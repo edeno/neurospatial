@@ -153,7 +153,7 @@ def _owned_regions(regions: object, n_dims: int, units: str | None) -> Regions:
 
 
 def _bins_in_region(
-    region_name: str,
+    region: str,
     regions: Mapping[str, Region],
     *,
     binning: Binning,
@@ -161,12 +161,10 @@ def _bins_in_region(
     cache: AnalysisCache,
 ) -> NDArray[np.intp]:
     """Indices of the bins the named region covers, in increasing order."""
-    if region_name not in regions:
-        raise RegionNotFoundError(
-            region_name, available=list(regions), argument="region_name"
-        )
+    if region not in regions:
+        raise RegionNotFoundError(region, available=list(regions), argument="region")
     mask = region_bin_mask(
-        regions[region_name],
+        regions[region],
         binning=binning,
         arena=arena,
         indexes=cache,

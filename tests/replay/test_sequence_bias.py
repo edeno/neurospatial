@@ -235,7 +235,7 @@ def session():
             speed=600.0,
             duration=0.24,
             rate_gain=2.0,
-            seed=seed,
+            rng=seed,
         )
         for cell, train in enumerate(event.spike_times):
             spikes[cell].append(train + offset)
@@ -262,7 +262,7 @@ def session():
             }
         )
         event = simulate_replay_event(
-            env, rates, duration=0.24, rate_gain=4.0, seed=100 + index, **options
+            env, rates, duration=0.24, rate_gain=4.0, rng=100 + index, **options
         )
         for cell, train in enumerate(event.spike_times):
             spikes[cell].append(train + offset)

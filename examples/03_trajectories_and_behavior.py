@@ -202,7 +202,7 @@ print(f"Running bouts: {len(movement)}")
 
 # %%
 entries = detect_region_crossings(
-    track, times, positions, region_name="right", direction="entry", max_gap=0.1
+    track, times, positions, region="right", direction="entry", max_gap=0.1
 )
 trials = detect_trials(track, times, positions, regions=["left", "right"], max_gap=0.1)
 runs = trials[trials.start_region == "left"]

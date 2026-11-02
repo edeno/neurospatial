@@ -216,7 +216,7 @@ correlations) that inevitably leads to changes in correlation".
 
 <!-- docs-test: run -->
 ```python
-def compare(spike_times, epochs_from, seed):
+def compare(spike_times, epochs_from, rng):
     return compare_reactivation_methods(
         spike_times,
         epochs_from.template_epochs,
@@ -224,7 +224,7 @@ def compare(spike_times, epochs_from, seed):
         epochs_from.control_epochs,
         reactivation_methods=methods,
         unit_groups=unit_groups,
-        rng=seed,
+        rng=rng,
     )
 
 
@@ -233,13 +233,13 @@ for kind in ("cell_identity", "circular_shift", "rate_poisson"):
     null = null_reactivation_data(
         session.spike_times, session.match_epochs, kind=kind, rng=1
     )
-    tables.append(compare(null, session, seed=1).assign(data=kind))
+    tables.append(compare(null, session, rng=1).assign(data=kind))
 for name, options in {
     "no_reactivation": {"reactivation": 0.0},
     "rate_change": {"reactivation": 0.0, "rate_change": 1.0},
 }.items():
     other = simulated_reactivation_session(n_units=30, duration=1200.0, rng=2, **options)
-    tables.append(compare(other.spike_times, other, seed=2).assign(data=name))
+    tables.append(compare(other.spike_times, other, rng=2).assign(data=name))
 everything = pd.concat(tables, ignore_index=True)
 mean_value = everything.groupby(["method", "data"], sort=False)["value"].mean()
 print(mean_value.unstack().round(3).to_string())
@@ -431,7 +431,7 @@ analysis at 0.1 to 5 s:
 <!-- docs-test: run -->
 ```python
 wide = [
-    dataclasses.replace(KUDRIMOTI_1999, name=f"{bin_size:g} s", bin_size=bin_size)
+    dataclasses.replace(KUDRIMOTI_1999, name=f"{bin_size:g} s", dt=bin_size)
     for bin_size in (0.1, 0.25, 1.0, 5.0)
 ]
 names = ["reactivated", "no_reactivation", "rate_change"]
@@ -474,11 +474,11 @@ three sessions:
 ```python
 bin_sizes = (0.05, 0.1, 0.25)
 by_bin = [
-    dataclasses.replace(KUDRIMOTI_1999, name=f"EV {b * 1000:g} ms", bin_size=b)
+    dataclasses.replace(KUDRIMOTI_1999, name=f"EV {b * 1000:g} ms", dt=b)
     for b in bin_sizes
 ] + [
     dataclasses.replace(
-        PEYRACHE_2010, name=f"assembly {b * 1000:g} ms", bin_size=b, test=None
+        PEYRACHE_2010, name=f"assembly {b * 1000:g} ms", dt=b, test=None
     )
     for b in bin_sizes
 ]
@@ -622,7 +622,7 @@ event_methods = [
 ]
 
 
-def compare_events(data, methods, seed):
+def compare_events(data, methods, rng):
     return compare_reactivation_methods(
         data.spike_times,
         data.template_epochs,
@@ -633,11 +633,11 @@ def compare_events(data, methods, seed):
         control_events=data.control_events,
         match_events=data.match_events,
         unit_groups=unit_groups,
-        rng=seed,
+        rng=rng,
     )
 
 
-events_table = compare_events(session, event_methods, seed=0)
+events_table = compare_events(session, event_methods, rng=0)
 pairwise = events_table[events_table["component"].isna()]
 columns = ["method", "value", "explained_variance", "reversed_explained_variance"]
 print(pairwise[[*columns, "semipartial_correlation"]].round(3).to_string(index=False))
@@ -734,7 +734,7 @@ for name, options in {
     "rate_change": {"reactivation": 0.0, "rate_change": 1.0},
 }.items():
     other = simulated_reactivation_session(n_units=30, duration=1200.0, rng=2, **options)
-    rows.append(compare_events(other, quick, seed=2).assign(data=name))
+    rows.append(compare_events(other, quick, rng=2).assign(data=name))
 by_data = pd.concat(rows).groupby(["method", "data"], sort=False)["value"].mean()
 print(by_data.unstack().round(3).to_string())
 ```
@@ -790,7 +790,7 @@ in the two rest periods.
   the tables; `reactivation_detection_rates(table, groups=["session"])`
   summarizes them.
 - **Your own variant.** `dataclasses.replace(KUDRIMOTI_1999, name=...,
-  bin_size=0.2)` changes one choice and keeps the rest; give it a new name.
+  dt=0.2)` changes one choice and keeps the rest; give it a new name.
 
 ## References
 

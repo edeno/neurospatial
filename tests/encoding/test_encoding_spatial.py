@@ -3950,7 +3950,7 @@ class TestSpatialRateRecovery:
         env = Environment.from_samples(samples, bin_size=2.0)
         env = env.with_metadata(units="cm")
         positions, times = simulate_trajectory_ou(
-            env, duration=1800.0, speed_units="cm", seed=42
+            env, duration=1800.0, speed_units="cm", rng=42
         )
         model = PlaceCellModel(
             env,
@@ -3960,7 +3960,7 @@ class TestSpatialRateRecovery:
             baseline_rate=0.1,
         )
         rates = model.firing_rate(times, positions)
-        spike_times = generate_poisson_spikes(rates, times, seed=42)
+        spike_times = generate_poisson_spikes(rates, times, rng=42)
         return env, spike_times, times, positions
 
     @pytest.mark.slow
@@ -4020,13 +4020,13 @@ class TestSpatialRateNaNPositionHandling:
         env = Environment.from_samples(samples, bin_size=self.BIN_SIZE)
         env = env.with_metadata(units="cm")
         positions, times = simulate_trajectory_ou(
-            env, duration=900.0, speed_units="cm", seed=42
+            env, duration=900.0, speed_units="cm", rng=42
         )
         model = PlaceCellModel(
             env, center=self.TRUE_CENTER, width=5.0, max_rate=30.0, baseline_rate=0.1
         )
         spike_times = generate_poisson_spikes(
-            model.firing_rate(times, positions), times, seed=7
+            model.firing_rate(times, positions), times, rng=7
         )
 
         clean = compute_spatial_rate(

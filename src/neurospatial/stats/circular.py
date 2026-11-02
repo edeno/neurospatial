@@ -67,7 +67,7 @@ Common Use Cases
 
 **Circular-circular correlation (e.g., phase coherence between electrodes)**:
 
->>> r, p = circular_circular_correlation(angles1, angles2)  # doctest: +SKIP
+>>> r, p = circular_circular_correlation(angles_a, angles_b)  # doctest: +SKIP
 
 **GLM circular tuning (head direction or theta phase)**::
 
@@ -748,8 +748,8 @@ def phase_position_correlation(
 
 
 def circular_circular_correlation(
-    angles1: NDArray[np.float64],
-    angles2: NDArray[np.float64],
+    angles_a: NDArray[np.float64],
+    angles_b: NDArray[np.float64],
     *,
     angle_unit: Literal["rad", "deg"] = "rad",
 ) -> tuple[float, float]:
@@ -762,11 +762,11 @@ def circular_circular_correlation(
 
     Parameters
     ----------
-    angles1 : ndarray of shape (n_samples,)
+    angles_a : ndarray of shape (n_samples,)
         First circular variable in radians or degrees.
-    angles2 : ndarray of shape (n_samples,)
+    angles_b : ndarray of shape (n_samples,)
         Second circular variable in radians or degrees. Must have same
-        length as ``angles1``. A pair with a NaN in either array is dropped
+        length as ``angles_a``. A pair with a NaN in either array is dropped
         with a warning and the correlation uses the remaining pairs.
     angle_unit : {'rad', 'deg'}, default='rad'
         Unit of input angles (applies to both arrays).
@@ -816,9 +816,9 @@ def circular_circular_correlation(
     --------
     >>> import numpy as np
     >>> from neurospatial.stats.circular import circular_circular_correlation
-    >>> angles1 = np.random.default_rng(42).uniform(0, 2 * np.pi, 100)
-    >>> angles2 = angles1 + 0.1 * np.random.default_rng(42).standard_normal(100)
-    >>> r, p = circular_circular_correlation(angles1, angles2)
+    >>> angles_a = np.random.default_rng(42).uniform(0, 2 * np.pi, 100)
+    >>> angles_b = angles_a + 0.1 * np.random.default_rng(42).standard_normal(100)
+    >>> r, p = circular_circular_correlation(angles_a, angles_b)
     >>> r > 0.8
     True
 
@@ -835,23 +835,23 @@ def circular_circular_correlation(
     """
     from scipy import stats
 
-    angles1 = to_radians(angles1, angle_unit)
-    angles2 = to_radians(angles2, angle_unit)
+    angles_a = to_radians(angles_a, angle_unit)
+    angles_b = to_radians(angles_b, angle_unit)
 
     # Validate paired inputs (handles NaN removal and length check)
-    angles1, angles2 = _validate_paired_input(
-        angles1, angles2, "angles1", "angles2", min_samples=5
+    angles_a, angles_b = _validate_paired_input(
+        angles_a, angles_b, "angles_a", "angles_b", min_samples=5
     )
 
-    n = len(angles1)
+    n = len(angles_a)
 
     # Compute circular means using scipy
-    alpha_bar = float(stats.circmean(angles1, high=2 * np.pi, low=0))
-    beta_bar = float(stats.circmean(angles2, high=2 * np.pi, low=0))
+    alpha_bar = float(stats.circmean(angles_a, high=2 * np.pi, low=0))
+    beta_bar = float(stats.circmean(angles_b, high=2 * np.pi, low=0))
 
     # Compute deviations from circular mean
-    sin_dev1 = np.sin(angles1 - alpha_bar)
-    sin_dev2 = np.sin(angles2 - beta_bar)
+    sin_dev1 = np.sin(angles_a - alpha_bar)
+    sin_dev2 = np.sin(angles_b - beta_bar)
 
     l20 = np.mean(sin_dev1**2)
     l02 = np.mean(sin_dev2**2)
@@ -1471,8 +1471,8 @@ def plot_circular_basis_tuning(
     beta_cos: float,
     angles: NDArray[np.float64] | None = None,
     rates: NDArray[np.float64] | None = None,
-    ax: Axes | PolarAxes | None = None,
     *,
+    ax: Axes | PolarAxes | None = None,
     intercept: float = 0.0,
     cov_matrix: NDArray[np.float64] | None = None,
     projection: Literal["polar", "linear"] = "polar",

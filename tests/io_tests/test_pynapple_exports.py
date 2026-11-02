@@ -378,9 +378,7 @@ def test_detected_visits_and_crossings_round_trip():
             times[visit.start_index : visit.stop_index],
         )
 
-    crossings = detect_region_crossings(
-        env, times, positions, region_name="B", max_gap=None
-    )
+    crossings = detect_region_crossings(env, times, positions, region="B", max_gap=None)
     group = to_pynapple(crossings, epochs=(times[0], np.nextafter(times[-1], 5)))
     assert list(group.direction) == ["entry", "exit"]
     np.testing.assert_array_equal(group[0].t, [2.0])
@@ -413,9 +411,7 @@ def test_each_detector_output_exports_with_its_fields():
     outputs = {
         "trials": detect_trials(env, times, positions, regions=["start", "goal"]),
         "movement": segment_by_velocity(times, positions, min_speed=5.0),
-        "approaches": detect_goal_directed_runs(
-            env, times, positions, goal_region="goal"
-        ),
+        "approaches": detect_goal_directed_runs(env, times, positions, region="goal"),
     }
     for name, intervals in outputs.items():
         assert len(intervals) > 0, name
@@ -423,7 +419,7 @@ def test_each_detector_output_exports_with_its_fields():
         assert list(iset.metadata_columns) == ["interval_id", *intervals.fields]
         np.testing.assert_array_equal(iset.start, intervals.start)
         _assert_same_membership(iset, intervals.windows)
-    assert list(to_pynapple(outputs["approaches"]).goal_region) == ["goal"]
+    assert list(to_pynapple(outputs["approaches"]).region) == ["goal"]
 
 
 # ---------------------------------------------------------------------------

@@ -156,7 +156,7 @@ def test_resample_diffuse_masked_not_biased_down():
     assert outside.any(), "fixture must produce outside-source bins"
 
     field = np.full(src.n_bins, 5.0)  # constant intensive field
-    new = resample_field(field, src, dst, method="diffuse", bandwidth=2.0)
+    new = resample_field(src, dst, field, method="diffuse", bandwidth=2.0)
 
     # Reconstruct the OLD behavior (zero-fill + single mass-conserving smooth).
     resampled = field[np.where(outside, 0, idx)].astype(float)
@@ -191,7 +191,7 @@ def test_resample_diffuse_source_nan_no_propagation():
     mid = int(np.argmin(np.abs(src.bin_centers[:, 0] - 5.0)))
     field[mid] = np.nan
 
-    out = resample_field(field, src, dst, method="diffuse", bandwidth=2.0)
+    out = resample_field(src, dst, field, method="diffuse", bandwidth=2.0)
 
     covered = ~outside
     # No propagation: the source NaN does not wipe out reachable covered bins.

@@ -220,7 +220,7 @@ class TestRippleDetectionScopeOut:
         spike_times = np.sort(rng.uniform(0, duration, 200)).astype(np.float64)
 
         result = peri_event_histogram(
-            spike_times, ripple_starts, window=(-0.5, 0.5), bin_size=0.05
+            spike_times, ripple_starts, window=(-0.5, 0.5), dt=0.05
         )
         # Standard PSTH result consumed without reshaping.
         assert result.firing_rate.ndim == 1

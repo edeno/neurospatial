@@ -101,7 +101,7 @@ def linear_track():
     """A seeded linear-track session: back-and-forth runs on a 1-D track."""
     from neurospatial.simulation import linear_track_session
 
-    return linear_track_session(seed=0)
+    return linear_track_session(rng=0)
 
 
 @pytest.fixture

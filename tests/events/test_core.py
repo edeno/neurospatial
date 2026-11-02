@@ -37,7 +37,7 @@ def sample_peri_event_result():
         sem=np.sqrt(histogram) / 10,
         n_events=50,
         window=(-0.5, 1.0),
-        bin_size=0.015,
+        dt=0.015,
     )
 
 
@@ -52,7 +52,7 @@ def sample_population_result():
         mean_sem=sem.mean(axis=0),
         n_events=50,
         window=(-0.5, 1.0),
-        bin_size=0.015,
+        dt=0.015,
     )
 
 
@@ -68,7 +68,7 @@ class TestPeriEventResult:
         """Test firing_rate() method converts counts to Hz."""
         result = sample_peri_event_result
         rate = result.firing_rate
-        expected = result.histogram / result.bin_size
+        expected = result.histogram / result.dt
         assert_allclose(rate, expected)
 
     def test_frozen_dataclass(self, sample_peri_event_result):
@@ -88,9 +88,9 @@ class TestPeriEventResult:
             ({"histogram": np.ones(99)}, "needs shape"),
             ({"sem": np.ones((100, 1))}, "needs shape"),
             ({"sem": -np.ones(100)}, "negative"),
-            ({"bin_size": 0.0}, "bin_size must be positive"),
-            ({"bin_size": np.nan}, "bin_size must be positive"),
-            ({"bin_size": 2.0}, "no complete bin"),
+            ({"dt": 0.0}, "dt must be positive"),
+            ({"dt": np.nan}, "dt must be positive"),
+            ({"dt": 2.0}, "no complete bin"),
             ({"window": (1.0, -0.5)}, "before its stop"),
             ({"n_events": 0}, "must be NaN exactly in the bins"),
             ({"n_events": 1}, "sem must be NaN exactly in the bins"),
@@ -109,14 +109,14 @@ class TestPeriEventResult:
             "sem": result.sem,
             "n_events": result.n_events,
             "window": result.window,
-            "bin_size": result.bin_size,
+            "dt": result.dt,
         }
         with pytest.raises(ValueError, match=match):
             PeriEventResult(**(fields | changes))
 
     def test_list_window_is_stored_as_a_tuple(self):
         result = PeriEventResult(
-            histogram=[1.0], sem=[np.nan], n_events=1, window=[-0.5, 0.5], bin_size=1.0
+            histogram=[1.0], sem=[np.nan], n_events=1, window=[-0.5, 0.5], dt=1.0
         )
         assert result.window == (-0.5, 0.5)
         assert isinstance(result.histogram, np.ndarray)
@@ -129,14 +129,14 @@ class TestPopulationPeriEventResult:
         """Test firing_rates() method converts counts to Hz for all units."""
         result = sample_population_result
         rates = result.firing_rates
-        expected = result.histograms / result.bin_size
+        expected = result.histograms / result.dt
         assert_allclose(rates, expected)
         assert rates.shape == (5, 100)
 
     def test_mean_firing_rate_conversion(self, sample_population_result):
-        """mean_firing_rate caches mean_histogram / bin_size (population Hz)."""
+        """mean_firing_rate caches mean_histogram / dt (population Hz)."""
         result = sample_population_result
-        expected = result.mean_histogram / result.bin_size
+        expected = result.mean_histogram / result.dt
         assert_allclose(result.mean_firing_rate, expected)
         assert result.mean_firing_rate.shape == result.mean_histogram.shape
 
@@ -173,7 +173,7 @@ class TestPopulationPeriEventResult:
             "mean_sem": result.mean_sem,
             "n_events": result.n_events,
             "window": result.window,
-            "bin_size": result.bin_size,
+            "dt": result.dt,
         }
         with pytest.raises(ValueError, match=match):
             PopulationPeriEventResult(**(fields | changes))
@@ -301,7 +301,7 @@ class TestEdgeCases:
             sem=np.array([0.5]),
             n_events=10,
             window=(-0.1, 0.1),
-            bin_size=0.2,
+            dt=0.2,
         )
         rate = result.firing_rate
         assert_allclose(rate, np.array([25.0]))  # 5.0 / 0.2 = 25.0

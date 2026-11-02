@@ -1,5 +1,6 @@
 """Base protocol and shared input checks for neural models."""
 
+import copy
 import hashlib
 from collections.abc import Callable, Hashable, Iterator
 from contextlib import contextmanager
@@ -306,16 +307,26 @@ def geodesic_lookup_bins(
 def _draw_rng(model: Any) -> np.random.Generator:
     """The generator a model draws its random parameters from.
 
-    A model built with ``seed=None`` first draws a seed from the operating
-    system and keeps it in its ``seed`` field, so ``dataclasses.replace``
-    and pickling rebuild the same draw. A seed that was passed is used as
-    passed.
+    A model built with ``rng=None`` first draws a seed from the operating
+    system and keeps it in its ``rng`` field, so ``dataclasses.replace``
+    and pickling rebuild the same draw. An int is used as passed. A
+    generator is copied when the model is built and every draw is made from
+    a fresh copy of that copy, so the caller's generator is not advanced and
+    a replaced model draws the same values.
     """
-    seed = model.seed
-    if seed is None:
-        seed = int(np.random.SeedSequence().generate_state(1)[0])
-        object.__setattr__(model, "seed", seed)
-    return np.random.default_rng(seed)
+    rng = model.rng
+    if rng is None:
+        rng = int(np.random.SeedSequence().generate_state(1)[0])
+        object.__setattr__(model, "rng", rng)
+    if isinstance(rng, np.random.Generator):
+        return copy.deepcopy(rng)
+    return np.random.default_rng(rng)
+
+
+def _snapshot_rng(model: Any) -> None:
+    """Replace a generator ``rng`` of ``model`` by a private copy of its state."""
+    if isinstance(model.rng, np.random.Generator):
+        object.__setattr__(model, "rng", copy.deepcopy(model.rng))
 
 
 def _set_rates(model: Any) -> None:

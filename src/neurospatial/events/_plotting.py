@@ -31,7 +31,7 @@ def plot_peri_event_response(
     event_times: NDArray[np.float64] | Intervals[Any],
     result: PeriEventResult,
     *,
-    axes: tuple[Axes, Axes] | None = None,
+    ax: tuple[Axes, Axes] | None = None,
     show_sem: bool = True,
     as_rate: bool = True,
     color: str = "C0",
@@ -62,7 +62,7 @@ def plot_peri_event_response(
         ``peri_event_histogram`` or selected from a population with
         ``population.sel(unit_id=...)``. Select the corresponding spike train
         by the same unit label before calling this function.
-    axes : pair of matplotlib.axes.Axes, optional
+    ax : pair of matplotlib.axes.Axes, optional
         Raster and histogram axes, in that order. If None, create two axes with
         a shared x-axis. Supplied axes are reused and given matching x-limits.
     show_sem : bool, default=True
@@ -89,11 +89,11 @@ def plot_peri_event_response(
     ValueError
         If cohort provenance is unknown, event-array length is incompatible,
         times are not finite 1-D arrays, no complete histogram bin exists, bin
-        metadata is inconsistent, or axes is not a pair of distinct axes.
+        metadata is inconsistent, or ax is not a pair of distinct axes.
 
     Notes
     -----
-    For a window not divisible by ``result.bin_size``, the histogram drops the
+    For a window not divisible by ``result.dt``, the histogram drops the
     trailing partial bin. This plot excludes that tail from the raster and both
     x-limits as well. Event inclusion still follows the original result's
     full-window exposure selection.
@@ -122,9 +122,11 @@ def plot_peri_event_response(
     ...     spike_times,
     ...     event_times,
     ...     (-0.5, 0.5),
-    ...     bin_size=0.1,
+    ...     dt=0.1,
     ... )
-    >>> axes = plot_peri_event_response(spike_times, event_times, result)
+    >>> raster_ax, histogram_ax = plot_peri_event_response(
+    ...     spike_times, event_times, result
+    ... )
     """
     import matplotlib.pyplot as plt
     from matplotlib.axes import Axes
@@ -166,30 +168,28 @@ def plot_peri_event_response(
             "including excluded events, in its original order."
         )
         raise ValueError(msg)
-    bin_edges = _make_bin_edges(result.window, result.bin_size)
-    if axes is not None:
+    bin_edges = _make_bin_edges(result.window, result.dt)
+    if ax is not None:
         try:
-            raster_ax, histogram_ax = axes
+            raster_ax, histogram_ax = ax
         except (TypeError, ValueError) as error:
-            msg = "axes must contain two distinct Matplotlib Axes."
+            msg = "ax must be a pair of two distinct Matplotlib Axes."
             raise ValueError(msg) from error
-        for ax in (raster_ax, histogram_ax):
+        for target in (raster_ax, histogram_ax):
             validate_instance(
-                ax,
+                target,
                 Axes,
-                name="axes",
+                name="ax",
                 owner="plot_peri_event_response()",
                 hint="pass two distinct Matplotlib Axes",
             )
         if raster_ax is histogram_ax:
-            msg = "axes must contain two distinct Matplotlib Axes."
+            msg = "ax must be a pair of two distinct Matplotlib Axes."
             raise ValueError(msg)
 
     selected_events = event_times[result.event_indices]
     spikes = _sorted_times(spike_times)
-    edges = _peri_event_bin_edges(
-        selected_events, result.window, bin_edges, result.bin_size
-    )
+    edges = _peri_event_bin_edges(selected_events, result.window, bin_edges, result.dt)
     if limits is not None:
         edges, _ = _cut_to_limits(
             edges,
@@ -205,7 +205,7 @@ def plot_peri_event_response(
         for i, j, event in zip(first, stop, selected_events, strict=True)
     ]
 
-    if axes is None:
+    if ax is None:
         _, (raster_ax, histogram_ax) = plt.subplots(
             2,
             1,
@@ -222,6 +222,6 @@ def plot_peri_event_response(
     raster_ax.set_title(f"{unit_label}{result.n_events} retained events")
     raster_ax.axvline(0.0, color="gray", linestyle="--", alpha=0.5, linewidth=1)
     result.plot(ax=histogram_ax, show_sem=show_sem, as_rate=as_rate, color=color)
-    for ax in (raster_ax, histogram_ax):
-        ax.set_xlim(bin_edges[0], bin_edges[-1])
+    for target in (raster_ax, histogram_ax):
+        target.set_xlim(bin_edges[0], bin_edges[-1])
     return raster_ax, histogram_ax

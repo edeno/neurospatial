@@ -2060,7 +2060,7 @@ def left_gaze_cell():
     )
     target = np.array([50.0, 100.0])
     rate = 0.5 + 20 * np.exp(-0.5 * (np.linalg.norm(viewed - target, axis=1) / 10) ** 2)
-    spikes = generate_poisson_spikes(rate, times, seed=7)
+    spikes = generate_poisson_spikes(rate, times, rng=7)
     return env, spikes, times, positions, headings, target
 
 

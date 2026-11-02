@@ -41,7 +41,7 @@ class TestDetectRegionCrossings:
             env,
             times,
             trajectory,
-            region_name="target",
+            region="target",
             direction="both",
             max_gap=None,
         )
@@ -77,7 +77,7 @@ class TestDetectRegionCrossings:
             env,
             times,
             trajectory,
-            region_name="target",
+            region="target",
             direction="entry",
             max_gap=None,
         )
@@ -110,7 +110,7 @@ class TestDetectRegionCrossings:
             env,
             times,
             trajectory,
-            region_name="target",
+            region="target",
             direction="exit",
             max_gap=None,
         )
@@ -143,7 +143,7 @@ class TestDetectRegionCrossings:
             env,
             times,
             trajectory,
-            region_name="target",
+            region="target",
             direction="both",
             max_gap=None,
         )
@@ -349,10 +349,10 @@ class TestRegionSegmentationIntegration:
 
         # 1. Detect region crossings
         source_crossings = detect_region_crossings(
-            env, times, trajectory, region_name="source", direction="both"
+            env, times, trajectory, region="source", direction="both"
         )
         target_crossings = detect_region_crossings(
-            env, times, trajectory, region_name="target", direction="both"
+            env, times, trajectory, region="target", direction="both"
         )
 
         # 2. Detect trials between the regions
@@ -473,7 +473,7 @@ class TestCrossingAndLapRecords:
             env,
             np.arange(5.0),
             np.c_[x, np.zeros_like(x)],
-            region_name="goal",
+            region="goal",
             max_gap=None,
         )
 

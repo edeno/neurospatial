@@ -58,7 +58,7 @@ speed = compute_speed(times, positions)  # cm/s
 heading_east = np.gradient(np.nan_to_num(positions[:, 0]), times) > 0
 in_field = np.exp(-((positions[:, 0] - 70.0) ** 2) / (2 * 8.0**2))
 rate = 0.5 + 20.0 * np.nan_to_num(in_field) * heading_east  # Hz
-spike_times = [generate_poisson_spikes(rate, times, seed=1)]
+spike_times = [generate_poisson_spikes(rate, times, rng=1)]
 
 trials = detect_trials(track, times, positions, regions=["west", "east"])
 east = trials[trials.end_region == "east"]
@@ -124,7 +124,7 @@ behavior = align_continuous_to_events(
     times, speed, east, (-1.0, 2.0), dt=0.1,
     feature_ids=["speed"], feature_units={"speed": "cm/s"},
 )
-psth = peri_event_histogram(spike_times[0], east, (-1.0, 2.0), bin_size=0.1)
+psth = peri_event_histogram(spike_times[0], east, (-1.0, 2.0), dt=0.1)
 print("time from departure (s):", behavior.relative_times[::5])
 print("trials under way:       ", behavior.counts[::5, 0])
 print("speed (cm/s):           ", np.round(behavior.means[::5, 0], 1))

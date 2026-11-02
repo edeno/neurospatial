@@ -51,7 +51,7 @@ def _path_graph():
         ),
         (
             lambda env, value: resample_field(
-                np.ones(env.n_bins), env, env, method="diffuse", bandwidth=value
+                env, env, np.ones(env.n_bins), method="diffuse", bandwidth=value
             ),
             "bandwidth must be positive and finite",
         ),

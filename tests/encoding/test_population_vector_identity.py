@@ -123,7 +123,7 @@ def test_exact_selection_refuses_unshared_units_naming_both_sides(make, maps):
 
     with pytest.raises(
         ValueError,
-        match=re.escape("only in firing_rates_1: [1], only in firing_rates_2: [5]"),
+        match=re.escape("only in firing_rates_a: [1], only in firing_rates_b: [5]"),
     ) as caught:
         population_vector_correlation(rates_1, rates_2, unit_selection="exact")
     assert "population_vector_correlation()" in str(caught.value)
@@ -182,8 +182,8 @@ def test_a_unit_left_out_by_intersection_does_not_remove_bins(make, maps):
 def test_generated_unit_ids_are_refused(make, maps):
     first, second = maps
     for rates_1, rates_2, name in (
-        (make(first, None), make(second, IDS), "firing_rates_1"),
-        (make(first, IDS), make(second, None), "firing_rates_2"),
+        (make(first, None), make(second, IDS), "firing_rates_a"),
+        (make(first, IDS), make(second, None), "firing_rates_b"),
     ):
         with pytest.raises(ValueError, match=f"{name} has no unit_ids") as caught:
             population_vector_correlation(rates_1, rates_2)
@@ -194,12 +194,12 @@ def test_mixing_a_result_with_an_array_is_refused(make, maps):
     first, second = maps
     result = make(first, IDS)
     with pytest.raises(
-        TypeError, match="SpatialRatesResult for firing_rates_1 and an array for"
+        TypeError, match="SpatialRatesResult for firing_rates_a and an array for"
     ) as caught:
         population_vector_correlation(result, second)
     assert "rates.firing_rates" in str(caught.value)
     with pytest.raises(
-        TypeError, match="SpatialRatesResult for firing_rates_2 and an array for"
+        TypeError, match="SpatialRatesResult for firing_rates_b and an array for"
     ):
         population_vector_correlation(first, result)
 
@@ -372,7 +372,7 @@ def test_different_estimator_settings_warn_as_in_compare_spatial_rates(env, maps
         )
     assert len(caught) == 1
     assert str(caught[0].message).startswith(
-        "population_vector_correlation(): firing_rates_1 and firing_rates_2 were "
+        "population_vector_correlation(): firing_rates_a and firing_rates_b were "
         "estimated with different bandwidth (bandwidth: 5.0 vs 10.0)."
     )
     assert caught[0].filename == __file__  # points at the caller's line

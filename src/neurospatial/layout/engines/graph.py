@@ -192,6 +192,7 @@ class GraphLayout(_NeighborPairsMixin):
 
     def plot_linear_layout(
         self,
+        *,
         ax: "matplotlib.axes.Axes | None" = None,
         **kwargs: Any,
     ) -> "matplotlib.axes.Axes":

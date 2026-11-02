@@ -11,7 +11,7 @@ from neurospatial.simulation import open_field_session
 
 @pytest.fixture(scope="module")
 def sim():
-    return open_field_session(duration=10, bin_size=10.0, n_place_cells=3, seed=0)
+    return open_field_session(duration=10, bin_size=10.0, n_place_cells=3, rng=0)
 
 
 def test_attributes_feed_analysis(sim):

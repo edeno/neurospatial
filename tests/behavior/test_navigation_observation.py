@@ -271,7 +271,7 @@ def _calls_with(times, positions, goal):
             env,
             times,
             positions,
-            decision_region="center",
+            region="center",
             trials=Intervals([], record_type=Trial),
             min_speed=1.0,
         ),

@@ -185,7 +185,7 @@ class TestRandomLines:
             short_track, posterior, times, band=2.0, n_lines=500
         )
         other = detect_trajectory_radon(
-            short_track, posterior, times, band=2.0, n_lines=500, line_seed=1
+            short_track, posterior, times, band=2.0, n_lines=500, rng=1
         )
         assert first.sinogram.shape == first.sinogram_speeds.shape == (500,)
         assert_array_equal(first.sinogram, again.sinogram)
@@ -259,7 +259,7 @@ class TestRandomLines:
         def score_or_error(seed):
             try:
                 return detect_trajectory_radon(
-                    short_track, posterior, times, band=2.0, n_lines=1, line_seed=seed
+                    short_track, posterior, times, band=2.0, n_lines=1, rng=seed
                 )
             except ValueError as error:
                 return error
@@ -275,7 +275,7 @@ class TestRandomLines:
         assert len(refused) > 0
 
     @pytest.mark.parametrize(
-        ("name", "value"), [("n_lines", 0), ("n_lines", 2.5), ("line_seed", -1)]
+        ("name", "value"), [("n_lines", 0), ("n_lines", 2.5), ("rng", -1)]
     )
     def test_invalid_counts_are_refused(self, short_track, name, value):
         posterior = np.eye(short_track.n_bins)
@@ -420,7 +420,7 @@ class TestRecipe:
 
     def _detect(self, env, rates, kind, seed, empty=(), **kwargs):
         event = simulate_replay_event(
-            env, rates, kind=kind, rate_gain=4.0, seed=seed, **kwargs
+            env, rates, kind=kind, rate_gain=4.0, rng=seed, **kwargs
         )
         counts, times = bin_spikes_in_time(
             list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration

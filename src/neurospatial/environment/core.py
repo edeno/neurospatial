@@ -5464,7 +5464,7 @@ class Environment(Generic[_C]):
 
         write_environment(nwbfile, self, name=name, overwrite=overwrite)
 
-    def bins_in_region(self, region_name: str) -> NDArray[np.intp]:
+    def bins_in_region(self, region: str) -> NDArray[np.intp]:
         """Return the indices of the bins a named region covers.
 
         A point region covers the one bin that contains the point. A polygon
@@ -5480,7 +5480,7 @@ class Environment(Generic[_C]):
 
         Parameters
         ----------
-        region_name : str
+        region : str
             The name of a region in ``self.regions``.
 
         Returns
@@ -5492,7 +5492,7 @@ class Environment(Generic[_C]):
         Raises
         ------
         KeyError
-            If ``region_name`` is not found in ``self.regions``.
+            If ``region`` is not found in ``self.regions``.
         ValueError
             If a point region has a different number of coordinates than the
             bins, or a polygon region is used in an environment that is not
@@ -5542,7 +5542,7 @@ class Environment(Generic[_C]):
 
         """
         return _bins_in_region(
-            region_name,
+            region,
             self.regions,
             binning=self._binning,
             arena=self._arena,
@@ -5758,8 +5758,8 @@ class Environment(Generic[_C]):
     @overload
     def plot(
         self,
-        ax: matplotlib.axes.Axes | None = None,
         *,
+        ax: matplotlib.axes.Axes | None = None,
         show_regions: bool = True,
         show_walls: bool = True,
         show_landmarks: bool = True,
@@ -5773,8 +5773,8 @@ class Environment(Generic[_C]):
     @overload
     def plot(
         self,
-        ax: None = None,
         *,
+        ax: None = None,
         show_regions: bool = True,
         show_walls: bool = True,
         show_landmarks: bool = True,
@@ -5782,6 +5782,7 @@ class Environment(Generic[_C]):
     ) -> fastplotlib.Figure: ...
 
     @keyword_hint(
+        "ax",
         "show_regions",
         "show_walls",
         "show_landmarks",
@@ -5792,8 +5793,8 @@ class Environment(Generic[_C]):
     )
     def plot(
         self,
-        ax: matplotlib.axes.Axes | None = None,
         *,
+        ax: matplotlib.axes.Axes | None = None,
         show_regions: bool = True,
         show_walls: bool = True,
         show_landmarks: bool = True,
@@ -5920,11 +5921,11 @@ class Environment(Generic[_C]):
             **kwargs,
         )
 
-    @keyword_hint("layout_plot_kwargs")
+    @keyword_hint("ax", "layout_plot_kwargs")
     def plot_1d(
         self,
-        ax: matplotlib.axes.Axes | None = None,
         *,
+        ax: matplotlib.axes.Axes | None = None,
         layout_plot_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> matplotlib.axes.Axes:
@@ -5977,8 +5978,8 @@ class Environment(Generic[_C]):
     def plot_field(
         self,
         field: NDArray[np.float64],
-        ax: matplotlib.axes.Axes | None = None,
         *,
+        ax: matplotlib.axes.Axes | None = None,
         cmap: str | Colormap = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -5995,8 +5996,8 @@ class Environment(Generic[_C]):
     def plot_field(
         self,
         field: NDArray[np.float64],
-        ax: None = None,
         *,
+        ax: None = None,
         cmap: str | Colormap = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,
@@ -6007,6 +6008,7 @@ class Environment(Generic[_C]):
     ) -> fastplotlib.Figure: ...
 
     @keyword_hint(
+        "ax",
         "cmap",
         "vmin",
         "vmax",
@@ -6020,8 +6022,8 @@ class Environment(Generic[_C]):
     def plot_field(
         self,
         field: NDArray[np.float64],
-        ax: matplotlib.axes.Axes | None = None,
         *,
+        ax: matplotlib.axes.Axes | None = None,
         cmap: str | Colormap = "viridis",
         vmin: float | None = None,
         vmax: float | None = None,

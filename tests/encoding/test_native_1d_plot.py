@@ -10,7 +10,7 @@ from neurospatial.simulation import linear_track_session
 
 @pytest.fixture(scope="module")
 def track_rates():
-    sim = linear_track_session(duration=60, n_place_cells=3, seed=0)
+    sim = linear_track_session(duration=60, n_place_cells=3, rng=0)
     return compute_spatial_rates(
         sim.env, sim.spike_times, sim.times, sim.positions, unit_ids=sim.unit_ids
     )

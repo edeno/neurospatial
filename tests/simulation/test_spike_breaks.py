@@ -25,7 +25,7 @@ def joined():
 def _spikes(times, positions, **kwargs):
     model = HeadDirectionCellModel(preferred_direction=np.pi / 4)
     return generate_population_spikes(
-        [model], times, positions, seed=7, show_progress=False, **kwargs
+        [model], times, positions, rng=7, show_progress=False, **kwargs
     )[0]
 
 

@@ -1912,7 +1912,7 @@ def distance_to_boundary(
     positions: NDArray[np.float64],
     *,
     boundary_type: Literal["edge", "region"] = "edge",
-    region_name: str | None = None,
+    region: str | None = None,
     metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """
@@ -1939,8 +1939,8 @@ def distance_to_boundary(
           exact distance to the arena's walls; for that use
           :func:`neurospatial.ops.nearest_boundary`.
         - 'region': Distance to boundary of a specific named region.
-          Requires ``region_name`` parameter.
-    region_name : str, optional
+          Requires ``region`` parameter.
+    region : str, optional
         Name of region for boundary_type='region'. Required when
         boundary_type='region', ignored otherwise.
     metric : {'geodesic', 'euclidean'}, default='geodesic'
@@ -1960,8 +1960,8 @@ def distance_to_boundary(
     Raises
     ------
     ValueError
-        If boundary_type='region' but region_name is not provided.
-        If region_name is provided but region doesn't exist.
+        If boundary_type='region' but region is not provided.
+        If region is provided but region doesn't exist.
         If no boundary bins found for the specified boundary_type.
 
     Notes
@@ -1991,7 +1991,7 @@ def distance_to_boundary(
     >>>
     >>> # Distance to goal region boundary
     >>> dist_goal = distance_to_boundary(  # doctest: +SKIP
-    ...     env, positions, boundary_type="region", region_name="goal"
+    ...     env, positions, boundary_type="region", region="goal"
     ... )
     >>>
     >>> # GLM design matrix with multiple boundary features
@@ -1999,7 +1999,7 @@ def distance_to_boundary(
     ...     [
     ...         distance_to_boundary(env, positions, boundary_type="edge"),
     ...         distance_to_boundary(
-    ...             env, positions, boundary_type="region", region_name="goal"
+    ...             env, positions, boundary_type="region", region="goal"
     ...         ),
     ...     ]
     ... )
@@ -2039,9 +2039,9 @@ def distance_to_boundary(
     if n_samples == 0:
         return np.array([], dtype=np.float64)
 
-    if boundary_type == "region" and region_name is None:
+    if boundary_type == "region" and region is None:
         msg = (
-            "region_name is required when boundary_type='region'. "
+            "region is required when boundary_type='region'. "
             "Provide the name of the region to compute distance to."
         )
         raise ValueError(msg)
@@ -2052,22 +2052,22 @@ def distance_to_boundary(
 
     else:
         # Region boundary bins: boundary of the named region
-        # region_name is already validated as not None by the earlier check
-        assert region_name is not None  # for type checker
+        # region is already validated as not None by the earlier check
+        assert region is not None  # for type checker
         _require_region_mask(
             env,
-            region_name,
+            region,
             operation="distance_to_boundary()",
-            argument="region_name",
+            argument="region",
         )
         boundary_bins = np.asarray(
-            _find_region_boundary_bins(env, region_name), dtype=np.intp
+            _find_region_boundary_bins(env, region), dtype=np.intp
         )
 
     if len(boundary_bins) == 0:
         raise ValueError(
             f"No boundary bins found for boundary_type='{boundary_type}'"
-            + (f", region_name='{region_name}'" if region_name else "")
+            + (f", region='{region}'" if region else "")
             + ". Check that the environment has valid boundaries."
         )
 
@@ -2107,7 +2107,7 @@ def _distance_to_bins(
     return distances
 
 
-def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
+def _find_region_boundary_bins(env: Environment, region: str) -> list[int]:
     """Find bins at the boundary of a named region.
 
     A bin is a region boundary bin if it's in the region AND has at least
@@ -2117,7 +2117,7 @@ def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
     ----------
     env : Environment
         Environment.
-    region_name : str
+    region : str
         Name of the region.
 
     Returns
@@ -2126,7 +2126,7 @@ def _find_region_boundary_bins(env: Environment, region_name: str) -> list[int]:
         Bin indices at the region boundary.
     """
     graph = env.connectivity
-    region_bins = set(env.bins_in_region(region_name))
+    region_bins = set(env.bins_in_region(region))
 
     if not region_bins:
         return []

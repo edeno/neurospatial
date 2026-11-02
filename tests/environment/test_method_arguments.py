@@ -83,19 +83,19 @@ CASES: dict[str, Case] = {
     ),
     "plot(ax, show_regions)": Case(
         lambda n: n["env"].plot(n["ax"], True),
-        "show_regions=True",
-        lambda n: n["env"].plot(n["ax"], show_regions=True),
+        "ax=None, show_regions=True",
+        lambda n: n["env"].plot(ax=n["ax"], show_regions=True),
     ),
     "plot_1d(ax, layout_plot_kwargs)": Case(
         lambda n: n["track"].plot_1d(n["ax"], {}),
-        "layout_plot_kwargs={}",
-        lambda n: n["track"].plot_1d(n["ax"], layout_plot_kwargs={}),
+        "ax=None, layout_plot_kwargs={}",
+        lambda n: n["track"].plot_1d(ax=n["ax"], layout_plot_kwargs={}),
         env="track",
     ),
     "plot_field(field, ax, cmap, vmin)": Case(
         lambda n: n["env"].plot_field(n["field"], n["ax"], "magma", 0.0),
-        "cmap='magma', vmin=0.0",
-        lambda n: n["env"].plot_field(n["field"], n["ax"], cmap="magma", vmin=0.0),
+        "ax=None, cmap='magma', vmin=0.0",
+        lambda n: n["env"].plot_field(n["field"], ax=n["ax"], cmap="magma", vmin=0.0),
     ),
 }
 

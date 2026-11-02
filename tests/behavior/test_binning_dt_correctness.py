@@ -63,9 +63,7 @@ class TestSafeGatherRegions:
         positions[2] = np.nan  # lost tracking: bin -1
         times = np.linspace(0.0, 1.0, len(positions))
 
-        crossings = detect_region_crossings(
-            env, times, positions, region_name=region_name
-        )
+        crossings = detect_region_crossings(env, times, positions, region=region_name)
 
         assert crossings == []
 

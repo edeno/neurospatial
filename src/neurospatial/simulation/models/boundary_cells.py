@@ -70,6 +70,7 @@ from neurospatial.simulation.models.base import (
     _model_inputs,
     _set_rates,
     _shared,
+    _snapshot_rng,
     _tuned_rate,
 )
 
@@ -324,7 +325,7 @@ class BoundaryVectorCellModel:
         draw tuning distances from.
     preferred_direction : float, optional
         Allocentric direction of that wall in radians (0 = East, +pi/2 =
-        North). If None, drawn uniformly from [-pi, pi) with ``seed``, as
+        North). If None, drawn uniformly from [-pi, pi) with ``rng``, as
         every direction is equally likely.
     distance_tolerance : float, optional
         Standard deviation of the distance tuning, in environment units.
@@ -346,11 +347,12 @@ class BoundaryVectorCellModel:
         illustrative value.
     boundary_source : {'physical', 'analysis'}, default='physical'
         The arena's declared walls, or the edges of the environment's bins.
-    seed : int or None, optional
-        Seed for the random ``preferred_direction``. When None and the
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed for the random ``preferred_direction``. When None and the
         direction is drawn, the model draws a seed from the operating system
-        and keeps it in ``seed``, so ``dataclasses.replace`` and pickling
-        keep the drawn direction.
+        and keeps it in ``rng``, so ``dataclasses.replace`` and pickling
+        keep the drawn direction. A generator is copied when the model is built: the caller's generator
+        is not advanced, and ``replace`` draws the same values.
 
     Attributes
     ----------
@@ -412,7 +414,7 @@ class BoundaryVectorCellModel:
     max_rate: float = 15.0
     baseline_rate: float = 0.01
     boundary_source: BoundarySource = "physical"
-    seed: int | None = None
+    rng: np.random.Generator | int | None = None
     _preferred_distance: float = field(init=False, repr=False)
     _preferred_direction: float = field(init=False, repr=False)
     _distance_tolerance: float = field(init=False, repr=False)
@@ -423,6 +425,7 @@ class BoundaryVectorCellModel:
     _reference_drive: float = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        _snapshot_rng(self)
         env = self.env
         call = "BoundaryVectorCellModel()"
         distance = self.preferred_distance

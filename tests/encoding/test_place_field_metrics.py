@@ -189,10 +189,10 @@ class TestDetectPlaceFields:
         runs = []
         for seed in range(3):
             positions, times = simulate_trajectory_laps(
-                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, seed=seed
+                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, rng=seed
             )
             rate = 15 * np.exp(-((positions[:, 0] - 100) ** 2) / (2 * 8.0**2)) + 0.1
-            trains = [generate_poisson_spikes(rate, times, seed=100 + seed)]
+            trains = [generate_poisson_spikes(rate, times, rng=100 + seed)]
             runs.append(compute_spatial_rates(env, trains, times, positions)[0])
         for rates in runs:
             assert rates.bandwidth == 5.0
@@ -261,13 +261,13 @@ class TestDetectPlaceFields:
 
         for seed in range(3):
             positions, times = simulate_trajectory_laps(
-                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, seed=seed
+                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, rng=seed
             )
             x = positions[:, 0]
             pair = gauss(x, 60, 10) + gauss(x, 96, 8) + 0.1
             alone = gauss(x, 150, 10) + 0.1
             spikes = [
-                generate_poisson_spikes(rate, times, seed=300 + 2 * seed + k)
+                generate_poisson_spikes(rate, times, rng=300 + 2 * seed + k)
                 for k, rate in enumerate((pair, alone))
             ]
             rates = compute_spatial_rates(env, spikes, times, positions)
@@ -328,7 +328,7 @@ class TestDetectPlaceFields:
         ).with_metadata(units="cm")
         for seed in range(3):
             positions, times = simulate_trajectory_laps(
-                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, seed=seed
+                env, n_laps=40, speed_mean=20.0, sampling_frequency=30.0, rng=seed
             )
             x = positions[:, 0]
             rate = (
@@ -336,7 +336,7 @@ class TestDetectPlaceFields:
                 + 4 * np.exp(-((x - 150) ** 2) / (2 * 8.0**2))
                 + 0.1
             )
-            spikes = [generate_poisson_spikes(rate, times, seed=200 + seed)]
+            spikes = [generate_poisson_spikes(rate, times, rng=200 + seed)]
             rates = compute_spatial_rates(env, spikes, times, positions)
             rate_map = np.asarray(rates.firing_rates)[0]
             fields = detect_place_fields(env, rate_map, bandwidth=rates.bandwidth)

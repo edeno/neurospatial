@@ -72,7 +72,7 @@ def _make_linear_track_sim(
 
     # --- trajectory (OU random walk in x, y fixed at 0) ---
     positions, times = simulate_trajectory_ou(
-        env, duration=duration, seed=seed, speed_units="cm"
+        env, duration=duration, rng=seed, speed_units="cm"
     )
 
     # --- place cells evenly spread along track ---
@@ -90,10 +90,10 @@ def _make_linear_track_sim(
             center=centers[i],
             width=15.0,
             max_rate=30.0,
-            seed=int(rng.integers(0, 2**31)),
+            rng=int(rng.integers(0, 2**31)),
         )
         rates = cell.firing_rate(times, positions)
-        spikes = generate_poisson_spikes(rates, times, seed=int(rng.integers(0, 2**31)))
+        spikes = generate_poisson_spikes(rates, times, rng=int(rng.integers(0, 2**31)))
         spike_times.append(spikes)
 
     return env, spike_times, times, positions

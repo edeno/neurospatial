@@ -45,7 +45,7 @@ def sweep(place_code):
     """A 900 cm/s sweep decoded in 20 ms bins: posterior, times and counts."""
     env, rates = place_code
     event = simulate_replay_event(
-        env, rates, kind="sweep", speed=900.0, rate_gain=4.0, seed=1
+        env, rates, kind="sweep", speed=900.0, rate_gain=4.0, rng=1
     )
     counts, grid = bin_spikes_in_time(
         list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration
@@ -464,7 +464,7 @@ class TestWidloskiFoster2025:
             speed=100.0,
             duration=0.8,
             start_position=40.0,
-            seed=1,
+            rng=1,
         )
         counts, grid = bin_spikes_in_time(
             list(event.spike_times), dt=0.005, t_start=0.0, t_stop=event.duration

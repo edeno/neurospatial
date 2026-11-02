@@ -23,10 +23,10 @@ TRIALS = Intervals.from_arrays(
 
 CALLS = {
     "peri_event_histogram": lambda epochs: peri_event_histogram(
-        SPIKES, EVENTS, (-1.0, 1.0), bin_size=0.25, epochs=epochs
+        SPIKES, EVENTS, (-1.0, 1.0), dt=0.25, epochs=epochs
     ),
     "population_peri_event_histogram": lambda epochs: population_peri_event_histogram(
-        [SPIKES, SPIKES[::2]], EVENTS, (-1.0, 1.0), bin_size=0.25, epochs=epochs
+        [SPIKES, SPIKES[::2]], EVENTS, (-1.0, 1.0), dt=0.25, epochs=epochs
     ),
     "peri_event_distance_histogram": lambda epochs: peri_event_distance_histogram(
         SPIKES, EVENTS, TIMES, POSITIONS, (-10.0, 10.0), bin_size=2.0, epochs=epochs
@@ -109,11 +109,11 @@ NO_TRIALS = TRIALS[TRIALS.cue == "up"]
 EVENT_SELECTIONS = {"no rows": NO_TRIALS, "empty array": np.array([])}
 PSTH_CALLS = {
     "peri_event_histogram": lambda events, **kw: peri_event_histogram(
-        SPIKES, events, (-1.0, 1.0), bin_size=0.25, **kw
+        SPIKES, events, (-1.0, 1.0), dt=0.25, **kw
     ),
     "population_peri_event_histogram": lambda events, **kw: (
         population_peri_event_histogram(
-            [SPIKES, SPIKES[::2]], events, (-1.0, 1.0), bin_size=0.25, **kw
+            [SPIKES, SPIKES[::2]], events, (-1.0, 1.0), dt=0.25, **kw
         )
     ),
 }
@@ -148,7 +148,7 @@ def test_response_plot_of_no_events_draws_an_empty_raster(selection):
 
     events = EVENT_SELECTIONS[selection]
     with pytest.warns(UserWarning, match="event_times holds no event"):
-        result = peri_event_histogram(SPIKES, events, (-1.0, 1.0), bin_size=0.25)
+        result = peri_event_histogram(SPIKES, events, (-1.0, 1.0), dt=0.25)
     raster_ax, _ = plot_peri_event_response(SPIKES, events, result)
     assert raster_ax.get_ylim() == (-0.5, 0.5)
     assert raster_ax.get_title() == "0 retained events"

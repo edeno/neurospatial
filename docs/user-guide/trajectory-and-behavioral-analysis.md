@@ -618,15 +618,15 @@ from neurospatial.behavior.segmentation import detect_region_crossings
 
 # Detect all crossings (entries and exits)
 crossings = detect_region_crossings(
-    env, times, positions, region_name="goal", direction="both"
+    env, times, positions, region="goal", direction="both"
 )
 
 # Filter by direction
 entries = detect_region_crossings(
-    env, times, positions, region_name="goal", direction="entry"
+    env, times, positions, region="goal", direction="entry"
 )
 exits = detect_region_crossings(
-    env, times, positions, region_name="goal", direction="exit"
+    env, times, positions, region="goal", direction="exit"
 )
 
 # Analyze crossing events
@@ -1319,7 +1319,7 @@ env = env.with_regions(regions)
 # A place cell with a field at 60 cm that fires only on the way out.
 outbound = phase < 0.5
 rate = 0.5 + 20.0 * outbound * np.exp(-0.5 * ((x - 60.0) / 8.0) ** 2)
-spike_times = generate_poisson_spikes(rate, times, seed=4)
+spike_times = generate_poisson_spikes(rate, times, rng=4)
 
 trials = detect_trials(env, times, positions, regions=["home", "goal"])
 print(trials)
@@ -1626,7 +1626,7 @@ goal_runs = detect_goal_directed_runs(
     env,
     times,
     positions,
-    goal_region="goal",
+    region="goal",
     directedness_threshold=0.7,
     min_progress=20.0,  # cm
 )
@@ -1748,7 +1748,7 @@ for trial_id, trial, samples in zip(
         env,
         times[samples],
         positions[samples],
-        goal_region=trial.end_region,
+        region=trial.end_region,
         directedness_threshold=0.5,
         min_progress=10.0,
     )

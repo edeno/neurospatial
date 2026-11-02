@@ -36,7 +36,7 @@ def place_code():
 
 def _counts(env, rates, kind, seed, dt, **kwargs):
     event = simulate_replay_event(
-        env, rates, kind=kind, rate_gain=4.0, seed=seed, **kwargs
+        env, rates, kind=kind, rate_gain=4.0, rng=seed, **kwargs
     )
     return bin_spikes_in_time(
         list(event.spike_times), dt=dt, t_start=0.0, t_stop=event.duration

@@ -44,14 +44,14 @@ region_builder.add("goal", point=np.array([0.0, 0.0]))
 env = env.with_regions(region_builder)
 
 # Binary reward (sparse RL)
-reward_sparse = region_reward_field(env, region_name="goal", decay="constant")
+reward_sparse = region_reward_field(env, region="goal", decay="constant")
 
 # Linear decay from boundary
-reward_linear = region_reward_field(env, region_name="goal", decay="linear")
+reward_linear = region_reward_field(env, region="goal", decay="linear")
 
 # Smooth Gaussian falloff
 reward_smooth = region_reward_field(
-    env, region_name="goal", decay="gaussian", bandwidth=10.0
+    env, region="goal", decay="gaussian", bandwidth=10.0
 )
 ```
 
@@ -62,7 +62,7 @@ reward_smooth = region_reward_field(
 **Use case:** Sparse reward RL, no reward shaping
 
 ```python
-reward = region_reward_field(env, region_name="goal", reward_value=1.0, decay="constant")
+reward = region_reward_field(env, region="goal", reward_value=1.0, decay="constant")
 ```
 
 Creates a binary reward field:
@@ -88,7 +88,7 @@ This is the **unbiased** approach - the agent receives reward only when reaching
 **Use case:** Gradient-based reward shaping with clear boundaries
 
 ```python
-reward = region_reward_field(env, region_name="goal", reward_value=1.0, decay="linear")
+reward = region_reward_field(env, region="goal", reward_value=1.0, decay="linear")
 ```
 
 Provides linear decay from the region boundary:
@@ -119,7 +119,7 @@ for example to compare reward fields across arenas:
 
 ```python
 reward = region_reward_field(
-    env, region_name="goal", decay="linear", max_distance=40.0
+    env, region="goal", decay="linear", max_distance=40.0
 )
 ```
 
@@ -129,7 +129,7 @@ reward = region_reward_field(
 
 ```python
 reward = region_reward_field(
-    env, region_name="goal", reward_value=1.0, decay="gaussian", bandwidth=10.0
+    env, region="goal", reward_value=1.0, decay="gaussian", bandwidth=10.0
 )
 ```
 
@@ -185,9 +185,9 @@ region_builder.add("goal", point=np.array([0.0, 0.0]))
 env = env.with_regions(region_builder)
 
 # Compare decay types
-reward_sparse = region_reward_field(env, region_name="goal", reward_value=10.0, decay="constant")
-reward_linear = region_reward_field(env, region_name="goal", reward_value=10.0, decay="linear")
-reward_smooth = region_reward_field(env, region_name="goal", reward_value=10.0,
+reward_sparse = region_reward_field(env, region="goal", reward_value=10.0, decay="constant")
+reward_linear = region_reward_field(env, region="goal", reward_value=10.0, decay="linear")
+reward_smooth = region_reward_field(env, region="goal", reward_value=10.0,
                                      decay="gaussian", bandwidth=15.0)
 
 # Visualize
@@ -392,9 +392,9 @@ plt.show()
 
 ```python
 # Region rewards
-region_reward_field(env, region_name="goal", decay="constant")  # ✓
-region_reward_field(env, region_name="goal", decay="linear")    # ✓
-region_reward_field(env, region_name="goal", decay="gaussian")  # ✓
+region_reward_field(env, region="goal", decay="constant")  # ✓
+region_reward_field(env, region="goal", decay="linear")    # ✓
+region_reward_field(env, region="goal", decay="gaussian")  # ✓
 
 # Goal rewards
 goal_reward_field(env, goal_bins, decay="exponential")  # ✓
@@ -439,7 +439,7 @@ You can combine multiple reward sources:
 
 ```python
 # Region-based reward for primary goal
-primary_reward = region_reward_field(env, region_name="primary_goal", reward_value=100.0)
+primary_reward = region_reward_field(env, region="primary_goal", reward_value=100.0)
 
 # Goal-based reward for subgoals
 subgoal_bins = [bin1, bin2, bin3]
@@ -463,7 +463,7 @@ reward_early = goal_reward_field(env, goal_bin, decay="exponential", scale=20.0)
 reward_mid = goal_reward_field(env, goal_bin, decay="exponential", scale=10.0)
 
 # Late training: minimal shaping or sparse
-reward_late = region_reward_field(env, region_name="goal", decay="constant")
+reward_late = region_reward_field(env, region="goal", decay="constant")
 ```
 
 This can help agents learn faster initially while converging to optimal policies later.

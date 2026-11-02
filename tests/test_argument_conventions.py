@@ -2,6 +2,7 @@
 
 import importlib
 import inspect
+import re
 
 import pytest
 from test_public_api_snapshot import NAMESPACES
@@ -146,11 +147,6 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # The video or region the annotation works on.
     ("annotate_track_graph", "video_path"),
     ("validate_annotations", "boundary"),
-    # The Axes to draw on, as in result.plot(ax) and Environment.plot(ax).
-    ("plot_circular_basis_tuning", "ax"),
-    ("plot_head_direction_tuning", "ax"),
-    ("plot_object_vector_tuning", "ax"),
-    ("plot_phase_precession", "ax"),
 }
 
 
@@ -197,17 +193,17 @@ def test_free_function_optional_data_list_is_current():
 # required positional name fails until it is classified here as data.
 REQUIRED_DATA_NAMES = {
     # Environments, graphs and recordings, and samples of them.
-    *("env", "env_1", "env_2", "src_env", "dst_env", "source_env", "target_env"),
-    *("G", "graph", "nodes", "sources", "bin_from", "bin_to", "centers"),
+    *("env", "env_a", "env_b", "source_env", "target_env"),
+    *("graph", "nodes", "sources", "bin_from", "bin_to", "centers"),
     *("nwbfile", "session", "obj", "data", "df", "path"),
     *("video_path", "xml_path", "json_path", "mask", "project"),
-    *("times", "t", "positions", "position", "points"),
+    *("times", "positions", "position", "points"),
     *("positions_a", "positions_b"),
     *("headings", "heading", "nose", "tail", "speeds", "lfp", "signals"),
     *("spike_times", "spike_counts", "control_counts", "match_counts"),
     *("targets", "ego_points", "object_positions", "cue_positions"),
     *("goal", "goal_bins", "start", "subgoals", "regions"),
-    *("angles", "angles1", "angles2", "angle", "linear_values", "phases"),
+    *("angles", "angles_a", "angles_b", "angle", "linear_values", "phases"),
     # Events, intervals, trials and labels.
     *("event_times", "events", "reference_events", "start_events", "stop_events"),
     *("entry_time", "reward_times"),
@@ -215,15 +211,15 @@ REQUIRED_DATA_NAMES = {
     *("template_epochs", "match_epochs"),
     *("laps", "visits", "labels", "direction_labels"),
     # The window of each event, by position in the canonical events order
-    # f(spike_times, event_times, window, *, bin_size).
+    # f(spike_times, event_times, window, *, dt).
     "window",
     # Fields, rate maps, fitted models and the results computed from them.
     *("field", "fields", "edge_field", "kernel", "basis", "bin_edges"),
-    *("firing_rate", "firing_rate_1", "firing_rate_2"),
-    *("firing_rates", "firing_rates_1", "firing_rates_2"),
-    *("rate_map_1", "rate_map_2", "rates_a", "rates_b", "all_place_fields"),
+    *("firing_rate", "firing_rate_a", "firing_rate_b"),
+    *("firing_rates", "firing_rates_a", "firing_rates_b"),
+    *("rate_map_a", "rate_map_b", "rates_a", "rates_b", "all_place_fields"),
     *("joint_counts", "autocorr_2d", "rate_map"),
-    *("field_bins", "field_bins_1", "field_bins_2", "field_bins_i", "field_bins_j"),
+    *("field_bins", "field_bins_a", "field_bins_b"),
     *("encoding_models", "models", "pattern", "posterior", "log_likelihood"),
     *("patterns", "reference_patterns", "activation"),
     *("explained_variance", "reversed_explained_variance"),
@@ -324,14 +320,11 @@ def test_environment_method_options_are_keyword_only():
 
     A positional option with a default would let ``env.smooth(rate, 5.0, mode="average")``
     or ``env.distance_between(a, b, None)`` change meaning silently. The
-    optional arguments allowed by position are data or the Axes to draw on.
+    optional arguments allowed by position are data.
     """
     from neurospatial import Environment
 
     optional_data = {
-        ("plot", "ax"),
-        ("plot_1d", "ax"),
-        ("plot_field", "ax"),
         ("rebin", "factor"),
         ("region_membership", "regions"),
         ("transitions", "bins"),
@@ -465,3 +458,270 @@ def test_warnings_from_sample_functions_point_at_the_caller():
         restrict(times, positions, epochs=[(0.0, 3.0), (5.0, 9.0)])
     assert len(caught) == 1, [str(w.message) for w in caught]
     assert {w.filename for w in caught} == {__file__}
+
+
+# --- One name per concept ----------------------------------------------------
+# Each test below enforces one row of the argument vocabulary in
+# .claude/rules/public-api.md.
+
+
+def _public_objects():
+    """``(object, label, parameters)`` of public functions, methods, constructors."""
+    seen = set()
+    for namespace in NAMESPACES:
+        module = importlib.import_module(namespace)
+        for name in module.__all__:
+            obj = getattr(module, name)
+            if not (inspect.isfunction(obj) or inspect.isclass(obj)):
+                continue
+            candidates = [obj]
+            if inspect.isclass(obj):
+                for attr in dir(obj):
+                    static = inspect.getattr_static(obj, attr)
+                    if isinstance(static, (classmethod, staticmethod)):
+                        static = static.__func__
+                    if not attr.startswith("_") and inspect.isfunction(static):
+                        candidates.append(static)
+            for candidate in candidates:
+                if candidate in seen:
+                    continue
+                seen.add(candidate)
+                try:
+                    parameters = inspect.signature(candidate).parameters
+                except (TypeError, ValueError):
+                    continue
+                label = (
+                    f"{candidate.__module__}.{getattr(candidate, '__qualname__', name)}"
+                )
+                yield candidate, label, parameters
+
+
+def _public_signatures():
+    """``(label, parameters)`` for public functions, methods and constructors."""
+    for _, label, parameters in _public_objects():
+        yield label, parameters
+
+
+def _documented_entry(function, parameter):
+    """The Parameters-section text documenting ``parameter`` ('' if absent)."""
+    lines = (inspect.getdoc(function) or "").splitlines()
+    for start, line in enumerate(lines):
+        if line.split(" :")[0].strip() == parameter and " :" in line:
+            entry = []
+            for following in lines[start + 1 :]:
+                if following and not following.startswith("    "):
+                    break
+                entry.append(following)
+            return " ".join(entry)
+    return ""
+
+
+def _public_callables_with_parameters():
+    """``(object, parameters)`` for public functions, methods and constructors."""
+    for obj, _, parameters in _public_objects():
+        yield obj, parameters
+
+
+def test_randomness_is_rng():
+    """Randomness is ``rng``, never ``seed`` or ``<something>_seed``."""
+    offenders = [
+        f"{label}({name}=)"
+        for label, parameters in _public_signatures()
+        for name in parameters
+        if name == "seed" or name.endswith("_seed")
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_rng_is_keyword_only_on_functions():
+    offenders = [
+        f"{function.__module__}.{function.__qualname__}"
+        for function, parameters in _public_callables_with_parameters()
+        if "rng" in parameters
+        and parameters["rng"].kind is not inspect.Parameter.KEYWORD_ONLY
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_single_region_is_region():
+    """One region is ``region=``; two roles in one call carry role prefixes."""
+    offenders = [
+        f"{label}({name}=)"
+        for label, parameters in _public_signatures()
+        for name in parameters
+        if name in {"region_name", "goal_region"}
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_time_bin_width_is_dt():
+    """A bin width in seconds is ``dt``; ``bin_size`` is spatial or angular."""
+    in_seconds = re.compile(r"\bseconds?\b|\bin s\b|\s\(s\)", re.IGNORECASE)
+    offenders = [
+        f"{function.__module__}.{function.__qualname__}"
+        for function, parameters in _public_callables_with_parameters()
+        if "bin_size" in parameters
+        and in_seconds.search(_documented_entry(function, "bin_size"))
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_pre_entry_window_is_window_duration():
+    offenders = [
+        f"{label}({name}=)"
+        for label, parameters in _public_signatures()
+        for name in parameters
+        if name == "pre_window"
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_paired_inputs_use_a_b():
+    """Two inputs of one role are suffixed ``_a`` / ``_b``."""
+    pair = re.compile(r"^(?P<stem>.+?)(?:_1|_2|_i|_j|1|2)$")
+    offenders = []
+    for label, parameters in _public_signatures():
+        names = set(parameters)
+        for name in names:
+            match = pair.match(name)
+            if not match:
+                continue
+            stem = match["stem"]
+            partner = {
+                "_1": "_2",
+                "_2": "_1",
+                "_i": "_j",
+                "_j": "_i",
+                "1": "2",
+                "2": "1",
+            }[name[len(stem) :]]
+            if stem + partner in names:
+                offenders.append(f"{label}({name}=)")
+    assert not offenders, sorted(offenders)
+
+
+def test_unit_selection_is_unit_ids():
+    offenders = [
+        f"{label}({name}=)"
+        for label, parameters in _public_signatures()
+        for name in parameters
+        # ``cells`` of ``ClippedLocator`` are polygon grid cells, not units.
+        if name == "cells" and not label.endswith("ClippedLocator")
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_smoothing_widths_say_their_unit():
+    """``smooth_window`` is seconds; a width counted in bins is ``smooth_bins``."""
+    in_bins = re.compile(r"\bbins?\b", re.IGNORECASE)
+    in_seconds = re.compile(r"\bseconds?\b|\s\(s\)", re.IGNORECASE)
+    offenders = []
+    for function, parameters in _public_callables_with_parameters():
+        name = f"{function.__module__}.{function.__qualname__}"
+        if "smoothing_window" in parameters:
+            offenders.append(f"{name}(smoothing_window=)")
+        if "smooth_window" in parameters:
+            entry = _documented_entry(function, "smooth_window")
+            if in_bins.search(entry) and not in_seconds.search(entry):
+                offenders.append(f"{name}(smooth_window= counts bins)")
+        if "smooth_bins" in parameters:
+            entry = _documented_entry(function, "smooth_bins")
+            if in_seconds.search(entry) and not in_bins.search(entry):
+                offenders.append(f"{name}(smooth_bins= is in seconds)")
+    assert not offenders, sorted(offenders)
+
+
+# Functions that take ``alpha``: each is a significance level.
+SIGNIFICANCE_ALPHA = {
+    "DirectionalRateResult.is_head_direction_cell",
+    "DirectionalRatesResult.classify",
+    "is_head_direction_cell",
+    "is_egocentric_object_vector_cell",
+    "is_object_vector_cell",
+    "PhasePrecessionResult.is_significant",
+    "has_phase_precession",
+    "CellTypeSignificanceResult.label_cell_types",
+    "CellTypeSignificanceResult.summary_table",
+    "is_place_cell",
+    "is_spatial_view_cell",
+    "apply_alpha",
+    "is_modulated",
+    "ShuffleTestResult.is_significant",
+    # Method and recipe records: the level a p-value must be below.
+    "BiasSequenceMethod",
+    "PairwiseOrderMethod",
+    "RankOrderMethod",
+    "ReplayMethod",
+    "RecurringSequenceMethod",
+    "TemplateMatchMethod",
+    "RecurringSequencesSignificanceResult",
+    "DatasetTestRecipe",
+    "ReactivationMethod",
+}
+
+# ``alpha`` that is not a significance level, each with its meaning.
+OTHER_ALPHA = {
+    # Matplotlib opacity of the drawn layer.
+    "EpochOverlay": "matplotlib opacity",
+    "TimeSeriesOverlay": "matplotlib opacity",
+    "VideoOverlay": "matplotlib opacity",
+    # The alpha-shape parameter of computational geometry.
+    "BoundaryConfig": "alpha-shape parameter (computational-geometry term)",
+}
+
+
+def test_alpha_is_significance_level():
+    """``alpha`` is a significance level only; other weights get their own name."""
+    offenders = [
+        f"{function.__module__}.{function.__qualname__}"
+        for function, parameters in _public_callables_with_parameters()
+        if "alpha" in parameters
+        and function.__qualname__ not in SIGNIFICANCE_ALPHA | OTHER_ALPHA.keys()
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_ax_is_keyword_only():
+    """The Matplotlib target is ``ax=``, keyword-only, and never ``axes=``."""
+    offenders = []
+    for label, parameters in _public_signatures():
+        if "axes" in parameters:
+            offenders.append(f"{label}(axes=)")
+        if (
+            "ax" in parameters
+            and parameters["ax"].kind is not inspect.Parameter.KEYWORD_ONLY
+        ):
+            offenders.append(f"{label}(ax=)")
+    assert not offenders, sorted(offenders)
+
+
+def test_graph_argument_name():
+    offenders = [
+        f"{label}({name}=)"
+        for label, parameters in _public_signatures()
+        for name in parameters
+        if name == "G"
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_sample_times_are_times():
+    offenders = [
+        f"{label}({name}=)"
+        for label, parameters in _public_signatures()
+        for name in parameters
+        if name == "t"
+    ]
+    assert not offenders, sorted(offenders)
+
+
+def test_field_resampling_takes_environments_first():
+    """``resample_field`` orders its arguments like ``map_probabilities``."""
+    from neurospatial.ops import map_probabilities, resample_field
+
+    resample = list(inspect.signature(resample_field).parameters)
+    assert resample[:3] == ["source_env", "target_env", "field"]
+    assert list(inspect.signature(map_probabilities).parameters)[:2] == [
+        "source_env",
+        "target_env",
+    ]

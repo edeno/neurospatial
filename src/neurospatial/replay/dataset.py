@@ -424,7 +424,7 @@ class DatasetTestResult(ReadOnlyArraysMixin, ResultMixin):
         )
         return values
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the test: a significance matrix, a p-value curve or the null.
 
         A grid over two criteria is drawn as Silva et al.'s (2015, Fig. 3)
@@ -3118,7 +3118,7 @@ SILVA_2015_MATRIX = DatasetTestRecipe(
         "True}} does not).",
         "Events pooled over the sessions of a condition (9,818 for e1s1, the "
         "sum of Supplementary Table 2). Controls (Fig. 3b): a Poisson data set "
-        "(null_events(kind='rate_poisson', n_copies=1, cells=place_cells), "
+        "(null_events(kind='rate_poisson', n_copies=1, unit_ids=place_unit_ids), "
         "decoded) and a time-swap data set (shuffle_events(env, events, "
         "null='time_bin_permutation')), each run through the same matrix "
         "against its own 5,000 column-cycle data sets; their comparison with "

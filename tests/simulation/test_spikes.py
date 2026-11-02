@@ -21,7 +21,7 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.full(1000, 10.0)
         times = np.linspace(0, 1, 1000)
 
-        spike_times = generate_poisson_spikes(firing_rate, times, seed=42)
+        spike_times = generate_poisson_spikes(firing_rate, times, rng=42)
 
         # Should generate roughly 10 spikes (Poisson variance)
         assert 5 <= len(spike_times) <= 15
@@ -31,7 +31,7 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.full(1000, 10.0)
         times = np.linspace(0, 1, 1000)
 
-        spike_times = generate_poisson_spikes(firing_rate, times, seed=42)
+        spike_times = generate_poisson_spikes(firing_rate, times, rng=42)
 
         # Check sorted
         assert np.all(np.diff(spike_times) >= 0)
@@ -44,7 +44,7 @@ class TestGeneratePoissonSpikes:
         refractory_period = 0.002  # 2ms
 
         spike_times = generate_poisson_spikes(
-            firing_rate, times, refractory_period=refractory_period, seed=42
+            firing_rate, times, refractory_period=refractory_period, rng=42
         )
 
         # Compute ISIs
@@ -61,7 +61,7 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.full(10000, 20.0)
         times = np.linspace(0, 10, 10000)
 
-        spike_times = generate_poisson_spikes(firing_rate, times, seed=42)
+        spike_times = generate_poisson_spikes(firing_rate, times, rng=42)
 
         # Expected: ~200 spikes
         mean_rate = len(spike_times) / 10.0
@@ -74,8 +74,8 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.full(1000, 10.0)
         times = np.linspace(0, 1, 1000)
 
-        spikes1 = generate_poisson_spikes(firing_rate, times, seed=42)
-        spikes2 = generate_poisson_spikes(firing_rate, times, seed=42)
+        spikes1 = generate_poisson_spikes(firing_rate, times, rng=42)
+        spikes2 = generate_poisson_spikes(firing_rate, times, rng=42)
 
         np.testing.assert_array_equal(spikes1, spikes2)
 
@@ -84,8 +84,8 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.full(1000, 10.0)
         times = np.linspace(0, 1, 1000)
 
-        spikes1 = generate_poisson_spikes(firing_rate, times, seed=42)
-        spikes2 = generate_poisson_spikes(firing_rate, times, seed=43)
+        spikes1 = generate_poisson_spikes(firing_rate, times, rng=42)
+        spikes2 = generate_poisson_spikes(firing_rate, times, rng=43)
 
         assert not np.array_equal(spikes1, spikes2)
 
@@ -94,7 +94,7 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.zeros(1000)
         times = np.linspace(0, 1, 1000)
 
-        spike_times = generate_poisson_spikes(firing_rate, times, seed=42)
+        spike_times = generate_poisson_spikes(firing_rate, times, rng=42)
 
         assert len(spike_times) == 0
 
@@ -106,7 +106,7 @@ class TestGeneratePoissonSpikes:
         # Clip negative values
         firing_rate = np.maximum(firing_rate, 0.0)
 
-        spike_times = generate_poisson_spikes(firing_rate, times, seed=42)
+        spike_times = generate_poisson_spikes(firing_rate, times, rng=42)
 
         # Should have spikes
         assert len(spike_times) > 0
@@ -123,7 +123,7 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.array([])
         times = np.array([])
 
-        spike_times = generate_poisson_spikes(firing_rate, times, seed=42)
+        spike_times = generate_poisson_spikes(firing_rate, times, rng=42)
 
         assert len(spike_times) == 0
 
@@ -141,7 +141,7 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.full(len(times), rate)
 
         spike_times = generate_poisson_spikes(
-            firing_rate, times, refractory_period=0.0, seed=0
+            firing_rate, times, refractory_period=0.0, rng=0
         )
 
         counts = np.histogram(spike_times, bins=times)[0]
@@ -158,7 +158,7 @@ class TestGeneratePoissonSpikes:
         times = np.r_[np.arange(1001) * 0.01, 10 + np.arange(1, 1001) * 0.1]
         firing_rate = np.r_[np.full(1000, 20.0), np.full(1001, 30.0)]
         spikes = generate_poisson_spikes(
-            firing_rate, times, refractory_period=0.0, seed=17
+            firing_rate, times, refractory_period=0.0, rng=17
         )
         assert np.sum(spikes < 10) == pytest.approx(20 * 10, rel=0.2)
         assert np.sum(spikes >= 10) == pytest.approx(30 * 100, rel=0.08)
@@ -171,7 +171,7 @@ class TestGeneratePoissonSpikes:
             np.array([0.0, 0.0, 1e6]),
             np.array([10.0, 11.0, 12.0]),
             refractory_period=0.0,
-            seed=0,
+            rng=0,
         )
         assert spikes.size == 0
 
@@ -179,7 +179,7 @@ class TestGeneratePoissonSpikes:
         """Multiple candidates in a coarse interval respect continuous-time ISIs."""
         times = np.array([10.0, 11.0, 12.0])
         spikes = generate_poisson_spikes(
-            np.full(3, 1000.0), times, refractory_period=0.002, seed=0
+            np.full(3, 1000.0), times, refractory_period=0.002, rng=0
         )
         assert spikes.size > len(times)
         assert np.all(np.diff(spikes) >= 0.002)
@@ -192,12 +192,12 @@ class TestGeneratePoissonSpikes:
         times = np.array([0.0, 0.1, 0.05, 0.2])
 
         with pytest.raises(ValueError, match="strictly increasing"):
-            generate_poisson_spikes(firing_rate, times, seed=42)
+            generate_poisson_spikes(firing_rate, times, rng=42)
 
         # Duplicate (zero-width) step also rejected.
         times_dup = np.array([0.0, 0.1, 0.1, 0.2])
         with pytest.raises(ValueError, match="strictly increasing"):
-            generate_poisson_spikes(firing_rate, times_dup, seed=42)
+            generate_poisson_spikes(firing_rate, times_dup, rng=42)
 
     def test_nonuniform_times_uses_per_bin_dt(self):
         """Spike probability tracks each bin's width, not the first interval.
@@ -219,7 +219,7 @@ class TestGeneratePoissonSpikes:
         firing_rate = np.full(len(times), rate)
 
         spikes = generate_poisson_spikes(
-            firing_rate, times, refractory_period=0.0, seed=0
+            firing_rate, times, refractory_period=0.0, rng=0
         )
 
         # Split spike counts by region using the time boundary.
@@ -242,7 +242,7 @@ class TestGeneratePoissonSpikes:
         times = np.linspace(0, 1, 6)
 
         with pytest.raises(ValueError, match="firing_rate=5, times=6"):
-            generate_poisson_spikes(firing_rate, times, seed=42)
+            generate_poisson_spikes(firing_rate, times, rng=42)
 
     def test_nan_firing_rate_raises(self):
         """A NaN in firing_rate raises ValueError naming 'firing_rate'."""
@@ -251,7 +251,7 @@ class TestGeneratePoissonSpikes:
         times = np.linspace(0, 1, 100)
 
         with pytest.raises(ValueError, match="firing_rate"):
-            generate_poisson_spikes(firing_rate, times, seed=42)
+            generate_poisson_spikes(firing_rate, times, rng=42)
 
     def test_inf_firing_rate_raises(self):
         """A +inf in firing_rate raises ValueError."""
@@ -260,7 +260,7 @@ class TestGeneratePoissonSpikes:
         times = np.linspace(0, 1, 100)
 
         with pytest.raises(ValueError, match="firing_rate"):
-            generate_poisson_spikes(firing_rate, times, seed=42)
+            generate_poisson_spikes(firing_rate, times, rng=42)
 
     def test_negative_rate_raises(self):
         """A negative rate is a bug in the rate, not zero activity."""
@@ -269,7 +269,7 @@ class TestGeneratePoissonSpikes:
         times = np.linspace(0, 1, 1000)
 
         with pytest.raises(ValueError, match="non-negative") as caught:
-            generate_poisson_spikes(firing_rate, times, seed=42)
+            generate_poisson_spikes(firing_rate, times, rng=42)
         assert "index 300" in str(caught.value)
 
     def test_interspike_intervals_are_exponential(self):
@@ -279,7 +279,7 @@ class TestGeneratePoissonSpikes:
         rate = 20.0
         times = np.linspace(0.0, 500.0, 50_001)
         spikes = generate_poisson_spikes(
-            np.full(times.shape, rate), times, refractory_period=0.0, seed=1
+            np.full(times.shape, rate), times, refractory_period=0.0, rng=1
         )
         assert len(spikes) / 500.0 == pytest.approx(rate, rel=0.03)
         isis = np.diff(spikes)
@@ -291,7 +291,7 @@ class TestGeneratePoissonSpikes:
         tau = 0.002
         times = np.linspace(0.0, 200.0, 200_001)
         spikes = generate_poisson_spikes(
-            np.full(times.shape, rate), times, refractory_period=tau, seed=2
+            np.full(times.shape, rate), times, refractory_period=tau, rng=2
         )
         realized = len(spikes) / 200.0
         assert realized == pytest.approx(rate / (1 + rate * tau), rel=0.03)
@@ -323,17 +323,17 @@ class TestGeneratePopulationSpikes:
         # Create small population
         n_cells = 5
         place_cells = [
-            PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(n_cells)
+            PlaceCellModel(simple_2d_env, width=8.0, rng=i) for i in range(n_cells)
         ]
 
         # Generate trajectory
         positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=10.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=10.0, rng=42, speed_units="cm"
         )
 
         # Generate spikes (no progress bar for tests)
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=7, show_progress=False
+            place_cells, times, positions, rng=7, show_progress=False
         )
 
         # Should return list of spike arrays
@@ -344,15 +344,15 @@ class TestGeneratePopulationSpikes:
         """Test that number of spike trains matches number of models."""
         n_cells = 10
         place_cells = [
-            PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(n_cells)
+            PlaceCellModel(simple_2d_env, width=8.0, rng=i) for i in range(n_cells)
         ]
 
         positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=5.0, rng=42, speed_units="cm"
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=7, show_progress=False
+            place_cells, times, positions, rng=7, show_progress=False
         )
 
         assert len(spike_trains) == n_cells
@@ -364,7 +364,7 @@ class TestGeneratePopulationSpikes:
         models = [_ConstantModel(20.0) for _ in range(4)]
 
         trains = generate_population_spikes(
-            models, times, positions, seed=0, show_progress=False
+            models, times, positions, rng=0, show_progress=False
         )
 
         edges = np.arange(0.0, 200.0 + 0.5, 0.5)
@@ -382,7 +382,7 @@ class TestGeneratePopulationSpikes:
 
         run0, run1 = (
             generate_population_spikes(
-                models, times, positions, seed=seed, show_progress=False
+                models, times, positions, rng=seed, show_progress=False
             )
             for seed in (0, 1)
         )
@@ -395,18 +395,18 @@ class TestGeneratePopulationSpikes:
         """Test that same seed produces same spike trains."""
         n_cells = 3
         place_cells = [
-            PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(n_cells)
+            PlaceCellModel(simple_2d_env, width=8.0, rng=i) for i in range(n_cells)
         ]
 
         positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=5.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=5.0, rng=42, speed_units="cm"
         )
 
         spike_trains1 = generate_population_spikes(
-            place_cells, times, positions, seed=7, show_progress=False
+            place_cells, times, positions, rng=7, show_progress=False
         )
         spike_trains2 = generate_population_spikes(
-            place_cells, times, positions, seed=7, show_progress=False
+            place_cells, times, positions, rng=7, show_progress=False
         )
 
         # Check that all spike trains are identical
@@ -416,15 +416,15 @@ class TestGeneratePopulationSpikes:
     def test_all_spikes_within_time_range(self, simple_2d_env):
         """Test that all generated spikes are within time range."""
         place_cells = [
-            PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(5)
+            PlaceCellModel(simple_2d_env, width=8.0, rng=i) for i in range(5)
         ]
 
         positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=10.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=10.0, rng=42, speed_units="cm"
         )
 
         spike_trains = generate_population_spikes(
-            place_cells, times, positions, seed=7, show_progress=False
+            place_cells, times, positions, rng=7, show_progress=False
         )
 
         # Check all spikes are within [times[0], times[-1]]
@@ -436,16 +436,16 @@ class TestGeneratePopulationSpikes:
     def test_progress_bar_disabled(self, simple_2d_env, capsys):
         """Test that progress bar can be disabled."""
         place_cells = [
-            PlaceCellModel(simple_2d_env, width=8.0, seed=i) for i in range(3)
+            PlaceCellModel(simple_2d_env, width=8.0, rng=i) for i in range(3)
         ]
 
         positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=1.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=1.0, rng=42, speed_units="cm"
         )
 
         # Generate without progress bar
         generate_population_spikes(
-            place_cells, times, positions, seed=7, show_progress=False
+            place_cells, times, positions, rng=7, show_progress=False
         )
 
         # Check no progress bar output (this is approximate test)
@@ -456,12 +456,12 @@ class TestGeneratePopulationSpikes:
     def test_refractory_period_applied(self, simple_2d_env):
         """Test that refractory period is applied to all cells."""
         place_cells = [
-            PlaceCellModel(simple_2d_env, width=8.0, max_rate=50.0, seed=i)
+            PlaceCellModel(simple_2d_env, width=8.0, max_rate=50.0, rng=i)
             for i in range(5)
         ]
 
         positions, times = simulate_trajectory_ou(
-            simple_2d_env, duration=10.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=10.0, rng=42, speed_units="cm"
         )
 
         refractory_period = 0.003  # 3ms
@@ -470,7 +470,7 @@ class TestGeneratePopulationSpikes:
             times,
             positions,
             refractory_period=refractory_period,
-            seed=7,
+            rng=7,
             show_progress=False,
         )
 
@@ -487,7 +487,7 @@ class TestGeneratePopulationSpikes:
         positions = np.column_stack([np.zeros_like(times), 10.0 * times])
 
         generate_population_spikes(
-            [recorder], times, positions, seed=7, show_progress=False
+            [recorder], times, positions, rng=7, show_progress=False
         )
 
         np.testing.assert_allclose(recorder.headings, np.pi / 2, atol=1e-9)
@@ -502,7 +502,7 @@ class TestGeneratePopulationSpikes:
         )
 
         trains = generate_population_spikes(
-            [north, south], times, positions, seed=7, show_progress=False
+            [north, south], times, positions, rng=7, show_progress=False
         )
 
         assert len(trains[0]) > 60  # ~100 expected at 50 Hz for 2 s
@@ -524,7 +524,7 @@ class TestGeneratePopulationSpikes:
         positions = np.column_stack([x, y])
 
         generate_population_spikes(
-            [recorder], times, positions, seed=7, show_progress=False
+            [recorder], times, positions, rng=7, show_progress=False
         )
 
         assert np.isfinite(recorder.headings).all()
@@ -540,7 +540,7 @@ class TestGeneratePopulationSpikes:
 
         with pytest.raises(ValueError, match="never moves") as caught:
             generate_population_spikes(
-                [model], times, positions, seed=42, show_progress=False
+                [model], times, positions, rng=42, show_progress=False
             )
         assert "headings=" in str(caught.value)
 
@@ -552,7 +552,7 @@ class TestGeneratePopulationSpikes:
 
         with pytest.raises(ValueError, match="max_gap") as caught:
             generate_population_spikes(
-                [model], times, positions, seed=42, show_progress=False
+                [model], times, positions, rng=42, show_progress=False
             )
         assert "never moves" in str(caught.value)
         assert "headings=" in str(caught.value)
@@ -572,7 +572,7 @@ class TestGeneratePopulationSpikes:
             times,
             positions,
             headings=headings,
-            seed=7,
+            rng=7,
             show_progress=False,
         )
 
@@ -594,14 +594,14 @@ class TestGeneratePopulationSpikes:
         )
 
         derived = generate_population_spikes(
-            [east_wall], times, positions, seed=7, show_progress=False
+            [east_wall], times, positions, rng=7, show_progress=False
         )
         given = generate_population_spikes(
             [east_wall],
             times,
             positions,
             headings=np.zeros(len(times)),
-            seed=7,
+            rng=7,
             show_progress=False,
         )
 
@@ -620,7 +620,7 @@ class TestGeneratePopulationSpikes:
 
         with pytest.raises(ValueError, match=r"Model 1 \(PlaceCellModel\)") as caught:
             generate_population_spikes(
-                models, times, positions, seed=7, show_progress=False
+                models, times, positions, rng=7, show_progress=False
             )
         assert "1 have a missing (NaN) position" in str(caught.value)
         assert "t = 0.4 s" in str(caught.value)
@@ -637,7 +637,7 @@ class TestGeneratePopulationSpikes:
                 times,
                 positions,
                 headings=headings,
-                seed=7,
+                rng=7,
                 show_progress=False,
             )
 
@@ -679,7 +679,7 @@ class TestAddModulation:
             modulation_freq=freq,
             modulation_depth=0.8,
             modulation_phase=phase,
-            seed=3,
+            rng=3,
         )
         oscillation_phase = 2 * np.pi * freq * kept
         error = np.angle(np.exp(1j * (_circular_mean(oscillation_phase) - phase)))
@@ -689,7 +689,7 @@ class TestAddModulation:
     def test_kept_fraction_is_one_over_one_plus_depth(self, dense_train, depth):
         """Thinning keeps 1 / (1 + d) of the spikes; all of them as d -> 0."""
         kept = add_modulation(
-            dense_train, modulation_freq=8.0, modulation_depth=depth, seed=4
+            dense_train, modulation_freq=8.0, modulation_depth=depth, rng=4
         )
         assert len(kept) / len(dense_train) == pytest.approx(1 / (1 + depth), abs=0.005)
 
@@ -701,7 +701,7 @@ class TestAddModulation:
             modulation_freq=freq,
             modulation_depth=0.5,
             modulation_phase=phase,
-            seed=5,
+            rng=5,
         )
 
         def near_preferred(spikes):
@@ -720,7 +720,7 @@ class TestAddModulation:
             spike_times,
             modulation_freq=8.0,
             modulation_depth=0.0,
-            seed=42,
+            rng=42,
         )
 
         np.testing.assert_array_equal(modulated, spike_times)
@@ -729,7 +729,7 @@ class TestAddModulation:
         spike_times = np.linspace(0, 5, 300)
 
         modulated = add_modulation(
-            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, rng=42
         )
 
         assert np.all(np.diff(modulated) >= 0)
@@ -740,10 +740,10 @@ class TestAddModulation:
         spike_times = np.linspace(0, 5, 300)
 
         modulated1 = add_modulation(
-            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, rng=42
         )
         modulated2 = add_modulation(
-            spike_times, modulation_freq=8.0, modulation_depth=0.5, seed=42
+            spike_times, modulation_freq=8.0, modulation_depth=0.5, rng=42
         )
 
         np.testing.assert_array_equal(modulated1, modulated2)
@@ -751,7 +751,7 @@ class TestAddModulation:
     def test_empty_spike_train(self):
         """Test with empty spike train."""
         modulated = add_modulation(
-            np.array([]), modulation_freq=8.0, modulation_depth=0.5, seed=42
+            np.array([]), modulation_freq=8.0, modulation_depth=0.5, rng=42
         )
 
         assert len(modulated) == 0
@@ -790,6 +790,6 @@ class TestAddModulation:
         spikes = np.linspace(0.0, 5.0, 200)
         shuffled = np.random.default_rng(1).permutation(spikes)
         np.testing.assert_array_equal(
-            add_modulation(shuffled, modulation_freq=8.0, seed=4),
-            add_modulation(spikes, modulation_freq=8.0, seed=4),
+            add_modulation(shuffled, modulation_freq=8.0, rng=4),
+            add_modulation(spikes, modulation_freq=8.0, rng=4),
         )

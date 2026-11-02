@@ -1919,7 +1919,15 @@ def _conditional_rows(posterior: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 def _takes_rng(score: Callable[..., Any]) -> bool:
-    """Whether ``score`` takes an ``rng`` keyword."""
+    """Whether ``score`` takes an ``rng`` keyword to be derived from the test's.
+
+    :func:`detect_trajectory_radon` takes one, but its default fixes the random
+    lines, which an event and its shuffles share, so it is not derived.
+    """
+    while isinstance(score, functools.partial):
+        score = score.func
+    if score is detect_trajectory_radon:
+        return False
     try:
         return "rng" in inspect.signature(score).parameters
     except (TypeError, ValueError) as error:
@@ -2054,7 +2062,7 @@ class _RadonScorer(_Scorer):
         off_track: str = "band_median",
         zero_rows: str = "refuse",
         n_lines: int | None = None,
-        line_seed: int = 0,
+        rng: np.random.Generator | int | None = 0,
     ) -> None:
         self.lines, self.posterior = _prepare_replay_lines(
             env,
@@ -2068,7 +2076,7 @@ class _RadonScorer(_Scorer):
             off_track=off_track,
             zero_rows=zero_rows,
             n_lines=n_lines,
-            line_seed=line_seed,
+            rng=rng,
             operation=_OPERATION,
         )
 

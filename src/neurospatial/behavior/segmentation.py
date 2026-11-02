@@ -376,7 +376,7 @@ def detect_region_crossings(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    region_name: str,
+    region: str,
     direction: Literal["both", "entry", "exit"] = "both",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
@@ -398,7 +398,7 @@ def detect_region_crossings(
         Positions in the environment's coordinates; NaN where tracking was
         lost, bridged like a deleted row (see ``max_gap``). Each is located
         in its bin inside the function.
-    region_name : str
+    region : str
         Name of region to detect crossings for. Must exist in env.regions.
         Passed as a keyword-only argument.
     direction : {'both', 'entry', 'exit'}, optional
@@ -435,7 +435,7 @@ def detect_region_crossings(
     Raises
     ------
     ValueError
-        If region_name not in env.regions, or direction is not one of
+        If region not in env.regions, or direction is not one of
         'both', 'entry', 'exit'.
     ValueError
         If ``times`` are not finite and strictly increasing, or
@@ -486,7 +486,7 @@ def detect_region_crossings(
     ...     env,
     ...     times,
     ...     trajectory,
-    ...     region_name="goal",
+    ...     region="goal",
     ...     direction="both",
     ...     max_gap=None,
     ... )
@@ -494,7 +494,7 @@ def detect_region_crossings(
     True
     """
     region_mask = _require_region_mask(
-        env, region_name, operation="detect_region_crossings()", argument="region_name"
+        env, region, operation="detect_region_crossings()", argument="region"
     )
     validate_choice(
         direction,
@@ -525,7 +525,7 @@ def detect_region_crossings(
                 position_bins[run],
                 times[run],
                 region_mask,
-                region_name=region_name,
+                region=region,
                 direction=direction,
             )
         )
@@ -537,7 +537,7 @@ def _detect_region_crossings_contiguous(
     times: NDArray[np.float64],
     region_mask: NDArray[np.bool_],
     *,
-    region_name: str,
+    region: str,
     direction: Literal["both", "entry", "exit"] = "both",
 ) -> list[Crossing]:
     """Detect crossings within one recording, after public input validation.
@@ -555,7 +555,7 @@ def _detect_region_crossings_contiguous(
             time=times[idx],
             direction=kind,
             bin_index=position_bins[idx],
-            region=region_name,
+            region=region,
         )
         for idx, kind in zip(changes[keep].tolist(), kinds[keep].tolist(), strict=True)
     ]
@@ -2038,7 +2038,7 @@ def detect_goal_directed_runs(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
-    goal_region: str,
+    region: str,
     directedness_threshold: float = 0.7,
     min_progress: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -2062,7 +2062,7 @@ def detect_goal_directed_runs(
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Positions in the environment's coordinates; NaN where tracking was
         lost. Each is located in its bin inside the function.
-    goal_region : str
+    region : str
         Name of goal region in env.regions. Runs are detected toward this region.
     directedness_threshold : float, optional
         Minimum directedness score of an approach to classify it as
@@ -2101,7 +2101,7 @@ def detect_goal_directed_runs(
     -------
     Intervals of Interval
         Goal-directed approaches in seconds, in time order, ids ``0`` to
-        ``n - 1``, with the field ``goal_region``: ``start`` is the
+        ``n - 1``, with the field ``region``: ``start`` is the
         departure sample and ``stop`` the arrival sample, so a row covers
         the travel between them (interval ``k`` is ``[times[k], times[k +
         1])``, as in :func:`segment_by_velocity`). A row means the
@@ -2114,7 +2114,7 @@ def detect_goal_directed_runs(
     Raises
     ------
     ValueError
-        If goal_region not in env.regions, or if directedness_threshold
+        If region not in env.regions, or if directedness_threshold
         not in [0, 1].
     ValueError
         If min_progress is negative or not finite, or is None while
@@ -2190,8 +2190,8 @@ def detect_goal_directed_runs(
     >>> x = np.linspace(10, 90, 41)  # 80 cm toward the goal in 4 s
     >>> positions = np.c_[x, np.zeros_like(x)]
     >>> times = np.arange(41) / 10.0
-    >>> runs = detect_goal_directed_runs(env, times, positions, goal_region="goal")
-    >>> runs.windows.tolist(), runs.goal_region.tolist()
+    >>> runs = detect_goal_directed_runs(env, times, positions, region="goal")
+    >>> runs.windows.tolist(), runs.region.tolist()
     ([[0.0, 4.0]], ['goal'])
 
     Out to the goal, back, and out again: each approach is its own row, and
@@ -2202,22 +2202,22 @@ def detect_goal_directed_runs(
     ...     env,
     ...     np.arange(trips.size) / 10.0,
     ...     np.c_[trips, np.zeros_like(trips)],
-    ...     goal_region="goal",
+    ...     region="goal",
     ... ).windows.tolist()
     [[0.0, 4.0], [8.0, 12.0]]
 
     Walking the same path away from the goal is not goal-directed:
 
-    >>> len(detect_goal_directed_runs(env, times, positions[::-1], goal_region="goal"))
+    >>> len(detect_goal_directed_runs(env, times, positions[::-1], region="goal"))
     0
 
     """
     # Input validation
     _require_region_mask(
         env,
-        goal_region,
+        region,
         operation="detect_goal_directed_runs()",
-        argument="goal_region",
+        argument="region",
     )
 
     if not 0.0 <= directedness_threshold <= 1.0:
@@ -2252,9 +2252,7 @@ def detect_goal_directed_runs(
     # Path distances between bin centers on the connectivity graph; inf for
     # bins that cannot reach the goal.
     paths = environment_paths(env, call="detect_goal_directed_runs")
-    distance_to_goal = paths.from_bins(
-        np.flatnonzero(regions_to_mask(env, [goal_region]))
-    )
+    distance_to_goal = paths.from_bins(np.flatnonzero(regions_to_mask(env, [region])))
     edges = _bin_adjacency(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
     )
@@ -2285,9 +2283,9 @@ def detect_goal_directed_runs(
         )
     return _windows_as_intervals(
         np.array(results, dtype=np.float64).reshape(-1, 2),
-        fields={"goal_region": goal_region},
+        fields={"region": region},
         settings={
-            "goal_region": goal_region,
+            "region": region,
             "directedness_threshold": float(directedness_threshold),
             "min_progress": float(min_progress),
             **gate_settings(max_gap, windows),

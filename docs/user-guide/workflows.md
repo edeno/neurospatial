@@ -66,7 +66,7 @@ true_rates = [
 # Spikes come from the true position, so they continue through the dropout.
 # Seed the spikes differently from the trajectory.
 spike_times = [
-    generate_poisson_spikes(rate, times, seed=10 + i)
+    generate_poisson_spikes(rate, times, rng=10 + i)
     for i, rate in enumerate(true_rates)
 ]
 env = Environment.from_samples(
@@ -304,7 +304,7 @@ from neurospatial import IncompatibleEnvironmentError
 from neurospatial.encoding import compare_spatial_rates, compute_spatial_rates
 from neurospatial.simulation import linear_track_session
 
-session = linear_track_session(duration=30, n_place_cells=3, seed=3)
+session = linear_track_session(duration=30, n_place_cells=3, rng=3)
 env_in_meters = session.env.with_metadata(units="m")
 rates_cm = compute_spatial_rates(
     session.env, session.spike_times, session.times, session.positions,
@@ -434,7 +434,7 @@ positions, times = simulate_trajectory_ou(
     duration=300.0,   # 5-minute session — full arena coverage
     dt=1 / 30.0,      # 30 Hz tracking
     speed_mean=15.0,  # cm/s
-    seed=0,
+    rng=0,
     speed_units="cm",
 )
 
@@ -458,7 +458,7 @@ assert env.bin_at([50.0, 50.0]) != -1, "Place cell center must be inside env!"
 # (In real experiments, load your spike timestamps here.)
 cell = PlaceCellModel(env, center=np.array([50.0, 50.0]), width=12.0, max_rate=20.0)
 rates = cell.firing_rate(times, positions)
-spike_times = generate_poisson_spikes(rates, times, seed=1)
+spike_times = generate_poisson_spikes(rates, times, rng=1)
 
 print(f"Total spikes: {len(spike_times)}")
 
@@ -570,14 +570,14 @@ env = Environment.from_samples(
 )
 env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
-    env, duration=600.0, dt=0.02, speed_mean=15.0, seed=0, speed_units="cm"
+    env, duration=600.0, dt=0.02, speed_mean=15.0, rng=0, speed_units="cm"
 )
 cells = [
-    PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, seed=i)
+    PlaceCellModel(env, center=np.array([c]), width=10.0, max_rate=20.0, rng=i)
     for i, c in enumerate(np.linspace(5.0, 95.0, 25))
 ]
 spike_times = generate_population_spikes(
-    cells, times, positions, seed=0, show_progress=False
+    cells, times, positions, rng=0, show_progress=False
 )
 
 # Step 2: Decode position in a single call (encode -> bin -> decode).
@@ -858,13 +858,13 @@ from neurospatial.simulation import (
 # A 100 x 100 cm arena, a 30 minute foraging trajectory, and one place cell.
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=3.0, units="cm")
 positions, times = simulate_trajectory_ou(
-    env, duration=1800.0, dt=1 / 30.0, speed_units="cm", seed=0
+    env, duration=1800.0, dt=1 / 30.0, speed_units="cm", rng=0
 )
 place_cell = PlaceCellModel(
     env, center=np.array([50.0, 50.0]), width=15.0, max_rate=30.0
 )
 spike_times = generate_poisson_spikes(
-    place_cell.firing_rate(times, positions), times, seed=1
+    place_cell.firing_rate(times, positions), times, rng=1
 )
 
 # Define experimental regions: a 15 cm radius center zone and 10 x 10 cm corners.
@@ -964,20 +964,20 @@ env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
 place_cell = PlaceCellModel(env, center=[30.0, 60.0], width=8.0, max_rate=15.0)
 
 
-def record_session(seed):
+def record_session(rng):
     """One 10-minute session: times, positions and the place cell's spikes."""
     positions, times = simulate_trajectory_ou(
-        env, duration=600.0, dt=1 / 30, speed_mean=15.0, speed_units="cm", seed=seed
+        env, duration=600.0, dt=1 / 30, speed_mean=15.0, speed_units="cm", rng=rng
     )
     # Seed the spikes differently from the trajectory.
     spikes = generate_poisson_spikes(
-        place_cell.firing_rate(times, positions), times, seed=seed + 100
+        place_cell.firing_rate(times, positions), times, rng=rng + 100
     )
     return times, positions, spikes
 
 
-times1, positions1, spikes1 = record_session(seed=1)
-times2, positions2, spikes2 = record_session(seed=2)
+times1, positions1, spikes1 = record_session(rng=1)
+times2, positions2, spikes2 = record_session(rng=2)
 
 options = dict(method="diffusion_kde", bandwidth=5.0, min_occupancy=0.5)
 day1 = compute_spatial_rate(env, spikes1, times1, positions1, **options)
@@ -997,7 +997,7 @@ assert stability > 0.9
 # move it onto the shared bins before comparing.
 env_day2 = Environment.from_samples(positions2, bin_size=5.0, units="cm")
 day2_own_bins = compute_spatial_rate(env_day2, spikes2, times2, positions2, **options)
-day2_on_shared_bins = resample_field(day2_own_bins.firing_rate, env_day2, env)
+day2_on_shared_bins = resample_field(env_day2, env, day2_own_bins.firing_rate)
 
 # The rates are copied, not rescaled: the peak is the same number of Hz.
 assert np.isclose(
@@ -1092,7 +1092,7 @@ x = 10.0 + 80.0 * (1.0 - np.abs(2.0 * phase - 1.0))
 positions = np.column_stack([x, np.zeros_like(x)])
 planted_center = np.where(phase < 0.5, 60.0, 40.0)
 intensity = 0.5 + 25.0 * np.exp(-0.5 * ((x - planted_center) / 10.0) ** 2)
-spikes = generate_poisson_spikes(intensity, times, seed=7)
+spikes = generate_poisson_spikes(intensity, times, rng=7)
 
 # Explicit trials supply the direction labels; both maps use the same graph.
 region_builder = Regions(env.regions.values())
@@ -1164,7 +1164,7 @@ from neurospatial.simulation import (
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
 env = env.with_metadata(units="cm")
 positions, times = simulate_trajectory_ou(
-    env, duration=180.0, dt=1 / 30, speed_units="cm", seed=7
+    env, duration=180.0, dt=1 / 30, speed_units="cm", rng=7
 )
 centers = np.array(
     [
@@ -1185,7 +1185,7 @@ trains = [
             env, center=center, width=12, max_rate=15, baseline_rate=0.5
         ).firing_rate(times, positions),
         times,
-        seed=10 + i,
+        rng=10 + i,
     )
     for i, center in enumerate(centers)
 ]
@@ -1333,7 +1333,7 @@ spike_window = np.array([[0.0, 10.0], [20.0, 30.0]])
 epochs = np.array([[1.0, 9.0], [21.0, 29.0]])
 window = (-1.0, 1.0)
 psth = peri_event_histogram(
-    spike_times, events["timestamp"].to_numpy(), window=window, bin_size=0.2,
+    spike_times, events["timestamp"].to_numpy(), window=window, dt=0.2,
     epochs=epochs, spike_window=spike_window,
 )
 selected = events.iloc[psth.event_indices].copy()
@@ -1541,7 +1541,7 @@ times = np.arange(len(positions)) / frame_rate
 speed = compute_speed(times, positions)  # cm/s
 in_field = np.exp(-np.sum((positions - [-17.0, 0.0]) ** 2, axis=1) / (2 * 8.0**2))
 rate = 1.0 + 25.0 * in_field + 12.0 * (speed < 2.0)  # Hz
-spike_times = [generate_poisson_spikes(rate, times, seed=7)]
+spike_times = [generate_poisson_spikes(rate, times, rng=7)]
 print(f"{times[-1] / 60:.1f} min tracked, {len(spike_times[0])} spikes")
 ```
 
@@ -1767,14 +1767,14 @@ from neurospatial.simulation import (
 
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
 positions, times = simulate_trajectory_ou(
-    env, duration=600.0, speed_units="cm", seed=0
+    env, duration=600.0, speed_units="cm", rng=0
 )
 spike_times = generate_poisson_spikes(
     PlaceCellModel(env, center=np.array([50.0, 50.0]), width=15.0).firing_rate(
         times, positions
     ),
     times,
-    seed=1,
+    rng=1,
 )
 
 # A position outside the environment has bin index -1. Check for it before

@@ -712,7 +712,7 @@ shape (n_units, n_bins)
         return dataset.copy(deep=True)
 
     def plot(
-        self, ax: Axes | None = None, *, unit_id: Any = _ALL_UNITS, **kwargs: Any
+        self, *, ax: Axes | None = None, unit_id: Any = _ALL_UNITS, **kwargs: Any
     ) -> Axes:
         """Plot how well the units' maps agree, or where one unit's map changed.
 

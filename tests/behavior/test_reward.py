@@ -53,7 +53,7 @@ class TestRegionRewardField:
 
         # Generate constant reward field
         reward = region_reward_field(
-            env, region_name="goal", reward_value=1.0, decay="constant"
+            env, region="goal", reward_value=1.0, decay="constant"
         )
 
         # Check shape
@@ -88,7 +88,7 @@ class TestRegionRewardField:
 
         reward_value = 10.0
         reward = region_reward_field(
-            env, region_name="goal", reward_value=reward_value, decay="constant"
+            env, region="goal", reward_value=reward_value, decay="constant"
         )
 
         from neurospatial.ops import regions_to_mask
@@ -116,7 +116,7 @@ class TestRegionRewardField:
 
         # Generate linear decay reward field
         reward = region_reward_field(
-            env, region_name="goal", reward_value=1.0, decay="linear"
+            env, region="goal", reward_value=1.0, decay="linear"
         )
 
         # Check shape
@@ -147,7 +147,7 @@ class TestRegionRewardField:
         x = env.bin_centers[:, 0]
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            reward = region_reward_field(env, region_name="goal", decay="linear")
+            reward = region_reward_field(env, region="goal", decay="linear")
 
         expected = np.where(x <= 4, 1.0, np.clip(1 - (x - 4) / 16, 0, None))
         expected[x > 50] = 0.0
@@ -159,7 +159,7 @@ class TestRegionRewardField:
         env = two_islands_env
         x = env.bin_centers[:, 0]
         reward = region_reward_field(
-            env, region_name="goal", decay="linear", reward_value=2.0, max_distance=8.0
+            env, region="goal", decay="linear", reward_value=2.0, max_distance=8.0
         )
         expected = np.where(x <= 4, 2.0, 2.0 * np.clip(1 - (x - 4) / 8, 0, None))
         expected[x > 50] = 0.0
@@ -176,7 +176,7 @@ class TestRegionRewardField:
             regions.add("goal", polygon=box(-1, -1, 5, 1))
             env = env.with_regions(regions)
             reward = region_reward_field(
-                env, region_name="goal", decay="linear", max_distance=40.0
+                env, region="goal", decay="linear", max_distance=40.0
             )
             # Bin centre at x = 24 lies 20 cm beyond the region's last bin (x = 4).
             rewards.append(reward[np.argmin(np.abs(env.bin_centers[:, 0] - 24))])
@@ -188,7 +188,7 @@ class TestRegionRewardField:
         regions = Regions(env.regions.values())
         regions.add("island_a", polygon=box(-1, -1, 21, 1))
         env = env.with_regions(regions)
-        reward = region_reward_field(env, region_name="island_a", decay="linear")
+        reward = region_reward_field(env, region="island_a", decay="linear")
         np.testing.assert_array_equal(reward, (env.bin_centers[:, 0] < 50) * 1.0)
 
     @pytest.mark.parametrize(
@@ -209,9 +209,7 @@ class TestRegionRewardField:
     def test_invalid_parameters_raise(self, two_islands_env, decay, kwargs, match):
         """Unused, non-positive or non-finite shape parameters raise."""
         with pytest.raises(ValueError, match=match):
-            region_reward_field(
-                two_islands_env, region_name="goal", decay=decay, **kwargs
-            )
+            region_reward_field(two_islands_env, region="goal", decay=decay, **kwargs)
 
     def test_region_reward_field_gaussian(self):
         """Test Gaussian falloff with smooth decay."""
@@ -233,7 +231,7 @@ class TestRegionRewardField:
         bandwidth = 10.0
         reward = region_reward_field(
             env,
-            region_name="goal",
+            region="goal",
             reward_value=1.0,
             decay="gaussian",
             bandwidth=bandwidth,
@@ -274,7 +272,7 @@ class TestRegionRewardField:
         )
         env = env.with_regions(regions)
         reward = region_reward_field(
-            env, region_name="ring", decay="gaussian", bandwidth=4.0, reward_value=2.0
+            env, region="ring", decay="gaussian", bandwidth=4.0, reward_value=2.0
         )
         assert reward.max() == pytest.approx(2.0)
         hole = np.linalg.norm(env.bin_centers, axis=1) < 3
@@ -299,9 +297,7 @@ class TestRegionRewardField:
 
         # Should raise ValueError when bandwidth not provided for Gaussian
         with pytest.raises(ValueError, match=r"bandwidth.*required.*gaussian|Gaussian"):
-            region_reward_field(
-                env, region_name="goal", decay="gaussian", bandwidth=None
-            )
+            region_reward_field(env, region="goal", decay="gaussian", bandwidth=None)
 
     def test_region_reward_field_invalid_region_error(self):
         """Test that non-existent region raises KeyError."""
@@ -315,7 +311,7 @@ class TestRegionRewardField:
 
         # No regions added
         with pytest.raises(KeyError, match="nonexistent"):
-            region_reward_field(env, region_name="nonexistent", decay="constant")
+            region_reward_field(env, region="nonexistent", decay="constant")
 
 
 class TestGoalRewardField:

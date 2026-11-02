@@ -378,14 +378,14 @@ def decode_session(
     >>> env = Environment.from_samples(positions_raw, bin_size=5.0)
     >>> env = env.with_metadata(units="cm")  # required by simulate_trajectory_ou
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=100.0, speed_units="cm", seed=0
+    ...     env, duration=100.0, speed_units="cm", rng=0
     ... )
     >>> n_neurons = 10
     >>> spike_times = [
     ...     generate_poisson_spikes(
-    ...         PlaceCellModel(env, width=15.0, seed=i).firing_rate(times, positions),
+    ...         PlaceCellModel(env, width=15.0, rng=i).firing_rate(times, positions),
     ...         times,
-    ...         seed=i,
+    ...         rng=i,
     ...     )
     ...     for i in range(n_neurons)
     ... ]

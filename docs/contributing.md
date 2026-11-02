@@ -237,7 +237,7 @@ those components. It does not call environment analysis methods from inside
 the computation. Two kinds of method may be called at the boundary: a query the
 environment answers from a structure it caches (its point lookup, KD-tree or
 diffusion eigenbasis), so repeated calls do not rebuild it, for example
-`src_env.bin_at`, `src_env.bin_center_tree()` and `dst_env.diffuse` in
+`source_env.bin_at`, `source_env.bin_center_tree()` and `target_env.diffuse` in
 `resample_field`; and the environment's own renderer, `plot_field`. Each base
 protocol names one to three members; combine bases rather than repeating
 members, and do not repeat a method's full signature unless the function calls

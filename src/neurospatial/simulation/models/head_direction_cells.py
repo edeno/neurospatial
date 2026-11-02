@@ -17,6 +17,7 @@ from neurospatial.simulation.models.base import (
     _model_headings,
     _model_inputs,
     _set_rates,
+    _snapshot_rng,
     _tuned_rate,
 )
 
@@ -34,7 +35,7 @@ class HeadDirectionCellModel:
     preferred_direction : float, optional
         Preferred firing direction in radians. Convention: 0 = East, π/2 = North,
         π = West, -π/2 = South (standard mathematical convention). If None
-        (the default), drawn uniformly from [-π, π) with ``seed``.
+        (the default), drawn uniformly from [-π, π) with ``rng``.
     concentration : float, optional
         Von Mises concentration parameter (κ). Higher values = sharper tuning.
         Default is 9.1, a 22.5° half-width at half-maximum: Taube et al.
@@ -59,11 +60,12 @@ class HeadDirectionCellModel:
         Firing rate facing away from the preferred direction, in Hz (default:
         0.01). An illustrative value: Taube et al. (1990) report little
         firing outside the directional range but no single rate.
-    seed : int | None, optional
-        Random seed for reproducible random direction selection. When None
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed for reproducible random direction selection. When None
         and the direction is drawn, the model draws a seed from the
-        operating system and keeps it in ``seed``, so
-        ``dataclasses.replace`` and pickling keep the drawn direction.
+        operating system and keeps it in ``rng``, so
+        ``dataclasses.replace`` and pickling keep the drawn direction. A generator is copied when the model is built: the caller's generator
+        is not advanced, and ``replace`` draws the same values.
 
     Attributes
     ----------
@@ -71,9 +73,9 @@ class HeadDirectionCellModel:
         The values the model fires with: read the drawn preferred direction,
         wrapped to (-π, π], here. Every parameter is also an attribute
         holding the argument as passed, so ``preferred_direction`` reads None
-        when it is drawn from ``seed``, and ``dataclasses.replace(model,
-        seed=2)`` draws again, as the constructor would. Only ``seed``
-        differs: a seed drawn for ``seed=None`` is kept there.
+        when it is drawn from ``rng``, and ``dataclasses.replace(model,
+        rng=2)`` draws again, as the constructor would. Only ``rng``
+        differs: a seed drawn for ``rng=None`` is kept there.
 
     Raises
     ------
@@ -134,7 +136,7 @@ class HeadDirectionCellModel:
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env = env.with_metadata(units="cm")  # required for simulate_trajectory_ou
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=10.0, seed=42, speed_units="cm"
+    ...     env, duration=10.0, rng=42, speed_units="cm"
     ... )
     >>>
     >>> # Heading from velocity, without a speed threshold: with min_speed > 0,
@@ -194,10 +196,11 @@ class HeadDirectionCellModel:
     concentration: float = 9.1
     max_rate: float = 35.0
     baseline_rate: float = 0.01
-    seed: int | None = None
+    rng: np.random.Generator | int | None = None
     _preferred_direction: float = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
+        _snapshot_rng(self)
         direction = self.preferred_direction
         if direction is None:
             direction = float(_draw_rng(self).uniform(-np.pi, np.pi))

@@ -147,7 +147,7 @@ class TestSpikeWords:
             spikes,
             max_isi=0.0,
             word_gap=0.1,
-            cells=np.array([True, True, False]),
+            unit_ids=np.array([0, 1]),
             epochs=np.array([[0.0, 1.03], [1.04, 6.0]]),
         )
         # 1.0 (epoch 1) and 1.05 (epoch 2) are 50 ms apart but in two epochs.

@@ -127,7 +127,7 @@ def simulate_trajectory_ou(
     rotational_velocity_std: float = 120 * (np.pi / 180),  # 120 deg/s in radians
     rotational_velocity_coherence_time: float = 0.08,
     boundary_mode: Literal["reflect", "periodic", "stop"] = "reflect",
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Simulate random exploration with smoothly varying speed and heading.
 
@@ -183,8 +183,8 @@ def simulate_trajectory_ou(
         - 'stop': the animal waits in place until its heading turns away
           from the wall. In 1-D, where the heading turns only at a wall, it
           reverses there as with 'reflect'.
-    seed : int | None, optional
-        Random seed for reproducibility.
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng``.
 
     Returns
     -------
@@ -287,7 +287,7 @@ def simulate_trajectory_ou(
     >>>
     >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=60.0, speed_units="cm", seed=0
+    ...     env, duration=60.0, speed_units="cm", rng=0
     ... )
     >>> positions.shape  # (6000, 2) at 100 Hz
     (6000, 2)
@@ -309,7 +309,7 @@ def simulate_trajectory_ou(
     ...     speed_mean=5.0,  # cm/s
     ...     speed_std=1.0,  # cm/s
     ...     coherence_time=1.0,  # seconds
-    ...     seed=42,
+    ...     rng=42,
     ... )
 
     See Also
@@ -378,7 +378,7 @@ def simulate_trajectory_ou(
     if boundary_mode == "periodic":
         periodic_box = _periodic_box(env)
     n_steps = _sample_count(duration, dt, "dt", "simulate_trajectory_ou()")
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(rng)
     n_dims = env.n_dims
     times = np.arange(n_steps, dtype=np.float64) * dt
 
@@ -643,7 +643,7 @@ def simulate_trajectory_sinusoidal(
     Generates simple back-and-forth motion with optional pauses at track ends.
     Useful for testing place field detection on linear tracks. The trajectory
     is deterministic (a closed-form sinusoid with fixed pauses), so it takes
-    no seed.
+    no rng.
 
     Parameters
     ----------
@@ -982,7 +982,7 @@ def simulate_trajectory_laps(
     inbound_path: list[int] | None = None,
     pause_duration: float = _DEFAULT_LAP_PAUSE_DURATION,
     sampling_frequency: float = _DEFAULT_LAP_SAMPLING_FREQUENCY,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
     return_metadata: bool = False,
 ) -> (
     tuple[NDArray[np.float64], NDArray[np.float64]]
@@ -1026,8 +1026,8 @@ def simulate_trajectory_laps(
         last, in seconds (default: 0.5 s), rounded to whole samples.
     sampling_frequency : float, optional
         Samples per second (default: 500 Hz).
-    seed : int | None, optional
-        Random seed for reproducibility.
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng``.
     return_metadata : bool, optional
         If True, returns metadata dict with lap_ids, lap_boundaries, and
         direction arrays (default: False).
@@ -1122,7 +1122,7 @@ def simulate_trajectory_laps(
 
     >>> track = Environment.from_polygon(box(0, 0, 100, 20), bin_size=2, units="cm")
     >>> positions, times, metadata = simulate_trajectory_laps(
-    ...     track, n_laps=3, seed=1, return_metadata=True
+    ...     track, n_laps=3, rng=1, return_metadata=True
     ... )
     >>> print(f"{times[-1]:.1f} s")
     15.4 s
@@ -1142,7 +1142,7 @@ def simulate_trajectory_laps(
     ...     track_width=2,
     ...     units="cm",
     ... )
-    >>> positions, times = simulate_trajectory_laps(l_track, n_laps=1, seed=0)
+    >>> positions, times = simulate_trajectory_laps(l_track, n_laps=1, rng=0)
     >>> bool(np.all(l_track.bin_at(positions) >= 0))
     True
     >>> print(f"{l_track.to_linear(positions[[0, -1]])} cm along the track")
@@ -1163,7 +1163,7 @@ def simulate_trajectory_laps(
         inbound_path=inbound_path,
         pause_duration=pause_duration,
         sampling_frequency=sampling_frequency,
-        seed=seed,
+        rng=rng,
         return_metadata=return_metadata,
         call="simulate_trajectory_laps()",
     )
@@ -1179,7 +1179,7 @@ def _simulate_trajectory_laps(
     inbound_path: list[int] | None = None,
     pause_duration: float = _DEFAULT_LAP_PAUSE_DURATION,
     sampling_frequency: float = _DEFAULT_LAP_SAMPLING_FREQUENCY,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
     return_metadata: bool = False,
     duration: float | None = None,
     call: str,
@@ -1227,7 +1227,7 @@ def _simulate_trajectory_laps(
     )
 
     # Initialize random number generator
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(rng)
 
     # Name the paths in errors as the scientist knows them.
     path_names = (

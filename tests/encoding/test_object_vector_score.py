@@ -200,8 +200,8 @@ def test_result_input_matches_its_reshaped_rate_map():
     )
     from neurospatial.simulation import generate_poisson_spikes
 
-    spikes = generate_poisson_spikes(rate, times, seed=11)
-    untuned = generate_poisson_spikes(np.full(len(times), rate.mean()), times, seed=12)
+    spikes = generate_poisson_spikes(rate, times, rng=11)
+    untuned = generate_poisson_spikes(np.full(len(times), rate.mean()), times, rng=12)
     settings = {"distance_range": (0.0, 50.0), "distance_bin_size": 5.0}
     result = compute_object_vector_rate(None, spikes, times, positions, obj, **settings)
     grid = np.asarray(result.firing_rate).reshape(
@@ -227,7 +227,7 @@ def _open_field_cell(rate_fn, seed: int):
     delta = obj - positions  # animal to object
     distance = np.hypot(*delta.T)
     direction = np.arctan2(delta[:, 1], delta[:, 0])
-    spikes = generate_poisson_spikes(rate_fn(distance, direction), times, seed=seed)
+    spikes = generate_poisson_spikes(rate_fn(distance, direction), times, rng=seed)
     return env, spikes, times, positions, obj
 
 

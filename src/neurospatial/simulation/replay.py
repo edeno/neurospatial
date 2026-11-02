@@ -18,6 +18,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._random import _seed_sequence
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_finite_real, validate_integer_at_least
 
@@ -112,7 +113,7 @@ def simulate_replay_event(
     random_interval: float = 0.02,
     drop_fraction: float = 0.0,
     n_noise_spikes: int = 0,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
 ) -> ReplayEventSimulation:
     """Simulate a candidate replay event with a known path along a track.
 
@@ -177,8 +178,8 @@ def simulate_replay_event(
         period, as Tingley & Peyrache (2020) inserted "noise" spikes. A
         background rate of ``r`` Hz per cell is about
         ``r * n_cells * duration`` spikes.
-    seed : int or None
-        Seed for the path, the spikes, the removal and the noise spikes,
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed for the path, the spikes, the removal and the noise spikes,
         which draw from separate streams: changing ``drop_fraction`` does not
         move the noise spikes, and neither changes the rate-map spikes
         before removal.
@@ -241,14 +242,14 @@ def simulate_replay_event(
     >>> rates = 0.5 + 25.0 * np.exp(
     ...     -0.5 * ((x - np.linspace(0, 200, 30)[:, None]) / 12.0) ** 2
     ... )
-    >>> event = simulate_replay_event(env, rates, speed=800.0, rate_gain=3.0, seed=0)
+    >>> event = simulate_replay_event(env, rates, speed=800.0, rate_gain=3.0, rng=0)
     >>> event.track_positions[[0, -1]].round()
     array([  0., 159.])
     >>> event.summary()["n_active_cells"] > 15
     True
 
     The same event with half its spikes removed (rounding half up) and 40
-    noise spikes added. With the same seed, the remaining rate-map spikes
+    noise spikes added. With the same rng, the remaining rate-map spikes
     are a subset of the event's:
 
     >>> noisy = simulate_replay_event(
@@ -258,7 +259,7 @@ def simulate_replay_event(
     ...     rate_gain=3.0,
     ...     drop_fraction=0.5,
     ...     n_noise_spikes=40,
-    ...     seed=0,
+    ...     rng=0,
     ... )
     >>> n_spikes = event.summary()["n_spikes"]
     >>> noisy.n_dropped_spikes == (n_spikes + 1) // 2
@@ -297,7 +298,7 @@ def simulate_replay_event(
     track = _Track(np.asarray(starts), np.asarray(stops))
     maps = _validated_rates(rates, env.n_bins)
 
-    seeds = np.random.SeedSequence(seed)
+    seeds = _seed_sequence(rng)
     # Spawned in this order, the path and spike streams do not depend on
     # the degradation settings.
     path_seed, spike_seed, drop_seed, noise_seed = seeds.spawn(4)
@@ -324,7 +325,7 @@ def simulate_replay_event(
         generate_poisson_spikes(
             rate_gain * np.append(cell[bins], cell[bins[-1]]),
             spike_grid,
-            seed=int(cell_seed),
+            rng=int(cell_seed),
         )
         for cell, cell_seed in zip(maps, cell_seeds, strict=True)
     )

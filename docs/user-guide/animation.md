@@ -180,7 +180,7 @@ scale. Without them, the same color means different values in each.
 `colorbar_label` names what the colors measure. Colors clip values outside
 the limits; in every view, a triangle at the colorbar's end marks a limit that
 the field's values pass. For a very long recording,
-`estimate_colormap_range_from_subset(fields, seed=0)` applies the same rule to
+`estimate_colormap_range_from_subset(fields, rng=0)` applies the same rule to
 a larger random sample of rows and returns `(vmin, vmax)` to pass in.
 
 The colorbar, the timestamp label and the fixed limits are drawn into every

@@ -164,7 +164,7 @@ def test_goal_directed_run_ends_at_an_outside_sample(strip, max_gap):
         strip,
         times,
         positions,
-        goal_region="goal",
+        region="goal",
         min_progress=10.0,
         max_gap=max_gap,
     ).windows
@@ -180,7 +180,7 @@ def test_goal_directed_runs_without_a_place_are_empty(strip):
             strip,
             times,
             np.full((len(times), 2), np.nan),
-            goal_region="goal",
+            region="goal",
             min_progress=10.0,
         ).windows
 
@@ -210,7 +210,7 @@ OUTSIDE = [500.0, 500.0]  # beyond the environment: bin -1
 
 SHUTTLE_CALLS = {
     "detect_region_crossings": lambda env, p, t, **kw: detect_region_crossings(
-        env, t, p, region_name="goal", **kw
+        env, t, p, region="goal", **kw
     ),
     "detect_trials": lambda env, p, t, **kw: detect_trials(
         env, t, p, regions=["start", "goal"], **kw
@@ -286,9 +286,9 @@ def _shuttle_in_cm():
     "detect",
     [
         lambda e, t, p: detect_trials(e, t, p, regions=["left", "right"]),
-        lambda e, t, p: detect_region_crossings(e, t, p, region_name="left"),
+        lambda e, t, p: detect_region_crossings(e, t, p, region="left"),
         lambda e, t, p: detect_goal_directed_runs(
-            e, t, p, goal_region="right", min_progress=5.0
+            e, t, p, region="right", min_progress=5.0
         ),
     ],
     ids=["detect_trials", "detect_region_crossings", "detect_goal_directed_runs"],
@@ -313,11 +313,9 @@ def test_positions_mostly_outside_the_environment_warn(detect):
     [
         lambda e, t, p, **kw: detect_trials(e, t, p, regions=["left", "right"], **kw),
         lambda e, t, p, **kw: detect_region_visits(e, t, p, regions=["left"], **kw),
-        lambda e, t, p, **kw: detect_region_crossings(
-            e, t, p, region_name="left", **kw
-        ),
+        lambda e, t, p, **kw: detect_region_crossings(e, t, p, region="left", **kw),
         lambda e, t, p, **kw: detect_goal_directed_runs(
-            e, t, p, goal_region="right", min_progress=5.0, **kw
+            e, t, p, region="right", min_progress=5.0, **kw
         ),
     ],
     ids=["trials", "visits", "crossings", "goal_runs"],

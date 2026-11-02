@@ -23,7 +23,7 @@ from neurospatial.simulation import open_field_session
 def test_documented_workflow_emits_no_warnings() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        session = open_field_session(duration=120.0, n_place_cells=8, seed=0)
+        session = open_field_session(duration=120.0, n_place_cells=8, rng=0)
         times, positions, spike_times = (
             session.times,
             session.positions,

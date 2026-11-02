@@ -37,7 +37,7 @@ class TestResampleFieldBasic:
         field = rng.random(src_env.n_bins)
 
         # Resample to destination
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # Should return array with dst_env.n_bins elements
         assert result.shape == (dst_env.n_bins,)
@@ -58,7 +58,7 @@ class TestResampleFieldBasic:
         field = rng.random(src_env.n_bins)
 
         # Resample to destination
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # Fine resolution should have more bins
         assert result.shape == (dst_env.n_bins,)
@@ -75,8 +75,8 @@ class TestResampleFieldBasic:
 
         field = rng.random(src_env.n_bins)
 
-        result_explicit = resample_field(field, src_env, dst_env, method="nearest")
-        result_default = resample_field(field, src_env, dst_env)
+        result_explicit = resample_field(src_env, dst_env, field, method="nearest")
+        result_default = resample_field(src_env, dst_env, field)
 
         np.testing.assert_array_equal(result_explicit, result_default)
 
@@ -92,7 +92,7 @@ class TestResampleFieldBasic:
         # Field with known range [0, 1]
         field = rng.random(src_env.n_bins)
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # Nearest method should preserve exact values (no interpolation)
         assert np.min(result) >= np.min(field) - 1e-10
@@ -114,7 +114,7 @@ class TestResampleFieldDiffuse:
         field = rng.random(src_env.n_bins)
 
         result = resample_field(
-            field, src_env, dst_env, method="diffuse", bandwidth=1.0
+            src_env, dst_env, field, method="diffuse", bandwidth=1.0
         )
 
         assert result.shape == (dst_env.n_bins,)
@@ -132,7 +132,7 @@ class TestResampleFieldDiffuse:
         field = rng.random(src_env.n_bins)
 
         with pytest.raises(ValueError, match="bandwidth must be provided"):
-            resample_field(field, src_env, dst_env, method="diffuse")
+            resample_field(src_env, dst_env, field, method="diffuse")
 
     def test_diffuse_smoother_than_nearest(self):
         """Test that diffuse method produces smoother results."""
@@ -146,9 +146,9 @@ class TestResampleFieldDiffuse:
         field = np.zeros(src_env.n_bins)
         field[src_env.n_bins // 2] = 1.0
 
-        nearest_result = resample_field(field, src_env, dst_env, method="nearest")
+        nearest_result = resample_field(src_env, dst_env, field, method="nearest")
         diffuse_result = resample_field(
-            field, src_env, dst_env, method="diffuse", bandwidth=2.0
+            src_env, dst_env, field, method="diffuse", bandwidth=2.0
         )
 
         # Diffuse should spread the spike more
@@ -166,10 +166,10 @@ class TestResampleFieldDiffuse:
         field[src_env.n_bins // 2] = 1.0
 
         result_small = resample_field(
-            field, src_env, dst_env, method="diffuse", bandwidth=0.5
+            src_env, dst_env, field, method="diffuse", bandwidth=0.5
         )
         result_large = resample_field(
-            field, src_env, dst_env, method="diffuse", bandwidth=3.0
+            src_env, dst_env, field, method="diffuse", bandwidth=3.0
         )
 
         # Larger bandwidth spreads values more
@@ -189,7 +189,7 @@ class TestResampleFieldEdgeCases:
 
         field = np.zeros(src_env.n_bins)
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         np.testing.assert_array_equal(result, np.zeros(dst_env.n_bins))
 
@@ -203,7 +203,7 @@ class TestResampleFieldEdgeCases:
 
         field = np.ones(src_env.n_bins) * 5.0
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # Nearest neighbor should preserve constant value
         np.testing.assert_allclose(result, 5.0, rtol=1e-10)
@@ -220,7 +220,7 @@ class TestResampleFieldEdgeCases:
 
         field = np.array([3.14])
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # All destination bins get mapped to single source bin
         assert result.shape == (dst_env.n_bins,)
@@ -239,7 +239,7 @@ class TestResampleFieldEdgeCases:
 
         field = rng.random(src_env.n_bins)
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # Every destination bin lies outside the source environment, so each
         # maps to the "outside" sentinel and resamples to NaN (a field cannot
@@ -263,7 +263,7 @@ class TestResampleFieldInputValidation:
         field = rng.random(src_env.n_bins)
 
         with pytest.raises(ValueError, match="method must be 'nearest' or 'diffuse'"):
-            resample_field(field, src_env, dst_env, method="invalid")
+            resample_field(src_env, dst_env, field, method="invalid")
 
     def test_field_size_mismatch(self):
         """Test that mismatched field and source environment sizes raise error."""
@@ -279,7 +279,7 @@ class TestResampleFieldInputValidation:
         with pytest.raises(
             ValueError, match=r"Field size .* does not match source environment"
         ):
-            resample_field(wrong_field, src_env, dst_env, method="nearest")
+            resample_field(src_env, dst_env, wrong_field, method="nearest")
 
     def test_negative_bandwidth(self):
         """Test that negative bandwidth raises error."""
@@ -293,7 +293,7 @@ class TestResampleFieldInputValidation:
         field = rng.random(src_env.n_bins)
 
         with pytest.raises(ValueError, match="bandwidth must be positive"):
-            resample_field(field, src_env, dst_env, method="diffuse", bandwidth=-1.0)
+            resample_field(src_env, dst_env, field, method="diffuse", bandwidth=-1.0)
 
     def test_dimension_mismatch(self):
         """Test that environments with different dimensions raise error."""
@@ -310,7 +310,7 @@ class TestResampleFieldInputValidation:
         field = rng.random(src_env.n_bins)
 
         # This should work (both 2D)
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
         assert result.shape == (dst_env.n_bins,)
 
 
@@ -330,7 +330,7 @@ class TestResampleFieldCorrectness:
         # Field with known values at each position
         field = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # Should be exact identity mapping
         np.testing.assert_array_equal(result, field)
@@ -354,7 +354,7 @@ class TestResampleFieldCorrectness:
         # Field with distinct values: [10, 20, 30, 40]
         field = np.array([10.0, 20.0, 30.0, 40.0])
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # Each destination point should get value from nearest source
         np.testing.assert_array_equal(result, field)
@@ -372,7 +372,7 @@ class TestResampleFieldCorrectness:
         # Source has single value
         field = np.array([42.0])
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # All destination bins should get the same value
         np.testing.assert_array_equal(result, np.array([42.0, 42.0, 42.0]))
@@ -391,7 +391,7 @@ class TestResampleFieldCorrectness:
         # Field with different values
         field = np.array([1.0, 2.0, 3.0, 4.0])
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # The (0.5, 0.5) point is equidistant from all 4 source bins
         # With tie_break=LOWEST_INDEX, should pick first bin
@@ -413,7 +413,7 @@ class TestResampleFieldMathematicalProperties:
         # Field with distinct values
         field = np.arange(src_env.n_bins, dtype=np.float64)
 
-        result = resample_field(field, src_env, dst_env, method="nearest")
+        result = resample_field(src_env, dst_env, field, method="nearest")
 
         # Every result value should be from original field
         for val in result:
@@ -428,7 +428,7 @@ class TestResampleFieldMathematicalProperties:
         field = rng.random(src_env.n_bins)
 
         # Resample to itself
-        result = resample_field(field, src_env, src_env, method="nearest")
+        result = resample_field(src_env, src_env, field, method="nearest")
 
         # Should be very close to identity
         np.testing.assert_allclose(result, field, rtol=1e-10)
@@ -444,9 +444,9 @@ class TestResampleFieldMathematicalProperties:
         dst_env = Environment.from_samples(src_data, bin_size=1.0)
 
         result = resample_field(
-            np.full(src_env.n_bins, 5.0),
             src_env,
             dst_env,
+            np.full(src_env.n_bins, 5.0),
             method="diffuse",
             bandwidth=1.0,
         )
@@ -465,7 +465,7 @@ class TestResampleFieldMathematicalProperties:
         observed = int(env.bin_at(np.array([[50.5]]))[0])
         field[observed] = 5.0
 
-        result = resample_field(field, env, env, method="diffuse", bandwidth=5.0)
+        result = resample_field(env, env, field, method="diffuse", bandwidth=5.0)
 
         defined = np.isfinite(result)
         assert defined[observed]
@@ -501,7 +501,7 @@ class TestResampleFieldOutsideSource:
         src, dst = arena_and_longer_track
         field = src.bin_centers[:, 0].copy()  # x position, cm
 
-        result = resample_field(field, src, dst, method=method, bandwidth=2.0)
+        result = resample_field(src, dst, field, method=method, bandwidth=2.0)
 
         # The source's bins end at x = 21 cm. A nearest-center rule with a
         # distance allowance gave x = 22..40 cm the edge value 20.
@@ -516,7 +516,7 @@ class TestResampleFieldOutsideSource:
         src, dst = arena_and_longer_track
         field = src.bin_centers[:, 0].copy()
 
-        result = resample_field(field, src, dst, method="nearest")
+        result = resample_field(src, dst, field, method="nearest")
 
         # The overlapping bins are the same bins, so each gets its own value.
         inside = dst.bin_centers[:, 0] <= src.dimension_ranges[0][1]
@@ -530,7 +530,7 @@ class TestResampleFieldOutsideSource:
         field = np.arange(src.n_bins, dtype=float)
         field[3] = np.nan
 
-        result = resample_field(field, src, dst, method="nearest")
+        result = resample_field(src, dst, field, method="nearest")
 
         np.testing.assert_array_equal(result, field)
 
@@ -544,7 +544,7 @@ class TestResampleFieldOutsideSource:
         dst = Environment.from_graph(graph, [(0, 1)], bin_size=2.0)
 
         with pytest.raises(NotImplementedError, match="without track_width"):
-            resample_field(np.ones(src.n_bins), src, dst)
+            resample_field(src, dst, np.ones(src.n_bins))
 
 
 def _line(spacing: float) -> Environment:
@@ -564,7 +564,7 @@ def test_diffuse_coarsening_keeps_a_narrow_field_wherever_it_lies(center):
     src, dst = _line(1.0), _line(8.0)
     x = src.bin_centers[:, 0]
     field = np.exp(-0.5 * ((x - center) / 1.0) ** 2)
-    resampled = resample_field(field, src, dst, method="diffuse", bandwidth=8.0)
+    resampled = resample_field(src, dst, field, method="diffuse", bandwidth=8.0)
     # The rate integrated over the track is kept at every shift.
     assert resampled.sum() * 8.0 == pytest.approx(field.sum() * 1.0, rel=0.01)
 
@@ -574,7 +574,7 @@ def test_diffuse_onto_the_same_environment_is_smoothing_by_the_bandwidth():
     env = _line(2.0)
     field = np.random.default_rng(0).uniform(0, 10, env.n_bins)
     np.testing.assert_allclose(
-        resample_field(field, env, env, method="diffuse", bandwidth=6.0),
+        resample_field(env, env, field, method="diffuse", bandwidth=6.0),
         env.smooth(field, bandwidth=6.0, mode="average"),
         rtol=1e-5,
         atol=1e-8,

@@ -44,8 +44,8 @@ def test_events_import_does_not_load_encoding_or_decoding():
     "call",
     [
         "population_peri_event_histogram("
-        "[np.array([0.1, 0.4])], [0.5], (-0.5, 0.5), bin_size=0.1)",
-        "peri_event_histogram(np.array([0.1, 0.4]), [0.5], (-0.5, 0.5), bin_size=0.1)",
+        "[np.array([0.1, 0.4])], [0.5], (-0.5, 0.5), dt=0.1)",
+        "peri_event_histogram(np.array([0.1, 0.4]), [0.5], (-0.5, 0.5), dt=0.1)",
     ],
 )
 def test_peri_event_histograms_do_not_load_decoding(call):

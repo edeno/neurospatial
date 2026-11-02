@@ -150,9 +150,9 @@ def test_track_cell_is_place_and_unavailable_scores_are_recorded():
     x = 200 * np.abs((np.cumsum(speed) / 30 / 200) % 2 - 1)
     trains = [
         generate_poisson_spikes(
-            0.1 + 12 * np.exp(-0.5 * ((x - 70) / 8) ** 2), times, seed=11
+            0.1 + 12 * np.exp(-0.5 * ((x - 70) / 8) ** 2), times, rng=11
         ),
-        generate_poisson_spikes(np.full(len(times), 1.5), times, seed=12),
+        generate_poisson_spikes(np.full(len(times), 1.5), times, rng=12),
     ]
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -226,7 +226,7 @@ def box_session():
             speed_units="cm",
             speed_mean=15.0,
             speed_std=7.5,
-            seed=seed,
+            rng=seed,
         )
         return env, times, positions
 
@@ -241,7 +241,7 @@ def test_grid_cell_with_background_firing_is_grid(box_session):
     grid = GridCellModel(
         env, grid_spacing=45.0, max_rate=10.0, baseline_rate=1.0
     ).firing_rate(times, positions)
-    trains = [generate_poisson_spikes(grid, times, seed=21)]
+    trains = [generate_poisson_spikes(grid, times, rng=21)]
     result = spatial_cell_type_significance(
         env,
         trains,
@@ -268,7 +268,7 @@ def test_border_cell_in_a_small_box_is_border(box_session):
     walls = shapely.box(0, 0, 50, 50).exterior
     distance = shapely.distance(shapely.points(positions), walls)
     rate = 0.2 + 11.8 * np.exp(-0.5 * (distance / 4.0) ** 2)
-    trains = [generate_poisson_spikes(rate, times, seed=22)]
+    trains = [generate_poisson_spikes(rate, times, rng=22)]
     result = spatial_cell_type_significance(
         env, trains, times, positions, n_shuffles=39, rng=0
     )
@@ -285,7 +285,7 @@ def test_untuned_p_values_are_uniform_for_every_statistic(box_session):
     env, times, positions = box_session(100, 10, seed=3)
     rng = np.random.default_rng(9)
     trains = [
-        generate_poisson_spikes(np.full(len(times), rate), times, seed=3000 + i)
+        generate_poisson_spikes(np.full(len(times), rate), times, rng=3000 + i)
         for i, rate in enumerate(rng.uniform(0.5, 3.0, 60))
     ]
     result = spatial_cell_type_significance(
@@ -337,7 +337,7 @@ def test_radial_arm_place_cells_are_not_border_cells():
         speed_units="cm",
         speed_mean=20.0,
         speed_std=10.0,
-        seed=8,
+        rng=8,
     )
     rng = np.random.default_rng(21)
     centers = env.bin_centers[rng.choice(env.n_bins, 12, replace=False)]
@@ -352,7 +352,7 @@ def test_radial_arm_place_cells_are_not_border_cells():
                 metric="geodesic",
             ).firing_rate(times, positions),
             times,
-            seed=500 + i,
+            rng=500 + i,
         )
         for i, center in enumerate(centers)
     ]

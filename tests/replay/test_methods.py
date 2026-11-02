@@ -67,7 +67,7 @@ def place_code():
 
 def _decoded(env, rates, kind, seed, **kwargs):
     event = simulate_replay_event(
-        env, rates, kind=kind, rate_gain=4.0, seed=seed, **kwargs
+        env, rates, kind=kind, rate_gain=4.0, rng=seed, **kwargs
     )
     counts, grid = bin_spikes_in_time(
         list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration
@@ -464,7 +464,7 @@ class TestJointDecode:
         envs = {"a": env_a, "b": env_b}
         models = {"a": rates_a, "b": rates_b}
         event = simulate_replay_event(
-            env_a, rates_a, kind="sweep", rate_gain=4.0, seed=9, speed=900.0
+            env_a, rates_a, kind="sweep", rate_gain=4.0, rng=9, speed=900.0
         )
         counts, grid = bin_spikes_in_time(
             list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration
@@ -1701,7 +1701,7 @@ class TestRankOrderMethods:
     def test_compare_scores_spikes_over_each_events_windows(self, place_code):
         env, rates = place_code
         event = simulate_replay_event(
-            env, rates, kind="sweep", rate_gain=4.0, seed=1, speed=900.0
+            env, rates, kind="sweep", rate_gain=4.0, rng=1, speed=900.0
         )
         counts, grid = bin_spikes_in_time(
             list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration

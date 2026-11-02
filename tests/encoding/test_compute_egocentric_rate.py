@@ -378,7 +378,7 @@ def _far_object_vector_cell(
     rate = 0.2 + 15.0 * np.exp(-0.5 * ((distance - preferred_distance) / 5.0) ** 2) * (
         np.exp(4.0 * (np.cos(direction) - 1.0))
     )
-    spikes = generate_poisson_spikes(rate, times, seed=1)
+    spikes = generate_poisson_spikes(rate, times, rng=1)
     return env, spikes, times, positions, obj
 
 
@@ -1372,7 +1372,7 @@ class TestEgocentricRateConvention:
         env = Environment.from_samples(samples, bin_size=2.0)
         env = env.with_metadata(units="cm")
         positions, times = simulate_trajectory_ou(
-            env, duration=1500.0, speed_units="cm", seed=7
+            env, duration=1500.0, speed_units="cm", rng=7
         )
         # The cell fires on the movement direction at every sample; the
         # analysis sees a heading only where the animal moves at >= 2 cm/s.
@@ -1410,7 +1410,7 @@ class TestEgocentricRateConvention:
         rates = model.firing_rate(times, positions, headings=movement)
         # Independent seed from the trajectory RNG so spike-acceptance uniforms
         # are not correlated with the simulated state.
-        spike_times = generate_poisson_spikes(rates, times, seed=99)
+        spike_times = generate_poisson_spikes(rates, times, rng=99)
 
         result = compute_egocentric_rate(
             env,
@@ -1506,7 +1506,7 @@ def test_an_object_on_the_left_is_at_plus_pi_over_2(side, bearing):
     rate = 0.2 + 20 * np.exp(2 * (np.cos(to_object - bearing) - 1)) * np.exp(
         -0.5 * ((distance - 20) / 5) ** 2
     )
-    spikes = generate_poisson_spikes(rate, times, seed=1)
+    spikes = generate_poisson_spikes(rate, times, rng=1)
 
     result = compute_egocentric_rate(
         None,

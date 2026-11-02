@@ -37,20 +37,20 @@ def test_new_order_is_warning_free() -> None:
             env,
             times,
             positions,
-            region_name="goal",
+            region="goal",
             direction="both",
             max_gap=None,
         )
     assert len(crossings) > 0
 
 
-def test_missing_region_name_in_new_order_raises() -> None:
+def test_missing_region_in_new_order_raises() -> None:
     env, times, positions = _make_env_and_trajectory()
-    with pytest.raises(TypeError, match="region_name"):
+    with pytest.raises(TypeError, match="region"):
         detect_region_crossings(env, times, positions)
 
 
-def test_new_order_with_positional_region_name_raises_clear_type_error() -> None:
+def test_new_order_with_positional_region_raises_clear_type_error() -> None:
     env, times, positions = _make_env_and_trajectory()
     with pytest.raises(TypeError, match="takes 3 positional arguments"):
         detect_region_crossings(env, times, positions, "goal")

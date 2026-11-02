@@ -63,7 +63,7 @@ def _make_sim(
     env = env.with_metadata(units="cm")
 
     positions, times = simulate_trajectory_ou(
-        env, duration=duration, seed=seed, speed_units="cm"
+        env, duration=duration, rng=seed, speed_units="cm"
     )
 
     centers = rng.uniform(5.0, 45.0, (n_neurons, 2))
@@ -74,10 +74,10 @@ def _make_sim(
             center=centers[i],
             width=12.0,
             max_rate=30.0,
-            seed=int(rng.integers(0, 2**31)),
+            rng=int(rng.integers(0, 2**31)),
         )
         rates = cell.firing_rate(times, positions)
-        spikes = generate_poisson_spikes(rates, times, seed=int(rng.integers(0, 2**31)))
+        spikes = generate_poisson_spikes(rates, times, rng=int(rng.integers(0, 2**31)))
         spike_times.append(spikes)
 
     return env, spike_times, times, positions
@@ -114,10 +114,10 @@ def _make_linear_sim(
     centers = np.column_stack([np.linspace(5.0, 95.0, 6), np.zeros(6)])
     spikes: list[np.ndarray] = []
     for i in range(6):
-        cell = PlaceCellModel(env, center=centers[i], width=15.0, max_rate=30.0, seed=i)
+        cell = PlaceCellModel(env, center=centers[i], width=15.0, max_rate=30.0, rng=i)
         rates = cell.firing_rate(times, positions)
         spikes.append(
-            generate_poisson_spikes(rates, times, seed=int(rng.integers(0, 2**31)))
+            generate_poisson_spikes(rates, times, rng=int(rng.integers(0, 2**31)))
         )
     return env, spikes, times, positions
 
@@ -515,17 +515,17 @@ def test_held_out_maze_geodesic_accuracy() -> None:
     env = make_w_maze(bin_size=4.0).env_track
     assert env.is_linearized_track
     positions, times = simulate_trajectory_ou(
-        env, duration=300.0, seed=0, speed_units="cm"
+        env, duration=300.0, rng=0, speed_units="cm"
     )
     centers = env.bin_centers[np.linspace(0, env.n_bins - 1, 30).astype(int)]
     spikes = [
         generate_poisson_spikes(
-            PlaceCellModel(env, center=c, width=8.0, max_rate=25.0, seed=i).firing_rate(
+            PlaceCellModel(env, center=c, width=8.0, max_rate=25.0, rng=i).firing_rate(
                 times,
                 positions,
             ),
             times,
-            seed=100 + i,
+            rng=100 + i,
         )
         for i, c in enumerate(centers)
     ]

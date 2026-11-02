@@ -83,7 +83,7 @@ positions, times = simulate_trajectory_laps(
     speed_std=2.0,
     sampling_frequency=50.0,
     pause_duration=0.5,
-    seed=trajectory_seed,
+    rng=trajectory_seed,
 )
 unit_ids = np.array([101, 104, 109, 112, 118, 123])
 models = [
@@ -101,7 +101,7 @@ spike_times = generate_population_spikes(
     times,
     positions,
     refractory_period=0.0,
-    seed=spike_seed,
+    rng=spike_seed,
     show_progress=False,
 )
 session = SimulationSession(

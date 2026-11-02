@@ -877,7 +877,7 @@ class TestDistanceToBoundary:
         positions = np.array([[1.0, 1.0], [6.0, 6.0]])
 
         result = distance_to_boundary(
-            env, positions, boundary_type="region", region_name="goal"
+            env, positions, boundary_type="region", region="goal"
         )
 
         assert result.shape == (2,)
@@ -894,18 +894,18 @@ class TestDistanceToBoundary:
 
         with pytest.raises(ValueError, match=r"Region.*not found"):
             distance_to_boundary(
-                env, positions, boundary_type="region", region_name="nonexistent"
+                env, positions, boundary_type="region", region="nonexistent"
             )
 
-    def test_region_name_required_for_region_type(self, simple_grid_env):
-        """Test region_name is required when boundary_type='region'."""
+    def test_region_required_for_region_type(self, simple_grid_env):
+        """Test region is required when boundary_type='region'."""
         from neurospatial.behavior.navigation import distance_to_boundary
 
         env = simple_grid_env
 
         positions = np.array([[5.0, 5.0]])
 
-        with pytest.raises(ValueError, match=r"region_name.*required"):
+        with pytest.raises(ValueError, match=r"region.*required"):
             distance_to_boundary(env, positions, boundary_type="region")
 
     def test_empty_positions(self, simple_grid_env):

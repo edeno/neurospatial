@@ -133,7 +133,7 @@ class _NeighborPairsMixin:
         return self._connectivity
 
     def plot(
-        self, ax: "matplotlib.axes.Axes | None" = None, **kwargs: Any
+        self, *, ax: "matplotlib.axes.Axes | None" = None, **kwargs: Any
     ) -> "matplotlib.axes.Axes":
         """Draw the bins' cells and connectivity graph, as ``Environment.plot`` does.
 

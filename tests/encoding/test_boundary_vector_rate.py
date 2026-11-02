@@ -50,7 +50,7 @@ def _wall_distance(positions: np.ndarray, angles: np.ndarray) -> np.ndarray:
 
 def _tuned_spikes(times, distance, preferred=15.0, width=4.0, seed=100):
     rate = 0.5 + 20.0 * np.exp(-0.5 * ((distance - preferred) / width) ** 2)
-    return generate_poisson_spikes(rate, times, seed=seed)
+    return generate_poisson_spikes(rate, times, rng=seed)
 
 
 @pytest.mark.parametrize(

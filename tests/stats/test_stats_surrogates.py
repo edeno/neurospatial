@@ -190,7 +190,7 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         surrogate_rates = [
             surrogate.mean(axis=1)  # Mean across neurons
             for surrogate in generate_inhomogeneous_poisson_surrogates(
-                spike_counts, smoothing_window=3, n_surrogates=500, rng=42
+                spike_counts, smooth_bins=3, n_surrogates=500, rng=42
             )
         ]
 
@@ -212,12 +212,12 @@ class TestGenerateInhomogeneousPoissonSurrogates:
         # Larger window = more smoothed (closer to homogeneous)
         surrogates_small = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, smoothing_window=1, n_surrogates=5, rng=42
+                spike_counts, smooth_bins=1, n_surrogates=5, rng=42
             )
         )
         surrogates_large = list(
             generate_inhomogeneous_poisson_surrogates(
-                spike_counts, smoothing_window=7, n_surrogates=5, rng=42
+                spike_counts, smooth_bins=7, n_surrogates=5, rng=42
             )
         )
         # With different smoothing, at least some surrogates should differ
@@ -396,7 +396,7 @@ class TestInhomogeneousPoissonRatePreservation:
         accumulator = np.zeros(n_time)
         n_surrogates = 1000
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            counts, smoothing_window=5, n_surrogates=n_surrogates, rng=7
+            counts, smooth_bins=5, n_surrogates=n_surrogates, rng=7
         ):
             accumulator += surrogate[:, 0]
         mean_surrogate = accumulator / n_surrogates
@@ -427,7 +427,7 @@ class TestInhomogeneousPoissonRatePreservation:
         accumulator = np.zeros(n_time)
         n_surrogates = 1000
         for surrogate in generate_inhomogeneous_poisson_surrogates(
-            counts, smoothing_window=5, n_surrogates=n_surrogates, rng=11
+            counts, smooth_bins=5, n_surrogates=n_surrogates, rng=11
         ):
             accumulator += surrogate[:, 0]
         mean_surrogate = accumulator / n_surrogates
@@ -544,5 +544,5 @@ def test_poisson_surrogates_refuse_non_count_input(counts):
 def test_inhomogeneous_poisson_refuses_zero_smoothing_window():
     from neurospatial.stats.surrogates import generate_inhomogeneous_poisson_surrogates
 
-    with pytest.raises(ValueError, match="smoothing_window"):
-        generate_inhomogeneous_poisson_surrogates(np.ones((3, 2)), smoothing_window=0)
+    with pytest.raises(ValueError, match="smooth_bins"):
+        generate_inhomogeneous_poisson_surrogates(np.ones((3, 2)), smooth_bins=0)

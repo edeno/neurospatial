@@ -41,9 +41,7 @@ def population():
 def test_population_mean_sem_is_across_events(population):
     """mean_sem is the SEM across events of each event's mean over units."""
     trains, event_times = population
-    result = population_peri_event_histogram(
-        trains, event_times, WINDOW, bin_size=BIN_SIZE
-    )
+    result = population_peri_event_histogram(trains, event_times, WINDOW, dt=BIN_SIZE)
 
     counts = np.stack([_brute_force_counts(t, event_times) for t in trains])
     per_event_mean = counts.mean(axis=0)
@@ -62,7 +60,7 @@ def test_population_mean_sem_is_zero_when_units_alternate():
     events = np.arange(10.0, 110.0, 10.0)
     trains = [events[0::2] + 0.1, events[1::2] + 0.1]
 
-    result = population_peri_event_histogram(trains, events, WINDOW, bin_size=0.5)
+    result = population_peri_event_histogram(trains, events, WINDOW, dt=0.5)
 
     assert_allclose(result.mean_histogram, [0.0, 0.5])
     assert_allclose(result.mean_sem, [0.0, 0.0], atol=1e-15)
@@ -73,9 +71,7 @@ def test_population_plot_band_is_mean_sem(population):
     import matplotlib.pyplot as plt
 
     trains, event_times = population
-    result = population_peri_event_histogram(
-        trains, event_times, WINDOW, bin_size=BIN_SIZE
-    )
+    result = population_peri_event_histogram(trains, event_times, WINDOW, dt=BIN_SIZE)
     ax = result.plot()
     band = ax.collections[0].get_paths()[0].vertices[:, 1]
     rate, rate_sem = result.mean_firing_rate, result.mean_sem / BIN_SIZE
@@ -87,11 +83,9 @@ def test_population_plot_band_is_mean_sem(population):
 
 def test_each_population_unit_matches_its_single_unit_psth(population):
     trains, event_times = population
-    result = population_peri_event_histogram(
-        trains, event_times, WINDOW, bin_size=BIN_SIZE
-    )
+    result = population_peri_event_histogram(trains, event_times, WINDOW, dt=BIN_SIZE)
     for unit, train in enumerate(trains):
-        single = peri_event_histogram(train, event_times, WINDOW, bin_size=BIN_SIZE)
+        single = peri_event_histogram(train, event_times, WINDOW, dt=BIN_SIZE)
         assert_array_equal(result.histograms[unit], single.histogram)
         assert_array_equal(result.sem[unit], single.sem)
         assert_array_equal(
@@ -102,9 +96,9 @@ def test_each_population_unit_matches_its_single_unit_psth(population):
 def test_psth_does_not_depend_on_the_clock_origin(population):
     trains, event_times = population
     shift = 1234.0  # a whole number of bins keeps every edge exact
-    base = peri_event_histogram(trains[0], event_times, WINDOW, bin_size=BIN_SIZE)
+    base = peri_event_histogram(trains[0], event_times, WINDOW, dt=BIN_SIZE)
     shifted = peri_event_histogram(
-        trains[0] + shift, event_times + shift, WINDOW, bin_size=BIN_SIZE
+        trains[0] + shift, event_times + shift, WINDOW, dt=BIN_SIZE
     )
     assert_array_equal(shifted.histogram, base.histogram)
     assert_array_equal(shifted.sem, base.sem)
@@ -113,11 +107,9 @@ def test_psth_does_not_depend_on_the_clock_origin(population):
 def test_psth_does_not_depend_on_event_order(population):
     trains, event_times = population
     order = np.random.default_rng(2).permutation(event_times.size)
-    base = population_peri_event_histogram(
-        trains, event_times, WINDOW, bin_size=BIN_SIZE
-    )
+    base = population_peri_event_histogram(trains, event_times, WINDOW, dt=BIN_SIZE)
     permuted = population_peri_event_histogram(
-        trains, event_times[order], WINDOW, bin_size=BIN_SIZE
+        trains, event_times[order], WINDOW, dt=BIN_SIZE
     )
     assert_allclose(permuted.histograms, base.histograms, rtol=1e-12)
     assert_allclose(permuted.sem, base.sem, rtol=1e-12)
@@ -135,9 +127,9 @@ def test_psth_recovers_a_known_poisson_rate():
     has_event = nearest >= 0
     since_event[has_event] = times[has_event] - event_times[nearest[has_event]]
     rate = np.where((since_event >= 0) & (since_event < 0.2), 40.0, 5.0)
-    spikes = generate_poisson_spikes(rate, times, refractory_period=0.0, seed=7)
+    spikes = generate_poisson_spikes(rate, times, refractory_period=0.0, rng=7)
 
-    result = peri_event_histogram(spikes, event_times, WINDOW, bin_size=0.05)
+    result = peri_event_histogram(spikes, event_times, WINDOW, dt=0.05)
 
     expected = np.where(
         (result.bin_centers > 0) & (result.bin_centers < 0.2), 40.0, 5.0
@@ -157,11 +149,11 @@ def test_millisecond_window_warns_once(population_call):
         warnings.simplefilter("always")
         if population_call:
             population_peri_event_histogram(
-                trains, np.array([2000.0, 3000.0]), (-500.0, 500.0), bin_size=10.0
+                trains, np.array([2000.0, 3000.0]), (-500.0, 500.0), dt=10.0
             )
         else:
             peri_event_histogram(
-                spikes, np.array([2000.0, 3000.0]), (-500.0, 500.0), bin_size=10.0
+                spikes, np.array([2000.0, 3000.0]), (-500.0, 500.0), dt=10.0
             )
     wide = [w for w in caught if "more than 60 seconds" in str(w.message)]
     assert len(wide) == 1

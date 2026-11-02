@@ -928,7 +928,7 @@ polygon's south and west sides: decision-region entry times
 (`decision_region_entry_time`, `compute_decision_analysis`,
 `compute_vte_session`), the goal bins and decision boundary of
 `compute_decision_analysis`, `trials_to_region_arrays` and
-`distance_to_boundary(region_name=...)`. Two regions that meet along a column
+`distance_to_boundary(region=...)`. Two regions that meet along a column
 of centers each get part of it, never both:
 
 <!-- docs-test: run -->
@@ -1510,7 +1510,7 @@ smoothed = env.smooth(rate, bandwidth=5.0, mode="average")
 kernel = env.compute_kernel(bandwidth=5.0, mode="density")
 # Before: env.plot_field(rate, ax, "magma")
 fig, ax = plt.subplots()
-env.plot_field(smoothed, ax, cmap="magma")
+env.plot_field(smoothed, ax=ax, cmap="magma")
 plt.close(fig)
 ```
 

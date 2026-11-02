@@ -181,7 +181,7 @@ class TestSimulateSession:
         """simulate_session() should return SimulationSession instance."""
         simple_2d_env = simple_2d_env.with_metadata(units="cm")
         session = simulate_session(
-            simple_2d_env, duration=1.0, n_cells=3, seed=42, show_progress=False
+            simple_2d_env, duration=1.0, n_cells=3, rng=42, show_progress=False
         )
 
         assert isinstance(session, SimulationSession)
@@ -197,7 +197,7 @@ class TestSimulateSession:
             duration=2.0,
             n_cells=5,
             cell_type="place",
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -214,7 +214,7 @@ class TestSimulateSession:
             n_cells=5,
             cell_type="border",
             distance_tolerance=5.0,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -242,7 +242,7 @@ class TestSimulateSession:
             n_cells=20,
             cell_type=cell_type,
             show_progress=False,
-            seed=0,
+            rng=0,
         )
         border = [
             (int(label), model)
@@ -304,7 +304,7 @@ class TestSimulateSession:
             duration=2.0,
             n_cells=5,
             cell_type="grid",
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -321,7 +321,7 @@ class TestSimulateSession:
             grid_spacing=30.0,
             grid_orientation=0.2,
             width=7.0,
-            seed=0,
+            rng=0,
             show_progress=False,
         )
         truths = list(session.ground_truth.values())
@@ -381,7 +381,7 @@ class TestSimulateSession:
             n_cells=n_cells,
             cell_type="mixed",
             distance_tolerance=5.0,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -403,7 +403,7 @@ class TestSimulateSession:
             duration=2.0,
             n_cells=3,
             trajectory_method="ou",
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -424,7 +424,7 @@ class TestSimulateSession:
             n_cells=n_cells,
             cell_type="place",
             coverage="uniform",
-            seed=42,
+            rng=42,
             show_progress=False,
         )
         centers = np.array([truth["center"] for truth in session.ground_truth.values()])
@@ -446,7 +446,7 @@ class TestSimulateSession:
     @staticmethod
     def _uniform_centers(env, n_cells, seed=0):
         session = simulate_session(
-            env, duration=1.0, n_cells=n_cells, seed=seed, show_progress=False
+            env, duration=1.0, n_cells=n_cells, rng=seed, show_progress=False
         )
         return np.array([truth["center"] for truth in session.ground_truth.values()])
 
@@ -611,7 +611,7 @@ class TestSimulateSession:
             duration=1.0,
             n_cells=50,
             cell_type="mixed",
-            seed=3,
+            rng=3,
             show_progress=False,
         )
         place = np.array(
@@ -643,7 +643,7 @@ class TestSimulateSession:
                 n_cells=20,
                 cell_type="place",
                 coverage="random",
-                seed=seed,
+                rng=seed,
                 show_progress=False,
             )
             return np.array([t["center"] for t in session.ground_truth.values()])
@@ -663,14 +663,14 @@ class TestSimulateSession:
             simple_2d_env,
             duration=1.0,
             n_cells=3,
-            seed=seed,
+            rng=seed,
             show_progress=False,
         )
         session2 = simulate_session(
             simple_2d_env,
             duration=1.0,
             n_cells=3,
-            seed=seed,
+            rng=seed,
             show_progress=False,
         )
 
@@ -695,7 +695,7 @@ class TestSimulateSession:
             cell_type="mixed",
             distance_tolerance=5.0,
             max_rate=custom_max_rate,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -740,7 +740,7 @@ class TestSimulateSession:
             cell_type="place",
             max_rate=40.0,
             width=15.0,
-            seed=seed,
+            rng=seed,
             show_progress=False,
         )
 
@@ -749,7 +749,7 @@ class TestSimulateSession:
             session.models,
             session.times,
             session.positions,
-            seed=seed,
+            rng=seed,
             show_progress=False,
         )
 
@@ -776,7 +776,7 @@ class TestSimulateSession:
             duration=1.0,
             n_cells=3,
             cell_type="place",
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -803,7 +803,7 @@ class TestSimulateSession:
             cell_type="place",
             trajectory_method="ou",
             coverage="uniform",
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -877,7 +877,7 @@ class TestSimulateSession:
             trajectory_method="ou",
             speed_mean=0.15,  # Custom speed
             coherence_time=1.0,  # Custom coherence
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -891,7 +891,7 @@ class TestSimulateSession:
             simple_2d_env,
             duration=2.0,
             n_cells=3,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -907,7 +907,7 @@ class TestSimulateSession:
             n_cells=3,
             trajectory_method="laps",
             n_laps=3,
-            seed=42,
+            rng=42,
             show_progress=False,
         )
 
@@ -935,7 +935,7 @@ class TestSimulateSession:
             duration=60.0,
             n_cells=4,
             trajectory_method="sinusoidal",
-            seed=42,
+            rng=42,
             show_progress=False,
         )
         assert session.positions.shape == (len(session.times), 2)
@@ -1081,7 +1081,7 @@ class TestSessionOwnsItsData:
     def test_mappings_are_read_only(self, simple_2d_env):
         session = SimulationSession(**_holder_fields(simple_2d_env))
         with pytest.raises(TypeError):
-            session.metadata["seed"] = 1  # type: ignore[index]
+            session.metadata["rng"] = 1  # type: ignore[index]
         with pytest.raises(TypeError):
             session.ground_truth[1] = {}  # type: ignore[index]
         with pytest.raises(TypeError):

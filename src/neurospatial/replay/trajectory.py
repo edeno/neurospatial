@@ -65,6 +65,7 @@ RegressionLineScoreResult
 from __future__ import annotations
 
 import contextlib
+import operator
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -73,6 +74,7 @@ import numpy as np
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._random import _seed_sequence
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.replay._inputs import _FIT_WHY, _posterior_times, _probability_rows
 
@@ -1609,7 +1611,7 @@ def detect_trajectory_radon(
     off_track: Literal["band_median", "bin_median"] = "band_median",
     zero_rows: Literal["refuse", "line_median"] = "refuse",
     n_lines: int | None = None,
-    line_seed: int = 0,
+    rng: np.random.Generator | int | None = 0,
 ) -> RadonDetectionResult:
     """Detect the constant-speed replay trajectory in a decoded event.
 
@@ -1703,8 +1705,9 @@ def detect_trajectory_radon(
         slope, as Maboudi et al. (2018) did after Kloosterman (2012), with
         35,000: much faster at a narrow ``band``, but the best line can be
         missed. The same lines are scored in an event and in its shuffles.
-    line_seed : int, default=0
-        Seed of the random lines with ``n_lines``, so a search is
+    rng : numpy.random.Generator or int or None, default=0
+        Random generator or seed of the random lines with ``n_lines``, as for
+        ``np.random.default_rng``. The default seed makes a search
         reproducible; events with the same numbers of time bins and bins
         draw the same lines.
 
@@ -1733,7 +1736,7 @@ def detect_trajectory_radon(
         with ``zero_rows="line_median"``, or
         ``off_track="bin_median"`` is given where no trajectory leaves the
         track (``wrap=True`` or ``line_ends="on_track"``); if ``n_lines`` is
-        not a positive integer or ``line_seed`` not a non-negative integer,
+        not a positive integer or ``rng`` an int below 0,
         or if no random line is both within the speed range and on the
         track; if no speed of the dense grid reaches ``min_speed``.
 
@@ -1919,7 +1922,7 @@ def detect_trajectory_radon(
         off_track=off_track,
         zero_rows=zero_rows,
         n_lines=n_lines,
-        line_seed=line_seed,
+        rng=rng,
         operation="detect_trajectory_radon()",
     )
     return _best_line(lines, posterior)
@@ -2009,7 +2012,7 @@ def _prepare_replay_lines(
     off_track: str = "band_median",
     zero_rows: str = "refuse",
     n_lines: int | None = None,
-    line_seed: int = 0,
+    rng: np.random.Generator | int | None = 0,
     operation: str,
 ) -> tuple[_ReplayLines, NDArray[np.float64]]:
     """Validate a replay line search and build its scorer.
@@ -2024,9 +2027,7 @@ def _prepare_replay_lines(
     from neurospatial._units import default_length
     from neurospatial.environment import _require_track_extents
 
-    _check_line_options(
-        wrap, line_ends, off_track, zero_rows, n_lines, line_seed, operation
-    )
+    _check_line_options(wrap, line_ends, off_track, zero_rows, n_lines, rng, operation)
     # Validates the environment and the posterior rows.
     _, starts, stops = _track_positions(
         env, posterior, operation, allow_zero_rows=zero_rows == "line_median"
@@ -2079,6 +2080,7 @@ def _prepare_replay_lines(
             )
         )
     elapsed = times - times[0]
+    line_stream = _line_stream(rng)
     reused = _REUSED_LINES.get()
     key = None
     if reused is not None:
@@ -2086,7 +2088,7 @@ def _prepare_replay_lines(
         key = (
             *(np.asarray(values).tobytes() for values in arrays),
             *(band, speed_bound, min_speed, wrap, line_ends, off_track),
-            *(zero_rows, n_lines, line_seed),
+            *(zero_rows, n_lines, line_stream),
         )
         if reused and reused[0] == key:
             return reused[1], posterior
@@ -2104,11 +2106,30 @@ def _prepare_replay_lines(
         off_track=off_track,
         zero_rows=zero_rows,
         n_lines=None if n_lines is None else int(n_lines),
-        line_seed=int(line_seed),
+        line_stream=line_stream,
     )
     if reused is not None:
         reused[:] = [key, lines]
     return lines, posterior
+
+
+def _line_stream(
+    rng: np.random.Generator | int | None,
+) -> tuple[Any, tuple[int, ...]]:
+    """A hashable identity of the stream ``np.random.default_rng(rng)`` starts.
+
+    Lines drawn from it are the same in every call that has the same identity,
+    which lets an event and its shuffles share their lines. An int gives its
+    own stream and a fresh generator the stream it was seeded with.
+    """
+    sequence = _seed_sequence(rng)
+    entropy: Any = sequence.entropy
+    if entropy is not None:
+        try:
+            entropy = operator.index(entropy)
+        except TypeError:
+            entropy = tuple(operator.index(part) for part in entropy)
+    return entropy, tuple(sequence.spawn_key)
 
 
 def _check_line_options(
@@ -2117,7 +2138,7 @@ def _check_line_options(
     off_track: str,
     zero_rows: str,
     n_lines: int | None,
-    line_seed: int,
+    rng: np.random.Generator | int | None,
     operation: str,
 ) -> None:
     """Refuse line-search options that are invalid or contradict each other."""
@@ -2131,7 +2152,10 @@ def _check_line_options(
     validate_choice(line_ends, _LINE_ENDS, name="line_ends", owner=operation)
     validate_choice(off_track, _OFF_TRACK, name="off_track", owner=operation)
     validate_choice(zero_rows, _ZERO_ROWS, name="zero_rows", owner=operation)
-    for name, count, smallest in (("n_lines", n_lines, 1), ("line_seed", line_seed, 0)):
+    for name, count, smallest in (
+        ("n_lines", n_lines, 1),
+        ("rng", None if isinstance(rng, np.random.Generator) else rng, 0),
+    ):
         if count is not None:
             validate_integer_at_least(count, smallest, name=name, owner=operation)
     if off_track == "bin_median" and (wrap or line_ends == "on_track"):
@@ -2288,8 +2312,8 @@ class _ReplayLines:
         How all-zero rows are scored (see :func:`detect_trajectory_radon`).
     n_lines : int or None, default=None
         None for the dense grid; else the number of random lines.
-    line_seed : int, default=0
-        Seed of the random lines.
+    line_stream : tuple
+        Identity of the random lines' stream, from :func:`_line_stream`.
     """
 
     # Memory budgets, in array elements of 8 bytes: the nonzeros of one
@@ -2321,7 +2345,7 @@ class _ReplayLines:
         off_track: str = "band_median",
         zero_rows: str = "refuse",
         n_lines: int | None = None,
-        line_seed: int = 0,
+        line_stream: tuple[Any, tuple[int, ...]] = (0, ()),
     ) -> None:
         self.order = order
         self.min_speed = min_speed
@@ -2358,10 +2382,10 @@ class _ReplayLines:
         self.speeds, self.start_positions = (
             self._grid(n_on_track, spacing, operation)
             if n_lines is None
-            else self._random_lines(n_lines, line_seed)
+            else self._random_lines(n_lines, line_stream)
         )
         if self.random:
-            self._require_a_searched_line(operation, line_seed)
+            self._require_a_searched_line(operation, line_stream)
         elif not np.any(np.abs(self.speeds) >= min_speed - 1e-9):
             raise ValueError(
                 _format_error(
@@ -2376,7 +2400,9 @@ class _ReplayLines:
                 )
             )
 
-    def _require_a_searched_line(self, operation: str, line_seed: int) -> None:
+    def _require_a_searched_line(
+        self, operation: str, line_stream: tuple[Any, tuple[int, ...]]
+    ) -> None:
         """Refuse random lines of which none is searched."""
         _, _, in_speed_range, placed = self._search_mask(
             self.speeds, self.start_positions
@@ -2397,7 +2423,7 @@ class _ReplayLines:
         raise ValueError(
             _format_error(
                 f"{operation} has no line to score: none of the "
-                f"{self.speeds.size} random lines (line_seed {line_seed}) is "
+                f"{self.speeds.size} random lines (rng {line_stream[0]}) is "
                 f"both within the speed range and on the track. "
                 f"{int(in_speed_range.sum())} have speeds {speed_range} "
                 f"units/s, and {int(placed.sum())} lie on the track {where}.",
@@ -2462,7 +2488,7 @@ class _ReplayLines:
         return speeds, start_positions
 
     def _random_lines(
-        self, n_lines: int, line_seed: int
+        self, n_lines: int, line_stream: tuple[Any, tuple[int, ...]]
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """Speed and start position of ``n_lines`` lines drawn as nelpy draws them.
 
@@ -2482,8 +2508,8 @@ class _ReplayLines:
         ----------
         n_lines : int
             Number of lines drawn.
-        line_seed : int
-            Seed of the draws: angles first, then distances.
+        line_stream : tuple
+            Entropy and spawn key of the draws: angles first, then distances.
 
         Returns
         -------
@@ -2499,7 +2525,10 @@ class _ReplayLines:
             else self.length
         )
         diagonal = np.hypot(n_time - 1, n_bins - 1)
-        generator = np.random.default_rng(line_seed)
+        entropy, spawn_key = line_stream
+        generator = np.random.default_rng(
+            np.random.SeedSequence(entropy, spawn_key=spawn_key)
+        )
         angle = np.pi * (generator.random(n_lines) - 0.5)
         distance = diagonal * (generator.random(n_lines) - 0.5)
         # nelpy keeps lines off the vertical, whose speed is infinite.

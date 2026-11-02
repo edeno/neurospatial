@@ -38,7 +38,7 @@ __all__ = [
 def region_reward_field(
     env: Environment,
     *,
-    region_name: str,
+    region: str,
     reward_value: float = 1.0,
     decay: Literal["constant", "linear", "gaussian"] = "constant",
     bandwidth: float | None = None,
@@ -53,7 +53,7 @@ def region_reward_field(
     ----------
     env : Environment
         Environment with regions defined.
-    region_name : str
+    region : str
         Name of region in env.regions to use as reward source.
     reward_value : float, default=1.0
         Maximum of the reward field: the reward inside the region, except
@@ -83,7 +83,7 @@ def region_reward_field(
     Raises
     ------
     RegionNotFoundError
-        If region_name is not found in env.regions (a ``KeyError``).
+        If region is not found in env.regions (a ``KeyError``).
     ValueError
         If ``decay`` is unknown; if ``bandwidth`` is missing for
         ``decay='gaussian'``; if ``bandwidth`` or ``max_distance`` is given
@@ -135,14 +135,14 @@ def region_reward_field(
     >>> _ = regions.add("goal", polygon=goal_polygon)
     >>> env = env.with_regions(regions)
     >>> # Binary reward (sparse RL)
-    >>> reward_binary = region_reward_field(env, region_name="goal", decay="constant")
+    >>> reward_binary = region_reward_field(env, region="goal", decay="constant")
     >>> # Smooth Gaussian reward shaping
     >>> reward_smooth = region_reward_field(
-    ...     env, region_name="goal", decay="gaussian", bandwidth=10.0
+    ...     env, region="goal", decay="gaussian", bandwidth=10.0
     ... )
     >>> # Linear decay that reaches 0 at 30 units from the region
     >>> reward_linear = region_reward_field(
-    ...     env, region_name="goal", decay="linear", max_distance=30.0
+    ...     env, region="goal", decay="linear", max_distance=30.0
     ... )
     >>> float(reward_linear.max()), float(reward_linear.min())
     (1.0, 0.0)
@@ -174,7 +174,7 @@ def region_reward_field(
         max_distance, name="max_distance", positive=True, none_allowed=True
     )
     region_mask = _require_region_mask(
-        env, region_name, operation="region_reward_field()", argument="region_name"
+        env, region, operation="region_reward_field()", argument="region"
     )
 
     if decay == "constant":

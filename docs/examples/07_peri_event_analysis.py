@@ -80,7 +80,7 @@ for latency, amplitude, seed in [(0.15, 24.0, 142), (0.40, 14.0, 143)]:
     for event in event_times:
         rate += amplitude * np.exp(-0.5 * ((times - event - latency) / 0.08) ** 2)
     # Distinct seeds for event jitter and each unit's spike generation.
-    spikes = generate_poisson_spikes(rate, times, seed=seed, refractory_period=0.0)
+    spikes = generate_poisson_spikes(rate, times, rng=seed, refractory_period=0.0)
     recorded = np.zeros(spikes.size, dtype=bool)
     for start, stop in spike_window:
         recorded |= (spikes >= start) & (spikes < stop)
@@ -102,12 +102,12 @@ print(f"Recorded spikes per unit: {[len(train) for train in spike_trains]}")
 
 # %%
 window = (-0.5, 1.0)
-bin_size = 0.025
+dt = 0.025
 population = population_peri_event_histogram(
     spike_trains,
     event_times,
     window=window,
-    bin_size=bin_size,
+    dt=dt,
     unit_ids=unit_ids,
     epochs=epochs,
     spike_window=spike_window,
@@ -191,7 +191,7 @@ plt.show()
 # positions, so we can also look up labels such as `retained_names` above.
 #
 # Spike-counting intervals include their start and exclude their stop:
-# `[start, stop)`. If the analysis window is not divisible by `bin_size`, the
+# `[start, stop)`. If the analysis window is not divisible by `dt`, the
 # final partial bin is left out of both the raster and PSTH. The full requested
 # window must still lie within a recorded period.
 

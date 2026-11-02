@@ -276,7 +276,7 @@ Field Correlations:
 Overall: {"PASSED" if self.passed else "FAILED"}
 """
 
-    def plot(self, ax: Axes | None = None) -> Axes:
+    def plot(self, *, ax: Axes | None = None) -> Axes:
         """Center error against field correlation for each evaluated unit.
 
         Passed units are drawn in one color and failed units in another;
@@ -390,9 +390,7 @@ def validate_simulation(
     Validate a one-minute linear-track session of three place cells:
 
     >>> from neurospatial.simulation import linear_track_session, validate_simulation
-    >>> session = linear_track_session(
-    ...     duration=60.0, n_place_cells=3, n_laps=6, seed=42
-    ... )
+    >>> session = linear_track_session(duration=60.0, n_place_cells=3, n_laps=6, rng=42)
     >>> result = validate_simulation(session)
     >>> result.n_evaluated, result.passed
     (3, True)
@@ -701,7 +699,7 @@ def plot_session_summary(
 
     >>> import matplotlib.pyplot as plt
     >>> from neurospatial.simulation import open_field_session, plot_session_summary
-    >>> session = open_field_session(duration=30.0, n_place_cells=8, seed=42)
+    >>> session = open_field_session(duration=30.0, n_place_cells=8, rng=42)
     >>> fig, axes = plot_session_summary(session)
     >>> [ax.get_title() for ax in axes[2:8]]
     ['Cell 0', 'Cell 1', 'Cell 2', 'Cell 3', 'Cell 4', 'Cell 5']

@@ -320,7 +320,7 @@ class TestLapRoundTrip:
         positions, times = simulate_trajectory_laps(
             env,
             n_laps=n_laps,
-            seed=7,
+            rng=7,
             sampling_frequency=30.0,
             speed_mean=15.0,
         )

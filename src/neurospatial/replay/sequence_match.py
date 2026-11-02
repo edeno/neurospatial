@@ -32,6 +32,7 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_integer_at_least
 from neurospatial.replay._compare import _tolerance
+from neurospatial.replay._inputs import _selected_units
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -195,7 +196,7 @@ def spike_words(
     *,
     max_isi: float,
     word_gap: float,
-    cells: NDArray[np.bool_] | None = None,
+    unit_ids: NDArray[np.intp] | None = None,
     epochs: Any = None,
 ) -> SpikeWordsResult:
     """Parse spike trains into words of letters (Lee & Wilson 2002).
@@ -204,7 +205,7 @@ def spike_words(
     letter at its first spike, and an isolated spike a letter of its own.
     The letters of all ``cells`` are merged in time and the string is split
     between adjacent letters more than ``word_gap`` apart. Lee & Wilson
-    parsed each template's cells separately (``cells=``), within slow-wave
+    parsed each template's cells separately (``unit_ids=``), within slow-wave
     sleep (``epochs=``), with ``max_isi=0.05`` and ``word_gap=0.1``.
 
     Parameters
@@ -218,9 +219,12 @@ def spike_words(
         A word ends where the next letter is more than ``word_gap`` seconds
         later (a gap equal to it within 1 ns of round-off stays in the word).
         Must be positive and at least ``max_isi``, as in the paper.
-    cells : NDArray[np.bool_] of shape (n_cells,), optional
-        The cells whose letters form the words, such as one template's
-        cells. None uses every cell.
+    unit_ids : NDArray[np.intp], optional
+        Distinct ids of the units whose letters form the words, in any
+        order: the labels a spike group carries (a dict's keys, a
+        ``TsGroup``'s index), else positions in ``spike_times`` (the default
+        labels ``np.arange(n)``), such as one template's cells. None uses
+        every cell.
     epochs : NDArray[np.float64] of shape (n_epochs, 2), Intervals, optional
         Sorted, non-overlapping ``(start, stop)`` intervals in seconds, such
         as slow-wave sleep, or an :class:`~neurospatial.Intervals` (its
@@ -239,7 +243,7 @@ def spike_words(
     ------
     ValueError
         If ``max_isi`` is negative, ``word_gap`` is not positive or is below
-        ``max_isi``, ``cells`` is not one boolean per cell, or ``epochs`` is
+        ``max_isi``, ``unit_ids`` is not distinct ids of units, or ``epochs`` is
         not sorted, non-overlapping ``(start, stop)`` rows with
         ``start < stop``.
 
@@ -260,7 +264,7 @@ def spike_words(
     >>> words.intervals.round(3).tolist()
     [[1.0, 1.11], [1.4, 1.5]]
     """
-    from neurospatial._spikes import as_spike_trains
+    from neurospatial._spikes import _as_spike_trains_with_ids
 
     operation = "spike_words()"
     _check_seconds(max_isi, "max_isi", operation, allow_zero=True)
@@ -275,17 +279,8 @@ def spike_words(
                 fix="use max_isi <= word_gap, e.g. max_isi=0.05, word_gap=0.1",
             )
         )
-    trains = as_spike_trains(spike_times)
-    selected = np.ones(len(trains), dtype=bool)
-    if cells is not None:
-        selected = np.asarray(cells)
-        if selected.dtype != bool or selected.shape != (len(trains),):
-            msg = (
-                f"{operation}: cells must be one boolean per cell, shape "
-                f"({len(trains)},), got dtype {selected.dtype} and shape "
-                f"{selected.shape}."
-            )
-            raise ValueError(msg)
+    trains, labels = _as_spike_trains_with_ids(spike_times)
+    selected = _selected_units(unit_ids, len(trains), operation, labels)
     units = np.flatnonzero(selected)
     onsets = [_onsets(trains[unit], max_isi) for unit in units]
     times = np.concatenate([np.empty(0), *onsets])

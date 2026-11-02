@@ -348,9 +348,9 @@ def _regions_mask(
 
 
 def resample_field(
+    source_env: ResampleSourceConsumer,
+    target_env: ResampleTargetConsumer,
     field: NDArray[np.float64],
-    src_env: ResampleSourceConsumer,
-    dst_env: ResampleTargetConsumer,
     *,
     method: Literal["nearest", "diffuse"] = "nearest",
     bandwidth: float | None = None,
@@ -363,12 +363,12 @@ def resample_field(
 
     Parameters
     ----------
-    field : NDArray[np.float64], shape (src_env.n_bins,)
-        Field defined on source environment
-    src_env : Environment
+    source_env : Environment
         Source environment where field is defined
-    dst_env : Environment
+    target_env : Environment
         Destination environment to resample onto
+    field : NDArray[np.float64], shape (source_env.n_bins,)
+        Field defined on source environment
     method : {"nearest", "diffuse"}, optional
         Resampling method. Default is "nearest".
 
@@ -389,11 +389,11 @@ def resample_field(
 
     Returns
     -------
-    resampled : NDArray[np.float64], shape (dst_env.n_bins,)
+    resampled : NDArray[np.float64], shape (target_env.n_bins,)
         Field resampled onto destination environment bins. Destination bins
-        whose centers lie in no source bin (``src_env.bin_at`` returns -1) are
+        whose centers lie in no source bin (``source_env.bin_at`` returns -1) are
         ``np.nan``. With "diffuse", missing (NaN) source values are averaged
-        over as ``dst_env.smooth(..., mode="average")`` does: a missing bin is
+        over as ``target_env.smooth(..., mode="average")`` does: a missing bin is
         filled from observed neighbours, and a bin too far from every observed
         bin for the smoothing to resolve its value stays ``np.nan``.
 
@@ -447,12 +447,12 @@ def resample_field(
     takes the value of the nearest source bin center (lowest index on ties),
     found with the source's KD-tree; one whose center lies in no source bin is
     NaN, however close it is to the source's edge. This is
-    ``src_env.interpolate(field, dst_env.bin_centers, mode="nearest")``. No
+    ``source_env.interpolate(field, target_env.bin_centers, mode="nearest")``. No
     interpolation or smoothing is applied.
 
-    **Diffuse method**: Smooths the field on ``src_env`` with bandwidth
+    **Diffuse method**: Smooths the field on ``source_env`` with bandwidth
     ``bandwidth / sqrt(2)``, reads it at the destination centers as the
-    nearest method does, and smooths the result on ``dst_env`` with the same
+    nearest method does, and smooths the result on ``target_env`` with the same
     bandwidth. Heat-kernel smoothing composes by adding variances, so the
     field is smoothed by ``bandwidth`` in all, and resampling onto the same
     environment is ``env.smooth(field, bandwidth=bandwidth, mode="average")``.
@@ -467,7 +467,7 @@ def resample_field(
     and a ``NaN`` in the source field is interpolated rather than propagating.
     Near valid bins dominate each average. A bin is left ``NaN`` if it is
     outside the source, or if the valid weight reaching it is below the
-    truncation-noise floor of ``dst_env.smooth(..., mode="average")``, as for a
+    truncation-noise floor of ``target_env.smooth(..., mode="average")``, as for a
     bin many ``bandwidth`` away from every valid bin.
 
     **Dimension requirements**: Both environments must have the same number
@@ -501,34 +501,34 @@ def resample_field(
     >>> from neurospatial.ops.mapping import resample_field
     >>> # Source: coarse resolution
     >>> src_data = np.array([[i, j] for i in range(21) for j in range(21)])
-    >>> src_env = Environment.from_samples(src_data, bin_size=4.0)
+    >>> source_env = Environment.from_samples(src_data, bin_size=4.0)
     >>> # Destination: fine resolution
     >>> dst_data = np.array([[i, j] for i in range(21) for j in range(21)])
-    >>> dst_env = Environment.from_samples(dst_data, bin_size=2.0)
+    >>> target_env = Environment.from_samples(dst_data, bin_size=2.0)
     >>> # Create field on source
-    >>> field = np.random.rand(src_env.n_bins)
+    >>> field = np.random.rand(source_env.n_bins)
     >>> # Resample to destination
-    >>> resampled = resample_field(field, src_env, dst_env, method="nearest")
-    >>> resampled.shape == (dst_env.n_bins,)
+    >>> resampled = resample_field(source_env, target_env, field, method="nearest")
+    >>> resampled.shape == (target_env.n_bins,)
     True
 
     Diffuse method (intensive fields only — e.g. a rate map or density):
 
     >>> # An intensive field (rate map). Do NOT diffuse spike counts / mass.
-    >>> rate_map = np.random.rand(src_env.n_bins)
+    >>> rate_map = np.random.rand(source_env.n_bins)
     >>> resampled_smooth = resample_field(
-    ...     rate_map, src_env, dst_env, method="diffuse", bandwidth=2.0
+    ...     source_env, target_env, rate_map, method="diffuse", bandwidth=2.0
     ... )
-    >>> resampled_smooth.shape == (dst_env.n_bins,)
+    >>> resampled_smooth.shape == (target_env.n_bins,)
     True
 
     Identity resampling (same environment):
 
-    >>> resampled_identity = resample_field(field, src_env, src_env)
+    >>> resampled_identity = resample_field(source_env, source_env, field)
     >>> np.allclose(resampled_identity, field)
     True
     """
-    for argument, env in (("src_env", src_env), ("dst_env", dst_env)):
+    for argument, env in (("source_env", source_env), ("target_env", target_env)):
         require_cartesian(
             env.coordinate_system,
             f"resample_field({argument}=...)",
@@ -542,8 +542,8 @@ def resample_field(
             ),
         )
     # Read every component once; the resampling below uses only these.
-    src_centers = src_env.bin_centers
-    dst_centers = dst_env.bin_centers
+    src_centers = source_env.bin_centers
+    dst_centers = target_env.bin_centers
     if field.shape[0] != src_centers.shape[0]:
         msg = (
             f"Field size {field.shape[0]} does not match source environment "
@@ -576,15 +576,15 @@ def resample_field(
         raise ValueError(msg)
 
     if method == "nearest":
-        return _nearest_source_values(field, src_env, dst_centers)
+        return _nearest_source_values(field, source_env, dst_centers)
     assert bandwidth is not None  # Already validated above
-    return _diffuse_resample(field, src_env, dst_env, float(bandwidth))
+    return _diffuse_resample(field, source_env, target_env, float(bandwidth))
 
 
 def _diffuse_resample(
     field: NDArray[np.float64],
-    src_env: ResampleSourceConsumer,
-    dst_env: ResampleTargetConsumer,
+    source_env: ResampleSourceConsumer,
+    target_env: ResampleTargetConsumer,
     bandwidth: float,
 ) -> NDArray[np.float64]:
     """Masked diffusion average carried from the source to the destination.
@@ -619,34 +619,34 @@ def _diffuse_resample(
     stacked = np.column_stack([np.where(observed, field, 0.0), observed.astype(float)])
     # NaN-free columns: each smoothing is the plain linear apply.
     on_source = np.asarray(
-        src_env.diffuse(stacked, bandwidth=half, mode="average"), dtype=np.float64
+        source_env.diffuse(stacked, bandwidth=half, mode="average"), dtype=np.float64
     )
-    dst_centers = dst_env.bin_centers
+    dst_centers = target_env.bin_centers
     read = np.column_stack(
         [
-            np.nan_to_num(_nearest_source_values(column, src_env, dst_centers))
+            np.nan_to_num(_nearest_source_values(column, source_env, dst_centers))
             for column in on_source.T
         ]
     )
     numerator, weights = np.asarray(
-        dst_env.diffuse(read, bandwidth=half, mode="average"), dtype=np.float64
+        target_env.diffuse(read, bandwidth=half, mode="average"), dtype=np.float64
     ).T
     # As env.smooth: NaN where no observed weight reaches the bin's component,
     # or where the smoothed weight is truncation noise next to the largest.
-    geometry = dst_env.get_diffusion_geometry()
+    geometry = target_env.get_diffusion_geometry()
     labels, n_components = geometry.labels, geometry.n_components
     support = _component_support_mask(labels, n_components, read[:, 1] > 0)
     support &= _above_component_floor(
         labels, n_components, weights, _MISSING_SUPPORT_FLOOR
     )
-    support &= src_env.bin_at(dst_centers) >= 0
+    support &= source_env.bin_at(dst_centers) >= 0
     with np.errstate(divide="ignore", invalid="ignore"):
         return np.where(support, numerator / weights, np.nan)
 
 
 def _nearest_source_values(
     field: NDArray[np.float64],
-    src_env: ResampleSourceConsumer,
+    source_env: ResampleSourceConsumer,
     dst_centers: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     """The value of the nearest source bin center at each destination center.
@@ -656,4 +656,4 @@ def _nearest_source_values(
     bins well outside the source copy its edge values. The source caches its
     KD-tree, so repeated resampling does not rebuild it.
     """
-    return np.asarray(src_env.interpolate(field, dst_centers, mode="nearest"))
+    return np.asarray(source_env.interpolate(field, dst_centers, mode="nearest"))

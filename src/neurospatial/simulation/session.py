@@ -18,7 +18,11 @@ from neurospatial._validation import (
     validate_finite_scalar,
 )
 from neurospatial.ops.boundary_vectors import nearest_boundary
-from neurospatial.simulation._seeds import _stream_seeds
+from neurospatial.simulation._seeds import (
+    _concrete_rng,
+    _recorded_rng,
+    _stream_seeds,
+)
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -130,14 +134,14 @@ class SimulationSession:
     ... )
     >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=10.0, speed_units="cm", seed=0
+    ...     env, duration=10.0, speed_units="cm", rng=0
     ... )
     >>> models = [
     ...     PlaceCellModel(env, center=[50.0, 50.0], width=10.0),
     ...     PlaceCellModel(env, center=[70.0, 60.0], width=8.0),
     ... ]
     >>> spike_times = generate_population_spikes(
-    ...     models, times, positions, seed=1, show_progress=False
+    ...     models, times, positions, rng=1, show_progress=False
     ... )
     >>> session = SimulationSession(
     ...     env=env,
@@ -321,7 +325,7 @@ def _simulated_session(
     from neurospatial.simulation.spikes import generate_population_spikes
 
     spike_times = generate_population_spikes(
-        models, times, positions, seed=spike_seed, show_progress=show_progress
+        models, times, positions, rng=spike_seed, show_progress=show_progress
     )
     return SimulationSession(
         env=env,
@@ -607,7 +611,7 @@ def simulate_session(
     trajectory_method: Literal["ou", "sinusoidal", "laps"] = "ou",
     coverage: Literal["uniform", "random"] = "uniform",
     show_progress: bool = True,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
     **kwargs: Any,
 ) -> SimulationSession:
     """Simulate complete recording session with trajectory and neural activity.
@@ -640,7 +644,7 @@ def simulate_session(
 
         - 'uniform': Every cell gets its own bin center, spread over the
           environment; the layout depends on the environment alone, not on
-          ``seed``. On a track (a linearized or 1-D environment), centers
+          ``rng``. On a track (a linearized or 1-D environment), centers
           are evenly spaced from one end to the other. In an arena of any
           shape, they are spread by farthest-point sampling with distances
           along the bins (so centers on either side of a wall count as far
@@ -656,12 +660,18 @@ def simulate_session(
           size=n)``. May result in clustering or gaps in coverage.
     show_progress : bool, optional
         Show progress bars during generation (default: True).
-    seed : int | None, optional
-        Random seed for reproducibility. Independent streams for the
-        trajectory, the field parameters (centers, grid phases) and the spikes
-        are spawned from one ``np.random.SeedSequence(seed)``, so spike draws
-        are not correlated with the movement. ``None`` leaves each stream
-        nondeterministic but still mutually independent.
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng``.
+        Independent streams for the trajectory, the field parameters
+        (centers, grid phases) and the spikes are spawned from one seed
+        sequence, so spike draws are not correlated with the movement. An int
+        spawns them from ``np.random.SeedSequence(rng)``; a generator spawns
+        children from its own seed sequence, as ``Generator.spawn`` does, so
+        passing the same generator twice gives different sessions. ``None``
+        draws fresh entropy. ``metadata["rng"]`` records the int, or the
+        entropy drawn for ``None`` (pass it as ``rng`` to repeat the
+        session), or ``None`` for a generator: pass an int seed to make a
+        session reproducible from its metadata.
     **kwargs : Any
         Trajectory and cell-model parameters, by the names of the functions
         and models that take them. Each goes only where it applies: a model
@@ -888,7 +898,8 @@ def simulate_session(
 
     # Independent streams for the trajectory, the field parameters and the
     # spikes, so that spike draws are not correlated with the movement.
-    trajectory_seed, field_center_seed, spike_seed = _stream_seeds(seed, 3)
+    rng = _concrete_rng(rng)
+    trajectory_seed, field_center_seed, spike_seed = _stream_seeds(rng, 3)
 
     # Generate trajectory using its own independent seed.
     if trajectory_method == "ou":
@@ -897,7 +908,7 @@ def simulate_session(
         ou_kwargs = dict(kwargs)
         ou_kwargs.setdefault("speed_units", env.units)
         positions, times = simulate_trajectory_ou(
-            env, duration=duration, seed=trajectory_seed, **ou_kwargs
+            env, duration=duration, rng=trajectory_seed, **ou_kwargs
         )
     elif trajectory_method == "sinusoidal":
         positions, times = simulate_trajectory_sinusoidal(
@@ -912,7 +923,7 @@ def simulate_session(
             env,
             n_laps=n_laps,
             duration=duration,
-            seed=trajectory_seed,
+            rng=trajectory_seed,
             return_metadata=False,
             call='simulate_session(trajectory_method="laps")',
             **laps_kwargs,
@@ -920,7 +931,7 @@ def simulate_session(
         # Type narrowing: return_metadata=False guarantees 2-tuple
         positions, times = result  # type: ignore[misc]
 
-    rng = np.random.default_rng(field_center_seed)
+    field_rng = np.random.default_rng(field_center_seed)
 
     # Cell counts: mixed sessions are 60% place, 20% border, 20% grid.
     if cell_type == "mixed":
@@ -935,9 +946,9 @@ def simulate_session(
     # Place centers and grid phases share one even layout; in mixed sessions
     # a seeded permutation assigns them to the two types, so neither type
     # covers only part of the environment.
-    field_centers = _field_centers(env, n_place + n_grid, coverage, rng)
+    field_centers = _field_centers(env, n_place + n_grid, coverage, field_rng)
     if cell_type == "mixed":
-        field_centers = field_centers[rng.permutation(len(field_centers))]
+        field_centers = field_centers[field_rng.permutation(len(field_centers))]
 
     # Place cells, then border cells, then grid cells; a type the session
     # does not simulate has no cells. Grid cells take the centers after the
@@ -946,7 +957,7 @@ def simulate_session(
         PlaceCellModel(env, center=center, **model_params["place"])
         for center in field_centers[:n_place]
     ]
-    models.extend(_border_cells(env, n_border, rng, model_params["border"]))
+    models.extend(_border_cells(env, n_border, field_rng, model_params["border"]))
     models.extend(
         GridCellModel(env, phase_offset=center, **model_params["grid"])
         for center in field_centers[n_place:]
@@ -958,7 +969,7 @@ def simulate_session(
         "cell_type": cell_type,
         "trajectory_method": trajectory_method,
         "coverage": coverage,
-        "seed": seed,
+        "rng": _recorded_rng(rng),
         **kwargs,  # Include any additional parameters
     }
     if trajectory_method == "laps":

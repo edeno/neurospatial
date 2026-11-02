@@ -26,7 +26,7 @@ def hd_cell():
     times = np.arange(0.0, 300.0, 0.02)
     headings = np.angle(np.exp(1j * np.cumsum(rng.normal(0.0, 0.1, times.size))))
     rate = 1.0 + 20.0 * np.exp(2.0 * (np.cos(headings - np.pi / 2) - 1.0))
-    spikes = generate_poisson_spikes(rate, times, seed=1)
+    spikes = generate_poisson_spikes(rate, times, rng=1)
     return spikes, times, headings
 
 

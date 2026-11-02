@@ -67,7 +67,7 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         ]
     )
     session = compute_vte_session(
-        env, r.times, r.positions, decision_region="decision", trials=trials
+        env, r.times, r.positions, region="decision", trials=trials
     )
     assert session.trial_results, "The session golden must exercise real metrics."
     heading_clock = float(np.median(np.diff(r.times))) if legacy_heading else r.times

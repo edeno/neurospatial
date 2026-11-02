@@ -195,7 +195,7 @@ def _peri_event_bin_edges(
     event_times: NDArray[np.float64],
     window: tuple[float, float],
     bin_edges: NDArray[np.float64],
-    bin_size: float,
+    dt: float,
 ) -> NDArray[np.float64]:
     """Absolute bin edges shared by histogram counting and rasters.
 
@@ -208,12 +208,12 @@ def _peri_event_bin_edges(
     windows = np.c_[event_times + window[0], event_times + window[1]]
     _time_bin_rounding(
         windows,
-        bin_size,
+        dt,
         context="peri-event bins",
-        width_name="bin_size",
+        width_name="dt",
         clock_fix=(
             "subtract a time origin from spike_times and event_times first "
-            "(keep the relative window unchanged), or use a larger bin_size."
+            "(keep the relative window unchanged), or use a larger dt."
         ),
     )
     edges: NDArray[np.float64] = np.minimum(
@@ -233,7 +233,7 @@ class _PeriEventCounts(NamedTuple):
     events_per_bin: NDArray[np.int64] | None
     event_ids: NDArray[np.int64] | None
     window: tuple[float, float]
-    bin_size: float
+    dt: float
     align: str | None
 
     @property
@@ -246,7 +246,7 @@ def _peri_event_histograms(
     trains: Sequence[NDArray[np.float64]],
     event_times: Any,
     window: tuple[float, float],
-    bin_size: float,
+    dt: float,
     epochs: Any,
     spike_window: Any,
     *,
@@ -275,12 +275,12 @@ def _peri_event_histograms(
         Retained rows covering each bin, for intervals; None for times.
     event_ids : NDArray[np.int64], shape (n_events,), or None
         ``interval_id`` of the retained rows, for intervals; None for times.
-    window, bin_size
+    window, dt
         As given.
     align : str or None
         ``align`` for intervals; None for times.
     """
-    bin_edges = _psth_bins(window, bin_size, context=context)
+    bin_edges = _psth_bins(window, dt, context=context)
     event_times, interval_ids, limits = interval_events(
         event_times, align, call=context
     )
@@ -295,7 +295,7 @@ def _peri_event_histograms(
     n_bins = bin_edges.size - 1
     # Count on the absolute clock, not on relative times: subtraction can move
     # an exact boundary spike across a bin edge.
-    edges = _peri_event_bin_edges(event_times, window, bin_edges, bin_size)
+    edges = _peri_event_bin_edges(event_times, window, bin_edges, dt)
     covered = np.ones((event_times.size, n_bins), dtype=bool)
     if limits is not None:
         # An edge within float rounding of a trial bound is that bound, so a
@@ -325,7 +325,7 @@ def _peri_event_histograms(
                 "Why: each trial's window is cut where the trial ends, on the "
                 "side away from the alignment point.\n"
                 "Fix: use a window on the trial's side of the alignment point "
-                "(window=(0, 2) with align='start'), or a smaller bin_size."
+                "(window=(0, 2) with align='start'), or a smaller dt."
             )
             raise ValueError(msg)
         else:
@@ -353,7 +353,7 @@ def _peri_event_histograms(
         events_per_bin=events_per_bin,
         event_ids=event_ids,
         window=window,
-        bin_size=bin_size,
+        dt=dt,
         align=None if limits is None else align,
     )
 
@@ -390,7 +390,7 @@ def peri_event_histogram(
     event_times: NDArray[np.float64] | Intervals[Any],
     window: tuple[float, float],
     *,
-    bin_size: float = 0.025,
+    dt: float = 0.025,
     align: str = "start",
     epochs: Any = None,
     spike_window: Any = None,
@@ -415,7 +415,7 @@ def peri_event_histogram(
         ``[start, stop)``: a spike exactly at ``event + stop`` is left out.
         For example, ``(-0.5, 1.0)`` captures 500 ms before to 1 s after each
         event.
-    bin_size : float, default=0.025
+    dt : float, default=0.025
         Width of time bins in seconds (default 25ms).
     align : {"start", "stop"}, default="start"
         For an ``Intervals``, align each row at its start or at its stop.
@@ -450,12 +450,12 @@ or None
         - event_indices: Positions of retained events in the original input;
           use ``event_times[result.event_indices]`` for a matching raster cohort
         - window: The input window
-        - bin_size: The input bin_size
+        - dt: The input dt
 
     Raises
     ------
     ValueError
-        If window is invalid or inverted, bin_size is not a finite positive
+        If window is invalid or inverted, dt is not a finite positive
         number or leaves no complete bin in the window, spike_times or
         event_times is not 1-D or holds NaN or Inf, time windows are
         invalid, windows with duration keep no event (usually event times on
@@ -511,7 +511,7 @@ or None
     >>> spike_times = np.array([9.8, 10.1, 10.3, 19.9, 20.2])
     >>> reward_times = np.array([10.0, 20.0])
     >>> result = peri_event_histogram(
-    ...     spike_times, reward_times, window=(-0.5, 1.0), bin_size=0.1
+    ...     spike_times, reward_times, window=(-0.5, 1.0), dt=0.1
     ... )
     >>> print(f"Peak at {result.bin_centers[result.histogram.argmax()]:.2f}s")
     Peak at -0.15s
@@ -526,7 +526,7 @@ or None
         [spike_times],
         event_times,
         window,
-        bin_size,
+        dt,
         epochs,
         spike_window,
         context="peri_event_histogram",
@@ -543,7 +543,7 @@ def population_peri_event_histogram(
     event_times: NDArray[np.float64] | Intervals[Any],
     window: tuple[float, float],
     *,
-    bin_size: float = 0.025,
+    dt: float = 0.025,
     align: str = "start",
     epochs: Any = None,
     spike_window: Any = None,
@@ -569,7 +569,7 @@ def population_peri_event_histogram(
         Time window (start, stop) relative to each event, in seconds,
         half-open ``[start, stop)``: a spike exactly at ``event + stop`` is
         left out.
-    bin_size : float, default=0.025
+    dt : float, default=0.025
         Width of time bins in seconds (default 25ms).
     align : {"start", "stop"}, default="start"
         Align each ``Intervals`` row at its start or stop, as in
@@ -616,13 +616,13 @@ or None
         - unit_table: Per-unit metadata of a ``SpikeTrains`` or a pynapple
           ``TsGroup`` input (its ``rate`` column dropped), else None
         - window: The input window
-        - bin_size: The input bin_size
+        - dt: The input dt
 
     Raises
     ------
     ValueError
         If spike_times is empty, a spike train or event_times is not 1-D or
-        holds NaN or Inf, window is invalid or inverted, bin_size is not a
+        holds NaN or Inf, window is invalid or inverted, dt is not a
         finite positive number or leaves no complete bin, time windows are
         invalid, windows with duration keep no event (usually event times on
         another clock), or ``align='stop'`` is given with censored trials.
@@ -666,7 +666,7 @@ or None
     ... ]
     >>> stim_times = np.array([10.0, 20.0, 30.0])
     >>> result = population_peri_event_histogram(
-    ...     spike_times, stim_times, window=(-0.5, 1.0), bin_size=0.1
+    ...     spike_times, stim_times, window=(-0.5, 1.0), dt=0.1
     ... )
     >>> print(f"{result.n_units} units, {result.n_events} events")
     2 units, 3 events
@@ -692,7 +692,7 @@ or None
         trains,
         event_times,
         window,
-        bin_size,
+        dt,
         epochs,
         spike_window,
         context=context,

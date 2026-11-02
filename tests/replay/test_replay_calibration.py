@@ -521,7 +521,7 @@ def test_signed_score_hides_agreement_on_forward_and_reverse_sweeps(track):
             kind="sweep",
             speed=sign * float(rng.uniform(250.0, 500.0)),
             rate_gain=4.0,
-            seed=index,
+            rng=index,
         )
         start = 2.0 * index
         for cell, train in enumerate(event.spike_times):
@@ -578,7 +578,7 @@ def test_false_positive_rates_on_simulated_events(track):
             rates,
             kind=kind,
             rate_gain=4.0,
-            seed=seed,
+            rng=seed,
             **({"speed": 400.0} if kind == "sweep" else {}),
         )
         event_counts, grid = bin_spikes_in_time(
@@ -787,15 +787,19 @@ class TestNullRandomization:
         trains, intervals = recording
         cells = np.array([True, True, True, False, False, False])
         null = null_events(
-            trains, intervals, kind="spike_time_uniform", cells=cells, rng=0
+            trains,
+            intervals,
+            kind="spike_time_uniform",
+            unit_ids=np.flatnonzero(cells),
+            rng=0,
         )
         real = _in_events(trains, intervals)
         copies = _in_events(null.spike_times, null.intervals)
         for copy, source in zip(copies, null.source_events, strict=True):
             for cell in range(3, 6):
                 np.testing.assert_allclose(copy[cell], real[source][cell])
-        with pytest.raises(ValueError, match="one boolean per cell"):
-            null_events(trains, intervals, kind="spike_time_uniform", cells=cells[:3])
+        with pytest.raises(ValueError, match="boolean array"):
+            null_events(trains, intervals, kind="spike_time_uniform", unit_ids=cells)
 
     def test_simulated_random_events_are_laid_out(self, track):
         x = track.bin_centers[:, 0]
@@ -885,7 +889,7 @@ def test_false_positives_on_null_copies(track, kind):
     intervals = []
     for index in range(10):
         event = simulate_replay_event(
-            track, rates, kind="sweep", speed=400.0, rate_gain=4.0, seed=index
+            track, rates, kind="sweep", speed=400.0, rate_gain=4.0, rng=index
         )
         start = 2.0 * index
         for cell, train in enumerate(event.spike_times):
@@ -1124,7 +1128,7 @@ def sweeps_and_nulls(track):
     intervals = []
     for index in range(8):
         event = simulate_replay_event(
-            track, rates, kind="sweep", speed=400.0, rate_gain=4.0, seed=index
+            track, rates, kind="sweep", speed=400.0, rate_gain=4.0, rng=index
         )
         start = 2.0 * index
         for cell, train in enumerate(event.spike_times):

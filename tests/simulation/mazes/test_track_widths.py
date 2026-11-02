@@ -57,7 +57,7 @@ def test_mazes_without_one_corridor_width_simulate_and_look_up(track):
         n_cells=3,
         trajectory_method="laps",
         show_progress=False,
-        seed=0,
+        rng=0,
     )
     bins = track.bin_at(session.positions)
     assert (bins >= 0).all()

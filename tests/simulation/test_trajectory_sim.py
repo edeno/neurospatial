@@ -46,7 +46,7 @@ class TestSimulateTrajectoryOU:
             simple_2d_env,
             duration=1.0,
             dt=0.01,
-            seed=42,
+            rng=42,
             speed_units="cm",
         )
 
@@ -61,7 +61,7 @@ class TestSimulateTrajectoryOU:
             simple_2d_env,
             duration=10.0,
             boundary_mode="reflect",
-            seed=42,
+            rng=42,
             speed_units="cm",
         )
 
@@ -81,7 +81,7 @@ class TestSimulateTrajectoryOU:
             speed_mean=8.0,
             speed_std=4.0,
             coherence_time=coherence_time,
-            seed=42,
+            rng=42,
             speed_units="cm",
         )
         speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / dt
@@ -100,7 +100,7 @@ class TestSimulateTrajectoryOU:
         results = []
         for dt in (0.005, 0.02, 0.1):
             positions, _times = simulate_trajectory_ou(
-                large_arena, duration=1000.0, dt=dt, speed_units="cm", seed=3
+                large_arena, duration=1000.0, dt=dt, speed_units="cm", rng=3
             )
             velocity = np.diff(positions, axis=0) / dt
             speed = np.linalg.norm(velocity, axis=1)
@@ -134,7 +134,7 @@ class TestSimulateTrajectoryOU:
             speed_std=0.0,
             rotational_velocity_coherence_time=dt / dt_over_tau,
             start_position=np.array([500.0, 500.0, 500.0]),
-            seed=3,
+            rng=3,
         )
         headings = np.diff(positions, axis=0)
         headings /= np.linalg.norm(headings, axis=1, keepdims=True)
@@ -169,7 +169,7 @@ class TestSimulateTrajectoryOU:
             speed_std=0.0,
             rotational_velocity_coherence_time=tau,
             start_position=np.array([500.0, 500.0, 500.0]),
-            seed=3,
+            rng=3,
         )
         headings = np.diff(positions, axis=0)
         headings /= np.linalg.norm(headings, axis=1, keepdims=True)
@@ -185,7 +185,7 @@ class TestSimulateTrajectoryOU:
 
         env_m = Environment.from_polygon(box(0, 0, 4, 4), bin_size=0.1, units="m")
         positions, _times = simulate_trajectory_ou(
-            env_m, duration=600.0, dt=0.05, speed_units="m", seed=0
+            env_m, duration=600.0, dt=0.05, speed_units="m", rng=0
         )
         speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / 0.05
         assert speed.mean() == pytest.approx(0.08, rel=0.1)
@@ -200,7 +200,7 @@ class TestSimulateTrajectoryOU:
         with pytest.raises(ValueError, match="needs speed_mean"):
             simulate_trajectory_ou(env, duration=1.0, speed_units="px")
         positions, _times = simulate_trajectory_ou(
-            env, duration=1.0, speed_mean=8.0, speed_units="px", seed=0
+            env, duration=1.0, speed_mean=8.0, speed_units="px", rng=0
         )
         assert env.contains(positions).all()
 
@@ -213,7 +213,7 @@ class TestSimulateTrajectoryOU:
     ):
         """Rounding error in duration / dt does not drop a sample."""
         positions, times = simulate_trajectory_ou(
-            connected_arena_env, duration=duration, dt=dt, speed_units="cm", seed=0
+            connected_arena_env, duration=duration, dt=dt, speed_units="cm", rng=0
         )
         assert len(times) == len(positions) == n_samples
         np.testing.assert_allclose(times, np.arange(n_samples) * dt)
@@ -256,7 +256,7 @@ class TestSimulateTrajectoryOU:
             simple_2d_env,
             duration=5.0,
             boundary_mode="reflect",
-            seed=42,
+            rng=42,
             speed_units="cm",
         )
 
@@ -286,7 +286,7 @@ class TestSimulateTrajectoryOU:
             speed_mean=30.0,
             speed_std=0.0,
             boundary_mode="periodic",
-            seed=42,
+            rng=42,
             speed_units="cm",
         )
         assert env.contains(positions).all()
@@ -307,7 +307,7 @@ class TestSimulateTrajectoryOU:
             simple_2d_env,
             duration=5.0,
             boundary_mode="stop",
-            seed=42,
+            rng=42,
             speed_units="cm",
         )
 
@@ -332,7 +332,7 @@ class TestSimulateTrajectoryOU:
             speed_mean=15.0,
             speed_std=8.0,
             speed_units="cm",
-            seed=1,
+            rng=1,
         )
         speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / dt
         # About 2100 independent samples (3000 s over twice the 0.7 s
@@ -352,7 +352,7 @@ class TestSimulateTrajectoryOU:
             speed_mean=10.0,
             speed_std=0.0,
             speed_units="cm",
-            seed=2,
+            rng=2,
         )
         steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
         moving = steps > 0
@@ -378,7 +378,7 @@ class TestSimulateTrajectoryOU:
             speed_std=0.0,
             rotational_velocity_std=0.0,
             speed_units="cm",
-            seed=3,
+            rng=3,
         )
         steps = np.diff(positions, axis=0)
         changed = np.flatnonzero(np.any(~np.isclose(steps[1:], steps[:-1]), axis=1))
@@ -432,7 +432,7 @@ class TestSimulateTrajectoryOU:
             speed_mean=15.0,
             speed_std=8.0,
             speed_units="cm",
-            seed=2,
+            rng=2,
         )
         steps = shapely.linestrings(np.stack([positions[:-1], positions[1:]], axis=1))
         assert not shapely.intersects(steps, divider).any()
@@ -466,7 +466,7 @@ class TestSimulateTrajectoryOU:
                 start_position=np.array(start, dtype=float),
                 speed_units="cm",
                 boundary_mode=boundary_mode,
-                seed=seed,
+                rng=seed,
             )
             assert env.contains(positions).all(), seed
             if boundary_mode == "reflect":
@@ -495,7 +495,7 @@ class TestSimulateTrajectoryOU:
                 start_position=np.array(start),
                 speed_units="cm",
                 boundary_mode=boundary_mode,
-                seed=0,
+                rng=0,
             )
 
     def test_a_start_outside_a_one_dimensional_environment_is_refused(self):
@@ -531,7 +531,7 @@ class TestSimulateTrajectoryOU:
                     start_position=start,
                     speed_units="cm",
                     boundary_mode=boundary_mode,
-                    seed=seed,
+                    rng=seed,
                 )
                 # The start itself may round outside; no position the
                 # animal moves to may.
@@ -562,7 +562,7 @@ class TestSimulateTrajectoryOU:
                 start_position=np.array([52.0, 30.0]),
                 speed_units="cm",
                 boundary_mode=boundary_mode,
-                seed=seed,
+                rng=seed,
             )
             side = np.sign(positions[1:, 0] - 52)
             moved = side != 0
@@ -612,7 +612,7 @@ class TestSimulateTrajectoryOU:
                     start_position=start,
                     speed_units="cm",
                     boundary_mode=boundary_mode,
-                    seed=seed,
+                    rng=seed,
                 )
                 moved = np.any(positions != positions[0], axis=1)
                 assert env.contains(positions[moved]).all(), (seed, boundary_mode)
@@ -630,13 +630,13 @@ class TestSimulateTrajectoryOU:
         pos1, times1 = simulate_trajectory_ou(
             simple_2d_env,
             duration=1.0,
-            seed=42,
+            rng=42,
             speed_units="cm",
         )
         pos2, times2 = simulate_trajectory_ou(
             simple_2d_env,
             duration=1.0,
-            seed=42,
+            rng=42,
             speed_units="cm",
         )
 
@@ -646,10 +646,10 @@ class TestSimulateTrajectoryOU:
     def test_different_seeds_produce_different_trajectories(self, simple_2d_env):
         """Test that different seeds produce different trajectories."""
         pos1, _ = simulate_trajectory_ou(
-            simple_2d_env, duration=1.0, seed=42, speed_units="cm"
+            simple_2d_env, duration=1.0, rng=42, speed_units="cm"
         )
         pos2, _ = simulate_trajectory_ou(
-            simple_2d_env, duration=1.0, seed=43, speed_units="cm"
+            simple_2d_env, duration=1.0, rng=43, speed_units="cm"
         )
 
         assert not np.array_equal(pos1, pos2)
@@ -678,7 +678,7 @@ class TestSimulateTrajectoryOU:
                 duration=1.0,
                 speed_mean=0.10,
                 speed_units="m",
-                seed=42,
+                rng=42,
             )
 
         # Matching units works.
@@ -687,7 +687,7 @@ class TestSimulateTrajectoryOU:
             duration=1.0,
             speed_mean=10.0,  # cm/s
             speed_units="cm",
-            seed=42,
+            rng=42,
         )
         assert len(positions) > 0
 
@@ -1024,7 +1024,7 @@ class TestSimulateTrajectoryLaps:
             speed_mean=10.0,
             pause_duration=0.0,
             return_metadata=True,
-            seed=42,
+            rng=42,
         )
 
         # Check that metadata contains lap_ids
@@ -1050,7 +1050,7 @@ class TestSimulateTrajectoryLaps:
             connected_arena_env,
             n_laps=3,
             return_metadata=True,
-            seed=42,
+            rng=42,
         )
 
         # Check required metadata keys
@@ -1085,7 +1085,7 @@ class TestSimulateTrajectoryLaps:
             pause_duration=pause_duration,
             sampling_frequency=sampling_frequency,
             return_metadata=True,
-            seed=42,
+            rng=42,
         )
 
         # Check lap boundaries
@@ -1117,7 +1117,7 @@ class TestSimulateTrajectoryLaps:
             connected_arena_env,
             n_laps=3,
             return_metadata=False,
-            seed=42,
+            rng=42,
         )
 
         # Should return tuple of 2 elements
@@ -1145,7 +1145,7 @@ class TestSimulateTrajectoryLaps:
             outbound_path=outbound_path,
             inbound_path=inbound_path,
             return_metadata=True,
-            seed=42,
+            rng=42,
         )
 
         # Check that trajectory was generated
@@ -1159,10 +1159,10 @@ class TestSimulateTrajectoryLaps:
     def test_reproducibility_with_seed(self, connected_arena_env):
         """Test that same seed produces same trajectory."""
         result1 = simulate_trajectory_laps(
-            connected_arena_env, n_laps=3, seed=42, return_metadata=True
+            connected_arena_env, n_laps=3, rng=42, return_metadata=True
         )
         result2 = simulate_trajectory_laps(
-            connected_arena_env, n_laps=3, seed=42, return_metadata=True
+            connected_arena_env, n_laps=3, rng=42, return_metadata=True
         )
 
         positions1, times1, metadata1 = result1
@@ -1178,7 +1178,7 @@ class TestSimulateTrajectoryLaps:
             connected_arena_env,
             n_laps=5,
             return_metadata=False,
-            seed=42,
+            rng=42,
         )
 
         # Use nearest_bin to check - this is more efficient than calling

@@ -400,7 +400,7 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
         env,
         times,
         positions,
-        decision_region="decision",
+        region="decision",
         # The decision entry is the last sample, so the trial must contain it.
         trials=Intervals(
             [Trial(times[0], times[-1] + 1.0, "source", "target", "reached")]

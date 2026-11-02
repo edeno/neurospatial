@@ -208,16 +208,16 @@ env = env.with_metadata(units="cm")
 
 # 2. Simulate ten minutes of foraging.
 positions_t, times = simulate_trajectory_ou(
-    env, duration=600.0, speed_units="cm", seed=42,
+    env, duration=600.0, speed_units="cm", rng=42,
 )
 
 # 3. Build a place cell tuned to the middle of the arena.
 cell = PlaceCellModel(env, center=np.array([30.0, 30.0]), width=8.0,
-                      max_rate=15.0, seed=42)
+                      max_rate=15.0, rng=42)
 
 # 4. Generate the spike train from the cell's firing model + trajectory.
 spike_times = generate_population_spikes(
-    [cell], times, positions_t, seed=42, show_progress=False,
+    [cell], times, positions_t, rng=42, show_progress=False,
 )[0]
 
 # 5. Recover the place field from spikes + trajectory.
@@ -484,7 +484,7 @@ positions, times = simulate_trajectory_ou(
     speed_mean=8.0,  # cm/s
     speed_std=4.0,  # cm/s: the animal speeds up and slows down
     coherence_time=0.7,  # seconds over which the speed changes
-    seed=42
+    rng=42
 )
 
 # Create place cell with known ground truth
@@ -498,7 +498,7 @@ place_cell = PlaceCellModel(
 # Generate spikes
 firing_rates = place_cell.firing_rate(times, positions)
 # Seed spikes apart from the trajectory so spike draws do not track position.
-spike_times = generate_poisson_spikes(firing_rates, times, seed=1)
+spike_times = generate_poisson_spikes(firing_rates, times, rng=1)
 
 # Validate with neurospatial analysis
 from neurospatial import compute_spatial_rate

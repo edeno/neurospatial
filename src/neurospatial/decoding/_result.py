@@ -664,8 +664,8 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     @reads_pynapple_samples
     def plot(
         self,
-        ax: Axes | None = None,
         *,
+        ax: Axes | None = None,
         true_times: NDArray[np.float64] | None = None,
         true_positions: NDArray[np.float64] | None = None,
         max_gap: float | None = DEFAULT_MAX_GAP,
@@ -1565,8 +1565,8 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
 
     def plot(
         self,
-        ax: Axes | None = None,
         *,
+        ax: Axes | None = None,
         quantity: Literal["entropy", "map"] = "entropy",
         **kwargs: Any,
     ) -> Axes:

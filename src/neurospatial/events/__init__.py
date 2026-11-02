@@ -49,7 +49,7 @@ Computing a peri-event time histogram (PSTH):
 ...     spike_times,
 ...     reward_times,
 ...     window=(-1.0, 2.0),
-...     bin_size=0.025,
+...     dt=0.025,
 ... )
 >>> print(
 ...     f"Peak at {result.bin_centers[result.histogram.argmax()]:.2f}s"

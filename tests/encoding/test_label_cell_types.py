@@ -78,8 +78,8 @@ def test_track_place_cell_is_place():
     x = 200 * np.abs((times / 20 + 0.37) % 2 - 1)
     field = 0.1 + 12 * np.exp(-0.5 * ((x - 70) / 8) ** 2)
     trains = [
-        generate_poisson_spikes(field, times, seed=11),
-        generate_poisson_spikes(np.full(len(times), 1.5), times, seed=12),
+        generate_poisson_spikes(field, times, rng=11),
+        generate_poisson_spikes(np.full(len(times), 1.5), times, rng=12),
     ]
     rates = compute_spatial_rates(env, trains, times, x[:, None])
     with warnings.catch_warnings():

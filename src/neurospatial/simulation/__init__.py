@@ -29,14 +29,14 @@ Low-level API for custom simulations:
 >>>
 >>> # Generate trajectory
 >>> positions, times = simulate_trajectory_ou(
-...     env, duration=2.0, seed=42, speed_units="cm"
+...     env, duration=2.0, rng=42, speed_units="cm"
 ... )
 >>>
 >>> # Create place cell at environment center with high rate
 >>> center = env.bin_centers[len(env.bin_centers) // 2]
->>> place_cell = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
+>>> place_cell = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, rng=42)
 >>> rates = place_cell.firing_rate(times, positions)
->>> spikes = generate_poisson_spikes(rates, times, seed=1)  # not the trajectory seed
+>>> spikes = generate_poisson_spikes(rates, times, rng=1)  # not the trajectory rng
 >>> isinstance(spikes, np.ndarray)  # Returns array of spike times
 True
 

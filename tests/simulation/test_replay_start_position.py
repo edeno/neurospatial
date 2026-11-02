@@ -36,7 +36,7 @@ def gapped_track():
 def test_a_start_on_the_second_segment_is_where_it_says(gapped_track):
     env, rates = gapped_track
     event = simulate_replay_event(
-        env, rates, kind="stationary", start_position=150.0, seed=0
+        env, rates, kind="stationary", start_position=150.0, rng=0
     )
     np.testing.assert_allclose(event.track_positions, 150.0)
     # 20 cm along the second segment, which runs from (100, 0) to (100, 100).
@@ -57,7 +57,7 @@ def test_a_backward_sweep_crosses_the_gap_without_entering_it(gapped_track):
     """
     env, rates = gapped_track
     event = simulate_replay_event(
-        env, rates, speed=-900.0, start_position=150.0, duration=0.05, seed=0
+        env, rates, speed=-900.0, start_position=150.0, duration=0.05, rng=0
     )
     positions = event.track_positions
     assert positions[0] == pytest.approx(150.0)

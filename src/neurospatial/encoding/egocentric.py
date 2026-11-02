@@ -405,7 +405,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
             "preferred_direction": float(self.preferred_direction()),
         }
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the object-vector rate map (firing rate by distance/direction).
 
         Delegates to the polar environment's plot_field method for
@@ -980,7 +980,7 @@ class ObjectVectorRatesResult(
             bandwidth=self.bandwidth,
         )
 
-    def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, idx: int, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the object-vector rate map for a specific neuron.
 
         Delegates to the polar environment's plot_field method for
@@ -4160,8 +4160,8 @@ def _is_object_vector_cell(
 
 def plot_object_vector_tuning(
     result: ObjectVectorRateResult,
-    ax: Axes | PolarAxes | None = None,
     *,
+    ax: Axes | PolarAxes | None = None,
     show_peak: bool = True,
     add_colorbar: bool = False,
     cmap: str = "viridis",

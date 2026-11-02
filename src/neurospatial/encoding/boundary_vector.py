@@ -356,7 +356,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         """
         return float(_distance_information(self)[0])
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the rate by distance (x axis) and direction (y axis).
 
         Parameters
@@ -523,7 +523,7 @@ class BoundaryVectorRatesResult(
             )
         return _boundary_summary(self, index=index)
 
-    def plot(self, idx: int, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, idx: int, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot unit ``idx``'s rate by distance and direction.
 
         Parameters

@@ -154,8 +154,8 @@ class FieldPlotConsumer(Protocol):
     def plot_field(
         self,
         field: NDArray[np.float64],
-        ax: Axes | None = ...,
         *,
+        ax: Axes | None = ...,
         cmap: str = ...,
         colorbar: bool = ...,
     ) -> Axes: ...

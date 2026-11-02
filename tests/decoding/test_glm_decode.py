@@ -99,16 +99,16 @@ class TestBayesianDecoderGlm:
             np.ones((10, 10), dtype=bool), grid_edges=(edges, edges), units="cm"
         )
         positions, times = simulate_trajectory_ou(
-            env, duration=200.0, seed=0, speed_units="cm"
+            env, duration=200.0, rng=0, speed_units="cm"
         )
         centers = np.random.default_rng(5).uniform(4.0, 36.0, (16, 2))
         spikes = [
             generate_poisson_spikes(
                 PlaceCellModel(
-                    env, center=c, width=8.0, max_rate=25.0, seed=i
+                    env, center=c, width=8.0, max_rate=25.0, rng=i
                 ).firing_rate(times, positions),
                 times,
-                seed=50 + i,
+                rng=50 + i,
             )
             for i, c in enumerate(centers)
         ]

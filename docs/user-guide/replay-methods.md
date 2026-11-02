@@ -68,7 +68,7 @@ from neurospatial.simulation import linear_track_session, simulate_replay_event
 
 # Running: 20 laps on a 200 cm track, 40 place cells
 session = linear_track_session(
-    duration=240.0, track_length=200.0, bin_size=4.0, n_place_cells=40, seed=0
+    duration=240.0, track_length=200.0, bin_size=4.0, n_place_cells=40, rng=0
 )
 env = session.env
 rates = compute_spatial_rates(
@@ -95,7 +95,7 @@ for index, kind in enumerate(kinds):
         kind=kind,
         duration=float(rng.uniform(0.08, 0.2)),
         rate_gain=4.0,
-        seed=index,
+        rng=index,
         **speed,
     )
     start = 300.0 + 2.0 * index
@@ -714,7 +714,7 @@ def simulate_epoch(rate_gain, seed):
             kind=kind,
             duration=float(epoch_rng.uniform(0.08, 0.2)),
             rate_gain=rate_gain,
-            seed=100 * seed + index,
+            rng=100 * seed + index,
             **speed,
         )
         start = 2.0 * index
@@ -968,7 +968,7 @@ visited get no mass), and decode the null events with the same prior.
   `p_value[mean_spread]`.
 - **A narrow line band.** `MABOUDI_2018` fits the line within 3 cm, so it
   searches 35,000 random lines (`score_options["n_lines"]`) rather than the
-  dense grid, which is slow at that band. Set `line_seed` in
+  dense grid, which is slow at that band. Set `rng` in
   `score_options` to repeat the same lines.
 - **Spike pairs without decoding.** `GUPTA_2010` scores every pair of
   spikes less than 80 ms apart by whether the two cells fire in the order
@@ -1009,7 +1009,7 @@ visited get no mass), and decode the null events with the same prior.
   drew their conclusions from counts of matching events over a data set:
   run `template_match_dataset_test` for those. Lee & Wilson's events are
   words cut from sleep spikes, one template's cells at a time:
-  `spike_words(spike_times, max_isi=0.05, word_gap=0.1, cells=template_cells,
+  `spike_words(spike_times, max_isi=0.05, word_gap=0.1, unit_ids=template_unit_ids,
   epochs=sws).intervals`. `NADASDY_1999` asks a different question, whether
   spike sequences recur within one session more often than in surrogate
   trains (`recurring_sequences_significance`), and has no per-event

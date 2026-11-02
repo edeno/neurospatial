@@ -52,11 +52,11 @@ def _defaulted_arguments(env_cm):
     """Per cell type, the model class and arguments that leave every derivable
     parameter to its default."""
     return {
-        "place": (PlaceCellModel, {"env": env_cm, "seed": 1}),
+        "place": (PlaceCellModel, {"env": env_cm, "rng": 1}),
         "border": (BorderCellModel, {"env": env_cm}),
-        "boundary_vector": (BoundaryVectorCellModel, {"env": env_cm, "seed": 1}),
+        "boundary_vector": (BoundaryVectorCellModel, {"env": env_cm, "rng": 1}),
         "grid": (GridCellModel, {"env": env_cm}),
-        "head_direction": (HeadDirectionCellModel, {"seed": 1}),
+        "head_direction": (HeadDirectionCellModel, {"rng": 1}),
         "object_vector": (
             ObjectVectorCellModel,
             {
@@ -80,16 +80,16 @@ def _defaulted_model(env_cm, cell_type):
 # Per cell type: changes that replace() must apply as a fresh constructor
 # would. "env" is replaced by the metre box, with coordinates rescaled.
 _CHANGES = {
-    "place": [{"seed": 2}, {"max_rate": 5.0}, {"env": None}],
+    "place": [{"rng": 2}, {"max_rate": 5.0}, {"env": None}],
     "border": [{"preferred_distance": 3.0}, {"env": None}],
     "boundary_vector": [
         {"preferred_distance": 40.0},
-        {"seed": 2},
+        {"rng": 2},
         {"direction_tolerance": 1.0},
         {"env": None},
     ],
     "grid": [{"grid_orientation": 0.3}, {"env": None}],
-    "head_direction": [{"seed": 2}, {"concentration": 2.0}],
+    "head_direction": [{"rng": 2}, {"concentration": 2.0}],
     "object_vector": [
         {"preferred_distance": 5.0},
         {"env": None, "object_positions": [[0.3, 0.3]]},
@@ -181,11 +181,11 @@ def test_boundary_vector_tolerance_follows_a_replaced_distance(box_cm):
 
 
 def test_head_direction_redraws_with_a_replaced_seed():
-    model = HeadDirectionCellModel(seed=1)
-    replaced = dataclasses.replace(model, seed=2)
+    model = HeadDirectionCellModel(rng=1)
+    replaced = dataclasses.replace(model, rng=2)
     assert (
         replaced.ground_truth["preferred_direction"]
-        == HeadDirectionCellModel(seed=2).ground_truth["preferred_direction"]
+        == HeadDirectionCellModel(rng=2).ground_truth["preferred_direction"]
     )
     assert (
         dataclasses.replace(model, max_rate=5.0).ground_truth["preferred_direction"]
@@ -210,16 +210,16 @@ _DRAWN = {
 
 def _unseeded_arguments(box_cm, cell_type):
     cls, arguments = _defaulted_arguments(box_cm)[cell_type]
-    return cls, {name: value for name, value in arguments.items() if name != "seed"}
+    return cls, {name: value for name, value in arguments.items() if name != "rng"}
 
 
 @pytest.mark.parametrize("cell_type", sorted(_DRAWN))
 def test_an_unseeded_draw_survives_replace_and_pickle(box_cm, cell_type):
-    """With seed=None the model keeps the seed it drew with, as an int."""
+    """With rng=None the model keeps the seed it drew with, as an int."""
     drawn, unrelated = _DRAWN[cell_type]
     cls, arguments = _unseeded_arguments(box_cm, cell_type)
     model = cls(**arguments)
-    assert isinstance(model.seed, int)
+    assert isinstance(model.rng, int)
     value = model.ground_truth[drawn]
     for copy in (
         dataclasses.replace(model, **unrelated),
@@ -235,14 +235,14 @@ def test_an_unseeded_model_redraws_with_a_replaced_seed(box_cm, cell_type):
     cls, arguments = _unseeded_arguments(box_cm, cell_type)
     model = cls(**arguments)
     for seed in (1, 2):
-        replaced = dataclasses.replace(model, seed=seed)
-        assert replaced.seed == seed
+        replaced = dataclasses.replace(model, rng=seed)
+        assert replaced.rng == seed
         np.testing.assert_array_equal(
             replaced.ground_truth[drawn],
-            cls(**arguments, seed=seed).ground_truth[drawn],
+            cls(**arguments, rng=seed).ground_truth[drawn],
         )
 
 
 def test_a_seed_is_kept_as_passed_and_drawn_only_for_a_draw(box_cm):
-    assert PlaceCellModel(box_cm, seed=7).seed == 7
-    assert PlaceCellModel(box_cm, center=[50.0, 50.0]).seed is None
+    assert PlaceCellModel(box_cm, rng=7).rng == 7
+    assert PlaceCellModel(box_cm, center=[50.0, 50.0]).rng is None

@@ -7,6 +7,7 @@ reproduces the whole call and adding a stream leaves the others unchanged.
 from __future__ import annotations
 
 import zlib
+from typing import cast
 
 import numpy as np
 
@@ -30,3 +31,15 @@ def _stream(entropy: int, *key: int) -> np.random.Generator:
 def _name_key(name: str) -> int:
     """A stable spawn-key entry for ``name``, independent of other names."""
     return zlib.crc32(name.encode())
+
+
+def _seed_sequence(rng: np.random.Generator | int | None) -> np.random.SeedSequence:
+    """The seed sequence behind ``rng``, as ``np.random.default_rng`` reads it.
+
+    An ``int`` or ``None`` gives ``np.random.SeedSequence(rng)``. A generator
+    gives the sequence it was seeded from, so ``np.random.default_rng(0)``
+    derives the same streams as ``0``.
+    """
+    if isinstance(rng, np.random.Generator):
+        return cast("np.random.SeedSequence", rng.bit_generator.seed_seq)
+    return np.random.SeedSequence(rng)

@@ -27,9 +27,7 @@ from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
 
 def test_no_crossing_reported_across_pause(pause_track):
     r = pause_track
-    assert (
-        detect_region_crossings(r.env, r.times, r.positions, region_name="target") == []
-    )
+    assert detect_region_crossings(r.env, r.times, r.positions, region="target") == []
 
 
 def test_crossing_epochs_equal_slicing(continuous_pause_track):
@@ -37,10 +35,10 @@ def test_crossing_epochs_equal_slicing(continuous_pause_track):
     # [0, 100) excludes the sample at 100 s, where the target is entered.
     selected = r.times < 100
     expected = detect_region_crossings(
-        r.env, r.times[selected], r.positions[selected], region_name="target"
+        r.env, r.times[selected], r.positions[selected], region="target"
     )
     actual = detect_region_crossings(
-        r.env, r.times, r.positions, region_name="target", epochs=(0, 100)
+        r.env, r.times, r.positions, region="target", epochs=(0, 100)
     )
     assert actual == expected
 
@@ -49,7 +47,7 @@ def test_canonical_crossings_do_not_warn_for_multiple_runs(pause_track):
     r = pause_track
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        detect_region_crossings(r.env, r.times, r.positions, region_name="target")
+        detect_region_crossings(r.env, r.times, r.positions, region="target")
     deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
     assert not deprecations
 
@@ -61,7 +59,7 @@ def test_invalid_epochs_raise_without_observed_samples(pause_track):
             r.env,
             np.array([]),
             np.empty((0, 2)),
-            region_name="target",
+            region="target",
             epochs=(2, 1),
         )
 
@@ -156,7 +154,7 @@ def test_goal_directed_runs_do_not_span_pause(pause_track):
     """
     r = pause_track
     runs = detect_goal_directed_runs(
-        r.env, r.times, r.positions, goal_region="target"
+        r.env, r.times, r.positions, region="target"
     ).windows
     assert runs.shape == (1, 2)
     # The departure is the last sample in the resting bin: within the time to
@@ -284,7 +282,7 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
         r.env,
         r.times,
         positions,
-        decision_region="target",
+        region="target",
         trials=Intervals([trial]),
         window_duration=1001,
     )
@@ -308,7 +306,7 @@ def test_decision_analysis_forwards_windows(pause_track):
             r.positions,
             decision_region="target",
             goal_regions=["source", "target"],
-            pre_window=1001,
+            window_duration=1001,
             epochs=(0, 100),
         )
 
@@ -375,7 +373,7 @@ def test_crossings_bridge_nan_rows_like_deleted_rows():
     times = np.arange(0.0, 40.0, 0.1)
     x = 50.0 - 49.0 * np.cos(2 * np.pi * times / 10.0)  # end to end every 5 s
     positions = np.column_stack([x, np.zeros_like(x)])
-    complete = detect_region_crossings(env, times, positions, region_name="goal")
+    complete = detect_region_crossings(env, times, positions, region="goal")
     missing = np.zeros(times.size, dtype=bool)
     missing[44] = True  # the first sample in the goal, at 4.4 s
     missing[142:147] = True  # 0.6 s across the entry at 14.4 s
@@ -384,21 +382,17 @@ def test_crossings_bridge_nan_rows_like_deleted_rows():
     positions[missing] = np.nan
     kept = ~missing
 
-    bridged = detect_region_crossings(env, times, positions, region_name="goal")
-    deleted = detect_region_crossings(
-        env, times[kept], positions[kept], region_name="goal"
-    )
+    bridged = detect_region_crossings(env, times, positions, region="goal")
+    deleted = detect_region_crossings(env, times[kept], positions[kept], region="goal")
 
     assert len(complete) == 8
     assert bridged == deleted
     assert [c.direction for c in bridged] == [c.direction for c in complete]
     # A NaN gap longer than max_gap breaks observation: the entry in the
     # 0.6 s gap is not observed at max_gap=0.3.
-    short = detect_region_crossings(
-        env, times, positions, region_name="goal", max_gap=0.3
-    )
+    short = detect_region_crossings(env, times, positions, region="goal", max_gap=0.3)
     assert short == detect_region_crossings(
-        env, times[kept], positions[kept], region_name="goal", max_gap=0.3
+        env, times[kept], positions[kept], region="goal", max_gap=0.3
     )
     assert len(short) == len(complete) - 1
 
@@ -409,7 +403,7 @@ def test_goal_directed_runs_bridge_nan_rows_like_deleted_rows():
     times = np.arange(0.0, 40.0, 0.1)
     x = 50.0 - 49.0 * np.cos(2 * np.pi * times / 10.0)  # end to end every 5 s
     positions = np.column_stack([x, np.zeros_like(x)])
-    options = {"goal_region": "goal", "min_progress": 20.0}
+    options = {"region": "goal", "min_progress": 20.0}
     complete = detect_goal_directed_runs(env, times, positions, **options)
     missing = np.zeros(times.size, dtype=bool)
     missing[22] = True  # one frame mid-approach, at 2.2 s
@@ -477,16 +471,13 @@ def test_no_event_at_an_epoch_stop_sample():
     positions = np.c_[x, np.zeros_like(x)]
     common = {"max_gap": None, "epochs": (0.0, 5.0)}
 
-    assert (
-        detect_region_crossings(env, times, positions, region_name="goal", **common)
-        == []
-    )
+    assert detect_region_crossings(env, times, positions, region="goal", **common) == []
     (trial,) = detect_trials(env, times, positions, regions=["start", "goal"], **common)
     assert (trial.start_time, trial.stop_time, trial.outcome) == (2.0, 5.0, "censored")
 
     # Without the epoch the same arrival is observed at 5 s.
     (entry,) = detect_region_crossings(
-        env, times, positions, region_name="goal", direction="entry", max_gap=None
+        env, times, positions, region="goal", direction="entry", max_gap=None
     )
     assert entry.time == 5.0
 

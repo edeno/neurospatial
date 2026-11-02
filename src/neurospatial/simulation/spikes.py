@@ -24,7 +24,7 @@ def generate_poisson_spikes(
     times: NDArray[np.float64],
     *,
     refractory_period: float = 0.002,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
 ) -> NDArray[np.float64]:
     """Generate Poisson spike train from firing rate time series.
 
@@ -44,8 +44,8 @@ def generate_poisson_spikes(
         Absolute refractory period in seconds (default: 2ms = 0.002s).
         Prevents spikes within this window. Biologically realistic value
         for most neurons is 1-3ms.
-    seed : int | None, optional
-        Random seed for reproducibility.
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng``.
 
     Returns
     -------
@@ -116,16 +116,16 @@ def generate_poisson_spikes(
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env = env.with_metadata(units="cm")
     >>> center = env.bin_centers[len(env.bin_centers) // 2]
-    >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
+    >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, rng=42)
     >>>
     >>> # Generate trajectory and firing rates
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=60.0, seed=42, speed_units="cm"
+    ...     env, duration=60.0, rng=42, speed_units="cm"
     ... )
     >>> rates = pc.firing_rate(times, positions)
     >>>
     >>> # Generate spikes
-    >>> spike_times = generate_poisson_spikes(rates, times, seed=42)
+    >>> spike_times = generate_poisson_spikes(rates, times, rng=42)
     >>> len(spike_times) > 0  # Should generate some spikes
     True
     >>>
@@ -134,10 +134,10 @@ def generate_poisson_spikes(
     ...     isi = np.diff(spike_times)
     ...     assert np.all(isi >= 0.002), "All ISIs should be >= 2ms"
 
-    Reproduce results with same seed:
+    Reproduce results with same rng:
 
-    >>> spikes1 = generate_poisson_spikes(rates, times, seed=42)
-    >>> spikes2 = generate_poisson_spikes(rates, times, seed=42)
+    >>> spikes1 = generate_poisson_spikes(rates, times, rng=42)
+    >>> spikes2 = generate_poisson_spikes(rates, times, rng=42)
     >>> np.array_equal(spikes1, spikes2)  # Identical
     True
 
@@ -152,7 +152,7 @@ def generate_poisson_spikes(
     Dayan & Abbott (2001), Theoretical Neuroscience, Chapter 1
     """
     # Initialize random number generator
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(rng)
 
     times = np.asarray(times, dtype=np.float64)
     firing_rate = np.asarray(firing_rate, dtype=np.float64)
@@ -250,7 +250,7 @@ def generate_population_spikes(
     headings: NDArray[np.float64] | None = None,
     break_before: ArrayLike | None = None,
     refractory_period: float = 0.002,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
     show_progress: bool = True,
 ) -> list[NDArray[np.float64]]:
     """Generate spike trains for population of neurons.
@@ -287,10 +287,12 @@ def generate_population_spikes(
         ``headings``.
     refractory_period : float, optional
         Refractory period for each neuron in seconds (default: 2ms).
-    seed : int | None, optional
-        Random seed for reproducibility. Each neuron's spikes come from its
-        own child of ``np.random.SeedSequence(seed)``, so the trains are
-        independent and no two seeds share a stream.
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng``. Each neuron's spikes come from its
+        own child of the seed sequence: ``np.random.SeedSequence(rng)`` for
+        an int, or the generator's own sequence (spawning, as
+        ``Generator.spawn`` does) for a generator. The trains are independent
+        and no two seeds share a stream.
     show_progress : bool, optional
         Show progress bar during spike generation (default: True).
         Set to False for quiet operation in scripts or tests.
@@ -338,7 +340,7 @@ def generate_population_spikes(
     ...         center=c,
     ...         width=8.0,
     ...         max_rate=rng.uniform(15, 30),
-    ...         seed=i,
+    ...         rng=i,
     ...     )
     ...     for i, c in enumerate(env.bin_centers[::5])
     ... ]
@@ -347,10 +349,10 @@ def generate_population_spikes(
     >>>
     >>> # Generate trajectory and spikes
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=120.0, seed=42, speed_units="cm"
+    ...     env, duration=120.0, rng=42, speed_units="cm"
     ... )
     >>> spike_trains = generate_population_spikes(
-    ...     place_cells, times, positions, seed=42, show_progress=False
+    ...     place_cells, times, positions, rng=42, show_progress=False
     ... )
     >>>
     >>> # Verify output structure
@@ -372,7 +374,7 @@ def generate_population_spikes(
     Generate spikes quietly (no progress bar):
 
     >>> spike_trains_quiet = generate_population_spikes(
-    ...     place_cells, times, positions, seed=42, show_progress=False
+    ...     place_cells, times, positions, rng=42, show_progress=False
     ... )
 
     A head-direction cell without ``headings`` fires with the direction of
@@ -388,7 +390,7 @@ def generate_population_spikes(
     ...     [HeadDirectionCellModel(preferred_direction=0.0)],
     ...     stop_times,
     ...     stop_path,
-    ...     seed=0,
+    ...     rng=0,
     ...     show_progress=False,
     ... )
     >>> len(hd_spikes[0]) > 0
@@ -409,9 +411,10 @@ def generate_population_spikes(
     - Number of spikes generated for current cell
     - Mean firing rate for current cell
 
-    **Reproducibility**: ``np.random.SeedSequence(seed).spawn(len(models))``
-    gives every model its own stream, so trains are independent across
-    neurons, the same ``seed`` reproduces them, and runs with different seeds
+    **Reproducibility**: A child of the seed sequence behind ``rng``
+    (``np.random.SeedSequence(rng)`` for an int, a generator's own sequence
+    for a generator) gives every model its own stream, so trains are independent across
+    neurons, the same ``rng`` reproduces them, and runs with different seeds
     share no stream.
 
     **Headings**: without ``headings``, models that need one see the
@@ -445,7 +448,7 @@ def generate_population_spikes(
     if derived:
         headings = _held_movement_heading(times, positions, break_before=breaks)
 
-    model_seeds = _stream_seeds(seed, len(models))
+    model_seeds = _stream_seeds(rng, len(models))
     duration = float(times[-1] - times[0])
     spike_trains = []
     iterator = tqdm(
@@ -468,7 +471,7 @@ def generate_population_spikes(
                 rates,
                 times,
                 refractory_period=refractory_period,
-                seed=model_seeds[i],
+                rng=model_seeds[i],
             )
             spike_trains.append(spikes)
             iterator.set_postfix(
@@ -658,7 +661,7 @@ def add_modulation(
     modulation_freq: float,
     modulation_depth: float = 0.5,
     modulation_phase: float = 0.0,
-    seed: int | None = None,
+    rng: np.random.Generator | int | None = None,
 ) -> NDArray[np.float64]:
     """Add rhythmic modulation to spike train (e.g., theta oscillation).
 
@@ -689,8 +692,8 @@ def add_modulation(
         - 0.0: Spikes preferred at cosine peaks
         - π/2: Spikes preferred at sine peaks
         - π: Spikes preferred at cosine troughs
-    seed : int | None, optional
-        Random seed for reproducibility.
+    rng : numpy.random.Generator or int or None, optional
+        Random generator or seed, as for ``np.random.default_rng``.
 
     Returns
     -------
@@ -748,14 +751,14 @@ def add_modulation(
     >>> env = Environment.from_samples(samples, bin_size=2.0)
     >>> env = env.with_metadata(units="cm")
     >>> center = env.bin_centers[len(env.bin_centers) // 2]
-    >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, seed=42)
+    >>> pc = PlaceCellModel(env, center=center, width=20.0, max_rate=50.0, rng=42)
     >>>
     >>> # Generate trajectory and spikes
     >>> positions, times = simulate_trajectory_ou(
-    ...     env, duration=60.0, seed=42, speed_units="cm"
+    ...     env, duration=60.0, rng=42, speed_units="cm"
     ... )
     >>> rates = pc.firing_rate(times, positions)
-    >>> spike_times = generate_poisson_spikes(rates, times, seed=7)
+    >>> spike_times = generate_poisson_spikes(rates, times, rng=7)
     >>>
     >>> # Add theta modulation (8 Hz, preferred phase at the theta trough)
     >>> theta_modulated = add_modulation(
@@ -763,7 +766,7 @@ def add_modulation(
     ...     modulation_freq=8.0,
     ...     modulation_depth=0.7,
     ...     modulation_phase=np.pi,
-    ...     seed=42,
+    ...     rng=42,
     ... )
     >>> bool(np.isin(theta_modulated, spike_times).all())  # a subset
     True
@@ -775,12 +778,12 @@ def add_modulation(
 
     >>> spike_times = np.linspace(0, 10, 500)  # Uniform spike train
     >>> no_mod = add_modulation(
-    ...     spike_times, modulation_freq=8.0, modulation_depth=0.0, seed=42
+    ...     spike_times, modulation_freq=8.0, modulation_depth=0.0, rng=42
     ... )
     >>> len(no_mod) == len(spike_times)  # No modulation keeps all spikes
     True
     >>> strong_mod = add_modulation(
-    ...     spike_times, modulation_freq=8.0, modulation_depth=0.9, seed=42
+    ...     spike_times, modulation_freq=8.0, modulation_depth=0.9, rng=42
     ... )
     >>> len(strong_mod) < len(no_mod)  # Strong modulation removes spikes
     True
@@ -823,7 +826,7 @@ def add_modulation(
         )
     spike_times = as_spike_train(spike_times)
 
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(rng)
     phases = 2 * np.pi * modulation_freq * spike_times - modulation_phase
     acceptance_prob = (1.0 + modulation_depth * np.cos(phases)) / (
         1.0 + modulation_depth

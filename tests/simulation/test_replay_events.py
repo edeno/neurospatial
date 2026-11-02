@@ -46,7 +46,7 @@ def _decode(env, rates, event):
 class TestPaths:
     def test_sweep_moves_at_its_speed(self, place_code):
         env, rates = place_code
-        event = simulate_replay_event(env, rates, speed=600.0, seed=0)
+        event = simulate_replay_event(env, rates, speed=600.0, rng=0)
         slope = np.polyfit(event.times, event.track_positions, 1)[0]
         assert slope == pytest.approx(600.0)
         assert event.track_positions[0] == pytest.approx(0.0)
@@ -54,26 +54,26 @@ class TestPaths:
 
     def test_backward_sweep_starts_at_the_track_end(self, place_code):
         env, rates = place_code
-        event = simulate_replay_event(env, rates, speed=-600.0, seed=0)
+        event = simulate_replay_event(env, rates, speed=-600.0, rng=0)
         assert event.track_positions[0] == pytest.approx(200.0, abs=1e-6)
         assert np.all(np.diff(event.track_positions) < 0)
 
     def test_stationary_event_stays_put(self, place_code):
         env, rates = place_code
-        event = simulate_replay_event(env, rates, kind="stationary", seed=0)
+        event = simulate_replay_event(env, rates, kind="stationary", rng=0)
         assert np.all(event.track_positions == 100.0)
         assert event.speed == 0.0
 
     def test_jump_has_two_fragments_jump_distance_apart(self, place_code):
         env, rates = place_code
         event = simulate_replay_event(
-            env, rates, kind="jump", speed=400.0, jump_distance=60.0, seed=0
+            env, rates, kind="jump", speed=400.0, jump_distance=60.0, rng=0
         )
         steps = np.diff(event.track_positions)
         jump = np.argmax(np.abs(steps))
         assert steps[jump] == pytest.approx(60.0 + 400.0 * 0.001)
         assert np.sum(np.abs(steps) > 1.0) == 1
-        default = simulate_replay_event(env, rates, kind="jump", speed=600.0, seed=0)
+        default = simulate_replay_event(env, rates, kind="jump", speed=600.0, rng=0)
         assert np.max(np.diff(default.track_positions)) == pytest.approx(
             50.0 + 0.6, abs=0.01
         )  # a quarter of the track, at any speed
@@ -97,9 +97,9 @@ class TestPaths:
         )
         rates = np.ones((5, env.n_bins))
         for kind, speed in (("sweep", 900.0), ("random", None), ("stationary", None)):
-            event = simulate_replay_event(env, rates, kind=kind, speed=speed, seed=1)
+            event = simulate_replay_event(env, rates, kind=kind, speed=speed, rng=1)
             assert np.isfinite(event.positions).all(), kind
-        sweep = simulate_replay_event(env, rates, speed=900.0, seed=1)
+        sweep = simulate_replay_event(env, rates, speed=900.0, rng=1)
         on_segment = np.isclose(sweep.positions[:, 1], 0.0) | np.isclose(
             sweep.positions[:, 0], 100.0
         )
@@ -107,13 +107,13 @@ class TestPaths:
 
     def test_random_event_draws_a_position_per_interval(self, place_code):
         env, rates = place_code
-        event = simulate_replay_event(env, rates, kind="random", seed=0)
+        event = simulate_replay_event(env, rates, kind="random", rng=0)
         assert np.unique(event.track_positions).size == 10  # 0.2 s / 20 ms
         assert np.isnan(event.speed)
 
     def test_positions_are_environment_coordinates(self, place_code):
         env, rates = place_code
-        event = simulate_replay_event(env, rates, speed=600.0, seed=0)
+        event = simulate_replay_event(env, rates, speed=600.0, rng=0)
         np.testing.assert_allclose(event.positions[:, 0], event.track_positions)
         np.testing.assert_allclose(event.positions[:, 1], 0.0)
 
@@ -121,7 +121,7 @@ class TestPaths:
 class TestSpikes:
     def test_cells_fire_where_the_path_is(self, place_code):
         env, rates = place_code
-        event = simulate_replay_event(env, rates, speed=900.0, rate_gain=4.0, seed=1)
+        event = simulate_replay_event(env, rates, speed=900.0, rate_gain=4.0, rng=1)
         fields = np.linspace(0.0, 200.0, 40)
         first_spikes = np.array(
             [t.min() if t.size else np.nan for t in event.spike_times]
@@ -137,7 +137,7 @@ class TestSpikes:
         for gain in (1.0, 4.0):
             events = [
                 simulate_replay_event(
-                    env, rates, kind="stationary", rate_gain=gain, seed=s
+                    env, rates, kind="stationary", rate_gain=gain, rng=s
                 )
                 for s in range(200)
             ]
@@ -148,8 +148,8 @@ class TestSpikes:
 
     def test_seed_repeats_the_event(self, place_code):
         env, rates = place_code
-        first = simulate_replay_event(env, rates, kind="random", seed=5)
-        second = simulate_replay_event(env, rates, kind="random", seed=5)
+        first = simulate_replay_event(env, rates, kind="random", rng=5)
+        second = simulate_replay_event(env, rates, kind="random", rng=5)
         np.testing.assert_array_equal(first.track_positions, second.track_positions)
         for a, b in zip(first.spike_times, second.spike_times, strict=True):
             np.testing.assert_array_equal(a, b)
@@ -158,7 +158,7 @@ class TestSpikes:
 class TestWithReplayMethods:
     def test_planted_sweep_is_detected_with_its_speed(self, place_code):
         env, rates = place_code
-        event = simulate_replay_event(env, rates, speed=900.0, rate_gain=4.0, seed=2)
+        event = simulate_replay_event(env, rates, speed=900.0, rate_gain=4.0, rng=2)
         decoded = _decode(env, rates, event)
         line = detect_trajectory_radon(env, decoded.posterior, decoded.times)
         assert line.speed == pytest.approx(900.0, rel=0.2)
@@ -179,7 +179,7 @@ class TestWithReplayMethods:
         p_values = []
         for seed in range(80):
             event = simulate_replay_event(
-                env, rates, kind="random", rate_gain=4.0, seed=100 + seed
+                env, rates, kind="random", rate_gain=4.0, rng=100 + seed
             )
             counts, grid = bin_spikes_in_time(
                 list(event.spike_times), dt=DT, t_start=0.0, t_stop=event.duration
@@ -212,7 +212,7 @@ class TestWithReplayMethods:
         """van der Meer et al. (2020): a stationary event scores high on a line fit."""
         env, rates = place_code
         event = simulate_replay_event(
-            env, rates, kind="stationary", rate_gain=4.0, seed=4
+            env, rates, kind="stationary", rate_gain=4.0, rng=4
         )
         decoded = _decode(env, rates, event)
         line = detect_trajectory_radon(env, decoded.posterior, decoded.times)
@@ -237,9 +237,9 @@ class TestDegradation:
 
     def test_no_degradation_leaves_the_event_unchanged(self, place_code):
         env, rates = place_code
-        default = simulate_replay_event(env, rates, speed=600.0, seed=3)
+        default = simulate_replay_event(env, rates, speed=600.0, rng=3)
         explicit = simulate_replay_event(
-            env, rates, speed=600.0, drop_fraction=0.0, n_noise_spikes=0, seed=3
+            env, rates, speed=600.0, drop_fraction=0.0, n_noise_spikes=0, rng=3
         )
         for a, b in zip(default.spike_times, explicit.spike_times, strict=True):
             np.testing.assert_array_equal(a, b)
@@ -305,7 +305,7 @@ class TestDegradation:
         path or spike streams of a seeded event.
         """
         env, rates = place_code
-        event = simulate_replay_event(env, rates, duration=0.05, seed=seed, **kwargs)
+        event = simulate_replay_event(env, rates, duration=0.05, rng=seed, **kwargs)
         for unit, train in enumerate(event.spike_times):
             np.testing.assert_allclose(
                 train, expected.get(unit, []), rtol=1e-12, atol=0.0
@@ -314,9 +314,9 @@ class TestDegradation:
     @pytest.mark.parametrize("fraction", [0.25, 0.5, 1.0])
     def test_removes_that_fraction_of_the_rate_map_spikes(self, place_code, fraction):
         env, rates = place_code
-        clean = simulate_replay_event(env, rates, speed=600.0, rate_gain=3.0, seed=4)
+        clean = simulate_replay_event(env, rates, speed=600.0, rate_gain=3.0, rng=4)
         dropped = simulate_replay_event(
-            env, rates, speed=600.0, rate_gain=3.0, drop_fraction=fraction, seed=4
+            env, rates, speed=600.0, rate_gain=3.0, drop_fraction=fraction, rng=4
         )
         n_clean = sum(train.size for train in clean.spike_times)
         n_left = sum(train.size for train in dropped.spike_times)
@@ -335,10 +335,10 @@ class TestDegradation:
         total = np.zeros(len(rates))
         for seed in range(40):
             clean = simulate_replay_event(
-                env, rates, kind="random", rate_gain=4.0, seed=seed
+                env, rates, kind="random", rate_gain=4.0, rng=seed
             )
             half = simulate_replay_event(
-                env, rates, kind="random", rate_gain=4.0, drop_fraction=0.5, seed=seed
+                env, rates, kind="random", rate_gain=4.0, drop_fraction=0.5, rng=seed
             )
             sizes = np.array([t.size for t in clean.spike_times])
             lost += sizes - np.array([t.size for t in half.spike_times])
@@ -351,10 +351,10 @@ class TestDegradation:
 
     def test_adds_noise_spikes_uniformly_over_cells_and_time(self, place_code):
         env, rates = place_code
-        clean = simulate_replay_event(env, rates, kind="stationary", seed=5)
+        clean = simulate_replay_event(env, rates, kind="stationary", rng=5)
         n_noise = 20_000
         noisy = simulate_replay_event(
-            env, rates, kind="stationary", n_noise_spikes=n_noise, seed=5
+            env, rates, kind="stationary", n_noise_spikes=n_noise, rng=5
         )
         assert noisy.n_noise_spikes == n_noise
         added = [
@@ -375,7 +375,7 @@ class TestDegradation:
     def test_noise_spikes_do_not_depend_on_the_removal(self, place_code):
         """Removal acts on the rate-map spikes; the noise spikes are kept whole."""
         env, rates = place_code
-        common = {"speed": 600.0, "rate_gain": 3.0, "seed": 6}
+        common = {"speed": 600.0, "rate_gain": 3.0, "rng": 6}
         clean = simulate_replay_event(env, rates, **common)
         noise_only = simulate_replay_event(env, rates, n_noise_spikes=50, **common)
         dropped = simulate_replay_event(env, rates, drop_fraction=0.6, **common)
@@ -397,9 +397,9 @@ class TestDegradation:
     def test_seed_repeats_the_degraded_event(self, place_code):
         env, rates = place_code
         kwargs = {"speed": 600.0, "drop_fraction": 0.3, "n_noise_spikes": 30}
-        first = simulate_replay_event(env, rates, seed=8, **kwargs)
-        second = simulate_replay_event(env, rates, seed=8, **kwargs)
-        other = simulate_replay_event(env, rates, seed=9, **kwargs)
+        first = simulate_replay_event(env, rates, rng=8, **kwargs)
+        second = simulate_replay_event(env, rates, rng=8, **kwargs)
+        other = simulate_replay_event(env, rates, rng=9, **kwargs)
         for a, b in zip(first.spike_times, second.spike_times, strict=True):
             np.testing.assert_array_equal(a, b)
         assert any(
@@ -410,7 +410,7 @@ class TestDegradation:
     def test_summary_reports_the_degradation(self, place_code):
         env, rates = place_code
         event = simulate_replay_event(
-            env, rates, speed=600.0, drop_fraction=0.5, n_noise_spikes=7, seed=0
+            env, rates, speed=600.0, drop_fraction=0.5, n_noise_spikes=7, rng=0
         )
         summary = event.summary()
         assert summary["drop_fraction"] == 0.5
@@ -426,7 +426,7 @@ class TestDegradation:
             hits = 0
             for seed in range(20):
                 event = simulate_replay_event(
-                    env, rates, speed=800.0, rate_gain=2.0, seed=seed, **kwargs
+                    env, rates, speed=800.0, rate_gain=2.0, rng=seed, **kwargs
                 )
                 spikes, interval = list(event.spike_times), (0.0, event.duration)
                 # Too few active cells to correlate is a missed event.
@@ -503,7 +503,7 @@ class TestRefusals:
 
 def test_result_is_read_only_and_pickles(place_code):
     env, rates = place_code
-    event = simulate_replay_event(env, rates, speed=600.0, seed=0)
+    event = simulate_replay_event(env, rates, speed=600.0, rng=0)
     assert isinstance(event, ReplayEventSimulation)
     with pytest.raises(ValueError, match="read-only"):
         event.track_positions[0] = 1.0

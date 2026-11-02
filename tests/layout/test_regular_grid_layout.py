@@ -387,7 +387,7 @@ def test_boundary_bins_without_inference_stay_inside_dimension_ranges():
 def linear_track_env():
     from neurospatial.simulation import linear_track_session
 
-    env = linear_track_session(duration=10.0, n_place_cells=1, seed=0).env
+    env = linear_track_session(duration=10.0, n_place_cells=1, rng=0).env
     assert env.n_dims == 1
     return env
 

@@ -53,7 +53,7 @@ from neurospatial._validation import (
     validate_integer_at_least,
 )
 from neurospatial.replay._compare import _tolerance
-from neurospatial.replay._inputs import _checked_intervals
+from neurospatial.replay._inputs import _checked_intervals, _selected_units
 from neurospatial.stats import _binomial_rate
 
 if TYPE_CHECKING:
@@ -1507,7 +1507,7 @@ def null_events(
     *,
     kind: Literal["cell_identity", "spike_shift", "spike_time_uniform", "rate_poisson"],
     n_copies: int = 1,
-    cells: NDArray[np.bool_] | None = None,
+    unit_ids: NDArray[np.intp] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> NullSpikeData:
     """Make events without replay from real candidate events.
@@ -1544,8 +1544,11 @@ def null_events(
         How each null event is made.
     n_copies : int, default=1
         Null events made from each real event.
-    cells : NDArray[np.bool_] or None, shape (n_cells,)
-        The cells to randomize, such as the place cells of the decoder
+    unit_ids : NDArray[np.intp] or None, shape (n_selected,)
+        Distinct ids of the units to randomize, in any order: the labels
+        a spike group carries (a dict's keys, a ``TsGroup``'s index), else
+        positions in ``spike_times`` (the default labels ``np.arange(n)``),
+        such as the place cells of the decoder
         (Takigawa et al. 2024 reassigned only "good" place cells); the
         others keep their spikes. None randomizes every cell.
     rng : np.random.Generator, int, or None
@@ -1562,7 +1565,7 @@ def null_events(
     ------
     ValueError
         If ``kind`` is not one of the options, ``n_copies`` is not a
-        positive integer, ``cells`` is not one boolean per cell, or
+        positive integer, ``unit_ids`` is not distinct ids of units, or
         ``intervals`` is not a list of finite ``(start, stop)`` with
         ``start < stop`` that do not overlap.
 
@@ -1670,7 +1673,7 @@ def null_events(
     >>> print([train.size for train in null.spike_times])
     [6, 5, 0]
     """
-    from neurospatial._spikes import as_spike_trains
+    from neurospatial._spikes import _as_spike_trains_with_ids
     from neurospatial.replay.rank_order import _spikes_by_window
 
     operation = "null_events()"
@@ -1678,14 +1681,8 @@ def null_events(
     validate_integer_at_least(n_copies, 1, name="n_copies", owner=operation)
     windows = _checked_intervals(intervals, operation)
     _check_no_overlap(windows, operation)
-    trains = as_spike_trains(spike_times)
-    chosen = np.ones(len(trains), dtype=bool) if cells is None else np.asarray(cells)
-    if chosen.dtype != np.bool_ or chosen.shape != (len(trains),):
-        msg = (
-            f"{operation}: cells must be one boolean per cell, shape "
-            f"({len(trains)},), got dtype {chosen.dtype} and shape {chosen.shape}."
-        )
-        raise ValueError(msg)
+    trains, labels = _as_spike_trains_with_ids(spike_times)
+    chosen = _selected_units(unit_ids, len(trains), operation, labels)
     randomized = np.flatnonzero(chosen)
     generator = np.random.default_rng(rng)
     durations = windows[:, 1] - windows[:, 0]
@@ -1888,7 +1885,7 @@ def simulated_null_events(
             duration=duration,
             rate_gain=rate_gain,
             start_position=start_position,
-            seed=int(seed),
+            rng=int(seed),
         )
         if not placed:
             placed = [[] for _ in event.spike_times]
