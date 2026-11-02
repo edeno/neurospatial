@@ -252,7 +252,11 @@ ignore = [
 "scripts/*" = ["T201"]
 "benchmarks/*" = ["T201"]
 "data/*" = ["T201"]
-"datasets/**/*.py" = ["T201"]
+"datasets/**/*.py" = [
+    "T201",    # loader scripts and the driver print summaries
+    "RUF001",  # tables use the en dash for n/a and the multiplication sign
+]
+"datasets/tests/*.py" = ["ARG"]  # pytest fixtures are used by name, not by value
 "examples/*.py" = [
     "E402",  # Module level import not at top of file (common in notebook cells)
     "N803",  # Allow uppercase argument names (mathematical notation in examples)

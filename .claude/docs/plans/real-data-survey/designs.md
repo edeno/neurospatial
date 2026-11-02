@@ -127,52 +127,9 @@ cannot read; that needs `inflate64` and is out of scope until then.
 
 ## Record validation
 
-`datasets/_record.py` holds `Recording` ([contract](shared-contracts.md#recording)) and:
-
-```python
-POSITION_UNITS = {"cm", "m", "pixel", "arbitrary"}
-
-
-def validate_recording(rec: Recording) -> None:
-    """Raise ValueError listing every contract violation in ``rec``."""
-    problems: list[str] = []
-    if (rec.times is None) != (rec.positions is None):
-        problems.append("times and positions must be set together")
-    if rec.times is not None and rec.positions is not None:
-        if rec.times.ndim != 1 or not np.all(np.diff(rec.times) > 0):
-            problems.append("times must be 1-D and strictly increasing")
-        if rec.positions.ndim != 2 or rec.positions.shape[0] != rec.times.shape[0]:
-            problems.append(f"positions shape {rec.positions.shape} does not match {rec.times.shape[0]} times")
-        if rec.position_units not in POSITION_UNITS:
-            problems.append(f"position_units {rec.position_units!r} not in {sorted(POSITION_UNITS)}")
-    if rec.headings is not None:
-        if rec.times is None or rec.headings.shape != rec.times.shape:
-            problems.append("headings must have one value per time")
-        finite = rec.headings[np.isfinite(rec.headings)]
-        if finite.size and (finite.min() < -np.pi or finite.max() > np.pi):
-            problems.append("headings must be radians in [-pi, pi]")
-    if rec.spike_times is not None:
-        if rec.unit_ids is None or len(rec.unit_ids) != len(rec.spike_times):
-            problems.append("unit_ids must have one id per spike train")
-        elif len(np.unique(rec.unit_ids)) != len(rec.unit_ids):
-            problems.append("unit_ids must be unique")
-        for index, train in enumerate(rec.spike_times):
-            if not np.all(np.isfinite(train)) or np.any(np.diff(train) < 0):
-                problems.append(f"spike train {index} must be finite and sorted")
-    if (rec.activity is None) != (rec.activity_times is None):
-        problems.append("activity and activity_times must be set together")
-    elif rec.activity is not None and rec.activity.shape[0] != rec.activity_times.shape[0]:
-        problems.append("activity must have one row per activity time")
-    for name, table in rec.epochs.items():
-        if table.ndim != 2 or table.shape[1] != 2 or np.any(table[:, 1] < table[:, 0]):
-            problems.append(f"epochs[{name!r}] must be (n, 2) with stop >= start")
-    missing_params = {"bin_size"} - set(rec.params) if rec.positions is not None else set()
-    if missing_params:
-        problems.append(f"params missing {sorted(missing_params)}")
-    if problems:
-        msg = f"{rec.dataset}/{rec.session} breaks the Recording contract:\n- " + "\n- ".join(problems)
-        raise ValueError(msg)
-```
+`datasets/_record.py` holds `Recording` ([contract](shared-contracts.md#recording))
+and `validate_recording`, which collects every violation of the contract
+invariants and raises one `ValueError` listing them all.
 
 ## Expectations
 
@@ -422,7 +379,7 @@ while loading or running operations on correctly loaded data is a candidate
 false alarm. **Not aggressive enough:** each recording is re-run with one known
 defect re-introduced (a *hazard*); an operation that accepts it without a
 warning or error is a candidate silent hazard. Both live in
-`datasets/_warnings.py`.
+`datasets/_calibration.py`.
 
 ```python
 import re
