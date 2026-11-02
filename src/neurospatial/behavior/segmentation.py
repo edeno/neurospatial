@@ -72,7 +72,6 @@ from neurospatial._intervals import (
     run_sample_bounds,
     start_allocation,
     times_in_intervals,
-    warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
@@ -2025,8 +2024,8 @@ def detect_goal_directed_runs(
         are not a metric length.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
-        between consecutive samples (a dropped frame; a NaN row is not
-        bridged here, see Notes). Longer gaps are excluded as tracking losses;
+        between consecutive samples (a dropped frame and a NaN row are the
+        same missing sample). Longer gaps are excluded as tracking losses;
         ``None`` bridges every gap. The default is calibrated for typical video
         and DeepLabCut tracking; choose a value longer than routine dropped or
         low-confidence frames and shorter than real tracking losses or pickups.
@@ -2082,14 +2081,13 @@ def detect_goal_directed_runs(
 
     Notes
     -----
-    A NaN position (lost tracking) or one outside the environment is not
-    located (bin -1), so an interval with either sample unlocated is not
-    observed and splits the recording, like a gap longer than ``max_gap``,
-    an ``epochs`` edge or a ``break_before``; each resulting stretch is
-    analyzed on its own, so no approach spans a pause. A NaN row is not
-    bridged here (``env.occupancy`` does bridge it): to bridge missing
-    samples, delete their rows, and a deleted row is bridged when the
-    samples around it are no more than ``max_gap`` apart. A sample in a part of the
+    A NaN position (lost tracking) is a missing sample, the same as a
+    deleted row: it is bridged when the samples around it are no more than
+    ``max_gap`` apart. A position outside the environment is observed but
+    not located (bin -1), so an interval touching it is not observed and
+    splits the recording, like a gap longer than ``max_gap``, an ``epochs``
+    edge or a ``break_before``; each resulting stretch is analyzed on its
+    own, so no approach spans a pause. A sample in a part of the
     environment that is not connected to the goal has no distance to it and
     splits the recording the same way: no approach includes it, and the
     approaches before and after it are scored on their own.
@@ -2188,8 +2186,15 @@ def detect_goal_directed_runs(
     times, position_bins = sample_bins(
         env, times, positions, call="detect_goal_directed_runs"
     )
-    breaks = validate_break_before(
-        break_before, len(times), call="detect_goal_directed_runs"
+    times, position_bins, breaks, _ = bridge_missing_positions(
+        times,
+        position_bins,
+        positions,
+        max_gap=max_gap,
+        epochs=as_intervals(epochs, name="epochs"),
+        break_before=validate_break_before(
+            break_before, len(times), call="detect_goal_directed_runs"
+        ),
     )
 
     from neurospatial.behavior._environment_paths import environment_paths
@@ -2206,7 +2211,8 @@ def detect_goal_directed_runs(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
     )
     # Complete-case rule, as in env.occupancy: an interval is observed only
-    # when both of its samples are in the environment.
+    # when both of its samples are in the environment. NaN rows are already
+    # dropped, and bridge_missing_positions warned if nothing is observed.
     gates = start_allocation(
         times,
         position_bins,
@@ -2215,7 +2221,6 @@ def detect_goal_directed_runs(
         epochs=as_intervals(epochs, name="epochs"),
         break_before=breaks,
     ).gates
-    warn_excluded_intervals(gates)
     results: list[tuple[float, float]] = []
     for first, last in run_sample_bounds(gates.mask):
         run = slice(first, last + 1)
