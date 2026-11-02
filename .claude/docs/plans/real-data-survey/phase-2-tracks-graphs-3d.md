@@ -47,7 +47,7 @@ Prerequisite: phase 1 merged (harness, registry, driver exist).
 | Test | Asserts |
 | --- | --- |
 | `datasets/tests/test_operations_tracks.py::test_graph_env_on_simulated_track` | `env.from_graph` op on a simulated linear-track recording with a 2-node graph returns `ok` and the expected bin count for the track length / bin size |
-| `test_operations_tracks.py::test_replay_op_detects_simulated_sweeps` | on a seeded `neurospatial.simulation.linear_track_session` + `simulate_replay_event` sweeps (as in `docs/user-guide/replay-methods.md:69-107`), `replay.compare_methods` reports a detection rate for sweeps above that for stationary events (ground truth known) |
+| `test_operations_tracks.py::test_replay_op_detects_simulated_sweeps` | on a seeded `neurospatial.simulation.linear_track_session` + `simulate_replay_event` sweeps (as in `docs/user-guide/replay-methods.md:69-107`), `replay.compare_methods` detects most simulated sweeps with both methods (sweeps are replay by construction; stationary events can also be replay, so they are not a negative control) |
 | `test_operations_tracks.py::test_ops_na_without_graph_or_ripples` | ops return `n/a` with an explanatory note when `geometry["graph"]` or `events["ripples"]` is absent |
 | `datasets/tests/test_record.py::test_three_dimensional_recording_validates` | a simulated 3-D recording passes validation and `n_dims` measures 3 |
 | `uv run ruff check datasets && uv run ruff format --check datasets` | clean |

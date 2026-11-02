@@ -96,11 +96,10 @@ def _with_events(track: Recording, kinds: list[str]) -> Recording:
 
 
 def test_replay_op_detects_simulated_sweeps(linear_track):
-    sweeps = replay_compare_methods(_with_events(linear_track, ["sweep"] * 12), {})
-    still = replay_compare_methods(_with_events(linear_track, ["stationary"] * 12), {})
-    assert sweeps.status == still.status == "ok"
+    # Sweeps are replay by construction. Stationary events can be replay too
+    # (DAVIDSON_2009 includes zero-speed lines), so they are no negative control.
+    outcome = replay_compare_methods(_with_events(linear_track, ["sweep"] * 12), {})
+    assert outcome.status == "ok"
+    assert outcome.summary["n_events"] == 12
     for method in ("davidson_2009", "grosmark_2016"):
-        assert sweeps.summary[f"{method}_rate"] > still.summary[f"{method}_rate"], (
-            method
-        )
-    assert sweeps.summary["grosmark_2016_rate"] > 0.5
+        assert outcome.summary[f"{method}_rate"] > 0.5, method

@@ -446,14 +446,16 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Datasets: simulated linear track (offline test construction)
 - Operation / step: replay.compare_methods
 - Kind: docs
-- Evidence: with 100 shuffles per null, 7 of 8 simulated stationary events
-  are called replay when tested together with 8 sweeps, and 0 of 16 when
-  tested with stationary events only. The pseudo-event null draws from the
-  whole set of candidate events (the recipe's note), so the null for a
-  stationary event changes with the batch. The replay guide documents that
-  `DAVIDSON_2009` accepts stationary events; not that the verdict depends on
-  the batch.
-- Harness workaround: the offline test compares sweep-only and stationary-only batches
+- Evidence: with 100 shuffles per null, the same simulated stationary events
+  are called replay 7 of 8 times when tested together with 8 sweeps, and 0 of
+  16 times when tested with stationary events only. Stationary events can be
+  replay, and the recipe's line search includes zero-speed lines on purpose,
+  so accepting them is not the issue; the issue is that an event's verdict
+  changes with the other events in the call. The pseudo-event null draws from
+  the whole set of candidate events (the recipe's note), so the null for an
+  event depends on the batch. The replay guide documents that `DAVIDSON_2009`
+  accepts stationary events, not that its verdicts depend on the batch.
+- Harness workaround: none
 - Proposed change: say in the recipe's notes and the replay guide that
   pseudo-event verdicts depend on the set of events passed together.
 - Status: open
