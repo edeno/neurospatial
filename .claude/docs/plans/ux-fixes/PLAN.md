@@ -1,6 +1,6 @@
 # UX fixes Implementation Plan
 
-**Status:** Not started.
+**Status:** In progress — phase 1
 
 These changes fix the problems found in the 2026-11-02 UX audit
 (`docs/reviews/UX_REVIEW_2026-11-02.md`):
