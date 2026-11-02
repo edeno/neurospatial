@@ -413,8 +413,7 @@ class _Column:
     ``name`` is both the column name and the record attribute that holds it.
     The attribute's annotation on the record class sets what the column
     accepts: a ``Literal`` lists the allowed strings, ``str`` takes any
-    string, ``str | None`` also takes None (stored as ``""``), and ``float``
-    and ``int`` are stored as float64 and int64.
+    string, and ``int`` is stored as int64.
     """
 
     name: str
@@ -456,11 +455,11 @@ def _record_columns(
     records: object,
     arrays: dict[str, Any],
     *,
-    times: dict[str, str],
+    time: tuple[str, str],
     columns: tuple[_Column, ...],
     needs: str,
-) -> tuple[list[NDArray[np.float64]], dict[str, tuple[str, NDArray[np.generic]]]]:
-    """Return the times and columns of a table, from records or from arrays.
+) -> tuple[NDArray[np.float64], dict[str, tuple[str, NDArray[np.generic]]]]:
+    """Return the times and columns of an events table, from records or arrays.
 
     Parameters
     ----------
@@ -470,9 +469,9 @@ def _record_columns(
         The writer's records argument; None to read ``arrays`` instead.
     arrays : dict of str to array-like or None
         Every array argument of the writer, by keyword.
-    times : dict of str to str
-        Array keyword of each time to the record attribute that holds it,
-        e.g. ``{"times": "time"}``.
+    time : (str, str)
+        Array keyword of the times and the record attribute that holds each,
+        e.g. ``("times", "time")``.
     columns : tuple of _Column
         The other columns, in table order.
     needs : str
@@ -480,31 +479,32 @@ def _record_columns(
 
     Returns
     -------
-    times : list of NDArray[np.float64], each shape (n_records,)
-        The checked times, in the order of ``times``.
+    times : NDArray[np.float64], shape (n_records,)
+        The checked times.
     columns : dict of str to (str, NDArray), values shape (n_records,)
         ``name -> (description, values)`` for each column given.
     """
     record = record_class.__name__.lower()
-    attributes = {**times, **{c.argument or c.name: c.name for c in columns}}
+    reference, attribute = time
+    attributes = {
+        reference: attribute,
+        **{c.argument or c.name: c.name for c in columns},
+    }
     if records is not None:
         _refuse_records_with_arrays(f"{record}s", arrays)
-        objects = _records(records, record_class, f"{record}s", arrays="/".join(times))
+        objects = _records(records, record_class, f"{record}s", arrays=reference)
         given = {
             key: [getattr(o, attribute) for o in objects]
             for key, attribute in attributes.items()
         }
     else:
-        required = [*times, *(c.argument or c.name for c in columns if c.required)]
+        required = [reference, *(c.argument or c.name for c in columns if c.required)]
         if any(arrays[key] is None for key in required):
             raise ValueError(needs)
         given = {key: value for key, value in arrays.items() if value is not None}
 
-    reference = next(iter(times))
-    checked = [_checked_event_times(given[key], key) for key in times]
-    n = len(checked[0])
-    for key, values in zip(times, checked, strict=True):
-        _refuse_length(len(values), key, n, reference)
+    checked = _checked_event_times(given[reference], reference)
+    n = len(checked)
     hints = get_type_hints(record_class)
     built = {
         c.name: (
@@ -547,8 +547,8 @@ def _column_values(
             f"characters. Pass [{values!r}] * {n} to use it for every record."
         )
         raise TypeError(msg)
-    if hint is float or hint is int:
-        numbers = np.array(values, dtype=np.float64 if hint is float else np.int64)
+    if hint is int:
+        numbers = np.array(values, dtype=np.int64)
         _refuse_length(len(numbers), argument, n, reference)
         return numbers
     array: NDArray[Any] = (
@@ -557,8 +557,6 @@ def _column_values(
     _refuse_length(len(array), argument, n, reference)
     if array.dtype.kind != "U":
         array = array.astype(object)
-        if type(None) in get_args(hint):
-            array = np.array(["" if v is None else v for v in array], object)
         if all(map(isinstance, array, repeat(str))):
             array = array.astype(str)
     record = record_class.__name__
@@ -655,7 +653,6 @@ def _build_time_intervals(
     start_times: NDArray[np.float64],
     stop_times: NDArray[np.float64],
     columns: dict[str, tuple[str, NDArray[np.generic]]],
-    ids: NDArray[np.int64] | None = None,
 ) -> Any:
     """Build a TimeIntervals table column by column.
 
@@ -671,20 +668,17 @@ def _build_time_intervals(
     columns : dict[str, tuple[str, NDArray]]
         Extra columns, each ``name -> (description, values)`` with values of
         shape ``(n_intervals,)``.
-    ids : NDArray[np.int64], shape (n_intervals,), optional
-        Row ids (the table's ``id`` column); default ``0`` to ``n - 1``.
 
     Returns
     -------
     pynwb.epoch.TimeIntervals
     """
-    from hdmf.common import ElementIdentifiers, VectorData
+    from hdmf.common import VectorData
     from pynwb.epoch import TimeIntervals
 
     return TimeIntervals(
         name=name,
         description=description,
-        id=None if ids is None else ElementIdentifiers(name="id", data=ids),
         columns=[
             VectorData(
                 name="start_time",
@@ -926,11 +920,11 @@ def write_region_crossings(
     # Check ndx-events first so users see the install hint.
     _require_ndx_events()
 
-    (crossing_times,), columns = _record_columns(
+    crossing_times, columns = _record_columns(
         Crossing,
         crossings,
         {"times": times, "regions": regions, "directions": directions},
-        times={"times": "time"},
+        time=("times", "time"),
         columns=_CROSSING_COLUMNS,
         needs="write_region_crossings needs either 'crossings' (from "
         "detect_region_crossings) or all of 'times', 'regions' and 'directions'.",
