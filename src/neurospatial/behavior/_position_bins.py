@@ -1,9 +1,9 @@
-"""One check of the per-sample ``position_bins`` behavior functions take."""
+"""Per-sample bins for the behavior functions: checked bins and the detector preamble."""
 
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -11,10 +11,13 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     EMPTY_RESULT,
+    as_intervals,
+    drop_missing_samples,
     start_allocation,
     times_in_intervals,
     warn_excluded_intervals,
 )
+from neurospatial._observation import validate_break_before
 from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
@@ -111,8 +114,8 @@ def sample_bins(
     *,
     call: str,
     epochs: NDArray[np.float64] | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.int64]]:
-    """Validated ``times`` and each position's bin, ``-1`` outside or missing.
+) -> tuple[NDArray[np.float64], NDArray[np.int64], NDArray[np.bool_]]:
+    """Validated ``times``, each position's bin (``-1`` outside or missing), tracking.
 
     The behavior detectors take ``(env, times, positions)`` and bin the
     positions here, so users never handle bin indices. A NaN position (lost
@@ -137,6 +140,8 @@ def sample_bins(
     -------
     times : ndarray of float64, shape (n_samples,)
     bins : ndarray of int64, shape (n_samples,)
+    tracked : ndarray of bool, shape (n_samples,)
+        True where every coordinate is finite (NaN marks lost tracking).
 
     Raises
     ------
@@ -169,11 +174,10 @@ def sample_bins(
     bins = np.asarray(env.bin_at(p), dtype=np.int64)
     # Time outside the epochs (a sleep box, a home cage) is not analyzed, so
     # positions there say nothing about the units.
-    counted = np.asarray(np.isfinite(p).all(axis=1), dtype=bool)
-    if epochs is not None:
-        counted &= times_in_intervals(epochs, t)
+    tracked = np.asarray(np.isfinite(p).all(axis=1), dtype=bool)
+    counted = tracked if epochs is None else tracked & times_in_intervals(epochs, t)
     _warn_if_mostly_outside(bins, counted, call=call)
-    return t, bins
+    return t, bins, tracked
 
 
 def _warn_if_mostly_outside(
@@ -204,7 +208,7 @@ def _warn_if_mostly_outside(
 def bridge_missing_positions(
     times: NDArray[np.float64],
     bins: NDArray[np.int64],
-    positions: ArrayLike,
+    tracked: NDArray[np.bool_],
     *,
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
@@ -231,8 +235,8 @@ def bridge_missing_positions(
         Validated timestamps in seconds.
     bins : ndarray of int64, shape (n_samples,)
         Each sample's bin (:func:`sample_bins`), -1 outside or missing.
-    positions : array-like, shape (n_samples, n_dims) or (n_samples,)
-        The positions the bins came from; NaN where missing.
+    tracked : ndarray of bool, shape (n_samples,)
+        False where the position is missing (:func:`sample_bins`).
     max_gap, epochs, break_before
         The detector's validated gates; ``epochs`` as resolved windows.
     result : str
@@ -247,20 +251,78 @@ def bridge_missing_positions(
     kept : ndarray of intp, shape (n_kept,)
         Indices of the kept rows in the original arrays.
     """
-    samples = np.asarray(positions, dtype=np.float64)
-    tracked: NDArray[np.bool_] = (
-        np.asarray(np.isfinite(samples.reshape(times.size, -1)).all(axis=1))
-        if times.size
-        else np.zeros(0, dtype=bool)
-    )
     gates = start_allocation(
         times, bins, tracked, max_gap=max_gap, epochs=epochs, break_before=break_before
     ).gates
     warn_excluded_intervals(gates, result=result)
-    kept = np.flatnonzero(tracked)
-    if break_before is not None:
-        declared = np.cumsum(np.asarray(break_before, dtype=np.intp))
-        moved = np.zeros(kept.size, dtype=bool)
-        moved[1:] = declared[kept[1:]] > declared[kept[:-1]]
-        break_before = moved
+    kept, break_before = drop_missing_samples(tracked, break_before)
     return times[kept], bins[kept], break_before, kept
+
+
+def gate_settings(
+    max_gap: float | None, windows: NDArray[np.float64] | None
+) -> dict[str, Any]:
+    """The ``max_gap`` and resolved ``epochs`` entries of ``analysis_settings``."""
+    return {
+        "max_gap": None if max_gap is None else float(max_gap),
+        "epochs": None if windows is None else windows.tolist(),
+    }
+
+
+def observed_samples(
+    env: Environment,
+    times: ArrayLike,
+    positions: ArrayLike,
+    *,
+    call: str,
+    max_gap: float | None,
+    epochs: Any,
+    break_before: ArrayLike | None,
+) -> tuple[
+    NDArray[np.float64],
+    NDArray[np.int64],
+    NDArray[np.bool_] | None,
+    NDArray[np.intp],
+    NDArray[np.float64] | None,
+]:
+    """The behavior detectors' preamble: bin the positions, then drop NaN rows.
+
+    Resolves ``epochs`` once, runs :func:`sample_bins` and
+    :func:`bridge_missing_positions` with the validated ``break_before``,
+    and returns the resolved windows for the detector's own gates and
+    settings.
+
+    Parameters
+    ----------
+    env : Environment
+        Allocentric environment the positions were recorded in.
+    times : array-like, shape (n_samples,)
+        Finite, strictly increasing timestamps in seconds.
+    positions : array-like, shape (n_samples, n_dims)
+        Positions in the environment's coordinates; NaN where missing.
+    call : str
+        Public function name, used in messages.
+    max_gap, epochs, break_before
+        The detector's gate arguments, as the user passed them.
+
+    Returns
+    -------
+    times : ndarray of float64, shape (n_kept,)
+    bins : ndarray of int64, shape (n_kept,)
+    break_before : ndarray of bool, shape (n_kept,), or None
+    kept : ndarray of intp, shape (n_kept,)
+        Indices of the kept rows in the original arrays.
+    windows : ndarray of float64, shape (n_windows, 2), or None
+        ``epochs`` resolved by :func:`~neurospatial._intervals.as_intervals`.
+    """
+    windows = as_intervals(epochs, name="epochs")
+    t, bins, tracked = sample_bins(env, times, positions, call=call, epochs=windows)
+    t, bins, breaks, kept = bridge_missing_positions(
+        t,
+        bins,
+        tracked,
+        max_gap=max_gap,
+        epochs=windows,
+        break_before=validate_break_before(break_before, t.size, call=call),
+    )
+    return t, bins, breaks, kept, windows

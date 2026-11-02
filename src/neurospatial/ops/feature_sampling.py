@@ -587,6 +587,21 @@ def _validated_feature_ids(
     return ids
 
 
+def _values_at_bins(
+    fields: NDArray[np.float64], bins: NDArray[np.intp]
+) -> NDArray[np.float64]:
+    """``fields`` ``(n_features, n_bins)`` at ``bins`` of any shape, NaN at ``-1``.
+
+    ``bins`` holds active-bin indices or ``-1`` (no bin). One gather from the
+    fields with a NaN row appended, which ``-1`` selects, so no intermediate
+    array of the result's size is made. Returns shape
+    ``bins.shape + (n_features,)``.
+    """
+    padded = np.vstack([fields.T, np.full((1, fields.shape[0]), np.nan)])
+    values: NDArray[np.float64] = padded[bins]
+    return values
+
+
 def _read_bins(
     fields: NDArray[np.float64], bins: NDArray[np.intp]
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
@@ -595,8 +610,6 @@ def _read_bins(
     ``-1`` never indexes a field: points without a bin stay NaN. Returns
     ``values`` and ``support`` of shape ``bins.shape + (n_features,)``.
     """
-    inside = bins >= 0
-    values = np.full((*bins.shape, fields.shape[0]), np.nan)
-    values[inside] = fields[:, bins[inside]].T
-    support = inside[..., np.newaxis] & np.isfinite(values)
-    return values, support
+    values = _values_at_bins(fields, bins)
+    # Points without a bin are NaN, so finite values are the supported ones.
+    return values, np.isfinite(values)

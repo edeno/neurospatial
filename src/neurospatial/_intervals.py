@@ -1701,6 +1701,27 @@ _HEADINGS_FIX = (
 )
 
 
+def empty_selection_names(
+    epochs: NDArray[np.float64] | None, spike_window: NDArray[np.float64] | None
+) -> list[str]:
+    """The resolved windows that are an empty selection (no rows)."""
+    return [
+        name
+        for name, windows in (("epochs", epochs), ("spike_window", spike_window))
+        if windows is not None and windows.shape[0] == 0
+    ]
+
+
+def empty_selection_message(names: list[str], consequence: str) -> str:
+    """Say that the ``names`` windows select no time, so ``consequence``."""
+    return (
+        f"{' and '.join(names)} {'select' if len(names) > 1 else 'selects'} no "
+        "time (an Intervals with no windows, such as a condition with no "
+        f"trials), so {consequence}. Fix: select intervals with duration, or "
+        "leave this condition out."
+    )
+
+
 def _all_excluded_message(
     gates: IntervalGates,
     dt: NDArray[np.float64],
@@ -1709,23 +1730,11 @@ def _all_excluded_message(
     result: str,
 ) -> str:
     """The warning for a selection that excludes every interval."""
-    empty = [
-        name
-        for name, value in (
-            ("epochs", gates.epochs),
-            ("spike_window", gates.spike_window),
-        )
-        if value is not None and value.shape[0] == 0
-    ]
+    empty = empty_selection_names(gates.epochs, gates.spike_window)
     if empty:
         # A deliberate empty selection, such as a condition with no trials:
         # nothing is wrong with the clock, so say what happened.
-        verb = "select" if len(empty) > 1 else "selects"
-        return (
-            f"{' and '.join(empty)} {verb} no time (an Intervals with no windows, "
-            f"such as a condition with no trials), so {result}. Fix: select "
-            "intervals with duration, or leave this condition out."
-        )
+        return empty_selection_message(empty, result)
     times, max_gap, sample_valid = gates.times, gates.max_gap, gates.sample_valid
     min_speed, break_before = gates.min_speed, gates.break_before
     if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():

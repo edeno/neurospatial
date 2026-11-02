@@ -19,6 +19,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._intervals import empty_selection_message
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -39,6 +40,8 @@ from neurospatial._validation import timestamps_of
 if TYPE_CHECKING:
     import pandas as pd
     from matplotlib.axes import Axes
+
+    from neurospatial.events.alignment import _PeriEventCounts
 
 
 def _validate_event_indices(
@@ -63,25 +66,14 @@ def _validate_event_indices(
         raise ValueError(msg)
 
 
-def empty_selection_names(
-    epochs: NDArray[np.float64] | None, spike_window: NDArray[np.float64] | None
-) -> list[str]:
-    """The resolved windows that are an empty selection (no rows)."""
-    return [
-        name
-        for name, windows in (("epochs", epochs), ("spike_window", spike_window))
-        if windows is not None and windows.shape[0] == 0
-    ]
-
-
 def warn_empty_selection(names: list[str], *, n_events: int, result: str) -> None:
     """Warn that an empty selection leaves no event to average."""
     warnings.warn(
-        f"{' and '.join(names)} {'select' if len(names) > 1 else 'selects'} no "
-        "time (an Intervals with no windows, "
-        f"such as a condition with no trials), so none of the {n_events} "
-        f"events is analyzed and {result} is NaN with n_events == 0. Fix: "
-        "select intervals with duration, or leave this condition out.",
+        empty_selection_message(
+            names,
+            f"none of the {n_events} events is analyzed and {result} is NaN "
+            "with n_events == 0",
+        ),
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
@@ -263,15 +255,31 @@ def _offset_scale(
 
 
 def _cut_to_limits(
-    times: NDArray[np.float64],
+    edges: NDArray[np.float64],
     lower: NDArray[np.float64],
     upper: NDArray[np.float64],
     scale: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Clip absolute ``times`` to ``[lower, upper]``, snapping rounded bounds."""
-    snapped = _snap_to(_snap_to(times, lower, scale), upper, scale)
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Clip absolute bin ``edges`` to ``[lower, upper]``, snapping rounded bounds.
+
+    Parameters
+    ----------
+    edges : ndarray of float64, shape (n_events, n_bins + 1)
+        Each event's bin edges on the recording clock.
+    lower, upper, scale : ndarray of float64, shape (n_events, 1)
+        Each event's limits and the magnitude of its edges (:func:`_snap_to`).
+
+    Returns
+    -------
+    cut : ndarray of float64, shape (n_events, n_bins + 1)
+        The edges, snapped to a limit within float rounding, then clipped.
+    covered : ndarray of bool, shape (n_events, n_bins)
+        Bins whose snapped edges lie wholly inside the limits.
+    """
+    snapped = _snap_to(_snap_to(edges, lower, scale), upper, scale)
+    covered = (snapped[:, :-1] >= lower) & (snapped[:, 1:] <= upper)
     cut: NDArray[np.float64] = np.clip(snapped, lower, upper)
-    return cut
+    return cut, covered
 
 
 def _window_bounds(
@@ -618,6 +626,7 @@ class _PeriEventExports:
     bin_size: float
     n_events: int
     n_events_dropped: int
+    event_indices: NDArray[np.intp] | None
     events_per_bin: NDArray[np.int64] | None
     align: str | None
     event_ids: NDArray[np.int64] | None
@@ -675,6 +684,24 @@ class _PeriEventExports:
         )
         df.attrs = self._table_attrs()
         return df
+
+
+def _cohort_fields(source: _PeriEventExports | _PeriEventCounts) -> dict[str, Any]:
+    """The event-cohort fields a PSTH result forwards from ``source``.
+
+    ``source`` is a PSTH result, or the counts a PSTH call builds one from;
+    the caller adds the histograms, SEM and unit labels.
+    """
+    return {
+        "n_events": source.n_events,
+        "window": source.window,
+        "bin_size": source.bin_size,
+        "n_events_dropped": source.n_events_dropped,
+        "event_indices": source.event_indices,
+        "events_per_bin": source.events_per_bin,
+        "align": source.align,
+        "event_ids": source.event_ids,
+    }
 
 
 # --- Result Dataclasses ---
@@ -1134,15 +1161,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         return PeriEventResult(
             histogram=self.histograms[idx],
             sem=self.sem[idx],
-            n_events=self.n_events,
-            window=self.window,
-            bin_size=self.bin_size,
             unit_id=unit_id,
-            n_events_dropped=self.n_events_dropped,
-            event_indices=self.event_indices,
-            events_per_bin=self.events_per_bin,
-            align=self.align,
-            event_ids=self.event_ids,
+            **_cohort_fields(self),
         )
 
     def __iter__(self) -> Iterator[PeriEventResult]:
@@ -1298,14 +1318,7 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         mean_result = PeriEventResult(
             histogram=self.mean_histogram,
             sem=self.mean_sem,
-            n_events=self.n_events,
-            window=self.window,
-            bin_size=self.bin_size,
-            n_events_dropped=self.n_events_dropped,
-            event_indices=self.event_indices,
-            events_per_bin=self.events_per_bin,
-            align=self.align,
-            event_ids=self.event_ids,
+            **_cohort_fields(self),
         )
         return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
 

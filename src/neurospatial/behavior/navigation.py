@@ -119,6 +119,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._interval_table import _missing_as_none
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
     break_sample_times,
@@ -128,6 +129,7 @@ from neurospatial._intervals import (
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.behavior._metric import metric_paths, require_metric
 from neurospatial.behavior._position_bins import validated_position_bins
 from neurospatial.geometry import require_cartesian
@@ -603,13 +605,24 @@ def _harmonic_progress(
     return u
 
 
-def _is_missing(value: object) -> bool:
-    """Whether a per-interval value is a pandas missing marker (NaN, pd.NA)."""
-    if value is None:
-        return True
-    if isinstance(value, float) and np.isnan(value):
-        return True
-    return type(value).__name__ in {"NAType", "NaTType"}
+def _samples_by_row(rows: NDArray[np.intp]) -> list[tuple[int, NDArray[np.intp]]]:
+    """Each row with samples, in row order, and its sample indices in time order.
+
+    Parameters
+    ----------
+    rows : ndarray of intp, shape (n_samples,)
+        Row of each sample, ``-1`` outside every row (:func:`_rows_and_targets`).
+
+    Returns
+    -------
+    list of (int, ndarray of intp)
+    """
+    inside = np.flatnonzero(rows >= 0)
+    if not inside.size:
+        return []
+    order = inside[np.argsort(rows[inside], kind="stable")]
+    unique, first = np.unique(rows[order], return_index=True)
+    return list(zip(unique.tolist(), np.split(order, first[1:]), strict=True))
 
 
 def _as_point(target: object) -> NDArray[np.float64] | None:
@@ -687,7 +700,7 @@ def _rows_and_targets(
     values = list(intervals._per_row(target, name=name)) if by_id else list(target)
     # A missing entry in a pandas column (NaN, pd.NA; pandas 3 stores a
     # missing string as NaN) is an unknown target, like None.
-    values = [None if _is_missing(value) else value for value in values]
+    values = [_missing_as_none(value) for value in values]
     if len(values) != len(intervals):
         msg = (
             f"{call}: {name}= has {len(values)} entries; give one per interval "
@@ -825,15 +838,6 @@ def _target_bins(
             )
         )
     return bins
-
-
-def _validated_point_radius(point_radius: object) -> float | None:
-    from neurospatial._validation import validate_finite_scalar
-
-    if point_radius is None:
-        return None
-    validate_finite_scalar(point_radius, name="point_radius", positive=True)
-    return float(point_radius)  # type: ignore[arg-type]  # checked finite real above
 
 
 def _warn_if_mostly_nan(
@@ -1095,7 +1099,9 @@ def path_progress(
     times, positions = _validated_route_samples(
         env, times, positions, intervals, call=call
     )
-    radius = _validated_point_radius(point_radius)
+    radius = validate_finite_scalar(
+        point_radius, name="point_radius", positive=True, none_allowed=True
+    )
     # One bin converges in 1-D, so only 2-D and 3-D point targets need a size.
     sized = env.n_dims > 1 and not env.is_linearized_track
     rows, starts, single_start = _rows_and_targets(
@@ -1145,8 +1151,7 @@ def path_progress(
             )
         return target_bins[key]
 
-    for row in np.unique(rows[rows >= 0]):
-        samples = np.flatnonzero(rows == row)
+    for row, samples in _samples_by_row(rows):
         st, gl = starts[row], goals[row]
         if st is None or gl is None:
             unknown[samples] = True
@@ -1304,8 +1309,8 @@ def distance_to_goal(
     distances = np.full(times.size, np.nan)
     unknown = np.zeros(times.size, dtype=bool)
     goal_bins: dict[tuple[Any, ...], NDArray[np.intp]] = {}
-    for row in np.unique(rows[rows >= 0]):
-        samples = np.flatnonzero(rows == row)
+    goal_samples: dict[tuple[Any, ...], list[NDArray[np.intp]]] = {}
+    for row, samples in _samples_by_row(rows):
         target = goals[row]
         if target is None:
             unknown[samples] = True
@@ -1322,16 +1327,15 @@ def distance_to_goal(
                     sized=False,
                 )
             )
-        targets = goal_bins[key]
-        if paths is not None:
-            distances[samples] = paths.from_bins_at(targets, positions[samples])
-            continue
-        from scipy.spatial import cKDTree
-
-        inside = samples[env.bin_at(positions[samples]) >= 0]
-        distances[inside] = cKDTree(env.bin_centers[targets]).query(positions[inside])[
-            0
-        ]
+            goal_samples[key] = []
+        goal_samples[key].append(samples)
+    # One distance query per distinct goal: each sample's distance depends
+    # only on its own position.
+    for key, parts in goal_samples.items():
+        samples = np.concatenate(parts)
+        distances[samples] = _distance_to_bins(
+            env, paths, goal_bins[key], positions[samples]
+        )
 
     analyzed = rows >= 0
     _warn_if_mostly_nan(
@@ -2065,16 +2069,38 @@ def distance_to_boundary(
         )
 
     boundary_bins = np.unique(np.asarray(boundary_bins, dtype=np.intp))
-    if paths is not None:
-        return paths.from_bins_at(boundary_bins, positions)
+    return _distance_to_bins(env, paths, boundary_bins, positions)
 
+
+def _distance_to_bins(
+    env: Environment,
+    paths: EnvironmentPaths | None,
+    bins: NDArray[np.intp],
+    positions: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Distance from each position to the nearest center of ``bins``.
+
+    Parameters
+    ----------
+    env : Environment
+    paths : EnvironmentPaths or None
+        Shortest-path engine (:func:`metric_paths`); None for straight lines.
+    bins : ndarray of intp, shape (n_targets,)
+        Distinct, valid bin indices.
+    positions : ndarray, shape (n_samples, n_dims)
+
+    Returns
+    -------
+    ndarray of float64, shape (n_samples,)
+        NaN at positions outside the environment or NaN.
+    """
+    if paths is not None:
+        return paths.from_bins_at(bins, positions)
     from scipy.spatial import cKDTree
 
-    distances = np.full(n_samples, np.nan, dtype=np.float64)
+    distances = np.full(len(positions), np.nan, dtype=np.float64)
     inside = env.bin_at(positions) >= 0
-    distances[inside] = cKDTree(env.bin_centers[boundary_bins]).query(
-        positions[inside]
-    )[0]
+    distances[inside] = cKDTree(env.bin_centers[bins]).query(positions[inside])[0]
     return distances
 
 

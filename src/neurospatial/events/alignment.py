@@ -17,6 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._intervals import (
+    empty_selection_names,
     intervals_contain,
     ragged_arange,
     resolve_time_windows,
@@ -28,15 +29,15 @@ from neurospatial._time_bins import _time_bin_rounding
 from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
+    _cohort_fields,
+    _cut_to_limits,
     _event_times,
     _finite_times,
     _inner_bounds,
     _offset_scale,
     _psth_bins,
-    _snap_to,
     _validate_window,
     _window_bounds,
-    empty_selection_names,
     interval_events,
     warn_empty_selection,
     warn_no_events,
@@ -78,9 +79,8 @@ def align_spikes_to_events(
         For example, ``(-0.5, 1.0)`` captures 500 ms before to 1 s after each
         event.
     align : {"start", "stop"}, default="start"
-        For an ``Intervals``, align each row at its start or at its stop.
-        Plain event times are the alignment points; only the default is
-        allowed with them.
+        Align each ``Intervals`` row at its start or stop, as in
+        :func:`peri_event_histogram`; plain times allow only the default.
 
     Returns
     -------
@@ -100,10 +100,11 @@ def align_spikes_to_events(
 
     Notes
     -----
-    For intervals, each row's window ends where the row does on the side away
-    from the alignment point: aligned at the start, no spike at or after the
-    trial's stop (it belongs to the next trial); aligned at the stop, no spike
-    before the trial's start.
+    For intervals, each row's window is cut as in :func:`peri_event_histogram`
+    (see its Notes): aligned at the start, no spike at or after the trial's
+    stop (it belongs to the next trial); aligned at the stop, no spike before
+    the trial's start. Spikes are not binned, so every spike in the cut
+    window is kept.
 
     See Also
     --------
@@ -228,9 +229,17 @@ class _PeriEventCounts(NamedTuple):
     sem: NDArray[np.float64]
     mean_sem: NDArray[np.float64]
     event_indices: NDArray[np.intp]
-    n_dropped: int
+    n_events_dropped: int
     events_per_bin: NDArray[np.int64] | None
     event_ids: NDArray[np.int64] | None
+    window: tuple[float, float]
+    bin_size: float
+    align: str | None
+
+    @property
+    def n_events(self) -> int:
+        """Number of retained events."""
+        return self.event_indices.size
 
 
 def _peri_event_histograms(
@@ -259,13 +268,17 @@ def _peri_event_histograms(
         SEM across events of each event's mean over units.
     event_indices : NDArray[np.intp], shape (n_events,)
         Input positions of the retained events.
-    n_dropped : int
+    n_events_dropped : int
         Events whose windows leave ``epochs`` or ``spike_window``, or, for
         intervals, hold no whole bin.
     events_per_bin : NDArray[np.int64], shape (n_bins,), or None
         Retained rows covering each bin, for intervals; None for times.
     event_ids : NDArray[np.int64], shape (n_events,), or None
         ``interval_id`` of the retained rows, for intervals; None for times.
+    window, bin_size
+        As given.
+    align : str or None
+        ``align`` for intervals; None for times.
     """
     bin_edges = _psth_bins(window, bin_size, context=context)
     event_times, interval_ids, limits = interval_events(
@@ -283,16 +296,16 @@ def _peri_event_histograms(
     edges = _peri_event_bin_edges(event_times, window, bin_edges, bin_size)
     covered = np.ones((event_times.size, n_bins), dtype=bool)
     if limits is not None:
-        lower = limits[0][event_indices, None]
-        upper = limits[1][event_indices, None]
         # An edge within float rounding of a trial bound is that bound, so a
         # bin ending at the trial's stop is whole and a spike at its start is
-        # counted whichever side the edge rounded to.
-        scale = _offset_scale(event_times, window)[:, None]
-        edges = _snap_to(_snap_to(edges, lower, scale), upper, scale)
-        covered = (edges[:, :-1] >= lower) & (edges[:, 1:] <= upper)
-        # Count only inside the cut: a spike at the stop is the next trial's.
-        edges = np.clip(edges, lower, upper)
+        # counted whichever side the edge rounded to. Count only inside the
+        # cut: a spike at the stop is the next trial's.
+        edges, covered = _cut_to_limits(
+            edges,
+            limits[0][event_indices, None],
+            limits[1][event_indices, None],
+            _offset_scale(event_times, window)[:, None],
+        )
         has_bin = covered.any(axis=1)
         event_times, event_indices = event_times[has_bin], event_indices[has_bin]
         edges, covered = edges[has_bin], covered[has_bin]
@@ -315,16 +328,6 @@ def _peri_event_histograms(
             raise ValueError(msg)
         else:
             warn_empty_selection(names, n_events=n_input_events, result="the histogram")
-        missing = np.full((len(trains), n_bins), np.nan, dtype=np.float64)
-        return _PeriEventCounts(
-            histograms=missing,
-            sem=missing.copy(),
-            mean_sem=np.full(n_bins, np.nan, dtype=np.float64),
-            event_indices=event_indices,
-            n_dropped=n_input_events,
-            events_per_bin=events_per_bin,
-            event_ids=event_ids,
-        )
 
     histograms = np.empty((len(trains), n_bins), dtype=np.float64)
     sem = np.empty((len(trains), n_bins), dtype=np.float64)
@@ -344,9 +347,12 @@ def _peri_event_histograms(
         sem=sem,
         mean_sem=mean_sem,
         event_indices=event_indices,
-        n_dropped=n_input_events - n_events,
+        n_events_dropped=n_input_events - n_events,
         events_per_bin=events_per_bin,
         event_ids=event_ids,
+        window=window,
+        bin_size=bin_size,
+        align=None if limits is None else align,
     )
 
 
@@ -525,16 +531,7 @@ or None
         align=align,
     )
     return PeriEventResult(
-        histogram=psth.histograms[0],
-        sem=psth.sem[0],
-        n_events=psth.event_indices.size,
-        window=window,
-        bin_size=bin_size,
-        n_events_dropped=psth.n_dropped,
-        event_indices=psth.event_indices,
-        events_per_bin=psth.events_per_bin,
-        align=None if psth.events_per_bin is None else align,
-        event_ids=psth.event_ids,
+        histogram=psth.histograms[0], sem=psth.sem[0], **_cohort_fields(psth)
     )
 
 
@@ -573,9 +570,8 @@ def population_peri_event_histogram(
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
     align : {"start", "stop"}, default="start"
-        For an ``Intervals``, align each row at its start or at its stop.
-        Plain event times are the alignment points; only the default is
-        allowed with them.
+        Align each ``Intervals`` row at its start or stop, as in
+        :func:`peri_event_histogram`; plain times allow only the default.
     epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, \
 or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
@@ -641,23 +637,10 @@ or None
     -----
     With a single retained event the SEM is undefined and is NaN.
 
-    For intervals, each row's window ends where the row does on the side away
-    from the alignment point: aligned at the start, no bin at or after the
-    trial's stop counts (it would be the next trial); aligned at the stop, no
-    bin before the trial's start. The other side counts as for any event, so
-    the time at the well before a departure or after an arrival stays in.
-    That side is not cut at the neighbouring trial: when the time at the well
-    is shorter than the window, it reaches into the previous trial (aligned
-    at the start) or the next one (aligned at the stop), and a spike there
-    counts for both trials. A bin counts for a trial only when it lies wholly inside the trial's
-    window, so each bin is the mean over the trials under way for all of it
-    (``events_per_bin``), NaN where there are none. Late bins therefore
-    describe only the longer trials, so a change late in the curve can come
-    from which trials remain rather than from time in the trial.
-    ``n_events_dropped`` also counts trials holding no whole bin. To average
-    the same trials in every bin, pass plain times with ``epochs=trials``
-    (only events whose whole window lies inside one trial), or compare trials
-    by progress along the route (:func:`neurospatial.behavior.path_progress`).
+    For intervals, rows are aligned, cut and averaged over the trials under
+    way in each bin as in :func:`peri_event_histogram` (see its Notes for the
+    cut rules). Every unit uses the same trials in a bin (``events_per_bin``),
+    and so does ``mean_sem``.
 
     Every bin is half-open ``[left, right)`` and stays inside ``window``.
     A trailing partial bin is dropped; spikes at the last whole-bin edge or
@@ -721,16 +704,9 @@ or None
         histograms=psth.histograms,
         sem=psth.sem,
         mean_sem=psth.mean_sem,
-        n_events=psth.event_indices.size,
-        window=window,
-        bin_size=bin_size,
         unit_ids=resolved_unit_ids,
         unit_table=spike_unit_table(spike_times),
-        n_events_dropped=psth.n_dropped,
-        event_indices=psth.event_indices,
-        events_per_bin=psth.events_per_bin,
-        align=None if psth.events_per_bin is None else align,
-        event_ids=psth.event_ids,
+        **_cohort_fields(psth),
     )
 
 

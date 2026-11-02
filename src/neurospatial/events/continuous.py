@@ -19,7 +19,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
+from neurospatial._intervals import (
+    DEFAULT_MAX_GAP,
+    as_intervals,
+    empty_selection_names,
+)
 from neurospatial._observation import validated_signals
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
@@ -48,7 +52,6 @@ from neurospatial.events._core import (
     _finite_times,
     _is_real_number,
     _validate_window,
-    empty_selection_names,
     interval_events,
     warn_no_events,
 )
@@ -816,19 +819,15 @@ def align_continuous_to_events(
     with at least one supported cell, and each cell is summarized over the
     events observed there (``counts``).
 
-    For intervals, each row's window ends where the row does on the side away
-    from the alignment point: aligned at the start, nothing at or after the
-    trial's stop is sampled (it would be the next trial); aligned at the stop,
-    nothing before the trial's start. The other side is sampled as for any
-    event, so the time at the well before a departure, or after an arrival,
-    stays in the window. That side is not cut at the neighbouring trial: when
-    the time at the well is shorter than the window, it reaches into the
-    previous trial (aligned at the start) or the next one (aligned at the
-    stop), and those samples are used for both trials. "complete" asks only that the cut window was observed, each cell
-    is averaged over the trials still under way at that time (``counts``),
-    and the rows are labelled by ``interval_id``. Late cells therefore
-    describe only the longer trials; to compare the same trials throughout,
-    use progress along the route (:func:`neurospatial.behavior.path_progress`).
+    For intervals, each row's window is cut as in
+    :func:`~neurospatial.events.peri_event_histogram` (see its Notes for the
+    cut rules): aligned at the start, nothing at or after the trial's stop is
+    sampled; aligned at the stop, nothing before the trial's start.
+    "complete" asks only that the cut window was observed, each cell is
+    averaged over the trials still under way at that time (``counts``), and
+    the rows are labelled by ``interval_id``. Late cells therefore describe
+    only the longer trials; to compare the same trials throughout, use
+    progress along the route (:func:`neurospatial.behavior.path_progress`).
 
     Parameters
     ----------
@@ -851,9 +850,9 @@ def align_continuous_to_events(
         resolution of your analysis, usually no finer than the sampling
         interval.
     align : {"start", "stop"}, default="start"
-        For an ``Intervals``, align each row at its start or at its stop.
-        Plain event times are the alignment points; only the default is
-        allowed with them.
+        Align each ``Intervals`` row at its start or stop, as in
+        :func:`~neurospatial.events.peri_event_histogram`; plain times allow
+        only the default.
     feature_ids : sequence, shape (n_features,), optional
         Unique feature labels; default ``0 .. n_features - 1``. The mappings
         below are keyed by these ids.

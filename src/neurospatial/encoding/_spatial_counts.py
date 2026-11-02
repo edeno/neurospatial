@@ -923,6 +923,8 @@ def _warn_if_population_silent(
         return
     nonempty = [np.asarray(s, dtype=np.float64) for s in spike_trains if len(s)]
     spikes = np.concatenate(nonempty) if nonempty else np.empty(0, dtype=np.float64)
+    if not _has_empty_observed_bin(spikes, observed_runs, _SILENCE_MIN_SECONDS / 3):
+        return  # no silence of _SILENCE_MIN_SECONDS: skip sorting every spike
     run_idx = np.searchsorted(observed_runs[:, 0], spikes, side="right") - 1
     inside = run_idx >= 0
     inside[inside] = spikes[inside] < observed_runs[run_idx[inside], 1]
@@ -944,6 +946,60 @@ def _warn_if_population_silent(
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
+
+
+def _has_empty_observed_bin(
+    spikes: NDArray[np.float64], observed_runs: NDArray[np.float64], width: float
+) -> bool:
+    """Whether a spike-free bin of ``width`` seconds lies wholly inside a run.
+
+    Bins are aligned at the first run's start. A silence of at least
+    ``3 * width`` inside a run always contains such a bin, so when there is
+    none no silence that long exists; the converse does not hold.
+
+    Proof: let the silence be the open stretch ``(a, b)`` between
+    consecutive marks of one run ``[r0, r1)`` (run start, spikes, run end),
+    with ``r0 <= a < b <= r1`` and ``b - a >= 3 * width``; no spike lies in
+    ``(a, b)``.
+    The first bin edge at or after ``a`` is ``a + d`` with
+    ``0 <= d < width``. If ``d >= width / 2``, the bin starting there ends
+    at ``a + d + width <= b - width``; otherwise the next bin, from
+    ``a + d + width`` to ``a + d + 2 * width <= b - width / 2``, is used.
+    Either bin lies inside ``(a, b)``, hence inside the run and free of
+    spikes, at least ``width / 2`` from ``a``, ``b`` and the run's edges.
+    Locating spikes and run edges in bins errs by a few ulps of the
+    timestamps (under 0.02 s below 10**14 s), far less than ``width / 2``,
+    so the bin is found empty.
+
+    Parameters
+    ----------
+    spikes : ndarray, shape (n_spikes,)
+        Spike times of every unit, in seconds, in any order.
+    observed_runs : ndarray, shape (n_runs, 2)
+        Sorted, disjoint ``[start, stop)`` runs, at least one.
+    width : float
+        Bin width in seconds.
+
+    Returns
+    -------
+    bool
+    """
+    origin = observed_runs[0, 0]
+    first = np.ceil((observed_runs[:, 0] - origin) / width)
+    stop = np.floor((observed_runs[:, 1] - origin) / width)
+    whole = stop > first  # runs holding at least one whole bin
+    if not whole.any():
+        return False
+    first, stop = first[whole].astype(np.intp), stop[whole].astype(np.intp)
+    n_bins = int(stop.max())
+    index = np.floor((spikes - origin) / width)
+    index = index[(index >= 0) & (index < n_bins)].astype(np.intp)
+    occupied = np.bincount(index, minlength=n_bins) > 0
+    edges = np.zeros(n_bins + 1, dtype=np.intp)
+    np.add.at(edges, first, 1)
+    np.add.at(edges, stop, -1)
+    inside = np.cumsum(edges[:-1]) > 0
+    return bool(np.any(inside & ~occupied))
 
 
 def _clock_ratio_hint(

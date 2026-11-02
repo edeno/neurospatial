@@ -12,8 +12,9 @@ from __future__ import annotations
 import dataclasses
 import numbers
 import warnings
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from copy import deepcopy
+from functools import cached_property
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, get_type_hints, overload
 
@@ -23,6 +24,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._observation import _validated_signal_times
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._results import marked_read_only, plain_value
 from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
@@ -33,11 +35,6 @@ if TYPE_CHECKING:
 __all__ = ["Interval", "Intervals"]
 
 _TIME_FIELDS = ("start_time", "stop_time")
-
-
-def _plain(value: Any) -> Any:
-    """A NumPy scalar as the matching Python scalar; anything else unchanged."""
-    return value.item() if isinstance(value, np.generic) else value
 
 
 def _checked_times(owner: str, start: object, stop: object) -> tuple[float, float]:
@@ -61,7 +58,7 @@ def _checked_times(owner: str, start: object, stop: object) -> tuple[float, floa
 
 def _checked_value(owner: str, name: str, value: Any) -> Any:
     """A field value: hashable, ``None`` for missing, never ``""``."""
-    value = _plain(value)
+    value = plain_value(value)
     if isinstance(value, str) and value == "":
         raise ValueError(
             _format_error(
@@ -270,11 +267,6 @@ def _column(values: Sequence[Any], dtype: np.dtype | None) -> NDArray[Any]:
     return _object_array(values)
 
 
-def _read_only(array: NDArray[Any]) -> NDArray[Any]:
-    array.setflags(write=False)
-    return array
-
-
 def _checked_ids(ids: ArrayLike, n: int, *, owner: str) -> NDArray[np.int64]:
     """``ids`` as unique, non-negative int64 of length ``n``."""
     raw = np.asarray(ids)
@@ -466,7 +458,7 @@ class Intervals(Generic[R]):
         names, dtypes = _schema(kind, rows, fields)
         for name in names:
             _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
-        values = {name: [_plain(getattr(r, name)) for r in rows] for name in names}
+        values = {name: [plain_value(getattr(r, name)) for r in rows] for name in names}
         for name, column in values.items():
             for value in column:
                 _checked_value(kind.__name__, name, value)
@@ -513,9 +505,9 @@ class Intervals(Generic[R]):
         self._record_type = record_type
         self._fields = fields
         self._dtypes = dtypes
-        self._ids = _read_only(np.asarray(ids, dtype=np.int64))
-        self._start = _read_only(np.asarray(start, dtype=np.float64))
-        self._stop = _read_only(np.asarray(stop, dtype=np.float64))
+        self._ids = marked_read_only(np.asarray(ids, dtype=np.int64))
+        self._start = marked_read_only(np.asarray(start, dtype=np.float64))
+        self._stop = marked_read_only(np.asarray(stop, dtype=np.float64))
         self._settings = deepcopy(settings)
         self._columns: dict[str, NDArray[Any]] = {}
 
@@ -537,12 +529,13 @@ class Intervals(Generic[R]):
     def __getstate__(self) -> dict[str, Any]:
         state = dict(self.__dict__)
         state["_columns"] = {}
+        state.pop("_id_lookup", None)
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__.update(state)
         for name in ("_ids", "_start", "_stop"):
-            _read_only(self.__dict__[name])
+            marked_read_only(self.__dict__[name])
 
     # ----------------------------------------------------------------- identity
 
@@ -581,7 +574,7 @@ class Intervals(Generic[R]):
     @property
     def durations(self) -> NDArray[np.float64]:
         """``stop - start`` in seconds, shape ``(n,)``."""
-        return _read_only(self._stop - self._start)
+        return marked_read_only(self._stop - self._start)
 
     @property
     def windows(self) -> NDArray[np.float64]:
@@ -592,7 +585,7 @@ class Intervals(Generic[R]):
         duration: an empty selection, not an error.
         """
         keep = self._stop > self._start
-        return _read_only(np.column_stack([self._start[keep], self._stop[keep]]))
+        return marked_read_only(np.column_stack([self._start[keep], self._stop[keep]]))
 
     def __getattr__(self, name: str) -> pd.Series:
         """One field as a Series indexed by ``interval_id``, in row order.
@@ -625,7 +618,7 @@ class Intervals(Generic[R]):
         column = self._columns.get(name)
         if column is None:
             values = [getattr(r, name) for r in self._records]
-            column = _read_only(_column(values, self._dtypes[name]))
+            column = marked_read_only(_column(values, self._dtypes[name]))
             self._columns[name] = column
         return column
 
@@ -742,10 +735,16 @@ class Intervals(Generic[R]):
                 f"{wanted.shape}. Flatten it first if every id is wanted."
             )
             raise ValueError(msg)
-        where = {int(i): p for p, i in enumerate(self._ids.tolist())}
-        flat = [int(i) for i in wanted.reshape(-1).tolist()]
-        missing = [i for i in flat if i not in where]
-        if missing:
+        flat = wanted.reshape(-1)
+        order, sorted_ids = self._id_lookup
+        # Ids are int64 and >= 0: unsigned ids beyond int64 wrap to negative
+        # values here, which match no row.
+        query = flat.astype(np.int64)
+        at = np.searchsorted(sorted_ids, query)
+        found = at < sorted_ids.size
+        found[found] = sorted_ids[at[found]] == query[found]
+        if not found.all():
+            missing = flat[~found].tolist()
             shown = ", ".join(map(str, missing[:10]))
             more = f" (+{len(missing) - 10} more)" if len(missing) > 10 else ""
             msg = (
@@ -753,9 +752,16 @@ class Intervals(Generic[R]):
                 f"over {_id_span(self._ids)}."
             )
             raise KeyError(msg)
+        positions = order[at]
         if wanted.ndim == 0:
-            return self._records[where[flat[0]]]
-        return self[np.array([where[i] for i in flat], dtype=np.intp)]
+            return self._records[int(positions[0])]
+        return self[positions]
+
+    @cached_property
+    def _id_lookup(self) -> tuple[NDArray[np.intp], NDArray[np.int64]]:
+        """Row positions that sort the ids, and the sorted ids, for ``sel``."""
+        order = np.argsort(self._ids)
+        return order, self._ids[order]
 
     # ------------------------------------------------------------------ samples
 
@@ -1027,8 +1033,8 @@ class Intervals(Generic[R]):
             input_ids=input_ids,
         )
         counts = np.empty((len(self), len(trains)), dtype=np.int64)
+        # The trains come back in time order, as searchsorted needs.
         for unit, train in enumerate(trains):
-            train = np.sort(train)
             counts[:, unit] = np.searchsorted(
                 train, self._stop, side="left"
             ) - np.searchsorted(train, self._start, side="left")
@@ -1140,7 +1146,10 @@ class Intervals(Generic[R]):
                 column = _object_array([_missing_as_none(v) for v in column])
             data[name] = column
         self._check_owned_fields(data, replaced=columns.keys())
-        labelled = _from_columns(self._start, self._stop, data, interval_ids=self._ids)
+        # The rows are in time order, so the order check always passes.
+        labelled = _from_columns(
+            self._start, self._stop, data, interval_ids=self._ids, owner="with_fields"
+        )
         labelled._settings = deepcopy(self._settings)
         return labelled
 
@@ -1163,7 +1172,7 @@ class Intervals(Generic[R]):
         if not owned:
             return
         for i, record in enumerate(self._records):
-            new = {name: _plain(data[name][i]) for name in owned}
+            new = {name: plain_value(data[name][i]) for name in owned}
             try:
                 dataclasses.replace(record, **new)  # type: ignore[type-var]
             except (TypeError, ValueError) as exc:
@@ -1237,7 +1246,7 @@ class Intervals(Generic[R]):
             stops,
             columns,
             interval_ids=interval_ids,
-            in_time_order="from_arrays",
+            owner="from_arrays",
         )
 
     @classmethod
@@ -1331,7 +1340,7 @@ class Intervals(Generic[R]):
             interval_ids=_index_ids(df.index)
             if id_column is None
             else df[id_column].to_numpy(),
-            in_time_order="from_dataframe",
+            owner="from_dataframe",
         )
 
     def __repr__(self) -> str:
@@ -1504,14 +1513,14 @@ def _from_columns(
     columns: dict[str, NDArray[Any]],
     *,
     interval_ids: ArrayLike | None,
-    in_time_order: str | None = None,
+    owner: str,
 ) -> Intervals[Interval]:
     """Build Interval rows from parallel columns, keeping column dtypes.
 
-    Rows are put in time order (by start, then stop; ties keep their input
-    order). ``in_time_order`` names a public builder that refuses input out
-    of that order instead, so a caller's arrays in input order stay aligned
-    with the rows.
+    The rows must already be in time order (by start, then stop), so a
+    caller's arrays in input order stay aligned with the rows; input out of
+    that order is refused, naming the public builder ``owner``. ``start``
+    and ``stop`` are copied, so the caller's arrays stay writable.
     """
     for name in columns:
         _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
@@ -1529,17 +1538,16 @@ def _from_columns(
         start.size,
         owner="Intervals",
     )
-    order = np.lexsort((stop, start))
     # A row that sorts before the one above it: earlier start, or the same
     # start and an earlier stop.
     backward = (start[1:] < start[:-1]) | (
         (start[1:] == start[:-1]) & (stop[1:] < stop[:-1])
     )
-    if in_time_order is not None and backward.any():
+    if backward.any():
         k = int(np.flatnonzero(backward)[0])
         raise ValueError(
             _format_error(
-                f"{in_time_order}: the rows are not in time order: row {k + 1} "
+                f"{owner}: the rows are not in time order: row {k + 1} "
                 f"[{start[k + 1]:g}, {stop[k + 1]:g}) s comes before row {k} "
                 f"[{start[k]:g}, {stop[k]:g}) s.",
                 why="Intervals keeps its rows in time order, so an array or mask "
@@ -1551,7 +1559,7 @@ def _from_columns(
         )
     intervals: Intervals[Interval] = object.__new__(Intervals)
     intervals._init_parts(
-        records=tuple(rows[i] for i in order),
+        records=rows,
         record_type=Interval,
         fields=names,
         # Each column keeps its dtype, for integer fields and empty selections.
@@ -1559,9 +1567,9 @@ def _from_columns(
             name: array.dtype if array.dtype.kind in "biuf" else np.dtype(object)
             for name, array in columns.items()
         },
-        ids=ids[order],
-        start=start[order],
-        stop=stop[order],
+        ids=ids,
+        start=start.copy(),
+        stop=stop.copy(),
         settings={},
     )
     return intervals
@@ -1629,3 +1637,49 @@ def readable_fields(
             continue
         out[name] = pd.Series(cells, index=table.index, dtype=object)
     return pd.DataFrame(out, index=table.index), dropped
+
+
+def intervals_from_stored(
+    table: pd.DataFrame,
+    *,
+    keep: Iterable[str],
+    id_column: str | None,
+    dropped_message: Callable[[list[str]], str],
+    checked_ids: Callable[[NDArray[Any]], NDArray[Any]] | None = None,
+) -> Intervals[Interval]:
+    """Intervals from a table stored elsewhere (an NWB table, pynapple metadata).
+
+    Columns that cannot be fields (:func:`readable_fields`) are left out with
+    a ``UserWarning`` reading ``dropped_message(names)``. A file may store
+    rows out of time order, so they are put in time order (ties keep the
+    stored order).
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+        ``start_time``, ``stop_time``, the ids if any, and candidate fields.
+    keep : iterable of str
+        Columns kept as they are (the bounds and ids).
+    id_column : str, optional
+        Column with the ids; None numbers the rows as stored.
+    dropped_message : callable
+        The warning text for the names of the columns left out.
+    checked_ids : callable, optional
+        Converts or refuses the id column, in stored order, before the rows
+        are sorted.
+
+    Returns
+    -------
+    Intervals of Interval
+    """
+    from neurospatial._stacklevel import _external_stacklevel
+
+    table, dropped = readable_fields(table, keep=keep)
+    if dropped:
+        warnings.warn(
+            dropped_message(dropped), UserWarning, stacklevel=_external_stacklevel()
+        )
+    if checked_ids is not None and id_column is not None:
+        table[id_column] = checked_ids(table[id_column].to_numpy())
+    table = table.sort_values(["start_time", "stop_time"], kind="stable")
+    return Intervals.from_dataframe(table, id_column=id_column)

@@ -73,11 +73,10 @@ from neurospatial._intervals import (
     start_allocation,
     times_in_intervals,
 )
-from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_choice, validate_finite_scalar
 from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
-from neurospatial.behavior._position_bins import bridge_missing_positions, sample_bins
+from neurospatial.behavior._position_bins import gate_settings, observed_samples
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
@@ -125,14 +124,15 @@ def _event_runs(
     position_bins: NDArray[np.int64],
     *,
     max_gap: float | None,
-    epochs: Any,
+    windows: NDArray[np.float64] | None,
     break_before: NDArray[np.bool_] | None,
 ) -> list[NDArray[np.intp]]:
-    """Observed runs holding only samples inside the half-open ``epochs``.
+    """Observed runs holding only samples inside the half-open epoch ``windows``.
 
     Takes the samples left after NaN rows were dropped
     (:func:`~neurospatial.behavior._position_bins.bridge_missing_positions`,
-    which also warns when nothing is observed). As in ``env.occupancy``, an
+    which also warns when nothing is observed); ``windows`` are the resolved
+    ``epochs``. As in ``env.occupancy``, an
     interval is observed when its gap passes ``max_gap``, ``epochs`` and
     ``break_before`` and both of its samples are in a bin: a sample at bin
     -1 (outside the environment) ends the run.
@@ -148,14 +148,13 @@ def _event_runs(
         position_bins,
         None,
         max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
+        epochs=windows,
         break_before=break_before,
     ).gates
     runs = [
         np.arange(first, last + 1, dtype=np.intp)
         for first, last in run_sample_bounds(gates.mask)
     ]
-    windows = as_intervals(epochs, name="epochs")
     if windows is None:
         return runs
     inside = times_in_intervals(windows, times)
@@ -504,29 +503,21 @@ def detect_region_crossings(
         owner="detect_region_crossings()",
     )
 
-    times, position_bins = sample_bins(
+    times, position_bins, breaks, _, windows = observed_samples(
         env,
         times,
         positions,
         call="detect_region_crossings",
-        epochs=as_intervals(epochs, name="epochs"),
-    )
-    times, position_bins, breaks, _ = bridge_missing_positions(
-        times,
-        position_bins,
-        positions,
         max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
-        break_before=validate_break_before(
-            break_before, len(times), call="detect_region_crossings"
-        ),
+        epochs=epochs,
+        break_before=break_before,
     )
     results: list[Crossing] = []
     for run in _event_runs(
         times,
         position_bins,
         max_gap=max_gap,
-        epochs=epochs,
+        windows=windows,
         break_before=breaks,
     ):
         results.extend(
@@ -779,8 +770,7 @@ def segment_by_velocity(
             "min_duration": float(min_duration),
             "hysteresis": float(hysteresis),
             "smooth_window": None if speed_given else float(smooth_window),
-            "max_gap": None if max_gap is None else float(max_gap),
-            "epochs": None if windows is None else windows.tolist(),
+            **gate_settings(max_gap, windows),
         },
     )
 
@@ -1220,38 +1210,28 @@ def detect_laps(
             env, start_region, operation="detect_laps()", argument="start_region"
         )
 
-    times, position_bins = sample_bins(
+    times, position_bins, breaks, _, windows = observed_samples(
         env,
         times,
         positions,
         call="detect_laps",
-        epochs=as_intervals(epochs, name="epochs"),
-    )
-    times, position_bins, breaks, _ = bridge_missing_positions(
-        times,
-        position_bins,
-        positions,
         max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
-        break_before=validate_break_before(
-            break_before, len(times), call="detect_laps"
-        ),
+        epochs=epochs,
+        break_before=break_before,
     )
     runs = _event_runs(
         times,
         position_bins,
         max_gap=max_gap,
-        epochs=epochs,
+        windows=windows,
         break_before=breaks,
     )
-    windows = as_intervals(epochs, name="epochs")
     settings = {
         "method": method,
         "min_overlap": None if method == "region" else float(min_overlap),
         "direction": direction,
         "start_region": start_region,
-        "max_gap": None if max_gap is None else float(max_gap),
-        "epochs": None if windows is None else windows.tolist(),
+        **gate_settings(max_gap, windows),
     }
     laps: list[Lap] = []
     if method == "region":
@@ -2193,22 +2173,14 @@ def detect_goal_directed_runs(
         )
     validate_finite_scalar(min_progress, name="min_progress", positive=False)
 
-    times, position_bins = sample_bins(
+    times, position_bins, breaks, _, windows = observed_samples(
         env,
         times,
         positions,
         call="detect_goal_directed_runs",
-        epochs=as_intervals(epochs, name="epochs"),
-    )
-    times, position_bins, breaks, _ = bridge_missing_positions(
-        times,
-        position_bins,
-        positions,
         max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
-        break_before=validate_break_before(
-            break_before, len(times), call="detect_goal_directed_runs"
-        ),
+        epochs=epochs,
+        break_before=break_before,
     )
 
     from neurospatial.behavior._environment_paths import environment_paths
@@ -2226,13 +2198,13 @@ def detect_goal_directed_runs(
     )
     # Complete-case rule, as in env.occupancy: an interval is observed only
     # when both of its samples are in the environment. NaN rows are already
-    # dropped, and bridge_missing_positions warned if nothing is observed.
+    # dropped, and observed_samples warned if nothing is observed.
     gates = start_allocation(
         times,
         position_bins,
         None,
         max_gap=max_gap,
-        epochs=as_intervals(epochs, name="epochs"),
+        epochs=windows,
         break_before=breaks,
     ).gates
     results: list[tuple[float, float]] = []
@@ -2249,7 +2221,6 @@ def detect_goal_directed_runs(
                 min_progress=min_progress,
             )
         )
-    windows = as_intervals(epochs, name="epochs")
     return _windows_as_intervals(
         np.array(results, dtype=np.float64).reshape(-1, 2),
         fields={"goal_region": goal_region},
@@ -2257,8 +2228,7 @@ def detect_goal_directed_runs(
             "goal_region": goal_region,
             "directedness_threshold": float(directedness_threshold),
             "min_progress": float(min_progress),
-            "max_gap": None if max_gap is None else float(max_gap),
-            "epochs": None if windows is None else windows.tolist(),
+            **gate_settings(max_gap, windows),
         },
     )
 

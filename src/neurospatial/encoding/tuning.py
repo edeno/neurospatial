@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -932,21 +932,8 @@ def compute_tuning_curve(
         owner="compute_tuning_curve",
         single_unit=True,
     )
-    unit = population[0]
-    return TuningCurveResult(
-        firing_rate=unit.firing_rate,
-        occupancy=unit.occupancy,
-        bin_edges=unit.bin_edges,
-        bandwidth=unit.bandwidth,
-        spike_counts=unit.spike_counts,
-        variable=unit.variable,
-        units=unit.units,
-        min_occupancy=unit.min_occupancy,
-        n_spikes_outside_intervals=unit.n_spikes_outside_intervals,
-        n_samples_outside_range=unit.n_samples_outside_range,
-        spike_window=unit.spike_window,
-        analysis_settings=unit.analysis_settings,
-    )
+    # A standalone curve has no unit label.
+    return replace(population[0], unit_id=None, _unit_ids_generated=False)
 
 
 @reads_pynapple_samples
@@ -1335,9 +1322,9 @@ def _tuning_curves(
         )
 
     frame_bins = value_frame_bins(values, edges, closed_last=True)
-    in_range = (values >= edges[0]) & (values <= edges[-1])
     analyzed = in_windows & np.isfinite(values)
-    n_outside = int(np.count_nonzero(analyzed & ~in_range))
+    # A finite value is in bin -1 only outside [edges[0], edges[-1]].
+    n_outside = int(np.count_nonzero(analyzed & (frame_bins < 0)))
     _warn_if_mostly_outside(values[analyzed], n_outside, edges, edges_source, call=call)
 
     if not single_unit:

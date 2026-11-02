@@ -114,6 +114,23 @@ by its trial.
   axis setup, and playback no longer warns of a slowdown when every frame
   fits exactly in `max_playback_fps`.
 
+### Faster trial and route analyses
+
+**Changed**
+
+- `path_progress` and `distance_to_goal` group samples by trial once
+  instead of scanning every sample per trial, and `distance_to_goal` makes
+  one distance query per distinct goal (geodesic, 10^6 samples × 1000
+  trials: 0.93 s → 0.48 s).
+- `Intervals.sel` looks ids up in a cached index (10^4 lookups at 10^4
+  rows: 3.4 s → 0.03 s), and `Intervals.spike_counts` no longer re-sorts
+  each train (300 units × 1000 trials: 0.23 s → 0.03 s).
+- `compute_tuning_curves` checks for recording-wide population silence with
+  a quick binned pre-check before the exact one (0.99 s → 0.58 s at 300
+  units × 36k spikes); the warning is unchanged.
+- `basis_at_positions` gathers the basis in one step, halving its peak
+  memory.
+
 ### One row per trial
 
 **Added**

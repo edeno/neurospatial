@@ -191,7 +191,7 @@ def plot_peri_event_response(
         selected_events, result.window, bin_edges, result.bin_size
     )
     if limits is not None:
-        edges = _cut_to_limits(
+        edges, _ = _cut_to_limits(
             edges,
             limits[0][result.event_indices, None],
             limits[1][result.event_indices, None],
