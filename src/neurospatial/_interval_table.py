@@ -1030,11 +1030,20 @@ class Intervals(Generic[R]):
             counts[:, unit] = np.searchsorted(
                 train, self._stop, side="left"
             ) - np.searchsorted(train, self._start, side="left")
-        spikes = np.sort(np.concatenate([np.empty(0), *trains]))
-        if spikes.size:  # no spikes at all is silence, not another clock
+        # No spike in any row is a clock mismatch only when the spikes' span
+        # misses the rows' span: a sparse cell is often silent in short
+        # trials. No spikes at all is silence.
+        fired = [train for train in trains if train.size]
+        timed = self._stop > self._start
+        if fired and timed.any() and not counts.any():
+            first = min(float(train.min()) for train in fired)
+            last = max(float(train.max()) for train in fired)
+            overlaps = (
+                first < self._stop[timed].max() and last >= self._start[timed].min()
+            )
             self._warn_if_no_sample_inside(
-                spikes,
-                np.asarray(counts.any(axis=1), dtype=bool),
+                np.array([first, last]),
+                np.array([overlaps]),
                 "Intervals.spike_counts",
             )
         return pd.DataFrame(

@@ -541,6 +541,14 @@ def test_spike_counts_warn_for_spikes_on_another_clock() -> None:
     assert trials.spike_counts([np.array([])]).to_numpy().sum() == 0
 
 
+def test_spike_counts_of_a_cell_silent_in_the_trials_do_not_warn() -> None:
+    """Spikes between and around short trials: zero counts are data."""
+    trials = Intervals.from_arrays([10.0, 50.0], [11.0, 51.0])
+    # Warnings are errors in this suite, so no warning may be emitted.
+    counts = trials.spike_counts(np.array([2.0, 20.0, 35.0, 70.0, 90.0]))
+    assert counts[0].tolist() == [0, 0]
+
+
 def test_spike_counts_of_an_empty_intervals_and_a_zero_duration_row() -> None:
     empty = Intervals.from_arrays([], [])
     counts = empty.spike_counts([np.array([0.5, 1.0])])
