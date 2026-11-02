@@ -108,7 +108,17 @@ GENERIC_HAZARDS: dict[str, tuple[Callable[[Recording], bool], Hazard]] = {
         _length_off_by_100,
     ),
 }
-PROBE_OPS = ("env.from_samples", "env.occupancy", "rates.spatial", "hd.tuning")
+PROBE_OPS = (
+    "env.from_samples",
+    "env.occupancy",
+    "rates.spatial",
+    "hd.tuning",
+    # Speed thresholds are where a time or length unit error shows up.
+    "behavior.segment_by_velocity",
+    "behavior.laps",
+    # A mirrored frame swaps left and right turns.
+    "behavior.turn_sequence",
+)
 
 
 def hazards_for(module: ModuleType, rec: Recording) -> dict[str, Hazard]:

@@ -10,6 +10,7 @@ across operations, so the registry lists the operations that build them first.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import tempfile
 from collections.abc import Callable, Mapping
@@ -42,6 +43,11 @@ class Operation:
     run: Callable[[Recording, dict[str, Any]], Outcome]
 
 
+def _units(rec: Recording) -> str | None:
+    # "arbitrary" means no physical unit, which neurospatial spells units=None.
+    return None if rec.position_units == "arbitrary" else rec.position_units
+
+
 def _env(rec: Recording, cache: dict[str, Any]) -> Any:
     from neurospatial import Environment
 
@@ -49,7 +55,7 @@ def _env(rec: Recording, cache: dict[str, Any]) -> Any:
         cache["env"] = Environment.from_samples(
             rec.positions,
             bin_size=rec.params["bin_size"],
-            units=rec.position_units,
+            units=_units(rec),
             name=rec.dataset,
         )
     return cache["env"]
@@ -145,12 +151,20 @@ def place_screen(rec: Recording, cache: dict[str, Any]) -> Outcome:
     return Outcome("ok", {"n_place_screen": int(passed.sum()), "n_units": passed.size})
 
 
+def _one_dimensional(rec: Recording) -> bool:
+    return rec.positions is not None and rec.positions.shape[1] == 1
+
+
 def grid_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    if _one_dimensional(rec):
+        return Outcome("n/a", note="grid score needs 2-D positions")
     scores = _rates(rec, cache).grid_scores().scores
     return Outcome("ok", _finite_stats(scores))
 
 
 def border_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    if _one_dimensional(rec):
+        return Outcome("n/a", note="border score needs 2-D positions")
     scores = _rates(rec, cache).border_scores().scores
     return Outcome("ok", _finite_stats(scores))
 
@@ -257,6 +271,140 @@ def nwb_roundtrip(rec: Recording, cache: dict[str, Any]) -> Outcome:
     return Outcome("ok", {"n_bins": env.n_bins})
 
 
+def _graph_env(rec: Recording, cache: dict[str, Any]) -> Any | None:
+    """The track-graph environment, or None when the source gives no graph.
+
+    Edges are ordered by a depth-first walk from ``geometry["graph_root"]``
+    (or the graph's first node), the order in which a single path through the
+    maze visits them. ``geometry["track_width"]``, when the source states it,
+    is the corridor width.
+    """
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = rec.geometry.get("graph")
+    if graph is None:
+        return None
+    if "graph_env" not in cache:
+        root = rec.geometry.get("graph_root", next(iter(graph.nodes)))
+        cache["graph_env"] = Environment.from_graph(
+            graph,
+            list(nx.dfs_edges(graph, source=root)),
+            bin_size=rec.params.get("graph_bin_size", rec.params["bin_size"]),
+            units=_units(rec),
+            name=f"{rec.dataset}-graph",
+            track_width=rec.geometry.get("track_width"),
+        )
+    return cache["graph_env"]
+
+
+def env_from_graph(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    env = _graph_env(rec, cache)
+    if env is None:
+        return Outcome("n/a", note="geometry has no graph")
+    return Outcome(
+        "ok", {"n_bins": env.n_bins, "n_bin_edges": env.connectivity.number_of_edges()}
+    )
+
+
+def segment_by_velocity(rec: Recording, _cache: dict[str, Any]) -> Outcome:
+    from neurospatial.behavior import segment_by_velocity as segment
+
+    if rec.params.get("min_speed") is None:
+        return Outcome("n/a", note="params has no min_speed")
+    segments = segment(rec.times, rec.positions, min_speed=rec.params["min_speed"])
+    windows = np.asarray(segments.windows)
+    return Outcome(
+        "ok",
+        {
+            "n_segments": len(windows),
+            "running_s": float(np.sum(windows[:, 1] - windows[:, 0]))
+            if len(windows)
+            else 0.0,
+        },
+    )
+
+
+def laps(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    from neurospatial.behavior import detect_laps
+
+    env = _graph_env(rec, cache) or _env(rec, cache)
+    found = detect_laps(env, rec.times, rec.positions)
+    directions = list(found.intervals_table()["direction"]) if len(found.start) else []
+    return Outcome(
+        "ok",
+        {
+            "n_laps": len(directions),
+            **{f"n_{d}": directions.count(d) for d in sorted(set(directions))},
+        },
+    )
+
+
+def turn_sequence(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    from neurospatial.behavior import graph_turn_sequence
+
+    env = _graph_env(rec, cache)
+    if env is None:
+        return Outcome("n/a", note="geometry has no graph")
+    turns = [
+        turn
+        for turn in graph_turn_sequence(env, rec.times, rec.positions).split("-")
+        if turn
+    ]
+    return Outcome(
+        "ok",
+        {
+            "n_turns": len(turns),
+            "frac_left": turns.count("left") / len(turns) if turns else float("nan"),
+        },
+    )
+
+
+def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    from neurospatial.encoding import compute_spatial_rates
+    from neurospatial.replay import (
+        compare_replay_methods,
+        decode_intervals,
+        detection_rates,
+    )
+    from neurospatial.replay.methods import DAVIDSON_2009, GROSMARK_2016
+
+    ripples = rec.events.get("ripples")
+    if ripples is None or rec.params.get("replay_dt") is None:
+        return Outcome("n/a", note="needs events['ripples'] and params['replay_dt']")
+    env, dt = _env(rec, cache), rec.params["replay_dt"]
+    spikes = list(rec.spike_times or ())
+    rates = compute_spatial_rates(
+        env,
+        spikes,
+        rec.times,
+        rec.positions,
+        min_speed=rec.params.get("min_speed"),
+        epochs=rec.params.get("train_epochs"),
+    )
+    events, counts = decode_intervals(env, spikes, ripples, rates, dt=dt)
+    methods = [DAVIDSON_2009, GROSMARK_2016]
+    if (n_shuffles := rec.params.get("replay_n_shuffles")) is not None:
+        # Fewer shuffles than published, for quick checks; real runs omit it.
+        methods = [dataclasses.replace(m, n_shuffles=n_shuffles) for m in methods]
+    table = compare_replay_methods(
+        env,
+        events,
+        replay_methods=methods,
+        spike_counts=counts,
+        spike_times=spikes,
+        encoding_models=rates,
+        dt=dt,
+        rng=0,
+    )
+    summary: dict[str, float | int | str] = {"n_events": len(events)}
+    for row in detection_rates(table).itertuples():
+        summary[f"{row.method}_rate"] = float(row.rate)
+        summary[f"{row.method}_ci"] = f"{row.ci_low:.3f}-{row.ci_high:.3f}"
+    return Outcome("ok", summary)
+
+
 _SPIKES_AND_POSITIONS = ("positions", "spike_times")
 
 OPERATIONS: tuple[Operation, ...] = (
@@ -270,4 +418,9 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("hd.tuning", ("headings", "spike_times"), hd_tuning),
     Operation("decode.position", _SPIKES_AND_POSITIONS, decode_position),
     Operation("io.nwb_roundtrip", _SPIKES_AND_POSITIONS, nwb_roundtrip),
+    Operation("env.from_graph", ("positions",), env_from_graph),
+    Operation("behavior.segment_by_velocity", ("positions",), segment_by_velocity),
+    Operation("behavior.laps", ("positions",), laps),
+    Operation("behavior.turn_sequence", ("positions",), turn_sequence),
+    Operation("replay.compare_methods", _SPIKES_AND_POSITIONS, replay_compare_methods),
 )

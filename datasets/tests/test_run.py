@@ -30,6 +30,15 @@ def test_driver_statuses_on_simulated_recording(simulated_record):
     assert border["note"].startswith(
         "NotImplementedError: Physical boundaries are unknown"
     )
+    # Operations that need inputs this recording lacks decide n/a themselves.
+    for op_id in (
+        "env.from_graph",
+        "behavior.segment_by_velocity",
+        "behavior.turn_sequence",
+        "replay.compare_methods",
+    ):
+        assert statuses.pop(op_id) == "n/a", op_id
+        assert simulated_record["operations"][op_id]["note"]
     assert set(statuses.values()) == {"ok"}, statuses
     assert simulated_record["expectations"][0]["passed"]
 
