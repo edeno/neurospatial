@@ -1,6 +1,6 @@
 # UX fixes Implementation Plan
 
-**Status:** In progress — phase 3a (merged: phase 1 #257, phase 2 #258)
+**Status:** In progress — phase 3b (merged: 1 #257, 2 #258, 3a #259)
 
 These changes fix the problems found in the 2026-11-02 UX audit
 (`docs/reviews/UX_REVIEW_2026-11-02.md`):
