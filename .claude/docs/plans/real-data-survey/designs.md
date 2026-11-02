@@ -496,6 +496,7 @@ row. Verdict vocabulary:
 | 2 | `caught, poor message` | raised or warned, but the message would not lead a user to the cause | `error-message` |
 | 2 | `silent` | accepted without comment | `silent-hazard` |
 | 2 | `undetectable` | silent, but no rule on values could catch it (`reason` says why, e.g. both value ranges are plausible) | `docs` if the docs should warn instead |
+| 2 | `no effect` | silent, and the operation's summary did not change | none |
 | 2 | `caught upstream` | silent here, but an earlier operation in the same workflow already warned or raised for this hazard | none |
 | 1 | `third-party` | emitted by another package (origin `third-party`), not neurospatial | none |
 

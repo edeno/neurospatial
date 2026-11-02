@@ -147,7 +147,9 @@ def probe_hazards(
 ) -> list[dict[str, Any]]:
     """Re-run ``probe_ops`` on each hazardous version of ``rec``.
 
-    An operation is probed when it reads a field the hazard changed. Its
+    An operation is probed when it reads a field the hazard changed and ran
+    ``ok`` on the clean recording (an operation that already fails, or that
+    finds its input missing, cannot respond to the hazard). Its
     response is ``raised``, ``warned`` (a warning the clean run of the same
     operation did not emit) or ``silent``. A hazard that reaches no probed
     operation gets one ``not probed`` row, so it cannot vanish from the table.
@@ -163,15 +165,18 @@ def probe_hazards(
         cache: dict[str, Any] = {}
         probed = False
         for op in operations:
+            clean = clean_operations.get(op.op_id, {})
             if (
                 op.op_id not in probe_ops
                 or not changed & (set(op.requires) | ALWAYS_READ)
                 or any(getattr(bad, f) is None for f in op.requires)
+                or clean.get("status", "ok") != "ok"  # nothing to compare against
             ):
                 continue
-            probed = True
-            clean = clean_operations.get(op.op_id, {})
             outcome, error, caught = captured(op.run, bad, cache)
+            if outcome is not None and outcome.status == "n/a":
+                continue
+            probed = True
             new = [
                 row
                 for row in caught

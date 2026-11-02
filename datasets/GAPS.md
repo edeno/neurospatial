@@ -7,8 +7,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-001: Spike-drop warning fires when spikes fall outside tracking but also outside the requested epochs
 
-- Datasets: peyrache_mouse32
-- Operation / step: hd.tuning (`compute_directional_rates(..., epochs=wake)`)
+- Datasets: peyrache_mouse32, figure8_000552
+- Operation / step: hd.tuning (`compute_directional_rates(..., epochs=wake)`); rates.spatial, decode.position, replay.compare_methods
 - Kind: false-alarm
 - Evidence: head direction is tracked only during the wake epoch (8812–10771 s);
   the recording runs 0–22025 s with sleep before and after. Passing
@@ -20,12 +20,16 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   has no `warn_on_drop=` (`compute_spatial_rates` has one), so the only way to
   silence it is to trim the spike trains by hand. The same warning is what
   catches spike times in ms (hazard probes in `warnings.md`), so the fix must
-  keep that.
+  keep that. On figure8_000552 (tracking only during the maze epoch,
+  7891–9483 s, of an 18,557 s recording) every spike-based operation warns
+  "5053296/5637087 spike_times (90%) … fell outside the position time window",
+  and `decode.position` warns twice for the one fact (position window and
+  decode window).
 - Harness workaround: none (the warning is recorded, the op is `ok`)
 - Proposed change: count as dropped only spikes inside the requested
   `epochs ∩ spike_window` that fall outside tracking; keep the clock-ratio hint
   for the units case; add `warn_on_drop=` to the directional entry points.
-- Status: promoted (UX fixes phase 6, branch `fix/ux-error-gaps`; the ms-clock case must still warn)
+- Status: promoted (UX fixes phase 6, branch `fix/ux-error-gaps`; the ms-clock case must still warn; at most one discarded-data warning per call)
 
 ## G-002: `method="binned"` smooths with a 5 cm bandwidth unless `bandwidth=0` is passed
 
@@ -159,7 +163,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-010: Spike times in ms pass unnoticed when the tracking covers only part of the recording
 
-- Datasets: peyrache_mouse32 (hazard probe `spike_times_in_ms` / hd.tuning)
+- Datasets: peyrache_mouse32 (hazard probe `spike_times_in_ms` / hd.tuning), figure8_000552 (`spike_times_in_ms` / rates.spatial)
 - Operation / step: hd.tuning
 - Kind: silent-hazard
 - Evidence: with spike times multiplied by 1000, `compute_directional_rates`
@@ -169,9 +173,177 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   1959 s wake epoch, so the ratio rule does not fire. The result changes
   quietly: median mean vector length 0.436 → 0.389, and 10 of 49 units lose a
   finite value. On 000582, where tracking covers the whole recording, the same
-  hazard is caught with "divide them by 1000".
+  hazard is caught with "divide them by 1000". On figure8_000552 the same
+  hazard is silent too: median peak rate 4.67 → 0.00 Hz with only the
+  clean-run warning.
 - Harness workaround: none
 - Proposed change: compare the spike span with the span of the requested
   epochs (or the whole tracked session) rather than with `times` alone; fixing
   G-001 removes the clean-run warning that hides this case.
 - Status: open (linked to G-001)
+
+## G-011: `read_intervals` does not search processing modules
+
+- Datasets: figure8_000552
+- Operation / step: loader (`read_intervals`)
+- Kind: missing-feature
+- Evidence: the file keeps its ripples (`processing/ecephys/Ripples`, 4297
+  rows) and sleep states (`processing/behavior/SleepStates`, 27 rows) as
+  `TimeIntervals` in processing modules. `read_intervals(nwbfile,
+  interval_name="Ripples")` raises "TimeIntervals 'Ripples' not found …
+  Available intervals: ['trials', 'epochs']". `read_position` searches
+  `processing/*` and `acquisition`; `read_intervals` only `intervals/`.
+- Harness workaround: `datasets/load_figure8_000552.py` reads both tables with pynwb
+- Proposed change: search processing modules (and list what was found there)
+  as `read_position` does.
+- Status: open
+
+## G-012: `read_position(position_name=)` rejects the `Position` container name
+
+- Datasets: figure8_000552
+- Operation / step: loader (`read_position`)
+- Kind: error-message
+- Evidence: with two position series, `read_position(nwbfile)` refuses to
+  choose (good). `position_name="LinearizedPosition"` (the container's name)
+  then raises "Position series 'LinearizedPosition' not found … pass
+  position_name= with a name or path from this list", and the list holds only
+  full series paths. The container name is what a user sees first in the file.
+- Harness workaround: the loader passes the full series path
+- Proposed change: accept a `Position` container name when it holds one series.
+- Status: open
+
+## G-013: `env.occupancy(min_speed=)` needs `speed=`; the rate and decoder entry points compute it
+
+- Datasets: figure8_000552, rosenberg_labyrinth
+- Operation / step: env.occupancy
+- Kind: friction
+- Evidence: `env.occupancy(times, positions, min_speed=4.0)` raises
+  "min_speed=4.0 was given without speed … pass speed= (one value per sample,
+  for example compute_speed(times, positions)), or min_speed=None", while
+  `compute_spatial_rates(..., min_speed=4.0)` and `BayesianDecoder.fit(...,
+  min_speed=4.0)` on the same arrays compute speed themselves and run. The
+  same argument means different things across siblings.
+- Harness workaround: none (cell is `err`)
+- Proposed change: compute speed in `occupancy` as the rate functions do (or
+  require `speed=` everywhere).
+- Status: promoted (UX fixes phase 3b: every sibling taking min_speed derives speed the same way)
+
+## G-014: A length unit off by 100 on a 1-D track builds 3 bins without a warning
+
+- Datasets: figure8_000552 (hazard probe `length_unit_off_by_100`)
+- Operation / step: env.from_samples, rates.spatial, behavior.segment_by_velocity
+- Kind: silent-hazard
+- Evidence: positions ×0.01 (metres labelled cm) on the 222 cm track give a
+  2.2 "cm" track: `Environment.from_samples(bin_size=2)` builds 3 bins with no
+  warning, rate maps flatten (median peak 4.67 → 1.36 Hz) and velocity
+  segmentation finds 0 running segments instead of 395, all silently. On
+  000582 the same hazard warns because the bin is at least the whole extent
+  in every dimension; here the extent (2.2) is just above the bin (2.0).
+- Harness workaround: none
+- Proposed change: warn when the environment has fewer than a handful of bins
+  along a dimension (the existing check only fires at one bin or fewer).
+- Status: open
+
+## G-015: `detect_laps` finds laps on a maze with no loop
+
+- Datasets: rosenberg_labyrinth
+- Operation / step: behavior.laps
+- Kind: wrong-result
+- Evidence: the labyrinth is a binary tree (`nx.is_tree` on the track graph is
+  True). Its `Environment.from_graph` bin graph has 412 edges for 350 bins and
+  63 three-bin cycles, one triangle at each junction. `detect_laps(env, times,
+  positions)` (method `auto`) accepts it as a loop environment and returns 3
+  "laps" of 0.9–1.3 s covering 6–7 bins each (one clockwise, one
+  counter-clockwise, one unknown). Its docs say `auto` raises when "its
+  connectivity graph has no cycle"; the cycles here are the junction cliques,
+  not loops of the maze.
+- Harness workaround: none
+- Proposed change: test for a loop on the track graph (or ignore cycles that
+  stay within one junction's bins) before counting laps.
+- Status: promoted (UX fixes phase 6 fix round)
+
+## G-016: A track graph without `track_width` cannot place positions
+
+- Datasets: rosenberg_labyrinth
+- Operation / step: behavior.laps, behavior.turn_sequence
+- Kind: friction
+- Evidence: `Environment.from_graph(graph, edge_order, bin_size=0.5)` builds,
+  but `detect_laps` and `graph_turn_sequence` then raise "Positions cannot be
+  assigned to the bins of a track built without track_width", with a clear fix
+  (`env.with_track_width(width)`). The source states the corridor width (one
+  maze cell), and with `track_width=1.0` both run.
+- Harness workaround: none (the loader states `geometry["track_width"]` from the source)
+- Proposed change: none beyond showing `track_width=` in the `from_graph`
+  example; the refusal is the right behavior.
+- Status: open
+
+## G-017: Missing positions stored as 0 silently change movement segments and turns
+
+- Datasets: rosenberg_labyrinth (hazard probe `missing_positions_as_zero`)
+- Operation / step: behavior.segment_by_velocity, behavior.turn_sequence
+- Kind: silent-hazard
+- Evidence: 4.9 % of the labyrinth's frames have no nose keypoint (NaN). With
+  them set to (0, 0), a corner of the maze, velocity segmentation finds 2936
+  movement segments instead of 2637 and the turn sequence 4604 turns instead
+  of 4415, with no warning. On 000582 the same hazard touches one sample and
+  is undetectable; here the zeros are 12,400 samples at exactly (0, 0).
+- Harness workaround: none
+- Proposed change: warn when a sizeable share of samples sit at exactly the
+  same coordinate (or at exactly 0) between moving samples.
+- Status: open
+
+## G-018: Replay methods run on one-time-bin events without a warning
+
+- Datasets: figure8_000552
+- Operation / step: replay.compare_methods
+- Kind: silent-hazard
+- Evidence: the file's ripple windows inside the maze epoch (71) have a median
+  duration of 29 ms (10th–90th percentile 22–65 ms), so most are one 20 ms
+  time bin. `DAVIDSON_2009` calls 0/71 replay (95 % CI 0–0.051) and
+  `GROSMARK_2016` 2/71. Both recipes' notes say candidate events last at
+  least 100 ms and that event selection is not applied; nothing warns that a
+  line fit or weighted correlation is being run on a single time bin.
+- Harness workaround: none
+- Proposed change: warn (or refuse) when an event has fewer time bins than a
+  recipe's score needs, and name the recipe's event-duration rule.
+- Status: open
+
+## G-019: The pre-registered node count left out the maze entrance
+
+- Datasets: rosenberg_labyrinth
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: the expectation "127 nodes" (the article's count) fails: the track
+  graph has 128, the article's 127 run ends plus the entrance where the mouse
+  comes in from the home cage, which the corridor geometry needs. "63
+  junctions" passes.
+- Harness workaround: none (the expectation stays as registered)
+- Proposed change: none
+- Status: won't fix (the expectation, not the loader, was incomplete)
+
+## G-020: A mirrored frame cannot be detected, and turn directions depend on it
+
+- Datasets: rosenberg_labyrinth (hazard probe `image_y_down`)
+- Operation / step: behavior.turn_sequence
+- Kind: docs
+- Evidence: with y left pointing down (image rows), every left turn becomes a
+  right turn; the share of left turns barely moves (0.5001 → 0.4999) because
+  the maze is symmetric, so no value check can catch it.
+- Harness workaround: the loader flips y to point up
+- Proposed change: say in `graph_turn_sequence` that left and right assume a
+  y-up (right-handed) frame and that image coordinates must be flipped first.
+- Status: open
+
+## G-021: Laps cannot be counted on a linearized figure-8
+
+- Datasets: figure8_000552
+- Operation / step: behavior.laps
+- Kind: friction
+- Evidence: the file gives the figure-8 only as a linearized 1-D position
+  (and camera x, y), no track graph. `detect_laps` on the 1-D environment
+  raises "this environment has no loop … for back-and-forth runs … use
+  detect_trials", which is right for the input. Counting laps around the
+  figure-8 needs a graph of the maze, which the dataset does not provide.
+- Harness workaround: none (cell is `err`)
+- Proposed change: none
+- Status: won't fix (behaves as documented)

@@ -9,6 +9,16 @@
       "verdict": "third-party",
       "gap": null,
       "reason": "Emitted by hdmf/pynwb while reading the 2022 file; not neurospatial's."
+    },
+    "neurospatial UserWarning: #/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.": {
+      "verdict": "false alarm",
+      "gap": "G-001",
+      "reason": "Spikes outside the maze epoch's tracking (sleep before and after); the advice to check units does not apply."
+    },
+    "neurospatial UserWarning: #/# spike_times (#%) fell outside the decode time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.": {
+      "verdict": "noisy",
+      "gap": "G-001",
+      "reason": "Second warning in the same decode.position call for the spikes outside tracking (sleep); same false alarm as the position-window one."
     }
   },
   "hazards": {
@@ -56,11 +66,80 @@
       "verdict": "silent",
       "gap": "G-010",
       "reason": "Only the spike-drop warning the clean run already emits; no clock-ratio hint. Mean vector lengths change quietly (median 0.436 to 0.389, 10 units lose a value)."
+    },
+    "figure8_000552/spike_times_in_ms/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-010",
+      "reason": "Only the clean run's spike-drop warning; median peak rate falls from 4.67 to 0 Hz."
+    },
+    "figure8_000552/length_unit_off_by_100/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "A 2.2-unit track with 2-unit bins: 3 bins instead of 112, no warning."
+    },
+    "figure8_000552/length_unit_off_by_100/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "Rate maps flatten (median peak 4.67 to 1.36 Hz) with no warning."
+    },
+    "figure8_000552/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "Speeds 100 times too small: 0 running segments instead of 395, no warning."
+    },
+    "rosenberg_labyrinth/missing_positions_as_zero/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "(0, 0) is inside an already visited corner bin; the bin count is unchanged."
+    },
+    "rosenberg_labyrinth/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to (0, 0) add movement segments: 2936 instead of 2637."
+    },
+    "rosenberg_labyrinth/missing_positions_as_zero/behavior.laps": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Same three (spurious, G-015) laps."
+    },
+    "rosenberg_labyrinth/missing_positions_as_zero/behavior.turn_sequence": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "4604 turns instead of 4415."
+    },
+    "rosenberg_labyrinth/image_y_down/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Mirroring keeps the bin count."
+    },
+    "rosenberg_labyrinth/image_y_down/behavior.segment_by_velocity": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Speeds do not depend on the mirror."
+    },
+    "rosenberg_labyrinth/image_y_down/behavior.laps": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Counts unchanged (one clockwise, one counter-clockwise, one unknown; the laps themselves are spurious, G-015)."
+    },
+    "rosenberg_labyrinth/image_y_down/behavior.turn_sequence": {
+      "verdict": "undetectable",
+      "gap": "G-020",
+      "reason": "Every left becomes a right; the symmetric maze keeps the share of left turns near 0.5, so no value check can see it."
     }
   },
   "errors": {
     "sargolini_000582/cells.border_score": {
       "gap": "G-005"
+    },
+    "figure8_000552/env.occupancy": {
+      "gap": "G-013"
+    },
+    "rosenberg_labyrinth/env.occupancy": {
+      "gap": "G-013"
+    },
+    "figure8_000552/behavior.laps": {
+      "gap": "G-021"
     }
   }
 }
