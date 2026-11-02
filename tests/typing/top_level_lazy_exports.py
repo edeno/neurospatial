@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     )
     from neurospatial._interval_table import Interval as ConcreteInterval
     from neurospatial._interval_table import Intervals as ConcreteIntervals
-    from neurospatial.behavior import compute_vte_session, time_to_goal
+    from neurospatial.behavior import Trial, compute_vte_session, time_to_goal
     from neurospatial.decoding._result import DecodingResult as ConcreteDecodingResult
     from neurospatial.encoding.spatial import (
         SpatialRateResult as ConcreteSpatialRateResult,
@@ -66,4 +66,18 @@ if TYPE_CHECKING:
     time_to_goal(times, task_log)
     compute_vte_session(
         env, times, positions, decision_region="center", trials=task_log
+    )
+
+    # with_fields keeps the record class when every name is a field the class
+    # defines, and gives Interval rows for a new field. Which one depends on
+    # the keyword names, so for detector records the type is the union; for
+    # Interval rows it is exact.
+    detected = ConcreteIntervals([Trial(0.0, 1.0, "home", "left", "reached")])
+    assert_type(detected, ConcreteIntervals[Trial])
+    assert_type(
+        detected.with_fields(outcome=["censored"], end_region=[None]),
+        ConcreteIntervals[Trial] | ConcreteIntervals[ConcreteInterval],
+    )
+    assert_type(
+        task_log.with_fields(outcome=["returned"]), ConcreteIntervals[ConcreteInterval]
     )

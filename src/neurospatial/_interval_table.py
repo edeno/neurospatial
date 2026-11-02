@@ -1086,7 +1086,7 @@ class Intervals(Generic[R]):
         table.attrs["analysis_settings"] = self.analysis_settings
         return table
 
-    def with_fields(self, **columns: Any) -> Intervals[Interval]:
+    def with_fields(self, **columns: Any) -> Intervals[R] | Intervals[Interval]:
         """These intervals with fields added or replaced, same ids and times.
 
         For labels from your task: the instructed goal, correct or error, a
@@ -1101,14 +1101,17 @@ class Intervals(Generic[R]):
 
         Returns
         -------
-        Intervals of Interval
-            The same ``interval_ids``, bounds and ``analysis_settings``, with
-            the existing fields followed by the new ones. Consumers read
-            fields by name, so the record class does not matter. A replaced
-            field that the record class defines (a ``Trial``'s ``outcome``)
-            keeps that class's rules: each row is rebuilt as the record class
-            with the new values, so ``outcome="reached"`` without an
-            ``end_region`` is refused as it is for a ``Trial``.
+        Intervals
+            The same ``interval_ids``, bounds and ``analysis_settings``. A
+            replaced field that the record class defines (a ``Trial``'s
+            ``outcome``) keeps that class's rules: each row is rebuilt as the
+            record class with the new values, so ``outcome="reached"``
+            without an ``end_region`` is refused as it is for a ``Trial``.
+            When every name is such a field, the result holds the rebuilt
+            records, so a ``Trial`` stays a ``Trial`` (with its ``success``).
+            A new field gives :class:`Interval` rows with the existing fields
+            followed by the new ones; consumers read fields by name, so they
+            work the same on either.
 
         Raises
         ------
@@ -1130,6 +1133,16 @@ class Intervals(Generic[R]):
         ('end_region', 'outcome')
         >>> labelled[labelled.outcome == "error"].interval_ids.tolist()
         [1]
+
+        Re-scoring detected trials keeps them trials:
+
+        >>> from neurospatial.behavior import Trial
+        >>> detected = Intervals([Trial(0.0, 8.0, "home", "left", "reached")])
+        >>> rescored = detected.with_fields(outcome=["censored"], end_region=[None])
+        >>> rescored
+        Intervals[Trial]: 1 interval in [0, 8) s; fields: start_region, end_region, outcome
+        >>> rescored[0].success
+        False
         """
         data = {name: self._field_array(name) for name in self._fields}
         for name, values in columns.items():
@@ -1145,36 +1158,18 @@ class Intervals(Generic[R]):
                 # A task log's missing label (NaN, pd.NA) is a missing value.
                 column = _object_array([_missing_as_none(v) for v in column])
             data[name] = column
-        self._check_owned_fields(data, replaced=columns.keys())
-        # The rows are in time order, so the order check always passes.
-        labelled = _from_columns(
-            self._start, self._stop, data, interval_ids=self._ids, owner="with_fields"
+        owned = (
+            set()
+            if self._record_type is Interval
+            else {f.name for f in dataclasses.fields(self._record_type) if f.init}  # type: ignore[arg-type]
         )
-        labelled._settings = deepcopy(self._settings)
-        return labelled
-
-    def _check_owned_fields(
-        self, data: Mapping[str, NDArray[Any]], *, replaced: Iterable[str]
-    ) -> None:
-        """Rebuild each record with the replaced fields its class owns.
-
-        The record class's own checks (for example ``Trial``: ``end_region``
-        is set exactly when ``outcome == "reached"``) then apply to the new
-        values, so a relabelled row is never one the class forbids.
-        """
-        if self._record_type is Interval:
-            return
-        owned = [
-            name
-            for name in replaced
-            if name in {f.name for f in dataclasses.fields(self._record_type) if f.init}  # type: ignore[arg-type]
-        ]
-        if not owned:
-            return
-        for i, record in enumerate(self._records):
-            new = {name: plain_value(data[name][i]) for name in owned}
+        replaced = [name for name in columns if name in owned]
+        records = list(self._records)
+        for i, record in enumerate(records if replaced else ()):
+            new = {name: plain_value(data[name][i]) for name in replaced}
             try:
-                dataclasses.replace(record, **new)  # type: ignore[type-var]
+                # The record class's own checks apply to the new values.
+                records[i] = dataclasses.replace(record, **new)  # type: ignore[type-var]
             except (TypeError, ValueError) as exc:
                 msg = (
                     f"with_fields: interval {self._ids[i]} would not be a valid "
@@ -1182,6 +1177,20 @@ class Intervals(Generic[R]):
                 )
                 error = TypeError if isinstance(exc, TypeError) else ValueError
                 raise error(msg) from exc
+        if len(replaced) == len(columns):
+            return Intervals(
+                records,
+                record_type=self._record_type,
+                fields=self.fields if self._record_type is Interval else None,
+                interval_ids=self._ids,
+                analysis_settings=self._settings,
+            )
+        # The rows are in time order, so the order check always passes.
+        labelled = _from_columns(
+            self._start, self._stop, data, interval_ids=self._ids, owner="with_fields"
+        )
+        labelled._settings = deepcopy(self._settings)
+        return labelled
 
     @classmethod
     def from_arrays(
