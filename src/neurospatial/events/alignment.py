@@ -79,9 +79,8 @@ def align_spikes_to_events(
         For example, ``(-0.5, 1.0)`` captures 500 ms before to 1 s after each
         event.
     align : {"start", "stop"}, default="start"
-        For an ``Intervals``, align each row at its start or at its stop.
-        Plain event times are the alignment points; only the default is
-        allowed with them.
+        Align each ``Intervals`` row at its start or stop, as in
+        :func:`peri_event_histogram`; plain times allow only the default.
 
     Returns
     -------
@@ -101,10 +100,11 @@ def align_spikes_to_events(
 
     Notes
     -----
-    For intervals, each row's window ends where the row does on the side away
-    from the alignment point: aligned at the start, no spike at or after the
-    trial's stop (it belongs to the next trial); aligned at the stop, no spike
-    before the trial's start.
+    For intervals, each row's window is cut as in :func:`peri_event_histogram`
+    (see its Notes): aligned at the start, no spike at or after the trial's
+    stop (it belongs to the next trial); aligned at the stop, no spike before
+    the trial's start. Spikes are not binned, so every spike in the cut
+    window is kept.
 
     See Also
     --------
@@ -570,9 +570,8 @@ def population_peri_event_histogram(
     bin_size : float, default=0.025
         Width of time bins in seconds (default 25ms).
     align : {"start", "stop"}, default="start"
-        For an ``Intervals``, align each row at its start or at its stop.
-        Plain event times are the alignment points; only the default is
-        allowed with them.
+        Align each ``Intervals`` row at its start or stop, as in
+        :func:`peri_event_histogram`; plain times allow only the default.
     epochs : (start, stop), array-like of shape (n, 2), Intervals, IntervalSet, \
 or None
         Restrict the analysis to these half-open [start, stop) windows (seconds,
@@ -638,23 +637,10 @@ or None
     -----
     With a single retained event the SEM is undefined and is NaN.
 
-    For intervals, each row's window ends where the row does on the side away
-    from the alignment point: aligned at the start, no bin at or after the
-    trial's stop counts (it would be the next trial); aligned at the stop, no
-    bin before the trial's start. The other side counts as for any event, so
-    the time at the well before a departure or after an arrival stays in.
-    That side is not cut at the neighbouring trial: when the time at the well
-    is shorter than the window, it reaches into the previous trial (aligned
-    at the start) or the next one (aligned at the stop), and a spike there
-    counts for both trials. A bin counts for a trial only when it lies wholly inside the trial's
-    window, so each bin is the mean over the trials under way for all of it
-    (``events_per_bin``), NaN where there are none. Late bins therefore
-    describe only the longer trials, so a change late in the curve can come
-    from which trials remain rather than from time in the trial.
-    ``n_events_dropped`` also counts trials holding no whole bin. To average
-    the same trials in every bin, pass plain times with ``epochs=trials``
-    (only events whose whole window lies inside one trial), or compare trials
-    by progress along the route (:func:`neurospatial.behavior.path_progress`).
+    For intervals, rows are aligned, cut and averaged over the trials under
+    way in each bin as in :func:`peri_event_histogram` (see its Notes for the
+    cut rules). Every unit uses the same trials in a bin (``events_per_bin``),
+    and so does ``mean_sem``.
 
     Every bin is half-open ``[left, right)`` and stays inside ``window``.
     A trailing partial bin is dropped; spikes at the last whole-bin edge or
