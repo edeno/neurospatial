@@ -23,6 +23,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._observation import _validated_signal_times
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._results import marked_read_only, plain_value
 from neurospatial._stacklevel import _external_stacklevel
 
 if TYPE_CHECKING:
@@ -33,11 +34,6 @@ if TYPE_CHECKING:
 __all__ = ["Interval", "Intervals"]
 
 _TIME_FIELDS = ("start_time", "stop_time")
-
-
-def _plain(value: Any) -> Any:
-    """A NumPy scalar as the matching Python scalar; anything else unchanged."""
-    return value.item() if isinstance(value, np.generic) else value
 
 
 def _checked_times(owner: str, start: object, stop: object) -> tuple[float, float]:
@@ -61,7 +57,7 @@ def _checked_times(owner: str, start: object, stop: object) -> tuple[float, floa
 
 def _checked_value(owner: str, name: str, value: Any) -> Any:
     """A field value: hashable, ``None`` for missing, never ``""``."""
-    value = _plain(value)
+    value = plain_value(value)
     if isinstance(value, str) and value == "":
         raise ValueError(
             _format_error(
@@ -270,11 +266,6 @@ def _column(values: Sequence[Any], dtype: np.dtype | None) -> NDArray[Any]:
     return _object_array(values)
 
 
-def _read_only(array: NDArray[Any]) -> NDArray[Any]:
-    array.setflags(write=False)
-    return array
-
-
 def _checked_ids(ids: ArrayLike, n: int, *, owner: str) -> NDArray[np.int64]:
     """``ids`` as unique, non-negative int64 of length ``n``."""
     raw = np.asarray(ids)
@@ -466,7 +457,7 @@ class Intervals(Generic[R]):
         names, dtypes = _schema(kind, rows, fields)
         for name in names:
             _check_field_name(name, owner="Intervals", reserved=_MEMBERS)
-        values = {name: [_plain(getattr(r, name)) for r in rows] for name in names}
+        values = {name: [plain_value(getattr(r, name)) for r in rows] for name in names}
         for name, column in values.items():
             for value in column:
                 _checked_value(kind.__name__, name, value)
@@ -513,9 +504,9 @@ class Intervals(Generic[R]):
         self._record_type = record_type
         self._fields = fields
         self._dtypes = dtypes
-        self._ids = _read_only(np.asarray(ids, dtype=np.int64))
-        self._start = _read_only(np.asarray(start, dtype=np.float64))
-        self._stop = _read_only(np.asarray(stop, dtype=np.float64))
+        self._ids = marked_read_only(np.asarray(ids, dtype=np.int64))
+        self._start = marked_read_only(np.asarray(start, dtype=np.float64))
+        self._stop = marked_read_only(np.asarray(stop, dtype=np.float64))
         self._settings = deepcopy(settings)
         self._columns: dict[str, NDArray[Any]] = {}
 
@@ -542,7 +533,7 @@ class Intervals(Generic[R]):
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__.update(state)
         for name in ("_ids", "_start", "_stop"):
-            _read_only(self.__dict__[name])
+            marked_read_only(self.__dict__[name])
 
     # ----------------------------------------------------------------- identity
 
@@ -581,7 +572,7 @@ class Intervals(Generic[R]):
     @property
     def durations(self) -> NDArray[np.float64]:
         """``stop - start`` in seconds, shape ``(n,)``."""
-        return _read_only(self._stop - self._start)
+        return marked_read_only(self._stop - self._start)
 
     @property
     def windows(self) -> NDArray[np.float64]:
@@ -592,7 +583,7 @@ class Intervals(Generic[R]):
         duration: an empty selection, not an error.
         """
         keep = self._stop > self._start
-        return _read_only(np.column_stack([self._start[keep], self._stop[keep]]))
+        return marked_read_only(np.column_stack([self._start[keep], self._stop[keep]]))
 
     def __getattr__(self, name: str) -> pd.Series:
         """One field as a Series indexed by ``interval_id``, in row order.
@@ -625,7 +616,7 @@ class Intervals(Generic[R]):
         column = self._columns.get(name)
         if column is None:
             values = [getattr(r, name) for r in self._records]
-            column = _read_only(_column(values, self._dtypes[name]))
+            column = marked_read_only(_column(values, self._dtypes[name]))
             self._columns[name] = column
         return column
 
@@ -1166,7 +1157,7 @@ class Intervals(Generic[R]):
         if not owned:
             return
         for i, record in enumerate(self._records):
-            new = {name: _plain(data[name][i]) for name in owned}
+            new = {name: plain_value(data[name][i]) for name in owned}
             try:
                 dataclasses.replace(record, **new)  # type: ignore[type-var]
             except (TypeError, ValueError) as exc:

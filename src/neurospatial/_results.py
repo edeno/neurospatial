@@ -59,6 +59,15 @@ def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
     return owned
 
 
+_ArrayT = TypeVar("_ArrayT", bound=np.ndarray)
+
+
+def marked_read_only(array: _ArrayT) -> _ArrayT:
+    """Mark an array read-only in place and return it, for arrays just computed."""
+    array.setflags(write=False)
+    return array
+
+
 def mark_read_only(value: object) -> None:
     """Mark an array, or the arrays in a (named, nested) tuple, read-only in place."""
     if isinstance(value, np.ndarray):

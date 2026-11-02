@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,7 @@ from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
     _coord_dim_names,
+    marked_read_only,
     read_only_copy,
 )
 from neurospatial._validation import validate_choice
@@ -31,15 +32,6 @@ if TYPE_CHECKING:
 
     from neurospatial.environment import Environment
     from neurospatial.ops._types import DistanceMetric
-
-
-_ArrayT = TypeVar("_ArrayT", bound=np.ndarray)
-
-
-def _read_only(array: _ArrayT) -> _ArrayT:
-    """Mark an array this result just computed read-only and return it."""
-    array.setflags(write=False)
-    return array
 
 
 # Largest accepted |row sum - 1|, also applied to the summary decoders'
@@ -101,7 +93,7 @@ def _owned_windows(value: Any, name: str) -> NDArray[np.float64]:
 
     window = as_intervals(value, name=name)
     assert window is not None  # as_intervals returns None only for None
-    return _read_only(window)
+    return marked_read_only(window)
 
 
 def _times_problems(times: NDArray[np.float64], n_time: int) -> list[str]:
@@ -575,7 +567,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         from neurospatial.decoding.estimates import _density_mode
 
         measures = relative_bin_measures(self.env, context="map_bin")
-        return _read_only(_density_mode(self.posterior, measures))
+        return marked_read_only(_density_mode(self.posterior, measures))
 
     @cached_property
     def map_position(self) -> NDArray[np.float64]:
@@ -597,7 +589,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         """
         from neurospatial.decoding.estimates import _bin_positions
 
-        return _read_only(_bin_positions(self.env, self.map_bin))
+        return marked_read_only(_bin_positions(self.env, self.map_bin))
 
     @cached_property
     def mean_position(self) -> NDArray[np.float64]:
@@ -628,7 +620,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         """
         from neurospatial.decoding.estimates import mean_position
 
-        return _read_only(mean_position(self.env, self.posterior))
+        return marked_read_only(mean_position(self.env, self.posterior))
 
     @cached_property
     def posterior_entropy(self) -> NDArray[np.float64]:
@@ -667,7 +659,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         """
         from neurospatial.decoding.estimates import posterior_entropy
 
-        return _read_only(posterior_entropy(self.posterior))
+        return marked_read_only(posterior_entropy(self.posterior))
 
     @reads_pynapple_samples
     def plot(
@@ -1382,7 +1374,7 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         def own(value: Any, dtype: Any, *, always_copy: bool = False) -> Any:
             if copy or always_copy:
                 return read_only_copy(value, dtype)
-            return _read_only(np.asarray(value, dtype=dtype))
+            return marked_read_only(np.asarray(value, dtype=dtype))
 
         map_bin = np.asarray(self.map_bin)
         if map_bin.dtype.kind not in "iu":
@@ -1482,7 +1474,7 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         """
         from neurospatial.decoding.estimates import _bin_positions
 
-        return _read_only(_bin_positions(self.env, self.map_bin))
+        return marked_read_only(_bin_positions(self.env, self.map_bin))
 
     @property
     def n_time_bins(self) -> int:
