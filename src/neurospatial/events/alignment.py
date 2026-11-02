@@ -30,12 +30,12 @@ from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
     _cohort_fields,
+    _cut_to_limits,
     _event_times,
     _finite_times,
     _inner_bounds,
     _offset_scale,
     _psth_bins,
-    _snap_to,
     _validate_window,
     _window_bounds,
     interval_events,
@@ -296,16 +296,16 @@ def _peri_event_histograms(
     edges = _peri_event_bin_edges(event_times, window, bin_edges, bin_size)
     covered = np.ones((event_times.size, n_bins), dtype=bool)
     if limits is not None:
-        lower = limits[0][event_indices, None]
-        upper = limits[1][event_indices, None]
         # An edge within float rounding of a trial bound is that bound, so a
         # bin ending at the trial's stop is whole and a spike at its start is
-        # counted whichever side the edge rounded to.
-        scale = _offset_scale(event_times, window)[:, None]
-        edges = _snap_to(_snap_to(edges, lower, scale), upper, scale)
-        covered = (edges[:, :-1] >= lower) & (edges[:, 1:] <= upper)
-        # Count only inside the cut: a spike at the stop is the next trial's.
-        edges = np.clip(edges, lower, upper)
+        # counted whichever side the edge rounded to. Count only inside the
+        # cut: a spike at the stop is the next trial's.
+        edges, covered = _cut_to_limits(
+            edges,
+            limits[0][event_indices, None],
+            limits[1][event_indices, None],
+            _offset_scale(event_times, window)[:, None],
+        )
         has_bin = covered.any(axis=1)
         event_times, event_indices = event_times[has_bin], event_indices[has_bin]
         edges, covered = edges[has_bin], covered[has_bin]

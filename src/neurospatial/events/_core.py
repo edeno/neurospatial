@@ -255,15 +255,31 @@ def _offset_scale(
 
 
 def _cut_to_limits(
-    times: NDArray[np.float64],
+    edges: NDArray[np.float64],
     lower: NDArray[np.float64],
     upper: NDArray[np.float64],
     scale: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    """Clip absolute ``times`` to ``[lower, upper]``, snapping rounded bounds."""
-    snapped = _snap_to(_snap_to(times, lower, scale), upper, scale)
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Clip absolute bin ``edges`` to ``[lower, upper]``, snapping rounded bounds.
+
+    Parameters
+    ----------
+    edges : ndarray of float64, shape (n_events, n_bins + 1)
+        Each event's bin edges on the recording clock.
+    lower, upper, scale : ndarray of float64, shape (n_events, 1)
+        Each event's limits and the magnitude of its edges (:func:`_snap_to`).
+
+    Returns
+    -------
+    cut : ndarray of float64, shape (n_events, n_bins + 1)
+        The edges, snapped to a limit within float rounding, then clipped.
+    covered : ndarray of bool, shape (n_events, n_bins)
+        Bins whose snapped edges lie wholly inside the limits.
+    """
+    snapped = _snap_to(_snap_to(edges, lower, scale), upper, scale)
+    covered = (snapped[:, :-1] >= lower) & (snapped[:, 1:] <= upper)
     cut: NDArray[np.float64] = np.clip(snapped, lower, upper)
-    return cut
+    return cut, covered
 
 
 def _window_bounds(
