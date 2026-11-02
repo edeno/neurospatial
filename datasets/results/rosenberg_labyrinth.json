@@ -1,0 +1,320 @@
+{
+  "dataset": "rosenberg_labyrinth",
+  "session": "B1",
+  "source": "https://raw.githubusercontent.com/markusmeister/Rosenberg-2021-Repository/9bac88c85a79be683d7a78ca02fdd929b200899b/outdata%20-%20tf%20files%20only/B1-tf",
+  "license": "MIT",
+  "conversions": [
+    "positions: maze cells = 15 * nose keypoint - 0.5 (the repository's alignment)",
+    "positions: y flipped to point up (y = 14 - y)",
+    "times: frames / 30 s; bouts concatenated",
+    "geometry['graph']: rebuilt from NewMaze (MM_Maze_Utils.py) plus an entrance node"
+  ],
+  "expectations": [
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=29.9, high=30.1), got 30.000000000436557"
+    },
+    {
+      "key": "maze_has_127_nodes",
+      "passed": false,
+      "detail": "predicate"
+    },
+    {
+      "key": "maze_has_63_junctions",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.5,
+      "peak_mb": 18.3
+    },
+    "env.occupancy": {
+      "status": "error",
+      "summary": {},
+      "note": "ValueError: min_speed=1.0 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 0.5
+    },
+    "rates.spatial": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.place_screen": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.grid_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.border_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_roundtrip": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "env.from_graph": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 350,
+        "n_bin_edges": 412
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.128,
+      "peak_mb": 0.9
+    },
+    "behavior.segment_by_velocity": {
+      "status": "ok",
+      "summary": {
+        "n_segments": 2637,
+        "running_s": 4959.700000000007
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.435,
+      "peak_mb": 16.1
+    },
+    "behavior.laps": {
+      "status": "ok",
+      "summary": {
+        "n_laps": 3,
+        "n_clockwise": 1,
+        "n_counter-clockwise": 1,
+        "n_unknown": 1
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 4.134,
+      "peak_mb": 32.2
+    },
+    "behavior.turn_sequence": {
+      "status": "ok",
+      "summary": {
+        "n_turns": 4415,
+        "frac_left": 0.5001132502831257
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 2.107,
+      "peak_mb": 32.2
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      },
+      "hazard_summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 2637,
+        "running_s": 4959.700000000007
+      },
+      "hazard_summary": {
+        "n_segments": 2936,
+        "running_s": 5202.199999999965
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 3,
+        "n_clockwise": 1,
+        "n_counter-clockwise": 1,
+        "n_unknown": 1
+      },
+      "hazard_summary": {
+        "n_laps": 3,
+        "n_clockwise": 1,
+        "n_counter-clockwise": 1,
+        "n_unknown": 1
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_turns": 4415,
+        "frac_left": 0.5001132502831257
+      },
+      "hazard_summary": {
+        "n_turns": 4604,
+        "frac_left": 0.5006516072980017
+      }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      },
+      "hazard_summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "env.occupancy",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 2637,
+        "running_s": 4959.700000000007
+      },
+      "hazard_summary": {
+        "n_segments": 2637,
+        "running_s": 4959.700000000007
+      }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "behavior.laps",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 3,
+        "n_clockwise": 1,
+        "n_counter-clockwise": 1,
+        "n_unknown": 1
+      },
+      "hazard_summary": {
+        "n_laps": 3,
+        "n_clockwise": 1,
+        "n_counter-clockwise": 1,
+        "n_unknown": 1
+      }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "behavior.turn_sequence",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_turns": 4415,
+        "frac_left": 0.5001132502831257
+      },
+      "hazard_summary": {
+        "n_turns": 4415,
+        "frac_left": 0.4998867497168743
+      }
+    }
+  ]
+}

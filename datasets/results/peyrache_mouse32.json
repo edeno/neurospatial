@@ -32,7 +32,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "db0cce880f8301ed5ea92c0be6ad34b96dac9b8e"
+    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
   },
   "load_warnings": [
     {
@@ -60,6 +60,11 @@
       "warnings": []
     },
     "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
       "status": "n/a",
       "note": "needs positions",
       "warnings": []
@@ -98,7 +103,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.206,
+      "seconds": 0.249,
       "peak_mb": 105.6
     },
     "decode.position": {
@@ -107,6 +112,31 @@
       "warnings": []
     },
     "io.nwb_roundtrip": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "behavior.laps": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "replay.compare_methods": {
       "status": "n/a",
       "note": "needs positions",
       "warnings": []

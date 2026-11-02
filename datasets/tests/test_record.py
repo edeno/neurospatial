@@ -87,3 +87,13 @@ def test_dt_required_when_decoding_is_possible(simulated_recording):
     params = {k: v for k, v in simulated_recording.params.items() if k != "dt"}
     with pytest.raises(ValueError, match=r"params missing \['dt'\]"):
         validate_recording(replace(simulated_recording, params=params))
+
+
+def test_three_dimensional_recording_validates(simulated_recording):
+    rng = np.random.default_rng(3)
+    steps = rng.normal(0.0, 0.02, (simulated_recording.times.size, 3))
+    positions = np.clip(np.cumsum(steps, axis=0), -2.0, 2.0)
+    rec = replace(simulated_recording, positions=positions, position_units="m")
+    validate_recording(rec)
+    rows = check_expectations(rec, {"n_dims": 3})
+    assert rows[0]["passed"]
