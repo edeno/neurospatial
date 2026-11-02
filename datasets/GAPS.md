@@ -246,7 +246,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-015: `detect_laps` finds laps on a maze with no loop
 
-- Datasets: rosenberg_labyrinth
+- Datasets: rosenberg_labyrinth, sargolini_000582
 - Operation / step: behavior.laps
 - Kind: wrong-result
 - Evidence: the labyrinth is a binary tree (`nx.is_tree` on the track graph is
@@ -256,7 +256,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   "laps" of 0.9–1.3 s covering 6–7 bins each (one clockwise, one
   counter-clockwise, one unknown). Its docs say `auto` raises when "its
   connectivity graph has no cycle"; the cycles here are the junction cliques,
-  not loops of the maze.
+  not loops of the maze. On sargolini_000582, an open 1 m box with no track,
+  `detect_laps` likewise accepts the grid's bin cycles as a loop and reports
+  one clockwise "lap".
 - Harness workaround: none
 - Proposed change: test for a loop on the track graph (or ignore cycles that
   stay within one junction's bins) before counting laps.

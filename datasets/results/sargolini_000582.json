@@ -41,7 +41,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "db0cce880f8301ed5ea92c0be6ad34b96dac9b8e"
+    "git_commit": "9e10cb06689e68249df6c040a862715de4469a70"
   },
   "load_warnings": [],
   "operations": {
@@ -55,7 +55,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.011,
+      "seconds": 1.873,
       "peak_mb": 30.0
     },
     "env.occupancy": {
@@ -69,7 +69,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.009,
       "peak_mb": 3.8
     },
     "rates.spatial": {
@@ -83,8 +83,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.872,
-      "peak_mb": 54.1
+      "seconds": 1.135,
+      "peak_mb": 53.9
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -96,7 +96,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 0.6
     },
     "cells.place_screen": {
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.046,
+      "seconds": 0.086,
       "peak_mb": 80.4
     },
     "cells.grid_score": {
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.05,
+      "seconds": 0.084,
       "peak_mb": 8.5
     },
     "cells.border_score": {
@@ -130,7 +130,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.006,
       "peak_mb": 0.6
     },
     "hd.tuning": {
@@ -149,7 +149,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.095,
+      "seconds": 0.131,
       "peak_mb": 31.0
     },
     "io.nwb_roundtrip": {
@@ -160,8 +160,56 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.623,
+      "seconds": 5.045,
       "peak_mb": 12.1
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no min_speed",
+      "gap": null,
+      "warnings": [],
+      "seconds": 1.28,
+      "peak_mb": 21.4
+    },
+    "behavior.laps": {
+      "status": "ok",
+      "summary": {
+        "n_laps": 1,
+        "n_clockwise": 1
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.053,
+      "peak_mb": 3.8
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "summary": {},
+      "note": "needs events['ripples'] and params['replay_dt']",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.212,
+      "peak_mb": 3.1
     }
   },
   "hazards": [
@@ -218,6 +266,21 @@
         "frac_nan_bins": 0.0,
         "median_peak_hz": 8.922085900468808,
         "median_mean_hz": 0.9319466872622875
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 1,
+        "n_clockwise": 1
+      },
+      "hazard_summary": {
+        "n_laps": 1,
+        "n_clockwise": 1
       }
     },
     {
@@ -292,6 +355,20 @@
         "frac_nan_bins": 0.0,
         "median_peak_hz": 0.9194317116302448,
         "median_mean_hz": 0.9058958261167503
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 1,
+        "n_clockwise": 1
+      },
+      "hazard_summary": {
+        "n_laps": 0
       }
     }
   ]

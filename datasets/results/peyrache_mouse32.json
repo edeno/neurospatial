@@ -32,7 +32,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "db0cce880f8301ed5ea92c0be6ad34b96dac9b8e"
+    "git_commit": "9e10cb06689e68249df6c040a862715de4469a70"
   },
   "load_warnings": [
     {
@@ -98,7 +98,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.206,
+      "seconds": 0.268,
       "peak_mb": 105.6
     },
     "decode.position": {
@@ -107,6 +107,31 @@
       "warnings": []
     },
     "io.nwb_roundtrip": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "behavior.laps": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "replay.compare_methods": {
       "status": "n/a",
       "note": "needs positions",
       "warnings": []

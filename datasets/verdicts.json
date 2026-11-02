@@ -171,6 +171,16 @@
       "verdict": "caught upstream",
       "gap": null,
       "reason": "Same refusal while building the environment."
+    },
+    "sargolini_000582/missing_positions_as_zero/behavior.laps": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Same single (spurious, G-015) lap."
+    },
+    "sargolini_000582/length_unit_off_by_100/behavior.laps": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "The 4-bin environment already warned in env.from_samples; no lap is found on it."
     }
   },
   "errors": {
