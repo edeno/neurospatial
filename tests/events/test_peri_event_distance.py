@@ -251,3 +251,19 @@ def test_intervals_as_event_times_are_refused_with_start_or_stop_fix():
             (-20.0, 20.0),
             bin_size=10.0,
         )
+
+
+def test_epochs_and_spike_window_that_do_not_overlap_are_refused():
+    times = np.arange(0.0, 100.0, 0.05)
+    positions = np.column_stack([times, np.zeros_like(times)])
+    with pytest.raises(ValueError, match=r"epochs and spike_window do not overlap"):
+        peri_event_distance_histogram(
+            np.array([30.0]),
+            np.array([20.0, 40.0]),
+            times,
+            positions,
+            (-10.0, 10.0),
+            bin_size=2.0,
+            epochs=[(0.0, 30.0)],
+            spike_window=[(50.0, 90.0)],
+        )

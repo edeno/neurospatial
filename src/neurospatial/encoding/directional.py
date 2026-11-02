@@ -2258,6 +2258,7 @@ def _count_directional(
     epochs: Any,
     spike_window: Any,
     backend: str,
+    epoch_interval_ids: list[int] | None,
     n_jobs: int = 1,
     break_before: NDArray[np.bool_] | None = None,
     estimate_dispersion: bool = True,
@@ -2290,6 +2291,9 @@ def _count_directional(
         Resolved time windows.
     backend : str
         Resolved backend recorded in the provenance.
+    epoch_interval_ids : list of int or None
+        Ids of an ``Intervals`` given as ``epochs``, recorded in the
+        provenance.
     n_jobs : int, default=1
         Parallel jobs for spike counting.
     break_before : ndarray of bool, shape (n_time,), or None
@@ -2350,6 +2354,7 @@ def _count_directional(
 
     settings = rate_analysis_settings(
         prepared.support,
+        epoch_interval_ids=epoch_interval_ids,
         method="binned" if bandwidth_rad is None else "circular_gaussian",
         bandwidth=bandwidth_rad,
         backend=backend,
@@ -2447,6 +2452,9 @@ def compute_directional_rate(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
@@ -2654,6 +2662,9 @@ def compute_directional_rates(
         same clock as ``times``). The interval between two consecutive samples
         counts only if it lies entirely inside one window. ``None`` (default)
         means unrestricted.
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``headings`` is a pynapple ``Tsd``, ``None`` uses its ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
@@ -2808,7 +2819,9 @@ def _directional_rates(
     one unit and skips the population-silence warning, which needs several
     units.
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, epoch_ids = resolve_time_windows(
+        epochs, spike_window
+    )
 
     from neurospatial._spikes import as_labelled_spike_trains, as_spike_train
     from neurospatial.encoding._backend import (
@@ -2867,6 +2880,7 @@ def _directional_rates(
         epochs=resolved_epochs,
         spike_window=resolved_spike_window,
         backend=resolved_backend,
+        epoch_interval_ids=epoch_ids,
         n_jobs=n_jobs,
         break_before=breaks,
     )
@@ -3483,7 +3497,7 @@ def head_direction_cell_significance(
     )
     trains, times, ids = inputs.trains, inputs.times, inputs.unit_ids
     (headings,) = inputs.copies
-    resolved_epochs, resolved_spike_window = inputs.epochs, inputs.spike_window
+    resolved_epochs, resolved_spike_window, _ = inputs.windows
     # Raises for unknown backends; the statistic itself only needs NumPy.
     validate_and_resolve_backend(backend)
     # Copies, so caller mutation during the shuffles cannot change the null.
@@ -3534,6 +3548,7 @@ def head_direction_cell_significance(
                 epochs=options["epochs"],
                 spike_window=options["spike_window"],
                 backend="numpy",
+                epoch_interval_ids=None,
                 n_jobs=n_jobs,
                 break_before=breaks,
                 estimate_dispersion=False,

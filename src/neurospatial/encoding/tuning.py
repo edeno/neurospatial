@@ -36,6 +36,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import (
     DEFAULT_MAX_GAP,
+    SampleSupports,
     _is_pynapple_object,
     interval_gates,
     resolve_time_windows,
@@ -44,11 +45,7 @@ from neurospatial._intervals import (
     value_frame_bins,
 )
 from neurospatial._observation import validate_break_before
-from neurospatial._pynapple import (
-    _epochs_within_supports,
-    interval_rows,
-    reads_pynapple_samples,
-)
+from neurospatial._pynapple import interval_rows, reads_pynapple_samples
 from neurospatial._results import _copy_analysis_settings
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
@@ -786,9 +783,10 @@ def compute_tuning_curve(
         trials of one condition (``epochs=trials[trials.outcome ==
         "correct"]``). An :class:`~neurospatial.Intervals` is read through
         its ``windows``, and its ``interval_ids`` are recorded in
-        ``analysis_settings["epoch_interval_ids"]``. With ``bin_edges`` or
-        ``value_range``, a selection with no rows gives NaN rates, zero
-        occupancy and a warning; with ``bin_size`` alone there are no values
+        ``analysis_settings["epoch_interval_ids"]`` (for a pynapple
+        ``values``, those of the rows inside its ``time_support``). With
+        ``bin_edges`` or ``value_range``, a selection with no rows gives NaN
+        rates, zero occupancy and a warning; with ``bin_size`` alone there are no values
         to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
         its ``time_support``, and explicit epochs are intersected with it,
@@ -1021,9 +1019,10 @@ def compute_tuning_curves(
         trials of one condition (``epochs=trials[trials.outcome ==
         "correct"]``). An :class:`~neurospatial.Intervals` is read through
         its ``windows``, and its ``interval_ids`` are recorded in
-        ``analysis_settings["epoch_interval_ids"]``. With ``bin_edges`` or
-        ``value_range``, a selection with no rows gives NaN rates, zero
-        occupancy and a warning; with ``bin_size`` alone there are no values
+        ``analysis_settings["epoch_interval_ids"]`` (for a pynapple
+        ``values``, those of the rows inside its ``time_support``). With
+        ``bin_edges`` or ``value_range``, a selection with no rows gives NaN
+        rates, zero occupancy and a warning; with ``bin_size`` alone there are no values
         to set the bins from, and it raises. None (default)
         analyzes all time; when ``values`` is a pynapple ``Tsd``, None uses
         its ``time_support``, and explicit epochs are intersected with it,
@@ -1234,7 +1233,6 @@ def _tuning_curves(
     single_unit: bool,
 ) -> TuningCurvesResult:
     """Validate, bin the variable, count every unit and estimate the rates."""
-    from neurospatial._interval_table import Intervals
     from neurospatial._spikes import as_labelled_spike_trains, as_spike_train
     from neurospatial.encoding._provenance import (
         rate_analysis_settings,
@@ -1243,28 +1241,19 @@ def _tuning_curves(
     from neurospatial.encoding._validation import validate_trajectory
 
     call = f"{owner}()"
-    epoch_ids = (
-        np.asarray(epochs.interval_ids).tolist()
-        if isinstance(epochs, Intervals)
-        else None
-    )
     if _is_pynapple_object(values):
-        # As for pynapple positions and headings: time outside the series'
-        # support (between trials, for a restricted series) is not analyzed,
-        # whether or not epochs are given.
+        # As for pynapple positions and headings, time outside the series'
+        # support (between trials, for a restricted series) is not analyzed.
         support = getattr(values, "time_support", None)
         if support is not None:
-            support_rows = interval_rows(support)
-            epochs = (
-                support_rows
-                if epochs is None
-                else _epochs_within_supports(epochs, {"values": support_rows})
-            )
+            epochs = SampleSupports(epochs, {"values": interval_rows(support)})
         values = np.asarray(values.d)
     validate_instance(variable, str, name="variable", owner=call)
     if units is not None:
         validate_instance(units, str, name="units", owner=call)
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, epoch_ids = resolve_time_windows(
+        epochs, spike_window
+    )
 
     if single_unit:
         spike_trains = [as_spike_train(spike_times)]
@@ -1366,6 +1355,7 @@ def _tuning_curves(
 
     settings = rate_analysis_settings(
         prepared.support,
+        epoch_interval_ids=epoch_ids,
         method="binned" if bandwidth is None else "gaussian",
         bandwidth=bandwidth,
         backend="numpy",
@@ -1377,7 +1367,6 @@ def _tuning_curves(
         bin_edges=edges.tolist(),
         value_range=[float(edges[0]), float(edges[-1])],
         edges_from=edges_source,
-        epoch_interval_ids=epoch_ids,
         n_samples_outside_range=n_outside,
     )
     return TuningCurvesResult(

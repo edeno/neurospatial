@@ -98,6 +98,45 @@ def test_rate_support_and_provenance_match_the_actual_analysis(rate_family):
         assert result.analysis_settings["epochs"][0][0] == 0
 
 
+def test_intervals_as_epochs_record_their_ids(rate_family):
+    """An Intervals analyzes its windows and records which intervals they were."""
+    from neurospatial import Intervals
+
+    _, compute, trains = rate_family
+    trials = Intervals.from_arrays([0.0, 3.0], [2.0, 6.0], interval_ids=[4, 9])
+    by_rows = compute(trains)
+    by_trials = compute(trains, epochs=trials)
+
+    np.testing.assert_array_equal(by_trials.firing_rates, by_rows.firing_rates)
+    np.testing.assert_array_equal(by_trials.occupancy, by_rows.occupancy)
+    assert by_rows.analysis_settings["epoch_interval_ids"] is None
+    assert by_trials.analysis_settings["epoch_interval_ids"] == [4, 9]
+    assert by_trials[1].analysis_settings["epoch_interval_ids"] == [4, 9]
+    single = compute(trains[0], single=True, epochs=trials)
+    assert single.analysis_settings["epoch_interval_ids"] == [4, 9]
+
+
+def test_boundary_vector_rates_record_epoch_interval_ids():
+    from neurospatial import Intervals
+    from neurospatial.encoding import compute_boundary_vector_rates
+
+    times = np.arange(400) / 20
+    positions = np.column_stack([15 + 10 * np.sin(times), 15 + 10 * np.cos(times / 2)])
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+    trials = Intervals.from_arrays([1.0, 8.0], [6.0, 15.0], interval_ids=[2, 7])
+    rates = compute_boundary_vector_rates(
+        env,
+        [times[::7]],
+        times,
+        positions,
+        direction_frame="allocentric",
+        boundary_source="analysis",
+        distance_bin_size=5.0,
+        epochs=trials,
+    )
+    assert rates.analysis_settings["epoch_interval_ids"] == [2, 7]
+
+
 def test_rate_metadata_survives_tables_and_netcdf(rate_family, tmp_path):
     _, compute, trains = rate_family
     result = compute(trains, unit_ids=["first", "second"])
@@ -135,6 +174,29 @@ def test_empty_populations_keep_observation_provenance(rate_family):
     np.testing.assert_allclose(empty.occupancy, populated.occupancy)
     assert not empty.spatial_support.any()
     assert empty.to_dataframe().empty
+
+
+@pytest.mark.parametrize("how", ["pickle", "deepcopy"])
+def test_an_empty_spike_window_survives_copies(rate_family, how):
+    """Rates of an empty selection copy and index like any other rates."""
+    import copy
+    import pickle
+
+    from neurospatial import Intervals
+
+    _, compute, trains = rate_family
+    none = Intervals.from_arrays([0.0], [1.0])[[]]
+    with pytest.warns(UserWarning, match="spike_window selects no time"):
+        rates = compute(trains, spike_window=none)
+    copied = (
+        pickle.loads(pickle.dumps(rates)) if how == "pickle" else copy.deepcopy(rates)
+    )
+
+    for result in (rates, copied, copied[1]):
+        assert result.spike_window.shape == (0, 2)
+        assert not result.spike_window.flags.writeable
+        assert result.analysis_settings["spike_window"] == []
+    np.testing.assert_array_equal(copied[1].occupancy, rates[1].occupancy)
 
 
 @pytest.mark.parametrize("family", ["view", "object_vector", "egocentric"])

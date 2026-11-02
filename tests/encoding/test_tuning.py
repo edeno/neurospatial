@@ -471,6 +471,26 @@ def test_explicit_epochs_are_intersected_with_the_values_support(runs):
     assert curve.analysis_settings["epoch_interval_ids"] == [7, 9]
 
 
+def test_epoch_ids_outside_the_values_support_are_not_recorded(runs):
+    """A trial between the series' support windows selects no time: no id."""
+    nap = pytest.importorskip("pynapple")
+    times, progress = runs
+    restricted = nap.Tsd(t=times, d=progress).restrict(
+        nap.IntervalSet([0.0, 2.0], [1.5, 3.5])
+    )
+    trials = Intervals.from_arrays(
+        [0.0, 1.6, 1.7, 2.5], [1.0, 1.9, 1.7, 3.0], interval_ids=[7, 8, 9, 11]
+    )
+
+    curve = compute_tuning_curve(
+        np.array([1.0]), restricted.t, restricted, bin_edges=EDGES, epochs=trials
+    )
+
+    # [1.6, 1.9) and the instant 1.7 lie in the gap [1.5, 2.0) of the series.
+    assert curve.analysis_settings["epoch_interval_ids"] == [7, 11]
+    assert curve.occupancy.sum() == pytest.approx(1.5)
+
+
 def test_to_xarray_names_the_variable(distance_curves):
     pytest.importorskip("xarray")
     dataset = distance_curves.to_xarray()

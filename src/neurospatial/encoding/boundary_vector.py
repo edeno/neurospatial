@@ -747,6 +747,9 @@ def compute_boundary_vector_rates(
         low-confidence frames and shorter than real tracking losses or pickups.
     epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
         Restrict the analysis to these half-open windows (seconds).
+        An :class:`~neurospatial.Intervals`, such as the trials of one
+        condition, is read through its ``windows``, and its ``interval_ids``
+        are recorded in ``analysis_settings["epoch_interval_ids"]``.
         When ``positions`` or ``headings`` is a pynapple object, ``None`` uses its
         ``time_support``.
     break_before : ArrayLike of bool, shape (n_samples,), optional
@@ -1005,7 +1008,9 @@ def _boundary_vector_rates(
         context=context,
     )
     require_known_bandwidth(env.units, bandwidth, method, context=context)
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, epoch_ids = resolve_time_windows(
+        epochs, spike_window
+    )
 
     spike_trains, resolved_unit_ids = as_labelled_spike_trains(
         spike_times, unit_ids, context=context
@@ -1077,6 +1082,7 @@ def _boundary_vector_rates(
     time_in_range = float(occupancy.sum())
     settings = rate_analysis_settings(
         support,
+        epoch_interval_ids=epoch_ids,
         method=method,
         bandwidth=resolved_bandwidth,
         min_occupancy=min_occupancy,

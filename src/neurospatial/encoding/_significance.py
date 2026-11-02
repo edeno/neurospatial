@@ -12,7 +12,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import resolve_time_windows
+from neurospatial._intervals import TimeWindows, resolve_time_windows
 from neurospatial._random import _entropy, _stream
 from neurospatial._results import plain_value
 from neurospatial._spikes import as_labelled_spike_trains
@@ -60,10 +60,8 @@ class ShuffleInputs(NamedTuple):
     """The per-sample arrays passed as ``copies`` (positions, headings)."""
     unit_ids: NDArray[Any]
     """One label per unit."""
-    epochs: NDArray[np.float64] | None
-    """Resolved ``epochs`` intervals."""
-    spike_window: NDArray[np.float64] | None
-    """Resolved ``spike_window`` interval."""
+    windows: TimeWindows
+    """Resolved ``epochs`` and ``spike_window``."""
 
 
 def shuffle_inputs(
@@ -106,9 +104,8 @@ def shuffle_inputs(
     times = np.array(times, dtype=np.float64, copy=True)
     copied = tuple(np.array(x, dtype=np.float64, copy=True) for x in copies)
     ids = np.arange(len(trains)) if labels is None else np.array(labels, copy=True)
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
     return ShuffleInputs(
-        trains, times, copied, ids, resolved_epochs, resolved_spike_window
+        trains, times, copied, ids, resolve_time_windows(epochs, spike_window)
     )
 
 

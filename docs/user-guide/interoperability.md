@@ -581,9 +581,14 @@ or `headings` uses the sample's `time_support` as its epochs, so a tracking
 gap shorter than `max_gap` is not counted as occupancy. Results that carry
 `analysis_settings` record the adopted windows in
 `analysis_settings["epochs"]`. An explicit `epochs=` is intersected with
-the sample's `time_support`, so only time inside both is analyzed; when `positions`
-and `headings` are both pynapple objects with different supports, the call is
-refused until you pass `epochs=` (for example their intersection). Every
+the sample's `time_support`, so only time inside both is analyzed. When those
+epochs are an `Intervals`, rate results record in
+`analysis_settings["epoch_interval_ids"]` the ids of its rows that overlap the
+support; a trial that falls entirely in a gap of the support is not listed.
+A `Tsd` passed as `values` to `compute_tuning_curve(s)` is read the same
+way. When `positions` and `headings` are both pynapple objects with different
+supports, the call is refused until you pass `epochs=` (for example their
+intersection). Every
 public function with a `positions` argument (also `true_positions`,
 `actual_positions` and `decoded_positions`), including
 `Environment.from_samples` and `env.bin_at`, refuses a `TsdFrame` whose

@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, replace
-from typing import Any, Literal, overload
+from typing import Any, Literal, NamedTuple, overload
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._results import EMPTY_SELECTION, ReadOnlyArraysMixin
+from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
 
 _ACCEPTED_FORMS = (
@@ -314,8 +314,6 @@ def _parse_intervals(
     Returns ``(rows, problems)``. ``rows`` is ``None`` when numbers or shape
     are unusable; ``problems`` is empty when ``rows`` is valid.
     """
-    if value is EMPTY_SELECTION:
-        return EMPTY_SELECTION, []
     kind = type(value).__name__
     if _is_pynapple_object(value) and kind != "IntervalSet":
         # A Ts/Tsd/TsdFrame has scalar .start/.end (its first and last
@@ -346,7 +344,7 @@ def _parse_intervals(
         if rows.ndim != 2 or rows.shape[1] != 2:
             return None, [f"{name}.windows has shape {rows.shape}; expected (n, 2)"]
         if rows.shape[0] == 0:
-            return EMPTY_SELECTION, []
+            return rows, []
     elif table and {"start_time", "stop_time"} <= set(value.columns):
         # A table (a task log, an NWB table's DataFrame): its bounds by name,
         # whatever its other columns or their order.
@@ -379,7 +377,7 @@ def _parse_intervals(
                 f"numbers ({exc})"
             ]
         if np.isfinite(start) and start == stop:
-            return EMPTY_SELECTION, []
+            return np.empty((0, 2)), []
         rows = np.array([[start, stop]])
     elif hasattr(value, "start") and hasattr(value, "end"):
         try:
@@ -481,7 +479,7 @@ def _parse_intervals(
 def _merge(rows: NDArray[np.float64]) -> NDArray[np.float64]:
     """Sort rows by start and merge overlapping or touching rows (vectorized)."""
     if rows.shape[0] == 0:
-        return EMPTY_SELECTION
+        return rows
     rows = rows[np.argsort(rows[:, 0], kind="stable")]
     running_stop = np.maximum.accumulate(rows[:, 1])
     opens_new = np.ones(rows.shape[0], dtype=bool)
@@ -559,24 +557,168 @@ IntervalSet-like
         pynapple time series (``Ts``, ``Tsd``, ``TsdFrame``) is refused with
         a pointer to its ``time_support``.
     """
-    rows, problems = _resolve_intervals(value, name)
+    if isinstance(value, SampleSupports):
+        rows, _, problems = _resolve_epochs(value)
+    else:
+        rows, problems = _resolve_intervals(value, name)
     if problems:
         _raise_invalid(problems)
     return rows
 
 
-def resolve_time_windows(
-    epochs: Any, spike_window: Any
-) -> tuple[NDArray[np.float64] | None, NDArray[np.float64] | None]:
-    """Normalize ``epochs`` and ``spike_window`` together.
+def recorded_windows(value: Any, *, name: str) -> NDArray[np.float64] | None:
+    """Windows as a result records them: resolved rows, possibly none.
+
+    A result keeps the windows its analysis resolved, so an array or list
+    without rows is the empty selection that analysis was given (an
+    ``Intervals`` with no windows), not a probable bug as it would be in an
+    analysis argument. Any other value is read by :func:`as_intervals`.
+
+    Parameters
+    ----------
+    value : None, array-like of shape (n, 2), or any form :func:`as_intervals` reads
+    name : str
+        Field name used in error messages.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_windows, 2), or None
+    """
+    if isinstance(value, (np.ndarray, list)) and np.shape(value) in ((0,), (0, 2)):
+        return np.empty((0, 2))
+    return as_intervals(value, name=name)
+
+
+@dataclass(frozen=True)
+class SampleSupports:
+    """``epochs`` as passed, with the time supports of the pynapple samples.
+
+    :func:`~neurospatial._pynapple.reads_pynapple_samples` passes this as
+    ``epochs`` when pynapple ``positions`` or ``headings`` carry a
+    ``time_support`` (and ``compute_tuning_curve(s)`` for pynapple
+    ``values``); :func:`resolve_time_windows` and :func:`as_intervals`
+    resolve it.
+
+    Attributes
+    ----------
+    epochs : Any
+        The caller's ``epochs`` (None or any form :func:`as_intervals` reads).
+    supports : dict of str to ndarray, each shape (n_intervals, 2)
+        Each sample's ``time_support`` as half-open rows, by argument name.
+    """
+
+    epochs: Any
+    supports: dict[str, NDArray[np.float64]]
+
+
+class TimeWindows(NamedTuple):
+    """Resolved ``epochs`` and ``spike_window`` of one analysis call."""
+
+    #: Sorted, merged ``[start, stop)`` rows, or None for no restriction.
+    epochs: NDArray[np.float64] | None
+    #: Sorted, merged ``[start, stop)`` rows, or None for no restriction.
+    spike_window: NDArray[np.float64] | None
+    #: ``interval_ids`` of the rows of an ``Intervals`` given as ``epochs``
+    #: that remain after the pynapple supports; None for any other ``epochs``.
+    epoch_interval_ids: list[int] | None
+
+
+def resolve_time_windows(epochs: Any, spike_window: Any) -> TimeWindows:
+    """Resolve ``epochs`` and ``spike_window`` of one analysis call.
+
+    ``epochs`` may carry pynapple sample supports (:class:`SampleSupports`):
+    with no ``epochs`` given, the samples' shared support is the epochs (two
+    samples with different supports are refused); explicit epochs are
+    intersected with every support, so time outside a sample's support is
+    never analyzed. Epochs that miss every support are kept unchanged, so the
+    analysis reports them as it does epochs that miss plain samples (often
+    another clock), not as a deliberately empty selection.
 
     Problems in both arguments are reported in a single ``ValueError``.
+
+    Returns
+    -------
+    TimeWindows
+        The resolved rows, and the ids of an :class:`~neurospatial.Intervals`
+        given as ``epochs``: those of its rows that overlap every sample
+        support (a row without duration: whose instant lies inside it), or
+        all of them when there is no support or the epochs miss it.
     """
-    epoch_rows, epoch_problems = _resolve_intervals(epochs, "epochs")
+    epoch_rows, epoch_ids, epoch_problems = _resolve_epochs(epochs)
     window_rows, window_problems = _resolve_intervals(spike_window, "spike_window")
     if epoch_problems or window_problems:
         _raise_invalid(epoch_problems + window_problems)
-    return epoch_rows, window_rows
+    return TimeWindows(epoch_rows, window_rows, epoch_ids)
+
+
+def _resolve_epochs(
+    value: Any,
+) -> tuple[NDArray[np.float64] | None, list[int] | None, list[str]]:
+    """Resolved ``epochs`` rows, the ids of an ``Intervals``, and any problems."""
+    from neurospatial._interval_table import Intervals
+
+    supports: dict[str, NDArray[np.float64]] = {}
+    if isinstance(value, SampleSupports):
+        value, supports = value.epochs, value.supports
+    if value is None and supports:
+        # The samples' support is the epochs, read as epochs are.
+        value, supports = _shared_support(supports), {}
+    intervals = value if isinstance(value, Intervals) else None
+    ids = None if intervals is None else intervals.interval_ids.tolist()
+    rows, problems = _resolve_intervals(value, "epochs")
+    if problems or rows is None or not supports:
+        return rows, ids, problems
+    kept, observed = rows, None
+    for support in supports.values():
+        if kept.shape[0] == 0:
+            # No sample lies in these epochs: report them as given.
+            return rows, ids, []
+        merged = as_intervals(support, name="time_support")
+        assert merged is not None
+        kept = intersect_intervals(kept, merged)
+        observed = merged if observed is None else intersect_intervals(observed, merged)
+    if kept.shape[0] == 0:
+        return rows, ids, []
+    if intervals is not None and observed is not None:
+        overlaps = _rows_overlap(intervals.start, intervals.stop, observed)
+        ids = intervals.interval_ids[overlaps].tolist()
+    return kept, ids, []
+
+
+def _rows_overlap(
+    starts: NDArray[np.float64],
+    stops: NDArray[np.float64],
+    windows: NDArray[np.float64],
+) -> NDArray[np.bool_]:
+    """Whether each ``[starts[i], stops[i])`` overlaps a sorted, merged window.
+
+    A row without duration overlaps the window that holds its instant.
+    """
+    first = np.searchsorted(windows[:, 1], starts, side="right")
+    inside = first < windows.shape[0]
+    # A row without duration reaches just past its instant.
+    reach = np.maximum(stops, np.nextafter(starts, np.inf))
+    starts_before = windows[np.minimum(first, windows.shape[0] - 1), 0] < reach
+    overlaps: NDArray[np.bool_] = inside & starts_before
+    return overlaps
+
+
+def _shared_support(supports: dict[str, NDArray[np.float64]]) -> NDArray[np.float64]:
+    """The one time support all pynapple samples share, else a refusal."""
+    (first, rows), *others = supports.items()
+    for name, other in others:
+        if not np.array_equal(rows, other):
+            raise ValueError(
+                _format_error(
+                    f"{first} and {name} have different pynapple time supports, "
+                    "so the epochs to analyze are ambiguous.",
+                    why="with epochs=None each pynapple sample's time_support is "
+                    "used as the epochs, and these disagree.",
+                    fix="pass epochs= explicitly, e.g. "
+                    f"epochs={first}.time_support.intersect({name}.time_support).",
+                )
+            )
+    return rows
 
 
 def ragged_arange(counts: NDArray[np.integer[Any]]) -> NDArray[np.intp]:

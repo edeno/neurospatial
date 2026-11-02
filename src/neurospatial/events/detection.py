@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
+from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import sample_feature, validated_observations
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.events._core import _event_times
@@ -130,13 +130,12 @@ def add_positions(
     """
     call = "add_positions"
     event_times = _event_times(events, timestamp_column, name="events", call=call)
-    normalized_epochs = as_intervals(epochs, name="epochs")
     t, xyz, support = validated_observations(
         times,
         positions,
         call=call,
         max_gap=max_gap,
-        epochs=normalized_epochs,
+        epochs=epochs,
         break_before=break_before,
         result="events between samples get NaN positions",
     )
@@ -159,6 +158,6 @@ def add_positions(
             event_times,
             interpolation="linear",
             kind="linear",
-            epochs=normalized_epochs,
+            epochs=support.epochs,
         )
     return result

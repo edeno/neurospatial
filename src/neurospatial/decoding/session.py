@@ -17,7 +17,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
-from neurospatial._intervals import DEFAULT_MAX_GAP, resolve_time_windows
+from neurospatial._intervals import DEFAULT_MAX_GAP, TimeWindows, resolve_time_windows
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
@@ -412,7 +412,7 @@ def decode_session(
     ...     prior=rates.spatial_support * env.bin_sizes,
     ... )
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    windows = resolve_time_windows(epochs, spike_window)
     dt = validate_dt(dt)
     dtype = validate_float_dtype(dtype, stored="rate maps and posteriors")
     options = _decode_options(decode_kwargs, caller="decode_session", summary=False)
@@ -429,9 +429,8 @@ def decode_session(
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        epochs=resolved_epochs,
+        windows=windows,
         break_before=break_before,
-        spike_window=resolved_spike_window,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
     )
@@ -442,9 +441,8 @@ def decode_session(
         firing_rates,
         dt=dt,
         max_gap=max_gap,
-        epochs=resolved_epochs,
+        windows=windows,
         break_before=break_before,
-        spike_window=resolved_spike_window,
         warn_spikes_outside=False,
         warn_partial_bins=warn_on_drop,
         dtype=dtype,
@@ -506,9 +504,8 @@ def _prepare_session_decode(
     *,
     dt: float,
     max_gap: float | None,
-    epochs: Any,
+    windows: TimeWindows,
     break_before: ArrayLike | None,
-    spike_window: Any,
     sample_valid: NDArray[np.bool_] | None,
     warn_spikes_outside: bool,
     warn_partial_bins: bool,
@@ -522,7 +519,7 @@ def _prepare_session_decode(
     _PoissonRates,
     NDArray[np.float64] | None,
     NDArray[np.float64],
-    NDArray[np.float64],
+    NDArray[np.float64] | None,
     NDArray[np.float64],
 ]:
     """Tile decode bins inside the observed runs and prepare the rate maps.
@@ -553,7 +550,7 @@ def _prepare_session_decode(
     from neurospatial.decoding.posterior import _prepare_decode_inputs
     from neurospatial.encoding import _validate_times
 
-    epochs, spike_window = resolve_time_windows(epochs, spike_window)
+    epochs, spike_window, _ = windows
     # Normalize array timestamps and spike groups at the boundary.
     trains, _ = _as_spike_trains_with_ids(spike_times)
     times_arr = np.asarray(times, dtype=np.float64)
@@ -672,9 +669,8 @@ def _fit_encoding_model(
     speed: NDArray[np.float64] | None = None,
     min_speed: float | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: NDArray[np.float64] | None = None,
+    windows: TimeWindows = TimeWindows(None, None, None),
     break_before: ArrayLike | None = None,
-    spike_window: NDArray[np.float64] | None = None,
     warn_on_drop: bool,
     dtype: type[np.float32] | type[np.float64] = np.float64,
     context: str = "decode_session",
@@ -683,10 +679,13 @@ def _fit_encoding_model(
     NDArray[np.float64],
     SpatialRatesResult,
 ]:
-    """Fit supported rate maps independently of the prediction time bins."""
-    from neurospatial._spikes import _as_spike_trains_with_ids
+    """Fit supported rate maps independently of the prediction time bins.
+
+    ``windows`` are the resolved ``epochs`` and ``spike_window``.
+    """
+    from neurospatial._spikes import _as_spike_trains_with_ids, spike_unit_table
     from neurospatial._validation import validate_times_positions
-    from neurospatial.encoding.spatial import compute_spatial_rates
+    from neurospatial.encoding.spatial import _spatial_rate_maps, _spatial_rates_result
 
     times_arr, positions = validate_times_positions(times, positions, call=context)
     breaks = validate_break_before(break_before, times_arr.size, call=context)
@@ -710,24 +709,34 @@ def _fit_encoding_model(
     # emits the spike-drop warning (and additionally an inactive-bin /
     # wrong-coordinate-frame warning the decode-time check cannot), so we
     # let it own the warning here and just thread warn_on_drop through.
-    rates_result = compute_spatial_rates(
+    # compute_spatial_rates on the windows already resolved.
+    maps = _spatial_rate_maps(
         env,
         trains,
         times_arr,
         positions,
-        bandwidth=bandwidth,
         method=_method,
+        bandwidth=bandwidth,
         min_occupancy=min_occupancy,
         penalty=penalty,
         rank=rank,
+        pooled=True,
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
+        time_allocation="start",
+        windows=windows,
+        break_before=breaks,
+        n_jobs=1,
+        backend="numpy",
         warn_on_drop=warn_on_drop,
         dtype=dtype,
-        epochs=epochs,
-        break_before=breaks,
-        spike_window=spike_window,
+        unit_ids=None,
+        context="compute_spatial_rates",
+        single_unit=False,
+    )
+    rates_result = _spatial_rates_result(
+        env, maps, method=_method, unit_table=spike_unit_table(trains)
     )
     # compute_spatial_rates already stores the result in `dtype`; the cast
     # is a cheap no-op guard so the working set is honored end-to-end. The
@@ -768,9 +777,8 @@ def _decode_with_models(
     *,
     dt: float = 0.025,
     max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: Any = None,
+    windows: TimeWindows = TimeWindows(None, None, None),
     break_before: ArrayLike | None = None,
-    spike_window: Any = None,
     warn_spikes_outside: bool = True,
     warn_partial_bins: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -798,9 +806,8 @@ def _decode_with_models(
         encoding_models,
         dt=dt,
         max_gap=max_gap,
-        epochs=epochs,
+        windows=windows,
         break_before=break_before,
-        spike_window=spike_window,
         sample_valid=sample_valid,
         warn_spikes_outside=warn_spikes_outside,
         warn_partial_bins=warn_partial_bins,
@@ -948,7 +955,7 @@ warn_on_drop, dtype
     >>> len(summary.map_position) > 0
     True
     """
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    windows = resolve_time_windows(epochs, spike_window)
     dt = validate_dt(dt)
     dtype = validate_float_dtype(dtype, stored="rate maps and posteriors")
     # Reject unsupported reduction options before performing the encoding fit.
@@ -968,9 +975,8 @@ warn_on_drop, dtype
         speed=speed,
         min_speed=min_speed,
         max_gap=max_gap,
-        epochs=resolved_epochs,
+        windows=windows,
         break_before=break_before,
-        spike_window=resolved_spike_window,
         warn_on_drop=warn_on_drop,
         dtype=dtype,
         context="decode_session_summary",
@@ -982,9 +988,8 @@ warn_on_drop, dtype
         firing_rates,
         dt=dt,
         max_gap=max_gap,
-        epochs=resolved_epochs,
+        windows=windows,
         break_before=break_before,
-        spike_window=resolved_spike_window,
         warn_spikes_outside=False,
         warn_partial_bins=warn_on_drop,
         dtype=dtype,
@@ -1002,9 +1007,8 @@ def _decode_with_models_summary(
     *,
     dt: float = 0.025,
     max_gap: float | None = DEFAULT_MAX_GAP,
-    epochs: Any = None,
+    windows: TimeWindows = TimeWindows(None, None, None),
     break_before: ArrayLike | None = None,
-    spike_window: Any = None,
     warn_spikes_outside: bool = True,
     warn_partial_bins: bool = True,
     dtype: type[np.float32] | type[np.float64] = np.float64,
@@ -1036,9 +1040,8 @@ def _decode_with_models_summary(
         encoding_models,
         dt=dt,
         max_gap=max_gap,
-        epochs=epochs,
+        windows=windows,
         break_before=break_before,
-        spike_window=spike_window,
         sample_valid=sample_valid,
         warn_spikes_outside=warn_spikes_outside,
         warn_partial_bins=warn_partial_bins,

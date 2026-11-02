@@ -28,6 +28,7 @@ import pytest
 from numpy.testing import assert_array_equal
 
 from neurospatial import Environment
+from neurospatial._intervals import resolve_time_windows
 from neurospatial.decoding import (
     BayesianDecoder,
     DecodingResult,
@@ -296,7 +297,7 @@ def test_epochs_restrict_encoding(sim) -> None:
         times,
         models,
         dt=0.5,
-        epochs=held_out,
+        windows=resolve_time_windows(held_out, None),
         spatial_support=fitted.spatial_support,
     )
     assert_array_equal(predicted.posterior, reference.posterior)

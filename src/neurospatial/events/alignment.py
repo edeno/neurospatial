@@ -285,7 +285,9 @@ def _peri_event_histograms(
         event_times, align, call=context
     )
     event_times = _finite_times(event_times, "event_times")
-    resolved_epochs, resolved_spike_window = resolve_time_windows(epochs, spike_window)
+    resolved_epochs, resolved_spike_window, _ = resolve_time_windows(
+        epochs, spike_window
+    )
     n_input_events = event_times.size
     event_times, event_indices = _keep_observed_events(
         event_times, window, resolved_epochs, resolved_spike_window, limits

@@ -72,7 +72,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._intervals import DEFAULT_MAX_GAP, as_intervals
 from neurospatial._observation import (
     ObservationSupport,
     validated_observations,
@@ -1483,7 +1483,7 @@ def detect_boundary_crossings(
         valid=position_bins >= 0,
         call="detect_boundary_crossings",
         max_gap=max_gap,
-        epochs=epochs,
+        epochs=as_intervals(epochs, name="epochs"),
         break_before=break_before,
         result="no boundary crossing was observed",
     )

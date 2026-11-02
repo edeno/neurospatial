@@ -29,6 +29,7 @@ def _sample(
 ):
     """Resolve support for one feature, then sample it at ``queries``."""
     times = np.asarray(times, dtype=float)
+    epochs = as_intervals(epochs, name="epochs")
     with warnings.catch_warnings():
         # Sparse clocks trip the shared "times are probably not in seconds"
         # warning, which is not what these tests check.
@@ -52,7 +53,7 @@ def _sample(
         np.asarray(queries, dtype=float),
         interpolation=interpolation,
         kind=kind,
-        epochs=as_intervals(epochs, name="epochs"),
+        epochs=epochs,
     )
 
 

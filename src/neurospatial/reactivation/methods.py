@@ -283,6 +283,10 @@ class ReactivationWindows:
         """
         rows = as_intervals(epochs, name="epochs")
         assert rows is not None
+        return self._split_rows(rows)
+
+    def _split_rows(self, rows: NDArray[np.float64]) -> list[NDArray[np.float64]]:
+        """:meth:`split` of resolved ``(n_epochs, 2)`` rows (none: no time)."""
         if self.length is None:
             return [rows]
         starts, stops = rows[:, 0], rows[:, 1]
@@ -1467,10 +1471,15 @@ def _binned(
     counts : ndarray, shape (n_bins, n_units)
     centers : ndarray, shape (n_bins,)
     """
-    from neurospatial.decoding import bin_spikes_in_time
+    from neurospatial._spikes import as_spike_trains
+    from neurospatial.decoding._time_bins import spike_counts_in_windows, validate_dt
 
     try:
-        counts, centers = bin_spikes_in_time(trains, dt=bin_size, epochs=windows)
+        # bin_spikes_in_time(trains, dt=bin_size, epochs=windows) on windows
+        # already resolved.
+        counts, centers = spike_counts_in_windows(
+            as_spike_trains(trains), windows, validate_dt(bin_size)
+        )
     except ValueError as error:
         raise _MethodError(str(error)) from error
     return counts.astype(np.float64), np.asarray(centers, dtype=np.float64)
@@ -1512,7 +1521,7 @@ def _windows_or_error(
     rule: ReactivationWindows, epochs: NDArray[np.float64], period: str
 ) -> list[NDArray[np.float64]]:
     """The rule's windows, refusing a period shorter than one window."""
-    windows = rule.split(epochs)
+    windows = rule._split_rows(epochs)
     if not windows:
         duration = float(np.sum(epochs[:, 1] - epochs[:, 0]))
         msg = (
