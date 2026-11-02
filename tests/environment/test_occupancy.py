@@ -210,10 +210,10 @@ class TestOccupancySpeedFiltering:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.array([[5.0, 5.0], [5.0, 5.0], [5.0, 5.0]])
 
-        # A still animal has speed 0: the gate drops every interval.
-        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-            gated = env.occupancy(times, positions, min_speed=2.0)
-        assert gated.sum() == 0.0
+        # A still animal has speed 0: the derived-speed gate drops every
+        # interval, so nothing usable is left.
+        with pytest.raises(InputError, match=r"excluded ALL.*min_speed=2\.0"):
+            env.occupancy(times, positions, min_speed=2.0)
 
     def test_polar_occupancy_min_speed_needs_speed(self):
         """A polar env cannot derive speed: (distance, angle) is not Cartesian."""

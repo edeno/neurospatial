@@ -143,10 +143,10 @@ class TestOccupancy:
         times = np.array([0.0, 1.0, 2.0])
         positions = np.tile(small_2d_env.bin_centers[0:1], (3, 1))
 
-        # A still animal has speed 0, so a 2 units/s gate drops every interval.
-        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-            gated = small_2d_env.occupancy(times, positions, min_speed=2.0)
-        assert gated.sum() == 0.0
+        # A still animal has speed 0, so a 2 units/s gate drops every interval
+        # and nothing usable is left.
+        with pytest.raises(InputError, match=r"excluded ALL.*min_speed=2\.0"):
+            small_2d_env.occupancy(times, positions, min_speed=2.0)
         # Speed alone would be silently ignored.
         with pytest.raises(ValueError, match="speed was given without min_speed"):
             small_2d_env.occupancy(times, positions, speed=np.ones(3))
