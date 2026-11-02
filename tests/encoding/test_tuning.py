@@ -611,6 +611,26 @@ def test_no_out_of_range_warning_for_half_or_for_samples_outside_epochs(runs):
     assert curve.n_samples_outside_range == progress.size // 2
 
 
+def test_a_deliberately_narrow_range_does_not_warn(runs):
+    """Firing within the first fifth of the route: most samples out, on purpose."""
+    times, progress = runs
+    narrow = compute_tuning_curve(
+        times[::3], times, progress, bin_size=0.05, value_range=(0.0, 0.2)
+    )
+    assert narrow.n_samples_outside_range > progress.size // 2
+
+
+def test_values_in_another_frame_warn(runs):
+    """Same span, shifted origin: nearly every sample is outside."""
+    times, progress = runs
+    # The first 2% of samples stay in range, so the curve is not empty.
+    shifted = np.where(
+        np.arange(progress.size) < progress.size // 50, progress, progress + 50.0
+    )
+    with pytest.warns(UserWarning, match=r"outside bin_edges \[0, 1\]"):
+        compute_tuning_curve(times[::3], times, shifted, bin_edges=EDGES)
+
+
 def test_out_of_range_fraction_is_of_analyzed_samples(runs):
     """NaN samples and samples outside epochs are not in the denominator.
 
@@ -620,7 +640,8 @@ def test_out_of_range_fraction_is_of_analyzed_samples(runs):
     times, progress = runs
     first = times < 10.0
     out = first & (np.arange(times.size) % 5 < 3)
-    values = np.where(out, progress + 2.0, progress)
+    # In percent: outside the 0-1 edges, and spanning far more than them.
+    values = np.where(out, 100.0 * progress + 2.0, progress)
     with pytest.warns(UserWarning, match=r"60 of 100 analyzed samples \(60\.0%\)"):
         compute_tuning_curve(
             times[::3], times, np.where(first, values, np.nan), bin_edges=EDGES

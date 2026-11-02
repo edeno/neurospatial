@@ -830,10 +830,12 @@ def compute_tuning_curve(
     UserWarning
         When every sampling interval is excluded, for example by an empty
         selection of trials; the rates are then NaN and the occupancy zero.
-        When more than half of the analyzed samples (finite values inside
-        ``epochs`` and ``spike_window``) are outside ``bin_edges``, usually
-        values in other units than the edges; they are counted in
-        ``n_samples_outside_range``.
+        When the analyzed samples (finite values inside ``epochs`` and
+        ``spike_window``) outside ``bin_edges`` look like values in other
+        units than the edges: most are outside and the values span at least
+        ten times the edges, or at least 95% are outside. A deliberately
+        narrow ``value_range`` does not warn; the excluded samples are
+        counted in ``n_samples_outside_range`` either way.
 
     See Also
     --------
@@ -1071,8 +1073,8 @@ def compute_tuning_curves(
     -----
     UserWarning
         When every sampling interval is excluded (NaN rates, zero
-        occupancy), when more than half of the analyzed samples are outside
-        ``bin_edges`` (as for :func:`compute_tuning_curve`), or when at least
+        occupancy), when the samples outside ``bin_edges`` look like values
+        in other units (as for :func:`compute_tuning_curve`), or when at least
         five units are all silent for at least 60 s and ``spike_window`` was
         not given.
 
@@ -1181,25 +1183,41 @@ def compute_tuning_curves(
     )
 
 
+# Signs of values in other units than the edges, rather than a deliberately
+# narrow range: values spanning ten times the edges (percent against 0-1, mm
+# against cm, ms against s) with most of them outside, or nearly every value
+# outside (another origin or frame).
+_UNIT_MISMATCH_SPAN_RATIO = 10.0
+_NEARLY_ALL_OUTSIDE = 0.95
+
+
 def _warn_if_mostly_outside(
+    analyzed_values: NDArray[np.float64],
     n_outside: int,
-    n_analyzed: int,
     edges: NDArray[np.float64],
     edges_source: str,
     *,
     call: str,
 ) -> None:
-    """Warn when more than half of the analyzed samples are in no bin."""
-    if 2 * n_outside <= n_analyzed:
+    """Warn when the samples in no bin suggest values in other units."""
+    n_analyzed = analyzed_values.size
+    if n_analyzed == 0 or 2 * n_outside <= n_analyzed:
+        return
+    span = float(analyzed_values.max() - analyzed_values.min())
+    wide = span >= _UNIT_MISMATCH_SPAN_RATIO * float(edges[-1] - edges[0])
+    if not wide and n_outside < _NEARLY_ALL_OUTSIDE * n_analyzed:
         return
     given = "value_range" if edges_source == "value_range" else "bin_edges"
     warnings.warn(
         f"{call}: {n_outside} of {n_analyzed} analyzed samples "
-        f"({n_outside / n_analyzed:.1%}) have a value outside bin_edges "
-        f"[{edges[0]:g}, {edges[-1]:g}], so they are in no bin and the rates "
-        "describe only the rest. Values in other units than the edges (percent "
-        "against 0-1, cm against m) do this. Fix: check the units of values "
-        f"against {given}, or widen {given} to cover the values.",
+        f"({n_outside / n_analyzed:.1%}) have a value outside {given} "
+        f"[{edges[0]:g}, {edges[-1]:g}] (values span "
+        f"[{analyzed_values.min():g}, {analyzed_values.max():g}]), so they are "
+        "in no bin and the rates describe only the rest. Values in other units "
+        "than the edges (percent against 0-1, cm against m) do this. Fix: check "
+        f"the units of values against {given}; if the narrow range is "
+        "deliberate, the excluded samples are counted in "
+        "n_samples_outside_range.",
         UserWarning,
         stacklevel=_external_stacklevel(),
     )
@@ -1320,9 +1338,7 @@ def _tuning_curves(
     in_range = (values >= edges[0]) & (values <= edges[-1])
     analyzed = in_windows & np.isfinite(values)
     n_outside = int(np.count_nonzero(analyzed & ~in_range))
-    _warn_if_mostly_outside(
-        n_outside, int(np.count_nonzero(analyzed)), edges, edges_source, call=call
-    )
+    _warn_if_mostly_outside(values[analyzed], n_outside, edges, edges_source, call=call)
 
     if not single_unit:
         # Recording coverage is about time, whether or not the variable is
