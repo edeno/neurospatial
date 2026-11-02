@@ -59,7 +59,7 @@ class _FittedState(ReadOnlyArraysMixin):
     spatial_support: NDArray[np.bool_] | None = None
     spike_window: NDArray[np.float64] | None = None
     analysis_settings: dict[str, Any] | None = None
-    encoding_config: _EncodingConfig = ("diffusion_kde", None, None, None, None)
+    encoding_config: _EncodingConfig = ("diffusion_kde", None, 0.0, None, None)
     # True when ``arange`` labels were generated for an unlabelled input; such
     # labels never drive label-based pairing.
     _unit_ids_generated: bool = False
@@ -129,19 +129,20 @@ class BayesianDecoder:
     dt : float, default=0.025
         Decoding time-bin width in seconds.
     bandwidth : float or None, default=None
-        Smoothing bandwidth (position units) for the ratio-method encoding step.
-        ``None`` uses 5 cm in declared metric units, otherwise 2.5 median bin
-        spacings; a ratio-only param, so it
-        must stay ``None`` when ``method="glm"`` (validated at construction).
+        Smoothing bandwidth (position units) for the ratio-method encoding
+        step; ``None`` is 0 (no smoothing) for ``method="binned"``, and 5 cm in
+        declared metric units, otherwise 2.5 median bin spacings, for the
+        kernel methods. A ratio-only param, so it must stay ``None`` when
+        ``method="glm"`` (validated at construction).
     method : str, default="diffusion_kde"
         Estimator for the encoding step. One of ``"diffusion_kde"``,
         ``"gaussian_kde"``, ``"binned"``, or ``"glm"`` (penalized-Poisson GAM,
         tuned with ``penalty`` / ``rank``).
-    min_occupancy : float or None, default=None
-        Minimum occupancy (seconds) for a bin to enter the ratio-method encoding
-        model. Unoccupied bins and bins below this threshold are excluded
-        from the posterior by ``spatial_support``. ``None`` resolves to 0.0; a
-        ratio-only param, so it must stay ``None`` when ``method="glm"``.
+    min_occupancy : float, default=0.0
+        Minimum occupancy (seconds) for a bin to enter the encoding model.
+        Unoccupied bins and bins below this threshold are excluded from the
+        posterior by ``spatial_support``; ``0.0`` excludes only unoccupied
+        bins. ``method="glm"`` fits every bin and accepts only ``0.0``.
     penalty : float or None, default=None
         ``method="glm"`` smoothness penalty ``lambda``; ``None`` chooses it by
         REML. Mutually exclusive with the ratio params (``bandwidth`` /
@@ -254,7 +255,7 @@ warn_on_drop
     dt: float = 0.025
     bandwidth: float | None = None
     method: str = "diffusion_kde"
-    min_occupancy: float | None = None
+    min_occupancy: float = 0.0
     penalty: float | None = None
     rank: int | None = None
     max_gap: float | None = DEFAULT_MAX_GAP
@@ -479,10 +480,11 @@ warn_on_drop
         models = np.asarray(rates.firing_rates)
         dtype = np.float32 if models.dtype == np.float32 else np.float64
         settings = rates.analysis_settings or {}
+        min_occupancy = 0.0 if rates.method == "glm" else rates.min_occupancy
         config: _EncodingConfig = (
             rates.method,
             rates.bandwidth,
-            None if rates.method == "glm" else rates.min_occupancy,
+            min_occupancy,
             settings.get("penalty"),
             settings.get("rank", rates.rank),
         )
@@ -492,7 +494,7 @@ warn_on_drop
             dtype=dtype,
             method=config[0],
             bandwidth=config[1],
-            min_occupancy=config[2],
+            min_occupancy=min_occupancy,
             penalty=config[3],
             rank=config[4],
             _fit=_FittedState(

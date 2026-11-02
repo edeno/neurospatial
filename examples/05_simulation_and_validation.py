@@ -76,7 +76,7 @@ env = env.with_metadata(units="cm")
 trajectory_stream, spike_stream = np.random.SeedSequence(2026).spawn(2)
 trajectory_seed = int(trajectory_stream.generate_state(1)[0])
 spike_seed = int(spike_stream.generate_state(1)[0])
-positions, times = simulate_trajectory_laps(
+positions, times, _ = simulate_trajectory_laps(
     env,
     n_laps=10,
     speed_mean=15.0,

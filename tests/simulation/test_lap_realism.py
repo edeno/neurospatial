@@ -37,7 +37,7 @@ def box_env():
 @pytest.fixture(scope="module")
 def box_laps(box_env):
     """Three traversals of the box with the default speed."""
-    return simulate_trajectory_laps(box_env, n_laps=3, rng=1, return_metadata=True)
+    return simulate_trajectory_laps(box_env, n_laps=3, rng=1)
 
 
 def _moving_steps(metadata):
@@ -110,7 +110,7 @@ def test_pause_samples_are_labelled_as_pauses(box_laps):
 
 def test_no_sample_repeats_at_a_lap_boundary_without_pauses(box_env):
     positions, _times, metadata = simulate_trajectory_laps(
-        box_env, n_laps=4, pause_duration=0.0, rng=1, return_metadata=True
+        box_env, n_laps=4, pause_duration=0.0, rng=1
     )
     assert np.all(_steps(positions) > 0)
     assert not np.any(metadata["direction"] == "pause")
@@ -172,7 +172,7 @@ def test_session_paths_are_smooth(lap_session):
 def test_default_speed_follows_environment_units(box_laps):
     positions_cm, times_cm, _metadata = box_laps
     env_m = Environment.from_polygon(box(0, 0, 1, 0.2), bin_size=0.02, units="m")
-    positions_m, times_m = simulate_trajectory_laps(env_m, n_laps=3, rng=1)
+    positions_m, times_m, _ = simulate_trajectory_laps(env_m, n_laps=3, rng=1)
     np.testing.assert_allclose(times_m, times_cm, rtol=1e-12)
     np.testing.assert_allclose(positions_m, positions_cm / 100, rtol=1e-12)
 
@@ -182,7 +182,9 @@ def test_default_speed_needs_metric_units():
     with pytest.raises(ValueError, match="speed_mean") as error:
         simulate_trajectory_laps(env, n_laps=3, rng=1)
     assert "not a metric length unit" in str(error.value)
-    positions, _times = simulate_trajectory_laps(env, n_laps=3, rng=1, speed_mean=20.0)
+    positions, _times, _ = simulate_trajectory_laps(
+        env, n_laps=3, rng=1, speed_mean=20.0
+    )
     assert np.all(env.bin_at(positions) >= 0)
 
 
@@ -202,7 +204,7 @@ def test_default_speed_needs_metric_units():
 def test_default_laps_run_the_length_of_a_strip_in_any_direction(build):
     """The default route joins the two bins farthest apart, whatever the axis."""
     env = build()
-    positions, _times = simulate_trajectory_laps(env, n_laps=2, rng=1)
+    positions, _times, _ = simulate_trajectory_laps(env, n_laps=2, rng=1)
     assert np.all(env.bin_at(positions) >= 0)
     # Bin centers 1 cm in from each end of the 100 cm strip.
     length = np.linalg.norm(positions - positions[0], axis=1).max()
@@ -213,7 +215,7 @@ def test_default_laps_run_the_length_of_a_strip_in_any_direction(build):
 def test_default_laps_run_stem_to_arm_on_a_t_maze():
     """The default route on a T-maze is the longest: the stem's foot to an arm."""
     env = _t_maze_track()
-    positions, _times = simulate_trajectory_laps(env, n_laps=1, rng=1)
+    positions, _times, _ = simulate_trajectory_laps(env, n_laps=1, rng=1)
     linear = env.to_linear(positions)
     assert np.all(np.diff(linear) >= 0) or np.all(np.diff(linear) <= 0)
     assert positions[0, 1] == pytest.approx(env.bin_centers[:, 1].min())
@@ -230,7 +232,7 @@ def test_default_route_across_a_circular_arena_is_nearly_straight():
     env = Environment.from_polygon(
         shapely.Point(0, 0).buffer(50, quad_segs=64), bin_size=2, units="cm"
     )
-    positions, _times = simulate_trajectory_laps(env, n_laps=1, rng=1)
+    positions, _times, _ = simulate_trajectory_laps(env, n_laps=1, rng=1)
     run = np.sum(np.linalg.norm(np.diff(positions, axis=0), axis=1))
     straight = np.linalg.norm(positions[-1] - positions[0])
     assert straight > 95.0  # across the arena
@@ -283,7 +285,7 @@ def test_custom_path_must_be_chain_of_neighbors(box_env):
 def test_custom_path_may_repeat_a_bin(box_env):
     """A repeated bin is a zero-length step: the path is still connected."""
     assert box_env.connectivity.has_edge(0, 1)
-    positions, _times = simulate_trajectory_laps(
+    positions, _times, _ = simulate_trajectory_laps(
         box_env, n_laps=2, outbound_path=[0, 0, 1], rng=1
     )
     np.testing.assert_allclose(positions[0], box_env.bin_centers[0])
@@ -342,7 +344,7 @@ def l_track():
 
 
 def test_track_lap_turns_at_the_junction(l_track):
-    positions, _times = simulate_trajectory_laps(l_track, n_laps=1, rng=1)
+    positions, _times, _ = simulate_trajectory_laps(l_track, n_laps=1, rng=1)
     assert np.all(l_track.bin_at(positions) >= 0)
     # Every sample lies on the centerline: projecting onto it changes nothing.
     np.testing.assert_allclose(
@@ -354,7 +356,7 @@ def test_track_lap_turns_at_the_junction(l_track):
 
 def test_track_lap_time_counts_toward_occupancy(l_track):
     """Every second of the lap lands in a place-field bin."""
-    positions, times = simulate_trajectory_laps(l_track, n_laps=1, rng=1)
+    positions, times, _ = simulate_trajectory_laps(l_track, n_laps=1, rng=1)
     np.testing.assert_allclose(
         l_track.occupancy(times, positions).sum(), times[-1] - times[0]
     )
@@ -400,7 +402,7 @@ def _t_maze_track():
 def test_track_laps_stay_on_the_centerline(build):
     env = build()
     walk = _walk_over_every_neighbor_pair(env)
-    positions, _times = simulate_trajectory_laps(
+    positions, _times, _ = simulate_trajectory_laps(
         env, n_laps=2, outbound_path=walk, rng=1
     )
     assert np.all(env.bin_at(positions) >= 0)
@@ -517,7 +519,7 @@ def layout_laps(request):
         warnings.simplefilter("ignore", UserWarning)
         env = LAYOUTS[request.param]()
     walk = _walk_over_every_neighbor_pair(env)
-    positions, _times = simulate_trajectory_laps(
+    positions, _times, _ = simulate_trajectory_laps(
         env, n_laps=2, outbound_path=walk, rng=1, sampling_frequency=200.0
     )
     return env, positions

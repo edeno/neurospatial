@@ -56,8 +56,9 @@ DEFAULTS: dict[type, dict[str, Any]] = {
     },
     # Gupta et al. (2010): fields above 5% of the population's highest rate,
     # merged across one-pixel gaps; spike pairs less than 80 ms apart; left
-    # and right laps forward and backward; 300 spike-time and 300
-    # cell-identity shuffles, beat 95% of both; at least 3 active cells.
+    # and right laps forward and backward; beat 95% of both shuffles; at
+    # least 3 active cells. The class uses the package's 1000 shuffles; the
+    # GUPTA_2010 recipe keeps the paper's 300.
     PairwiseOrderMethod: {
         "field_threshold": 0.05,
         "merge_gap_bins": 1,
@@ -65,14 +66,15 @@ DEFAULTS: dict[type, dict[str, Any]] = {
         "max_time_lag": 0.08,
         "directions": ("forward", "backward"),
         "nulls": ("spike_time_permutation", "cell_identity"),
-        "n_shuffles": 300,
+        "n_shuffles": 1000,
         "alpha": 0.05,
         "min_active_cells": 3,
     },
-    # Liu et al. (2023): cosine of skew-bias matrices; 100 shuffles of the
-    # spike sequence; |correlation| beyond 5% of the shuffles.
+    # Liu et al. (2023): cosine of skew-bias matrices; |correlation| beyond 5%
+    # of the shuffles. The class uses the package's 1000 shuffles; the
+    # LIU_2023_BIAS recipe keeps the paper's 100.
     BiasSequenceMethod: {
-        "n_shuffles": 100,
+        "n_shuffles": 1000,
         "alpha": 0.05,
         "alternative": "greater",
         "use_absolute": True,
@@ -213,8 +215,10 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             "decoding": {"time_bin": 0.02, "time_step": 0.005},
         },
     ),
-    "gupta_2010": (PairwiseOrderMethod, {}),
-    "liu_2023_bias": (BiasSequenceMethod, {}),
+    # 300 spike-time and 300 cell-identity shuffles.
+    "gupta_2010": (PairwiseOrderMethod, {"n_shuffles": 300}),
+    # "shuffling the spikes sequence n = 100 times".
+    "liu_2023_bias": (BiasSequenceMethod, {"n_shuffles": 100}),
     "wu_foster_2014": (
         ArmReplayMethod,
         {"decoding": {"time_bin": 0.01, "position_bin": 1.85}},

@@ -317,7 +317,7 @@ class TestLapRoundTrip:
         )
 
         n_laps = 5
-        positions, times = simulate_trajectory_laps(
+        positions, times, _ = simulate_trajectory_laps(
             env,
             n_laps=n_laps,
             rng=7,

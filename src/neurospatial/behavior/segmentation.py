@@ -592,6 +592,8 @@ def segment_by_velocity(
     min_speed : float
         Velocity threshold for movement classification (units/second).
         Samples with velocity > ``min_speed`` are considered movement.
+        Required: this function sees no environment, so it cannot know the
+        positions' unit.
     min_duration : float, optional
         Minimum segment duration in seconds. Default: 0.5.
         Segments shorter than this are excluded.

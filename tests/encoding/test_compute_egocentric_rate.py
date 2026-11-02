@@ -767,7 +767,8 @@ class TestComputeEgocentricRateSmoothing:
             method=method,
             distance_range=(0.0, 50.0),
             distance_bin_size=5.0,
-            bandwidth=5.0,
+            # Binned polar maps are not smoothed and refuse a bandwidth.
+            **({} if method == "binned" else {"bandwidth": 5.0}),
         )
         assert np.asarray(result.firing_rate).shape[0] > 0
 
@@ -1183,7 +1184,8 @@ class TestComputeEgocentricRateMinOccupancy:
             "distance_range": (0.0, 50.0),
             "distance_bin_size": 5.0,
             "method": method,
-            "bandwidth": 5.0,
+            # Binned polar maps are not smoothed and refuse a bandwidth.
+            **({} if method == "binned" else {"bandwidth": 5.0}),
         }
         args = (None, spike_times, times, positions, headings, object_positions)
         occupancy = np.asarray(compute_egocentric_rate(*args, **settings).occupancy)

@@ -255,7 +255,7 @@ from neurospatial.behavior import compute_path_efficiency, goal_bias
 
 efficiency = compute_path_efficiency(
     track, times, positions, trials, goal=trials.end_region
-)  # one row per trial, indexed by interval_id
+).summary_table()  # one row per trial, indexed by interval_id
 table["efficiency"] = efficiency["efficiency"]
 table["goal_bias"] = goal_bias(track, times, positions, trials, goal=trials.end_region)
 print(table.groupby("end_region")[["efficiency", "goal_bias"]].mean().round(2))

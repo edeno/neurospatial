@@ -171,7 +171,7 @@ result = compute_spatial_rate(
 )
 supported_rate = np.where(result.spatial_support, result.firing_rate, np.nan)
 raw = compute_spatial_rate(
-    env, spike_times, times, positions, method="binned", bandwidth=0.0, **settings
+    env, spike_times, times, positions, method="binned", **settings
 )
 print(
     f"Bins meeting the occupancy criterion: {result.spatial_support.sum()} / {env.n_bins}"

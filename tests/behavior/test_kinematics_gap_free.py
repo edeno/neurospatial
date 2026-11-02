@@ -81,6 +81,15 @@ def kinematic_goldens():
             ("goal" if key == "goal_position" else key): value
             for key, value in fields.items()
         }
+    # Path-efficiency and goal-directed results later gained ``interval_ids``
+    # (None for one path) and ``units`` (the environment's, "cm"), and the
+    # goal-directed result ``arrival_tested`` (True: the golden passes a
+    # goal_radius); the metrics are unchanged.
+    for name in ("compute_path_efficiency", "compute_path_efficiency_geodesic"):
+        goldens[name]["fields"].update(interval_ids=None, units="cm")
+    goldens["compute_goal_directed_metrics"]["fields"].update(
+        arrival_tested=True, interval_ids=None, units="cm"
+    )
     return goldens
 
 

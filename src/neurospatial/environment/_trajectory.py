@@ -31,11 +31,11 @@ from neurospatial._intervals import (
     interval_gates,
     observed_interval_mask,
     start_allocation,
-    validate_speed_gate,
     warn_excluded_intervals,
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._validation import validate_choice, validate_times_positions
+from neurospatial._velocity import resolve_speed
 from neurospatial.environment._cache import AnalysisCache
 from neurospatial.environment._fields import _compute_kernel
 from neurospatial.geometry import (
@@ -131,9 +131,23 @@ def _occupancy(
     # Before the empty and single-sample returns, which never look positions up.
     require_position_columns(positions, n_dims, call="Environment.occupancy")
 
-    speed = validate_speed_gate(speed, min_speed, len(times))
     breaks = validate_break_before(
         break_before, len(times), call="Environment.occupancy"
+    )
+    if min_speed is not None and speed is None:
+        # Speed is derived from Cartesian positions; (distance, angle) rows
+        # would mix units and ignore the angle wrap.
+        require_cartesian(
+            coordinates,
+            "Environment.occupancy(min_speed=...) without speed=",
+            why="speed is derived from Cartesian positions, and polar "
+            "(distance, angle) rows mix a length with an angle that wraps at ±π.",
+            fix="pass speed= (one value per sample, for example the animal's "
+            "speed from its allocentric positions with compute_speed).",
+        )
+    # The rate maps' speed: given, or derived from positions the same way.
+    speed = resolve_speed(
+        times, positions, speed, min_speed, max_gap=max_gap, break_before=breaks
     )
 
     # Validate time_allocation parameter

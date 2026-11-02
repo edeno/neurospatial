@@ -506,7 +506,7 @@ class TestPathEfficiencyObservedSupport:
         assert np.isnan(result.traveled_length)
         assert np.isnan(result.efficiency)
         assert np.isnan(result.angular_efficiency)
-        assert result.time_efficiency is None
+        assert np.isnan(result.time_efficiency)
 
     def test_complete_path_keeps_its_ratios(self):
         """A completely observed straight run is perfectly efficient."""
@@ -1051,7 +1051,7 @@ def _segment(traveled, shortest, *, fully_observed=True, metric="euclidean"):
     return PathEfficiencyResult(
         traveled_length=traveled,
         shortest_length=shortest,
-        time_efficiency=None,
+        time_efficiency=np.nan,
         angular_efficiency=1.0,
         start_position=np.zeros(2),
         goal=np.ones(2),
@@ -1078,7 +1078,7 @@ class TestPathEfficiencyResultContract:
                 traveled_length=1.0,
                 shortest_length=1.0,
                 efficiency=0.5,
-                time_efficiency=None,
+                time_efficiency=np.nan,
                 angular_efficiency=1.0,
                 start_position=np.zeros(2),
                 goal=np.ones(2),
@@ -1204,3 +1204,114 @@ class TestGeodesicPathLengthEstimands:
         assert result.traveled_length == pytest.approx(140.0, rel=1e-12)
         assert exact <= result.shortest_length <= exact + 2 * 2.0
         assert exact / 140 <= result.efficiency <= (exact + 4.0) / 140
+
+
+def test_path_efficiency_single_return_type():
+    """With or without intervals the result is a PathEfficiencyResult.
+
+    A run east along a 10 cm strip and back, each its own trial, and a third
+    trial with an unknown goal: the per-trial arrays equal each trial measured
+    alone, and the table has typed columns (an unknown goal must not turn
+    ``fully_observed`` into an object column).
+    """
+    from neurospatial import Intervals
+    from neurospatial.behavior.navigation import (
+        PathEfficiencyResult,
+        compute_path_efficiency,
+    )
+
+    times = np.arange(30) / 10.0  # s
+    x = np.r_[np.arange(10.0), np.arange(10.0)[::-1], np.full(10, 5.0)]
+    positions = np.column_stack([x, np.zeros(30)])  # cm
+    env = Environment.from_samples(positions, bin_size=1.0, units="cm")
+    trials = Intervals.from_arrays([0.0, 1.0, 2.0], [1.0, 2.0, 3.0])
+    goals = [positions[9], positions[19], None]
+
+    whole = compute_path_efficiency(
+        env, times, positions, goal=positions[9], reference_speed=10.0
+    )
+    per_trial = compute_path_efficiency(
+        env, times, positions, trials, goal=goals, reference_speed=10.0
+    )
+    for result in (whole, per_trial):
+        assert type(result) is PathEfficiencyResult
+        table = result.summary_table()
+        assert table.index.name == "interval_id"
+        assert table.select_dtypes(include="object").empty, table.dtypes
+        assert table.attrs["units"]["traveled_length"] == "cm"
+        assert table.attrs["units"]["efficiency"] == ""
+    assert isinstance(whole.traveled_length, float)
+    assert isinstance(whole.time_efficiency, float)
+    no_speed = compute_path_efficiency(env, times, positions, goal=positions[9])
+    assert np.isnan(no_speed.time_efficiency)
+
+    np.testing.assert_array_equal(per_trial.interval_ids, trials.interval_ids)
+    for name in ("traveled_length", "efficiency", "time_efficiency"):
+        values = getattr(per_trial, name)
+        assert values.shape == (3,)
+        assert values.dtype == np.float64
+        assert not values.flags.writeable
+    for row in range(2):
+        inside = (times >= trials.start[row]) & (times < trials.stop[row])
+        alone = compute_path_efficiency(
+            env,
+            times[inside],
+            positions[inside],
+            goal=goals[row],
+            reference_speed=10.0,
+        )
+        for name in ("traveled_length", "shortest_length", "efficiency"):
+            assert getattr(per_trial, name)[row] == pytest.approx(
+                getattr(alone, name), rel=1e-12
+            )
+    # Both runs go straight to their goals, 9 cm away.
+    assert_allclose(per_trial.traveled_length[:2], [9.0, 9.0])
+    assert_allclose(per_trial.efficiency[:2], [1.0, 1.0])
+    assert np.isnan(per_trial.efficiency[2])
+    # fully_observed describes tracking only: the third trial has no missing
+    # sample, so it is fully observed although its goal is unknown.
+    assert per_trial.fully_observed.tolist() == [True, True, True]
+    assert per_trial.summary()["n_fully_observed"] == 3
+    lost = positions.copy()
+    lost[25] = np.nan  # a frame lost inside the third trial
+    gappy = compute_path_efficiency(
+        env, times, lost, trials, goal=goals, max_gap=0.15, reference_speed=10.0
+    )
+    assert gappy.fully_observed.tolist() == [True, True, False]
+    assert gappy.summary()["n_fully_observed"] == 2
+    table = per_trial.summary_table()
+    assert table["fully_observed"].dtype == bool
+    assert "goal" not in table  # point goals stay in result.goal
+    assert per_trial.goal[2] is None
+
+
+def test_unmeasured_metrics_are_nan_not_none():
+    """A result refuses None for a metric instead of coercing it to NaN."""
+    from neurospatial.behavior.navigation import (
+        GoalDirectedMetrics,
+        PathEfficiencyResult,
+    )
+
+    with pytest.raises(ValueError, match=r"time_efficiency is None") as caught:
+        PathEfficiencyResult(
+            traveled_length=2.0,
+            shortest_length=1.0,
+            time_efficiency=None,
+            angular_efficiency=1.0,
+            start_position=np.zeros(2),
+            goal=np.ones(2),
+            metric="euclidean",
+            fully_observed=True,
+        )
+    assert "time_efficiency=np.nan" in str(caught.value)
+    with pytest.raises(ValueError, match=r"time_to_reach_goal is None"):
+        GoalDirectedMetrics(
+            goal_bias=1.0,
+            mean_approach_rate=-1.0,
+            time_to_reach_goal=None,
+            min_distance_to_goal=1.0,
+            goal_distance_at_start=2.0,
+            goal_distance_at_end=1.0,
+            goal=np.ones(2),
+            metric="euclidean",
+        )

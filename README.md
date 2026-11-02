@@ -227,7 +227,7 @@ result = compute_spatial_rate(
 )
 
 # Fast screen; field detection and cell classification are separate questions.
-print("Place candidate:", result.is_place_cell(criterion="threshold"))
+print("Place candidate:", result.is_place_cell())
 
 # 6. Plot.
 fig, ax = plt.subplots()
@@ -242,8 +242,8 @@ swap in real spike times, change the trajectory, add more cells, or
 detect place fields with [`detect_place_fields`](https://edeno.github.io/neurospatial/api/).
 A field can also flag untuned low-count units. For a verdict that also
 tests information against a circular-shift null, call
-`is_place_cell(env, spike_times, times, positions_t, criterion="shuffle", rng=0)`
-with the raw arrays (about 1000 map recomputes by default).
+`is_place_cell(env, spike_times, times, positions_t, rng=0)` with the raw
+arrays; it runs a 1000-shift test by default (about 1000 map recomputes).
 See [the spatial rate-map tutorial](https://github.com/edeno/neurospatial/blob/main/examples/02_spatial_rate_maps.ipynb)
 for the full tutorial.
 

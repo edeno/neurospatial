@@ -66,7 +66,7 @@ array([ True,  True, False])
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING
 
 import numpy as np
 import shapely
@@ -392,8 +392,9 @@ def points_in_any_region(
     side by side split their shared edges:
 
     >>> _ = regions.add("next_box", polygon=box(20.0, 0.0, 40.0, 20.0))
-    >>> regions_containing_points([[20.0, 5.0]], regions, return_dataframe=False)
-    [['next_box']]
+    >>> regions_containing_points([[20.0, 5.0]], regions)
+       start_box  next_box
+    0      False      True
 
     A point region needs a radius:
 
@@ -421,42 +422,6 @@ def points_in_any_region(
     return mask
 
 
-@overload
-def regions_containing_points(
-    positions: ArrayLike,
-    regions: Mapping[str, Region],
-    *,
-    transform: SpatialTransform | None = ...,
-    region_names: Sequence[str] | None = ...,
-    return_dataframe: Literal[True] = ...,
-    point_radius: float | None = ...,
-) -> pd.DataFrame: ...
-
-
-@overload
-def regions_containing_points(
-    positions: ArrayLike,
-    regions: Mapping[str, Region],
-    *,
-    transform: SpatialTransform | None = ...,
-    region_names: Sequence[str] | None = ...,
-    return_dataframe: Literal[False],
-    point_radius: float | None = ...,
-) -> list[list[str]]: ...
-
-
-@overload
-def regions_containing_points(
-    positions: ArrayLike,
-    regions: Mapping[str, Region],
-    *,
-    transform: SpatialTransform | None = ...,
-    region_names: Sequence[str] | None = ...,
-    return_dataframe: bool,
-    point_radius: float | None = ...,
-) -> pd.DataFrame | list[list[str]]: ...
-
-
 @reads_pynapple_samples
 def regions_containing_points(
     positions: ArrayLike,
@@ -464,9 +429,8 @@ def regions_containing_points(
     *,
     transform: SpatialTransform | None = None,
     region_names: Sequence[str] | None = None,
-    return_dataframe: bool = True,
     point_radius: float | None = None,
-) -> pd.DataFrame | list[list[str]]:
+) -> pd.DataFrame:
     """Return which regions contain each position.
 
     Parameters
@@ -486,10 +450,6 @@ def regions_containing_points(
     region_names : str or sequence of str, optional
         Regions to test, in column order. A single string is one name. If
         None, every region in ``regions`` is used, in collection order.
-    return_dataframe : bool, default=True
-        If True, return a boolean DataFrame with one column per region. If
-        False, return a list with the names of the regions containing each
-        position.
     point_radius : float, optional
         Radius around each point region, in the regions' units, within which a
         position counts as in it (Euclidean distance), for example the radius
@@ -498,14 +458,11 @@ def regions_containing_points(
 
     Returns
     -------
-    pandas.DataFrame or list of list of str
-        With ``return_dataframe=True``, a DataFrame of shape
-        ``(n_positions, n_selected_regions)`` with a ``RangeIndex`` and one
-        bool column per region; entry ``(i, name)`` is True when
-        ``positions[i]`` lies in region ``name``. With
-        ``return_dataframe=False``, a list of length ``n_positions`` whose
-        ``i``-th entry lists the names of the regions containing
-        ``positions[i]``, in column order.
+    pandas.DataFrame
+        Shape ``(n_positions, n_selected_regions)``, with a ``RangeIndex``
+        and one bool column per region; entry ``(i, name)`` is True when
+        ``positions[i]`` lies in region ``name``. ``.to_numpy(dtype=bool)`` gives the
+        bool array.
 
     Raises
     ------
@@ -539,7 +496,11 @@ def regions_containing_points(
     0      True   False
     1      True    True
     2     False   False
-    >>> regions_containing_points(positions, regions, return_dataframe=False)
+
+    The names of the regions containing each position:
+
+    >>> table = regions_containing_points(positions, regions)
+    >>> [list(table.columns[row]) for row in table.to_numpy(dtype=bool)]
     [['left_arm'], ['left_arm', 'center'], []]
 
     The fraction of samples in each region:
@@ -579,10 +540,4 @@ def regions_containing_points(
         )
         for region in selected
     }
-    if return_dataframe:
-        return pd.DataFrame(masks, index=pd.RangeIndex(len(transformed)))
-    if not masks:
-        return [[] for _ in range(len(transformed))]
-    names = list(masks)
-    membership = np.column_stack(list(masks.values()))
-    return [[names[j] for j in np.flatnonzero(row)] for row in membership]
+    return pd.DataFrame(masks, index=pd.RangeIndex(len(transformed)))

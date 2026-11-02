@@ -47,7 +47,7 @@ def env():
 _SEGMENT = PathEfficiencyResult(
     traveled_length=2.0,
     shortest_length=1.0,
-    time_efficiency=None,
+    time_efficiency=np.nan,
     angular_efficiency=1.0,
     start_position=np.zeros(2),
     goal=np.ones(2),
@@ -95,7 +95,7 @@ CASES = [
         {
             "traveled_length": 1.0,
             "shortest_length": 1.0,
-            "time_efficiency": None,
+            "time_efficiency": np.nan,
             "angular_efficiency": 1.0,
             "start_position": np.ones(2),
             "goal": np.ones(2),
@@ -115,7 +115,7 @@ CASES = [
         {
             "goal_bias": 1.0,
             "mean_approach_rate": -1.0,
-            "time_to_reach_goal": None,
+            "time_to_reach_goal": np.nan,
             "min_distance_to_goal": 1.0,
             "goal_distance_at_start": 2.0,
             "goal_distance_at_end": 1.0,

@@ -82,7 +82,10 @@ def observed_steps(
     return start, end, counted
 
 
-#: Speed below which an animal counts as stationary, in centimeters per second.
+#: Speed below which an animal counts as stationary, in centimeters per second:
+#: the "STOP (linear speed <5 cm/s)" threshold of Davidson, Kloosterman &
+#: Wilson (2009, Neuron 63:497), also the immobility threshold of Pfeiffer &
+#: Foster (2013, Nature 497:74).
 DEFAULT_MIN_SPEED_CM_PER_S = 5.0
 
 
