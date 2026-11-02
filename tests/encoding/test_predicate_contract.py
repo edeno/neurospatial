@@ -1,4 +1,4 @@
-"""Cell screens share defaults and boundaries; shuffle verdicts use raw arrays."""
+"""Free predicates give shuffle verdicts by default; result methods are screens."""
 
 import inspect
 import warnings
@@ -16,27 +16,75 @@ def _names(f):
     return free, method
 
 
-def test_is_place_cell_requires_criterion(significance_recording):
-    r = significance_recording
-    for function, args in [
-        (encoding.is_place_cell, (r.env, r.trains[0], r.times, r.positions)),
-        (
-            encoding.compute_spatial_rate(
-                r.env, r.trains[0], r.times, r.positions
-            ).is_place_cell,
-            (),
-        ),
-    ]:
+FREE_PREDICATES = (
+    "is_place_cell",
+    "is_head_direction_cell",
+    "is_object_vector_cell",
+    "is_egocentric_object_vector_cell",
+    "is_spatial_view_cell",
+)
+
+
+def test_free_predicates_default_to_shuffle():
+    for name in FREE_PREDICATES:
+        function = getattr(encoding, name)
         parameter = inspect.signature(function).parameters["criterion"]
-        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
-        assert parameter.default is inspect.Parameter.empty
-        with pytest.raises(TypeError, match="criterion"):
-            function(*args)
+        assert parameter.kind is inspect.Parameter.KEYWORD_ONLY, name
+        assert parameter.default == "shuffle", name
+        assert inspect.getdoc(function).startswith("Test whether "), name
+
+
+def test_invalid_criterion_names_has_place_field(significance_recording):
+    r = significance_recording
     with pytest.raises(ValueError, match=r"threshold.*shuffle") as exc:
         encoding.is_place_cell(
             r.env, r.trains[0], r.times, r.positions, criterion="spatial_info"
         )
     assert "has_place_field" in str(exc.value)
+
+
+def test_result_screens_take_no_criterion(significance_family, significance_recording):
+    f, r = significance_family, significance_recording
+    method_name = _names(f)[1]
+    rates = f.compute(*f.args(r), **f.defaults)
+    for screen in (getattr(rates[0], method_name), rates.classify):
+        assert "criterion" not in inspect.signature(screen).parameters
+        assert inspect.getdoc(screen).startswith("Screen "), screen.__qualname__
+    with pytest.raises(TypeError, match="criterion"):
+        getattr(rates[0], method_name)(criterion="threshold")
+    if f.name == "place":
+        rate = encoding.compute_spatial_rate(r.env, r.trains[0], r.times, r.positions)
+        for criterion in ("threshold", "shuffle"):
+            with pytest.raises(TypeError, match="criterion"):
+                rate.is_place_cell(criterion=criterion)
+
+
+def test_default_predicate_matches_explicit_shuffle(
+    ou_2min_env, ou_2min, noise_trains, strong_field_spikes
+):
+    """The default verdict is the 1000-shift test, the population rule's own."""
+    t, p, _ = ou_2min
+    trains = noise_trains(120)
+    ids = [1, 17, 99]  # two untuned units significant by chance, one place cell
+    population = [trains[1], trains[17], strong_field_spikes]
+    significance = encoding.place_cell_significance(
+        ou_2min_env, population, t, p, unit_ids=ids, rng=0
+    )
+    rates = encoding.compute_spatial_rates(ou_2min_env, population, t, p)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        debiased = rates.spatial_information() - rates.spatial_information_bias()
+    verdicts = []
+    for uid, train, beyond_bias in zip(ids, population, debiased >= 0.5, strict=True):
+        default = encoding.is_place_cell(ou_2min_env, train, t, p, unit_id=uid, rng=0)
+        explicit = encoding.is_place_cell(
+            ou_2min_env, train, t, p, criterion="shuffle", unit_id=uid, rng=0
+        )
+        assert default is explicit
+        assert significance[uid].null_scores.shape == (1000,)
+        assert default == bool(significance[uid].p_value < 0.05 and beyond_bias)
+        verdicts.append(default)
+    assert verdicts == [False, False, True]
 
 
 @pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
@@ -48,7 +96,7 @@ def test_threshold_free_method_classify_agree(
     predicate = getattr(f.module, free_name)
     single = getattr(f.module, f.compute_name[:-1])
     criteria = {"criterion": "threshold"}
-    method_kw = criteria if f.name == "place" else {}
+    method_kw = {}
     rates = f.compute(*f.args(r), **f.defaults)
     for i, train in enumerate(r.trains):
         result = single(*f.args(r, train), **f.defaults)
@@ -78,6 +126,7 @@ def test_threshold_free_method_classify_agree(
         np.testing.assert_array_equal(rates.classify(min_info=cutoff), metric >= cutoff)
 
 
+@pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
 def test_mode_keywords_raise(significance_family, significance_recording):
     f, r = significance_family, significance_recording
     predicate = getattr(f.module, _names(f)[0])
@@ -94,6 +143,11 @@ def test_mode_keywords_raise(significance_family, significance_recording):
     with pytest.raises(ValueError, match="Fix:") as exc:
         predicate(*args, criterion=criterion, **bad)
     assert all(key in str(exc.value) for key in bad)
+    # A keyword spelled at its default changes nothing, so it is accepted.
+    at_default = {"n_shuffles": 1000, "min_shift": 20.0}
+    assert predicate(
+        *args, criterion=criterion, **at_default, **f.defaults
+    ) == predicate(*args, criterion=criterion, **f.defaults)
     with pytest.raises(ValueError, match="Fix:") as exc:
         predicate(*args, criterion="percentile")
     assert criterion in str(exc.value)
@@ -108,7 +162,7 @@ def test_free_predicates_raise_on_bad_input(
     args = list(f.args(r, r.trains[0]))
     offset = 1 if f.name == "head_direction" else 2
     args[offset], args[offset + 1] = args[offset + 1], args[offset]
-    kwargs = {"criterion": "threshold"} if f.name == "place" else {}
+    kwargs = {"criterion": "threshold"}
     # Swapped, a heading series read as times decreases; 2-D positions are not 1-D.
     swapped = (
         r"times must be strictly increasing"
@@ -138,22 +192,22 @@ def test_threshold_constants_are_the_defaults(
     free_name, method_name = _names(f)
     predicate = getattr(f.module, free_name)
     rates = f.compute(*f.args(r), **f.defaults)
-    criteria = {"criterion": "threshold"} if f.name == "place" else {}
+    criteria = {"criterion": "threshold"}
     for fn in [predicate, getattr(rates[0], method_name), rates.classify]:
         for name in constant:
             parameter = inspect.signature(fn).parameters[name]
             assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
-            assert parameter.default is None
+            assert parameter.default == constant[name], (fn.__qualname__, name)
     np.testing.assert_array_equal(rates.classify(), rates.classify(**constant))
     assert predicate(*f.args(r, r.trains[0]), **criteria, **f.defaults) == predicate(
         *f.args(r, r.trains[0]), **criteria, **constant, **f.defaults
     )
     method = getattr(rates[0], method_name)
-    assert method(**criteria) == method(**criteria, **constant)
+    assert method() == method(**constant)
 
 
 def test_shuffle_defaults_have_one_source():
-    """Every shuffle test's signature defaults are the shared shuffle defaults."""
+    """Every shuffle test's and verdict's defaults are the shared shuffle defaults."""
     from neurospatial.encoding._significance import _SHUFFLE_DEFAULTS
 
     tests = [
@@ -166,6 +220,10 @@ def test_shuffle_defaults_have_one_source():
         parameters = inspect.signature(fn).parameters
         for name in ("n_shuffles", "min_shift"):
             assert parameters[name].default == _SHUFFLE_DEFAULTS[name], fn.__name__
+    for name in FREE_PREDICATES:
+        parameters = inspect.signature(getattr(encoding, name)).parameters
+        for key, value in _SHUFFLE_DEFAULTS.items():
+            assert parameters[key].default == value, (name, key)
 
 
 def test_methods_have_no_shuffle(significance_family, significance_recording):
@@ -175,13 +233,6 @@ def test_methods_have_no_shuffle(significance_family, significance_recording):
     assert not hasattr(rates[0], "shuffle_test")
     with pytest.raises(TypeError):
         rates.classify(criterion="shuffle")
-    if f.name == "place":
-        with pytest.raises(ValueError, match="Fix:") as exc:
-            rates[0].is_place_cell(criterion="shuffle")
-        assert (
-            "is_place_cell(env, spike_times, times, positions, criterion='shuffle')"
-            in str(exc.value)
-        )
 
 
 def test_has_place_field_flags_noise(
@@ -227,7 +278,7 @@ def test_label_constants_and_removed_aliases(significance_recording):
     for name in constant:
         param = inspect.signature(rates.label_cell_types).parameters[name]
         assert param.kind is inspect.Parameter.KEYWORD_ONLY
-        assert param.default is None
+        assert param.default == constant[name]
     for cls, alias in [
         (encoding.SpatialRatesResult, "detect_cell_types"),
         (encoding.DirectionalRatesResult, "detect_hd_cells"),
@@ -240,6 +291,9 @@ def test_label_constants_and_removed_aliases(significance_recording):
 
 
 @pytest.mark.slow
+# An unsmoothed binned map can have more independent bins than a unit has
+# spikes; its verdict is then False with this warning, as the rule expects.
+@pytest.mark.filterwarnings("ignore:.*fewer spikes than their rate maps:UserWarning")
 def test_free_and_population_shuffles_agree(
     significance_family, significance_recording
 ):
@@ -415,7 +469,7 @@ def test_is_place_cell_shuffle_rejects_noise(ou_2min_env, ou_2min, noise_trains)
 def test_head_direction_alpha_in_both_modes(significance_recording):
     r = significance_recording
     screen = encoding.is_head_direction_cell(
-        r.trains[0], r.times, r.headings, alpha=1.0
+        r.trains[0], r.times, r.headings, criterion="threshold", alpha=1.0
     )
     assert isinstance(screen, bool)
     sig = encoding.head_direction_cell_significance(
@@ -473,9 +527,7 @@ def test_is_place_cell_threshold(ou_2min_env, ou_2min, noise_trains):
         for tr in trains
     ]
     np.testing.assert_array_equal(flags, rates.classify())
-    assert all(
-        rates[i].is_place_cell(criterion="threshold") == flags[i] for i in range(20)
-    )
+    assert all(rates[i].is_place_cell() == flags[i] for i in range(20))
     # Untuned 0.5 Hz units (about 60 spikes): the uncorrected cutoff passes
     # most of them by chance; the bias-corrected screen passes none.
     assert (rates.spatial_information() >= 0.5).sum() >= 10
@@ -483,23 +535,17 @@ def test_is_place_cell_threshold(ou_2min_env, ou_2min, noise_trains):
 
 
 @pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
-def test_heading_interpretation_uses_shared_thresholds(
-    significance_recording, monkeypatch
-):
+def test_heading_interpretation_uses_shared_thresholds(significance_recording):
     from neurospatial.encoding import directional
 
     r = significance_recording
     result = directional.compute_directional_rate(r.trains[0], r.times, r.headings)
-    assert (
-        inspect.signature(result.interpretation).parameters["min_mvl"].default is None
-    )
-    assert result.interpretation() == result.interpretation(min_mvl=0.4)
-    monkeypatch.setattr(
-        directional,
-        "HEAD_DIRECTION_THRESHOLDS",
-        MappingProxyType({"min_mvl": 0.0, "alpha": 0.0}),
-    )
-    text = result.interpretation()
+    constant = directional.HEAD_DIRECTION_THRESHOLDS
+    parameters = inspect.signature(result.interpretation).parameters
+    for name in constant:
+        assert parameters[name].default == constant[name], name
+    assert result.interpretation() == result.interpretation(**constant)
+    text = result.interpretation(min_mvl=0.0, alpha=0.0)
     assert "Not classified as HD cell" in text
     assert "Tuning test not significant" in text
     assert ">= 0.0" in text

@@ -144,8 +144,8 @@ def _warn_if_below_bin_length(env: Any, bandwidth: float) -> None:
             "size, so almost no smoothing happens.",
             why="a bandwidth in different units (for example metres on a cm "
             "environment) looks like this.",
-            fix="pass bandwidth in env.units, or method='binned' with "
-            "bandwidth=0 for no smoothing.",
+            fix="pass bandwidth in env.units, or method='binned' (unsmoothed) "
+            "without a bandwidth for no smoothing.",
         ),
         UserWarning,
         stacklevel=_external_stacklevel(),
@@ -689,7 +689,7 @@ def _validate_spatial_method_params(
     method: str,
     *,
     bandwidth: float | None,
-    min_occupancy: float | None,
+    min_occupancy: float,
     penalty: float | None,
     rank: int | None,
 ) -> tuple[float | None, int | None]:
@@ -699,8 +699,9 @@ def _validate_spatial_method_params(
 
     1. **Method validity** -- ``method`` must be one of the four spatial methods
        (``diffusion_kde`` / ``gaussian_kde`` / ``binned`` / ``glm``).
-    2. **Mutual exclusivity** -- an *explicitly set* (``not None``) ratio param
-       (``bandwidth`` / ``min_occupancy``) with ``method="glm"``,
+    2. **Mutual exclusivity** -- an *explicitly set* ratio param (a
+       ``bandwidth`` that is not None, or a nonzero ``min_occupancy``) with
+       ``method="glm"``,
        or ``penalty`` / ``rank`` with a ratio method, raises ``ValueError`` naming
        which param belongs to which method. Keyed on ``is None`` (the sentinel
        default), so bare ``method="glm"`` does not false-trip on a resolved
@@ -716,8 +717,11 @@ def _validate_spatial_method_params(
     ----------
     method : str
         The requested estimator.
-    bandwidth, min_occupancy : float or None
-        Ratio-method params (``None`` = "not set").
+    bandwidth : float or None
+        Ratio-method smoothing (``None`` = "not set").
+    min_occupancy : float
+        Seconds; ``0.0`` masks nothing and is accepted with ``method="glm"``.
+        ``None`` is refused.
     penalty : float or None
         glm penalty (``None`` = choose by REML).
     rank : int or None
@@ -739,11 +743,13 @@ def _validate_spatial_method_params(
     if method not in _SPATIAL_METHODS:
         msg = f"method must be one of {list(_SPATIAL_METHODS)}, got {method!r}"
         raise ValueError(msg)
+    min_occupancy = validate_min_occupancy(min_occupancy)
 
     if method == "glm":
+        # min_occupancy=0.0 masks nothing, which is what the glm fit does.
         ratio_values = {
             "bandwidth": bandwidth,
-            "min_occupancy": min_occupancy,
+            "min_occupancy": None if min_occupancy == 0.0 else min_occupancy,
         }
         for name, value in ratio_values.items():
             if value is not None:
@@ -808,10 +814,20 @@ def validate_min_occupancy(min_occupancy: float) -> float:
     Raises
     ------
     ValueError
-        If ``min_occupancy`` is NaN, infinite or negative. A NaN threshold
+        If ``min_occupancy`` is None, NaN, infinite or negative. A NaN threshold
         compares False with every occupancy, so it would mask every bin
         without the fully-masked warning.
     """
+    if min_occupancy is None:
+        raise ValueError(
+            _format_error(
+                "min_occupancy=None is not a threshold.",
+                why="Why: min_occupancy is the seconds a bin must be occupied for "
+                "its rate to count; it has no None default",
+                fix="pass min_occupancy=0.0 for no masking, or a dwell time in "
+                "seconds such as 0.5",
+            )
+        )
     value = float(min_occupancy)
     if not (np.isfinite(value) and value >= 0.0):
         raise ValueError(

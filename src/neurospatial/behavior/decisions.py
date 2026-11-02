@@ -673,11 +673,12 @@ def pre_decision_heading_stats(
         sample: it has no heading of its own and is bridged like a deleted
         row when the observed samples on either side are within ``max_gap``.
     min_speed : float
-        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
-        with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
-        Minimum speed for valid heading (units/s); finite and non-negative.
-        Stationary periods are excluded from statistics.
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s with positions
+        in cm, the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
+        63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped):
+        this function sees no environment, so it cannot know the positions' unit.
+        Minimum speed for valid heading (units/s); finite and non-negative. Stationary
+        periods are excluded from statistics.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -950,9 +951,10 @@ def compute_pre_decision_metrics(
         Duration of pre-decision window to analyze (seconds); finite and
         positive.
     min_speed : float
-        Required, in position units per second (e.g. ``5.0`` for 5 cm/s
-        with positions in cm): this function sees no environment, so it
-        cannot know the positions' unit.
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s with positions
+        in cm, the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
+        63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped):
+        this function sees no environment, so it cannot know the positions' unit.
         Minimum speed for valid heading (units/s); finite and non-negative.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
@@ -1618,10 +1620,11 @@ def compute_decision_analysis(
         Duration of pre-decision window to analyze (seconds); finite and
         positive.
     min_speed : float or None, default=None
-        In position units per second. None is 5 cm/s expressed in
-        ``env.units`` (``0.05`` for meters, ``50.0`` for millimeters); with
-        units that are not a metric length, pass it explicitly.
-        Minimum speed for valid heading (units/s); finite and non-negative.
+        Minimum speed for valid heading, in position units per second (finite and
+        non-negative); None is 5 cm/s expressed in ``env.units`` (``0.05`` for meters,
+        ``50.0`` for millimeters), the speed below which Davidson, Kloosterman & Wilson
+        (2009, Neuron 63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat
+        as stopped. With units that are not a metric length, pass it explicitly.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from

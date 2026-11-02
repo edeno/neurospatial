@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import warnings
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from types import MappingProxyType
 from typing import Any, NamedTuple
 
@@ -23,9 +23,9 @@ from neurospatial.stats.shuffle import (
     shuffle_spike_times_circular,
 )
 
-# Shuffle settings every cell-type shuffle test shares. The ``*_significance``
-# signatures spell ``n_shuffles`` and ``min_shift`` out so the API reference
-# shows the values; a test pins them to this mapping.
+# Shuffle settings every cell-type shuffle test and verdict shares. The
+# ``*_significance`` and ``is_*_cell`` signatures spell the values out so the
+# API reference shows them; a test pins them to this mapping.
 _SHUFFLE_DEFAULTS = MappingProxyType(
     {"n_shuffles": 1000, "min_shift": 20.0, "alpha": 0.05}
 )
@@ -35,18 +35,6 @@ def _stream_key(label: Hashable) -> int:
     """Stable key shared by Python and NumPy scalar representations."""
     value = np.asarray(label).item()
     return int.from_bytes(hashlib.sha256(repr(value).encode()).digest()[:8], "little")
-
-
-def resolve_shuffle_settings(
-    n_shuffles: int | None, min_shift: float | None
-) -> dict[str, Any]:
-    """Fill unset shuffle-predicate settings from ``_SHUFFLE_DEFAULTS``."""
-    return {
-        "n_shuffles": int(_SHUFFLE_DEFAULTS["n_shuffles"])
-        if n_shuffles is None
-        else n_shuffles,
-        "min_shift": _SHUFFLE_DEFAULTS["min_shift"] if min_shift is None else min_shift,
-    }
 
 
 class ShuffleInputs(NamedTuple):
@@ -166,9 +154,8 @@ def shuffle_information_verdict(
     significance: Callable[[], ShuffleTestResult],
     rate_map: Callable[[], Any],
     *,
-    alpha: float | None,
-    min_info: float | None,
-    default_min_info: float,
+    alpha: float,
+    min_info: float,
     kind: str,
 ) -> bool:
     """Shuffle verdict of an information-tuned cell type for one unit.
@@ -185,13 +172,10 @@ def shuffle_information_verdict(
         Computes the unit's rate map. It is called only for a significant
         unit, with warnings suppressed: the test already showed the warnings
         of this same map.
-    alpha : float or None
-        Significance level; ``None`` uses ``_SHUFFLE_DEFAULTS["alpha"]``.
-    min_info : float or None
-        Cutoff on bias-corrected information (bits/spike); ``None`` uses
-        ``default_min_info``.
-    default_min_info : float
-        The cell type's default cutoff.
+    alpha : float
+        Significance level.
+    min_info : float
+        Cutoff on bias-corrected information (bits/spike).
     kind : str
         Cell type named in the unknown-bias warning, such as ``"place"``.
 
@@ -202,14 +186,12 @@ def shuffle_information_verdict(
     """
     from neurospatial.encoding._metrics import _beyond_bias
 
-    level = _SHUFFLE_DEFAULTS["alpha"] if alpha is None else alpha
-    if not significance().p_value < level:
+    if not significance().p_value < alpha:
         return False
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         result = rate_map()
-    cutoff = default_min_info if min_info is None else min_info
-    return _beyond_bias(result, cutoff, kind=kind)
+    return _beyond_bias(result, min_info, kind=kind)
 
 
 def shuffle_pvalues(
@@ -277,15 +259,36 @@ def check_criterion(criterion: str, allowed: tuple[str, ...], *, call: str) -> N
         )
 
 
+def _equals_default(value: Any, default: Any) -> bool:
+    """Whether a passed scalar setting is its default (False when not comparable)."""
+    try:
+        return bool(value == default)
+    except (TypeError, ValueError):
+        return False
+
+
 def check_mode_keywords(
     criterion: str,
     *,
     threshold: dict[str, Any],
     shuffle: dict[str, Any],
+    defaults: Mapping[str, Any],
     call: str,
 ) -> None:
+    """Refuse a keyword of the other criterion that differs from its default.
+
+    ``threshold`` and ``shuffle`` map each mode's keywords to the values the
+    caller passed; ``defaults`` maps keywords to their signature defaults (a
+    keyword missing from it defaults to None). A keyword left at its default
+    is not an error: the selected criterion simply does not use it.
+    """
     wrong = threshold if criterion == "shuffle" else shuffle
-    offending = {name: value for name, value in wrong.items() if value is not None}
+    offending = {
+        name: value
+        for name, value in wrong.items()
+        if value is not None
+        and not (name in defaults and _equals_default(value, defaults[name]))
+    }
     if offending:
         values = ", ".join(f"{name}={value!r}" for name, value in offending.items())
         alternate = "shuffle" if criterion != "shuffle" else "threshold"

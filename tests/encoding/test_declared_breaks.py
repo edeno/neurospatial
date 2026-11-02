@@ -276,20 +276,25 @@ PREDICATES = {
         "directional",
         "directional",
         "compute_directional_rate",
-        {},
+        {"criterion": "threshold"},
     ),
-    "is_spatial_view_cell": ("view", "view", "compute_view_rate", {}),
+    "is_spatial_view_cell": (
+        "view",
+        "view",
+        "compute_view_rate",
+        {"criterion": "threshold"},
+    ),
     "is_object_vector_cell": (
         "object_vector",
         "egocentric",
         "compute_object_vector_rate",
-        {},
+        {"criterion": "threshold"},
     ),
     "is_egocentric_object_vector_cell": (
         "egocentric",
         "egocentric",
         "compute_egocentric_rate",
-        {},
+        {"criterion": "threshold"},
     ),
 }
 

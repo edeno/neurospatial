@@ -164,7 +164,7 @@ def simulate_trajectory_ou(
         RatInABox default): how gradually the animal speeds up and slows down.
     rotational_velocity_std : float, optional
         Standard deviation of the turning rate in radians/second (default:
-        120°/s = 2.094 rad/s, the RatInABox default). Used in 2-D.
+        2π/3 rad/s (120°/s), the RatInABox default). Used in 2-D.
     rotational_velocity_coherence_time : float, optional
         Autocorrelation time of the turning rate in seconds (default: 0.08 s,
         the RatInABox default). In 2-D it sets how long a turn persists; in
@@ -983,11 +983,7 @@ def simulate_trajectory_laps(
     pause_duration: float = _DEFAULT_LAP_PAUSE_DURATION,
     sampling_frequency: float = _DEFAULT_LAP_SAMPLING_FREQUENCY,
     rng: np.random.Generator | int | None = None,
-    return_metadata: bool = False,
-) -> (
-    tuple[NDArray[np.float64], NDArray[np.float64]]
-    | tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]
-):
+) -> tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]:
     """Simulate structured lap-based trajectory.
 
     Generates back-and-forth movement along specified or auto-computed paths,
@@ -1028,9 +1024,6 @@ def simulate_trajectory_laps(
         Samples per second (default: 500 Hz).
     rng : numpy.random.Generator or int or None, optional
         Random generator or seed, as for ``np.random.default_rng``.
-    return_metadata : bool, optional
-        If True, returns metadata dict with lap_ids, lap_boundaries, and
-        direction arrays (default: False).
 
     Returns
     -------
@@ -1041,8 +1034,8 @@ def simulate_trajectory_laps(
         Notes).
     times : NDArray[np.float64], shape (n_time,)
         Time points in seconds.
-    metadata : dict, optional (if return_metadata=True)
-        Dictionary with keys:
+    metadata : dict
+        Which traversal each sample belongs to, with keys:
 
         - 'lap_ids' : NDArray[np.int_], shape (n_time,) - Traversal number
           (0, 1, ...) of each sample, -1 during a pause.
@@ -1104,15 +1097,9 @@ def simulate_trajectory_laps(
     >>> env = env.with_metadata(units="cm")
     >>>
     >>> # Simulate laps
-    >>> positions, times = simulate_trajectory_laps(env, n_laps=5)
+    >>> positions, times, metadata = simulate_trajectory_laps(env, n_laps=3)
     >>> print(positions.shape[0] > 0)  # Should have positions
     True
-
-    With metadata:
-
-    >>> positions, times, metadata = simulate_trajectory_laps(
-    ...     env, n_laps=3, return_metadata=True
-    ... )
     >>> print("lap_ids" in metadata)
     True
     >>> print("direction" in metadata)
@@ -1121,9 +1108,7 @@ def simulate_trajectory_laps(
     Three traversals of a 1 m track take about as long as for a running rat:
 
     >>> track = Environment.from_polygon(box(0, 0, 100, 20), bin_size=2, units="cm")
-    >>> positions, times, metadata = simulate_trajectory_laps(
-    ...     track, n_laps=3, rng=1, return_metadata=True
-    ... )
+    >>> positions, times, metadata = simulate_trajectory_laps(track, n_laps=3, rng=1)
     >>> print(f"{times[-1]:.1f} s")
     15.4 s
     >>> moving = (metadata["lap_ids"][1:] == metadata["lap_ids"][:-1]) & np.any(
@@ -1142,7 +1127,7 @@ def simulate_trajectory_laps(
     ...     track_width=2,
     ...     units="cm",
     ... )
-    >>> positions, times = simulate_trajectory_laps(l_track, n_laps=1, rng=0)
+    >>> positions, times, _ = simulate_trajectory_laps(l_track, n_laps=1, rng=0)
     >>> bool(np.all(l_track.bin_at(positions) >= 0))
     True
     >>> print(f"{l_track.to_linear(positions[[0, -1]])} cm along the track")
@@ -1164,7 +1149,6 @@ def simulate_trajectory_laps(
         pause_duration=pause_duration,
         sampling_frequency=sampling_frequency,
         rng=rng,
-        return_metadata=return_metadata,
         call="simulate_trajectory_laps()",
     )
 
@@ -1180,13 +1164,9 @@ def _simulate_trajectory_laps(
     pause_duration: float = _DEFAULT_LAP_PAUSE_DURATION,
     sampling_frequency: float = _DEFAULT_LAP_SAMPLING_FREQUENCY,
     rng: np.random.Generator | int | None = None,
-    return_metadata: bool = False,
     duration: float | None = None,
     call: str,
-) -> (
-    tuple[NDArray[np.float64], NDArray[np.float64]]
-    | tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]
-):
+) -> tuple[NDArray[np.float64], NDArray[np.float64], dict[str, Any]]:
     """Shared lap engine; sessions allocate samples before generating positions.
 
     With ``duration``, speed draws only weight the traversal durations, so the
@@ -1406,11 +1386,9 @@ def _simulate_trajectory_laps(
     directions = np.array(all_directions)
     lap_boundaries = np.array(lap_boundaries_list, dtype=np.int_)
 
-    if return_metadata:
-        metadata = {
-            "lap_ids": lap_ids,
-            "lap_boundaries": lap_boundaries,
-            "direction": directions,
-        }
-        return positions, times, metadata
-    return positions, times
+    metadata = {
+        "lap_ids": lap_ids,
+        "lap_boundaries": lap_boundaries,
+        "direction": directions,
+    }
+    return positions, times, metadata

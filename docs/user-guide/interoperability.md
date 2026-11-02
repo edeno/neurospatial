@@ -679,8 +679,8 @@ Some results match pynapple exactly; others differ by design:
   spike to the position sample at or before it, pynapple to the nearest
   sample. Occupancy is the elapsed time to the next sample, while pynapple
   counts samples and converts with the mean sampling rate, so the two differ
-  for irregular tracking. `method="binned"` also
-  smooths by default; pass `bandwidth=0` to compare unsmoothed maps.
+  for irregular tracking. `method="binned"` is unsmoothed unless you pass a
+  `bandwidth`, like pynapple's tuning curves.
 - **Recording window.** Use `read_units(...).spike_window`, the intersection
   of the units' observation intervals, as `spike_window=`. A `TsGroup` loaded
   from NWB by `nap.load_file` gets a time support from its first spike to its

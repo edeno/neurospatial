@@ -1937,12 +1937,20 @@ class Environment(Generic[_C]):
             With ``time_allocation='linear'`` an interval with an end outside
             the environment adds only the time its straight path spends inside.
         speed : NDArray[np.float64], shape (n_samples,), optional
-            Instantaneous speed at each sample, required with min_speed and
-            refused without it (it would be ignored). Samples below the
-            threshold are excluded from occupancy calculation.
+            Your own speed of each sample, used with ``min_speed`` instead of
+            the derived one, and refused without it (it would be ignored).
+            Pass it for another definition of speed, for example along a
+            linearized track.
         min_speed : float, optional
-            Minimum speed threshold in physical units per second. Requires
-            speed parameter. Samples with speed < min_speed are excluded.
+            Minimum speed in position units per second; intervals that start
+            slower are excluded. Without ``speed``, speed is
+            :func:`neurospatial.behavior.compute_speed`, the magnitude of the
+            0.1 s Gaussian-smoothed velocity, the speed
+            ``compute_spatial_rate`` derives for the same ``min_speed``, so
+            this occupancy matches that rate map's. As there, ``epochs`` does
+            not change the derived speed: it is smoothed across the whole
+            recording (split only at gaps longer than ``max_gap`` and declared
+            breaks), then gated. Polar environments need ``speed``.
         max_gap : float or None, default=1.0
             Longest stretch of missing tracking, in seconds, to bridge: the time
             between consecutive valid samples (a dropped frame and a NaN row are
@@ -1994,7 +2002,7 @@ class Environment(Generic[_C]):
         ------
         ValueError
             If times and positions have different lengths, if arrays are
-            inconsistent, or if only one of speed and min_speed is given.
+            inconsistent, or if speed is given without min_speed.
         ValueError
             If positions have wrong number of dimensions.
         ValueError

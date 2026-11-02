@@ -370,3 +370,99 @@ def validated_smooth_window(smooth_window: float, *, call: str) -> float:
             )
         )
     return float(smooth_window)
+
+
+def resolve_speed(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    speed: NDArray[np.float64] | None,
+    min_speed: float | None,
+    *,
+    max_gap: float | None,
+    break_before: NDArray[np.bool_] | None = None,
+) -> NDArray[np.float64] | None:
+    """Resolve the speed array used for the shared speed gate.
+
+    This is the single source of truth for the speed array that gates BOTH
+    the spike numerator and the occupancy denominator. Both the single and
+    batch encode paths call this ONCE at the top and pass the resulting
+    concrete array down to both the spike kernel and ``env.occupancy`` — so
+    the retained-sample set is identical on both sides by construction, and a
+    firing rate (spikes / occupancy) cannot become biased by gating only one
+    side.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_samples,)
+        Trajectory timestamps in seconds (assumed sorted/finite; validated
+        upstream by ``validate_trajectory``). Division by ``Δt`` is guarded
+        defensively against non-positive gaps.
+    positions : ndarray, shape (n_samples, n_dims)
+        Trajectory position coordinates.
+    speed : ndarray, shape (n_samples,), or None
+        Caller-supplied speed array. When provided, it is validated and
+        returned unchanged (no re-derivation downstream).
+    min_speed : float or None
+        Speed threshold. When ``None``, NO speed filtering happens: this
+        returns ``None`` and the caller passes nothing speed-related to
+        ``env.occupancy``. It is an error to pass ``speed``
+        without ``min_speed`` (see Raises): a bare ``speed`` would otherwise be
+        silently ignored.
+
+    Returns
+    -------
+    ndarray, shape (n_samples,), or None
+        - ``None`` when ``min_speed is None`` (no filtering).
+        - The validated ``speed`` array when one was passed.
+        - Otherwise :func:`neurospatial.behavior.compute_speed` (smoothed).
+
+    Raises
+    ------
+    ValueError
+        If ``speed`` is provided without ``min_speed`` (the message names both
+        ``speed`` and ``min_speed``).
+        If a ``speed`` array is passed whose length does not match
+        ``times`` (the message names ``speed``).
+
+    max_gap : float or None
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Already validated declared recording breaks; the derived speed is
+        never smoothed across one.
+
+    Notes
+    -----
+    When ``speed is None`` and ``min_speed`` is set, speed is
+    :func:`neurospatial.behavior.compute_speed`: the magnitude of the
+    Gaussian-smoothed (0.1 s) velocity, so tracking jitter at rest does not
+    pass the gate. Pass ``speed=`` to use another definition, for example
+    speed along a linearized track.
+    """
+    from neurospatial._intervals import interval_valid_mask, validate_speed_gate
+
+    times = np.asarray(times, dtype=np.float64)
+    if speed is not None or min_speed is None:
+        # The shared check of the speed gate: speed without min_speed would
+        # be silently ignored.
+        return validate_speed_gate(speed, min_speed, len(times))
+    positions = np.asarray(positions, dtype=np.float64)
+    if positions.ndim == 1:
+        positions = positions.reshape(-1, 1)
+
+    if len(times) <= 1:
+        # No intervals: speed is undefined; return zeros so a min_speed gate
+        # consistently excludes the (non-existent) intervals on both sides.
+        return np.zeros(len(times), dtype=np.float64)
+    mask = interval_valid_mask(
+        times,
+        max_gap=max_gap,
+        epochs=None,
+        break_before=break_before,
+        sample_valid=np.asarray(np.isfinite(positions).all(axis=1), dtype=bool),
+    )
+    return smoothed_speed(times, positions, mask, smooth_window=DEFAULT_SPEED_SMOOTHING)

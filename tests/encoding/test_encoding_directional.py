@@ -4358,7 +4358,7 @@ class TestHeadingCoverage:
         with pytest.warns(UserWarning, match="unvisited"):
             result[0].is_head_direction_cell()
         with pytest.warns(UserWarning, match="unvisited"):
-            is_head_direction_cell(trains[0], times, headings)
+            is_head_direction_cell(trains[0], times, headings, criterion="threshold")
 
     def test_full_heading_coverage_does_not_warn(self, biased_heading_session) -> None:
         import warnings

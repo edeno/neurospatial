@@ -731,9 +731,7 @@ def field_density_map(
     return density
 
 
-def count_place_cells(
-    rates: SpatialRatesResult, *, min_info: float | None = None
-) -> int:
+def count_place_cells(rates: SpatialRatesResult, *, min_info: float = 0.5) -> int:
     """
     Count units that pass the place-cell information screen.
 
@@ -749,9 +747,9 @@ def count_place_cells(
         Population rate maps from ``compute_spatial_rates``. The bias depends
         on the maps' occupancy, estimator and bandwidth, so information
         values alone cannot be screened.
-    min_info : float or None, default=None
-        Inclusive minimum bias-corrected information (bits/spike); None is
-        0.5 bits/spike, a common screening convention, not derived or calibrated.
+    min_info : float, default=0.5
+        Inclusive minimum bias-corrected information (bits/spike), a common
+        screening convention, not derived or calibrated.
 
     Returns
     -------

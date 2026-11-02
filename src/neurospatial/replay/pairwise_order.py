@@ -229,7 +229,7 @@ class PairwiseOrderMethod:
         "spike_time_permutation",
         "cell_identity",
     )
-    n_shuffles: int = 300
+    n_shuffles: int = 1000
     alpha: float = 0.05
     min_active_cells: int = 3
     notes: tuple[str, ...] = ()
@@ -521,7 +521,7 @@ def pairwise_order_significance(
     merge_gap_bins: int = 1,
     field_center: Literal["rate_weighted", "peak"] = "rate_weighted",
     nulls: Sequence[str] = _NULLS,
-    n_shuffles: int = 300,
+    n_shuffles: int = 1000,
     unit_groups: NDArray[Any] | Sequence[Any] | None = None,
     rng: np.random.Generator | int | None = None,
 ) -> PairwiseOrderSignificanceResult:
@@ -553,9 +553,10 @@ def pairwise_order_significance(
           stay unscored, so adding them changes neither the score nor its
           shuffles. Davidson et al. (2009), whose cell-identity shuffle
           Gupta et al. cite, shuffled among spatially tuned units only.
-    n_shuffles : int, default=300
-        Shuffles per null (Gupta et al. 2010: 300). A p-value is at least
-        ``1 / (n_shuffles + 1)``.
+    n_shuffles : int, default=1000
+        Shuffles per null. A p-value is at least ``1 / (n_shuffles + 1)``.
+        Gupta et al. (2010) used 300 per null; the ``GUPTA_2010`` method
+        reproduces that.
     unit_groups : array-like, shape (n_cells,), optional
         As for :func:`pairwise_order_score`. Each spike train keeps its
         group in the shuffles: after a spike-time permutation, a pair is
@@ -590,8 +591,8 @@ def pairwise_order_significance(
     Each p-value is ``(k + 1) / (n + 1)``, where ``k`` counts shuffles
     scoring at least as high as the event (Phipson & Smyth 2010). Gupta et
     al. called an event significant when its score was "greater than 95% of
-    both independent sets of shuffled sequences": with 300 shuffles, at most
-    14 shuffles at or above the event, which is exactly
+    both independent sets of shuffled sequences": with their 300 shuffles, at
+    most 14 shuffles at or above the event, which is exactly
     ``(k + 1) / 301 < 0.05``.
 
     Examples
