@@ -1102,8 +1102,11 @@ def read_trials(nwbfile: NWBFile) -> Intervals[Interval]:
     """
     Read the NWB trials table as Intervals.
 
-    Each row becomes one :class:`~neurospatial.Interval`: the table ``id`` is
-    its ``interval_id`` and every other column a field, in column order.
+    Each row becomes one :class:`~neurospatial.Interval`: its
+    ``interval_id`` comes from the ``interval_id`` column that
+    :func:`write_trials` stores, or else from the table ``id`` (tables
+    written by other software), and every other column is a field, in
+    column order.
     Text ``""`` reads back as ``None`` (NWB text columns cannot hold
     ``None``, so :func:`write_trials` stores a missing value as ``""``); a
     list cell (for example NWB ``tags``) becomes a tuple.
