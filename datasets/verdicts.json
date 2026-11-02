@@ -191,9 +191,114 @@
       "verdict": "silent",
       "gap": "G-014",
       "reason": "Speeds 100 times too high: 668 movement segments (882 s) instead of 69 (146 s)."
+    },
+    "miniscope_002030/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that bin_size is at least the data extent and suggests a units mismatch."
+    },
+    "miniscope_002030/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "env.from_samples already warned; occupancy piles into 4 bins."
+    },
+    "miniscope_002030/length_unit_off_by_100/behavior.laps": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "env.from_samples already warned; the spurious lap (G-015) disappears on 4 bins."
+    },
+    "giocomo_000405/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that bin_size is at least the data extent and suggests a units mismatch."
+    },
+    "giocomo_000405/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "env.from_samples already warned."
+    },
+    "giocomo_000405/length_unit_off_by_100/behavior.laps": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "No laps either way."
+    },
+    "giocomo_000405/positions_read_as_mm/env.from_samples": {
+      "verdict": "undetectable",
+      "gap": null,
+      "reason": "A 12-15 cm arena with 2.5 cm bins (42 bins) is plausible for a mouse; only knowing the animal is a rat says it is wrong."
+    },
+    "giocomo_000405/positions_read_as_mm/env.occupancy": {
+      "verdict": "undetectable",
+      "gap": null,
+      "reason": "Same: occupancy per bin rises (median 0.22 to 15.9 s) as bins grow relative to the arena."
+    },
+    "giocomo_000405/positions_read_as_mm/behavior.laps": {
+      "verdict": "silent",
+      "gap": "G-015",
+      "reason": "3 laps on the shrunken open field instead of 0: the spurious-lap bug, not the units."
+    },
+    "giocomo_001701/headings_in_degrees/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Names the evidence (largest 180, steps of 359.4) and the fix."
+    },
+    "giocomo_001701/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Zeros at (0, 0), outside the tracked area (minimum 3.6 cm): 268 bins instead of 266."
+    },
+    "giocomo_001701/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Occupancy shifts (max 77.8 to 81.4 s per bin)."
+    },
+    "giocomo_001701/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median mean rate 1.022 to 1.009 Hz."
+    },
+    "giocomo_001701/missing_positions_as_zero/behavior.laps": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "No laps either way."
+    },
+    "giocomo_001701/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that the spike span is about 1000 times the tracking: divide by 1000."
+    },
+    "giocomo_001701/spike_times_in_ms/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Same warning with the divide-by-1000 hint."
+    },
+    "giocomo_001701/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that bin_size is at least the data extent."
+    },
+    "giocomo_001701/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": null,
+      "reason": "env.from_samples already warned."
+    },
+    "giocomo_001701/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that the bandwidth spans the environment and to check env.units."
+    },
+    "giocomo_001701/length_unit_off_by_100/behavior.laps": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "No laps either way."
+    },
+    "giocomo_001701/headings_read_as_degrees/hd.tuning": {
+      "verdict": "silent",
+      "gap": "G-031",
+      "reason": "Headings within +-0.055 rad: median mean vector length 0.12 to 0.999 for all 320 units, no warning."
     }
   },
-  "errors": {
+  "cells": {
     "sargolini_000582/cells.border_score": {
       "gap": "G-005"
     },
@@ -214,6 +319,18 @@
     },
     "yartsev_bat_demo/env.occupancy": {
       "gap": "G-013"
+    },
+    "figure8_000552/io.nwb_readers": {
+      "gap": "G-012"
+    },
+    "giocomo_000405/io.nwb_readers": {
+      "gap": "G-032"
+    },
+    "miniscope_002030/io.nwb_readers": {
+      "gap": "G-032"
+    },
+    "giocomo_001701/io.nwb_readers": {
+      "gap": "G-030"
     }
   }
 }

@@ -460,6 +460,191 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
     return Outcome("ok", summary)
 
 
+_TO_CM = {"m": 100.0, "cm": 1.0, "mm": 0.1}
+
+
+def _reader_result(
+    read: Callable[[], Any], compare: Callable[[Any], str], have: bool
+) -> str:
+    try:
+        value = read()
+    except Exception as exc:
+        missing = "Missing" in type(exc).__name__
+        if missing:
+            return (
+                "not found, but the loader found it"
+                if have
+                else "absent (file has none)"
+            )
+        return f"raised {type(exc).__name__}"
+    if not have:
+        return "found data the loader did not use"
+    return compare(value)
+
+
+def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
+    """Run the NWB readers with default arguments and compare with the loader.
+
+    Each reader is ``ok`` when it returns the loader's range-checked arrays
+    (after unit scaling), ``absent`` when neither finds the data, and
+    otherwise a mismatch, a miss or an error, which makes the cell a
+    workaround.
+    """
+    import pynwb
+
+    from neurospatial.io.nwb import read_head_direction, read_position, read_units
+    from neurospatial.stats import wrap_angle
+
+    path = rec.params.get("nwb_path")
+    if path is None:
+        return Outcome("n/a", note="params has no nwb_path (not an NWB dataset)")
+
+    def position(value: Any) -> str:
+        if rec.position_units not in _TO_CM or value.units not in _TO_CM:
+            return f"units {value.units!r} not comparable with {rec.position_units!r}"
+        scaled = (
+            np.asarray(value.positions)
+            * _TO_CM[value.units]
+            / _TO_CM[rec.position_units]
+        )
+        if scaled.shape != np.shape(rec.positions):
+            return (
+                f"different series (shape {scaled.shape} vs {np.shape(rec.positions)})"
+            )
+        same = np.allclose(scaled, rec.positions, equal_nan=True)
+        return "ok" if same else "mismatch: values differ"
+
+    def heading(value: Any) -> str:
+        got = np.asarray(wrap_angle(np.asarray(value.headings, dtype=float)))
+        if got.shape != np.shape(rec.headings):
+            return f"different series (shape {got.shape})"
+        diff = np.abs(np.angle(np.exp(1j * (got - rec.headings))))
+        worst = float(np.nanmax(diff))
+        if worst < 1e-6:
+            return "ok"
+        return (
+            f"mismatch: up to {worst:.3f} rad; reader range "
+            f"[{np.nanmin(got):.3f}, {np.nanmax(got):.3f}]"
+        )
+
+    def units(value: Any) -> str:
+        trains = list(value.spike_times)
+        if len(trains) != len(rec.spike_times or ()):
+            return f"mismatch: {len(trains)} units vs {len(rec.spike_times or ())}"
+        same = all(
+            np.array_equal(np.asarray(a), b)
+            for a, b in zip(trains, rec.spike_times or (), strict=True)
+        )
+        return "ok" if same else "mismatch: spike times differ"
+
+    with pynwb.NWBHDF5IO(path, "r", load_namespaces=True) as io:
+        nwbfile = io.read()
+        found = {
+            "position": _reader_result(
+                lambda: read_position(nwbfile), position, rec.positions is not None
+            ),
+            "head_direction": _reader_result(
+                lambda: read_head_direction(nwbfile), heading, rec.headings is not None
+            ),
+            "units": _reader_result(
+                lambda: read_units(nwbfile), units, rec.spike_times is not None
+            ),
+        }
+    fine = all(v == "ok" or v.startswith("absent") for v in found.values())
+    return Outcome(
+        "ok" if fine else "workaround",
+        found,
+        note=""
+        if fine
+        else "; ".join(
+            f"{k}: {v}"
+            for k, v in found.items()
+            if not (v == "ok" or v.startswith("absent"))
+        ),
+    )
+
+
+def imaging_rates(_rec: Recording, _cache: dict[str, Any]) -> Outcome:
+    return Outcome(
+        "missing",
+        note=(
+            "no public spatial map from a continuous signal: compute_spatial_rates and"
+            " compute_tuning_curve(s) take spike times"
+        ),
+        gap="G-029",
+    )
+
+
+DFF_NOISE_SD = 3.0
+
+
+def _transient_onsets(trace: np.ndarray, times: np.ndarray) -> np.ndarray:
+    """Times where a trace rises above median + 3 robust SD (1.4826 x MAD)."""
+    median = np.nanmedian(trace)
+    sd = 1.4826 * np.nanmedian(np.abs(trace - median))
+    above = trace > median + DFF_NOISE_SD * sd
+    onsets = np.flatnonzero(above[1:] & ~above[:-1]) + 1
+    return times[onsets]
+
+
+def imaging_rates_workaround(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Spatial maps from imaging activity built in the harness, not by neurospatial.
+
+    ``binned_rate``: occupancy-weighted mean of each cell's rate per spatial
+    bin (frames assigned with ``env.bin_at``; NaN where never visited).
+    ``dff``: one event per transient onset, where ΔF/F rises above its median
+    plus 3 robust SD (1.4826 × MAD), passed to ``compute_spatial_rates`` as
+    spike times. The threshold is a harness heuristic, not a deconvolution.
+    """
+    from neurospatial.encoding import compute_spatial_rates
+
+    env = _env(rec, cache)
+    activity = np.asarray(rec.activity)
+    frame_times = np.asarray(rec.activity_times)
+    if rec.activity_kind == "binned_rate":
+        at_frames = np.column_stack(
+            [np.interp(frame_times, rec.times, c) for c in np.asarray(rec.positions).T]
+        )
+        bins = np.asarray(env.bin_at(at_frames))
+        valid = bins >= 0
+        counts = np.bincount(bins[valid], minlength=env.n_bins).astype(float)
+        maps = np.stack(
+            [
+                np.bincount(bins[valid], weights=cell[valid], minlength=env.n_bins)
+                for cell in activity.T
+            ]
+        )
+        with np.errstate(invalid="ignore", divide="ignore"):
+            maps = np.where(counts > 0, maps / counts, np.nan)
+        rule = "occupancy-weighted mean binned rate per spatial bin (harness)"
+    elif rec.activity_kind == "dff":
+        events = [_transient_onsets(cell, frame_times) for cell in activity.T]
+        maps = np.asarray(
+            compute_spatial_rates(env, events, rec.times, rec.positions).firing_rates
+        )
+        rule = (
+            f"one event per dF/F transient onset above median + {DFF_NOISE_SD:g} robust SD"
+            " (1.4826 x MAD), then compute_spatial_rates (harness heuristic)"
+        )
+    else:
+        return Outcome(
+            "n/a", note=f"activity_kind {rec.activity_kind!r} has no workaround"
+        )
+    cache["imaging_maps"] = maps
+    with np.errstate(all="ignore"):
+        peaks = np.nanmax(maps, axis=1)
+    return Outcome(
+        "workaround",
+        {
+            "n_cells": maps.shape[0],
+            "frac_nan_bins": float(np.isnan(maps).mean()),
+            "median_peak": float(np.nanmedian(peaks)),
+        },
+        note=rule,
+        gap="G-029",
+    )
+
+
 _SPIKES_AND_POSITIONS = ("positions", "spike_times")
 
 OPERATIONS: tuple[Operation, ...] = (
@@ -481,4 +666,9 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("behavior.laps", ("positions",), laps),
     Operation("behavior.turn_sequence", ("positions",), turn_sequence),
     Operation("replay.compare_methods", _SPIKES_AND_POSITIONS, replay_compare_methods),
+    Operation("io.nwb_readers", (), nwb_readers),
+    Operation("imaging.rates", ("activity", "positions"), imaging_rates),
+    Operation(
+        "imaging.rates_workaround", ("activity", "positions"), imaging_rates_workaround
+    ),
 )

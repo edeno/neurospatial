@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
+    "git_commit": "639f08121bd9c6eb10c6ff42ef6f598f36ed5145"
   },
   "load_warnings": [],
   "operations": {
@@ -52,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.5,
+      "seconds": 0.424,
       "peak_mb": 18.3
     },
     "env.occupancy": {
@@ -118,8 +118,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.128,
-      "peak_mb": 0.9
+      "seconds": 0.119,
+      "peak_mb": 0.8
     },
     "behavior.segment_by_velocity": {
       "status": "ok",
@@ -130,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.435,
+      "seconds": 0.467,
       "peak_mb": 16.1
     },
     "behavior.laps": {
@@ -144,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.134,
+      "seconds": 4.647,
       "peak_mb": 32.2
     },
     "behavior.turn_sequence": {
@@ -156,12 +156,31 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.107,
+      "seconds": 3.28,
       "peak_mb": 32.2
     },
     "replay.compare_methods": {
       "status": "n/a",
       "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_readers": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_path (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
       "warnings": []
     }
   },

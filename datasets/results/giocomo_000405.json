@@ -1,0 +1,357 @@
+{
+  "dataset": "giocomo_000405",
+  "session": "Cl_OF_120618",
+  "source": "https://dandiarchive.org/dandiset/000405/draft sub-s2/sub-s2_ses-Cl-OF-120618.nwb (asset 627b3e66-79c1-481a-9a74-afea5c9f641c)",
+  "license": "unstated (draft dandiset)",
+  "conversions": [
+    "positions: track_data columns x, y by the description's column names; labelled mm, read as cm (ranges -62..60, -5..134)",
+    "times: 0.02 * arange(n) s; track_data's rate attribute (0.02) is the period",
+    "headings: track_data column hd (0..6.28) as radians, wrapped to [-pi, pi]",
+    "activity: firing_rates (labelled uv) as binned rates in Hz"
+  ],
+  "expectations": [
+    {
+      "key": "n_cells",
+      "passed": true,
+      "detail": "expected 46, got 46"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=49.0, high=51.0), got 50.000000000045475"
+    },
+    {
+      "key": "activity_is_binned_rate",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "headings_span_the_circle",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "639f08121bd9c6eb10c6ff42ef6f598f36ed5145"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 2076,
+        "n_dims": 2,
+        "max_extent": 140.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.343,
+      "peak_mb": 8.1
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 1318.0600000000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.21999999999999886,
+        "max_s": 23.080000000000297
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.024,
+      "peak_mb": 8.2
+    },
+    "rates.spatial": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.place_screen": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.grid_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.border_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_roundtrip": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no min_speed",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.laps": {
+      "status": "ok",
+      "summary": {
+        "n_laps": 0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.047,
+      "peak_mb": 8.2
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_readers": {
+      "status": "workaround",
+      "summary": {
+        "position": "not found, but the loader found it",
+        "head_direction": "not found, but the loader found it",
+        "units": "absent (file has none)"
+      },
+      "note": "position: not found, but the loader found it; head_direction: not found, but the loader found it",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.203,
+      "peak_mb": 0.2
+    },
+    "imaging.rates": {
+      "status": "missing",
+      "summary": {},
+      "note": "no public spatial map from a continuous signal: compute_spatial_rates and compute_tuning_curve(s) take spike times",
+      "gap": "G-029",
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "imaging.rates_workaround": {
+      "status": "workaround",
+      "summary": {
+        "n_cells": 46,
+        "frac_nan_bins": 0.0,
+        "median_peak": 63.18135621484342
+      },
+      "note": "occupancy-weighted mean binned rate per spatial bin (harness)",
+      "gap": "G-029",
+      "warnings": [],
+      "seconds": 0.071,
+      "peak_mb": 9.3
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "headings_in_degrees",
+      "op": "",
+      "response": "not probed",
+      "message": "changes ['headings'], which no probed operation reads",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.from_samples",
+      "response": "warned",
+      "message": "bin_size=2.5 is at least the per-axis data extent [1.226035677419247, 1.3918827282273294] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0278377 (in the same units as positions), or choose a size below the data extent",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 2076,
+        "n_dims": 2,
+        "max_extent": 140.0
+      },
+      "hazard_summary": {
+        "n_bins": 4,
+        "n_dims": 2,
+        "max_extent": 2.5
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 1318.0600000000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.21999999999999886,
+        "max_s": 23.080000000000297
+      },
+      "hazard_summary": {
+        "total_s": 1318.06,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 171.83999999999997,
+        "max_s": 852.6000000000001
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 0
+      },
+      "hazard_summary": {
+        "n_laps": 0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "positions_read_as_mm",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 2076,
+        "n_dims": 2,
+        "max_extent": 140.0
+      },
+      "hazard_summary": {
+        "n_bins": 42,
+        "n_dims": 2,
+        "max_extent": 15.000000000000002
+      }
+    },
+    {
+      "hazard": "positions_read_as_mm",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 1318.0600000000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.21999999999999886,
+        "max_s": 23.080000000000297
+      },
+      "hazard_summary": {
+        "total_s": 1318.0600000000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 15.940000000000033,
+        "max_s": 437.2599999999998
+      }
+    },
+    {
+      "hazard": "positions_read_as_mm",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "positions_read_as_mm",
+      "op": "behavior.laps",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 0
+      },
+      "hazard_summary": {
+        "n_laps": 3,
+        "n_clockwise": 2,
+        "n_counter-clockwise": 1
+      }
+    },
+    {
+      "hazard": "positions_read_as_mm",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "headings_as_stored",
+      "op": "",
+      "response": "not probed",
+      "message": "changes ['headings'], which no probed operation reads",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}
