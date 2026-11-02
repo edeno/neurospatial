@@ -1308,16 +1308,9 @@ def distance_to_goal(
                     sized=False,
                 )
             )
-        targets = goal_bins[key]
-        if paths is not None:
-            distances[samples] = paths.from_bins_at(targets, positions[samples])
-            continue
-        from scipy.spatial import cKDTree
-
-        inside = samples[env.bin_at(positions[samples]) >= 0]
-        distances[inside] = cKDTree(env.bin_centers[targets]).query(positions[inside])[
-            0
-        ]
+        distances[samples] = _distance_to_bins(
+            env, paths, goal_bins[key], positions[samples]
+        )
 
     analyzed = rows >= 0
     _warn_if_mostly_nan(
@@ -2051,16 +2044,38 @@ def distance_to_boundary(
         )
 
     boundary_bins = np.unique(np.asarray(boundary_bins, dtype=np.intp))
-    if paths is not None:
-        return paths.from_bins_at(boundary_bins, positions)
+    return _distance_to_bins(env, paths, boundary_bins, positions)
 
+
+def _distance_to_bins(
+    env: Environment,
+    paths: EnvironmentPaths | None,
+    bins: NDArray[np.intp],
+    positions: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Distance from each position to the nearest center of ``bins``.
+
+    Parameters
+    ----------
+    env : Environment
+    paths : EnvironmentPaths or None
+        Shortest-path engine (:func:`metric_paths`); None for straight lines.
+    bins : ndarray of intp, shape (n_targets,)
+        Distinct, valid bin indices.
+    positions : ndarray, shape (n_samples, n_dims)
+
+    Returns
+    -------
+    ndarray of float64, shape (n_samples,)
+        NaN at positions outside the environment or NaN.
+    """
+    if paths is not None:
+        return paths.from_bins_at(bins, positions)
     from scipy.spatial import cKDTree
 
-    distances = np.full(n_samples, np.nan, dtype=np.float64)
+    distances = np.full(len(positions), np.nan, dtype=np.float64)
     inside = env.bin_at(positions) >= 0
-    distances[inside] = cKDTree(env.bin_centers[boundary_bins]).query(
-        positions[inside]
-    )[0]
+    distances[inside] = cKDTree(env.bin_centers[bins]).query(positions[inside])[0]
     return distances
 
 
