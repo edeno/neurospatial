@@ -16,8 +16,9 @@ hc-2 has no cell table, so the units are hc-3's for the same recording
 (``hc3-cell.csv``, topdir ``ec013.32``): its electrodes 5-8, all CA1, are
 hc-2's shanks 1-4 (36 of hc-2's 37 clusters from 2 up are in the table at
 electrode + 4, and their firing rates in this session correlate 0.90 with
-the table's rates over the day, against -0.15 at electrode + 0). The one
-cluster the table leaves out is dropped; interneurons are kept and
+the table's rates over the day, against -0.15 at electrode + 0); the loader
+refuses fewer than 36 of 37 matched. The one cluster the table leaves out is
+dropped; interneurons are kept and
 labelled, as in hc-3 (``params["cell_type"]``). The pixel
 scale is inferred from the 180 cm side over the larger per-axis span of the
 tracked positions.
@@ -133,6 +134,8 @@ def load(cache: Path | None = None) -> Recording:
         apparatus_span_px=_largest_axis_span,
         span_px=(120.0, 300.0),
         geometry={"shape": "square", "size_cm": ARENA_CM},
+        # 36 of the 37 clusters from 2 up are in hc-3's table (see above).
+        min_matched=36 / 37,
     )
     side_px = ARENA_CM / rec.geometry["inferred_cm_per_pixel"]
     return with_environment(

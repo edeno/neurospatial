@@ -233,12 +233,16 @@ def neuroscope_recording(
     apparatus_span_px: Any,
     span_px: tuple[float, float],
     geometry: dict[str, Any],
+    min_matched: float | None = None,
 ) -> Recording:
     """Recording from a Neuroscope session tracked with two LEDs, in pixels.
 
     ``units`` maps (shank, cluster) to the source's cell-table row; None keeps
-    every cluster from 2 up. ``apparatus_span_px`` measures the span in
-    pixels that ``apparatus_cm`` corresponds to; it sets the inferred scale.
+    every cluster from 2 up. With ``min_matched``, fewer than that share of
+    the session's clusters from 2 up found in ``units`` is refused (a cell
+    table mapped to the wrong electrodes). ``apparatus_span_px`` measures
+    the span in pixels that ``apparatus_cm`` corresponds to; it sets the
+    inferred scale.
     """
     rates = neuroscope_rates(files["xml"])
     wideband = rates["wideband_hz"]
@@ -265,6 +269,13 @@ def neuroscope_recording(
             ids.append(f"{shank}.{cluster}")
             kept[key] = (units or {}).get(key, {})
     missing = sorted(set(units or {}) - set(kept))
+    if min_matched is not None and len(kept) / max(found, 1) < min_matched:
+        msg = (
+            f"{len(kept)} of the session's {found} clusters are in the cell table,"
+            f" fewer than the {min_matched:.1%} the loader documents; the table's"
+            " electrodes no longer map to this session's shanks, recheck the offset"
+        )
+        raise ValueError(msg)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
     tracked = np.isfinite(positions).all(axis=1)
     return Recording(
