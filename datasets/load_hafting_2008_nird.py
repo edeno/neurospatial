@@ -24,6 +24,12 @@ Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s
 (running); ``dt`` 0.25 s and alternating 60 s train/test blocks. The track
 is also given as a one-edge graph from (−160, 0) to (160, 0) cm; its width
 is not stated.
+
+Environment: built from the samples (inferred). The archive's readme
+(``readme_hafting2008.txt``, read) states "a linear track (mostly 320 cm)"
+but no width, and ``Environment.bin_at`` refuses a track built without
+``track_width`` (a far-off position would land in its nearest bin), so a
+declared track would need a width no source gives.
 """
 
 from __future__ import annotations

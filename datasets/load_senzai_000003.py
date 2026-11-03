@@ -40,6 +40,10 @@ Analysis choices (``params``):
   maps; place maps here mix two apparatus seen in the same camera image.
 - ``dt`` 0.25 s, alternating 60 s ``train_epochs``/``test_epochs`` inside the
   awake periods.
+
+Environment: built from the samples (inferred). Positions are pixels with no
+stated scale, and the open field and the theta maze share one image with no
+epochs separating them, so no stated outline can be placed.
 """
 
 from __future__ import annotations
