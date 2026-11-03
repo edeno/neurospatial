@@ -37,12 +37,14 @@ Files are downloaded once into `data/datasets/` (git-ignored) or into
 `$NEUROSPATIAL_DATA_DIR` when it is set, and every file is checked against a
 pinned SHA-256. A file whose checksum does not match is never overwritten. Data
 are not redistributed here; each loader records the dataset's license.
-The labyrinth's trajectories and Gardner's spike trains are Python pickles;
+Zip members are read by HTTP byte range; Deflate64 members (Grieves 2020),
+which Python's `zipfile` cannot inflate, are inflated with `inflate64` and
+CRC-checked. The labyrinth's trajectories and Gardner's spike trains are Python pickles;
 their loaders read them with restricted unpicklers that resolve only the
 globals and dtypes those files hold, and refuse every other one (Gardner's
 loader also lists a pickle's imports from its opcodes before unpickling).
 
-Multi-GB DANDI files (000044, 000447) are not downloaded: the loader checks the
+Multi-GB DANDI files (000044, 000447, 000003) are not downloaded: the loader checks the
 SHA-256 DANDI publishes for the asset, then reads the few datasets it needs by
 HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 
@@ -68,12 +70,31 @@ HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 | `hc28_hpa` | Rat CA1 and PFC units on a W-track, untracked frames stored as 0 (CRCNS hc-28) | 21.3 MB from a 2.8 GB archive | CRCNS terms |
 | `hc31_anm190422` | Rat CA1 units on a 48 m track, position in inches (CRCNS hc-31) | 166.8 MB | CRCNS terms |
 | `hc18_train261` | Rat CA1 units while carried on a model train (CRCNS hc-18) | 134.8 MB from a 6.5 GB archive | CRCNS terms |
+| `grieves_2020_lattice` | Rat CA1 in a 3-D climbing lattice (UCL RDR 9926477; one Deflate64 member of an 11.2 GB zip by byte range) | 431 MB | CC0 |
+| `watermaze_10248158` | Mouse Morris water-maze swim paths, EthoVision JSON, behavior only (Figshare 10248158) | 9.9 MB | CC-BY-4.0 |
+| `olafsdottir_5566548` | Rat hippocampus and deep MEC tetrodes on a Z-track, Axona files (Zenodo 5566548; 34 members of a 9.9 GB zip by byte range) | 105 MB | CC-BY-4.0 |
+| `takigawa_7114733` | Rat CA1 on two novel 2 m linear tracks (Zenodo 7114733) | 20.0 MB | CC0 |
+| `hafting_2008_nird` | Rat MEC grid cells on a 320 cm linear track (NIRD 10.11582/2017.00020; 4 members of a 20.9 MB zip by byte range) | 1.0 MB | CC-BY-4.0 |
+| `j16_23020757` | Rat hippocampus in a spatial bandit maze with its track graph, `.npz` without pickles (Zenodo 23020757) | 75.1 MB | CC-BY-4.0 |
+| `agarwal_24757638` | Rat CA1 and mPFC on a 3-arm maze with a wheel delay (Figshare 24757638) | 226 MB | CC-BY-4.0 |
+| `shipley_30902972` | Mouse CA1 tetrodes on an 8-arm radial maze and sleep, Kilosort NPY + MATLAB (UCL RDR 30902972; 4 members of a 4.4 GB zip by byte range) | 67 MB | CC-BY-4.0 |
+| `rsc_000987` | Mouse retrosplenial units in a square arena, motion-capture head direction (DANDI 000987) | 20.2 MB | CC-BY-4.0 |
+| `ca1ca3_001880` | Mouse CA1 and CA3 units on a cheeseboard maze, ripples (DANDI 001880) | 65.7 MB | CC0-1.0 |
+| `gonzalez_001695` | Mouse CA1/CA3/RSC units on a novel linear maze with sleep, ripples (DANDI 001695) | 61.3 MB | CC-BY-4.0 |
+| `neurolab_001754` | Rat CA1 units in spaceflight, Escher staircase; pixels sampled at spike times (DANDI 001754) | 3.2 MB | CC-BY-4.0 |
+| `valero_000568` | Mouse CA1 units on a 110 cm linear track, ripples (DANDI 000568) | 5.8 MB | CC-BY-4.0 |
+| `aeryjones_000165` | Mouse hippocampal multi-unit activity per channel on a linear track (DANDI 000165) | 23.3 MB | CC-BY-4.0 |
+| `dyads_001845` | Rat on a cooperative W-maze, DeepLabCut pose, behavior only (DANDI 001845) | 1.4 MB | CC0-1.0 |
+| `senzai_000003` | Mouse dentate gyrus and CA3 units, open exploration and maze; pixels labelled metres (DANDI 000003) | streamed from 4.7 GB | CC-BY-4.0 |
+| `kanter_2025` | Rat LEC and CA1 Neuropixels units, 1 m open field with novel objects (EBRAINS 10.25493/GTVB-FQR) | 29.6 MB | CC-BY-SA-4.0 |
 
 NWB loaders set `params["nwb_source"]` to the cached file, or to the URL of a
 file read by byte range. The `io.nwb_readers`
 operation then runs neurospatial's position, head-direction and unit readers
 on it with default arguments and compares what they return with the loader's
-range-checked arrays.
+range-checked arrays. `io.read_pose` runs `read_pose` the same way, reports each
+keypoint's share of NaN samples, and feeds one keypoint to the rate maps (or
+occupancy, for a behavior-only file).
 
 CRCNS loaders (`hc*`) need a free crcns.org account. They read it from the
 `CRCNS_USERNAME` and `CRCNS_PASSWORD` environment variables and never print,
@@ -97,6 +118,9 @@ operation cells; each writes to `results/studies/`:
   real units against 100 circular shifts.
 - `hc11_vs_000044.py`: the same session from CRCNS hc-11 and DANDI 000044,
   unit by unit, sample by sample.
+- `egocentric_boundary_survey.py`: the `rates.egocentric_boundary` operation
+  on every recording with head direction, without rewriting the driver's
+  results.
 
 ## Read the results
 

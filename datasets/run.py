@@ -51,6 +51,23 @@ LOADERS = {
     "hc28_hpa": "load_hc28_hpa",
     "hc31_anm190422": "load_hc31_anm190422",
     "hc18_train261": "load_hc18_train261",
+    "grieves_2020_lattice": "load_grieves_2020_lattice",
+    "watermaze_10248158": "load_watermaze_10248158",
+    "olafsdottir_5566548": "load_olafsdottir_5566548",
+    "takigawa_7114733": "load_takigawa_7114733",
+    "hafting_2008_nird": "load_hafting_2008_nird",
+    "j16_23020757": "load_j16_23020757",
+    "agarwal_24757638": "load_agarwal_24757638",
+    "shipley_30902972": "load_shipley_30902972",
+    "rsc_000987": "load_rsc_000987",
+    "ca1ca3_001880": "load_ca1ca3_001880",
+    "gonzalez_001695": "load_gonzalez_001695",
+    "neurolab_001754": "load_neurolab_001754",
+    "valero_000568": "load_valero_000568",
+    "aeryjones_000165": "load_aeryjones_000165",
+    "dyads_001845": "load_dyads_001845",
+    "senzai_000003": "load_senzai_000003",
+    "kanter_2025": "load_kanter_2025",
 }
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"

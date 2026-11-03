@@ -1,0 +1,454 @@
+{
+  "dataset": "aeryjones_000165",
+  "session": "Sumac06_LinearTrack",
+  "source": "https://dandiarchive.org/dandiset/000165/0.211118.1526 sub-Sumac/sub-Sumac_ses-Sumac06-LinearTrack_behavior+ecephys.nwb (asset fd219159-b8ee-4bb3-933b-581245af0317)",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "times: 45114 samples on 32340 distinct timestamps; samples sharing a timestamp averaged",
+    "spike_times: ASSUMED on the tracking clock with offset 0 (every channel has a spike at exactly 0.0 s; the LFP starts at 0); a constant-offset scan of 1-D Skaggs information ranks offset 0 11th of 247",
+    "positions: read_position, labelled cm; range checked (1st-99th percentile span 35.1 by 4.9): too short for a mouse linear track in cm to confirm the label, kept as arbitrary units",
+    "spike_times: read_units (32 channel multi-unit trains); the spike at exactly 0.0 s dropped from 31 trains; spikes end at 462.1 s of 1504 s tracked; every channel is silent from 269.6 s to 460.3 s, then 553 spikes fall in 1.7 s",
+    "params['analysis_epochs']: 0 to 269.6 s, the end of the continuous spike recording"
+  ],
+  "expectations": [
+    {
+      "key": "n_units",
+      "passed": true,
+      "detail": "expected 32, got 32"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": false,
+      "detail": "expected Range(low=25.0, high=35.0), got 19.305019305035167"
+    },
+    {
+      "key": "spikes_cover_tracking",
+      "passed": false,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3971+g9ce92cfa4",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
+  },
+  "load_warnings": [
+    {
+      "category": "DeprecationWarning",
+      "origin": "third-party",
+      "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+      "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+      "count": 1
+    }
+  ],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 163,
+        "n_dims": 2,
+        "max_extent": 38.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.023,
+      "peak_mb": 1.9
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 269.5649666666667,
+        "frac_bins_visited": 0.8282208588957055,
+        "median_s_per_visited_bin": 0.4144666666666623,
+        "max_s": 56.993433333333414
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.007,
+      "peak_mb": 4.0
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 32,
+        "frac_nan_bins": 0.17177914110429449,
+        "median_peak_hz": 4.584322832693974,
+        "median_mean_hz": 3.470941397460096
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.089,
+      "peak_mb": 19.9
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 0.017599736815758105,
+        "bits_per_spike_max": 0.1268402537788674,
+        "bits_per_spike_n_finite": 31
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 0.4
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 0.0015155653970571417,
+        "median_shifted_bits_per_spike": 0.6726376857868632,
+        "frac_above_every_shift": 0.0,
+        "n_units": 1,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.239,
+      "peak_mb": 24.4
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 0,
+        "n_units": 32
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 1.0
+    },
+    "cells.grid_score": {
+      "status": "ok",
+      "summary": {
+        "n_finite": 0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.112,
+      "peak_mb": 0.2
+    },
+    "cells.border_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 0.1
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 17.242640687119284,
+        "chance_median_error": 7.037421468630562,
+        "units": "arbitrary",
+        "n_time_bins": 478
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.067,
+      "peak_mb": 19.9
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 163
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 2.738,
+      "peak_mb": 2.2
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no min_speed",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.008,
+      "peak_mb": 4.0
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "summary": {},
+      "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.nwb_readers": {
+      "status": "workaround",
+      "summary": {
+        "position": "units 'cm' not comparable with 'arbitrary'",
+        "head_direction": "absent (file has none)",
+        "units": "mismatch: spike times differ"
+      },
+      "note": "position: units 'cm' not comparable with 'arbitrary'; units: mismatch: spike times differ",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "DeprecationWarning",
+          "origin": "third-party",
+          "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.359,
+      "peak_mb": 13.8
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "DeprecationWarning",
+          "origin": "third-party",
+          "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.335,
+      "peak_mb": 0.4
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 32,
+        "frac_nan_bins": 0.17177914110429449,
+        "median_peak_hz": 4.584322832693974,
+        "median_mean_hz": 3.470941397460096
+      },
+      "hazard_summary": {
+        "n_units": 32,
+        "frac_nan_bins": 0.17177914110429449,
+        "median_peak_hz": 0.027072756344879337,
+        "median_mean_hz": 0.004788426171870542
+      }
+    },
+    {
+      "hazard": "duplicate_timestamps_kept",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 163,
+        "n_dims": 2,
+        "max_extent": 38.0
+      },
+      "hazard_summary": {
+        "n_bins": 161,
+        "n_dims": 2,
+        "max_extent": 38.0
+      }
+    },
+    {
+      "hazard": "duplicate_timestamps_kept",
+      "op": "env.occupancy",
+      "response": "raised",
+      "message": "InputError: Invalid times/positions passed to Environment.occupancy():\n- times must be strictly increasing; 12774 timestamp(s) repeat the one before, first 0.05183333333333451 at indices 1 and 2. A repeated timestamp gives one instant two samples and the interval between them no duration. To keep the first row of each timestamp, index times and every per-sample array with keep = np.unique(times, return_index=True)[1]; if the recordings restart their clocks, analyze each recording in its own call or map them to one clock.\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, so mis-shaped, unsorted or repeated timestamps give wrong numbers.\nFix: pass times as a sorted 1-D array of numeric timestamps in seconds, without repeats, with one numeric positions row per timestamp.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 269.5649666666667,
+        "frac_bins_visited": 0.8282208588957055,
+        "median_s_per_visited_bin": 0.4144666666666623,
+        "max_s": 56.993433333333414
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "duplicate_timestamps_kept",
+      "op": "rates.spatial",
+      "response": "raised",
+      "message": "InputError: Invalid times/positions passed to compute_spatial_rates():\n- times must be strictly increasing; 12774 timestamp(s) repeat the one before, first 0.05183333333333451 at indices 1 and 2. A repeated timestamp gives one instant two samples and the interval between them no duration. To keep the first row of each timestamp, index times and every per-sample array with keep = np.unique(times, return_index=True)[1]; if the recordings restart their clocks, analyze each recording in its own call or map them to one clock.\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, so mis-shaped, unsorted or repeated timestamps give wrong numbers.\nFix: pass times as a sorted 1-D array of numeric timestamps in seconds, without repeats, with one numeric positions row per timestamp.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 32,
+        "frac_nan_bins": 0.17177914110429449,
+        "median_peak_hz": 4.584322832693974,
+        "median_mean_hz": 3.470941397460096
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "duplicate_timestamps_kept",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "duplicate_timestamps_kept",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "duplicate_timestamps_kept",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "tracking_beyond_spikes",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 163,
+        "n_dims": 2,
+        "max_extent": 38.0
+      },
+      "hazard_summary": {
+        "n_bins": 163,
+        "n_dims": 2,
+        "max_extent": 38.0
+      }
+    },
+    {
+      "hazard": "tracking_beyond_spikes",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 269.5649666666667,
+        "frac_bins_visited": 0.8282208588957055,
+        "median_s_per_visited_bin": 0.4144666666666623,
+        "max_s": 56.993433333333414
+      },
+      "hazard_summary": {
+        "total_s": 1503.7714333333333,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 2.1224666666667673,
+        "max_s": 306.5887999999982
+      }
+    },
+    {
+      "hazard": "tracking_beyond_spikes",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "All 32 units are silent from 462.1 s to 1503.8 s (1042 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 32,
+        "frac_nan_bins": 0.17177914110429449,
+        "median_peak_hz": 4.584322832693974,
+        "median_mean_hz": 3.470941397460096
+      },
+      "hazard_summary": {
+        "n_units": 32,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 1.0307514213582332,
+        "median_mean_hz": 0.6512587646571215
+      }
+    },
+    {
+      "hazard": "tracking_beyond_spikes",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "tracking_beyond_spikes",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "tracking_beyond_spikes",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}

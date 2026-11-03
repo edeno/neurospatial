@@ -1,0 +1,526 @@
+{
+  "dataset": "neurolab_001754",
+  "session": "Rat2-FD4-19980420",
+  "source": "https://dandiarchive.org/dandiset/001754/0.260728.1352 sub-Rat2/sub-Rat2_ses-19980420T095700_behavior+ecephys.nwb (asset 697481a1-9460-4f66-a8d2-ab41310ec0ce)",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "positions: read_position, pixels, no calibration in the file; range checked: 0-255 by 65-255 px",
+    "positions: 2218 samples at exactly (0, 255), the lost-LED code, set to NaN; other samples with x exactly 0: 1, kept",
+    "times: the 25320 distinct spike times of all units (position is sampled at spikes)",
+    "epochs: sessions by type (BL, ES, MC)"
+  ],
+  "expectations": [
+    {
+      "key": "n_units",
+      "passed": true,
+      "detail": "expected 72, got 72"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "position_min",
+      "passed": true,
+      "detail": "expected Range(low=[0, 0], high=[255, 255]), got array([ 0., 65.])"
+    },
+    {
+      "key": "position_max",
+      "passed": true,
+      "detail": "expected Range(low=[0, 0], high=[255, 255]), got array([255.   , 254.999])"
+    },
+    {
+      "key": "pixels",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "five_task_epochs",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "position_sampled_at_spikes",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3971+g9ce92cfa4",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 2174,
+        "n_dims": 2,
+        "max_extent": 256.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        }
+      ],
+      "seconds": 0.199,
+      "peak_mb": 8.1
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 652.0200000000013,
+        "frac_bins_visited": 0.547378104875805,
+        "median_s_per_visited_bin": 0.31999999999993634,
+        "max_s": 34.61000000000013
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "example": "About 17% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.006,
+      "peak_mb": 2.9
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.45262189512419504,
+        "median_peak_hz": 0.05086606867136988,
+        "median_mean_hz": 0.0010070694379638414
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "example": "About 17% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "count": 1
+        }
+      ],
+      "seconds": 1.21,
+      "peak_mb": 119.5
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 1.6591906199169681,
+        "bits_per_spike_max": 3.5164997587843696,
+        "bits_per_spike_n_finite": 38
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.003,
+      "peak_mb": 10.5
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 1.6014314355570143,
+        "median_shifted_bits_per_spike": 1.2343145489052216,
+        "frac_above_every_shift": 0.42857142857142855,
+        "n_units": 14,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "example": "About 17% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "count": 4
+        }
+      ],
+      "seconds": 0.132,
+      "peak_mb": 12.1
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 4,
+        "n_units": 72
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.084,
+      "peak_mb": 106.3
+    },
+    "cells.grid_score": {
+      "status": "ok",
+      "summary": {
+        "median": -0.1966026040605054,
+        "max": 0.3304058739423405,
+        "n_finite": 32
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.223,
+      "peak_mb": 16.2
+    },
+    "cells.border_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 1.8
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 103.31370849898477,
+        "chance_median_error": 71.50793489136069,
+        "units": "pixel",
+        "n_time_bins": 1527
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "example": "About 18% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "count": 1
+        },
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "example": "About 18% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "count": 1
+        },
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "example": "decoding_error(): 1 of 1527 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.242,
+      "peak_mb": 61.2
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 2174
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 2
+        }
+      ],
+      "seconds": 3.169,
+      "peak_mb": 18.9
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no min_speed",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "example": "About 18% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.014,
+      "peak_mb": 7.0
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "summary": {},
+      "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.nwb_readers": {
+      "status": "workaround",
+      "summary": {
+        "position": "mismatch: values differ",
+        "head_direction": "absent (file has none)",
+        "units": "ok (loader used this reader)"
+      },
+      "note": "position: mismatch: values differ",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.39,
+      "peak_mb": 2.3
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.365,
+      "peak_mb": 0.4
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_bins": 2174,
+        "n_dims": 2,
+        "max_extent": 256.0
+      },
+      "hazard_summary": {
+        "n_bins": 2181,
+        "n_dims": 2,
+        "max_extent": 256.0
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "total_s": 652.0200000000013,
+        "frac_bins_visited": 0.547378104875805,
+        "median_s_per_visited_bin": 0.31999999999993634,
+        "max_s": 34.61000000000013
+      },
+      "hazard_summary": {
+        "total_s": 778.9000000000005,
+        "frac_bins_visited": 0.5602934433745989,
+        "median_s_per_visited_bin": 0.31999999999993634,
+        "max_s": 115.55000000000155
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.45262189512419504,
+        "median_peak_hz": 0.05086606867136988,
+        "median_mean_hz": 0.0010070694379638414
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.4397065566254012,
+        "median_peak_hz": 0.049397466101864615,
+        "median_mean_hz": 0.0007645837171087228
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).\nAll 72 units are silent from 3922.8 s to 3993.3 s (70 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\nAbout 17% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.\n\n31769/31769 spike_times (100%) across all neurons fell outside the position time window [2529.81, 8472.01]; spike_times.min()=2.52981e+06 spike_times.max()=8.47201e+06. The spike times span 5.9422e+06 and reach 8.47201e+06, about 1000 times the 5942.2 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.45262189512419504,
+        "median_peak_hz": 0.05086606867136988,
+        "median_mean_hz": 0.0010070694379638414
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.45262189512419504,
+        "median_peak_hz": 0.0,
+        "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "lost_led_code_kept",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_bins": 2174,
+        "n_dims": 2,
+        "max_extent": 256.0
+      },
+      "hazard_summary": {
+        "n_bins": 2174,
+        "n_dims": 2,
+        "max_extent": 256.0
+      }
+    },
+    {
+      "hazard": "lost_led_code_kept",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "total_s": 652.0200000000013,
+        "frac_bins_visited": 0.547378104875805,
+        "median_s_per_visited_bin": 0.31999999999993634,
+        "max_s": 34.61000000000013
+      },
+      "hazard_summary": {
+        "total_s": 778.9000000000005,
+        "frac_bins_visited": 0.5519779208831647,
+        "median_s_per_visited_bin": 0.32000000000061846,
+        "max_s": 130.97000000000162
+      }
+    },
+    {
+      "hazard": "lost_led_code_kept",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.45262189512419504,
+        "median_peak_hz": 0.05086606867136988,
+        "median_mean_hz": 0.0010070694379638414
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.44802207911683534,
+        "median_peak_hz": 0.028737828659746327,
+        "median_mean_hz": 0.00042679287833090774
+      }
+    },
+    {
+      "hazard": "lost_led_code_kept",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "lost_led_code_kept",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "lost_led_code_kept",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}

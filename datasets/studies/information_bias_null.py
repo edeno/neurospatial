@@ -54,6 +54,7 @@ DATASETS = (
     "sargolini_000582",
     "gardner_2022_grid",
     "grosmark_000044_circular",
+    "grieves_2020_lattice",
 )
 RATES_HZ = (0.5, 2.0, 8.0)
 N_SIM = 200

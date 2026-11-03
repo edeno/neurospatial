@@ -73,3 +73,54 @@ def imaging_recording() -> Recording:
         activity_kind="binned_rate",
         params={"bin_size": 5.0},
     )
+
+
+EBC_DISTANCE_CM = 20.0
+EBC_DIRECTION = np.pi / 2  # egocentric: the wall on the animal's left
+BOX_CM = 100.0
+
+
+def _wall_distance(positions: np.ndarray, angles: np.ndarray) -> np.ndarray:
+    """Distance along each allocentric ray to the walls of a [0, BOX_CM] square."""
+    dx, dy = np.cos(angles), np.sin(angles)
+    with np.errstate(divide="ignore"):
+        tx = np.where(dx > 0, (BOX_CM - positions[:, 0]) / dx, -positions[:, 0] / dx)
+        ty = np.where(dy > 0, (BOX_CM - positions[:, 1]) / dy, -positions[:, 1] / dy)
+    return np.minimum(np.where(dx == 0, np.inf, tx), np.where(dy == 0, np.inf, ty))
+
+
+@pytest.fixture(scope="session")
+def egocentric_boundary_recording() -> Recording:
+    """20 min in a walled 100 cm square; one cell fires when a wall is 20 cm to the left.
+
+    A seeded random walk at 30 Hz (speed about 15 cm/s, turning smoothly,
+    reflected at the walls); heading is the direction of movement. The cell's
+    rate is 0.5 Hz plus a 20 Hz Gaussian (SD 4 cm) of the distance to the
+    wall along heading + pi/2.
+    """
+    rng = np.random.default_rng(7)
+    n, dt = 36_000, 1 / 30
+    direction = np.cumsum(rng.normal(0, 0.15, n))
+    steps = 15.0 * dt * np.column_stack([np.cos(direction), np.sin(direction)])
+    unfolded = np.cumsum(steps, axis=0) + BOX_CM / 2
+    positions = np.abs((unfolded % (2 * BOX_CM)) - BOX_CM)  # reflect into the box
+    moved = np.diff(positions, axis=0, prepend=positions[:1] - steps[:1])
+    headings = np.arctan2(moved[:, 1], moved[:, 0])
+    left = _wall_distance(positions, headings + EBC_DIRECTION)
+    rate = 0.5 + 20.0 * np.exp(-((left - EBC_DISTANCE_CM) ** 2) / (2 * 4.0**2))
+    times = np.arange(n) * dt
+    counts = rng.poisson(rate * dt)
+    spikes = np.sort(np.repeat(times, counts) + rng.uniform(0, dt, counts.sum()))
+    return Recording(
+        dataset="ebc_sim",
+        session="seed7",
+        source="simulated",
+        license="n/a",
+        times=times,
+        positions=positions,
+        position_units="cm",
+        headings=headings,
+        spike_times=(spikes,),
+        unit_ids=np.array(["ebc"]),
+        params={"bin_size": 2.5, "dt": 0.25},
+    )

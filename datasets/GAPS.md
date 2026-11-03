@@ -99,6 +99,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: undecided — probably none beyond surfacing the requirement
   in the border-score docs and the quickstart.
 - Status: open
+- More evidence (archive batch): the same refusal on hafting_2008_nird, takigawa_7114733, olafsdottir_5566548, shipley_30902972, agarwal_24757638 and j16_23020757; none of these sources gives wall positions in the tracking frame. `rates.egocentric_boundary` meets the same requirement and runs with `boundary_source="analysis"` (G-082).
+- More evidence (NWB breadth batch): the same refusal on all eight new
+  recordings with spikes and 2-D positions (000987, 001880, 001695, 001754,
+  000568, 000165, 000003, Kanter): every environment there is built from
+  samples.
 
 ## G-006: Grid score differs from opexebo on the same rate map because of the autocorrelogram
 
@@ -193,6 +198,23 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   epochs (or the whole tracked session) rather than with `times` alone; fixing
   G-001 removes the clean-run warning that hides this case.
 - Status: fixed (#265): with the clean-run warning gone, the spike-drop warning flags the ms case on Mouse32 and the figure-8
+- More evidence (NWB breadth batch, after #265): spike times x 1000 are
+  silent on 2 of 9 new recordings. On 001695 (no `epochs`; sleep spikes
+  outside the maze tracking) the clean run already emits the spike-drop
+  warning for 75 % of spikes, and the hazard only raises it to 100 % with the
+  same message and no span ratio: median peak 0.73 -> 0.0 Hz. On 000165
+  (`epochs` 0-269.6 s) nothing warns: 883 of the 557,063 ms-scaled spikes
+  still fall inside 0-269.6 s, and the rest lie outside the epochs, which
+  the epochs-aware drop count does not count: median peak 4.58 -> 0.03 Hz.
+  The other seven are caught: on 001754 and 000003 (`epochs` passed, but the
+  tracking spans the whole recording) the drop count against the tracking
+  window gives "about 1000 times ... divide them by 1000"; on 000568 and
+  Kanter the only new message is "All N units are silent ... pass
+  spike_window", whose advice is wrong for a unit error.
+- Proposed change (addition): apply the span-ratio test (spike span about
+  1000 times the analysed span) to the analysed span, the requested `epochs`
+  or else the tracking, not only to `times`. A rule "warn when no spike falls
+  inside the epochs" would miss 000165, where 883 ms-scaled spikes still do.
 
 ## G-011: `read_intervals` does not search processing modules
 
@@ -228,6 +250,10 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: the loader passes the full series path
 - Proposed change: accept a `Position` container name when it holds one series.
 - Status: open
+- More evidence (NWB breadth batch): 001880 lists `SubjectPosition/PositionSeries`
+  and `SubjectPosition/VelocitySeries` (vx, vy, speed in cm/s) as two
+  Position candidates; 001845 lists six processed keypoints. Both refusals
+  are right; the loaders pass the full series path.
 
 ## G-013: `env.occupancy(min_speed=)` needs `speed=`; the rate and decoder entry points compute it
 
@@ -271,6 +297,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   in the environment can tell, and `env.occupancy` and `rates.spatial` refuse
   it only through `min_speed` (every interval excluded, with the units hint).
   Check 2 does not cover a long track; the speed gate does.
+- More evidence (archive batch): `length_unit_off_by_100` is caught by `Environment.from_samples` on all seven new cm recordings (bin at least the extent), but `segment_by_velocity` finds 0 running segments silently on each (281, 604, 491, 715, 516 and 290 -> 0; 668 -> 1 on the Z-track), and on hafting_2008_nird and olafsdottir_5566548 occupancy and rate maps change without a warning of their own (occupancy 655.6 -> 0.24 s and 1266 -> 0.84 s).
+- More evidence (NWB breadth batch): `segment_by_velocity` with positions
+  /100 finds 0 running segments, silently, on 001880 (1,030 clean), 001695
+  (315), 000568 (458) and 001845 (10); the environment and rate steps on the
+  same recordings warn or raise.
 
 ## G-015: `detect_laps` finds laps on a maze with no loop
 
@@ -305,6 +336,12 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   counter-clockwise); the hc-28 W-track is refused ("no loop"), while the
   000447 W-track gave 1 lap; the hc-3 250 cm linear track and the hc-31 48 m
   track are refused, as they should be.
+- More evidence (archive batch): refused ("no loop") on the water maze, the two Takigawa tracks, the Z-track, the radial maze and the 3-arm maze, and on the 3-D lattice ("cannot tell whether this 3-D environment has a loop"); none of these has a loop, so the refusals are right. The water-maze pool is an open arena that is refused, not given a spurious lap.
+- More evidence (NWB breadth batch): refused ("no loop") on the 000987 and
+  001880 arenas, the 001695, 000568 and 000165 linear tracks, the 001754
+  staircase session (all five sessions' tracks in one image), the 001845
+  W-maze and the 000003 arena, as it should be. Kanter's 1 m open field
+  gives 1 clockwise "lap" (cell `ok`): the open-arena case that #265 left.
 
 ## G-016: A track graph without `track_width` cannot place positions
 
@@ -320,6 +357,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: none beyond showing `track_width=` in the `from_graph`
   example; the refusal is the right behavior.
 - Status: open
+- More evidence (archive batch): hafting_2008_nird (a one-edge 320 cm track) and j16_23020757 (the authors' 10-node bandit-maze graph) build with `from_graph` (80 and 248 bins) but `detect_laps` and `graph_turn_sequence` refuse both, because neither source states the track width.
 
 ## G-017: Missing positions stored as 0 silently change movement segments and turns
 
@@ -348,6 +386,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   origin bin holds 175.3 s (the most of any bin),
   running segments 487 → 455, all silent. Check 1 would fire (15.5 % at the
   origin against 0 % on every clean recording, now 19 of 19 with positions).
+- More evidence (archive batch): NaN positions as (0, 0) are silent on the water maze (0.29 % of samples), Takigawa (85 %: everything off the tracks), the Z-track (29 %: largest occupancy bin 43.9 -> 290.6 s) and the 3-arm maze, both as NaN -> 0 and as the file's own `xMM = yMM = 0` sentinel (0.20 %). Check 1 (origin share >= 0.1 %) would fire on all four.
+- More evidence (NWB breadth batch): silent on 001880 (5.3 % NaN, mostly
+  off the maze: 1,080 -> 1,085 bins, 1,030 -> 1,035 movement segments),
+  001845 (38 % NaN: 245 -> 248 bins, 10 -> 14 segments), 001754 (8.8 % NaN:
+  most-occupied bin 34.6 -> 115.6 s) and 000003 (0.04 % NaN: environment
+  extent 168 -> 500 px). Check 1 (origin share) would catch each. 001754 also
+  has its own lost-tracking code at (0, 255) (G-053), which an origin rule
+  does not see.
 
 ## G-018: Replay methods run on one-time-bin events without a warning
 
@@ -390,6 +436,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: say in `graph_turn_sequence` that left and right assume a
   y-up (right-handed) frame and that image coordinates must be flipped first.
 - Status: open
+- More evidence (archive batch): on the Z-track the y flip undone (hazard `image_y_down`) leaves every summary identical; the frame cannot be checked without a heading (one LED) or a stated layout.
 
 ## G-021: No periodic 1-D track: a linearized loop is treated as a line
 
@@ -440,6 +487,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   close to the 5 px bin: 341 of 2487 visited bins hold a single frame, and
   the median unit's peak rate is exactly 1 spike / 1 frame = 39.06 Hz.
   `min_occupancy` defaults to 0 s.
+- More evidence (archive batch): the Grieves lattice (3-D, 4 cm bins, 8182 visited bins, 24 % of them under 0.1 s, median 0.23 s) gives the information-bias study's second sparse 3-D case. Untuned Poisson cells: mean information / mean bias 0.94, 1.00, 1.00 at 0.5, 2, 8 Hz (200 cells each); bursty cells 3.0, 4.1, 4.7. Real units (17 with a defined bias, 100 shifts each): median information 0.579, bias 0.169, shift-null mean 0.392, null / bias 2.51; 6 % pass the bias rule but not the shifts' 95th percentile (bat, rerun: 0.92 and 2.24 at 8 Hz, null / bias 2.19, 44 %). The estimate holds for Poisson cells on sparse 3-D occupancy; the gap to the shift null is temporal structure, as on the bat.
 
 ## G-023: 3-D position decoding is near chance on the bat session
 
@@ -454,6 +502,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none
 - Proposed change: undecided (revisit after G-022)
 - Status: open
+- More evidence (archive batch): on the Grieves lattice (24 units, 4 cm bins in 3-D) the median decoding error is 82.7 cm against a geodesic chance of 76.8 cm.
 
 ## G-024: Grid and border scores refuse 3-D environments
 
@@ -469,6 +518,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (cells are `err`)
 - Proposed change: none
 - Status: won't fix (behaves as documented)
+- More evidence (archive batch): grid and border scores refuse the Grieves lattice (3-D) the same way.
 
 ## G-025: 3.6 % of the bat's positions lie outside the room bounds the file states
 
@@ -611,6 +661,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   `TimeSeries` (with a column choice) in the readers; consider finding a
   `SpatialSeries` whose name says head direction.
 - Status: open
+- More evidence (NWB breadth batch): 000003 stores its two position sensors
+  as bare `SpatialSeries` in `acquisition` (not in a `Position`
+  container); `read_position` raises "No Position data found" (G-062).
 
 ## G-033: 000405's labels disagree with its values
 
@@ -717,6 +770,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: the loop factory agreed for G-021; nothing for the linear
   track beyond the existing message.
 - Status: open
+- More evidence (NWB breadth batch): the 001695 novel linear maze and the
+  000568 110 cm linear track hold ripples and 2-D positions with no
+  linearized coordinate; the refusal is the same, and neither file states the
+  track's endpoints in camera coordinates. On 001880's cheeseboard (an open
+  maze, no track) see G-060.
 
 ## G-039: Pre-registered expectations that were wrong in the second batch
 
@@ -756,6 +814,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: none for neurospatial (the hazard row shows whether it
   notices rebuilt times)
 - Status: won't fix (data quirk)
+- More evidence (archive batch): run on vollan_lt and vollan_of, `compute_boundary_vector_rates` warns that "about 6 % of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked": correct, the authors removed every sample under 5 cm/s.
 
 ## G-041: 000044 has no ripple table; replay candidates are population bursts
 
@@ -816,6 +875,585 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none
 - Proposed change: undecided; find the cause before trusting shuffle verdicts
   on speed-filtered data
+- Status: open
+
+## G-050: Position and head orientation stored one axis per series cannot be read
+
+- Datasets: rsc_000987
+- Operation / step: loader, io.nwb_readers (`read_position`, `read_head_direction`)
+- Kind: missing-feature
+- Evidence: 000987 stores motion-capture tracking as three `SpatialSeries`
+  per container: `Position/x`, `y`, `z` (unit blank, reference frame blank)
+  and `CompassDirection/rx`, `ry`, `rz` (radians, 0 to 2 pi). With default
+  arguments `read_position` refuses ("Found 3 Position series candidates")
+  and suggests `position_name='acquisition/Position/x'`, which returns one
+  axis; there is no way to ask for (x, z) as one 2-D position, and nothing
+  says which axis is vertical. `read_head_direction` refuses the same way for
+  the three Euler angles. Only the values tell that y is vertical (span 9 cm
+  against 53 cm for x and z) and that the blank unit is metres. The refusals
+  are right; the cell is an error because a reader raised, as the operation
+  defines it.
+- Harness workaround: `datasets/load_rsc_000987.py` reads the five series with
+  pynwb, returns (x, -z) x 100 cm and `ry` as heading
+- Proposed change: accept a list of per-axis series (`position_name=[...]`)
+  or document the pynwb recipe; say in the refusal when the candidates look
+  like one axis each (same timestamps, one column each)
+- Status: open
+
+## G-051: Motion-capture head direction sits 0.3-0.5 rad off the direction of movement
+
+- Datasets: rsc_000987, kanter_2025
+- Operation / step: loader (`_record.heading_vs_movement`)
+- Kind: data-quirk
+- Evidence: both files track a rigid body on the head with motion capture.
+  000987's yaw (`ry`, in the (x, -z) floor frame) against movement faster than
+  10 cm/s at 10 Hz: mean offset +0.51 rad, spread 49 degrees (the mouse
+  walks slowly: median 6 cm/s, 90th percentile 14 cm/s). Kanter's
+  `head_direction` ("(x=1, y=0) unit vector") against movement faster than
+  20 cm/s: mean -0.33 rad, spread 17 degrees (-0.42 rad, 34 degrees above
+  10 cm/s). Neither passes the survey's frame rule (|mean| <= 0.2 rad and
+  spread < 45 degrees). The offset is not fixed: over Kanter's 17 windows of
+  60 s with at least 10 running samples (median 36), the window means range
+  from -0.62 to +2.33 rad (circular SD 31 degrees), so no single correction
+  is defensible from movement; its cause (a rigid-body zero, head turns while
+  running) is not known. For contrast, 001701's tracked heading gives
+  -0.07 rad and 10 degrees. The sign of each heading is tested by negating
+  it alone: the spread rises to 87 degrees on 000987 (from 49) and to 81 on
+  Kanter (from 17), so both turn the same way as their position frames.
+  Mirroring positions and heading together leaves heading minus movement
+  unchanged and cannot be tested this way (G-020).
+- Harness workaround: none; both loaders keep the headings and record the
+  frame as not verified in `conversions`. Mean vector lengths do not depend
+  on the frame; preferred directions are not interpreted.
+- Proposed change: none for neurospatial. The frame rule may need a
+  per-dataset offset allowance for motion-capture heads: decide before using
+  it as a hard gate.
+- Status: open
+
+## G-052: 001695's position conversion factor contradicts its values
+
+- Datasets: gonzalez_001695
+- Operation / step: loader, io.nwb_readers (`read_position`)
+- Kind: data-quirk
+- Evidence: `AnimalPosition/Position` is labelled `unit="centimeters"` with
+  `conversion=0.01`. NWB defines the value as stored x conversion in the
+  stated unit, so `read_position` (correctly, by the spec) returns a track
+  0.066-1.14 "cm" long with no warning. The stored values span 108 by 6, a
+  linear track in cm, and the file's own `Speed` (cm/s) matches the speed
+  from the stored values (median ratio 0.90), not from the converted ones.
+  The `io.nwb_readers` cell is a workaround: "position: mismatch: values
+  differ". A user who takes the reader's output gets the hazard
+  `conversion_applied_labelled_cm`: `Environment.from_samples(bin_size=2.5)`
+  warns that the bin is at least the extent, and occupancy and rate maps
+  raise "Interval filtering excluded ALL trajectory intervals ... check that
+  min_speed=4.0 is in the positions' length units" (both caught), but
+  `segment_by_velocity` silently finds 0 running segments instead of 315
+  (G-014). The reference frame also says "(0,0) is center of arena" while
+  every value is positive.
+- Harness workaround: `datasets/load_gonzalez_001695.py` reads the stored
+  values with h5py and checks them against the file's speed
+- Proposed change: none for neurospatial (the reader follows the spec)
+- Status: open
+
+## G-053: 001754 samples position at spike times and codes a lost LED as a corner
+
+- Datasets: neurolab_001754
+- Operation / step: loader, env.occupancy, rates.spatial, decode.position
+- Kind: data-quirk
+- Evidence: the 25,320 position samples are exactly the 25,320 distinct spike
+  times of the 72 units ("sampled at spike occurrence times"); within a
+  session the median gap is 20-70 ms, the 90th percentile 0.27-0.5 s.
+  Occupancy from these samples weights each position by the time to the next
+  spike of any unit, not by time spent there. neurospatial's
+  boolean-masking warning fires on every occupancy-based operation ("About
+  17% of the analysed time is in runs of removed samples lasting 0.25 s to
+  max_gap=1.0 s, which looks like times were boolean-masked"): it notices the
+  irregular sampling, though its example cause (a speed mask) is not this
+  one. Separately, 2,218 samples sit at exactly (0, 255), a corner no other
+  sample reaches: the tracker's lost-LED code. Kept as positions (hazard
+  `lost_led_code_kept`), they move 127 s of occupancy into one corner bin
+  (most-occupied bin 34.6 -> 131.0 s) and lower the median peak rate from
+  0.051 to 0.029 Hz, with no warning (the G-017 pattern, at a corner instead
+  of the origin). Position decoding on the staircase is worse than chance
+  (median error 103 px against 72 px).
+- Harness workaround: the loader sets (0, 255) to NaN; occupancy is left as
+  the sampling allows
+- Proposed change: none beyond G-017's repeated-coordinate check, which would
+  catch (0, 255) as well as (0, 0)
+- Status: open
+
+## G-054: 000568's video timestamps run 22.6 s ahead of its position timestamps
+
+- Datasets: valero_000568
+- Operation / step: loader (hazard `video_timestamps`)
+- Kind: data-quirk
+- Evidence: the tracking video `ImageSeries` and the position series have the
+  same 67,131 frames, but the video timestamps are 22.55-23.12 s earlier.
+  The position timestamps are the ones aligned with the spikes: mean spatial
+  information over the 35 units is 1.09 bits/spike with them, 0.81 with the
+  video timestamps, and at most 0.85 at any shift of 5-40 s either way. With
+  the video timestamps (hazard), median peak rate falls 1.57 -> 0.92 Hz and
+  nothing warns: a shifted clock is indistinguishable from a real one in the
+  arrays.
+- Harness workaround: the loader uses the position timestamps and checks the
+  offset
+- Proposed change: none
+- Status: open
+
+## G-055: 000165 repeats timestamps and its spikes cover 270 s of 1,504 s tracked
+
+- Datasets: aeryjones_000165
+- Operation / step: loader, rates.spatial (hazards `duplicate_timestamps_kept`, `tracking_beyond_spikes`)
+- Kind: data-quirk
+- Evidence: the 45,114 position samples come exactly 30 per second overall
+  (1,504 s), but only 32,340 timestamps are distinct: 12,774 intervals are
+  zero (36 % of those pairs at the same position), 213 are under 1 ms,
+  3,620 are 1-30 ms and the rest 30-104 ms, most near 52 ms. neurospatial refuses them
+  clearly ("times must be strictly increasing; 12774 timestamp(s) repeat the
+  one before ... at indices 1 and 2"), so the hazard is caught. The `units`
+  table is a "MUA table" (one multi-unit train per channel, 32), every
+  non-empty train starts with a spike at exactly 0.0 s, and spikes run
+  continuously only to 269.6 s, then a 0.7 s fragment at 461.3-462.1 s; the
+  LFP is 275 s long and tracking 1,504 s. neurospatial found the gap: on a
+  first run analysed to the last spike it warned "All 32 units are silent
+  from 269.6 s to 460.3 s (191 s) while position is tracked. If the
+  electrophysiology was not recording then, pass spike_window=(start,
+  stop)" (correct, and how the loader's analysis span was set). Analysed over
+  the whole tracking (hazard `tracking_beyond_spikes`), rates are divided by
+  1,504 s instead of 270 s of occupancy (median peak 4.58 -> 1.03 Hz) and the
+  same warning fires for 462.1-1503.8 s (caught). The spike clock is ASSUMED
+  to be the tracking clock with offset 0 (every channel has a spike at
+  exactly 0.0 s, and the LFP starts at 0 too); the data do not show it: a
+  scan of constant offsets (5 s steps, mean 1-D Skaggs information of the 29
+  channels with at least 50 spikes) ranks offset 0 11th of 247, below
+  offsets of 325-465 s, and multi-unit channels are too weakly tuned to name
+  another. The length unit is labelled
+  centimeters, but the tracked span is 35 by 5 and the 90th percentile speed
+  6.6 per s, too short and slow to confirm cm for a mouse linear track.
+- Harness workaround: the loader averages samples that share a timestamp,
+  drops the 0.0 s spikes, limits analysis to 0-269.6 s and keeps positions in
+  arbitrary units
+- Proposed change: none for neurospatial (the duplicate-timestamp refusal and
+  the silence warning already point at the problems)
+- Status: open
+
+## G-056: 001845's smallest file has 123 s of pose, repeated first timestamps and one unconverted keypoint
+
+- Datasets: dyads_001845
+- Operation / step: loader, io.read_pose, io.nwb_readers
+- Kind: data-quirk
+- Evidence: the DeepLabCut `PoseEstimation` (six keypoints, pixels) covers
+  873.8-996.9 s of a 1,577 s video and session; the dandiset's usual files
+  (about 9 MB, e.g. sub-ER1 ses-09) cover whole sessions. Its first nine
+  timestamps are equal (873.812 s), so `read_pose` refuses: "Pose bodypart
+  'PoseEstimationSeriesBody' timestamps must be finite and strictly
+  increasing. Fix: correct the source time axis before reading." (right, and
+  why the `io.read_pose` cell is an error). The raw keypoints have no NaN;
+  low confidence is a separate array (head below 0.6 on 43 % of samples). The
+  authors' processed positions (`processed_position/<keypoint>`, cm) drop the
+  repeats and set low-confidence samples to NaN (head 38 %, nose 45 %, body
+  32 %), but `processed_position/tail_end`, labelled centimeters, spans
+  13-522 by 179-908, the pixel range: it was not converted. Chosen as
+  positions (hazard `unconverted_keypoint`), it builds a 1,062-bin
+  environment 730 "cm" wide instead of 245 bins and 125 cm, and 27 movement
+  segments instead of 10, with no warning. With default arguments
+  `read_position` refuses the six processed series ("Found 6 Position series
+  candidates"), as for G-012.
+- Harness workaround: `datasets/load_dyads_001845.py` reads
+  `processed_position/head` (the keypoint the authors' well visits use) with
+  `read_position(position_name=...)` and keeps its NaN
+- Proposed change: none for neurospatial
+- Status: open
+
+## G-057: `read_units` refuses a units table whose ids repeat across probes
+
+- Datasets: kanter_2025
+- Operation / step: loader, io.nwb_readers (`read_units`)
+- Kind: missing-feature
+- Evidence: the Kanter file's `units` table has 380 rows but 235 distinct ids:
+  each probe (LEC, CA1) numbers its clusters from 0, and the electrode group
+  tells them apart. `read_units` refuses: "The units table repeats id(s) [0,
+  1, 2, ...]". The refusal is right (ids must identify units), but no argument
+  reads the table with a unit key built from another column, and the message
+  does not say how to proceed. A user who keys spike trains by the table id
+  instead (hazard `units_merged_by_id`) merges 145 pairs of units from two
+  brain areas into 235 trains (median peak rate 4.61 -> 7.76 Hz, median mean
+  vector length 0.106 -> 0.092), and nothing can warn: merged trains look
+  like ordinary units. The file's head direction and position read fine
+  (`read_position(columns=[0, 1])`; the default read returns a third, height
+  column).
+- Harness workaround: `datasets/load_kanter_2025.py` reads the table with
+  pynwb and names units `<area>-<id>`
+- Proposed change: name the electrode-group (or another column) route in the
+  refusal, or accept a key such as `unit_key=("electrode_group", "id")`
+- Status: open
+
+## G-058: `units="pixel"` is warned about; only "pixels" and "px" are registered
+
+- Datasets: neurolab_001754, senzai_000003
+- Operation / step: env.from_samples, io.nwb_roundtrip
+- Kind: false-alarm
+- Evidence: `Environment.from_samples(..., units="pixel")` warns
+  "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm',
+  'pixels', 'px']. Free-form strings are allowed but may not be interpreted
+  by tools that consume `units`". The singular is the natural spelling (and
+  the survey harness's); `read_position` itself normalizes a file's
+  "pixels" to "px". In hazard probes this warning reappears whenever a probe
+  rebuilds the environment, and is counted as the probe's "new message".
+- Harness workaround: none (the harness keeps "pixel")
+- Proposed change: accept "pixel" as an alias of "px", as "meters" is of "m"
+- Status: open
+
+## G-059: Pre-registered expectations that were wrong in the NWB breadth batch
+
+- Datasets: aeryjones_000165, dyads_001845
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: 000165's "sampling rate 25-35 Hz" assumed one sample per video
+  frame; after averaging samples that share a timestamp the median interval
+  is 0.0518 s (19.3 Hz). Its "spikes cover tracking" was registered as a
+  consistency requirement and fails because the spike recording stops at
+  269.6 s of 1,504 s tracked (G-055). 001845's processed positions are at
+  28.6 Hz (median interval 0.035 s), not 29-31 Hz. Not wrong, but worth
+  knowing: 001695's track-length expectation (90-130 cm) was written after
+  the stored values (6.6-114) had been read during the file choice, so it
+  restates the metadata walk rather than predicting it; the other new
+  expectations cite their metadata sources in the same way.
+- Harness workaround: none (the expectations stay as registered)
+- Proposed change: none
+- Status: won't fix (the expectations, not the loaders, were wrong)
+
+## G-060: No replay score for events in an open arena or maze recorded in 2-D
+
+- Datasets: ca1ca3_001880 (and the linear tracks of gonzalez_001695 and valero_000568, logged under G-038)
+- Operation / step: replay.compare_methods
+- Kind: missing-feature
+- Evidence: all three files hold ripples and 2-D positions and no
+  linearized coordinate. `compare_replay_methods` refuses each: "needs a
+  position along a track, but this is a 2-D RegularGrid environment that is
+  not a linearized track ... Fix: use a 1-D ...". On the 001695 and 000568
+  linear tracks the refusal is right and is G-038's case (the files state no
+  track endpoints; 000568 states the track's length, 110 cm, but not where it
+  lies in the camera frame). On 001880's cheeseboard maze, an open 2-D
+  arena with 195 ripples on the maze, no 1-D track exists: the published
+  replay methods in neurospatial (`DAVIDSON_2009`, `GROSMARK_2016`) score
+  1-D sequences, and it has no 2-D replay score.
+- Harness workaround: none (cells are `err`)
+- Proposed change: undecided; a 2-D trajectory score is a new method and
+  needs a published reference before it is added
+- Status: open
+
+## G-061: The default rate map passes 7 GB for one unit on a 98,000-bin grid, after only a memory warning
+
+- Datasets: senzai_000003
+- Operation / step: env.from_samples, rates.spatial (hazard: the "meters" label trusted)
+- Kind: performance
+- Evidence: 000003's positions are pixels labelled metres (G-062). A user who
+  trusts the label and converts to cm (x 100) with a 4 cm bin gets
+  `Environment.from_samples` warning "Creating large grid with shape (4181,
+  2494) (10,427,414 bins). Estimated memory usage: 11097.9 MB" (0.7 s, peak
+  0.9 GB, 97,993 active bins). `compute_spatial_rates` with
+  `method="binned"` then takes 1.0 s and 1.1 GB for one unit, but the default
+  `diffusion_kde` passed 7.4 GB within 25 s for one unit and was stopped; in
+  the driver the same probe drove the machine into 10.7 GB of swap and was
+  killed after 22 min. The environment's memory warning is the only signal,
+  and its estimate (11 GB for the grid) does not describe what the rate map
+  then allocates.
+- Harness workaround: the probe is removed from `load_senzai_000003.py`;
+  the numbers above are from running its steps by hand
+- Proposed change: estimate the diffusion operator's memory from the active
+  bin count and refuse (or fall back with a warning) above a limit, naming
+  `method="binned"` or a larger `bin_size`
+- Status: open
+
+## G-062: 000003's positions are pixels labelled metres, outside a Position container
+
+- Datasets: senzai_000003
+- Operation / step: loader, io.nwb_readers
+- Kind: data-quirk
+- Evidence: `acquisition/position_sensor0` and `position_sensor1` are bare
+  `SpatialSeries` (not in a `Position` container), labelled
+  `unit="meters"`, reference frame "unknown", at 39.0625 Hz over the whole
+  17,050 s recording. Their values run 117-499 (spans about 160 by 110): an
+  arena 160 m wide if they were metres, so they are video pixels, and no
+  calibration is given. The two sensors sit about 14 px apart, but the
+  direction from one to the other does not follow movement (spread 66-83
+  degrees), so no head direction is derived. The file has no epochs table
+  for its "open exploration and theta maze"; only sleep states label the
+  awake periods. `read_position` finds neither series (G-032).
+- Harness workaround: the loader reads sensor 0 with pynwb and keeps pixels
+- Proposed change: none for neurospatial beyond G-032
+- Status: open
+
+## G-070: Zhang 2022's deposit holds cell summaries, not tracking
+
+- Datasets: zhang_2022_ebc (dropped)
+- Operation / step: dataset selection
+- Kind: data-quirk
+- Evidence: Figshare 21647423 (`Zhang et al Figshare data.zip`, 197 MB) holds
+  MATLAB code and three MATLAB `table` files, `All_BDcells.mat` (370 rows,
+  48 cells, 14 rats), `All_HDcells.mat` (`mdata_2box` 189 rows,
+  `mdata_4box` 587 rows) and `All_TDcells.mat`, read with `mat-io`. Each
+  row has one cell's spike times and spike indices into a tracking stream,
+  and the authors' rate maps, egocentric maps and scores; no column holds
+  per-sample positions or head directions (checked on `All_BDcells` and
+  `All_HDcells`; the paper's data statement says "Summarized datasets").
+  Without the tracking, no occupancy or egocentric map can be computed, so
+  the dataset is dropped. The egocentric operation therefore has no
+  dataset whose authors classified egocentric boundary cells to compare with.
+- Harness workaround: none (not loaded)
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-071: Pre-registered expectations that were wrong in the archive batch
+
+- Datasets: takigawa_7114733, j16_23020757
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: the Takigawa extent check took the two 2 m tracks as one span
+  (180–240 cm), but the tracks lie side by side in the camera frame and
+  together span 249 cm in y (each track's own principal-axis extent is 186
+  and 194 cm, G-076). J16's `headings_span_the_circle` assumed the
+  file's `head_orientation` would be used as head direction; the loader
+  leaves it out (G-072), so the check has nothing to measure.
+- Harness workaround: none (the expectations stay as registered)
+- Proposed change: none
+- Status: won't fix (the expectations, not the loaders, were wrong)
+
+## G-072: J16's head orientation sits 13° off the direction of movement
+
+- Datasets: j16_23020757
+- Operation / step: loader (frame check), hd.tuning, rates.egocentric_boundary
+- Kind: data-quirk
+- Evidence: `head_orientation` (radians, [−π, π], 36 of 36 direction bins
+  covered) minus the direction of movement above 10 cm/s has a circular
+  mean of +13.1° and a median spread of 20.4°; the offset has the same sign
+  on all nine corridors (+3.9° to +20.5°) and is the same against the
+  file's own `head_velocity` (+13.4°). The frame check refuses a mean
+  beyond 0.2 rad (11.5°), so the loader leaves `headings` empty and keeps
+  the series in `params["head_orientation"]`. A 13° rotation is not a frame
+  error (those are 90°, 180° or a mirror); it is either the headstage
+  mounting or the rat's head posture, and the file cannot tell which. 21 of
+  the 203 units have no spikes in this epoch.
+- Harness workaround: none (headings not used)
+- Proposed change: none for neurospatial. For the harness: decide whether
+  the frame check should separate a frame error (|mean| near π/2 or π)
+  from a small constant offset.
+- Status: open (question for the maintainer)
+
+## G-073: Agarwal's `headDirDeg` is not a head direction
+
+- Datasets: agarwal_24757638
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: in session rec02, 78 % of tracked samples of `headDirDeg` are
+  exactly 0 and the rest sit on 45° steps (106 distinct values in 4.7
+  million samples); heading minus direction of movement above 10 cm/s has
+  a median spread of 89.4°, what an unrelated angle gives. Untracked
+  samples are stored as `xMM = yMM = 0` (0.20 %). The record documents
+  neither.
+- Harness workaround: the loader leaves `headings` empty and sets
+  `xPix = yPix = 0` samples to NaN
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-074: The Grieves lattice files leave units and frames undocumented
+
+- Datasets: grieves_2020_lattice
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: `lattice_3d.pox/poy/poz` have no stated unit; the speed of the
+  stored positions is 10.03 × the stored velocity `pov` (median), and
+  `pov`'s median of 11.7 is a climbing rat's speed in cm/s, so positions
+  are mm. The head direction `lattice.poh` is the azimuth in the overhead
+  camera's 2-D frame: against `lattice.pox/poy` heading minus movement has
+  mean −0.8° and spread 42°, against the 3-D frame's x, y the mean is
+  −113°. Each tetrode's cluster 0 field holds only `spike_times`
+  (0.68–1.5 million spikes, 5.7 million in all), the unsorted remainder.
+  The zip uses Deflate64, which Python's `zipfile` cannot inflate.
+- Harness workaround: the loader divides by 10 with the speed-ratio check,
+  leaves out headings and cluster 0, and `_fetch` inflates Deflate64 with
+  `inflate64` and checks the CRC-32
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-075: Shipley's position header says 30 Hz; the camera ran at 30.05 Hz
+
+- Datasets: shipley_30902972
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: `trialData.pos` concatenates 12 trials' tracking (146,101
+  samples) and states `sample_rate 30.0 hz`; sample index / 30 Hz ends
+  4870.0 s, 8 s after the last spike (4862.1 s). The file maps each curated
+  spike to its position sample (`tetrode(k).pos_sample`); a line per trial
+  through those pairs gives 30.047–30.064 Hz and trial offsets within
+  0.4 s, worst residual 41 ms. `pos.dir` equals `dir_disp`: with one LED it
+  is the direction of displacement, not head direction. The Kilosort
+  `spike_times.npy` / 30 kHz for the 71 `good` clusters equals the 1,201,058
+  curated tetrode timestamps exactly.
+- Harness workaround: the loader times the position samples with the
+  per-trial fit
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-076: Takigawa's two tracks have different pixel calibrations; two sessions are duplicates
+
+- Datasets: takigawa_7114733
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: in RAT5_SESS1 each track's `cm_per_pixel` (from its 2 m length)
+  is 0.388 and 0.443; the session's `cm_per_pixel` 0.426 is their average,
+  and with it track 1 reads about 10 % long and track 2 about 4 % short.
+  With each track's own factor, the tracks' extents along their principal
+  axes are 186.3 and 194.2 cm (the tracks are not straight, so less than the
+  2 m path), and the two stay at least 32 cm apart, so no 4 cm bin holds
+  both. In the record, `RAT1_SESS2_*` and `RAT4_SESS1_*` are byte-identical
+  (same MD5 for both the clusters and the position files), so one of those
+  two sessions is not what its name says.
+- Harness workaround: the loader converts each track with its own factor and
+  range-checks each track's principal-axis extent (170–205 cm); a first
+  version used the session average
+- Proposed change: none
+- Status: fixed in the loader (scale); won't fix (the duplicate sessions are
+  the record's)
+
+## G-077: The water-maze file gives no length unit
+
+- Datasets: watermaze_10248158
+- Operation / step: loader, behavior.segment_by_velocity
+- Kind: data-quirk
+- Evidence: EthoVision's raw coordinates and the arena description (pool
+  circle radius 95, platform radius 10) carry no unit or pixels-per-cm
+  calibration, in the file, the Figshare record or the Rtrack export. The
+  loader keeps `position_units="arbitrary"`, so no speed threshold can be
+  stated and `behavior.segment_by_velocity` is n/a. Each trial's clock
+  starts at 0 and the file holds no time between trials.
+- Harness workaround: trials laid 200 s apart on one clock, with a NaN
+  sample marking each trial's end
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-078: The harness's decoding chance level used straight-line distance against a geodesic error
+
+- Datasets: all with `decode.position`
+- Operation / step: decode.position
+- Kind: docs
+- Evidence: `DecodingResult.error_against` measures along the bin graph by
+  default (`metric="geodesic"`, documented); the harness computed its
+  chance level with `np.linalg.norm`. On open fields the two differ by at
+  most about 8 %, but on mazes they do not: on the Olafsdottir Z-track the
+  median error is 115 cm (geodesic) against a Euclidean chance of 112 cm,
+  which read as chance; the geodesic chance is 142 cm. The harness now
+  computes chance with `decoding_error(..., metric="geodesic")`, shuffling
+  the true positions within each connected part of the bin graph: a global
+  shuffle on Takigawa's two separate tracks puts 51 % of pairs an infinite
+  path apart (median inf); within each track the chance is 68.3 cm, and the
+  share of cross-part pairs is reported as `chance_frac_disconnected`.
+  Every geodesic chance differs from the old straight-line one when a
+  recording is rerun, open fields included (quantized to bin centres, and
+  8-connected paths up to about 8 % longer than the straight line). A user
+  writing the same baseline by hand would make the same mistakes: nothing in
+  the result says which metric its error used.
+- Harness workaround: none (fixed in the harness; tested on a U-shaped track
+  and on two separate boxes)
+- Proposed change: show the metric next to the error in the decoding
+  tutorial, and give a chance-level helper that uses the same metric
+- Status: open
+
+## G-079: The large-grid warning suggests a smaller bin than the one in use
+
+- Datasets: grieves_2020_lattice (hazard probed once by hand, not by the driver)
+- Operation / step: env.from_samples, rates.spatial
+- Kind: error-message
+- Evidence: with Grieves' mm positions taken as cm (×10) and `bin_size=4.0`,
+  `Environment.from_samples` warns "Creating large grid with shape (388,
+  429, 371) (61,753,692 bins). Estimated memory usage: 83863.5 MB … Fix:
+  increase bin_size; … For example, use bin_size=2.0". The example is a
+  fixed string (`src/neurospatial/layout/helpers/utils.py:412`), here half
+  the bin size in use. These numbers come from a one-off manual run, not
+  from a committed script: the environment built in 1.3 s (109,862 visited
+  bins, 4.4 GB peak), and in a first driver run, before the hazard was taken
+  out of `HAZARDS`, `compute_spatial_rates` on it ran for over an hour at
+  18 GB before the run was stopped. The
+  warning is the only signal of the unit error, which makes it the right
+  place to name the likely cause.
+- Harness workaround: the hazard is documented in the loader and left out
+  of the driver's probes
+- Proposed change: compute the example from the current `bin_size` and the
+  grid shape (e.g. the bin size that keeps the grid under the threshold),
+  and say that a grid this large often means positions in a smaller unit
+  than stated
+- Status: open
+
+## G-080: Pixels taken for cm (a 2–4× scale error) are silent
+
+- Datasets: olafsdottir_5566548, shipley_30902972, takigawa_7114733 (hazard `pixels_labelled_cm`)
+- Operation / step: env.from_samples, env.occupancy, rates.spatial, behavior.segment_by_velocity
+- Kind: silent-hazard
+- Evidence: each loader converts pixels with a calibration the source
+  states (390 and 274 pixels per metre; 0.388 and 0.443 cm per pixel on
+  Takigawa's two tracks). With the pixels kept and called cm, nothing warns
+  on any of the three: the Z-track's environment grows from 556 to 4281
+  bins (extent 172 → 664 "cm"), the radial maze from 697 to 3488
+  (177 → 480), the two 2 m tracks from 952 to 3997 (252 → 592); speeds
+  2.3–3.9 × too high pass the speed gates (running occupancy 1266 → 1702 s,
+  1350 → 1737 s, 1093 → 1510 s) and median peak rates rise 2–8 × from sparse
+  bins (3.8 → 30.2 Hz, 16.7 → 60.1 Hz, 11.3 → 25.3 Hz). The fewer-than-5-bins check (decision 1) cannot see a
+  scale error in this direction; only a stated apparatus size can.
+- Harness workaround: none (each loader range-checks its span against the
+  apparatus with `checked_span`)
+- Proposed change: none on raw arrays. Where an environment is built from an
+  arena outline (`from_polygon`, or an `arena=` with a stated size), samples
+  far outside it could warn.
+- Status: open
+
+## G-081: A position clock a fraction of a percent slow shifts spikes against positions silently
+
+- Datasets: shipley_30902972 (hazard `clock_from_header_rate`)
+- Operation / step: env.occupancy, rates.spatial, behavior.segment_by_velocity
+- Kind: silent-hazard
+- Evidence: timing Shipley's positions as index / 30 Hz, the header's
+  nominal rate, instead of the camera's measured 30.05 Hz puts positions up
+  to 8 s late by the session's end. Occupancy barely changes (1349.5 s
+  both ways) but the median peak rate falls from 16.7 to 10.7 Hz, and no
+  warning fires: the spikes all still fall inside the (slightly longer)
+  tracking span. On Vollan (G-040) closing gaps shortened the span and the
+  drop warning caught it; a drift that lengthens the span is invisible to
+  that check.
+- Harness workaround: the loader times samples from the file's
+  spike-to-sample map (G-075)
+- Proposed change: none in neurospatial (no value check can see a slow
+  clock); a loader-side check, as here, is the only defence
+- Status: open
+
+## G-082: No egocentric boundary cell test, and no speed gate on boundary maps
+
+- Datasets: gardner_2022_grid, vollan_of, vollan_lt, giocomo_001701 (the
+  operation run on the earlier recordings with head direction)
+- Operation / step: rates.egocentric_boundary
+- Kind: missing-feature
+- Evidence: `compute_boundary_vector_rates(..., direction_frame="egocentric",
+  boundary_source="analysis")` runs on every recording with head direction
+  (an environment from samples declares no walls, so the edge of the
+  visited bins stands for them; the default `"physical"` raises as for
+  border scores, G-005). The share of units whose peak lies in the outermost
+  ring (45–50 cm), where the docstring says untuned cells peak by chance
+  (16–31 % of untuned simulated cells), is 10 % of 483 units in Gardner's
+  1.5 m box, 48 % of 644 in Vollan's open field, 33 % of 320 on 001701's
+  X maze and 44 % of 389 on Vollan's linear track (where "walls" are the
+  track's edges). Median distance information is 0.02–0.05 bits. There is no
+  public verdict for boundary-vector or egocentric boundary cells (no
+  `is_*` predicate; there are ones for place, head-direction, object-vector,
+  egocentric object-vector and spatial-view cells),
+  so these maps cannot be screened. `compute_boundary_vector_rates` also has
+  no `min_speed=`, unlike `compute_spatial_rates`; the operation runs on all
+  samples. No new recording in this batch has usable head direction (G-072,
+  G-073, G-074; one LED on the others), and Zhang 2022's authors'
+  classification could not be compared (G-070).
+- Harness workaround: none (the operation runs with `boundary_source="analysis"`)
+- Proposed change: a shuffle verdict for boundary-vector and egocentric
+  boundary maps with the same `criterion=` contract as the other
+  predicates; `min_speed=` on the boundary-vector entry points
 - Status: open
 
 ## G-090: The same session in CRCNS hc-11 and DANDI 000044 differs only in its sleep scoring
@@ -948,7 +1586,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (the harness's position unit is "pixel")
 - Proposed change: one unit table; the registry check accepts every alias
   that `_units` resolves
-- Status: open
+- Status: duplicate of G-058 (same warning, found independently on the CRCNS pixel recordings)
 
 ## G-096: A missing-sample marker other than NaN or 0 passes silently
 
