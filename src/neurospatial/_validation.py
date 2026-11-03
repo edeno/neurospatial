@@ -974,15 +974,14 @@ def _refuse_wrong_kind(
         - ``"spike_counts"``: a ``(n_time_bins, n_neurons)`` count matrix. A
           list or tuple of spike trains is refused with the binning call:
           rows of different lengths, or rows of one length that each
-          strictly increase and either hold a value that is not a
-          non-negative whole number (times in seconds) or, over two or more
-          rows, are at least 3 long (whole-number sample indices; counts of 3
-          or more neurons rising in every time bin are implausible). So is
-          the ``(counts,
-          bin_edges)`` tuple ``bin_spikes_in_time`` returns. Other rows of
-          one length holding non-negative whole numbers are a count matrix,
-          including rising rows shorter than 3 (``[[0, 1], [1, 3], [0, 2]]``
-          is 2 neurons' counts); an ndarray is always read as counts.
+          strictly increase and hold a value that is not a non-negative
+          whole number (times in seconds). So is the ``(counts,
+          bin_edges)`` tuple ``bin_spikes_in_time`` returns. Rows of one
+          length holding non-negative whole numbers are a count matrix, also
+          when every row rises: units ordered by rate often rise in every
+          time bin. An ndarray is always read as counts. Limitation: spike
+          trains given as whole-number sample indices, all of one length,
+          are read as counts too.
         - ``"spike_times"``: spike times of several units. A 2-D array of
           non-negative whole numbers, some above 1, with a value repeated in
           a row is a count matrix, not spike times (one unit cannot fire
@@ -1063,21 +1062,19 @@ def _refuse_wrong_kind(
             ]
             ragged = len({row.size for row in rows}) > 1
             # Spike trains are ragged; a count matrix is rectangular and holds
-            # non-negative whole numbers. Equal-length rows that each strictly
-            # increase are trains when they are fractional (times in seconds)
-            # or, over two or more time bins, at least 3 long: 3 or more
-            # neurons' counts rising in every time bin is implausible, but
-            # whole-number sample indices do. One whole row is one time bin of
-            # counts, which may rise by chance. Shorter whole rows that rise
-            # are counts (2 neurons rise by chance, 1 neuron vacuously), and
-            # fractional counts out of order get the fractional-count refusal.
+            # non-negative whole numbers, even when every row increases: units
+            # ordered by rate (1, 20 and 80 Hz in 100 ms bins) rise in a bin
+            # with P ~ 0.8, and in all of 4 bins with P ~ 0.42. Equal-length
+            # trains in time order with fractional times (seconds) are still
+            # trains. Equal-length trains of whole-number sample indices
+            # cannot be told from counts and are read as counts. Fractional
+            # counts out of order get the fractional-count refusal.
             whole = all(
                 np.all(np.isfinite(row) & (row >= 0) & (row == np.round(row)))
                 for row in rows
             )
             increasing = all(np.all(np.diff(row) > 0) for row in rows)
-            long_rows = rows[0].size >= 3 and len(rows) >= 2
-            if ragged or (increasing and (long_rows or not whole)):
+            if ragged or (increasing and not whole):
                 raise TypeError(
                     _format_error(
                         f"{caller}() takes a spike count matrix of shape "
@@ -1087,8 +1084,7 @@ def _refuse_wrong_kind(
                         "neuron in each time bin with the rate maps.",
                         fix="bin them first with bin_spikes_in_time(spike_times, "
                         "dt=...), which returns (counts, bin_edges), and pass "
-                        "the counts. If these rows are already counts, pass "
-                        f"np.asarray({name}).",
+                        "the counts.",
                     )
                 )
     elif expected == "spike_times" and isinstance(value, np.ndarray):

@@ -79,11 +79,12 @@
   are properties. The contract test now covers every `ResultMixin` class.
   `GoalDirectedMetrics(..., interval_ids=...)` accepts the default scalar
   `arrival_tested`.
-- A count matrix passed as a list of rows, such as `[[0, 1], [1, 3]]`, is
-  read as counts; it was refused as spike trains when its rows increased.
-  Equal-length rows of three or more whole numbers that rise in every row,
-  over two or more rows, are still read as spike trains (sample indices),
-  and the refusal says to pass `np.asarray(...)` for counts.
+- A count matrix passed as a list of rows, such as `[[0, 2, 9], [0, 1, 7]]`,
+  is read as counts; it was refused as spike trains when its rows increased,
+  as the counts of units ordered by rate often do. Rows of one length are
+  read as spike trains only when they are fractional (times in seconds) and
+  each rises; ragged rows are always trains. Spike trains of one length
+  given as whole-number sample indices are read as counts.
 - The boolean-masking warning catches fragmented masks (kept runs of a few
   frames between long removed runs), which inflated occupancy several-fold
   with no warning. It reads regular sampling as steps that cluster at whole

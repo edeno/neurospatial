@@ -294,19 +294,30 @@ def test_equal_length_spike_trains_are_still_refused_as_counts(session, rates):
         decode_position(session.env, one_spike_each, rates, dt=0.1)
 
 
-def test_equal_length_whole_number_trains_are_refused_as_counts(session, rates):
-    """Spike trains as sample indices: whole numbers, one length, all rising.
+def test_rate_ordered_counts_that_rise_in_every_bin_decode(session, rates):
+    """Counts of units ordered by rate rise in every time bin, and decode.
 
-    Three or more neurons whose counts rise in every time bin are implausible
-    (one time in six per bin for three neurons), so these rows are trains.
+    Three units at 1, 20 and 80 Hz in 100 ms bins have Poisson means 0.1, 2
+    and 8, so their counts rise in a bin with probability about 0.80, and in
+    all 4 bins here with probability about 0.42.
+    """
+    nested = [[0, 2, 9], [0, 1, 7], [1, 3, 8], [0, 2, 6]]
+    from_list = decode_position(session.env, nested, rates, dt=0.1)
+    from_array = decode_position(session.env, np.array(nested), rates, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
+
+
+def test_equal_length_sample_index_trains_read_as_counts(session, rates):
+    """Documented limitation: trains as whole-number sample indices.
+
+    Rows of one length holding non-negative whole numbers are a count
+    matrix even when each rises, so spike trains given as sample indices,
+    all of one length, cannot be told from counts and decode as counts.
     """
     sample_indices = [[100, 250, 400], [120, 300, 500], [10, 20, 30]]
-    with pytest.raises(TypeError, match="got 3 spike trains") as error:
-        decode_position(session.env, sample_indices, rates, dt=0.1)
-    # A count matrix that does rise in every bin decodes as an ndarray.
-    assert "np.asarray" in str(error.value)
-    decoded = decode_position(session.env, np.array(sample_indices), rates, dt=0.1)
-    assert decoded.posterior.shape == (3, session.env.n_bins)
+    from_list = decode_position(session.env, sample_indices, rates, dt=0.1)
+    from_array = decode_position(session.env, np.array(sample_indices), rates, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
 
 
 def test_list_of_pynapple_trains_passed_as_counts(session, rates):
