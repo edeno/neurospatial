@@ -159,6 +159,7 @@ class CheeseboardDims(MazeDims):
 
 def make_cheeseboard_maze(
     dims: CheeseboardDims | None = None,
+    *,
     bin_size: float = 2.0,
 ) -> MazeEnvironments:
     """Create a Cheeseboard Maze environment.

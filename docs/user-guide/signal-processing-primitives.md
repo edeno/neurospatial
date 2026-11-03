@@ -8,7 +8,7 @@ Use graph operations to describe a spatial field's neighborhood or build a custo
 | `neighbor_reduce(env, field, op="mean")` | Aggregate immediate graph neighbors | One graph step |
 | `graph_convolve(env, field, kernel, normalize=True)` | Apply custom distance weights | Graph shortest-path distances |
 
-Import the last two functions from `neurospatial.ops.graph`. Graph connectivity represents permitted movement; an unvisited bin inferred from tracking is not evidence of a physical wall. Define known geometry before interpreting a boundary-aware filter.
+Import the last two functions from `neurospatial.ops`. Graph connectivity represents permitted movement; an unvisited bin inferred from tracking is not evidence of a physical wall. Define known geometry before interpreting a boundary-aware filter.
 
 ## A working field with observation support
 
@@ -19,7 +19,7 @@ This small synthetic recording is sufficient to run the recipes below in order. 
 import numpy as np
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.graph import neighbor_reduce
+from neurospatial.ops import neighbor_reduce
 from neurospatial.simulation import generate_poisson_spikes
 
 edges = np.arange(0.0, 100.0 + 10.0, 10.0)
@@ -56,7 +56,7 @@ The following analytic field has no missing observations, so every graph neighbo
 <!-- docs-test: run -->
 ```python
 import numpy as np
-from neurospatial.ops.graph import neighbor_reduce
+from neurospatial.ops import neighbor_reduce
 
 field = np.sin(env.bin_centers[:, 0] / 10.0)
 local_mean = neighbor_reduce(env, field, op="mean")
@@ -71,7 +71,7 @@ Only `sum` and `mean` accept per-source-bin `weights`. To average observed rates
 ```python
 import numpy as np
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.graph import neighbor_reduce
+from neurospatial.ops import neighbor_reduce
 
 result = compute_spatial_rate(
     env, spike_times, times, positions, bandwidth=5.0, min_occupancy=0.1
@@ -93,7 +93,7 @@ Correlate each observed bin's rate with its observed-neighbor average. Restrict 
 ```python
 import numpy as np
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.graph import neighbor_reduce
+from neurospatial.ops import neighbor_reduce
 
 result = compute_spatial_rate(
     env, spike_times, times, positions, bandwidth=5.0, min_occupancy=0.1
@@ -125,7 +125,7 @@ For positive kernels, `normalize=True` divides each destination's weights by the
 <!-- docs-test: run -->
 ```python
 import numpy as np
-from neurospatial.ops.graph import graph_convolve
+from neurospatial.ops import graph_convolve
 
 field = np.sin(env.bin_centers[:, 0] / 10.0)
 field[0] = np.nan
@@ -148,7 +148,7 @@ Subtract a broad local average from a narrow average. Normalize the two averages
 ```python
 import numpy as np
 from neurospatial.encoding import compute_spatial_rate
-from neurospatial.ops.graph import graph_convolve
+from neurospatial.ops import graph_convolve
 
 result = compute_spatial_rate(
     env, spike_times, times, positions, bandwidth=5.0, min_occupancy=0.1
@@ -180,8 +180,8 @@ Use `normalize=False` only when your supplied weights already have the intended 
 <!-- docs-test: run -->
 ```python
 import numpy as np
-from neurospatial.ops.distance import geodesic_distance_matrix
-from neurospatial.ops.graph import graph_convolve
+from neurospatial.ops import geodesic_distance_matrix
+from neurospatial.ops import graph_convolve
 
 distances = geodesic_distance_matrix(env.connectivity, weight="distance")
 kernel_matrix = np.exp(-(distances**2) / (2 * 5.0**2))

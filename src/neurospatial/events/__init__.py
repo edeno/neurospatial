@@ -127,3 +127,8 @@ __all__ = [
     "plot_peri_event_histogram",
     "plot_peri_event_response",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

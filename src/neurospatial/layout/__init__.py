@@ -57,3 +57,8 @@ __all__ = [
     "get_n_bins",
     "list_available_layouts",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

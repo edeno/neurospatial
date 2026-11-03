@@ -39,7 +39,7 @@ from neurospatial.layout.engines.masked_grid import MaskedGridLayout
 from neurospatial.ops.basis import heat_kernel_wavelet_basis
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.diffusion import _MRFEigenbasis
-from neurospatial.ops.smoothing import compute_diffusion_kernels
+from neurospatial.ops.smoothing import diffusion_kernels
 from neurospatial.ops.transforms import AffineND
 
 
@@ -680,10 +680,8 @@ def test_compute_diffusion_kernels_rejects_graphs_that_sum_edges(graph_type):
     nx.set_edge_attributes(graph, 1.0, "A")
     nx.set_edge_attributes(graph, 1.0, "distance")
     with pytest.raises(ValueError, match=r"undirected simple nx\.Graph.*nx\.Graph\("):
-        compute_diffusion_kernels(
-            graph, volumes=np.ones(4), bandwidth=1.0, mode="average"
-        )
-    kernel = compute_diffusion_kernels(
+        diffusion_kernels(graph, volumes=np.ones(4), bandwidth=1.0, mode="average")
+    kernel = diffusion_kernels(
         nx.Graph(graph), volumes=np.ones(4), bandwidth=1.0, mode="average"
     )
     np.testing.assert_allclose(kernel.sum(axis=1), 1.0)

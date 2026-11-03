@@ -286,6 +286,7 @@ def _platform(centroids: dict[int, np.ndarray], to_cm: list[float]) -> Polygon:
 
 def make_small_hex_maze(
     dims: SmallHexDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

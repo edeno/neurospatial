@@ -556,7 +556,7 @@ from shapely.geometry import box
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_boundary_vector_rate
-from neurospatial.ops import compute_boundary_distances
+from neurospatial.ops import boundary_distances
 from neurospatial.simulation import generate_poisson_spikes
 
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
@@ -566,7 +566,7 @@ positions = rng.uniform(2, 98, (len(times), 2))  # cm
 headings = rng.uniform(-np.pi, np.pi, len(times))  # radians, 0 = East
 
 # 18 direction bins of 20 degrees; one is centered straight to the left.
-distances, directions = compute_boundary_distances(
+distances, directions = boundary_distances(
     env, positions, headings, direction_frame="egocentric", n_directions=18
 )
 wall_left = distances[:, np.isclose(directions, np.pi / 2)][:, 0]  # cm
@@ -591,7 +591,7 @@ counts once per ray; `result.distance_information()` gives the information
 about wall distance along the preferred direction, where the distance bins do
 partition time. It is biased upward for few spikes, so compare it with a
 shuffled control before calling a cell boundary-tuned.
-`neurospatial.ops.compute_boundary_distances` gives the ray distances
+`neurospatial.ops.boundary_distances` gives the ray distances
 themselves, and `neurospatial.ops.nearest_boundary` the distance and
 direction to the closest wall at each sample.
 
@@ -789,7 +789,7 @@ unit a grid cell only when its autocorrelogram also has a hexagonal first ring
 the arena's side has no such ring and is not labeled grid. On layouts without a rectangular grid (hexagonal bins,
 tracks, meshes) there is no grid score: `summary_table()` records it in
 `attrs["unavailable_metrics"]`. `spatial_autocorrelation_radial` from
-`neurospatial.encoding.grid` gives a distance-correlation profile there, but a
+`neurospatial.encoding` gives a distance-correlation profile there, but a
 radial profile does not test for sixfold symmetry.
 
 ### Allocentric and egocentric object vectors
@@ -1028,6 +1028,30 @@ versions and numerical differences. This guide does not provide an executable
 cross-package benchmark. On rectangular boxes the border score is the
 per-wall calculation of Solstad et al. (2008); see the border score section for
 the remaining differences from BNT and opexebo.
+
+## Which place-cell function?
+
+Several functions answer questions that sound alike. They differ in what they
+return and in how much evidence they use. A verdict runs a circular-shift
+shuffle; a screen applies fixed cutoffs to a rate map; a detector only finds
+fields.
+
+| Question | Function | Returns | Kind |
+| --- | --- | --- | --- |
+| Where does the neuron fire? | `compute_spatial_rate(env, spike_times, times, positions)`; `compute_spatial_rates` for several neurons | `SpatialRateResult`, `SpatialRatesResult` | Rate map (unsupported bins are NaN) |
+| Where are its fields? | `detect_place_fields(env, rate_result)` | `PlaceFieldsResult` | Detector |
+| Does its rate map have a field? | `has_place_field(env, spike_times, times, positions)`, or `rate_result.has_place_field()` | `bool` | Detector, not a cell-type verdict |
+| Is this neuron a place cell? | `is_place_cell(env, spike_times, times, positions)` (shuffle by default; pass `rng=` to reproduce) | `bool` | Verdict |
+| Which neurons in my population are place cells? | `place_cell_significance(env, spike_times, times, positions)` | `PlaceCellSignificanceResult` with a p-value per unit | Verdict |
+| A fast first look at a rate map I already have | `rate_result.is_place_cell()`, `rates.classify()`, `count_place_cells(rates)` | `bool`, bool array, `int` | Screen (fixed cutoff, no shuffle) |
+| Is it a place, grid or border cell? | `spatial_cell_type_significance(env, spike_times, times, positions)` | `CellTypeSignificanceResult` | Verdict |
+| A fast label for every neuron | `rates.label_cell_types()` | array of strings | Screen |
+
+`is_place_cell(..., criterion="threshold")` is the same fast screen on raw
+arrays. The other cell types follow the same pattern: `is_head_direction_cell`,
+`is_object_vector_cell`, `is_egocentric_object_vector_cell` and
+`is_spatial_view_cell` are verdicts, and their result classes carry screens.
+Report a verdict, not a screen, as evidence that a neuron is a given cell type.
 
 ## Information bias and cell verdicts
 

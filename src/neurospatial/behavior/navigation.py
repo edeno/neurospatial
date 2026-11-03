@@ -2315,7 +2315,7 @@ def distance_to_boundary(
     distance_to_goal : Distance from each position to a goal
     neurospatial.events.time_to_nearest_event : Temporal distance to events
     neurospatial.ops.nearest_boundary : Exact distance and direction to walls
-    neurospatial.ops.compute_boundary_distances : Distance to walls along
+    neurospatial.ops.boundary_distances : Distance to walls along
         each direction
     """
     from neurospatial.ops.mapping import _require_region_mask

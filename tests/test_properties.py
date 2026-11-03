@@ -1667,7 +1667,7 @@ class TestBearingProperties:
     - Bearing left is +pi/2
     - Bearing always in [-pi, pi]
 
-    Note: compute_egocentric_bearing takes (positions, headings, targets)
+    Note: egocentric_bearing takes (positions, headings, targets)
     """
 
     @given(
@@ -1681,7 +1681,7 @@ class TestBearingProperties:
         self, x: float, y: float, heading: float, distance: float
     ) -> None:
         """Property: bearing to point directly ahead is 0."""
-        from neurospatial.ops.egocentric import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import egocentric_bearing
 
         position = np.array([[x, y]])
         headings = np.array([heading])
@@ -1691,8 +1691,8 @@ class TestBearingProperties:
             [[x + distance * np.cos(heading), y + distance * np.sin(heading)]]
         )
 
-        # API: compute_egocentric_bearing(positions, headings, targets)
-        bearing = compute_egocentric_bearing(position, headings, point_ahead)
+        # API: egocentric_bearing(positions, headings, targets)
+        bearing = egocentric_bearing(position, headings, point_ahead)
 
         np.testing.assert_allclose(
             bearing[0, 0],
@@ -1712,7 +1712,7 @@ class TestBearingProperties:
         self, x: float, y: float, heading: float, distance: float
     ) -> None:
         """Property: bearing to point directly left is +pi/2."""
-        from neurospatial.ops.egocentric import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import egocentric_bearing
 
         position = np.array([[x, y]])
         headings = np.array([heading])
@@ -1723,8 +1723,8 @@ class TestBearingProperties:
             [[x + distance * np.cos(left_heading), y + distance * np.sin(left_heading)]]
         )
 
-        # API: compute_egocentric_bearing(positions, headings, targets)
-        bearing = compute_egocentric_bearing(position, headings, point_left)
+        # API: egocentric_bearing(positions, headings, targets)
+        bearing = egocentric_bearing(position, headings, point_left)
 
         np.testing.assert_allclose(
             bearing[0, 0],
@@ -1744,7 +1744,7 @@ class TestBearingProperties:
         self, x: float, y: float, heading: float, seed: int
     ) -> None:
         """Property: bearing is always in [-pi, pi]."""
-        from neurospatial.ops.egocentric import compute_egocentric_bearing
+        from neurospatial.ops.egocentric import egocentric_bearing
 
         position = np.array([[x, y]])
         headings = np.array([heading])
@@ -1753,8 +1753,8 @@ class TestBearingProperties:
         rng = np.random.default_rng(seed)
         objects = rng.uniform(-100, 100, size=(10, 2))
 
-        # API: compute_egocentric_bearing(positions, headings, targets)
-        bearings = compute_egocentric_bearing(position, headings, objects)
+        # API: egocentric_bearing(positions, headings, targets)
+        bearings = egocentric_bearing(position, headings, objects)
 
         assert np.all(bearings >= -np.pi), "Found bearing < -pi"
         assert np.all(bearings <= np.pi), "Found bearing > pi"

@@ -1426,7 +1426,7 @@ class TestReplayShuffleCalibration:
     def _p_value(self, env, posterior, *, n_shuffles, seed):
         from neurospatial.replay.nulls import shuffle_posterior_circular
         from neurospatial.replay.trajectory import fit_linear_trajectory
-        from neurospatial.stats import compute_shuffle_pvalue
+        from neurospatial.stats import shuffle_pvalue
 
         times = np.arange(self.N_TIME_BINS) * self.DT
 
@@ -1439,7 +1439,7 @@ class TestReplayShuffleCalibration:
                 env, posterior, n_shuffles=n_shuffles, rng=seed
             )
         ]
-        return compute_shuffle_pvalue(score(posterior), np.array(null))
+        return shuffle_pvalue(score(posterior), np.array(null))
 
     def test_events_without_sequences_are_rarely_significant(self, track):
         stimulus_rng = np.random.default_rng(1)

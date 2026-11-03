@@ -450,7 +450,7 @@ class Landmarks(Mapping[str, Landmark]):
         Parameters
         ----------
         points : array-like, shape (n_points, n_dims)
-            Points such as gaze locations from ``compute_viewed_location``.
+            Points such as gaze locations from ``viewed_location``.
         name : str
             The landmark.
         tolerance : float

@@ -7,7 +7,7 @@ relative to the animal's heading (Hinman et al., 2019; Alexander et al.,
 2020). Both are measured from the walls themselves, not from the edge of the
 visited bins: an unvisited corner is not a wall.
 
-``compute_boundary_distances`` casts one ray per direction from each sample
+``boundary_distances`` casts one ray per direction from each sample
 and returns the distance to the first wall along it, the measurement behind
 boundary-vector and egocentric boundary rate maps. ``nearest_boundary`` gives
 the distance and allocentric direction to the closest wall point.
@@ -56,7 +56,7 @@ if TYPE_CHECKING:
     from neurospatial.geometry._boundaries import BoundarySource
     from neurospatial.ops._protocols import BinningConsumer
 
-__all__ = ["boundary_directions", "compute_boundary_distances", "nearest_boundary"]
+__all__ = ["boundary_directions", "boundary_distances", "nearest_boundary"]
 
 
 def boundary_directions(*, n_directions: int) -> NDArray[np.float64]:
@@ -88,7 +88,7 @@ def boundary_directions(*, n_directions: int) -> NDArray[np.float64]:
 
 
 @reads_pynapple_samples
-def compute_boundary_distances(
+def boundary_distances(
     env: BinningConsumer,
     positions: NDArray[np.float64],
     headings: NDArray[np.float64] | None = None,
@@ -149,7 +149,7 @@ def compute_boundary_distances(
     See Also
     --------
     nearest_boundary : Distance and direction to the closest wall point.
-    compute_viewed_location : First wall along the gaze direction.
+    viewed_location : First wall along the gaze direction.
     neurospatial.behavior.distance_to_boundary : Distance to the edge of the
         environment's bins, to obstacles or to a region's boundary.
     neurospatial.behavior.distance_to_goal : Distance from each position to a
@@ -162,10 +162,10 @@ def compute_boundary_distances(
     >>> import numpy as np
     >>> from shapely.geometry import box
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops import compute_boundary_distances
+    >>> from neurospatial.ops import boundary_distances
     >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
     >>> positions = np.array([[20.0, 50.0]])  # cm
-    >>> distances, directions = compute_boundary_distances(
+    >>> distances, directions = boundary_distances(
     ...     env, positions, direction_frame="allocentric", n_directions=4
     ... )
     >>> np.degrees(directions).round().tolist()
@@ -174,7 +174,7 @@ def compute_boundary_distances(
     [[28.3, 70.7, 70.7, 28.3]]
     """
     positions, headings = _check_samples(
-        positions, headings, direction_frame, call="compute_boundary_distances()"
+        positions, headings, direction_frame, call="boundary_distances()"
     )
     directions = boundary_directions(n_directions=n_directions)
     binning, arena = env.binning, env.arena
@@ -248,7 +248,7 @@ def nearest_boundary(
 
     See Also
     --------
-    compute_boundary_distances : Distance to the first wall along each ray.
+    boundary_distances : Distance to the first wall along each ray.
     neurospatial.behavior.distance_to_boundary : Distance to the edge of the
         environment's bins, to obstacles or to a region's boundary.
     neurospatial.behavior.distance_to_goal : Distance from each position to a

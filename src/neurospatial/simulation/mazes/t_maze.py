@@ -112,6 +112,7 @@ class TMazeDims(MazeDims):
 
 def make_t_maze(
     dims: TMazeDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

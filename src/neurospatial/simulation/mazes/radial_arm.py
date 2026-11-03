@@ -172,6 +172,7 @@ class RadialArmDims(MazeDims):
 
 def make_radial_arm_maze(
     dims: RadialArmDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

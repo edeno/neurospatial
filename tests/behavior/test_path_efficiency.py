@@ -119,14 +119,14 @@ class TestTraveledPathLength:
     def test_geodesic_excludes_interval_outside_environment(self):
         """A sample outside the environment drops its intervals, not the total."""
         from neurospatial.behavior.navigation import traveled_path_length
-        from neurospatial.behavior.trajectory import compute_step_lengths
+        from neurospatial.behavior.trajectory import step_lengths
 
         env = self._grid_env()
         positions = env.bin_centers[np.arange(6)].copy()
         positions[2] = [500.0, 500.0]
         times = np.arange(6) * 0.1
 
-        steps = compute_step_lengths(positions, metric="geodesic", env=env)
+        steps = step_lengths(positions, metric="geodesic", env=env)
         assert np.isnan(steps[1])
         assert np.isnan(steps[2])
         expected = steps[[0, 3, 4]].sum()
@@ -223,20 +223,20 @@ class TestTraveledPathLength:
     ):
         """Gap-free recording: identical to the plain sum of step lengths."""
         from neurospatial.behavior.navigation import traveled_path_length
-        from neurospatial.behavior.trajectory import compute_step_lengths
+        from neurospatial.behavior.trajectory import step_lengths
 
         rec = continuous_recording
 
         assert_allclose(
             traveled_path_length(rec.times, rec.positions),
-            np.sum(compute_step_lengths(rec.positions)),
+            np.sum(step_lengths(rec.positions)),
             rtol=1e-12,
         )
         assert_allclose(
             traveled_path_length(
                 rec.times, rec.positions, metric="geodesic", env=rec.env
             ),
-            np.sum(compute_step_lengths(rec.positions, metric="geodesic", env=rec.env)),
+            np.sum(step_lengths(rec.positions, metric="geodesic", env=rec.env)),
             rtol=1e-12,
         )
 
@@ -383,7 +383,7 @@ class TestPathEfficiencyObservedSupport:
             angular_efficiency,
             compute_path_efficiency,
         )
-        from neurospatial.behavior.trajectory import compute_step_lengths
+        from neurospatial.behavior.trajectory import step_lengths
 
         r = continuous_recording
         goal = r.positions[-1]
@@ -391,7 +391,7 @@ class TestPathEfficiencyObservedSupport:
             r.env, r.times, r.positions, goal=goal, metric=metric
         )
         assert result.traveled_length == float(
-            np.sum(compute_step_lengths(r.positions, metric=metric, env=r.env))
+            np.sum(step_lengths(r.positions, metric=metric, env=r.env))
         )
         assert result.efficiency == result.shortest_length / result.traveled_length
         assert result.angular_efficiency == angular_efficiency(

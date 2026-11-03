@@ -401,17 +401,17 @@ class TestViewshedResult:
 
 
 class TestComputeViewedLocation:
-    """Tests for compute_viewed_location function."""
+    """Tests for viewed_location function."""
 
     def test_fixed_distance_method(self):
         """Fixed distance method returns point at fixed distance in gaze direction."""
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         # Animal at origin, facing East
         positions = np.array([[0.0, 0.0], [0.0, 0.0]])
         headings = np.array([0.0, np.pi / 2])  # East, then North
 
-        viewed = compute_viewed_location(
+        viewed = viewed_location(
             positions,
             headings,
             method="fixed_distance",
@@ -427,7 +427,7 @@ class TestComputeViewedLocation:
     def test_ray_cast_method_with_boundary(self):
         """Ray cast method returns intersection with environment boundary."""
         from neurospatial import Environment
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         # Create square environment
         rng = np.random.default_rng(42)
@@ -438,7 +438,7 @@ class TestComputeViewedLocation:
         positions = np.array([[50.0, 50.0]])
         headings = np.array([0.0])  # East
 
-        viewed = compute_viewed_location(
+        viewed = viewed_location(
             positions, headings, method="ray_cast", env=env, boundary_source="analysis"
         )
 
@@ -449,14 +449,14 @@ class TestComputeViewedLocation:
 
     def test_gaze_offsets(self):
         """Gaze offsets adjust the viewing angle relative to heading."""
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         # Animal facing East with gaze offset of 90 degrees (looking left)
         positions = np.array([[0.0, 0.0]])
         headings = np.array([0.0])
         gaze_offsets = np.array([np.pi / 2])  # Looking 90 degrees left
 
-        viewed = compute_viewed_location(
+        viewed = viewed_location(
             positions,
             headings,
             method="fixed_distance",
@@ -471,7 +471,7 @@ class TestComputeViewedLocation:
     def test_nan_when_viewing_outside_environment(self):
         """Returns NaN when ray doesn't intersect environment."""
         from neurospatial import Environment
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         # Create L-shaped environment (missing upper-right quadrant)
         rng = np.random.default_rng(42)
@@ -486,7 +486,7 @@ class TestComputeViewedLocation:
         positions = np.array([[30.0, 30.0]])
         headings = np.array([np.pi / 4])  # North-East
 
-        viewed = compute_viewed_location(
+        viewed = viewed_location(
             positions,
             headings,
             method="ray_cast",
@@ -502,51 +502,51 @@ class TestComputeViewedLocation:
 
     def test_invalid_method_raises(self):
         """Invalid method raises ValueError."""
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         positions = np.array([[0.0, 0.0]])
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match="method"):
-            compute_viewed_location(
+            viewed_location(
                 positions, headings, method="invalid", boundary_source="analysis"
             )
 
     def test_ray_cast_without_env_raises(self):
         """ray_cast method without environment raises error."""
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         positions = np.array([[0.0, 0.0]])
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match="env"):
-            compute_viewed_location(
+            viewed_location(
                 positions, headings, method="ray_cast", boundary_source="analysis"
             )
 
     def test_fixed_distance_needs_an_explicit_view_distance(self):
         """No published distance applies to every species, task and arena."""
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         positions = np.array([[5.0, 5.0]])
         headings = np.array([0.0])
 
         with pytest.raises(ValueError, match="needs view_distance"):
-            compute_viewed_location(positions, headings, method="fixed_distance")
+            viewed_location(positions, headings, method="fixed_distance")
         with pytest.raises(ValueError, match="no meaning with method='ray_cast'"):
-            compute_viewed_location(
+            viewed_location(
                 positions, headings, env=_open_box(20.0, 5.0), view_distance=10.0
             )
         with pytest.raises(ValueError, match="positive finite"):
-            compute_viewed_location(
+            viewed_location(
                 positions, headings, method="fixed_distance", view_distance=0.0
             )
 
     def test_the_default_gaze_takes_the_first_wall(self):
         """With no method, the viewed point is the wall, as in compute_view_rate."""
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
-        viewed = compute_viewed_location(
+        viewed = viewed_location(
             np.array([[5.0, 5.0]]), np.array([0.0]), env=_open_box(20.0, 5.0)
         )
         assert_allclose(viewed, [[20.0, 5.0]], atol=1e-9)
@@ -554,13 +554,13 @@ class TestComputeViewedLocation:
     @pytest.mark.parametrize("boundary_source", ["physical", "analysis"])
     def test_ray_cast_reaches_a_distant_wall_by_default(self, boundary_source):
         """The default search reaches every wall, even in a 3 m arena."""
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         env = _open_box(300.0, 10.0)
         positions = np.array([[10.0, 150.0], [150.0, 10.0], [290.0, 290.0]])
         headings = np.array([0.0, np.pi / 2, -3 * np.pi / 4])
 
-        viewed = compute_viewed_location(
+        viewed = viewed_location(
             positions,
             headings,
             method="ray_cast",
@@ -585,10 +585,10 @@ class TestComputeViewedLocation:
         self, method, positions, headings, offsets, match
     ):
         """Misaligned inputs are refused instead of broadcast or truncated."""
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         with pytest.raises(ValueError, match=match):
-            compute_viewed_location(
+            viewed_location(
                 positions,
                 headings,
                 method=method,
@@ -627,7 +627,7 @@ def _bearings(env, position, heading):
 
 
 class TestComputeViewshed:
-    """Tests for compute_viewshed function."""
+    """Tests for viewshed function."""
 
     @pytest.mark.parametrize(
         ("size", "bin_size"), [(100.0, 2.0), (200.0, 2.0), (200.0, 1.0)]
@@ -635,17 +635,17 @@ class TestComputeViewshed:
     @pytest.mark.parametrize("where", [(0.5, 0.5), (0.025, 0.025), (0.373, 0.819)])
     def test_every_bin_of_an_open_box_is_visible(self, size, bin_size, where):
         """With no walls in the way, nothing is hidden, whatever the bin size."""
-        from neurospatial.ops.visibility import compute_viewshed
+        from neurospatial.ops.visibility import viewshed
 
         env = _open_box(size, bin_size)
         position = np.array(where) * size
-        result = compute_viewshed(env, position, heading=0.3)
+        result = viewshed(env, position, heading=0.3)
         assert result.n_visible_bins == env.n_bins
         assert result.visibility_fraction == 1.0
 
     @pytest.mark.parametrize("boundary_source", ["physical", "analysis"])
     def test_a_wall_hides_exactly_the_bins_behind_it(self, boundary_source):
-        from neurospatial.ops.visibility import compute_viewshed
+        from neurospatial.ops.visibility import viewshed
 
         env = _divided_room()
         observer = np.array([25.3, 50.7])
@@ -656,9 +656,7 @@ class TestComputeViewshed:
         crossing_y = observer[1] + t * (centers[:, 1] - observer[1])
         hidden = beyond & (crossing_y >= 20) & (crossing_y <= 80)
 
-        result = compute_viewshed(
-            env, observer, heading=0.0, boundary_source=boundary_source
-        )
+        result = viewshed(env, observer, heading=0.0, boundary_source=boundary_source)
 
         assert 0 < hidden.sum() < env.n_bins
         np.testing.assert_array_equal(result.visibility_map, (~hidden).astype(float))
@@ -666,13 +664,13 @@ class TestComputeViewshed:
 
     def test_left_only_field_of_view_sees_north_east_when_facing_east(self):
         """+angles are to the left: facing East, the left is North."""
-        from neurospatial.ops.visibility import FieldOfView, compute_viewshed
+        from neurospatial.ops.visibility import FieldOfView, viewshed
 
         env = _open_box(100.0, 2.0)
         observer = np.array([50.3, 50.7])
         fov = FieldOfView(left_angle=np.pi / 2, right_angle=0.1)
 
-        result = compute_viewshed(env, observer, heading=0.0, fov=fov)
+        result = viewshed(env, observer, heading=0.0, fov=fov)
 
         bearing = _bearings(env, observer, 0.0)
         expected = (bearing >= 0.1) & (bearing <= np.pi / 2)
@@ -684,12 +682,12 @@ class TestComputeViewshed:
 
     def test_facing_north_sees_north(self):
         """Heading pi/2 is North; a forward field of view sees only bins north."""
-        from neurospatial.ops.visibility import compute_viewshed
+        from neurospatial.ops.visibility import viewshed
 
         env = _open_box(100.0, 2.0)
         observer = np.array([50.3, 50.7])
 
-        result = compute_viewshed(env, observer, heading=np.pi / 2, fov=np.pi / 2)
+        result = viewshed(env, observer, heading=np.pi / 2, fov=np.pi / 2)
 
         offsets = env.bin_centers[result.visible_bins] - observer
         assert result.n_visible_bins > 0
@@ -697,31 +695,29 @@ class TestComputeViewshed:
         assert np.all(np.abs(offsets[:, 0]) <= offsets[:, 1])
 
     def test_float_fov_is_the_total_angle(self):
-        from neurospatial.ops.visibility import FieldOfView, compute_viewshed
+        from neurospatial.ops.visibility import FieldOfView, viewshed
 
         env = _open_box(100.0, 5.0)
         observer = np.array([50.3, 50.7])
-        as_float = compute_viewshed(env, observer, 0.4, fov=np.pi)
-        as_object = compute_viewshed(
-            env, observer, 0.4, fov=FieldOfView.symmetric(np.pi / 2)
-        )
+        as_float = viewshed(env, observer, 0.4, fov=np.pi)
+        as_object = viewshed(env, observer, 0.4, fov=FieldOfView.symmetric(np.pi / 2))
         np.testing.assert_array_equal(as_float.visible_bins, as_object.visible_bins)
         assert_allclose(as_float.visibility_fraction, 0.5, atol=0.05)
 
     @pytest.mark.parametrize("fov", [0.0, -1.0, 7.0, np.nan])
     def test_float_fov_outside_a_circle_raises(self, fov):
-        from neurospatial.ops.visibility import compute_viewshed
+        from neurospatial.ops.visibility import viewshed
 
         with pytest.raises(ValueError, match=r"total angle in \(0, 2\*pi\]"):
-            compute_viewshed(_open_box(20.0, 5.0), np.array([10.0, 10.0]), 0.0, fov=fov)
+            viewshed(_open_box(20.0, 5.0), np.array([10.0, 10.0]), 0.0, fov=fov)
 
     def test_cues_and_bins_share_one_visibility_test(self):
         """A cue on a bin center is visible exactly when that bin is."""
-        from neurospatial.ops.visibility import FieldOfView, compute_viewshed
+        from neurospatial.ops.visibility import FieldOfView, viewshed
 
         env = _divided_room()
         observer = np.array([25.3, 50.7])
-        result = compute_viewshed(
+        result = viewshed(
             env,
             observer,
             heading=0.4,
@@ -737,10 +733,10 @@ class TestComputeViewshed:
         )
 
     def test_observer_outside_sees_nothing(self):
-        from neurospatial.ops.visibility import compute_viewshed
+        from neurospatial.ops.visibility import viewshed
 
         env = _open_box(20.0, 5.0)
-        result = compute_viewshed(env, np.array([30.0, 10.0]), np.pi)
+        result = viewshed(env, np.array([30.0, 10.0]), np.pi)
         np.testing.assert_array_equal(result.visibility_map, np.zeros(env.n_bins))
         assert result.visibility_fraction == 0.0
 
@@ -752,34 +748,34 @@ class TestComputeViewshed:
         ],
     )
     def test_malformed_cues_raise(self, cues, match):
-        from neurospatial.ops.visibility import compute_viewshed
+        from neurospatial.ops.visibility import viewshed
 
         with pytest.raises(ValueError, match=match):
-            compute_viewshed(
+            viewshed(
                 _open_box(20.0, 5.0), np.array([10.0, 10.0]), 0.0, cue_positions=cues
             )
 
     def test_position_must_be_one_point(self):
-        from neurospatial.ops.visibility import compute_viewshed
+        from neurospatial.ops.visibility import viewshed
 
         with pytest.raises(ValueError, match=r"needs shape \(2,\)"):
-            compute_viewshed(_open_box(20.0, 5.0), np.array([[10.0, 10.0]]), 0.0)
+            viewshed(_open_box(20.0, 5.0), np.array([[10.0, 10.0]]), 0.0)
 
 
 class TestComputeViewField:
-    """Tests for compute_view_field function."""
+    """Tests for view_field function."""
 
     def test_mask_matches_the_viewshed(self):
         from neurospatial.ops.visibility import (
             FieldOfView,
-            compute_view_field,
-            compute_viewshed,
+            view_field,
+            viewshed,
         )
 
         env = _divided_room()
         observer = np.array([25.3, 50.7])
-        mask = compute_view_field(env, observer, 0.2, fov=FieldOfView.primate())
-        result = compute_viewshed(env, observer, 0.2, fov=FieldOfView.primate())
+        mask = view_field(env, observer, 0.2, fov=FieldOfView.primate())
+        result = viewshed(env, observer, 0.2, fov=FieldOfView.primate())
 
         assert mask.dtype == bool
         assert mask.shape == (env.n_bins,)
@@ -882,12 +878,12 @@ class TestVisibleCues:
 
 
 class TestComputeViewshedTrajectory:
-    """Tests for compute_viewshed_trajectory function."""
+    """Tests for viewshed_trajectory function."""
 
     def test_each_frame_is_that_frames_viewshed(self):
         from neurospatial.ops.visibility import (
-            compute_viewshed,
-            compute_viewshed_trajectory,
+            viewshed,
+            viewshed_trajectory,
         )
 
         env = _divided_room()
@@ -895,15 +891,13 @@ class TestComputeViewshedTrajectory:
         headings = np.array([0.0, np.pi / 2, np.pi, -2.0])
         cues = np.array([[60.0, 50.0], [10.0, 10.0]])
 
-        results = compute_viewshed_trajectory(
+        results = viewshed_trajectory(
             env, positions, headings, fov=np.pi, cue_positions=cues
         )
 
         assert len(results) == len(positions)
         for result, position, heading in zip(results, positions, headings, strict=True):
-            single = compute_viewshed(
-                env, position, heading, fov=np.pi, cue_positions=cues
-            )
+            single = viewshed(env, position, heading, fov=np.pi, cue_positions=cues)
             np.testing.assert_array_equal(result.visibility_map, single.visibility_map)
             np.testing.assert_array_equal(result.visible_cues, single.visible_cues)
             assert_allclose(result.cue_bearings, single.cue_bearings)
@@ -922,10 +916,10 @@ class TestComputeViewshedTrajectory:
     )
     def test_misaligned_samples_raise(self, positions, headings, match):
         """Extra headings are not silently dropped, nor missing ones an IndexError."""
-        from neurospatial.ops.visibility import compute_viewshed_trajectory
+        from neurospatial.ops.visibility import viewshed_trajectory
 
         with pytest.raises(ValueError, match=match):
-            compute_viewshed_trajectory(_open_box(20.0, 5.0), positions, headings)
+            viewshed_trajectory(_open_box(20.0, 5.0), positions, headings)
 
 
 class TestVisibilityOccupancy:
@@ -1137,13 +1131,13 @@ class TestVisibilityOccupancySupport:
     def test_invalid_viewshed_options_raise_without_usable_intervals(
         self, open_square, walk, options, error, match, data
     ):
-        """The errors match compute_viewshed's, even when no viewshed is needed."""
-        from neurospatial.ops.visibility import compute_viewshed, visibility_occupancy
+        """The errors match viewshed's, even when no viewshed is needed."""
+        from neurospatial.ops.visibility import viewshed, visibility_occupancy
 
         times, positions, headings = walk
         kwargs = {"boundary_source": "analysis", **options}
         with pytest.raises(error, match=match) as expected:
-            compute_viewshed(open_square, positions[0], headings[0], **kwargs)
+            viewshed(open_square, positions[0], headings[0], **kwargs)
 
         if data == "all_excluded":
             times, positions, headings = times * 100.0, positions, headings
@@ -1250,19 +1244,19 @@ class TestMissingObservations:
             )
 
     def test_view_field_refuses_a_missing_observation(self, open_field):
-        from neurospatial.ops.visibility import compute_view_field
+        from neurospatial.ops.visibility import view_field
 
-        with pytest.raises(ValueError, match="compute_view_field"):
-            compute_view_field(
+        with pytest.raises(ValueError, match="view_field"):
+            view_field(
                 open_field, np.array([np.nan, 10.0]), 0.0, boundary_source="analysis"
             )
 
     def test_trajectory_keeps_missing_frames_missing(self, open_field):
-        from neurospatial.ops.visibility import compute_viewshed_trajectory
+        from neurospatial.ops.visibility import viewshed_trajectory
 
         positions = np.array([[10.0, 10.0], [np.nan, 10.0], [10.0, 10.0]])
         headings = np.array([0.0, 0.0, np.nan])
-        observed, *missing = compute_viewshed_trajectory(
+        observed, *missing = viewshed_trajectory(
             open_field, positions, headings, boundary_source="analysis"
         )
         assert observed.n_visible_bins > 0
@@ -1281,7 +1275,7 @@ class TestMissingObservations:
             NearestBinLocator,
             SpatialBins,
         )
-        from neurospatial.ops.visibility import compute_viewshed
+        from neurospatial.ops.visibility import viewshed
 
         centers = np.array([[0.0, 0.0], [1.0, 0.0]])
         env = Environment.from_bins(
@@ -1294,7 +1288,7 @@ class TestMissingObservations:
             )
         )
         with pytest.raises(NotImplementedError, match="exact planar cells") as info:
-            compute_viewshed(env, np.zeros(2), 0.0, boundary_source="analysis")
+            viewshed(env, np.zeros(2), 0.0, boundary_source="analysis")
         message = str(info.value)
         assert "planar area-measured" in message
         assert message.count("Fix:") == 1
@@ -1309,7 +1303,7 @@ def test_trajectory_viewsheds_build_the_mesh_lookup_once(call, monkeypatch):
     from neurospatial.geometry import _locators
     from neurospatial.layout import create_layout
     from neurospatial.ops.visibility import (
-        compute_viewshed_trajectory,
+        viewshed_trajectory,
         visibility_occupancy,
     )
 
@@ -1337,7 +1331,7 @@ def test_trajectory_viewsheds_build_the_mesh_lookup_once(call, monkeypatch):
         )
         assert occupancy.sum() > 0
     else:
-        results = compute_viewshed_trajectory(
+        results = viewshed_trajectory(
             env, positions, headings, boundary_source="analysis"
         )
         assert all(result.n_visible_bins > 0 for result in results)

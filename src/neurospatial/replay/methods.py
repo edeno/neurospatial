@@ -23,6 +23,10 @@ sizes) for reference but does not decode: methods are compared on the same
 decoded posterior, so differences come from the replay test alone. Choices a
 paper does not specify, and bugs in the authors' code that are not
 reproduced, are listed in each recipe's ``notes``.
+
+This module is public for the recipe constants (``DAVIDSON_2009``,
+``PUBLISHED_METHODS`` and the rest). The classes and functions defined here
+are public at ``neurospatial.replay``.
 """
 
 from __future__ import annotations
@@ -141,14 +145,6 @@ __all__ = [
     "WU_2017",
     "WU_FOSTER_2014",
     "YAMAMOTO_TONEGAWA_2017",
-    "RankOrderMethod",
-    "ReplayCriterion",
-    "ReplayDetectionResult",
-    "ReplayMethod",
-    "ReplaySegmentation",
-    "compare_replay_methods",
-    "detect_rank_order_replay",
-    "detect_replay",
 ]
 
 _OPERATION = "detect_replay()"
@@ -287,7 +283,7 @@ def _shuffle_p_floor(n_shuffles: int, alternative: str) -> float:
     """The smallest p-value ``n_shuffles`` shuffles can give.
 
     ``1 / (n + 1)`` for a one-sided test and twice that for a two-sided
-    test, which doubles the smaller tail (``compute_shuffle_pvalue``).
+    test, which doubles the smaller tail (``shuffle_pvalue``).
     """
     smallest = 1.0 / (n_shuffles + 1)
     return min(2.0 * smallest, 1.0) if alternative == "two-sided" else smallest

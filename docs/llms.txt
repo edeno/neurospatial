@@ -1,0 +1,864 @@
+# neurospatial
+
+> Discretize spatial environments into bins with connectivity graphs and run spatial neuroscience analyses on them: neural encoding, decoding, behavior, peri-event analysis, simulation, animation and NWB I/O.
+
+Import every name from the package path listed below. Documentation: https://edeno.github.io/neurospatial/
+
+## Scientific conventions
+
+- Angles are radians. Allocentric: 0 = East, +π/2 = North. Egocentric (animal
+  frame): 0 = ahead, +π/2 = left, −π/2 = right, ±π = behind. Mixing the frames
+  gives plausible but wrong results.
+- Missing is not zero. Rate maps always store unsupported bins as NaN; there
+  is no option to store a fill. Decode with
+  `BayesianDecoder.from_rates(rates)` or pass the rate result itself to
+  `decode_position`; bare zero-filled arrays need
+  `prior=rates.spatial_support * env.bin_sizes`.
+- A decoding posterior or prior is a probability mass per bin. The default
+  prior is uniform over space (mass proportional to `env.bin_sizes`), and the
+  MAP bin and credible region rank bins by density, mass / bin size.
+- `min_occupancy` is seconds of occupancy per bin, not a density.
+- `has_place_field` detects a field. The free `is_*_cell` predicates are
+  verdicts: they default to `criterion="shuffle"` (1000 circular shifts; pass
+  `rng=` to reproduce) and take `criterion="threshold"` for the fast screen.
+  Result methods (`is_*_cell()`, `classify()`, `label_cell_types()`) are
+  threshold screens and take no `criterion=`.
+- `method="binned"` is the unsmoothed occupancy-normalized histogram unless a
+  `bandwidth` is passed; the kernel methods default to a 5 cm bandwidth.
+
+## Canonical argument order
+
+```text
+encoding      f(env, spike_times, times, positions[, headings][, object_positions], *, params)
+directional   f(spike_times, times, headings, *, params)      # heading is not a position: no env
+egocentric    f(positions, headings, targets)
+behavior      f(env, times, positions, *, ...) or f(times, positions, *, ...)  # detectors bin positions inside
+events        f(spike_times, event_times, window, *, dt)
+```
+
+Data comes before metadata, and `times` precedes `positions` whenever both are
+required.
+
+## Public API
+
+
+### neurospatial
+
+- `BinIndexOutOfRangeError` (class): Raised when a bin index falls outside ``[0, n_bins)``.
+- `CartesianOnlyError` (class): Raised when an operation needs Cartesian positions and the environment is polar.
+- `DecodingResult` (class): Container for Bayesian decoding results.
+- `Environment` (class): A discretized environment with owned coordinate meaning and connectivity.
+- `IncompatibleEnvironmentError` (class): Raised when two environments are required to share a property but do not.
+- `InputError` (class): Raised when an argument passed to a public function cannot be used.
+- `Interval` (class): A half-open time window ``[start_time, stop_time)`` with named fields.
+- `Intervals` (class): Half-open time intervals with stable ids and named fields.
+- `Landmark` (class): One named landmark and its geometry.
+- `Landmarks` (class): An immutable, ordered collection of landmarks with unique names.
+- `LayoutNotBuiltError` (class): Raised when a :class:`LayoutEngine` is accessed before ``build()``.
+- `NeurospatialError` (class): Base class for every exception neurospatial defines.
+- `PeriEventResult` (class): Result from peri-event histogram analysis.
+- `Region` (class): Immutable description of a spatial ROI.
+- `RegionNotFoundError` (class): Raised when a region name is requested but not in the Regions container.
+- `Regions` (class): A small `dict`-like container mapping *name → Region*.
+- `SpatialRateResult` (class): Result of spatial rate computation for a single neuron.
+- `SpatialRatesResult` (class): Result of spatial rate computation for multiple neurons.
+- `animation`: Animation module for neurospatial.
+- `annotation`: Video annotation tools for defining environments and regions.
+- `arena`: The physical apparatus around an environment's bins.
+- `behavior`: Behavioral analysis.
+- `binning`: Build an environment from your own bins with :meth:`Environment.from_bins`.
+- `compute_spatial_rate`: Compute spatial firing rate map for one neuron.
+- `compute_spatial_rates`: Compute spatial firing rate maps for multiple neurons.
+- `decode_position`: Decode position from a precomputed spike-count matrix and rate maps.
+- `decode_session`: Encode, bin, and decode in one call.
+- `decoding`: Bayesian decoding subpackage for population neural analysis.
+- `encoding`: Neural encoding analysis.
+- `environment`: Spatial environments with owned geometry and explicit coordinate meaning.
+- `events`: Events module for neurospatial.
+- `extensions`: Let neurospatial accept spatial objects defined by another package.
+- `io`: Input/Output utilities.
+- `landmarks`: Named things in an environment that an animal sees or approaches.
+- `layout`
+- `ops`: Low-level operations for power users.
+- `peri_event_histogram`: Compute peri-event time histogram (PSTH).
+- `reactivation`: Reactivation analysis: cell assemblies and co-firing compared between periods.
+- `regions`: regions =======
+- `replay`: Replay analysis: score decoded candidate events and test them against shuffles.
+- `simulation`: Simulation subpackage for generating synthetic spatial data.
+- `stats`: Statistical methods.
+- `testing`: Check that an environment behaves as the rest of neurospatial expects.
+
+### neurospatial.animation
+
+- `Animation` (class): Named spatial fields and overlays synchronized in physical time.
+- `AnimationField` (class): One spatial field stream on its own clock, in seconds.
+- `AnimationView` (class): A scene's viewer and its selected recording interval.
+- `BodypartOverlay` (class): Multi-keypoint pose tracking with optional skeleton visualization.
+- `EpochOverlay` (class): Intervals of time, such as ripples or run bouts, on every time panel.
+- `EventInspector` (class): Browse event windows without merging intervals or losing event IDs.
+- `EventOverlay` (class): Overlay for discrete timestamped events at specified spatial positions.
+- `FastplotlibAnimation` (class): Fields over time on the GPU, with a time slider and playback controls.
+- `HeadDirectionOverlay` (class): Heading direction visualization rendered as a line from head to indicator.
+- `MOUSE_SKELETON`
+- `ObjectVectorOverlay` (class): Vector overlay showing lines from animal to objects for object-vector cell analysis.
+- `PositionOverlay` (class): Single trajectory with optional trail visualization.
+- `RAT_SKELETON`
+- `SIMPLE_SKELETON`
+- `Skeleton` (class): Immutable definition of anatomical structure for pose tracking.
+- `SpikeRasterOverlay` (class): Spikes of many units as a raster beside the field, on the same clock.
+- `TimeSeriesOverlay` (class): Time series visualization in right column during animation.
+- `VideoOverlay` (class): Video background overlay for displaying recorded footage behind or above fields.
+- `calibrate_video`: Calibrate video coordinates to environment space.
+- `estimate_colormap_range_from_subset`: Estimate colormap range from random subset of frames.
+- `subsample_frames`: Subsample frames to target frame rate.
+
+### neurospatial.annotation
+
+- `AnnotationConfig` (class): Configuration for annotation UI settings.
+- `AnnotationProject` (class): A resumable annotation draft, independent of the original video.
+- `AnnotationResult` (class): Result from an annotation session.
+- `AnnotationShape` (class): One editable shape in pixel ``(x, y)`` coordinates.
+- `BoundaryConfig` (class): Configuration for boundary inference from positions.
+- `MultipleBoundaryStrategy`
+- `RegionGrowProvider` (class): CPU color segmentation connected to foreground clicks.
+- `RegionType`
+- `SegmentAnythingProvider` (class): Adapt a SAM2-style image predictor without importing model libraries.
+- `SegmentationPrompt` (class): Foreground/background clicks and an optional bounding box.
+- `SegmentationProposal` (class): A nonempty mask and optional confidence and JSON provenance.
+- `SegmentationProvider` (class): An image-to-mask adapter requiring no viewer or GUI imports.
+- `TrackGraphResult` (class): Result from track graph annotation session.
+- `annotate_project`: Resume an editable annotation project without the original video.
+- `annotate_track_graph`: Launch interactive napari annotation to build a track graph.
+- `annotate_video`: Launch interactive napari annotation on a video frame.
+- `boundary_from_positions`: Infer environment boundary from position data.
+- `mask_to_polygons`: Convert every foreground pixel cell to polygons in pixel (x, y).
+- `regions_from_cvat`: Load regions from a CVAT for images 1.1 XML export with optional calibration.
+- `regions_from_labelme`: Load regions from LabelMe JSON with optional calibration.
+- `validate_annotations`: Comprehensive validation of annotated regions and boundary.
+
+### neurospatial.arena
+
+- `Arena` (class): Continuous coordinates and known domain geometry, without a binning.
+- `BoundaryKind`
+- `EgocentricSurround` (class): Computational radial/angular support, without inferred physical walls.
+- `MaskArena` (class): Closed union of active Cartesian cells, without inferred physical walls.
+- `OpenArena` (class): A known planar polygonal domain, the kind of its outline and named walls.
+- `TrackArena` (class): Union of exact constant-width capsules around centerline segments.
+- `UnknownArena` (class): Explicitly unknown continuous geometry.
+
+### neurospatial.behavior
+
+- `Crossing` (class): Region crossing event.
+- `CumulativeDistanceResult` (class): Observed distance travelled, returned by ``compute_cumulative_distance``.
+- `DecisionAnalysisResult` (class): Complete decision analysis for a trial.
+- `DecisionBoundaryMetrics` (class): Metrics related to decision boundaries between goals.
+- `GoalDirectedMetrics` (class): Goal-directed navigation metrics of a trajectory, or of each interval.
+- `Lap` (class): Detected lap on circular track.
+- `MSDResult` (class): Mean square displacement curve returned by ``mean_square_displacement``.
+- `PathEfficiencyResult` (class): Path efficiency metrics of a trajectory, or of each of its intervals.
+- `PreDecisionMetrics` (class): Metrics from the pre-decision window.
+- `RegionVisit` (class): One uninterrupted observation of membership in a named region.
+- `ResampledPathResult` (class): Equal-distance samples of a path, returned by ``resample_by_distance``.
+- `SubgoalEfficiencyResult` (class): Path efficiency with subgoal decomposition.
+- `Trial` (class): One trial: the run from leaving one region to arriving at the next.
+- `VTESessionResult` (class): VTE analysis for an entire session.
+- `VTETrialResult` (class): VTE metrics for a single trial.
+- `angular_efficiency`: Compute how directly the path heads toward the goal.
+- `approach_rate`: Compute rate of distance change toward goal.
+- `classify_vte`: Classify trial as VTE based on VTE index.
+- `compute_cumulative_distance`: Compute observed distance travelled, never crossing a recording break.
+- `compute_decision_analysis`: Compute complete decision analysis for a trajectory.
+- `compute_goal_directed_metrics`: Compute comprehensive goal-directed navigation metrics.
+- `compute_home_range`: Compute home range as the most intensively used area holding a percent of time.
+- `compute_movement_angular_velocity`: Compute how fast the movement direction turns, in radians per second.
+- `compute_path_efficiency`: Compute comprehensive path efficiency metrics.
+- `compute_planar_curvature`: Compute the signed curvature of the observed path at each tracking sample.
+- `compute_planar_turn_angles`: Compute the signed turn in movement direction at each tracking sample.
+- `compute_pre_decision_metrics`: Compute all pre-decision window metrics.
+- `compute_speed`: Running speed at each tracking sample, robust to tracking jitter.
+- `compute_vte_session`: Compute VTE metrics for all trials in a session.
+- `compute_vte_trial`: Compute VTE metrics for a single trial.
+- `decision_region_entry_time`: Find time of first entry to a decision region.
+- `detect_boundary_crossings`: Detect when trajectory crosses decision boundaries.
+- `detect_goal_directed_runs`: Detect goal-directed runs: approaches to a goal that are efficient.
+- `detect_laps`: Detect laps in a circular track trajectory.
+- `detect_region_crossings`: Detect region entry and exit events in a trajectory.
+- `detect_region_visits`: Detect observed visits to named regions, such as reward wells.
+- `detect_trials`: Trials from tracked positions: the runs between visits to the regions.
+- `distance_to_boundary`: Compute distance to environment boundary at each position.
+- `distance_to_decision_boundary`: Geodesic distance from each position to the decision boundary.
+- `distance_to_goal`: Distance from each sample's position to the goal.
+- `distance_to_reward`: Compute distance to reward location at each sample.
+- `extract_pre_decision_window`: Extract trajectory segment before decision region entry.
+- `geodesic_voronoi_labels`: Label each bin by its nearest goal using geodesic distance.
+- `goal_bias`: Compute mean alignment toward goal over trajectory.
+- `goal_direction`: Compute direction (angle) from each position to goal.
+- `goal_reward_field`: Generate distance-based reward field from goal bins.
+- `goal_vector`: Compute vector from each position to goal.
+- `graph_turn_sequence`: Extract discrete turn sequence from trajectory.
+- `head_sweep_from_positions`: Compute head sweep magnitude (IdPhi) from position trajectory.
+- `head_sweep_magnitude`: Compute integrated absolute head rotation (IdPhi).
+- `heading_direction_labels`: Label each sample by the direction the animal moves in.
+- `heading_from_body_orientation`: Compute heading from nose and tail keypoints.
+- `heading_from_velocity`: Compute heading from position timeseries using velocity direction.
+- `headings_to_direction_labels`: Label each sample by a heading you already computed.
+- `in_epochs`: Boolean mask: ``True`` where each element of ``times`` falls in any epoch.
+- `instantaneous_goal_alignment`: Compute instantaneous alignment between movement and goal direction.
+- `labels_to_epochs`: Convert one label per sample into half-open epochs, one row per epoch.
+- `mean_square_displacement`: Compute mean square displacement (MSD) from continuous trajectory positions.
+- `normalize_vte_scores`: Z-score VTE metrics across trials.
+- `path_progress`: Progress from start to goal at each sample, between 0 and 1.
+- `pre_decision_heading_stats`: Compute circular statistics on heading in a trajectory window.
+- `pre_decision_speed_stats`: Compute speed statistics for a trajectory window.
+- `region_reward_field`: Generate reward field from a named region.
+- `resample_by_distance`: Resample a path every ``spacing`` along its observed distance.
+- `restrict`: Restrict ``times`` and time-aligned arrays to a set of epochs.
+- `restrict_spike_trains`: Restrict each ragged per-unit spike train by its **own** timestamps.
+- `segment_by_velocity`: Find movement epochs: stretches where speed stays above a threshold.
+- `shortest_path_length`: Compute shortest path distance from start to goal.
+- `smooth_positions`: Smooth tracked positions in time, never across a tracking loss.
+- `step_lengths`: Compute step lengths (distances) between consecutive positions.
+- `subgoal_efficiency`: Compute path efficiency decomposed by subgoals.
+- `time_efficiency`: Compute time efficiency: ratio of optimal to actual travel time.
+- `time_to_goal`: Compute time remaining until goal arrival for each trial.
+- `trajectory_similarity`: Compute similarity between two trajectories.
+- `traveled_path_length`: Compute the distance traveled over observed intervals.
+- `trials_between_visits`: Trials between consecutive visits you already have.
+- `vte_index`: Compute combined VTE index.
+
+### neurospatial.binning
+
+- `BinConnections` (class): Neighbor pairs between bins, and which of them movement can cross.
+- `Binning` (class): Published bins, their connections, lookup, faces and optional components.
+- `ClipMapping` (class): Owned child-to-immediate-parent indices, shape ``(n_child_bins,)``.
+- `ClippedLocator` (class): Apply immediate-parent ownership, then closed child-polygon membership.
+- `DiffusionGeometry` (class): Validated finite-volume diffusion data in active-bin order.
+- `FaceGeometry` (class): Validated, read-only cell faces in authoritative edge order.
+- `FaceNormals` (class): Physical face normals in ``Binning.connections.pairs`` (open pair) order.
+- `FramedGrid` (class): Owned current grid cells with an affine map into world coordinates.
+- `GridBinningSpec` (class): Rectangular lattice origin, frame and navigation choices.
+- `HexLocator` (class): Locate points in a pointy-top hexagonal lattice.
+- `HexagonShapes` (class): Regular hexagons with centers ``(n_bins, 2)``, radius and orientation.
+- `KnownFaces` (class): Owned finite-volume faces that no longer need their originating layout.
+- `MeshLocator` (class): Locate points in a fixed triangulation clipped to a polygon.
+- `MissingFaces` (class): The reason finite-volume operations cannot use a binning.
+- `NearestBinLocator` (class): Find the nearest bin center, optionally within a maximum distance.
+- `Outline` (class): An immutable polygon or multipolygon outline.
+- `PolygonCells` (class): Ordered immutable connected polygons, including their interior rings.
+- `RectilinearGrid` (class): Axis-aligned rectangular cells, in the layout's own coordinates.
+- `RectilinearLocator` (class): Locate points in the rectangular cells of an active grid.
+- `SpatialBins` (class): Ordered bins and their physical measures, without their connections.
+- `SubsetLocator` (class): Map parent bins to child bins, keeping dropped and outside points outside.
+- `TrackLinearization` (class): Owned track geometry and its absolute linear coordinate system.
+- `TransformedLocator` (class): Find bins of affinely mapped cells by mapping points back to them.
+- `TriangleShapes` (class): Mesh points ``(n_points, 2)`` and active triangles ``(n_bins, 3)``.
+
+### neurospatial.decoding
+
+- `BayesianDecoder` (class): Immutable Bayesian position decoder over the functional decode core.
+- `DecodingResult` (class): Container for Bayesian decoding results.
+- `DecodingSummary` (class): Per-time decode reductions, without the full posterior.
+- `JointDecodingResult` (class): Posterior over the bins of several rate-map sets, decoded together.
+- `bin_spikes_in_time`: Bin per-neuron spike times into a count matrix on a regular time grid.
+- `confusion_matrix`: Confusion matrix between decoded and actual bin indices.
+- `credible_region`: Highest-density credible region containing a given probability mass.
+- `decode_jointly`: Decode position jointly over several sets of rate maps.
+- `decode_position`: Decode position from a precomputed spike-count matrix and rate maps.
+- `decode_position_summary`: Memory-safe decode that streams per-time reductions, not the posterior.
+- `decode_session`: Encode, bin, and decode in one call.
+- `decode_session_summary`: Memory-safe sibling of :func:`decode_session`.
+- `decoding_correlation`: Weighted Pearson correlation between decoded and actual positions.
+- `decoding_error`: Compute position error for each time bin.
+- `log_poisson_likelihood`: Compute the Poisson log-likelihood of spike counts at every bin.
+- `map_bin`: Maximum a posteriori bin index for each time bin.
+- `map_position`: MAP position in environment coordinates.
+- `mean_position`: Posterior mean position (expected value).
+- `median_decoding_error`: Compute the median decoding error over the decoded time bins.
+- `normalize_to_posterior`: Convert log-likelihood to posterior using Bayes' rule.
+- `posterior_entropy`: Posterior entropy in bits (entropy measure).
+
+### neurospatial.encoding
+
+- `BoundaryVectorRateResult` (class): Firing rate of one unit by distance and direction to walls.
+- `BoundaryVectorRatesResult` (class): Firing rates of several units by distance and direction to walls.
+- `CellTypeSignificanceResult` (class): Circular-shift tests of place, grid and border tuning for each unit.
+- `DirectionalPlaceFields` (class): Container for direction-conditioned place field results.
+- `DirectionalRateResult` (class): Result of directional rate computation for a single neuron.
+- `DirectionalRatesResult` (class): Result of directional rate computation for multiple neurons.
+- `GridProperties` (class): Grid cell metrics read from a 2D autocorrelogram.
+- `ObjectVectorRateResult` (class): Result of object-vector rate computation for a single neuron.
+- `ObjectVectorRatesResult` (class): Result of object-vector rate computation for multiple neurons.
+- `PhasePrecessionResult` (class): Results from phase precession analysis.
+- `PlaceCellSignificanceResult` (class): Circular-shift tests of each unit's spatial information.
+- `PlaceFieldsResult` (class): Result of ``detect_place_fields()``: one unit's fields and their rate map.
+- `PopulationCoverageResult` (class): Results from population coverage analysis.
+- `RateComparisonResult` (class): Per-unit similarity of two conditions' rate maps over shared support.
+- `SpatialRateResult` (class): Result of spatial rate computation for a single neuron.
+- `SpatialRatesResult` (class): Result of spatial rate computation for multiple neurons.
+- `SpikeTrains` (class): Immutable container of ragged per-unit spike trains.
+- `TuningCurveResult` (class): One unit's firing rate as a function of a behavioral variable.
+- `TuningCurvesResult` (class): Firing rates of several units as a function of one behavioral variable.
+- `ViewRateResult` (class): Result of view rate computation for a single neuron.
+- `ViewRatesResult` (class): Result of view rate computation for multiple neurons.
+- `autocorrelation_pixel_size`: Physical side of the square pixels of :func:`spatial_autocorrelation`.
+- `border_score`: Border score of a firing rate map (Solstad et al., 2008).
+- `compare_spatial_rates`: Correlate each unit's rate map between two conditions.
+- `compute_boundary_vector_rate`: Firing rate of one unit by distance and direction to the walls.
+- `compute_boundary_vector_rates`: Firing rate of each unit by distance and direction to the walls.
+- `compute_directional_place_fields`: Compute place fields conditioned on movement direction or trial type.
+- `compute_directional_rate`: Compute directional firing rate for one neuron.
+- `compute_directional_rates`: Compute directional firing rates for multiple neurons.
+- `compute_egocentric_rate`: Compute egocentric firing rate for one neuron.
+- `compute_egocentric_rates`: Compute egocentric firing rates for multiple neurons.
+- `compute_object_vector_rate`: Compute allocentric firing rate for one neuron.
+- `compute_object_vector_rates`: Compute allocentric firing rates for multiple neurons.
+- `compute_phase_precession`: Analyze phase precession in place cell data.
+- `compute_spatial_rate`: Compute spatial firing rate map for one neuron.
+- `compute_spatial_rates`: Compute spatial firing rate maps for multiple neurons.
+- `compute_tuning_curve`: Firing rate of one unit as a function of a behavioral variable.
+- `compute_tuning_curves`: Firing rates of several units as a function of a behavioral variable.
+- `compute_view_rate`: Compute view field for one neuron.
+- `compute_view_rates`: Compute view fields for multiple neurons.
+- `count_place_cells`: Count units that pass the place-cell information screen.
+- `detect_place_fields`: Segment a rate map into place fields around successive peaks.
+- `egocentric_object_vector_cell_significance`: Test egocentric object vector tuning against circular spike-time shifts.
+- `field_density_map`: Count number of overlapping place fields per bin.
+- `field_emd`: Compute Earth Mover's Distance (EMD) between two firing rate distributions.
+- `field_overlap`: Compute Jaccard similarity between two place fields.
+- `field_shape_metrics`: Compute geometric shape metrics for a place field.
+- `field_shift_distance`: Compute distance between field centroids across sessions/environments.
+- `field_size`: Compute field size (area) in physical units.
+- `field_stability`: Compute stability between two firing rate maps (correlation).
+- `grid_properties`: Compute all grid cell metrics from 2D autocorrelogram.
+- `grid_scale`: Compute grid spacing (scale) from 2D autocorrelogram.
+- `grid_score`: Compute grid score from 2D spatial autocorrelation.
+- `has_phase_precession`: Quick check for significant phase precession.
+- `has_place_field`: Detect whether the rate map has a place field; this is not a cell-type verdict.
+- `head_direction_cell_significance`: Test head direction tuning against circular spike-time shifts.
+- `in_out_field_ratio`: Compute ratio of in-field to out-of-field mean firing rate.
+- `information_per_second`: Compute spatial information in bits per second.
+- `is_egocentric_object_vector_cell`: Test whether one neuron is an egocentric object-vector cell with a circular-shift shuffle (default).
+- `is_head_direction_cell`: Test whether one neuron is a head direction cell with a circular-shift shuffle (default).
+- `is_object_vector_cell`: Test whether one neuron is an object-vector cell with a circular-shift shuffle (default).
+- `is_place_cell`: Test whether one neuron is a place cell with a circular-shift shuffle (default).
+- `is_spatial_view_cell`: Test whether one neuron is a spatial view cell with a circular-shift shuffle (default).
+- `mutual_information`: Compute mutual information from a joint position-response histogram.
+- `object_vector_cell_significance`: Test object vector tuning against circular spike-time shifts.
+- `object_vector_score`: Combined distance and direction selectivity of an object-vector map.
+- `observed_wall_fraction`: Fraction of the walls' length along which a rate map is observed.
+- `place_cell_significance`: Test place tuning against circular spike-time shifts.
+- `plot_head_direction_tuning`: Plot head direction tuning curve with metrics overlay.
+- `plot_object_vector_tuning`: Plot object-vector tuning curve as polar heatmap.
+- `plot_phase_precession`: Plot phase precession with doubled phase axis.
+- `plot_population_coverage`: Visualize place cell coverage with optional gap highlighting.
+- `population_coverage`: Compute spatial coverage of a place cell population.
+- `population_vector_correlation`: Population-vector correlation at each location between two conditions.
+- `rate_map_centroid`: Compute firing-rate-weighted centroid of place field.
+- `rate_map_coherence`: Compute spatial coherence of a firing rate map.
+- `rate_map_correlations`: Pearson correlation between every pair of rate maps.
+- `region_coverage`: Compute field coverage for each region.
+- `selectivity`: Compute spatial selectivity (peak rate / mean rate).
+- `sparsity`: Compute sparsity of spatial firing for single neuron.
+- `spatial_autocorrelation`: Compute the 2D spatial autocorrelogram of a firing rate map.
+- `spatial_autocorrelation_radial`: Compute 1D distance-binned spatial autocorrelation.
+- `spatial_cell_type_significance`: Test place, grid and border tuning against circular spike-time shifts.
+- `spatial_coverage_single_cell`: Compute fraction of environment where cell fires above threshold.
+- `spatial_information`: Compute Skaggs spatial information (bits per spike) for single neuron.
+- `spatial_view_cell_significance`: Test spatial view tuning against circular spike-time shifts.
+- `theta_phase`: Extract instantaneous theta phase from a local field potential (LFP).
+- `untuned_border_score`: Border score of a cell that fires equally everywhere it was observed.
+
+### neurospatial.environment
+
+- `BinMapping` (class): Exact correspondence from the bins of a parent environment to a child's.
+- `BinSequenceWithRuns` (class): Bin sequence with run-length boundaries returned by ``bin_sequence_with_runs``.
+- `CartesianSystem` (class): Bin centers are ``(x, y[, z])`` positions in one length unit.
+- `EgocentricPolarSystem` (class): Bin centers are ``(distance, angle)``: a length and radians.
+- `Environment` (class): A discretized environment with owned coordinate meaning and connectivity.
+
+### neurospatial.events
+
+- `ContinuousEventResult` (class): Continuous signals sampled around events, from ``align_continuous_to_events``.
+- `PeriEventDistanceResult` (class): Firing rate by distance travelled from an event.
+- `PeriEventResult` (class): Result from peri-event histogram analysis.
+- `PopulationPeriEventResult` (class): Result from population peri-event histogram analysis.
+- `add_positions`: Add spatial coordinates to events by interpolating from trajectory.
+- `align_continuous_to_events`: Sample continuous signals at fixed times around each event.
+- `align_events`: Align events to reference events within a time window.
+- `align_spikes_to_events`: Get spike times relative to each event for raster plots.
+- `event_count_in_window`: Count events within time window around each sample.
+- `event_indicator`: Binary indicator of whether an event occurs near each sample time.
+- `events_to_intervals`: Pair start and stop events into intervals.
+- `filter_by_intervals`: Filter events to those within (or outside) intervals.
+- `intervals_to_events`: Convert intervals to point events at their starts and/or stops.
+- `peri_event_distance_histogram`: Firing rate by distance travelled from each event.
+- `peri_event_histogram`: Compute peri-event time histogram (PSTH).
+- `plot_peri_event_histogram`: Plot peri-event time histogram (PSTH).
+- `plot_peri_event_response`: Plot a matching raster and histogram for one unit's peri-event result.
+- `population_peri_event_histogram`: Compute peri-event histogram for a population of units.
+- `time_to_nearest_event`: Compute time to nearest event for each sample.
+
+### neurospatial.extensions
+
+- `SnapshotAdapter` (class): Adapt one external provider type and saved format to built-in data.
+
+### neurospatial.io
+
+- `from_dict`: Decode bins and Arena from a dictionary made by :func:`to_dict`.
+- `from_file`: Load binning and Arena data without running a layout builder.
+- `from_pynapple`: Convert a pynapple object to plain NumPy arrays and its epochs.
+- `nwb`: NWB integration for neurospatial.
+- `to_dict`: Convert v4 binning and Arena data to a dictionary for in-memory handoff.
+- `to_file`: Save Environment to a versioned JSON + npz file pair.
+- `to_pynapple`: Convert neurospatial data to the matching pynapple object.
+
+### neurospatial.io.nwb
+
+- `NWBHeadDirection` (class): Head direction samples from an NWB file.
+- `NWBPose` (class): Pose-estimation keypoints and their coordinate declarations from NWB.
+- `NWBPosition` (class): Position samples and coordinate declarations from an NWB file.
+- `NWBUnits` (class): Unit spikes, identities and acquisition coverage from an NWB file.
+- `bodypart_overlay_from_nwb`: Create BodypartOverlay from NWB PoseEstimation data.
+- `dataframe_to_events_table`: Convert a pandas DataFrame to an ndx-events EventsTable.
+- `environment_from_position`: Create an Environment by binning the positions in an NWB Position container.
+- `head_direction_overlay_from_nwb`: Create HeadDirectionOverlay from NWB CompassDirection data.
+- `position_overlay_from_nwb`: Create PositionOverlay from NWB Position data.
+- `read_environment`: Decode a saved NWB binning and Arena record without a layout builder.
+- `read_events`: Read events table from NWB file.
+- `read_head_direction`: Read head direction data from NWB file.
+- `read_intervals`: Read an NWB TimeIntervals table as Intervals.
+- `read_pose`: Read pose estimation data from NWB file.
+- `read_position`: Read position data from NWB file.
+- `read_spatial_rates`: Read a population :class:`SpatialRatesResult` written by ``write_spatial_rates``.
+- `read_trials`: Read the NWB trials table as Intervals.
+- `read_units`: Read spike-time arrays from an NWB ``units`` table.
+- `write_environment`: Store complete bins and Arena in the ``Environment-v4`` format.
+- `write_events`: Write generic events DataFrame to NWB EventsTable.
+- `write_laps`: Write laps to an NWB TimeIntervals table.
+- `write_region_crossings`: Write region crossings to an NWB EventsTable.
+- `write_spatial_rates`: Write a population :class:`SpatialRatesResult` to NWB with a unit axis.
+- `write_trials`: Write trials to the NWB trials table.
+
+### neurospatial.landmarks
+
+- `Landmark` (class): One named landmark and its geometry.
+- `Landmarks` (class): An immutable, ordered collection of landmarks with unique names.
+
+### neurospatial.layout
+
+- `GraphLayout` (class): Layout defined by a user-provided graph, typically for 1D tracks.
+- `HexagonalLayout` (class): 2D layout that tiles a rectangular area with a hexagonal lattice.
+- `ImageMaskLayout` (class): 2D layout derived from a boolean image mask.
+- `LayoutEngine` (class): What an environment needs from a layout engine: ``build()`` and ``binning()``.
+- `LayoutType` (class): Layout labels: the built-in layout engines and the special builds.
+- `MaskedGridLayout` (class): Layout from a pre-defined N-D boolean mask and explicit grid edges.
+- `RegularGridLayout` (class): Axis-aligned rectangular N-D grid layout.
+- `ScaleBarConfig` (class): Configuration for scale bar rendering.
+- `ShapelyPolygonLayout` (class): 2D grid layout masked by a Shapely Polygon.
+- `TriangularMeshLayout` (class): A LayoutEngine that builds a triangular mesh over interior points (auto-generated) clipped to a boundary polygon. Each triangle whose centroid lies inside the polygon is kept as an active bin. Connectivity by shared faces.
+- `create_layout`: Factory for creating and building a spatial-layout engine.
+- `find_layout_type`: Return the layout that ``name`` spells, or None.
+- `get_centers`: Calculate the center of each bin given its edges.
+- `get_layout_parameters`: Retrieve expected build parameters for a specified layout engine type.
+- `get_n_bins`: Calculate the number of bins needed for each dimension of a dataset.
+- `list_available_layouts`: List the layout names that ``create_layout`` builds.
+
+### neurospatial.ops
+
+- `AffineND` (class): Invertible affine transform as an (n_dims+1) × (n_dims+1) homogeneous matrix.
+- `FieldOfView` (class): Field of view specification for visibility analysis.
+- `KernelMode`
+- `MRFBasis` (class): Reduced-rank penalty basis for the penalized-Poisson GAM.
+- `SpatialFeatureResult` (class): Feature-map values at query points.
+- `SpatialTransform` (class): Callable that maps an (N, n_dims) array of points → (N, n_dims) array.
+- `TieBreakStrategy`
+- `VideoCalibration` (class): Video-to-environment coordinate calibration.
+- `ViewshedResult` (class): Result of viewshed analysis from a single observer position.
+- `allocentric_to_egocentric`: Batch transform allocentric points to egocentric coordinates.
+- `apply_kernel`: Apply diffusion kernel in forward or adjoint mode.
+- `basis_at_positions`: Evaluate a spatial basis at the animal's positions, one row per sample.
+- `boundary_directions`: Ray directions, the centers of ``n_directions`` equal sectors of a turn.
+- `boundary_distances`: Distance to the first wall along rays in evenly spaced directions.
+- `calibrate_from_landmarks`: Build pixel→cm transform from corresponding landmark pairs.
+- `calibrate_from_scale_bar`: Build pixel→cm transform from a scale bar of known length.
+- `chebyshev_filter_basis`: Compute Chebyshev polynomial filter basis on the diffusion generator.
+- `clamp`: Clamp field values to [lo, hi] range.
+- `combine_fields`: Combine multiple fields using specified aggregation mode.
+- `convert_to_cm`: Convert pixel coordinates to centimeter coordinates.
+- `convert_to_pixels`: Convert centimeter coordinates to pixel coordinates with y-flip.
+- `diffusion_kernels`: Assemble a finite-volume diffusion kernel from a face-measure graph.
+- `distance_field`: Compute distance field: distance from each node to nearest source node.
+- `divergence`: Compute net outward flux per cell volume.
+- `egocentric_bearing`: Compute bearing angle to targets in egocentric coordinates.
+- `egocentric_distance`: Compute distance to targets from animal position.
+- `egocentric_to_allocentric`: Batch transform egocentric points to allocentric coordinates.
+- `estimate_transform`: Estimate transformation from point correspondences (2D or 3D).
+- `euclidean_distance_matrix`: Compute pairwise Euclidean distance matrix between points.
+- `flip_y`: Flip the *y*-axis of pixel coordinates so that origin moves from top-left to bottom-left.
+- `flip_y_data`: Flip y-axis of coordinates so that the origin moves from image-space top-left to Cartesian bottom-left.
+- `from_rotation_matrix`: Create affine transform from rotation matrix (2D or 3D).
+- `geodesic_distance_between_points`: Compute geodesic distance between two specific nodes in a graph.
+- `geodesic_distance_matrix`: Compute geodesic (shortest-path) distance matrix on a graph.
+- `geodesic_rbf_basis`: Compute maze-aware RBF basis using geodesic distances.
+- `gradient`: Compute the directional derivative of a scalar field along every edge.
+- `graph_convolve`: Convolve a spatial field with a custom kernel on the graph.
+- `heat_kernel_wavelet_basis`: Compute heat kernel wavelet basis via graph diffusion.
+- `identity`: Return the 2D identity transform.
+- `identity_nd`: Return the N-dimensional identity transform.
+- `map_probabilities`: Map probabilities on source_env onto target_env.
+- `nearest_boundary`: Distance and allocentric direction from each sample to the closest wall.
+- `neighbor_reduce`: Aggregate field values over spatial neighborhoods.
+- `neighbors_within`: Return bins within radius of each center bin.
+- `normalize_field`: Normalize field to sum to 1 (probability distribution).
+- `pairwise_distances`: Compute pairwise geodesic distances between specified nodes.
+- `plot_basis_functions`: Visualize selected basis functions for quality checking.
+- `regions_to_mask`: Select the environment bins that one or more regions cover.
+- `resample_field`: Resample field from source to destination environment.
+- `rotate_2d`: Create a counter-clockwise rotation by ``angle`` radians.
+- `sample_egocentric_features`: Read bin-valued feature maps at points fixed in the animal's frame.
+- `sample_spatial_features`: Read bin-valued feature maps at the animal's positions.
+- `scale_2d`: Create uniform or anisotropic scaling transformation.
+- `scale_3d`: Create 3D scaling transformation.
+- `select_basis_centers`: Select well-distributed center nodes for basis functions.
+- `simple_scale`: Create a simple transform that converts pixel units to centimeters.
+- `spatial_basis`: Create maze-aware spatial basis with automatic parameter selection.
+- `translate`: Create translation transformation.
+- `translate_3d`: Create 3D translation transformation.
+- `view_field`: Compute binary visibility mask from observer position.
+- `viewed_location`: Compute the location being viewed by the animal.
+- `viewshed`: Compute visible bins from an observer position.
+- `viewshed_trajectory`: Compute viewshed at each point along a trajectory.
+- `visibility_occupancy`: Compute time each bin was visible during trajectory.
+- `visible_cues`: Check visibility of cue positions.
+
+### neurospatial.reactivation
+
+- `AssemblyDetectionResult` (class): Results from cell assembly detection.
+- `AssemblyEventResponseResult` (class): Activation strength around events and each event's response.
+- `AssemblyMemberCofiringResult` (class): Correlations between a pattern's members in a control and a match period.
+- `AssemblyPattern` (class): A detected cell assembly pattern.
+- `AssemblyReactivationResult` (class): A pattern's activation strength after a task compared with before it.
+- `AssemblySimilarityResult` (class): Absolute cosine similarity between two sets of patterns.
+- `CHANG_2025_ASSEMBLY`
+- `EL_GABY_2021`
+- `EventResponse` (class): How an assembly method measures R(t) around events, such as SWR onsets.
+- `ExplainedVarianceContributionResult` (class): Each pair's and each unit's contribution to the explained variance.
+- `ExplainedVarianceResult` (class): Results from explained variance reactivation analysis.
+- `GIRI_2019`
+- `GIRI_2024`
+- `HARVEY_2023_ASSEMBLY`
+- `KUDRIMOTI_1999`
+- `LANSINK_2009`
+- `LIU_2023_ASSEMBLY`
+- `LIU_2023_EV`
+- `LIU_2023_PAIRWISE`
+- `OLIVA_2020_ASSEMBLY`
+- `OLIVA_2020_EV`
+- `PENNARTZ_2004`
+- `PEYRACHE_2010`
+- `PUBLISHED_REACTIVATION_METHODS`
+- `ROBINSON_2026_ASSEMBLY`
+- `ROBINSON_2026_PAIRWISE`
+- `ReactivationMethod` (class): A published reactivation analysis: bins, pairs, windows and test.
+- `ReactivationWindows` (class): How a period's epochs are cut into analysis windows.
+- `SimulatedReactivationSession` (class): A simulated rest - task - rest session.
+- `TATSUNO_2006`
+- `VAN_DE_VEN_2016`
+- `assembly_activation`: Compute activation strength of an assembly over time.
+- `assembly_event_response`: Activation strength around events, such as sharp-wave ripple onsets.
+- `assembly_member_cofiring`: Correlate a pattern's members in a control and a match period.
+- `assembly_reactivation`: Compare a pattern's activation strength after a task with before it.
+- `assembly_similarity`: Absolute cosine similarity of patterns detected in two sessions.
+- `compare_reactivation_methods`: Apply several published reactivation methods to one session.
+- `detect_assemblies`: Detect cell assemblies from population spike counts.
+- `equalize_firing_rates`: Remove random spikes so each unit fires at one rate in both periods.
+- `ev_rev_contrast`: The explained variance ratio (EV - REV) / (EV + REV).
+- `explained_variance_contributions`: Each pair's contribution to the explained variance, leaving it out.
+- `explained_variance_reactivation`: Compute explained variance for pairwise correlation reactivation.
+- `marchenko_pastur_threshold`: Compute the Marchenko-Pastur reference threshold for eigenvalues.
+- `null_reactivation_data`: Spike times whose match-period spikes carry no reactivation.
+- `pairwise_activation`: Co-firing in each time bin, weighted by every pair's template correlation.
+- `pairwise_correlations`: Compute pairwise correlations between neurons.
+- `reactivation_detection_rates`: Each method's share of rows called reactivated, with an interval.
+- `simulated_reactivation_session`: Simulate rest, a task and rest, with assemblies that may reactivate.
+
+### neurospatial.regions
+
+- `Region` (class): Immutable description of a spatial ROI.
+- `Regions` (class): A small `dict`-like container mapping *name → Region*.
+- `load_cvat_xml`: Read the shapes of one image in a CVAT for images 1.1 export as regions.
+- `load_labelme_json`: Read the shapes of a LabelMe annotation file as regions.
+- `mask_to_region`: Trace one connected area of a 2-D image mask into a polygon Region.
+- `plot_regions`: Draw regions on Matplotlib axes: points as markers, polygons as patches.
+- `points_in_any_region`: Return whether each position lies in at least one region.
+- `regions_containing_points`: Return which regions contain each position.
+- `regions_from_json`: Read a regions file written by :func:`regions_to_json`.
+- `regions_table`: Tabulate regions, one row per region in iteration order.
+- `regions_to_json`: Write regions to a standard JSON file that any language can read.
+
+### neurospatial.replay
+
+- `ArmReplayMethod` (class): A published test for replay of single arms and of pairs of arms.
+- `BiasSequenceMethod` (class): A published pairwise-bias sequence test (Liu et al. 2023).
+- `BiasSimilarityResult` (class): Similarity of an event's firing order to a template, against shuffles.
+- `CircularSequenceResult` (class): A sequence fit to a decoded event on a circular track.
+- `CriterionGrid` (class): A :class:`~neurospatial.replay.ReplayCriterion` with several thresholds.
+- `DatasetTestResult` (class): A data-set statistic tested against null data sets.
+- `DistributionTestResult` (class): Observed events' values against pooled null events' values.
+- `IsotonicFitResult` (class): A monotonic trajectory fit to a decoded event (Michon et al. 2019).
+- `LinearFitResult` (class): A straight-line trajectory fit to a decoded event.
+- `MatchingIndexResult` (class): The matching index of one event (Ji & Wilson 2007).
+- `NullSpikeData` (class): Spike trains of events without replay, laid out like a session.
+- `PairwiseBiasResult` (class): Skew-bias matrix of the spikes in one event.
+- `PairwiseOrderMethod` (class): A published pairwise-order replay test (Gupta et al. 2010).
+- `PairwiseOrderResult` (class): Pairwise-order score of one candidate event.
+- `PairwiseOrderSignificanceResult` (class): Pairwise-order score of one event tested against shuffles.
+- `RadonDetectionResult` (class): The constant-speed line through a decoded event with the best replay score.
+- `RankOrderMethod` (class): A published rank-order replay test.
+- `RankOrderResult` (class): Rank-order correlation of one candidate event.
+- `RankOrderSignificanceResult` (class): Rank-order correlation of one event tested against cell-order shuffles.
+- `RecurringSequenceMethod` (class): A published session-level test of recurring spike sequences.
+- `RecurringSequencesResult` (class): Spike sequences that start with a reference cell's spike, and their recurrences.
+- `RecurringSequencesSignificanceResult` (class): A session's recurring sequences compared with surrogate spike trains.
+- `RegressionLineScoreResult` (class): Posterior mass near the line through a decoded event's MAP positions.
+- `ReplayCriterion` (class): One threshold an event must meet to count as replay.
+- `ReplayDetectionResult` (class): One method's verdict on one event.
+- `ReplayMethod` (class): A published replay test: score, shuffles, and thresholds.
+- `ReplaySegmentation` (class): How a method cuts an event into trajectory segments before testing it.
+- `ReplaySegmentsResult` (class): Segments of one decoded candidate event that pass a segmentation rule.
+- `ReplaySignificanceResult` (class): A decoded event's replay score tested against shuffled events.
+- `SequenceMatchResult` (class): The best match of one event's word to the template (Lee & Wilson 2002).
+- `ShuffledDataset` (class): Every event of a data set, shuffled once.
+- `SpikeWordsResult` (class): Spike trains parsed into words (Lee & Wilson 2002).
+- `TemplateMatchDatasetResult` (class): A template-matching method's data-set test: counts of matches against chance.
+- `TemplateMatchMethod` (class): A published template-matching replay test of firing order.
+- `TrajectoryMetrics` (class): Per-time-bin and per-event metrics of one decoded candidate event.
+- `WeightedCorrelationResult` (class): Weighted correlation between time and decoded position in one event.
+- `apply_alpha`: A comparison table's verdicts at other alphas, such as matched ones.
+- `best_sequence_match`: Best match of an event's letters to the field order (Lee & Wilson 2002).
+- `bias_similarity`: Cosine between two skew-bias matrices over the pairs both define.
+- `bias_similarity_significance`: Test an event's bias similarity to a template against label shuffles.
+- `burst_onset_times`: The first spike of each burst, one train per cell.
+- `compare_replay_methods`: Apply several published replay methods to several decoded events.
+- `dataset`: Data-set-level replay tests: is there more replay in a data set than chance?
+- `dataset_test`: Test a data-set statistic against null data sets (a Monte Carlo test).
+- `dataset_values`: Per-event values of a real data set, or of null data sets, by one method.
+- `decode_intervals`: Decode each interval in non-overlapping time bins of width ``dt``.
+- `detect_arm_replay`: Find a single-arm or joint-arm replay in one decoded event.
+- `detect_bias_sequence_replay`: Apply a published pairwise-bias sequence test to one candidate event.
+- `detect_pairwise_order_replay`: Apply a published pairwise-order method to one candidate event.
+- `detect_rank_order_replay`: Apply one published rank-order method to one candidate event.
+- `detect_replay`: Apply one published replay method to one decoded event.
+- `detect_template_match_replay`: Apply one published template-matching method to one candidate event.
+- `detect_trajectory_radon`: Detect the constant-speed replay trajectory in a decoded event.
+- `detection_rates`: Each method's share of events called replay, with a confidence interval.
+- `distribution_test`: Compare observed events' values with the pooled values of null events.
+- `event_properties`: Measure each decoded event, to break detection rates down by them.
+- `fit_circular_sequence`: Fit the decoded path around a circular track (Wikenheiser & Redish 2013).
+- `fit_isotonic_trajectory`: Fit a monotonic trajectory to a decoded event (Michon et al. 2019).
+- `fit_linear_trajectory`: Fit a straight-line trajectory to a decoded event.
+- `matched_alpha`: Each method's alpha that holds its false-positive rate to a target.
+- `mean_pairwise_bias`: Mean skew-bias matrix over many events, such as a task's theta cycles.
+- `method_agreement`: How often every pair of methods agree, with Cohen's kappa.
+- `methods`: Published replay detection methods as explicit, comparable recipes.
+- `null_events`: Make events without replay from real candidate events.
+- `pairwise_bias_matrix`: Skew-bias matrix of the spikes in one event (Roth 2016).
+- `pairwise_order_score`: Pairwise firing order of nearby spikes in an event (Gupta et al. 2010).
+- `pairwise_order_significance`: Test an event's pairwise-order score against shuffles (Gupta et al. 2010).
+- `rank_order_correlation`: Rank-order correlation between field order and firing order in an event.
+- `rank_order_significance`: Test an event's rank-order correlation against cell-order shuffles.
+- `recurring_sequences_significance`: Test whether a session holds more recurring sequences than surrogates.
+- `recurring_spike_sequences`: Find spike sequences that recur in a session (Nádasdy et al. 1999).
+- `regression_line_score`: Posterior mass near the line through a decoded event's MAP positions.
+- `relative_rank_template`: Each cell's mean relative rank over a session's frames (Liu et al. 2019).
+- `replay_segments`: Cut a decoded event into segments in which the position moves smoothly.
+- `replay_significance`: Test a decoded event's replay score against shuffled events.
+- `score_agreement`: How closely every pair of methods' scores correlate across events.
+- `sequence_matching_index`: Matching index of firing order and field order (Ji & Wilson 2007).
+- `shuffle_cell_identity`: Shuffle mapping between spike trains and place fields.
+- `shuffle_events`: Null data sets as decoded events, for a control analysed like real data.
+- `shuffle_place_fields_circular`: Circularly shift each place field by a random amount.
+- `shuffle_place_fields_circular_2d`: Circularly shift 2D place fields in both dimensions.
+- `shuffle_posterior_circular`: Circularly shift posterior at each time bin independently.
+- `shuffle_posterior_weighted_circular`: Shift each time bin's posterior so its peak lands at a weighted position.
+- `shuffle_spike_counts_circular`: Circularly shift each cell's spike counts in time, within one event.
+- `shuffle_spike_counts_uniform`: Place each cell's spikes uniformly at random within one event.
+- `simulated_null_events`: Simulate events without replay from the cells' rate maps.
+- `spike_words`: Parse spike trains into words of letters (Lee & Wilson 2002).
+- `surrogate_spike_trains`: Spike trains with some structure kept and the rest randomized.
+- `template_correlation_test`: Test how well templates match reference templates, against cell-order shuffles.
+- `template_fractions`: Fraction of a jointly decoded event's posterior in each template.
+- `template_match_dataset_test`: Test a data set's matches against chance and template shuffles.
+- `trajectory_metrics`: Every published per-event metric used to accept or reject a replay event.
+- `weighted_correlation`: Weighted correlation between time and decoded position in one event.
+
+### neurospatial.replay.dataset
+
+- `DATASET_RECIPES`
+- `DatasetTestRecipe` (class): A published data-set-level replay test, with every value it uses.
+- `FAROOQ_2019_POISSON`
+- `FAROOQ_2019_SPACE_BIN`
+- `FAROOQ_2019_TIME_BIN`
+- `FAROOQ_2019_WEIGHTED`
+- `GROSMARK_2016_SURROGATES`
+- `LIU_2019_TEMPLATES`
+- `SILVA_2015_MATRIX`
+- `SILVA_2015_RANK_ORDER`
+- `STELLA_2019_JITTER`
+- `XU_2019_ROTATION`
+
+### neurospatial.replay.methods
+
+- `AMBROSE_2016`
+- `BERNERS_LEE_2021`
+- `BERNERS_LEE_2022`
+- `BUSH_2022`
+- `CAREY_2019`
+- `CHANG_2025`
+- `CHENANI_2019`
+- `DAVIDSON_2009`
+- `DIBA_BUZSAKI_2007`
+- `FAROOQ_2019`
+- `FOSTER_WILSON_2006`
+- `GROSMARK_2016`
+- `GUPTA_2010`
+- `HARVEY_2023`
+- `HARVEY_2023_LINE`
+- `IGATA_2021`
+- `JADHAV_2016`
+- `JI_WILSON_2007`
+- `KARLSSON_FRANK_2009`
+- `LEE_WILSON_2002`
+- `LIU_2023`
+- `LIU_2023_BIAS`
+- `MABOUDI_2018`
+- `MALLORY_2025`
+- `MICHON_2019`
+- `MUESSIG_2019`
+- `NADASDY_1999`
+- `OLAFSDOTTIR_2015`
+- `OLAFSDOTTIR_2016`
+- `OLAFSDOTTIR_2017`
+- `PFEIFFER_FOSTER_2013`
+- `PFEIFFER_FOSTER_2015`
+- `PUBLISHED_METHODS`
+- `SHIN_2019`
+- `SILVA_2015`
+- `SOULA_2023`
+- `TANG_2017`
+- `TIROLE_2022`
+- `WIDLOSKI_FOSTER_2022`
+- `WIDLOSKI_FOSTER_2025`
+- `WIKENHEISER_REDISH_2013`
+- `WU_2017`
+- `WU_FOSTER_2014`
+- `YAMAMOTO_TONEGAWA_2017`
+
+### neurospatial.simulation
+
+- `BorderCellModel` (class): Firing as a function of the distance to the nearest wall.
+- `BoundaryVectorCellModel` (class): Boundary vector cell: walls at a preferred distance and direction.
+- `GridCellModel` (class): Periodic hexagonal grid pattern model (2D only).
+- `HeadDirectionCellModel` (class): Von Mises head direction cell model.
+- `NeuralModel` (class): Protocol for neural models that generate firing rates.
+- `ObjectVectorCellModel` (class): Distance and direction tuned firing model for objects.
+- `PlaceCellModel` (class): Gaussian place field model.
+- `ReplayEventSimulation` (class): A simulated candidate event and the path it replays.
+- `SimulationSession` (class): Complete simulation session result.
+- `SimulationValidationResult` (class): Recovery of simulated place fields, returned by ``validate_simulation``.
+- `SpatialViewCellModel` (class): Gaze-based firing model for spatial view cells.
+- `add_modulation`: Add rhythmic modulation to spike train (e.g., theta oscillation).
+- `border_cell_session`: Generate session with border and place cells.
+- `generate_poisson_spikes`: Generate Poisson spike train from firing rate time series.
+- `generate_population_spikes`: Generate spike trains for population of neurons.
+- `grid_cell_session`: Generate session with grid cells (2D only).
+- `linear_track_session`: Generate linear track simulation with lap-based running.
+- `mazes`: Standard maze environments for spatial navigation research.
+- `open_field_session`: Generate standard open field arena simulation.
+- `plot_session_summary`: Create comprehensive visualization of simulation session.
+- `simulate_replay_event`: Simulate a candidate replay event with a known path along a track.
+- `simulate_session`: Simulate complete recording session with trajectory and neural activity.
+- `simulate_trajectory_laps`: Simulate structured lap-based trajectory.
+- `simulate_trajectory_ou`: Simulate random exploration with smoothly varying speed and heading.
+- `simulate_trajectory_sinusoidal`: Simulate sinusoidal back-and-forth running along a track.
+- `tmaze_alternation_session`: Generate T-maze spatial alternation task simulation.
+- `validate_simulation`: Validate simulation by comparing detected place fields to ground truth.
+
+### neurospatial.simulation.mazes
+
+- `BarnesDims` (class): Dimension specifications for Barnes Maze.
+- `CheeseboardDims` (class): Dimension specifications for Cheeseboard Maze.
+- `CrosswordDims` (class): Dimension specifications for Crossword Maze.
+- `HamletDims` (class): Dimension specifications for Hamlet Maze.
+- `HamptonCourtDims` (class): Dimensions of Small's (1901) Hampton Court maze.
+- `HoneycombDims` (class): Dimension specifications for Honeycomb Maze.
+- `LinearTrackDims` (class): Dimension specifications for Linear Track.
+- `MAZE_LANDMARK_ROLES`
+- `MazeDims` (class): Base class for maze dimension specifications.
+- `MazeEnvironments` (class): Container for 2D and track-graph maze environments.
+- `PlusMazeDims` (class): Dimension specifications for Plus Maze (Cruciate Maze).
+- `RadialArmDims` (class): Dimension specifications for Radial Arm Maze.
+- `RatHexmazeDims` (class): Dimension specifications for the Rat HexMaze.
+- `RepeatedTDims` (class): Dimensions of Blodgett's six-unit T maze (Tolman & Nyswander, 1927).
+- `RepeatedYDims` (class): Dimension specifications for Repeated Y-Maze.
+- `SmallHexDims` (class): Size and barrier configuration of the Small Hex Maze.
+- `SquareMazeDims` (class): Dimension specifications for Square Maze (Open Field Box).
+- `SungodDims` (class): Dimension specifications for Sungod Maze.
+- `TMazeDims` (class): Dimension specifications for T-Maze.
+- `WMazeDims` (class): Dimension specifications for W-Maze.
+- `WatermazeDims` (class): Dimension specifications for Morris Water Maze.
+- `YMazeDims` (class): Dimension specifications for Y-Maze.
+- `make_barnes_maze`: Create a Barnes Maze environment.
+- `make_buffered_line`: Create a polygon by buffering a line segment.
+- `make_cheeseboard_maze`: Create a Cheeseboard Maze environment.
+- `make_circular_arena`: Create a circular polygon (arena, pool, platform).
+- `make_corridor_polygon`: Create a rectangular corridor polygon between two points.
+- `make_crossword_maze`: Create a Crossword Maze environment.
+- `make_hamlet_maze`: Create a Hamlet Maze environment.
+- `make_hampton_court_maze`: Create Small's (1901) Hampton Court maze.
+- `make_honeycomb_maze`: Create a Honeycomb Maze environment.
+- `make_linear_track`: Create a Linear Track environment.
+- `make_plus_maze`: Create a Plus Maze (Cruciate Maze) environment.
+- `make_radial_arm_maze`: Create a Radial Arm Maze environment.
+- `make_rat_hexmaze`: Create a Rat HexMaze environment.
+- `make_repeated_t_maze`: Create Blodgett's six-unit T maze (Tolman & Nyswander, 1927, Fig. 5).
+- `make_repeated_y_maze`: Create a Repeated Y-Maze environment.
+- `make_small_hex_maze`: Create the Small Hex Maze (Krausz et al. 2023; Berke lab).
+- `make_square_maze`: Create a Square Maze (Open Field Box) environment.
+- `make_sungod_maze`: Create a Sungod Maze environment.
+- `make_t_maze`: Create a T-Maze environment.
+- `make_w_maze`: Create a W-Maze environment.
+- `make_watermaze`: Create a Morris Water Maze environment.
+- `make_y_maze`: Create a Y-Maze environment.
+- `union_polygons`: Combine multiple polygons into a single geometry.
+
+### neurospatial.stats
+
+- `CircularBasisResult` (class): Result from circular_basis() function.
+- `ShuffleTestResult` (class): Result container for shuffle-based significance testing.
+- `circular_basis`: Compute sine/cosine basis functions for circular variables.
+- `circular_basis_metrics`: Compute amplitude, phase, and p-value from GLM coefficients.
+- `circular_circular_correlation`: Circular-circular correlation coefficient.
+- `circular_linear_correlation`: Circular-linear correlation coefficient.
+- `circular_mean`: Compute the circular mean (mean direction) of angles.
+- `circular_variance`: Compute the circular variance of angles.
+- `generate_inhomogeneous_poisson_surrogates`: Generate inhomogeneous Poisson surrogate spike trains with smoothed rates.
+- `generate_jittered_spikes`: Generate temporally jittered surrogate spike trains.
+- `generate_poisson_surrogates`: Generate homogeneous Poisson surrogate spike trains.
+- `is_modulated`: Quick check: Do GLM coefficients show significant circular modulation?
+- `mean_resultant_length`: Compute the mean resultant length (Rayleigh vector length).
+- `phase_position_correlation`: Correlation between spike phases and positions.
+- `plot_circular_basis_tuning`: Plot tuning curve from GLM circular basis coefficients.
+- `rayleigh_test`: Rayleigh test for non-uniformity of circular data.
+- `shuffle_pvalue`: Compute Monte Carlo p-value with Phipson-Smyth correction.
+- `shuffle_spike_times_circular`: Circularly shift spikes on the joined analyzed-time axis.
+- `shuffle_spikes_isi`: Shuffle inter-spike intervals to test ISI ordering significance.
+- `shuffle_time_bins`: Shuffle temporal order of time bins within an event.
+- `shuffle_time_bins_coherent`: Shuffle time bins coherently across all neurons (time-swap shuffle).
+- `shuffle_trials`: Shuffle labels across trials to test trial identity significance.
+- `shuffle_zscore`: Compute z-score of observed value relative to null distribution.
+- `wrap_angle`: Wrap angle to (-π, π].
+
+### neurospatial.testing
+
+- `assert_environment_contract`: Check bin lookup, read-only state and saving against known answers.

@@ -6,18 +6,47 @@ including place cells, grid cells, head direction cells, border cells,
 object-vector cells, and spatial view cells, and how the same cells' rate
 maps compare between behavioral conditions (``compare_spatial_rates``).
 
-Submodules
+Start Here
 ----------
-spatial : Spatial rate analysis
-grid : Grid cell analysis
-directional : Head direction and directional-rate analysis
-border : Border/boundary cell analysis
-boundary_vector : Boundary-vector and egocentric boundary cell rate maps
-egocentric : Object-vector and egocentric-rate analysis
-view : Spatial view cell analysis
-phase_precession : Theta phase precession analysis
-tuning : Firing rate as a function of one behavioral variable
-population : Population-level metrics
+compute_spatial_rate, compute_spatial_rates : Where does the neuron fire?
+    ``compute_spatial_rate(env, spike_times, times, positions)`` returns a
+    :class:`SpatialRateResult`; pass a list of spike trains to
+    ``compute_spatial_rates`` for a population. Bins the animal never
+    visited are NaN, not zero.
+
+has_place_field, detect_place_fields : Does the rate map have a field, and where?
+    ``has_place_field`` returns a bool; ``detect_place_fields(env,
+    rate_result)`` returns the field bins. Neither says the neuron is a place
+    cell.
+
+is_place_cell, place_cell_significance : Is it a place cell?
+    ``is_place_cell`` is a circular-shift shuffle verdict for one neuron
+    (``criterion="threshold"`` is the fast screen); ``place_cell_significance``
+    tests a population. Result methods ``.is_place_cell()`` and ``.classify()``
+    are threshold screens only.
+
+spatial_cell_type_significance : Which cells are place, grid or border cells?
+    ``rates.label_cell_types()`` is the fast screen.
+
+compute_directional_rate, is_head_direction_cell : Is it a head direction cell?
+    Take ``spike_times, times, headings`` (radians); no environment.
+
+compute_object_vector_rate, compute_view_rate : Is it tuned to objects or to
+    where the animal looks?
+    Object-vector and spatial-view cells. ``is_object_vector_cell`` and
+    ``is_spatial_view_cell`` are the matching shuffle verdicts.
+
+compute_tuning_curve, compare_spatial_rates : Other tuning curves, and rate maps
+    compared between conditions
+
+spatial_information, border_score, spatial_autocorrelation, grid_score : Metrics
+    of a rate map you already have
+    ``grid_score`` takes the 2-D autocorrelogram from ``spatial_autocorrelation``,
+    not the rate map.
+
+See the "Which place-cell function?" table in the neuroscience-metrics user
+guide for a longer decision table. Every name above is public at
+``neurospatial.encoding``.
 """
 
 # Comparing rate maps between conditions
@@ -29,7 +58,7 @@ from neurospatial.encoding._comparison import (
 # Border/boundary cell analysis
 # Field metrics (from _field_metrics and _metrics modules)
 from neurospatial.encoding._field_metrics import (
-    compute_field_emd,
+    field_emd,
     field_shape_metrics,
     field_shift_distance,
     field_size,
@@ -55,8 +84,8 @@ from neurospatial.encoding._validation import (
 from neurospatial.encoding._validation import _validate_times as _validate_times
 from neurospatial.encoding.border import (
     border_score,
-    compute_region_coverage,
     observed_wall_fraction,
+    region_coverage,
     untuned_border_score,
 )
 
@@ -101,6 +130,7 @@ from neurospatial.encoding.grid import (
     grid_scale,
     grid_score,
     spatial_autocorrelation,
+    spatial_autocorrelation_radial,
 )
 
 # Phase precession analysis
@@ -176,7 +206,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "SpikeTrains",
     # Border/boundary cell analysis
     "border_score",
-    "compute_region_coverage",
+    "region_coverage",
     "observed_wall_fraction",
     "untuned_border_score",
     # Boundary-vector rate (boundary-vector and egocentric boundary cells)
@@ -229,6 +259,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "grid_scale",
     "grid_score",
     "spatial_autocorrelation",
+    "spatial_autocorrelation_radial",
     # Head direction cell analysis
     "is_head_direction_cell",
     "plot_head_direction_tuning",
@@ -238,7 +269,7 @@ __all__ = [  # noqa: RUF022 - organized by category
     "DirectionalPlaceFields",
     "PlaceFieldsResult",
     "compute_directional_place_fields",
-    "compute_field_emd",
+    "field_emd",
     "detect_place_fields",
     "is_place_cell",
     "has_place_field",
@@ -267,3 +298,8 @@ __all__ = [  # noqa: RUF022 - organized by category
     "rate_map_correlations",
     "population_vector_correlation",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

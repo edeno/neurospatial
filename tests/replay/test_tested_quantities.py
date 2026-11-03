@@ -22,7 +22,7 @@ from neurospatial.replay import (
 )
 from neurospatial.replay.methods import WIDLOSKI_FOSTER_2022, WIDLOSKI_FOSTER_2025
 from neurospatial.simulation import simulate_replay_event
-from neurospatial.stats.shuffle import compute_shuffle_pvalue
+from neurospatial.stats.shuffle import shuffle_pvalue
 
 DT = 0.02
 TESTED = {"mean_spread": "less", "mean_mean_jump": "less"}
@@ -155,7 +155,7 @@ class TestShuffleTest:
         assert result.tested_p_values["mean_mean_jump"] == pytest.approx(1.0)
         dispersion = nulls["dispersion"]
         assert result.tested_p_values["dispersion"] == pytest.approx(
-            compute_shuffle_pvalue(
+            shuffle_pvalue(
                 dispersion.observed_score,
                 dispersion.null_scores,
                 alternative="two-sided",

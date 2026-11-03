@@ -249,3 +249,8 @@ __all__ = [
     "write_spatial_rates",
     "write_trials",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

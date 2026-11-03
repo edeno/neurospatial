@@ -11,7 +11,7 @@ from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.arena import OpenArena
 from neurospatial.ops import (
     boundary_directions,
-    compute_boundary_distances,
+    boundary_distances,
     nearest_boundary,
 )
 
@@ -42,7 +42,7 @@ def test_directions_are_sector_centers():
 def test_allocentric_distances_match_the_box_geometry(box_env):
     positions = np.random.default_rng(0).uniform(5, 95, (50, 2))
 
-    distances, directions = compute_boundary_distances(
+    distances, directions = boundary_distances(
         box_env, positions, direction_frame="allocentric", n_directions=24
     )
 
@@ -55,7 +55,7 @@ def test_egocentric_rays_turn_with_the_heading(box_env):
     positions = rng.uniform(5, 95, (50, 2))
     headings = rng.uniform(-np.pi, np.pi, 50)
 
-    distances, directions = compute_boundary_distances(
+    distances, directions = boundary_distances(
         box_env, positions, headings, direction_frame="egocentric", n_directions=24
     )
 
@@ -74,7 +74,7 @@ def test_an_interior_wall_stops_the_ray():
     positions = np.random.default_rng(2).uniform(0, SIDE, (4000, 2))
     env = Environment.from_samples(positions, bin_size=5.0, arena=arena)
 
-    distances, directions = compute_boundary_distances(
+    distances, directions = boundary_distances(
         env,
         np.array([[30.0, 30.0], [30.0, 80.0]]),
         direction_frame="allocentric",
@@ -96,10 +96,10 @@ def test_physical_walls_ignore_an_unvisited_half_and_analysis_edges_do_not():
     )
     position = np.array([[25.0, 50.0]])
 
-    physical, directions = compute_boundary_distances(
+    physical, directions = boundary_distances(
         env, position, direction_frame="allocentric", n_directions=4
     )
-    analysis, _ = compute_boundary_distances(
+    analysis, _ = boundary_distances(
         env,
         position,
         direction_frame="allocentric",
@@ -118,7 +118,7 @@ def test_missing_samples_are_nan_and_unreached_walls_are_inf(box_env):
     positions = np.array([[np.nan, 50.0], [200.0, 50.0], [50.0, 50.0], [50.0, 50.0]])
     headings = np.array([0.0, 0.0, np.nan, 0.0])
 
-    distances, _ = compute_boundary_distances(
+    distances, _ = boundary_distances(
         box_env,
         positions,
         headings,
@@ -140,7 +140,7 @@ def test_missing_samples_are_nan_and_unreached_walls_are_inf(box_env):
 )
 def test_headings_must_match_the_direction_frame(box_env, headings, frame, message):
     with pytest.raises(ValueError, match=message):
-        compute_boundary_distances(
+        boundary_distances(
             box_env, np.array([[50.0, 50.0]]), headings, direction_frame=frame
         )
 
@@ -148,10 +148,10 @@ def test_headings_must_match_the_direction_frame(box_env, headings, frame, messa
 @pytest.mark.parametrize(
     ("measure", "options"),
     [
-        (compute_boundary_distances, {"direction_frame": "allocentric"}),
+        (boundary_distances, {"direction_frame": "allocentric"}),
         (nearest_boundary, {}),
     ],
-    ids=["compute_boundary_distances", "nearest_boundary"],
+    ids=["boundary_distances", "nearest_boundary"],
 )
 def test_wrong_position_columns_name_the_function_called(box_env, measure, options):
     with pytest.raises(ValueError, match=rf"^{measure.__name__}\(\) got positions"):

@@ -61,7 +61,7 @@ from neurospatial._intervals import (
 )
 from neurospatial.encoding._spatial_counts import FrameBinning, prepare_frame_binning
 from neurospatial.encoding._validation import validate_trajectory
-from neurospatial.ops.egocentric import compute_egocentric_bearing
+from neurospatial.ops.egocentric import egocentric_bearing
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -375,7 +375,7 @@ def _compute_object_coords(
         delta = targets - positions[:, None, :]
         bearings_all = wrap_angle(np.arctan2(delta[:, :, 1], delta[:, :, 0]))
     else:
-        bearings_all = compute_egocentric_bearing(positions, headings, object_positions)
+        bearings_all = egocentric_bearing(positions, headings, object_positions)
 
     # Find nearest object at each timepoint
     # Handle NaN distances (objects/positions outside environment with geodesic metric):

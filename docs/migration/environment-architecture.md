@@ -61,7 +61,7 @@ These modules no longer exist. Use the public API instead.
 | `neurospatial.environment._HAS_SHAPELY` | nothing: shapely is a required dependency and always available |
 
 The modules that implement `Environment` methods now have private names
-(`neurospatial.environment._fields` and so on) and may change without notice.
+(modules whose names start with an underscore) and may change without notice.
 Call the methods; they return the same results.
 
 <!-- docs-test: run -->
@@ -76,17 +76,17 @@ assert isinstance(runs, BinSequenceWithRuns)
 `neurospatial.arena` still provides the public arena classes (`Arena`,
 `OpenArena`, `MaskArena`, `TrackArena`, `UnknownArena`, `EgocentricSurround`).
 
-## `neurospatial.ops.binning` is now `neurospatial.ops.mapping`
+## The point-to-bin utilities are public at `neurospatial.ops`
 
 `neurospatial.binning` holds the `Binning` records that describe an
 environment's bins. The point-to-bin utilities had a confusingly similar
-name, so `neurospatial.ops.binning` is renamed `neurospatial.ops.mapping`.
-The functions are unchanged:
+name, so the module `neurospatial.ops.binning` was renamed. Import the
+functions from `neurospatial.ops`; they are unchanged:
 
 <!-- docs-test: run -->
 ```python
 # Before: from neurospatial.ops.binning import regions_to_mask
-from neurospatial.ops.mapping import regions_to_mask, resample_field
+from neurospatial.ops import regions_to_mask, resample_field
 from neurospatial.ops import TieBreakStrategy  # a Literal type alias
 ```
 
@@ -153,7 +153,7 @@ in one cache per environment.
 
 **`clear_cache()` takes no arguments.** It releases every cached analysis. The
 `kdtree=`, `kernels=` and `cached_properties=` options are removed, together
-with `neurospatial.ops.mapping.clear_kdtree_cache`. Clearing only frees
+with the module-level `clear_kdtree_cache` function. Clearing only frees
 memory: the next analysis computes what it needs again and gives the same
 result.
 
@@ -257,7 +257,7 @@ If you wrote your own layout engine:
   bins nor an environment built from it. To publish other neighbor pairs,
   return them from your own engine's `binning()`.
 - An engine may also have a `layout_type` label, and build
-  arguments recorded with `neurospatial.layout.base.capture_build_params`
+  arguments recorded with the `capture_build_params` decorator
   become `env.layout_parameters`. Both are optional. The label becomes
   `env.layout_type` and the binning's `kind` (see "One layout label"
   below); without one, the environment uses your binning's `kind`. Name the
@@ -442,7 +442,7 @@ call `child.with_regions(Regions())`. To rename a derived environment, pass
 <!-- docs-test: run -->
 ```python
 from neurospatial import Regions
-from neurospatial.ops.transforms import translate
+from neurospatial.ops import translate
 
 west = env.bin_centers[:, 0] < 50.0
 # Before: env.subset(bins=west) dropped the regions and the name
@@ -1209,7 +1209,7 @@ positions keep refusing a polar environment, now with their own name in the
 message: `compute_spatial_rate`, `compute_spatial_rates`,
 `place_cell_significance`, `compute_directional_place_fields`, the view-rate functions,
 `compute_decision_analysis`, `compute_vte_session`, the geodesic modes of
-`compute_step_lengths`, `mean_square_displacement` and `decoding_error`,
+`step_lengths`, `mean_square_displacement` and `decoding_error`,
 the `distance_to_reward` and `distance_to_boundary` event regressors,
 `simulate_trajectory_ou`, and the boundary, object-vector, spatial-view and
 geodesic place-cell models. For egocentric rate maps use
@@ -1249,7 +1249,7 @@ them and compares the stored distance and angle columns directly.
 
 ## `validate_environment` is removed
 
-`neurospatial.layout.validation.validate_environment(env)` re-checked what
+`validate_environment(env)` re-checked what
 every factory already checks when it builds an environment, so it always
 passed. Remove the call. Its `strict=True` mode warned when `units` or `frame`
 were missing; declare them when you build the environment instead.
@@ -1346,7 +1346,7 @@ wall-based measures such as `border_score`:
 
 <!-- docs-test: run -->
 ```python
-from neurospatial.encoding.grid import (
+from neurospatial.encoding import (
     spatial_autocorrelation,
     spatial_autocorrelation_radial,
 )
@@ -1380,7 +1380,7 @@ grid cell is reported with the orientation it was given:
 
 <!-- docs-test: run -->
 ```python
-from neurospatial.encoding.grid import (
+from neurospatial.encoding import (
     autocorrelation_pixel_size,
     grid_properties,
     spatial_autocorrelation,

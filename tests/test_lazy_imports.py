@@ -47,6 +47,7 @@ _EXPECTED_LAZY_ATTRS = {
     "SpatialRateResult": ("neurospatial.encoding.spatial", "SpatialRateResult"),
     "SpatialRatesResult": ("neurospatial.encoding.spatial", "SpatialRatesResult"),
     "decode_position": ("neurospatial.decoding.posterior", "decode_position"),
+    "decode_session": ("neurospatial.decoding.session", "decode_session"),
     "DecodingResult": ("neurospatial.decoding._result", "DecodingResult"),
     "peri_event_histogram": ("neurospatial.events.alignment", "peri_event_histogram"),
     "PeriEventResult": ("neurospatial.events._core", "PeriEventResult"),
@@ -183,3 +184,41 @@ def test_environment_import_loads_no_plotting_or_table_libraries() -> None:
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     )
     assert result.stdout.strip() == ""
+
+
+def test_decode_session_at_root() -> None:
+    """The one-call decoder is importable from the root and listed there."""
+    import neurospatial.decoding
+
+    assert ns.decode_session is neurospatial.decoding.decode_session
+    assert "decode_session" in ns.__all__
+    assert "decode_session" in dir(ns)
+
+
+_PACKAGES = tuple(
+    namespace
+    for namespace in NAMESPACES
+    if hasattr(importlib.import_module(namespace), "__path__")
+)
+
+
+@pytest.mark.parametrize("namespace", _PACKAGES)
+def test_lazy_modules_dir_lists_all(namespace: str) -> None:
+    """``dir()`` of a public package lists its ``__all__`` and nothing private."""
+    module = importlib.import_module(namespace)
+    listed = set(dir(module))
+    assert set(module.__all__) <= listed
+    private = {
+        name
+        for name in listed - set(module.__all__)
+        if not (name.startswith("__") and name.endswith("__"))
+    }
+    assert not private, (
+        f"dir({namespace}) lists names outside __all__: {sorted(private)}"
+    )
+
+
+def test_io_dir_lists_nwb() -> None:
+    import neurospatial.io
+
+    assert "nwb" in dir(neurospatial.io)

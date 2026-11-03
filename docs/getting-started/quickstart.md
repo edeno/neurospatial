@@ -13,7 +13,7 @@ pip install neurospatial
 See the [installation guide](installation.md) for optional extras (napari
 animation, NWB, JAX, xarray) and `uv`/conda instructions.
 
-## Your first place field
+## Your first rate map
 
 The block below is complete and runnable top to bottom. It creates an
 environment, simulates a foraging trajectory and one place cell's spikes with
@@ -46,7 +46,7 @@ place_cell = PlaceCellModel(
 firing_rate_hz = place_cell.firing_rate(times, positions)
 spike_times = generate_poisson_spikes(firing_rate_hz, times, rng=2)
 
-# 3. Estimate the place field: a boundary-aware, smoothed firing-rate map.
+# 3. Estimate the rate map: a boundary-aware, smoothed firing-rate map.
 result = compute_spatial_rate(env, spike_times, times, positions, bandwidth=8.0)
 
 # Check that the map covers the arena: most bins should have a finite rate.
@@ -92,7 +92,7 @@ print("Heuristic thresholds:", table.attrs["classification_thresholds"])
 
 # Plot the firing-rate map; returns a Matplotlib Axes you can further style.
 ax = result.plot()
-ax.set_title("Simulated place field")
+ax.set_title("Rate map of a simulated place cell")
 plt.show()
 ```
 
