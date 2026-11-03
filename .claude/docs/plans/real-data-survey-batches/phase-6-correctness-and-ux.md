@@ -281,11 +281,17 @@ colour range, NaN colour).
 
 ## How it ships
 
-One PR per task, in this order:
+One PR for the whole phase, from one integration branch. The tasks run in
+this order:
 
-1. 6a (loaders), which every later task depends on.
-2. 6b, 6c, 6d, 6e and 6f, in parallel worktrees.
-3. 6g (findings).
+1. 6a (loaders), which every later task depends on, merged into the
+   integration branch first.
+2. 6b, 6c, 6d, 6e and 6f, each in its own worktree branched from the
+   integration branch, and merged back into it when its review is done.
+3. 6g (findings), written on the integration branch.
+
+Each task gets its independent review before it merges into the
+integration branch, and the whole branch gets one more before the PR.
 
 Before the parallel tasks start:
 
@@ -372,8 +378,9 @@ time with whatever is easiest to score.
 
 ## Review
 
-Before opening each PR, dispatch an independent reviewer against the diff.
-Give it the code, not the agent's conclusions. Confirm:
+Before each task merges into the integration branch, and once more before
+the PR, dispatch an independent reviewer against the diff. Give it the code,
+not the agent's conclusions. Confirm:
 
 - every `agrees` compares against a truth that does not come from the code
   under test (no self-consistency checks);
