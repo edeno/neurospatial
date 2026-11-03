@@ -40,7 +40,9 @@ class TestHeadDirectionCellModel:
         """Half the rate 22.5 degrees off the peak, as a 90-degree triangle."""
         hd = HeadDirectionCellModel(preferred_direction=0.0, baseline_rate=0.0)
         assert hd.max_rate == 35.0
-        assert hd.ground_truth["tuning_width_deg"] == pytest.approx(22.5, abs=0.05)
+        assert hd.ground_truth["tuning_width"] == pytest.approx(
+            np.radians(22.5), abs=np.radians(0.05)
+        )
         rates = _rates(hd, np.radians([0.0, 22.5]))
         assert rates[1] / rates[0] == pytest.approx(0.5, abs=1e-3)
 
@@ -164,7 +166,7 @@ class TestHeadDirectionCellModel:
         hd = HeadDirectionCellModel(
             preferred_direction=0.0, concentration=concentration, baseline_rate=0.0
         )
-        assert round(hd.ground_truth["tuning_width_deg"]) == half_width_deg
+        assert round(np.degrees(hd.ground_truth["tuning_width"])) == half_width_deg
 
     @pytest.mark.parametrize("concentration", [1.0, 2.0, 5.0, 10.0])
     @pytest.mark.parametrize("baseline_rate", [0.0, 1.0, 10.0])
@@ -178,7 +180,6 @@ class TestHeadDirectionCellModel:
         )
         width = hd.ground_truth["tuning_width"]
         np.testing.assert_allclose(_rates(hd, [width, -width]), 20.0, rtol=1e-12)
-        assert hd.ground_truth["tuning_width_deg"] == pytest.approx(np.degrees(width))
 
     @pytest.mark.parametrize(
         ("concentration", "baseline_rate"),
@@ -197,7 +198,6 @@ class TestHeadDirectionCellModel:
         headings = np.linspace(-np.pi, np.pi, 3601)
         assert _rates(hd, headings).min() >= 20.0
         assert np.isnan(hd.ground_truth["tuning_width"])
-        assert np.isnan(hd.ground_truth["tuning_width_deg"])
 
     def test_ground_truth_properties(self):
         """Test that ground_truth returns correct parameters."""
@@ -211,12 +211,12 @@ class TestHeadDirectionCellModel:
         gt = hd.ground_truth
 
         assert gt["preferred_direction"] == pytest.approx(np.pi / 3, abs=1e-6)
-        assert gt["preferred_direction_deg"] == pytest.approx(60.0, abs=0.1)
         assert gt["concentration"] == 4.0
         assert gt["max_rate"] == 60.0
         assert gt["baseline_rate"] == 5.0
         assert "tuning_width" in gt
-        assert "tuning_width_deg" in gt
+        # Angles are radians only, as in the encoding tables.
+        assert not any(key.endswith("_deg") for key in gt)
 
     def test_tuning_width_formula(self):
         """With a silent baseline, the von Mises HWHM formula."""

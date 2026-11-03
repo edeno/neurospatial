@@ -292,13 +292,11 @@ class HeadDirectionCellModel:
 
             - 'cell_type': 'head_direction'
             - 'preferred_direction': float - preferred direction in radians
-            - 'preferred_direction_deg': float - preferred direction in degrees
             - 'concentration': float - von Mises concentration (κ)
             - 'tuning_width': float - half-width at half-maximum in radians:
               the angle from the preferred direction at which the rate falls
               to ``max_rate / 2``, as ``DirectionalRateResult.tuning_width``
               measures it. NaN when the rate never falls that low.
-            - 'tuning_width_deg': float - the same half-width in degrees
             - 'max_rate': float - peak firing rate in Hz
             - 'baseline_rate': float - baseline firing rate in Hz
 
@@ -338,10 +336,8 @@ class HeadDirectionCellModel:
         return {
             "cell_type": "head_direction",
             "preferred_direction": self._preferred_direction,
-            "preferred_direction_deg": float(np.degrees(self._preferred_direction)),
             "concentration": self.concentration,
             "tuning_width": tuning_width,
-            "tuning_width_deg": float(np.degrees(tuning_width)),
             "max_rate": self.max_rate,
             "baseline_rate": self.baseline_rate,
         }

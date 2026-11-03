@@ -92,11 +92,9 @@ class NeuralModel(Protocol):
     **head_direction**
 
         - ``'preferred_direction'``: float - preferred direction in radians
-        - ``'preferred_direction_deg'``: float - the same in degrees
         - ``'concentration'``: float - von Mises concentration (κ)
         - ``'tuning_width'``: float - half-width at half of ``max_rate``,
           in radians; NaN when the rate never falls to half
-        - ``'tuning_width_deg'``: float - the same in degrees
         - ``'max_rate'``, ``'baseline_rate'``: float - rates in Hz
 
     **object_vector**
