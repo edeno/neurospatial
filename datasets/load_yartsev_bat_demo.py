@@ -61,10 +61,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch_zip_member
 from _record import Range, Recording, check_expectations, validate_recording
 
 from neurospatial import Environment
+from neurospatial.datasets._fetch import fetch_zip_member
 
 DATASET = {
     "key": "yartsev_bat_demo",

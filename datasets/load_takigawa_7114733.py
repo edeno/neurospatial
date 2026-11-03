@@ -54,7 +54,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch
 from _record import (
     Range,
     Recording,
@@ -69,6 +68,8 @@ from _tracks import (
     simplify_polyline,
     with_declared,
 )
+
+from neurospatial.datasets._fetch import fetch
 
 DATASET = {
     "key": "takigawa_7114733",

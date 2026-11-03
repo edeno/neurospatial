@@ -53,7 +53,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch
 from _record import (
     Range,
     Recording,
@@ -64,6 +63,8 @@ from _record import (
     validate_recording,
 )
 from _tracks import declared_geometry, with_declared
+
+from neurospatial.datasets._fetch import fetch
 
 DATASET = {
     "key": "j16_23020757",

@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_asset_url, fetch
 from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
@@ -44,6 +43,8 @@ from _record import (
     check_expectations,
     validate_recording,
 )
+
+from neurospatial.datasets._fetch import dandi_asset_url, fetch
 
 DATASET = {
     "key": "sargolini_000582",

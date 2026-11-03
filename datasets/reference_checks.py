@@ -478,7 +478,8 @@ def _circular_error(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def head_direction_check(rec: Recording) -> list[str]:
     import pynapple as nap
-    from _fetch import open_nwb
+
+    from neurospatial.datasets._fetch import open_nwb
 
     with open_nwb(rec.params["nwb_source"]) as nwbfile:
         locations = nwbfile.units["location"][:]

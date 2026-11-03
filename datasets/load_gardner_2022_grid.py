@@ -55,7 +55,6 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
-from _fetch import fetch_zip_member
 from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
@@ -67,6 +66,8 @@ from _record import (
     intersect_intervals,
     validate_recording,
 )
+
+from neurospatial.datasets._fetch import fetch_zip_member
 
 DATASET = {
     "key": "gardner_2022_grid",

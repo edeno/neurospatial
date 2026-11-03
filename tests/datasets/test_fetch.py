@@ -9,6 +9,7 @@ import http.server
 import io
 import json
 import logging
+import sys
 import tarfile
 import threading
 import traceback
@@ -18,10 +19,11 @@ import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
-import _fetch
 import numpy as np
 import pytest
-from _fetch import fetch
+
+from neurospatial.datasets import _fetch
+from neurospatial.datasets._fetch import fetch
 
 
 @pytest.fixture
@@ -69,6 +71,55 @@ def test_cache_root_reads_environment(tmp_path, monkeypatch):
     assert _fetch.cache_root() == tmp_path / "elsewhere"
 
 
+def test_cache_root_precedence(tmp_path, monkeypatch):
+    monkeypatch.setenv("NEUROSPATIAL_DATA_DIR", str(tmp_path / "env"))
+    assert _fetch.cache_root(tmp_path / "arg") == tmp_path / "arg"
+    assert (tmp_path / "arg").is_dir()
+    assert not (tmp_path / "env").exists()
+
+
+@pytest.mark.parametrize(
+    ("platform", "expected"),
+    [
+        ("linux", Path("/home/u/.cache/neurospatial/datasets")),
+        ("darwin", Path("/home/u/.cache/neurospatial/datasets")),
+        ("win32", Path("/local/neurospatial/datasets")),
+    ],
+)
+def test_cache_root_per_user_default(tmp_path, monkeypatch, platform, expected):
+    monkeypatch.delenv("NEUROSPATIAL_DATA_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", "/local")
+    monkeypatch.setattr(_fetch.sys, "platform", platform)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/home/u")))
+    monkeypatch.setattr(Path, "mkdir", lambda *args, **kwargs: None)
+    assert _fetch.cache_root() == expected
+
+
+@pytest.mark.parametrize("module", ["pynwb", "fsspec", "inflate64"])
+def test_missing_extra_names_the_install(monkeypatch, tmp_path, module):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def without(name, *args, **kwargs):
+        if name == module:
+            msg = f"No module named {module!r}"
+            raise ModuleNotFoundError(msg, name=module)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without)
+    monkeypatch.delitem(sys.modules, module, raising=False)
+    calls = {
+        "pynwb": lambda: _fetch.open_nwb(str(tmp_path / "x.nwb")).__enter__(),
+        "fsspec": lambda: _fetch.fetch_zip_member(
+            "http://x/y.zip", "m", sha256="0" * 64, subdir="d", cache=tmp_path
+        ),
+        "inflate64": lambda: _fetch._copy_deflate64(None, None, None),
+    }
+    with pytest.raises(ImportError, match=r"neurospatial\[datasets\]"):
+        calls[module]()
+
+
 def test_dandi_stream_url_refuses_changed_digest(monkeypatch):
     published = {"digest": {"dandi:sha2-256": "b" * 64}}
 
@@ -109,7 +160,9 @@ class _RangeHandler(http.server.SimpleHTTPRequestHandler):
 
 
 def test_open_nwb_reads_local_and_http(tmp_path):
-    import pynwb
+    pynwb = pytest.importorskip("pynwb")
+    pytest.importorskip("fsspec")
+    pytest.importorskip("h5py")
     from pynwb.behavior import Position
 
     nwbfile = pynwb.NWBFile("demo", "id", datetime.datetime.now(datetime.UTC))

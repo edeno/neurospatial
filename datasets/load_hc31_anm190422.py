@@ -49,7 +49,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch_crcns
 from _record import (
     Range,
     Recording,
@@ -59,6 +58,8 @@ from _record import (
     validate_recording,
 )
 from _tracks import declared_geometry, graph_from_points
+
+from neurospatial.datasets._fetch import fetch_crcns
 
 DATASET = {
     "key": "hc31_anm190422",

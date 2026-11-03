@@ -35,7 +35,8 @@ sys.path.insert(0, str(HERE.parent))
 
 import load_grosmark_000044_linear  # noqa: E402
 import load_hc11_achilles  # noqa: E402
-from _fetch import open_nwb  # noqa: E402
+
+from neurospatial.datasets._fetch import open_nwb  # noqa: E402
 
 RESULTS = HERE.parent / "results" / "studies"
 SAMPLE_S = 1 / 20000

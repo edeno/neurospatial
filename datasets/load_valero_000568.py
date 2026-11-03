@@ -44,7 +44,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_asset_url, fetch, open_nwb
 from _record import (
     Range,
     Recording,
@@ -54,6 +53,8 @@ from _record import (
     validate_recording,
 )
 from _tracks import declared_geometry, straight_placement, straight_track
+
+from neurospatial.datasets._fetch import dandi_asset_url, fetch, open_nwb
 
 DATASET = {
     "key": "valero_000568",

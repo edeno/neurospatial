@@ -46,7 +46,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch
 from _geometry import declared_circle, with_environment
 from _record import Range, Recording, check_expectations, validate_recording
 from load_vollan_lt import (
@@ -56,6 +55,8 @@ from load_vollan_lt import (
     times_rebuilt_from_dt,
     to_recording,
 )
+
+from neurospatial.datasets._fetch import fetch
 
 DATASET = {
     "key": "vollan_of",

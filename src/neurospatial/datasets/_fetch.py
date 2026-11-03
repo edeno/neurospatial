@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import struct
+import sys
 import tarfile
 import tempfile
 import urllib.error
@@ -33,12 +34,29 @@ from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import IO, Any
 
-DEFAULT_CACHE = Path(__file__).resolve().parent.parent / "data" / "datasets"
+
+def _default_cache() -> Path:
+    """The per-user cache: ``%LOCALAPPDATA%\\neurospatial\\datasets`` on Windows, else ``~/.cache/neurospatial/datasets``."""
+    platform = sys.platform  # a variable, so mypy checks both branches on any OS
+    if platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "neurospatial" / "datasets"
+    return Path.home() / ".cache" / "neurospatial" / "datasets"
 
 
 def cache_root(cache: Path | None = None) -> Path:
-    """Return the cache directory: ``cache``, ``$NEUROSPATIAL_DATA_DIR`` or ``data/datasets``."""
-    root = Path(cache or os.environ.get("NEUROSPATIAL_DATA_DIR", DEFAULT_CACHE))
+    """Return the cache directory, created if absent.
+
+    The first of ``cache``, ``$NEUROSPATIAL_DATA_DIR`` and the per-user
+    default: ``%LOCALAPPDATA%\\neurospatial\\datasets`` on Windows,
+    ``~/.cache/neurospatial/datasets`` elsewhere.
+    """
+    if cache is not None:
+        root = Path(cache)
+    elif env := os.environ.get("NEUROSPATIAL_DATA_DIR"):
+        root = Path(env)
+    else:
+        root = _default_cache()
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -117,8 +135,11 @@ def _copy_deflate64(
     output may not exceed the size the directory states, and its CRC-32 must
     match.
     """
-    import inflate64
+    from neurospatial._optional import require_optional
 
+    inflate64 = require_optional(
+        "inflate64", extra="datasets", purpose="reading Deflate64 zip members"
+    )
     stream = archive.fp
     assert stream is not None
     stream.seek(info.header_offset)
@@ -163,8 +184,11 @@ def fetch_zip_member(
     Deflate64 members (compression method 9), which ``zipfile`` cannot read,
     are inflated with ``inflate64``.
     """
-    import fsspec
+    from neurospatial._optional import require_optional
 
+    fsspec = require_optional(
+        "fsspec", extra="datasets", purpose="reading zip members by byte range"
+    )
     dest = cache_root(cache) / subdir / Path(member).name
     if (found := _existing(dest, sha256)) is not None:
         return found
@@ -326,9 +350,10 @@ def fetch_crcns_tar_members(
                 msg = f"{path}: member {info.name} is not a regular file"
                 raise ValueError(msg)
             dest, digest = missing.pop(info.name)
+            stream: IO[bytes] = source
 
-            def write(tmp: IO[bytes], source: IO[bytes] = source) -> None:
-                shutil.copyfileobj(source, tmp)
+            def write(tmp: IO[bytes], stream: IO[bytes] = stream) -> None:
+                shutil.copyfileobj(stream, tmp)
 
             found[info.name] = _install(_download_to_temp(dest, write), dest, digest)
             if not missing:
@@ -365,15 +390,19 @@ def dandi_stream_url(asset_id: str, *, sha256: str) -> str:
 @contextlib.contextmanager
 def open_nwb(source: str) -> Iterator[Any]:
     """Yield the NWBFile at a local path, or at an http(s) URL read by byte range."""
-    import pynwb
+    from neurospatial._optional import require_optional
 
+    pynwb = require_optional("pynwb", extra="datasets", purpose="reading NWB files")
     if not source.startswith(("https://", "http://")):
         with pynwb.NWBHDF5IO(source, "r", load_namespaces=True) as io:
             yield io.read()
         return
-    import fsspec
-    import h5py
-
+    fsspec = require_optional(
+        "fsspec", extra="datasets", purpose="reading NWB files by byte range"
+    )
+    h5py = require_optional(
+        "h5py", extra="datasets", purpose="reading NWB files by byte range"
+    )
     with (
         fsspec.open(
             source, "rb", block_size=4 << 20, cache_type="blockcache"

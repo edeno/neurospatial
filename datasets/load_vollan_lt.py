@@ -50,7 +50,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch
 from _record import (
     Range,
     Recording,
@@ -66,6 +65,8 @@ from _tracks import (
     straight_track,
     with_declared,
 )
+
+from neurospatial.datasets._fetch import fetch
 
 DATASET = {
     "key": "vollan_lt",

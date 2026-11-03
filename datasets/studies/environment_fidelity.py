@@ -92,11 +92,12 @@ from scipy.spatial import cKDTree
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from _fetch import cache_root  # noqa: E402
 from _geometry import MAX_SIZE_RESIDUAL, judge_declared  # noqa: E402
 from _record import Recording  # noqa: E402
 from operations import _graph_env, _samples_env, env_kind  # noqa: E402
 from run import LOADERS  # noqa: E402
+
+from neurospatial.datasets._fetch import cache_root  # noqa: E402
 
 RESULTS = HERE.parent / "results" / "studies"
 SEED = 0

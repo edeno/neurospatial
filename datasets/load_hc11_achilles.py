@@ -43,7 +43,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch_crcns_tar_members
 from _record import (
     Range,
     Recording,
@@ -53,6 +52,8 @@ from _record import (
     validate_recording,
 )
 from load_grosmark_000044_circular import N_CANDIDATES, population_bursts
+
+from neurospatial.datasets._fetch import fetch_crcns_tar_members
 
 DATASET = {
     "key": "hc11_achilles",

@@ -50,7 +50,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch
 from _geometry import declared_circle, with_environment
 from _record import (
     Range,
@@ -59,6 +58,8 @@ from _record import (
     checked_span,
     validate_recording,
 )
+
+from neurospatial.datasets._fetch import fetch
 
 DATASET = {
     "key": "watermaze_10248158",

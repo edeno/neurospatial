@@ -59,9 +59,10 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
-from _fetch import fetch
 from _record import Range, Recording, check_expectations, validate_recording
 from _tracks import declared_geometry, with_declared
+
+from neurospatial.datasets._fetch import fetch
 
 DATASET = {
     "key": "rosenberg_labyrinth",

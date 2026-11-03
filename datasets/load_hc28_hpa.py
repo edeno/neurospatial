@@ -60,7 +60,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch_crcns_tar_members
 from _formats import two_led_heading
 from _record import (
     Range,
@@ -79,6 +78,8 @@ from _tracks import (
     parallel_arm_candidates,
     parallel_arm_lengths,
 )
+
+from neurospatial.datasets._fetch import fetch_crcns_tar_members
 
 TRACK_WIDTH_CM = 7.0
 FIT_CAP_CM = 10.0

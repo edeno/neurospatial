@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_asset_url, fetch, open_nwb
 from _geometry import declared_circle, with_environment
 from _record import (
     Range,
@@ -43,6 +42,8 @@ from _record import (
     checked_span,
     validate_recording,
 )
+
+from neurospatial.datasets._fetch import dandi_asset_url, fetch, open_nwb
 
 DATASET = {
     "key": "miniscope_002030",

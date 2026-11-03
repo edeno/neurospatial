@@ -81,7 +81,7 @@ def test_axona_tetrode_and_cut_round_trip():
 
 def test_deflate64_member_is_inflated_and_crc_checked(tmp_path):
     inflate64 = pytest.importorskip("inflate64")
-    import _fetch
+    from neurospatial.datasets import _fetch
 
     payload = np.random.default_rng(2).bytes(200_000)
     deflater = inflate64.Deflater()
@@ -156,7 +156,7 @@ def test_deflate64_member_is_inflated_and_crc_checked(tmp_path):
 
 def test_deflate64_member_with_a_different_local_name_is_refused(tmp_path):
     inflate64 = pytest.importorskip("inflate64")
-    import _fetch
+    from neurospatial.datasets import _fetch
 
     payload = b"lattice " * 1000
     deflater = inflate64.Deflater()

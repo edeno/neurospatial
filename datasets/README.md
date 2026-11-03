@@ -39,7 +39,7 @@ uv run --group datasets --extra nwb --extra pynapple pytest datasets/tests -n 0
 
 ## Downloads
 
-Files are downloaded once into `data/datasets/` (git-ignored) or into
+Files are downloaded once into `~/.cache/neurospatial/datasets/` (`%LOCALAPPDATA%\neurospatial\datasets` on Windows) or into
 `$NEUROSPATIAL_DATA_DIR` when it is set, and every file is checked against a
 pinned SHA-256. A file whose checksum does not match is never overwritten. Data
 are not redistributed here; each loader records the dataset's license.
@@ -52,7 +52,7 @@ loader also lists a pickle's imports from its opcodes before unpickling).
 
 Multi-GB DANDI files (000044, 000447, 000003) are not downloaded: the loader checks the
 SHA-256 DANDI publishes for the asset, then reads the few datasets it needs by
-HTTP byte range (`_fetch.open_nwb`), about a minute per file.
+HTTP byte range (`neurospatial.datasets._fetch.open_nwb`), about a minute per file.
 
 | Dataset | What it is | Size | License |
 | --- | --- | --- | --- |
@@ -105,8 +105,8 @@ occupancy, for a behavior-only file).
 
 CRCNS loaders (`hc*`) need a free crcns.org account. They read it from the
 `CRCNS_USERNAME` and `CRCNS_PASSWORD` environment variables and never print,
-log or store either value (`_fetch.fetch_crcns`). CRCNS serves `.tar.gz`
-archives, which cannot be read by byte range: `_fetch.fetch_crcns_tar_members`
+log or store either value (`neurospatial.datasets._fetch.fetch_crcns`). CRCNS serves `.tar.gz`
+archives, which cannot be read by byte range: `neurospatial.datasets._fetch.fetch_crcns_tar_members`
 streams an archive once and keeps only the pinned members, so the first load
 of `hc28_hpa` or `hc18_train261` reads the whole 2.8 or 6.5 GB archive (about
 3-10 min). CRCNS terms: cite the data set and its paper; some labs ask to be
@@ -159,7 +159,7 @@ operation cells; each writes to `results/studies/`:
    in `run.py:LOADERS`, and commit before loading any data, so the
    expectations are not tuned to the result.
 2. Implement `load(cache=None) -> Recording` (see `_record.py`): fetch with
-   `_fetch.fetch` and a pinned SHA-256, try neurospatial's readers first, walk
+   `neurospatial.datasets._fetch.fetch` and a pinned SHA-256, try neurospatial's readers first, walk
    the whole NWB file before deciding something is missing, check every stored
    unit against the value ranges, and list every conversion.
 3. Add `HAZARDS` for any quirk the loader corrects, so the driver can check

@@ -27,8 +27,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch
 from _record import Recording, check_expectations, validate_recording
+
+from neurospatial.datasets._fetch import fetch
 
 DATASET = {
     "key": "peyrache_mouse32",

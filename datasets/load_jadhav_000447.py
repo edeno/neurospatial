@@ -50,7 +50,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_stream_url, open_nwb
 from _record import (
     Range,
     Recording,
@@ -67,6 +66,8 @@ from _tracks import (
     parallel_arm_candidates,
     parallel_arm_lengths,
 )
+
+from neurospatial.datasets._fetch import dandi_stream_url, open_nwb
 
 DATASET = {
     "key": "jadhav_000447",
