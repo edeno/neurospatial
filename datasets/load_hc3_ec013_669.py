@@ -39,6 +39,11 @@ Analysis choices (``params``): the pixel scale is inferred from the stated
 apparatus (250 cm over the tracked span along the track's long axis) and is
 used only to choose ``bin_size`` (about 2.5 cm) and ``min_speed`` (4 cm/s)
 in pixels; ``dt`` 0.25 s with alternating 60 s train/test blocks.
+
+Declared environment (``geometry["environment"]``): the 250 x 7 cm track
+(Mizuseki et al. 2012, Behavioral Testing) as a one-edge graph in pixels at
+the inferred scale, along the samples' principal axis and centred on them.
+Its length is not an independent check: the scale comes from the same 250 cm.
 """
 
 from __future__ import annotations
@@ -67,6 +72,12 @@ from _record import (
     checked_span,
     heading_vs_movement,
     validate_recording,
+)
+from _tracks import (
+    declared_geometry,
+    straight_placement,
+    straight_track,
+    with_declared,
 )
 
 DATASET = {
@@ -104,6 +115,7 @@ BASE = "ec013.669"
 TOPDIR = "ec013.38"
 N_SHANKS = 8
 TRACK_CM = 250.0
+TRACK_WIDTH_CM = 7.0
 RUNNING_CM_S = 10.0
 _SHA256 = {
     "clu.1": "ca742885578da8600369e0f38ef160a91409e38cb6d24c700ea9278c2904ebcd",
@@ -313,7 +325,7 @@ def load(cache: Path | None = None) -> Recording:
     units = {
         (int(row["ele"]), int(row["clu"])): row for row in cell_table(TOPDIR, cache)
     }
-    return neuroscope_recording(
+    rec = neuroscope_recording(
         files,
         dataset=DATASET,
         session=f"{TOPDIR}/{BASE}",
@@ -325,6 +337,21 @@ def load(cache: Path | None = None) -> Recording:
         span_px=(150.0, 400.0),
         geometry={"shape": "linear track", "length_cm": TRACK_CM},
     )
+    cm_per_px = rec.geometry["inferred_cm_per_pixel"]
+    graph, fit = straight_track(rec.positions, TRACK_CM / cm_per_px)
+    entries, line = declared_geometry(
+        graph,
+        rec.positions,
+        kind=f"straight track {TRACK_CM:g} x {TRACK_WIDTH_CM:g} cm",
+        source="Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7"
+        " cm2)'; in pixels at the inferred scale, which comes from the same 250 cm",
+        bin_size=rec.params["bin_size"],
+        track_width=TRACK_WIDTH_CM / cm_per_px,
+        units="pixel",
+        name=DATASET["key"],
+        placement=straight_placement(fit, "pixel"),
+    )
+    return with_declared(rec, entries, line)
 
 
 def coincident_leds_as_east(rec: Recording) -> Recording:

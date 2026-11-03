@@ -28,6 +28,11 @@ Analysis choices (``params``):
 - ``replay_dt`` 0.02 s; ``events["ripples"]``: the first 200 ripples after the
   maze (post-maze sleep), decoded with the maze's rate maps. Only 6 ripples
   fall inside the tracked maze session.
+- Declared environment (``geometry["environment"]``): Gonzalez et al. 2026
+  (the paper the dandiset cites) describe a linear track with a water well at
+  either end; its size is in a supplementary table not read here. The track
+  is a one-edge graph along the samples' principal axis whose length is
+  fitted (the samples' 0.5th to 99.5th percentile along it), with no width.
 """
 
 from __future__ import annotations
@@ -45,6 +50,7 @@ from _record import (
     check_expectations,
     validate_recording,
 )
+from _tracks import declared_geometry, straight_placement, straight_track
 
 DATASET = {
     "key": "gonzalez_001695",
@@ -129,6 +135,19 @@ def load(cache: Path | None = None) -> Recording:
     ripples = windows[states == "Ripple"]
     after_maze = ripples[ripples[:, 0] > times[-1]][:_N_REPLAYED]
     train, test = alternating_blocks(times[0], times[-1], 60.0)
+    graph, fit = straight_track(stored, None)
+    declared, declared_line = declared_geometry(
+        graph,
+        stored,
+        kind="straight track, length fitted",
+        source="Gonzalez et al. 2026 Methods: a linear track with a water well at"
+        " either end; its length and width (Supplementary Table 1) were not read",
+        bin_size=2.5,
+        track_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placement=straight_placement(fit, "cm"),
+    )
     return Recording(
         dataset=DATASET["key"],
         session="M02-20240312",
@@ -147,6 +166,7 @@ def load(cache: Path | None = None) -> Recording:
             },
         },
         events={"ripples": after_maze, "all_ripples": ripples},
+        geometry=declared,
         params={
             "bin_size": 2.5,
             "min_speed": 4.0,
@@ -168,6 +188,7 @@ def load(cache: Path | None = None) -> Recording:
             f"{int(np.sum((ripples[:, 0] >= times[0]) & (ripples[:, 1] <= times[-1])))}"
             " fall inside the maze session)",
             "epochs: SleepStates rows WAKE, NREM, REM by label",
+            declared_line,
         ),
     )
 

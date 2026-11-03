@@ -23,7 +23,10 @@ What the loader converts:
 Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s
 (running); ``dt`` 0.25 s and alternating 60 s train/test blocks. The track
 is also given as a one-edge graph from (−160, 0) to (160, 0) cm; its width
-is not stated.
+is not stated. That graph is the declared environment
+(``geometry["environment"]``): the archive's ``readme_hafting2008.txt``
+(read from the zip) states "a linear track (mostly 320 cm)", and the file's
+own coordinates place it; the fit is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ from _record import (
     checked_span,
     validate_recording,
 )
+from _tracks import declared_geometry
 
 DATASET = {
     "key": "hafting_2008_nird",
@@ -112,6 +116,19 @@ def load(cache: Path | None = None) -> Recording:
         np.sort(np.asarray(_read(c, cache)["ts"], float).ravel()) for c in cells
     )
     train, test = alternating_blocks(times[0], times[-1], 60.0)
+    graph = track_graph()
+    declared, declared_line = declared_geometry(
+        graph,
+        positions,
+        kind=f"straight track {2 * _HALF_LENGTH_CM:g} cm",
+        source="readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; width"
+        " not stated",
+        bin_size=4.0,
+        track_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placement="the file's own frame (posx spans -160 to 160, posy is centred on 0)",
+    )
     return Recording(
         dataset=DATASET["key"],
         session=_SESSION,
@@ -123,8 +140,9 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=spikes,
         unit_ids=np.asarray(cells),
         geometry={
-            "graph": track_graph(),
+            "graph": graph,
             "graph_root": "west",
+            **declared,
             "position_span_cm": np.ptp(positions, axis=0),
         },
         params={
@@ -140,6 +158,7 @@ def load(cache: Path | None = None) -> Recording:
             span,
             "times, spike_times: post and ts as stored (s)",
             "unit_ids: tetrode and cluster from the file names",
+            declared_line,
         ),
     )
 

@@ -26,6 +26,9 @@ Analysis choices (``params``):
   track epoch (the file has no trial table).
 - ``replay_dt`` 0.02 s; ``events["ripples"]``: the 24 ripples inside the
   tracked track epoch.
+- Declared environment (``geometry["environment"]``): the stated 110 cm by
+  6.35 cm track as a one-edge graph along the samples' principal axis,
+  centred on them (``_tracks.straight_track``); the fit is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ from _record import (
     check_expectations,
     validate_recording,
 )
+from _tracks import declared_geometry, straight_placement, straight_track
 
 DATASET = {
     "key": "valero_000568",
@@ -76,6 +80,7 @@ _ASSET_ID = "48f2daa0-752b-4de5-932a-6e4682478493"
 _SHA256 = "17bc28bed791fad03b3a87702a77f2f8c74ca5daac0a8e8dbc742df3506b1790"
 # The track is 110 cm; the tracked span along it must lie here (cm).
 _TRACK_CM = (100.0, 130.0)
+_LENGTH_CM, _WIDTH_CM = 110.0, 6.35
 
 
 def _windows(table: object) -> np.ndarray:
@@ -123,6 +128,18 @@ def load(cache: Path | None = None) -> Recording:
     track = windows[(windows[:, 0] <= times[0]) & (windows[:, 1] >= times[-1])]
     on_track = (ripples[:, 0] >= times[0]) & (ripples[:, 1] <= times[-1])
     train, test = alternating_blocks(times[0], times[-1], 60.0)
+    graph, fit = straight_track(positions, _LENGTH_CM)
+    declared, declared_line = declared_geometry(
+        graph,
+        positions,
+        kind=f"straight track {_LENGTH_CM:g} cm",
+        source="NWB series description '110 cm long, 6.35 cm wide'",
+        bin_size=2.5,
+        track_width=_WIDTH_CM,
+        units="cm",
+        name=DATASET["key"],
+        placement=straight_placement(fit, "cm"),
+    )
     return Recording(
         dataset=DATASET["key"],
         session="fCamk2_201014_sess3",
@@ -143,7 +160,11 @@ def load(cache: Path | None = None) -> Recording:
             },
         },
         events={"ripples": ripples[on_track], "all_ripples": ripples},
-        geometry={"track_length_cm": 110.0, "track_width_cm": 6.35},
+        geometry={
+            "track_length_cm": _LENGTH_CM,
+            "track_width_cm": _WIDTH_CM,
+            **declared,
+        },
         params={
             "bin_size": 2.5,
             "min_speed": 4.0,
@@ -164,6 +185,7 @@ def load(cache: Path | None = None) -> Recording:
             f"events['ripples']: the {int(on_track.sum())} of {len(ripples)}"
             " RippleTimeIntervals rows inside the track tracking",
             "epochs: the epoch holding the tracking as track; SleepStates by label",
+            declared_line,
         ),
     )
 

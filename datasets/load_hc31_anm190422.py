@@ -35,6 +35,11 @@ What the loader converts:
 Analysis choices (``params``): the track coordinate is the 1-D position;
 ``bin_size`` 2.5 cm (1928 bins); ``min_speed`` 4 cm/s; ``dt`` 0.25 s with
 alternating 60 s train/test blocks.
+
+Declared environment (``geometry["environment"]``): the 48 m track (the
+hc-31 data description) as one 1-D edge along the authors' track
+coordinate, from its smallest to its largest value; the width and the folded
+layout are not stated in any source read here.
 """
 
 from __future__ import annotations
@@ -53,6 +58,7 @@ from _record import (
     checked_span,
     validate_recording,
 )
+from _tracks import declared_geometry, graph_from_points
 
 DATASET = {
     "key": "hc31_anm190422",
@@ -133,6 +139,19 @@ def load(cache: Path | None = None) -> Recording:
     step_speed = step_track / np.diff(times)
     fast = step_speed > 10.0
     speed_ratio = float(np.median(stored_speed[fast] / step_speed[fast]))
+    ends = np.nanmin(track[:, 0]), np.nanmax(track[:, 0])
+    declared, declared_line = declared_geometry(
+        graph_from_points({"start": ends[:1], "end": ends[1:]}, [("start", "end")]),
+        track,
+        kind=f"1-D track along the authors' coordinate, {ends[1] - ends[0]:.0f} cm",
+        source="hc-31 data description: 'a novel 48-m long linear track'; width"
+        " not stated",
+        bin_size=2.5,
+        track_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placement="the file's track coordinate, from its smallest to its largest value",
+    )
     return Recording(
         dataset=DATASET["key"],
         session=f"{linear.animal} {linear.session} run2",
@@ -148,6 +167,7 @@ def load(cache: Path | None = None) -> Recording:
             "shape": "48 m linear track, folded",
             "length_cm": 4800.0,
             "positions_2d": xy,
+            **declared,
         },
         params={
             "bin_size": 2.5,
@@ -167,6 +187,7 @@ def load(cache: Path | None = None) -> Recording:
             f"units: spEpochSep(:, 3) run2 trains, microseconds -> s; {len(trains)} kept,"
             f" {silent} without a spike in run 2 dropped; ID is uint8 (no NaN for"
             " interneurons), so none excluded",
+            declared_line,
         ),
     )
 
