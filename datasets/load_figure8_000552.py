@@ -13,15 +13,23 @@ Where it lives: DANDI 000552, version 0.230630.2304, one 96 MB NWB file,
 CC-BY-4.0.
 
 What the loader converts: nothing changes units. ``positions`` is the
-linearized track position (cm); the camera (x, y) is kept in
-``geometry["positions_2d"]``. Ripples and sleep states are read with pynwb
-because they live in ``processing/`` tables that ``read_intervals`` does not
-search.
+camera (x, y) in cm; the linearized track position (cm) is kept in
+``params["linearized"]``, as for the other 2-D tracks: a loop cannot be
+declared on a line, where 0 and 222 cm are different points (G-021). Ripples
+and sleep states are read with pynwb because they live in ``processing/``
+tables that ``read_intervals`` does not search.
+
+Declared environment (``geometry["environment"]``): the figure-8 as a track
+graph with both loops closed, a rectangle with a bar across its middle (six
+nodes, seven edges, every edge kept), its node positions fitted to the
+camera samples (``_tracks.figure8_candidates``, ``fit_nodes``); no source
+read here states its size or width. ``geometry["lap_start_region"]`` cuts
+the centre bar at its middle, which every trial crosses once.
 
 Analysis choices (``params``):
 
-- ``bin_size`` 2 cm: 112 bins along the 222 cm track, the position bin of the
-  ``GROSMARK_2016`` replay recipe.
+- ``bin_size`` 2 cm: the position bin of the ``GROSMARK_2016`` replay
+  recipe (112 bins along the 222 cm linearized coordinate).
 - ``min_speed`` 4 cm/s: excludes stops at the reward wells, where the animal
   is still and ripples happen, from the running rate maps.
 - ``train_epochs``/``test_epochs``: even and odd trials, so position decoding
@@ -42,6 +50,13 @@ from typing import Any
 import numpy as np
 from _fetch import dandi_asset_url, fetch
 from _record import Range, Recording, check_expectations, validate_recording
+from _tracks import (
+    best_fit,
+    cut_region,
+    declared_geometry,
+    edge_lengths,
+    figure8_candidates,
+)
 
 DATASET = {
     "key": "figure8_000552",
@@ -53,11 +68,17 @@ DATASET = {
 
 # Pre-registered from the dandiset description and a metadata probe of this
 # file, before the first run of this loader.
+# The positions became the camera (x, y) when the loop was declared; the
+# registered range checks now apply to the linearized coordinate.
 EXPECTATIONS: dict[str, Any] = {
     "n_units": 113,
-    "n_dims": 1,
-    "position_min": Range(0.0, 222.0),
-    "position_max": Range(0.0, 222.0),
+    "n_dims": 2,
+    "linearized_min": lambda rec: Range(0.0, 222.0).contains(
+        float(np.nanmin(rec.params["linearized"]))
+    ),
+    "linearized_max": lambda rec: Range(0.0, 222.0).contains(
+        float(np.nanmax(rec.params["linearized"]))
+    ),
     "ripples_present": lambda rec: (
         "ripples" in rec.events and len(rec.events["ripples"]) > 0
     ),
@@ -69,10 +90,11 @@ _ASSET_ID = "61ea529d-46db-42e6-b742-17588b2f70a2"
 _SHA256 = "3ab5f99419a9d0070ef6b5bc468841b75467ac95f538e9735312fa0d29aa3d4a"
 _LINEAR = "processing/behavior/LinearizedPosition/LinearizedSpatialSeries"
 _CAMERA = "processing/behavior/SubjectPosition/SpatialSeries"
+_FIT_CAP_CM = 10.0
 
 
 def load(cache: Path | None = None) -> Recording:
-    """Fetch the session and return it as a ``Recording`` (linearized cm)."""
+    """Fetch the session and return it as a ``Recording`` (camera x, y in cm)."""
     import pynwb
 
     from neurospatial.io.nwb import read_intervals, read_position, read_units
@@ -99,6 +121,9 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"expected cm positions, got {linear.units!r} and {camera.units!r}"
         raise ValueError(msg)
     times = np.asarray(linear.times, dtype=float)
+    if not np.array_equal(np.asarray(camera.times, dtype=float), times):
+        msg = "the camera and linearized series have different timestamps"
+        raise ValueError(msg)
     trial_windows = np.column_stack([np.asarray(trials.start), np.asarray(trials.stop)])
     epoch_windows = np.column_stack(
         [np.asarray(session_epochs.start), np.asarray(session_epochs.stop)]
@@ -107,6 +132,28 @@ def load(cache: Path | None = None) -> Recording:
         (epoch_windows[:, 0] <= times[0]) & (epoch_windows[:, 1] >= times[-1])
     ]
     in_maze = (ripples[:, 0] >= maze[0, 0]) & (ripples[:, 1] <= maze[0, 1])
+    xy = np.asarray(camera.positions, dtype=float)
+    graph, _ = best_fit(figure8_candidates(xy), xy, cap=_FIT_CAP_CM)
+    bar = [np.asarray(graph.nodes[n]["pos"]) for n in ("bar_0", "bar_1")]
+    region = cut_region(
+        "centre_bar",
+        0.5 * (bar[0] + bar[1]),
+        bar[1] - bar[0],
+        half_length=2.0,
+        half_width=10.0,
+    )
+    declared, declared_line = declared_geometry(
+        graph,
+        xy,
+        kind="figure-8: a rectangle with a bar across its middle, both loops closed",
+        source="DANDI 000552 (figure-8 maze); no size or width stated",
+        bin_size=2.0,
+        track_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placement=f"node positions fitted to the camera samples; edges (cm):"
+        f" {edge_lengths(graph)}",
+    )
     epochs = {
         "maze": maze,
         "trials": trial_windows,
@@ -123,7 +170,7 @@ def load(cache: Path | None = None) -> Recording:
         source=f"{DATASET['source']} {_PATH}",
         license=DATASET["license"],
         times=times,
-        positions=np.asarray(linear.positions, dtype=float).reshape(-1, 1),
+        positions=xy,
         position_units="cm",
         spike_times=tuple(
             np.asarray(spikes, dtype=float) for spikes in units.spike_times
@@ -133,8 +180,8 @@ def load(cache: Path | None = None) -> Recording:
         events={"ripples": ripples[in_maze], "all_ripples": ripples},
         geometry={
             "track_length_cm": 222.0,
-            "positions_2d": np.asarray(camera.positions, dtype=float),
-            "positions_2d_units": "cm",
+            **declared,
+            "lap_start_region": region,
         },
         params={
             "bin_size": 2.0,
@@ -146,13 +193,16 @@ def load(cache: Path | None = None) -> Recording:
             "test_epochs": trial_windows[1::2],
             "nwb_source": str(path),
             "readers_used": ("units",),
+            "linearized": np.asarray(linear.positions, dtype=float).ravel(),
         },
         conversions=(
-            f"positions: {_LINEAR} (cm), reshaped to (n, 1)",
-            f"geometry['positions_2d']: {_CAMERA} (cm)",
+            f"positions: {_CAMERA} (cm)",
+            f"params['linearized']: {_LINEAR} (cm), 0 and 222 cm the same place",
             "events['ripples']: Ripples table rows inside the maze epoch;"
             " every row in events['all_ripples']",
             "epochs: sleep states by label from processing/behavior/SleepStates (pynwb)",
+            declared_line,
+            "geometry['lap_start_region']: across the centre bar at its middle",
         ),
     )
 
