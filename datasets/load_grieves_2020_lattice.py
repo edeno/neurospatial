@@ -44,17 +44,33 @@ Analysis choices (``params``): ``bin_size`` 4 cm, close to the authors' 3-D
 rate maps (33 x 35 x 39 bins over the volume); ``min_speed`` 3 cm/s;
 ``analysis_epochs`` the lattice part; ``dt`` 0.25 s and alternating 60 s
 train/test blocks.
+
+Environment (``geometry["environment"]``): the lattice the rat climbed, as its
+bars. The file's 147 bars are cut at their crossings into a graph of
+segments (``_geometry.lattice_graph``) and built with
+``_geometry.graph_environment``, which keeps every segment
+(``Environment.from_graph`` keeps only the segments its edge order lists).
+The Supplementary Methods (read) state the tubes' diameter, 10 mm, but the
+tracked point is the head, which a rat on a bar holds a median 6 cm from it,
+so a 10 mm track would leave almost every sample off it. No source states how
+far the head reaches from a bar, so ``track_width`` is twice the 99th
+percentile of the head's distance from the nearest bar, measured here (about
+31 cm): it places 99 % of the samples. The voxel environment built from the
+samples stays the driver's ``env.from_samples`` and is used whole with
+``--inferred-env``.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from _fetch import fetch_zip_member
+from _geometry import distance_to_segments, graph_environment, lattice_graph
 from _record import (
     Range,
     Recording,
@@ -97,6 +113,8 @@ _MM_PER_CM = 10.0
 # bars along each of the three axes.
 _N_BARS = 147
 _LATTICE_SIDE_CM = 97.0
+_N_CUBES = 6
+_BIN_SIZE = 4.0
 RUNNING_CM_S = 10.0
 
 
@@ -164,6 +182,18 @@ def load(cache: Path | None = None) -> Recording:
     )
     lattice = np.array([[times[0], times[-1]]])
     train, test = alternating_blocks(times[0], times[-1], 60.0)
+    graph = lattice_graph(bars_cm, _N_CUBES)
+    reach = distance_to_segments(positions[np.isfinite(positions).all(axis=1)], bars_cm)
+    reach_pct = np.percentile(reach, [50, 95, 99])
+    width = 2 * float(reach_pct[2])
+    environment = partial(
+        graph_environment,
+        graph,
+        bin_size=_BIN_SIZE,
+        track_width=width,
+        units="cm",
+        name=DATASET["key"],
+    )
     return Recording(
         dataset=DATASET["key"],
         session="926_06042018 lattice",
@@ -175,9 +205,13 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=tuple(spikes),
         unit_ids=np.asarray(ids),
         epochs={"lattice": lattice},
-        geometry={"lattice_bars_cm": bars_cm, "lattice_type": lattice_type},
+        geometry={
+            "lattice_bars_cm": bars_cm,
+            "lattice_type": lattice_type,
+            "environment": environment,
+        },
         params={
-            "bin_size": 4.0,
+            "bin_size": _BIN_SIZE,
             "min_speed": 3.0,
             "dt": 0.25,
             "analysis_epochs": lattice,
@@ -193,6 +227,14 @@ def load(cache: Path | None = None) -> Recording:
             f" bars; config3.lattice_type {lattice_type!r}",
             f"units: {len(spikes)} tetrode/cluster fields; cluster 0 of each tetrode"
             f" ({n_unsorted} spikes, unsorted) left out",
+            f"environment: declared lattice, its {len(bars_cm)} bars (Grieves et al."
+            " 2020 Supplementary Methods: 6 x 6 x 6 cubes, 0.97 m a side) as a graph of"
+            f" {graph.number_of_nodes()} crossings and {graph.number_of_edges()}"
+            " segments, every segment kept (_geometry.graph_environment); placement:"
+            " the file's bars, in the positions' frame (not fitted); track_width"
+            f" {width:.1f} cm = 2 x the 99th percentile of the head's distance from"
+            f" the nearest bar (median {reach_pct[0]:.1f}, 95th percentile"
+            f" {reach_pct[1]:.1f} cm), not the stated 10 mm tube diameter",
             "headings: none; lattice.poh minus the direction of movement above"
             f" {RUNNING_CM_S:g} cm/s: in the camera's 2-D frame (lattice.pox, poy)"
             f" mean {np.degrees(in_camera[0]):.1f} deg, spread"
