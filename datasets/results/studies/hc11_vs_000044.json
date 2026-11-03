@@ -1,0 +1,96 @@
+{
+  "units": {
+    "n_000044": 137,
+    "n_hc11": 137,
+    "n_paired_same_count": 137,
+    "n_within_one_sample": 137,
+    "max_dt_s": 0.0,
+    "n_same_cell_type": 137,
+    "same_order": true,
+    "total_spikes_000044": 8414607,
+    "total_spikes_hc11": 8414607
+  },
+  "position": {
+    "n_samples_000044": 80762,
+    "n_samples_hc11": 80762,
+    "max_time_diff_s": 5.011679604649544e-08,
+    "same_nan_pattern": true,
+    "max_xy_diff_cm": 0.0,
+    "same_linearized_nan_pattern": true,
+    "max_linearized_diff_cm": 0.0
+  },
+  "epochs": {
+    "pre": {
+      "000044": [
+        0.0,
+        18079.5
+      ],
+      "hc11": [
+        0.0,
+        18079.5
+      ]
+    },
+    "maze": {
+      "000044": [
+        18079.5,
+        20147.0
+      ],
+      "hc11": [
+        18079.5,
+        20147.0
+      ]
+    },
+    "post": {
+      "000044": [
+        20147.0,
+        34861.1032
+      ],
+      "hc11": [
+        20147.0,
+        34861.1032
+      ]
+    }
+  },
+  "states": {
+    "000044": {
+      "awake": {
+        "n": 62,
+        "total_s": 16747.0
+      },
+      "non_rem": {
+        "n": 60,
+        "total_s": 15890.0
+      },
+      "rem": {
+        "n": 22,
+        "total_s": 2071.0
+      }
+    },
+    "hc11": {
+      "wake": {
+        "n": 20,
+        "total_s": 5698.0
+      },
+      "drowsy": {
+        "n": 72,
+        "total_s": 9967.0
+      },
+      "non_rem": {
+        "n": 57,
+        "total_s": 15488.0
+      },
+      "intermediate": {
+        "n": 31,
+        "total_s": 510.0
+      },
+      "rem": {
+        "n": 28,
+        "total_s": 2653.0
+      }
+    }
+  },
+  "candidate_bursts": {
+    "000044": 1646,
+    "hc11": 1803
+  }
+}
