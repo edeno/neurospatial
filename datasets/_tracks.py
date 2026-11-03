@@ -49,6 +49,18 @@ REACH_QUANTILE = 0.995
 # 6), not here.
 MIN_PIECE_BINS = 20.0
 BASE_OFFSETS = (0.05, 0.1, 0.15, 0.2)
+# The whole track's frame offset (``frame_offset``) is read along a direction
+# only where, with any one piece left out, the pieces across it still add up
+# to at least one piece lying perpendicular to it (the sum of the pieces'
+# perpendicular projections, along that direction, at least 1): no single
+# piece decides it. Along a single straight track the sum is 0.
+MIN_FRAME_EIGENVALUE = 1.0
+# The fit is repeated on the samples less the translation found so far, until
+# a step moves it less than ``FRAME_CONVERGED_BINS`` bins: samples moved off a
+# short corridor are otherwise taken by its neighbours or leave the window,
+# and one least-squares step recovers only half to two thirds of a shift.
+FRAME_MAX_ITERATIONS = 50
+FRAME_CONVERGED_BINS = 1e-3
 
 
 def graph_arrays(graph: Any) -> tuple[list[Any], NDArray[np.float64], NDArray[np.intp]]:
@@ -345,6 +357,157 @@ def edge_fit(
         )
         if unsupported
         else 0.0,
+    }
+
+
+def frame_offset(
+    graph: Any, positions: NDArray[np.float64], *, tolerance: float
+) -> dict[str, Any]:
+    """One translation of the whole track off its samples, from every piece.
+
+    Each straight piece of any length (``_straight_pieces``, as ``edge_fit``
+    cuts them; a piece shared by several segments counted once) with 10
+    samples near it gives the median of its samples' offset vectors
+    perpendicular to it, ``m_k``: in 2-D the median signed lateral offset
+    times the piece's unit normal. Samples are assigned as for the
+    stretch bias in ``edge_fit``: each to its nearest segment, projecting
+    inside it, within ``BIAS_WINDOW_BINS`` bins (``tolerance`` is one bin).
+    One translation ``s`` is fitted by least squares to the constraints
+    ``P_k s = m_k`` (``P_k`` projects onto the plane perpendicular to piece
+    ``k``), one per piece however many samples it has, so
+    ``(sum P_k) s = sum m_k``. A misplaced layout moves every piece's
+    samples the same way; scatter on both sides of a piece averages out.
+    The fit is repeated on the samples less the ``s`` found so far, and the
+    steps summed, until a step is below ``FRAME_CONVERGED_BINS`` bins (at
+    most ``FRAME_MAX_ITERATIONS``; ``frame_converged``,
+    ``frame_iterations``): on corridors a few bins long, samples moved off
+    one are taken by its neighbours or leave the window, and a single step
+    recovers only half to two thirds of a shift.
+
+    No single piece decides. A direction is read only where, with any one
+    piece left out, the others still add up to at least one piece lying
+    across it (``e' (sum P_k - P_j) e >= MIN_FRAME_EIGENVALUE`` for every
+    ``j``, on the eigenvectors ``e`` of ``sum P_k``); ``s`` has no component
+    along the others (``frame_unconstrained``: the along-track direction of
+    a single straight track, and the direction only one short arm crosses,
+    whose lean is a local feature, as ``edge_fit`` treats a short stretch).
+    The judged offset, ``frame_offset_judged``, is the smallest norm of the
+    judged components over the fits with one piece left out (linearised at
+    the converged ``s``): a misfit only when it survives dropping any
+    piece. The judged components are every axis in 2-D and the horizontal
+    ones (x, y) in 3-D, where a head on a headstage sits above the bars and
+    biases the vertical one, which is reported (``frame_offset_vertical``).
+
+    Returns ``frame_offset`` (``s``, shape (n_dims,), NaN with no piece),
+    ``frame_offset_judged``, ``frame_offset_vertical`` (3-D, else None),
+    ``frame_pieces``, ``frame_min_eigenvalue`` and ``frame_max_eigenvalue``
+    (of ``sum P_k``: the fit's condition), ``frame_unconstrained`` and
+    ``frame_judged_unconstrained`` (how many directions not read have a
+    judged component), ``frame_iterations`` and ``frame_converged``.
+    """
+    _, nodes, edges = graph_arrays(graph)
+    samples = tracked(positions)
+    n_dims = samples.shape[1]
+    start = nodes[edges[:, 0]]
+    step = nodes[edges[:, 1]] - start
+    pieces = []
+    seen: set[frozenset[int]] = set()
+    for piece in _straight_pieces(nodes, edges, min_length=MIN_PIECE_BINS * tolerance):
+        members = frozenset(j for j, _ in piece)
+        if members not in seen:
+            seen.add(members)
+            direction = np.sum([sign * step[j] for j, sign in piece], axis=0)
+            pieces.append((list(members), direction / np.linalg.norm(direction)))
+
+    def medians(
+        points: NDArray[np.float64],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Directions ``(n, n_dims)`` and median offsets ``(n, n_dims)`` of the
+        pieces with 10 samples near them."""
+        segment, _, along = edge_offsets(graph, points)
+        perpendicular = points - start[segment] - along[:, None] * step[segment]
+        near = (
+            (along > 0)
+            & (along < 1)
+            & (np.linalg.norm(perpendicular, axis=1) <= BIAS_WINDOW_BINS * tolerance)
+        )
+        used, offsets = [], []
+        for members, direction in pieces:
+            mine = near & np.isin(segment, members)
+            if mine.sum() < 10:
+                continue
+            # An orthonormal basis of the plane perpendicular to the piece.
+            basis = np.linalg.svd(direction[None])[2][1:].T
+            used.append(direction)
+            offsets.append(basis @ np.median(perpendicular[mine] @ basis, axis=0))
+        return np.reshape(used, (-1, n_dims)), np.reshape(offsets, (-1, n_dims))
+
+    def read_directions(
+        directions: NDArray[np.float64],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+        """``sum P_k``'s eigenvalues, eigenvectors and which are read."""
+        total = len(directions) * np.eye(n_dims) - directions.T @ directions
+        values, vectors = np.linalg.eigh(total)
+        # The most any one piece adds across each eigenvector.
+        largest = np.max(1.0 - (directions @ vectors) ** 2, axis=0)
+        return values, vectors, values - largest >= MIN_FRAME_EIGENVALUE
+
+    judged_axes = 2 if n_dims == 3 else n_dims
+    shift = np.zeros(n_dims)
+    converged = False
+    for iteration in range(1, FRAME_MAX_ITERATIONS + 1):
+        directions, offsets = medians(samples - shift)
+        if not len(directions):
+            nan = float("nan")
+            return {
+                "frame_offset": [nan] * n_dims,
+                "frame_offset_judged": nan,
+                "frame_offset_vertical": nan if n_dims == 3 else None,
+                "frame_pieces": 0,
+                "frame_min_eigenvalue": 0.0,
+                "frame_max_eigenvalue": 0.0,
+                "frame_unconstrained": np.eye(n_dims).tolist(),
+                "frame_judged_unconstrained": judged_axes,
+                "frame_iterations": iteration,
+                "frame_converged": False,
+            }
+        values, vectors, read = read_directions(directions)
+        basis = vectors[:, read]
+        update = basis @ ((basis.T @ offsets.sum(axis=0)) / values[read])
+        shift = shift + update
+        if np.linalg.norm(update) < FRAME_CONVERGED_BINS * tolerance:
+            converged = True
+            break
+    # Leave one piece out, linearised at the converged shift: the remaining
+    # pieces' residual medians move it by (B' A_j B)^-1 B' (sum m - m_j).
+    judged = float("inf") if read.any() else 0.0
+    residual = offsets.sum(axis=0)
+    for direction, offset in zip(directions, offsets, strict=True):
+        left = (
+            basis.T
+            @ (
+                (len(directions) - 1) * np.eye(n_dims)
+                - directions.T @ directions
+                + np.outer(direction, direction)
+            )
+            @ basis
+        )
+        moved = shift + basis @ np.linalg.solve(left, basis.T @ (residual - offset))
+        judged = min(judged, float(np.linalg.norm(moved[:judged_axes])))
+    unread = vectors[:, ~read].T
+    return {
+        "frame_offset": shift.tolist(),
+        "frame_offset_judged": judged,
+        "frame_offset_vertical": float(shift[2]) if n_dims == 3 else None,
+        "frame_pieces": len(directions),
+        "frame_min_eigenvalue": float(values[0]),
+        "frame_max_eigenvalue": float(values[-1]),
+        "frame_unconstrained": unread.tolist(),
+        "frame_judged_unconstrained": int(
+            np.sum(np.linalg.norm(unread[:, :judged_axes], axis=1) > 1e-9)
+        ),
+        "frame_iterations": iteration,
+        "frame_converged": converged,
     }
 
 

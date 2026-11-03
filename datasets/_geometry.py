@@ -512,7 +512,13 @@ def judge_declared(
       ``_tracks.MAX_UNSUPPORTED`` of their length (``_tracks.edge_fit``);
       for a climbing ``lattice`` that segment support is reported, not
       judged (the tracked head stays a few cm off the bars), and in 3-D a
-      side is not defined, so the lattice's placement is not judged;
+      side is not defined, so no stretch's bias is judged. Every track and
+      the lattice is also judged as a whole (``_tracks.frame_offset``): one
+      translation fitted to every straight piece's median perpendicular
+      offset, any length, limit one bin (``MAX_SIDE_BIAS_BINS``), over both
+      axes in 2-D and the horizontal ones in 3-D (the vertical, raised by a
+      head above the bars, is reported); a direction no piece crosses, or
+      only one does, is not read;
     - an outline (a polygonal domain): per side, how far the samples nearest
       it reach past it (their ``OUTER_QUANTILE`` signed distance, positive
       beyond the wall; limit ``MAX_SIDE_BIAS_BINS`` bins: an outline moved off
@@ -553,7 +559,7 @@ def judge_declared(
     Returns ``{"kind", "misfit": [reasons], "fit": {...}, "outside": share or
     None, "outside_by_speed": {...}}``.
     """
-    from _tracks import edge_fit, misfit_reasons, segment_distance
+    from _tracks import edge_fit, frame_offset, misfit_reasons, segment_distance
 
     positions = np.asarray(positions, dtype=float)
     tracked = np.isfinite(positions).all(axis=1)
@@ -581,6 +587,22 @@ def judge_declared(
             fit[f"size_residual_{key}"] = value
         out["fit"] = fit
         out["misfit"] = misfit_reasons(fit, bin_size, judge_support=not lattice)
+        fit.update(frame_offset(graph, samples, tolerance=bin_size))
+        fit["frame_offset_limit"] = MAX_SIDE_BIAS_BINS * bin_size
+        if fit["frame_pieces"] == 0:
+            if not any("no samples near" in reason for reason in out["misfit"]):
+                out["misfit"].append(
+                    "no samples near the declared geometry (no piece has 10"
+                    " samples within 3 bins of it)"
+                )
+        elif fit["frame_offset_judged"] > fit["frame_offset_limit"]:
+            plane = " horizontally" if samples.shape[1] == 3 else ""
+            out["misfit"].append(
+                f"the samples lie {fit['frame_offset_judged']:.3g}{plane} off the"
+                f" track as a whole (one translation fitted to"
+                f" {fit['frame_pieces']} pieces; limit"
+                f" {MAX_SIDE_BIAS_BINS:g} bin, {fit['frame_offset_limit']:.3g})"
+            )
         if fit["end_overshoot"] > MAX_SIZE_RESIDUAL:
             out["misfit"].append(
                 f"samples reach {fit['end_overshoot']:.0%} of the track's length"

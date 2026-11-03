@@ -482,3 +482,214 @@ def test_a_track_with_no_samples_near_it_is_misfit():
     judged = _judged_line([[0, 0], [100, 0]], samples)
     assert np.isnan(judged["fit"]["max_edge_bias"])
     assert any("no samples near the declared geometry" in r for r in judged["misfit"])
+
+
+# The whole-track frame offset (``_tracks.frame_offset``): one translation
+# fitted to every piece's median perpendicular offset, judged at one bin.
+FRAME_BIN = 2.5
+
+
+def _old_reasons(judged):
+    """The misfit reasons the per-stretch, end and size checks give alone."""
+    return [r for r in judged["misfit"] if "as a whole" not in r]
+
+
+@pytest.fixture(scope="module")
+def grid_maze():
+    """A 4 x 4 grid of 15 cm corridors (6 bins, all shorter than a judged
+    stretch), both orientations, no free ends; 2 cm scatter on both sides of
+    each corridor and unequal sampling (corridor k gets 100 + 20 k samples)."""
+    names = {(i, j): f"{i}{j}" for i in range(4) for j in range(4)}
+    graph = graph_from_points(
+        {name: (15.0 * i, 15.0 * j) for (i, j), name in names.items()},
+        [(names[i, j], names[i + 1, j]) for i in range(3) for j in range(4)]
+        + [(names[i, j], names[i, j + 1]) for i in range(4) for j in range(3)],
+    )
+    _, nodes, edges = graph_arrays(graph)
+    rng = np.random.default_rng(21)
+    parts = []
+    for k, (u, v) in enumerate(edges):
+        n = 100 + 20 * k
+        a, b = nodes[u], nodes[v]
+        normal = np.array([-(b - a)[1], (b - a)[0]]) / 15.0
+        parts.append(
+            a
+            + rng.uniform(0, 1, n)[:, None] * (b - a)
+            + rng.normal(0, 2.0, n)[:, None] * normal
+        )
+    return graph, np.vstack(parts)
+
+
+def _judged(graph, samples):
+    from _geometry import graph_environment, judge_declared
+
+    env = graph_environment(
+        graph, bin_size=FRAME_BIN, track_width=20.0, units="cm", name="t"
+    )
+    return judge_declared(
+        env, np.arange(len(samples)) / 30.0, samples, bin_size=FRAME_BIN
+    )
+
+
+def test_a_maze_of_short_corridors_in_place_has_no_frame_offset(grid_maze):
+    graph, samples = grid_maze
+    judged = _judged(graph, samples)
+    fit = judged["fit"]
+    assert fit["judged_stretches"] == 0  # no stretch reaches 20 bins
+    assert fit["frame_pieces"] == 24
+    # 12 corridors along x and 12 along y: sum P_k = diag(12, 12).
+    assert fit["frame_min_eigenvalue"] == pytest.approx(12.0)
+    assert fit["frame_max_eigenvalue"] == pytest.approx(12.0)
+    assert np.linalg.norm(fit["frame_offset"]) < 0.2 * FRAME_BIN
+    assert fit["frame_unconstrained"] == []
+    assert judged["misfit"] == []
+
+
+@pytest.mark.parametrize("axis", [0, 1])
+def test_a_maze_of_short_corridors_moved_off_its_samples_is_misfit(grid_maze, axis):
+    # Samples 1.5 bins (3.75 cm) off the maze along x, then y: the 12
+    # corridors across that axis each see the shift, those along it see none,
+    # so s = (3.75, 0) or (0, 3.75).
+    graph, samples = grid_maze
+    shift = np.zeros(2)
+    shift[axis] = 1.5 * FRAME_BIN
+    judged = _judged(graph, samples + shift)
+    np.testing.assert_allclose(
+        judged["fit"]["frame_offset"], shift, atol=0.2 * FRAME_BIN
+    )
+    assert any("as a whole" in r for r in judged["misfit"])
+    # Negative control: without the frame check nothing fails it (no judged
+    # stretch, no free end, no stated size).
+    assert _old_reasons(judged) == []
+
+
+def tilted_lattice(n_cubes: int = 3, side: float = 16.0) -> np.ndarray:
+    """Bars of a cubic lattice turned so a body diagonal is vertical: every
+    bar 35.26 degrees from horizontal, in three directions. Shape (n, 2, 3)."""
+    # Rotation taking (1, 1, 1) / sqrt(3) to +z.
+    z = np.ones(3) / np.sqrt(3)
+    x = np.array([1.0, -1.0, 0.0]) / np.sqrt(2)
+    rotation = np.vstack([x, np.cross(z, x), z])
+    ticks = side * np.arange(n_cubes + 1)
+    bars = []
+    for axis in range(3):
+        others = [a for a in range(3) if a != axis]
+        for p in ticks:
+            for q in ticks:
+                start, stop = np.zeros(3), np.zeros(3)
+                start[others], stop[others] = (p, q), (p, q)
+                stop[axis] = ticks[-1]
+                bars.append([rotation @ start, rotation @ stop])
+    return np.asarray(bars)
+
+
+@pytest.fixture(scope="module")
+def lattice_samples():
+    """Head samples along every segment with 1 cm scatter across the bar and
+    a head held 1.5 bins (6 cm at 4 cm bins) above the bars."""
+    from _geometry import graph_environment, lattice_graph
+
+    graph = lattice_graph(tilted_lattice(), 3)
+    _, nodes, edges = graph_arrays(graph)
+    rng = np.random.default_rng(23)
+    parts = []
+    for u, v in edges:
+        a, b = nodes[u], nodes[v]
+        d = (b - a) / np.linalg.norm(b - a)
+        noise = rng.normal(0, 1.0, (60, 3))
+        noise -= (noise @ d)[:, None] * d
+        parts.append(a + rng.uniform(0, 1, 60)[:, None] * (b - a) + noise)
+    samples = np.vstack(parts) + np.array([0.0, 0.0, 6.0])
+    env = graph_environment(graph, bin_size=4.0, track_width=30.0, units="cm", name="l")
+    return env, samples
+
+
+def _judged_lattice(env, samples):
+    from _geometry import judge_declared
+
+    return judge_declared(
+        env, np.arange(len(samples)) / 50.0, samples, bin_size=4.0, lattice=True
+    )
+
+
+def test_a_tilted_lattice_reports_the_head_height_and_judges_the_horizontal(
+    lattice_samples,
+):
+    env, samples = lattice_samples
+    judged = _judged_lattice(env, samples)
+    fit = judged["fit"]
+    # The head's +6 cm is seen by every bar as its part perpendicular to it,
+    # P_k (0, 0, 6), so s = (0, 0, 6): reported, not judged.
+    np.testing.assert_allclose(fit["frame_offset"], [0.0, 0.0, 6.0], atol=0.8)
+    assert fit["frame_offset_vertical"] == pytest.approx(6.0, abs=0.8)
+    assert fit["frame_converged"]
+    assert fit["frame_offset_judged"] < 0.2 * 4.0
+    # Three bar directions 35.26 degrees from horizontal, equally many:
+    # sum P_k = (2/3) n_pieces I.
+    assert fit["frame_min_eigenvalue"] == pytest.approx(
+        2 / 3 * fit["frame_pieces"], rel=1e-6
+    )
+    assert judged["misfit"] == []
+    # Moved 1.5 bins (6 cm) horizontally: misfit, recovered within 0.2 bin.
+    moved = _judged_lattice(env, samples + np.array([6.0, 0.0, 0.0]))
+    np.testing.assert_allclose(moved["fit"]["frame_offset"], [6.0, 0.0, 6.0], atol=0.8)
+    assert any("horizontally off the track as a whole" in r for r in moved["misfit"])
+    # Negative control: the lattice's other checks do not see it.
+    assert _old_reasons(moved) == []
+
+
+def test_a_single_straight_track_cannot_read_its_along_track_offset():
+    # A straight 100 cm track cut at 15 and 85 cm: three overlapping 50 cm
+    # pieces, all along x. Across it each adds 1 (2 with any one left out);
+    # along it nothing, so a 4 cm shift along the track is not read.
+    rng = np.random.default_rng(25)
+    samples = np.column_stack([rng.uniform(0, 100, 4000), rng.normal(0, 2.0, 4000)])
+    cut = [[0, 0], [15, 0], [85, 0], [100, 0]]
+    judged = _judged_line(cut, samples + np.array([4.0, 0.0]))
+    fit = judged["fit"]
+    assert fit["frame_pieces"] == 3
+    assert fit["frame_min_eigenvalue"] == pytest.approx(0.0, abs=1e-12)
+    assert fit["frame_max_eigenvalue"] == pytest.approx(3.0)
+    np.testing.assert_allclose(np.abs(fit["frame_unconstrained"]), [[1.0, 0.0]])
+    assert fit["frame_judged_unconstrained"] == 1
+    assert fit["frame_offset"][0] == 0.0
+    assert abs(fit["frame_offset"][1]) < 0.2 * FRAME_BIN
+    # Drawn as one segment it is one piece, and no single piece decides: no
+    # direction is read.
+    one = _judged_line([[0, 0], [100, 0]], samples)["fit"]
+    assert one["frame_pieces"] == 1
+    assert one["frame_judged_unconstrained"] == 2
+
+
+def test_one_short_arm_alone_does_not_decide_the_frame_offset():
+    # The T of the reward-arm test: only its 15 cm arm crosses x, so x is not
+    # read and the arm's 3 cm lean stays a reported local feature; y is read
+    # by the two halves.
+    from _geometry import graph_environment, judge_declared
+
+    graph = graph_from_points(
+        {"a": (0.0, 0.0), "j": (50.0, 0.0), "b": (100.0, 0.0), "r": (50.0, 15.0)},
+        [("a", "j"), ("j", "b"), ("j", "r")],
+    )
+    env = graph_environment(graph, bin_size=2.5, track_width=60.0, units="cm", name="t")
+    rng = np.random.default_rng(11)
+    main = np.column_stack([rng.uniform(0, 100, 8000), rng.normal(0, 1.0, 8000)])
+    arm = np.column_stack(
+        [50.0 + 3.0 + rng.normal(0, 1.0, 1200), rng.uniform(1, 15, 1200)]
+    )
+    samples = np.vstack([main, arm])
+    fit = judge_declared(env, np.arange(len(samples)) / 30.0, samples, bin_size=2.5)[
+        "fit"
+    ]
+    assert fit["frame_pieces"] == 3
+    np.testing.assert_allclose(np.abs(fit["frame_unconstrained"]), [[1.0, 0.0]])
+    assert fit["frame_offset"][0] == 0.0
+    # Moved 4 cm in y, the two halves read it, and it survives dropping either.
+    moved = judge_declared(
+        env,
+        np.arange(len(samples)) / 30.0,
+        samples + np.array([0.0, 4.0]),
+        bin_size=2.5,
+    )
+    assert moved["fit"]["frame_offset"][1] == pytest.approx(4.0, abs=0.5)
+    assert any("as a whole" in r for r in moved["misfit"])
