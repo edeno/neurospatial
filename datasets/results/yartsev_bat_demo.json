@@ -52,7 +52,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "a47669fe362b35de6e47e1343b190a9cb7b30fd8"
   },
   "load_warnings": [],
   "operations": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.43,
+      "seconds": 0.28,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -80,7 +80,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.405,
+      "seconds": 3.129,
       "peak_mb": 289.8
     },
     "env.declared": {
@@ -94,7 +94,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.157,
+      "seconds": 0.122,
       "peak_mb": 112.6
     },
     "rates.spatial": {
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 69.511,
+      "seconds": 68.329,
       "peak_mb": 1734.2
     },
     "rates.spatial_information": {
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.042,
+      "seconds": 0.039,
       "peak_mb": 160.6
     },
     "rates.information_vs_shifts": {
@@ -136,17 +136,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 51.957,
-      "peak_mb": 1800.5,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 9.126,
+      "peak_mb": 280.7
     },
     "cells.place_screen": {
       "status": "ok",
@@ -157,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.748,
+      "seconds": 1.516,
       "peak_mb": 177.0
     },
     "cells.grid_score": {
@@ -203,7 +194,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.637,
+      "seconds": 5.218,
       "peak_mb": 240.7
     },
     "io.nwb_roundtrip": {
@@ -214,7 +205,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 13.166,
+      "seconds": 10.242,
       "peak_mb": 211.6
     },
     "env.from_graph": {
@@ -235,7 +226,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.343,
+      "seconds": 1.228,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -244,7 +235,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.213,
+      "seconds": 0.22,
       "peak_mb": 97.2
     },
     "behavior.turn_sequence": {
@@ -420,7 +411,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=0.5, epochs, samples out of bounds or at NaN positions), so occupancy is zero in every bin. Fix: check that min_speed=0.5 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=0.5, epochs, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=0.5 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 120.85833514072318,
@@ -434,7 +425,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=0.5, epochs, samples out of bounds or at NaN positions), so the rate map is empty. Fix: check that min_speed=0.5 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=0.5, epochs, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=0.5 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 289,

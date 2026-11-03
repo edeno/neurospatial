@@ -32,7 +32,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [
     {
@@ -100,7 +100,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.189,
+      "seconds": 0.264,
       "peak_mb": 154.7
     },
     "rates.egocentric_boundary": {
@@ -161,8 +161,8 @@
           "count": 9
         }
       ],
-      "seconds": 0.643,
-      "peak_mb": 106.1
+      "seconds": 0.956,
+      "peak_mb": 106.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -178,7 +178,7 @@
           "count": 9
         }
       ],
-      "seconds": 0.51,
+      "seconds": 0.717,
       "peak_mb": 0.4
     },
     "imaging.rates": {

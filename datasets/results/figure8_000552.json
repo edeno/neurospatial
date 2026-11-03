@@ -8,6 +8,7 @@
     "params['linearized']: processing/behavior/LinearizedPosition/LinearizedSpatialSeries (cm), 0 and 222 cm the same place",
     "events['ripples']: Ripples table rows inside the maze epoch; every row in events['all_ripples']",
     "epochs: sleep states by label from processing/behavior/SleepStates (pynwb)",
+    "train/test: trials alternating within visited_arm (11 left, 10 right; each label on its own side of the centre bar)",
     "environment: declared figure-8: a rectangle with a bar across its middle, both loops closed (DANDI 000552 (figure-8 maze); no size or width stated); tracked point: not stated; physical width not stated; placement tolerance 12.5 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: node positions fitted to the camera samples; edges (cm): corner_0-corner_1 71.9; corner_0-bar_0 38.5; corner_1-bar_1 35.0; corner_2-bar_1 30.7; corner_2-corner_3 67.2; corner_3-bar_0 31.2; bar_0-bar_1 70.5 (fitted to the samples); fit: median |lateral offset| 0.99 cm, worst stretch bias 0.60 cm (limit 2), worst unsupported share of a segment 0%; track length 345.0 cm",
     "geometry['lap_start_region']: across the centre bar at its middle"
   ],
@@ -50,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
+    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
   },
   "load_warnings": [],
   "operations": {
@@ -64,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.053,
+      "seconds": 0.06,
       "peak_mb": 2.8
     },
     "env.occupancy": {
@@ -78,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.043,
+      "seconds": 0.051,
       "peak_mb": 12.7
     },
     "env.declared": {
@@ -106,7 +107,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.259,
+      "seconds": 0.244,
       "peak_mb": 198.6
     },
     "rates.spatial_information": {
@@ -134,17 +135,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.232,
-      "peak_mb": 252.6,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 2.018,
+      "peak_mb": 244.1
     },
     "cells.place_screen": {
       "status": "ok",
@@ -155,7 +147,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 1.4
     },
     "cells.grid_score": {
@@ -189,19 +181,27 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 7.810378802743796,
-        "chance_median_error": 56.54216960571152,
+        "median_error": 5.919476792212197,
+        "chance_median_error": 65.86765872019608,
         "chance_frac_disconnected": 0.0,
-        "frac_actual_outside": 0.0006613756613756613,
+        "frac_actual_outside": 0.0007415647015202076,
         "units": "cm",
-        "n_time_bins": 3024,
-        "median_error_on_declared": 7.8103788027437835,
-        "n_on_declared": 3022
+        "n_time_bins": 2697,
+        "median_error_on_declared": 5.919476792212197,
+        "n_on_declared": 2695
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 0.295,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "example": "decoding_error(): 1 of 2697 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.35,
       "peak_mb": 198.5
     },
     "io.nwb_roundtrip": {
@@ -212,8 +212,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.829,
-      "peak_mb": 2.9
+      "seconds": 1.937,
+      "peak_mb": 2.2
     },
     "env.from_graph": {
       "status": "ok",
@@ -236,7 +236,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.021,
       "peak_mb": 13.0
     },
     "behavior.laps": {
@@ -251,7 +251,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.057,
+      "seconds": 0.062,
       "peak_mb": 6.4
     },
     "behavior.turn_sequence": {
@@ -263,7 +263,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.022,
+      "seconds": 0.023,
       "peak_mb": 6.4
     },
     "replay.compare_methods": {
@@ -281,8 +281,8 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.361,
-      "peak_mb": 225.2
+      "seconds": 0.393,
+      "peak_mb": 225.3
     },
     "io.nwb_readers": {
       "status": "error",
@@ -294,8 +294,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.956,
-      "peak_mb": 137.2
+      "seconds": 1.025,
+      "peak_mb": 137.3
     },
     "io.read_pose": {
       "status": "n/a",
@@ -303,8 +303,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.817,
-      "peak_mb": 1.9
+      "seconds": 0.938,
+      "peak_mb": 1.8
     },
     "imaging.rates": {
       "status": "n/a",
@@ -359,7 +359,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bin. Fix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 596.5508666666738,
@@ -373,7 +373,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty. Fix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 113,
@@ -402,7 +402,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, epochs, samples out of bounds or at NaN positions), so the result is empty or NaN rather than a measurement. Fix: pass max_gap=None to disable gap gating; check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, epochs, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which the result is empty or NaN rather than a measurement, the call refuses.\nFix: pass max_gap=None to disable gap gating; check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 6,

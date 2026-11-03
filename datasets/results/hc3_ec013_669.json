@@ -45,7 +45,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
+    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
   },
   "load_warnings": [],
   "operations": {
@@ -67,8 +67,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.427,
-      "peak_mb": 14.1
+      "seconds": 0.059,
+      "peak_mb": 2.7
     },
     "env.occupancy": {
       "status": "ok",
@@ -89,7 +89,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.045,
+      "seconds": 0.037,
       "peak_mb": 4.4
     },
     "env.declared": {
@@ -103,7 +103,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.005,
       "peak_mb": 4.5
     },
     "rates.spatial": {
@@ -125,8 +125,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.901,
-      "peak_mb": 27.4
+      "seconds": 0.064,
+      "peak_mb": 4.9
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -161,8 +161,8 @@
           "count": 4
         }
       ],
-      "seconds": 0.314,
-      "peak_mb": 6.3
+      "seconds": 0.245,
+      "peak_mb": 6.2
     },
     "cells.place_screen": {
       "status": "ok",
@@ -173,7 +173,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.5
     },
     "cells.grid_score": {
@@ -205,7 +205,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.078,
+      "seconds": 0.054,
       "peak_mb": 6.2
     },
     "rates.egocentric_boundary": {
@@ -247,8 +247,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.138,
-      "peak_mb": 8.7
+      "seconds": 0.074,
+      "peak_mb": 8.0
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -266,8 +266,8 @@
           "count": 2
         }
       ],
-      "seconds": 3.339,
-      "peak_mb": 12.5
+      "seconds": 2.166,
+      "peak_mb": 2.6
     },
     "env.from_graph": {
       "status": "ok",
@@ -290,8 +290,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.042,
-      "peak_mb": 24.6
+      "seconds": 0.03,
+      "peak_mb": 3.3
     },
     "behavior.laps": {
       "status": "error",
@@ -320,8 +320,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.184,
-      "peak_mb": 3.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -329,8 +329,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
-      "peak_mb": 0.3
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -338,7 +338,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 0.0
     },
     "imaging.rates": {

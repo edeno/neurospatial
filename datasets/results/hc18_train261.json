@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "fc85af6a9fe36e31048a0c6f11e6643e117b3a7e"
   },
   "load_warnings": [],
   "operations": {
@@ -66,7 +66,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.33,
+      "seconds": 0.364,
       "peak_mb": 58.1
     },
     "env.occupancy": {
@@ -88,8 +88,8 @@
           "count": 1
         }
       ],
-      "seconds": 3.886,
-      "peak_mb": 117.9
+      "seconds": 3.499,
+      "peak_mb": 118.0
     },
     "env.declared": {
       "status": "ok",
@@ -102,7 +102,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.472,
+      "seconds": 3.166,
       "peak_mb": 129.7
     },
     "rates.spatial": {
@@ -124,7 +124,7 @@
           "count": 1
         }
       ],
-      "seconds": 7.971,
+      "seconds": 10.49,
       "peak_mb": 118.9
     },
     "rates.spatial_information": {
@@ -137,7 +137,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 1.4
     },
     "rates.information_vs_shifts": {
@@ -155,29 +155,13 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
-          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
-          "count": 1
-        },
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
           "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
           "example": "bandwidth=None resolved to 11.32 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
-          "count": 5
+          "count": 4
         }
       ],
-      "seconds": 32.676,
-      "peak_mb": 165.9,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 47.747,
+      "peak_mb": 132.5
     },
     "cells.place_screen": {
       "status": "ok",
@@ -228,8 +212,8 @@
         "frac_actual_outside": 0.012794612794612794,
         "units": "pixel",
         "n_time_bins": 3138,
-        "median_error_on_declared": 276.0553545466586,
-        "n_on_declared": 2932
+        "median_error_on_declared": 275.92368370100525,
+        "n_on_declared": 2929
       },
       "note": "",
       "gap": null,
@@ -249,7 +233,7 @@
           "count": 1
         }
       ],
-      "seconds": 9.613,
+      "seconds": 8.916,
       "peak_mb": 118.9
     },
     "io.nwb_roundtrip": {
@@ -268,8 +252,8 @@
           "count": 2
         }
       ],
-      "seconds": 2.382,
-      "peak_mb": 3.8
+      "seconds": 2.975,
+      "peak_mb": 3.4
     },
     "env.from_graph": {
       "status": "ok",
@@ -311,7 +295,7 @@
           "count": 1
         }
       ],
-      "seconds": 9.041,
+      "seconds": 9.848,
       "peak_mb": 117.4
     },
     "behavior.turn_sequence": {
@@ -323,7 +307,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.333,
+      "seconds": 4.917,
       "peak_mb": 117.3
     },
     "replay.compare_methods": {

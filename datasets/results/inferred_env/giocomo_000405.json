@@ -8,7 +8,7 @@
     "times: 0.02 * arange(n) s; track_data's rate attribute (0.02) is the period",
     "headings: none; track_data column hd is the direction of movement from x, y",
     "activity: firing_rates (labelled uv) as binned rates in Hz",
-    "environment: declared rectangle (150 x 130, Gonzalez & Giocomo 2024 eLife Methods: 'The dimensions of field are 1.3m x 1.5m'); placement fitted: centre_x -2.11, centre_y 64.5, rotation_rad 1.57, samples_side_a 138, samples_side_b 120, size_residual_a -0.0821, size_residual_b -0.0797"
+    "environment: declared rectangle (150 x 130, Gonzalez & Giocomo 2024 eLife Methods: 'The dimensions of field are 1.3m x 1.5m'); placement fitted: centre_x -1.17, centre_y 64.2, rotation_rad 1.56, samples_side_a 140, samples_side_b 122, size_residual_a -0.0685, size_residual_b -0.0632"
   ],
   "expectations": [
     {
@@ -44,9 +44,17 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
-  "load_warnings": [],
+  "load_warnings": [
+    {
+      "category": "RuntimeWarning",
+      "origin": "third-party",
+      "template": "invalid value encountered in oriented_envelope",
+      "example": "invalid value encountered in oriented_envelope",
+      "count": 1
+    }
+  ],
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -58,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.212,
+      "seconds": 0.171,
       "peak_mb": 8.0
     },
     "env.occupancy": {
@@ -72,7 +80,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.013,
       "peak_mb": 8.2
     },
     "env.declared": {
@@ -160,7 +168,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.033,
+      "seconds": 0.029,
       "peak_mb": 8.2
     },
     "behavior.turn_sequence": {
@@ -187,7 +195,7 @@
       "note": "position: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.151,
+      "seconds": 0.131,
       "peak_mb": 0.2
     },
     "io.read_pose": {
@@ -196,8 +204,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.148,
-      "peak_mb": 0.3
+      "seconds": 0.125,
+      "peak_mb": 0.2
     },
     "imaging.rates": {
       "status": "missing",
@@ -218,7 +226,7 @@
       "note": "occupancy-weighted mean binned rate per spatial bin (harness)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.053,
+      "seconds": 0.046,
       "peak_mb": 9.3
     }
   },

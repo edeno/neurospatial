@@ -8,6 +8,7 @@
     "params['linearized']: processing/behavior/LinearizedPosition/LinearizedSpatialSeries (cm), 0 and 222 cm the same place",
     "events['ripples']: Ripples table rows inside the maze epoch; every row in events['all_ripples']",
     "epochs: sleep states by label from processing/behavior/SleepStates (pynwb)",
+    "train/test: trials alternating within visited_arm (11 left, 10 right; each label on its own side of the centre bar)",
     "environment: declared figure-8: a rectangle with a bar across its middle, both loops closed (DANDI 000552 (figure-8 maze); no size or width stated); tracked point: not stated; physical width not stated; placement tolerance 12.5 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: node positions fitted to the camera samples; edges (cm): corner_0-corner_1 71.9; corner_0-bar_0 38.5; corner_1-bar_1 35.0; corner_2-bar_1 30.7; corner_2-corner_3 67.2; corner_3-bar_0 31.2; bar_0-bar_1 70.5 (fitted to the samples); fit: median |lateral offset| 0.99 cm, worst stretch bias 0.60 cm (limit 2), worst unsupported share of a segment 0%; track length 345.0 cm",
     "geometry['lap_start_region']: across the centre bar at its middle"
   ],
@@ -50,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -64,8 +65,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.057,
-      "peak_mb": 2.9
+      "seconds": 0.089,
+      "peak_mb": 2.8
     },
     "env.occupancy": {
       "status": "ok",
@@ -78,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.02,
+      "seconds": 0.039,
       "peak_mb": 12.5
     },
     "env.declared": {
@@ -101,7 +102,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.322,
+      "seconds": 0.509,
       "peak_mb": 199.5
     },
     "rates.spatial_information": {
@@ -129,17 +130,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.998,
-      "peak_mb": 259.2,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 2.027,
+      "peak_mb": 245.4
     },
     "cells.place_screen": {
       "status": "ok",
@@ -150,7 +142,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.014,
       "peak_mb": 18.2
     },
     "cells.grid_score": {
@@ -161,7 +153,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.474,
+      "seconds": 0.663,
       "peak_mb": 9.9
     },
     "cells.border_score": {
@@ -186,19 +178,19 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 8.828427124746188,
-        "chance_median_error": 50.97056274847714,
-        "chance_frac_disconnected": 0.0006615944426066821,
-        "frac_actual_outside": 0.00033068783068783067,
+        "median_error": 6.82842712474619,
+        "chance_median_error": 59.656854249492376,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 3024,
-        "median_error_on_declared": 8.828427124746188,
-        "n_on_declared": 3022
+        "n_time_bins": 2697,
+        "median_error_on_declared": 6.82842712474619,
+        "n_on_declared": 2695
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.419,
+      "seconds": 0.491,
       "peak_mb": 199.4
     },
     "io.nwb_roundtrip": {
@@ -209,7 +201,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.516,
+      "seconds": 3.929,
       "peak_mb": 6.7
     },
     "env.from_graph": {
@@ -230,7 +222,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.038,
       "peak_mb": 13.0
     },
     "behavior.laps": {
@@ -244,7 +236,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.041,
+      "seconds": 0.069,
       "peak_mb": 5.8
     },
     "behavior.turn_sequence": {
@@ -265,13 +257,13 @@
         "events": "ripples",
         "davidson_2009_rate": 0.0,
         "davidson_2009_ci": "0.000-0.168",
-        "grosmark_2016_rate": 0.0,
-        "grosmark_2016_ci": "0.000-0.168"
+        "grosmark_2016_rate": 0.05,
+        "grosmark_2016_ci": "0.001-0.249"
       },
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 0.363,
+      "seconds": 0.565,
       "peak_mb": 225.5
     },
     "io.nwb_readers": {
@@ -284,7 +276,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.97,
+      "seconds": 1.551,
       "peak_mb": 137.3
     },
     "io.read_pose": {
@@ -293,8 +285,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.832,
-      "peak_mb": 1.9
+      "seconds": 1.318,
+      "peak_mb": 1.8
     },
     "imaging.rates": {
       "status": "n/a",
@@ -349,7 +341,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bin. Fix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 603.3192666666728,
@@ -363,7 +355,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty. Fix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 113,

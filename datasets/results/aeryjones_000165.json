@@ -40,7 +40,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "fc85af6a9fe36e31048a0c6f11e6643e117b3a7e"
   },
   "load_warnings": [
     {
@@ -62,7 +62,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.026,
+      "seconds": 0.024,
       "peak_mb": 1.9
     },
     "env.occupancy": {
@@ -90,7 +90,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.005,
       "peak_mb": 4.9
     },
     "rates.spatial": {
@@ -104,7 +104,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.048,
+      "seconds": 0.05,
       "peak_mb": 19.8
     },
     "rates.spatial_information": {
@@ -132,17 +132,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.635,
-      "peak_mb": 37.4,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 0.275,
+      "peak_mb": 24.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -199,7 +190,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.055,
+      "seconds": 0.069,
       "peak_mb": 19.8
     },
     "io.nwb_roundtrip": {
@@ -210,8 +201,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.74,
-      "peak_mb": 1.7
+      "seconds": 1.947,
+      "peak_mb": 1.9
     },
     "env.from_graph": {
       "status": "ok",
@@ -240,7 +231,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.008,
       "peak_mb": 4.4
     },
     "behavior.turn_sequence": {
@@ -252,7 +243,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.01,
       "peak_mb": 4.4
     },
     "replay.compare_methods": {
@@ -282,7 +273,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.292,
+      "seconds": 0.324,
       "peak_mb": 13.7
     },
     "io.read_pose": {
@@ -299,7 +290,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.27,
+      "seconds": 0.298,
       "peak_mb": 0.4
     },
     "imaging.rates": {
@@ -355,7 +346,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, epochs, samples out of bounds or at NaN positions), so occupancy is zero in every bin. Fix: check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, epochs, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 269.5649666666667,
@@ -369,7 +360,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, epochs, samples out of bounds or at NaN positions), so the rate map is empty. Fix: check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, epochs, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 32,

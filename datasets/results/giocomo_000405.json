@@ -8,7 +8,7 @@
     "times: 0.02 * arange(n) s; track_data's rate attribute (0.02) is the period",
     "headings: none; track_data column hd is the direction of movement from x, y",
     "activity: firing_rates (labelled uv) as binned rates in Hz",
-    "environment: declared rectangle (150 x 130, Gonzalez & Giocomo 2024 eLife Methods: 'The dimensions of field are 1.3m x 1.5m'); placement fitted: centre_x -2.11, centre_y 64.5, rotation_rad 1.57, samples_side_a 138, samples_side_b 120, size_residual_a -0.0821, size_residual_b -0.0797"
+    "environment: declared rectangle (150 x 130, Gonzalez & Giocomo 2024 eLife Methods: 'The dimensions of field are 1.3m x 1.5m'); placement fitted: centre_x -1.17, centre_y 64.2, rotation_rad 1.56, samples_side_a 140, samples_side_b 122, size_residual_a -0.0685, size_residual_b -0.0632"
   ],
   "expectations": [
     {
@@ -44,9 +44,17 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "fc85af6a9fe36e31048a0c6f11e6643e117b3a7e"
   },
-  "load_warnings": [],
+  "load_warnings": [
+    {
+      "category": "RuntimeWarning",
+      "origin": "third-party",
+      "template": "invalid value encountered in oriented_envelope",
+      "example": "invalid value encountered in oriented_envelope",
+      "count": 1
+    }
+  ],
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -58,21 +66,21 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.316,
-      "peak_mb": 8.1
+      "seconds": 0.184,
+      "peak_mb": 8.0
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
         "total_s": 1318.06,
-        "frac_bins_visited": 0.6699775712912528,
-        "median_s_per_visited_bin": 0.20000000000015916,
-        "max_s": 25.419999999999895
+        "frac_bins_visited": 0.6661326497917334,
+        "median_s_per_visited_bin": 0.21999999999994202,
+        "max_s": 23.999999999999943
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.381,
+      "seconds": 0.36,
       "peak_mb": 17.1
     },
     "env.declared": {
@@ -86,7 +94,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.04,
+      "seconds": 0.041,
       "peak_mb": 9.3
     },
     "rates.spatial": {
@@ -163,7 +171,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.042,
+      "seconds": 0.047,
       "peak_mb": 8.2
     },
     "behavior.turn_sequence": {
@@ -190,7 +198,7 @@
       "note": "position: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.127,
+      "seconds": 0.131,
       "peak_mb": 0.2
     },
     "io.read_pose": {
@@ -199,7 +207,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.124,
+      "seconds": 0.126,
       "peak_mb": 0.2
     },
     "imaging.rates": {
@@ -215,13 +223,13 @@
       "status": "workaround",
       "summary": {
         "n_cells": 46,
-        "frac_nan_bins": 0.3300224287087472,
-        "median_peak": 65.18920915260404
+        "frac_nan_bins": 0.3338673502082666,
+        "median_peak": 68.00341830520807
       },
       "note": "occupancy-weighted mean binned rate per spatial bin (harness)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.07,
+      "seconds": 0.075,
       "peak_mb": 9.3
     }
   },
@@ -252,15 +260,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 1318.06,
-        "frac_bins_visited": 0.6699775712912528,
-        "median_s_per_visited_bin": 0.20000000000015916,
-        "max_s": 25.419999999999895
+        "frac_bins_visited": 0.6661326497917334,
+        "median_s_per_visited_bin": 0.21999999999994202,
+        "max_s": 23.999999999999943
       },
       "hazard_summary": {
         "total_s": 1318.06,
-        "frac_bins_visited": 0.0006408202499198974,
-        "median_s_per_visited_bin": 659.03,
-        "max_s": 1016.6799999999998
+        "frac_bins_visited": 0.001281640499839795,
+        "median_s_per_visited_bin": 202.04000000000013,
+        "max_s": 835.1000000000001
       }
     },
     {
@@ -315,15 +323,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 1318.06,
-        "frac_bins_visited": 0.6699775712912528,
-        "median_s_per_visited_bin": 0.20000000000015916,
-        "max_s": 25.419999999999895
+        "frac_bins_visited": 0.6661326497917334,
+        "median_s_per_visited_bin": 0.21999999999994202,
+        "max_s": 23.999999999999943
       },
       "hazard_summary": {
         "total_s": 1318.06,
-        "frac_bins_visited": 0.01281640499839795,
-        "median_s_per_visited_bin": 15.989999999999775,
-        "max_s": 323.8800000000009
+        "frac_bins_visited": 0.013457225248317847,
+        "median_s_per_visited_bin": 17.509999999999867,
+        "max_s": 310.02000000000004
       }
     },
     {

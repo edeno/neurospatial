@@ -6,7 +6,7 @@
   "conversions": [
     "positions: cm = read_position metres x 100 (file stores cm, conversion=0.01)",
     "headings: none; the file has one LED (SpatialSeriesLED1)",
-    "environment: declared square (100 x 100, NWB session_description: 'a 1 x 1 meter enclosure'); placement fitted: centre_x 0.0426, centre_y 0.135, rotation_rad 1.57, samples_side_a 99.5, samples_side_b 97.1, size_residual_a -0.00545, size_residual_b -0.029"
+    "environment: declared square (100 x 100, NWB session_description: 'a 1 x 1 meter enclosure'); placement fitted: centre_x 0.332, centre_y -0.12, rotation_rad 0.00355, samples_side_a 99.9, samples_side_b 97.4, size_residual_a -0.000663, size_residual_b -0.0258"
   ],
   "expectations": [
     {
@@ -42,7 +42,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -56,7 +56,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.115,
+      "seconds": 0.275,
       "peak_mb": 5.8
     },
     "env.occupancy": {
@@ -70,7 +70,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.009,
       "peak_mb": 3.8
     },
     "env.declared": {
@@ -93,8 +93,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.449,
-      "peak_mb": 49.9
+      "seconds": 0.68,
+      "peak_mb": 50.0
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -121,17 +121,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.737,
-      "peak_mb": 57.8,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 0.093,
+      "peak_mb": 3.9
     },
     "cells.place_screen": {
       "status": "ok",
@@ -142,7 +133,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.041,
+      "seconds": 0.059,
       "peak_mb": 80.4
     },
     "cells.grid_score": {
@@ -155,7 +146,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.029,
+      "seconds": 0.049,
       "peak_mb": 1.0
     },
     "cells.border_score": {
@@ -192,7 +183,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.267,
+      "seconds": 0.409,
       "peak_mb": 30.4
     },
     "io.nwb_roundtrip": {
@@ -203,8 +194,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.492,
-      "peak_mb": 11.6
+      "seconds": 4.149,
+      "peak_mb": 11.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -233,8 +224,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
-      "peak_mb": 5.0
+      "seconds": 0.045,
+      "peak_mb": 4.2
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -264,8 +255,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.229,
-      "peak_mb": 2.6
+      "seconds": 0.396,
+      "peak_mb": 3.5
     },
     "io.read_pose": {
       "status": "n/a",
@@ -273,7 +264,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.261,
+      "seconds": 0.4,
       "peak_mb": 0.3
     },
     "imaging.rates": {

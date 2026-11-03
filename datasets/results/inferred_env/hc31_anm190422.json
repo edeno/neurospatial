@@ -9,7 +9,7 @@
     "geometry['positions_2d']: posMaze(2) x, y in inches -> cm; median ratio of linear to 2-D step while moving 1.000",
     "velocity column: inches per microsecond -> cm/s; median ratio to the speed of the track coordinate above 10 cm/s 0.90 (not used)",
     "units: spEpochSep(:, 3) run2 trains, microseconds -> s; 61 kept, 2 without a spike in run 2 dropped; ID is uint8 (no NaN for interneurons), so none excluded",
-    "environment: declared 1-D track along the authors' coordinate, 4816 cm (hc-31 data description: 'a novel 48-m long linear track'; width not stated); tracked point: not stated (video, the authors' track coordinate); physical width not stated; placement tolerance 2.5 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 0.0% of samples are dropped by construction); placement: the file's track coordinate, from its smallest to its largest value (file's linearized coordinate); fit: median |lateral offset| 0.00 cm, worst stretch bias 0.00 cm (limit 2.5), worst unsupported share of a segment 0%, length +0% of the stated; track length 4815.6 cm"
+    "environment: declared 1-D track along the authors' coordinate, 4816 cm (hc-31 data description: 'a novel 48-m long linear track'; width not stated); tracked point: not stated (video, the authors' track coordinate); physical width not stated; placement tolerance 2.5 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 0.0% of samples are dropped by construction); placement: the file's track coordinate, from its smallest to its largest value (file's linearized coordinate); fit: median |lateral offset| nan cm, worst stretch bias nan cm (limit 2.5), worst unsupported share of a segment 0%, length +0% of the stated; track length 4815.6 cm"
   ],
   "expectations": [
     {
@@ -45,7 +45,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -59,8 +59,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.099,
-      "peak_mb": 3.1
+      "seconds": 0.061,
+      "peak_mb": 3.2
     },
     "env.occupancy": {
       "status": "ok",
@@ -73,7 +73,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.018,
+      "seconds": 0.011,
       "peak_mb": 6.9
     },
     "env.declared": {
@@ -96,7 +96,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.376,
+      "seconds": 0.614,
       "peak_mb": 93.6
     },
     "rates.spatial_information": {
@@ -109,7 +109,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.003,
       "peak_mb": 7.9
     },
     "rates.information_vs_shifts": {
@@ -124,17 +124,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.099,
-      "peak_mb": 109.7,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
-      }
+      "seconds": 0.164,
+      "peak_mb": 9.2
     },
     "cells.place_screen": {
       "status": "ok",
@@ -145,7 +136,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.264,
+      "seconds": 0.108,
       "peak_mb": 152.6
     },
     "cells.grid_score": {
@@ -191,7 +182,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.457,
+      "seconds": 0.291,
       "peak_mb": 81.4
     },
     "io.nwb_roundtrip": {
@@ -202,7 +193,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.948,
+      "seconds": 2.528,
       "peak_mb": 9.3
     },
     "env.from_graph": {
@@ -223,7 +214,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
+      "seconds": 0.012,
       "peak_mb": 7.3
     },
     "behavior.laps": {
@@ -232,7 +223,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.005,
       "peak_mb": 3.6
     },
     "behavior.turn_sequence": {
@@ -324,7 +315,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 909.2134216957675,
@@ -338,7 +329,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 61,
@@ -490,7 +481,7 @@
       "hazard": "times_in_microseconds",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: the median sampling interval is 3.337e+04 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 3.337e+04, or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: the median sampling interval is 3.337e+04 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 3.337e+04, or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 909.2134216957675,
@@ -504,7 +495,7 @@
       "hazard": "times_in_microseconds",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: the median sampling interval is 3.337e+04 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 3.337e+04, or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: the median sampling interval is 3.337e+04 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 3.337e+04, or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 61,
@@ -518,7 +509,7 @@
       "hazard": "times_in_microseconds",
       "op": "behavior.segment_by_velocity",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0), so no movement epoch was found. Fix: the median sampling interval is 3.337e+04 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 3.337e+04, or pass max_gap=None to disable gap gating.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which no movement epoch was found, the call refuses.\nFix: the median sampling interval is 3.337e+04 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 3.337e+04, or pass max_gap=None to disable gap gating.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_segments": 237,

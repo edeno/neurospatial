@@ -45,7 +45,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -59,7 +59,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.044,
+      "seconds": 0.062,
       "peak_mb": 2.1
     },
     "env.occupancy": {
@@ -76,12 +76,12 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.",
+          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.",
           "count": 1
         }
       ],
-      "seconds": 0.013,
+      "seconds": 0.018,
       "peak_mb": 4.2
     },
     "env.declared": {
@@ -95,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.008,
       "peak_mb": 4.6
     },
     "rates.spatial": {
@@ -112,12 +112,12 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
           "count": 1
         }
       ],
-      "seconds": 0.062,
+      "seconds": 0.097,
       "peak_mb": 5.2
     },
     "rates.spatial_information": {
@@ -148,22 +148,13 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "count": 5
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "count": 4
         }
       ],
-      "seconds": 0.819,
-      "peak_mb": 21.4,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 0.504,
+      "peak_mb": 7.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -174,7 +165,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 2.1
     },
     "cells.grid_score": {
@@ -209,12 +200,12 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.",
+          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.",
           "count": 1
         }
       ],
-      "seconds": 0.102,
+      "seconds": 0.136,
       "peak_mb": 15.8
     },
     "rates.egocentric_boundary": {
@@ -244,19 +235,19 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "example": "About 7% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "example": "About 7% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
           "count": 1
         },
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.",
+          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.",
           "count": 1
         }
       ],
-      "seconds": 0.089,
+      "seconds": 0.122,
       "peak_mb": 9.7
     },
     "io.nwb_roundtrip": {
@@ -267,8 +258,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.775,
-      "peak_mb": 2.8
+      "seconds": 2.476,
+      "peak_mb": 2.1
     },
     "env.from_graph": {
       "status": "ok",
@@ -300,12 +291,12 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.",
+          "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.",
           "count": 1
         }
       ],
-      "seconds": 0.007,
+      "seconds": 0.009,
       "peak_mb": 4.1
     },
     "behavior.turn_sequence": {
@@ -317,7 +308,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.009,
       "peak_mb": 4.1
     },
     "replay.compare_methods": {
@@ -383,7 +374,7 @@
       "hazard": "spike_times_in_ms",
       "op": "rates.spatial",
       "response": "warned",
-      "message": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.\n\n214394/214394 spike_times (100%) across all neurons fell outside the position time window [7227.56, 8412.35]; spike_times.min()=7.22756e+06 spike_times.max()=8.41235e+06. The spike times span 1.18479e+06 and reach 8.41235e+06, about 1000 times the 1184.79 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "message": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.\n\n214394/214394 spike_times (100%) across all neurons fell outside the position time window [7227.56, 8412.35]; spike_times.min()=7.22756e+06 spike_times.max()=8.41235e+06. The spike times span 1.18479e+06 and reach 8.41235e+06, about 1000 times the 1184.79 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 389,
@@ -402,7 +393,7 @@
       "hazard": "spike_times_in_ms",
       "op": "hd.tuning",
       "response": "warned",
-      "message": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.\n\n214394/214394 spike_times (100%) across all neurons fell outside the position time window [7227.56, 8412.35]; spike_times.min()=7.22756e+06 spike_times.max()=8.41235e+06. The spike times span 1.18479e+06 and reach 8.41235e+06, about 1000 times the 1184.79 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "message": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s. They are either boolean-masked samples (for example times[speed > 5]) or dropped tracking frames (for example df[df.likelihood > 0.9] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.\n\n214394/214394 spike_times (100%) across all neurons fell outside the position time window [7227.56, 8412.35]; spike_times.min()=7.22756e+06 spike_times.max()=8.41235e+06. The spike times span 1.18479e+06 and reach 8.41235e+06, about 1000 times the 1184.79 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 389,

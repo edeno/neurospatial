@@ -9,7 +9,7 @@
     "scale: 0.995 cm per pixel inferred from the stated 180 cm apparatus; used only for bin_size 2.51 px and min_speed 4.02 px/s",
     "headings: first LED in front (back-to-front angle minus movement direction above 10 cm/s: circular mean 0.4 deg, median spread 42.5 deg; the other order gives -179.6 deg); 2.3% of tracked frames have both LEDs at one point -> NaN; frame of the stored pixel axes (y direction unstated)",
     "spikes: .res samples / 20000 Hz; 36 units kept of 37 clusters >= 2 (the cell table's units; 5 listed units have no spikes in this session)",
-    "environment: declared square (180.837 x 180.837, drop edge, crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the inferred scale); placement fitted: centre_x 170, centre_y 117, rotation_rad 3.14, samples_side_a 177, samples_side_b 175, size_residual_a -0.0211, size_residual_b -0.03"
+    "environment: declared square (180.837 x 180.837, drop edge, crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the inferred scale); placement fitted: centre_x 169, centre_y 116, rotation_rad -1.57, samples_side_a 181, samples_side_b 179, size_residual_a 0.000294, size_residual_b -0.00748"
   ],
   "expectations": [
     {
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -72,8 +72,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.228,
-      "peak_mb": 11.7
+      "seconds": 0.38,
+      "peak_mb": 11.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
+      "seconds": 0.039,
       "peak_mb": 10.6
     },
     "env.declared": {
@@ -117,8 +117,8 @@
           "count": 1
         }
       ],
-      "seconds": 3.414,
-      "peak_mb": 258.7
+      "seconds": 4.139,
+      "peak_mb": 254.5
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -130,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.002,
       "peak_mb": 7.7
     },
     "rates.information_vs_shifts": {
@@ -153,7 +153,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.213,
+      "seconds": 0.262,
       "peak_mb": 12.5
     },
     "cells.place_screen": {
@@ -165,7 +165,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.3,
+      "seconds": 0.413,
       "peak_mb": 205.7
     },
     "cells.grid_score": {
@@ -178,7 +178,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.246,
+      "seconds": 0.326,
       "peak_mb": 28.3
     },
     "cells.border_score": {
@@ -187,8 +187,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
-      "peak_mb": 1.8
+      "seconds": 0.001,
+      "peak_mb": 1.7
     },
     "hd.tuning": {
       "status": "ok",
@@ -201,8 +201,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.038,
-      "peak_mb": 8.5
+      "seconds": 0.047,
+      "peak_mb": 8.4
     },
     "rates.egocentric_boundary": {
       "status": "error",
@@ -222,8 +222,8 @@
         "frac_actual_outside": 0.0004945598417408506,
         "units": "pixel",
         "n_time_bins": 2072,
-        "median_error_on_declared": 83.49127447789937,
-        "n_on_declared": 2022
+        "median_error_on_declared": 83.36514062334702,
+        "n_on_declared": 2021
       },
       "note": "",
       "gap": null,
@@ -243,8 +243,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.436,
-      "peak_mb": 110.8
+      "seconds": 1.998,
+      "peak_mb": 110.1
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -262,8 +262,8 @@
           "count": 2
         }
       ],
-      "seconds": 3.298,
-      "peak_mb": 35.1
+      "seconds": 4.318,
+      "peak_mb": 24.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -283,8 +283,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.616,
-      "peak_mb": 32.3
+      "seconds": 0.033,
+      "peak_mb": 11.1
     },
     "behavior.laps": {
       "status": "ok",
@@ -295,8 +295,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.058,
-      "peak_mb": 12.7
+      "seconds": 0.153,
+      "peak_mb": 11.6
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -313,8 +313,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.103,
-      "peak_mb": 3.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -322,8 +322,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
-      "peak_mb": 0.3
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -331,7 +331,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 0.0
     },
     "imaging.rates": {

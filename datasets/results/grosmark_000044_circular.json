@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "a47669fe362b35de6e47e1343b190a9cb7b30fd8"
   },
   "load_warnings": [],
   "operations": {
@@ -58,8 +58,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.276,
-      "peak_mb": 12.1
+      "seconds": 0.19,
+      "peak_mb": 8.7
     },
     "env.occupancy": {
       "status": "ok",
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.645,
+      "seconds": 0.672,
       "peak_mb": 13.0
     },
     "env.declared": {
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.18,
+      "seconds": 0.171,
       "peak_mb": 13.0
     },
     "rates.spatial": {
@@ -100,8 +100,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.811,
-      "peak_mb": 274.2
+      "seconds": 0.723,
+      "peak_mb": 270.6
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -128,17 +128,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.201,
-      "peak_mb": 340.2,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 4.179,
+      "peak_mb": 332.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -203,8 +194,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.994,
-      "peak_mb": 271.1
+      "seconds": 1.034,
+      "peak_mb": 270.5
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -214,8 +205,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.3,
-      "peak_mb": 3.6
+      "seconds": 2.477,
+      "peak_mb": 2.6
     },
     "env.from_graph": {
       "status": "ok",
@@ -238,8 +229,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.675,
-      "peak_mb": 23.0
+      "seconds": 0.072,
+      "peak_mb": 9.1
     },
     "behavior.laps": {
       "status": "ok",
@@ -253,8 +244,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.39,
-      "peak_mb": 11.9
+      "seconds": 0.448,
+      "peak_mb": 12.0
     },
     "behavior.turn_sequence": {
       "status": "ok",
@@ -265,7 +256,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.305,
+      "seconds": 0.341,
       "peak_mb": 11.8
     },
     "replay.compare_methods": {
@@ -283,8 +274,8 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 10.554,
-      "peak_mb": 273.3
+      "seconds": 11.749,
+      "peak_mb": 270.5
     },
     "io.nwb_readers": {
       "status": "error",
@@ -296,8 +287,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/CircularMazeLinearizedPosition/CircularMazeLinearizedTimeSeries', 'processing/behavior/CircularMazePosition/CircularMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/CircularMazeLinearizedPosition/CircularMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 23.437,
-      "peak_mb": 319.2
+      "seconds": 10.156,
+      "peak_mb": 319.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -305,8 +296,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 38.16,
-      "peak_mb": 96.0
+      "seconds": 8.083,
+      "peak_mb": 95.9
     },
     "imaging.rates": {
       "status": "n/a",
@@ -466,7 +457,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bin. Fix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 1708.800511224581,
@@ -480,7 +471,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty. Fix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 104,
@@ -509,7 +500,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, epochs, samples out of bounds or at NaN positions), so the result is empty or NaN rather than a measurement. Fix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, epochs, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which the result is empty or NaN rather than a measurement, the call refuses.\nFix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that epochs overlap `times` (same clock, seconds); check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 67,

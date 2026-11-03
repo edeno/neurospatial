@@ -11,7 +11,7 @@
     "spike_times: spike_times split at spike_offsets; 203 units, 21 with no spikes",
     "headings: head_orientation not used; minus the direction of movement above 10 cm/s: circular mean 13.1 deg, median spread 20.4 deg (frame check: |mean| <= 0.2 rad = 11.5 deg)",
     "geometry['graph']: track_nodes, track_node_positions, track_edges, track_edge_distance",
-    "environment: declared the authors' track graph (10 nodes, 9 corridors) (file: track_nodes, track_edges; Comrie et al. 2026 STAR Methods: 'Hallways were 6.5 cm wide and linear track segments were each 53 cm long'); tracked point: the head (the file's head_position; how it was tracked is not stated); physical width 6.5 cm (stated), 63.8% of samples beyond half of it (87% at 0-4 cm/s, 64% at 4-30 cm/s, 35% at 30-inf cm/s); placement tolerance 36.9 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the file's node positions (authors' graph); fit: median |lateral offset| 2.73 cm, worst stretch bias 1.81 cm (limit 2), worst unsupported share of a segment 8%; track length 488.5 cm"
+    "environment: declared the authors' track graph (10 nodes, 9 corridors) (file: track_nodes, track_edges; Comrie et al. 2026 STAR Methods: 'Hallways were 6.5 cm wide and linear track segments were each 53 cm long'); tracked point: the head (the file's head_position; how it was tracked is not stated); physical width 6.5 cm (stated), 63.8% of samples beyond half of it (87% at 0-4 cm/s, 64% at 4-30 cm/s, 35% at 30-inf cm/s); placement tolerance 36.9 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the file's node positions (authors' graph); fit: median |lateral offset| 2.73 cm, worst stretch bias 1.81 cm (limit 2), worst unsupported share of a segment 0%; track length 488.5 cm"
   ],
   "expectations": [
     {
@@ -52,7 +52,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.098,
+      "seconds": 0.19,
       "peak_mb": 41.2
     },
     "env.occupancy": {
@@ -80,7 +80,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.816,
+      "seconds": 2.505,
       "peak_mb": 189.8
     },
     "env.declared": {
@@ -94,7 +94,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.193,
+      "seconds": 0.254,
       "peak_mb": 108.3
     },
     "rates.spatial": {
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.079,
+      "seconds": 2.895,
       "peak_mb": 189.4
     },
     "rates.spatial_information": {
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 3.4
     },
     "rates.information_vs_shifts": {
@@ -136,17 +136,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 12.622,
-      "peak_mb": 236.5,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 11.979,
+      "peak_mb": 197.0
     },
     "cells.place_screen": {
       "status": "ok",
@@ -157,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.004,
       "peak_mb": 3.4
     },
     "cells.grid_score": {
@@ -203,7 +194,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.196,
+      "seconds": 2.845,
       "peak_mb": 189.5
     },
     "io.nwb_roundtrip": {
@@ -214,8 +205,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.754,
-      "peak_mb": 3.0
+      "seconds": 2.142,
+      "peak_mb": 4.1
     },
     "env.from_graph": {
       "status": "ok",
@@ -238,7 +229,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.601,
+      "seconds": 1.926,
       "peak_mb": 197.2
     },
     "behavior.laps": {
@@ -247,7 +238,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.207,
+      "seconds": 0.26,
       "peak_mb": 97.0
     },
     "behavior.turn_sequence": {
@@ -259,7 +250,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.221,
+      "seconds": 0.279,
       "peak_mb": 97.0
     },
     "replay.compare_methods": {
@@ -342,7 +333,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 792.0917177200317,
@@ -356,7 +347,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 203,

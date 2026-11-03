@@ -12,7 +12,7 @@
     "times: clean.t as stored (s)",
     "spike_times: split by spike_id into 109 units",
     "unit_ids: id_conversion column 2 (1000 x tetrode + cluster)",
-    "environment: declared two tracks, each the authors' centreline as a path (two components) (file: track_mask_x, track_mask_y (each track's centreline); Tirole et al. 2022: 'two novel linear tracks (2 m)'; width not stated); tracked point: not stated; physical width not stated; placement tolerance 41.4 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the centrelines in cm, simplified to within 0.5 cm (8 segments) (authors' centrelines); fit: median |lateral offset| 4.57 cm, worst stretch bias 4.12 cm (limit 4), worst unsupported share of a segment 0%; track length 399.4 cm"
+    "environment: declared two tracks, each the authors' centreline as a path (two components) (file: track_mask_x, track_mask_y (each track's centreline); Tirole et al. 2022: 'two novel linear tracks (2 m)'; width not stated); tracked point: not stated; physical width not stated; placement tolerance 41.4 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the centrelines in cm, simplified to within 0.5 cm (8 segments) (authors' centrelines); fit: median |lateral offset| 4.57 cm, worst stretch bias nan cm (limit 4), worst unsupported share of a segment 0%; track length 399.4 cm"
   ],
   "expectations": [
     {
@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "fc85af6a9fe36e31048a0c6f11e6643e117b3a7e"
   },
   "load_warnings": [],
   "operations": {
@@ -62,7 +62,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.094,
+      "seconds": 0.097,
       "peak_mb": 9.2
     },
     "env.occupancy": {
@@ -76,7 +76,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.086,
+      "seconds": 0.095,
       "peak_mb": 24.5
     },
     "env.declared": {
@@ -90,7 +90,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.017,
+      "seconds": 0.016,
       "peak_mb": 7.3
     },
     "rates.spatial": {
@@ -104,7 +104,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.2,
+      "seconds": 0.21,
       "peak_mb": 47.2
     },
     "rates.spatial_information": {
@@ -132,17 +132,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.734,
-      "peak_mb": 92.7,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 0.965,
+      "peak_mb": 57.0
     },
     "cells.place_screen": {
       "status": "ok",
@@ -193,8 +184,8 @@
         "frac_actual_outside": 0.01207983193277311,
         "units": "cm",
         "n_time_bins": 3997,
-        "median_error_on_declared": 7.659005618653923,
-        "n_on_declared": 3762
+        "median_error_on_declared": 7.554130903990807,
+        "n_on_declared": 3761
       },
       "note": "",
       "gap": null,
@@ -207,7 +198,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.266,
+      "seconds": 0.328,
       "peak_mb": 47.1
     },
     "io.nwb_roundtrip": {
@@ -218,7 +209,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.983,
+      "seconds": 1.901,
       "peak_mb": 2.7
     },
     "env.from_graph": {
@@ -242,7 +233,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.051,
+      "seconds": 0.047,
       "peak_mb": 19.9
     },
     "behavior.laps": {
@@ -251,7 +242,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.032,
+      "seconds": 0.034,
       "peak_mb": 18.7
     },
     "behavior.turn_sequence": {
@@ -263,7 +254,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.043,
+      "seconds": 0.041,
       "peak_mb": 9.0
     },
     "replay.compare_methods": {
@@ -440,7 +431,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs), so occupancy is zero in every bin. Fix: 17622 of 316509 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 651.8 s), or pass max_gap=None to disable gap gating; check that min_speed=5.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: 17622 of 316509 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 651.8 s), or pass max_gap=None to disable gap gating; check that min_speed=5.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 1069.3118370000093,
@@ -454,7 +445,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs), so the rate map is empty. Fix: 17622 of 316509 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 651.8 s), or pass max_gap=None to disable gap gating; check that min_speed=5.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: 17622 of 316509 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 651.8 s), or pass max_gap=None to disable gap gating; check that min_speed=5.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 109,

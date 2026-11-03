@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -58,8 +58,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.261,
-      "peak_mb": 12.1
+      "seconds": 0.207,
+      "peak_mb": 8.7
     },
     "env.occupancy": {
       "status": "ok",
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.069,
+      "seconds": 0.11,
       "peak_mb": 11.7
     },
     "env.declared": {
@@ -95,8 +95,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.151,
-      "peak_mb": 276.6
+      "seconds": 1.404,
+      "peak_mb": 272.9
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.005,
       "peak_mb": 10.8
     },
     "rates.information_vs_shifts": {
@@ -123,17 +123,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.404,
-      "peak_mb": 370.2,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 2.863,
+      "peak_mb": 335.8
     },
     "cells.place_screen": {
       "status": "ok",
@@ -144,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.07,
+      "seconds": 0.077,
       "peak_mb": 98.1
     },
     "cells.grid_score": {
@@ -157,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.93,
+      "seconds": 1.121,
       "peak_mb": 15.9
     },
     "cells.border_score": {
@@ -166,8 +157,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
-      "peak_mb": 1.8
+      "seconds": 0.001,
+      "peak_mb": 1.7
     },
     "hd.tuning": {
       "status": "n/a",
@@ -194,8 +185,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.515,
-      "peak_mb": 273.5
+      "seconds": 1.932,
+      "peak_mb": 272.8
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -205,8 +196,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.348,
-      "peak_mb": 15.7
+      "seconds": 4.462,
+      "peak_mb": 15.4
     },
     "env.from_graph": {
       "status": "n/a",
@@ -226,8 +217,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.726,
-      "peak_mb": 22.9
+      "seconds": 0.087,
+      "peak_mb": 9.1
     },
     "behavior.laps": {
       "status": "ok",
@@ -241,7 +232,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.148,
+      "seconds": 0.178,
       "peak_mb": 10.9
     },
     "behavior.turn_sequence": {
@@ -268,8 +259,8 @@
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 9.547,
-      "peak_mb": 273.4
+      "seconds": 9.957,
+      "peak_mb": 270.5
     },
     "io.nwb_readers": {
       "status": "error",
@@ -281,8 +272,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/CircularMazeLinearizedPosition/CircularMazeLinearizedTimeSeries', 'processing/behavior/CircularMazePosition/CircularMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/CircularMazeLinearizedPosition/CircularMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 56.297,
-      "peak_mb": 319.2
+      "seconds": 9.484,
+      "peak_mb": 319.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -290,8 +281,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 19.618,
-      "peak_mb": 96.0
+      "seconds": 32.926,
+      "peak_mb": 95.9
     },
     "imaging.rates": {
       "status": "n/a",
@@ -446,7 +437,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bin. Fix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 1725.8501163253386,
@@ -460,7 +451,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty. Fix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: 14551 of 104456 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 337.7 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 104,

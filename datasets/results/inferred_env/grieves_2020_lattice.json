@@ -46,7 +46,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -60,8 +60,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.389,
-      "peak_mb": 67.5
+      "seconds": 1.702,
+      "peak_mb": 67.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -74,7 +74,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.127,
+      "seconds": 0.141,
       "peak_mb": 64.7
     },
     "env.declared": {
@@ -97,7 +97,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 40.353,
+      "seconds": 53.097,
       "peak_mb": 1644.1
     },
     "rates.spatial_information": {
@@ -110,7 +110,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.005,
       "peak_mb": 13.2
     },
     "rates.information_vs_shifts": {
@@ -125,7 +125,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.917,
+      "seconds": 1.139,
       "peak_mb": 68.0
     },
     "cells.place_screen": {
@@ -137,7 +137,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.946,
+      "seconds": 6.016,
       "peak_mb": 205.9
     },
     "cells.grid_score": {
@@ -146,7 +146,7 @@
       "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's RegularGrid layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 1.6
     },
     "cells.border_score": {
@@ -155,7 +155,7 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.007,
       "peak_mb": 6.8
     },
     "hd.tuning": {
@@ -169,7 +169,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.06,
+      "seconds": 0.087,
       "peak_mb": 30.5
     },
     "rates.egocentric_boundary": {
@@ -190,13 +190,13 @@
         "frac_actual_outside": 0.0004166666666666667,
         "units": "cm",
         "n_time_bins": 7200,
-        "median_error_on_declared": 82.34022991907156,
-        "n_on_declared": 7140
+        "median_error_on_declared": 82.34022991907155,
+        "n_on_declared": 7137
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 49.9,
+      "seconds": 67.517,
       "peak_mb": 951.6
     },
     "io.nwb_roundtrip": {
@@ -207,7 +207,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.1,
+      "seconds": 7.106,
       "peak_mb": 127.3
     },
     "env.from_graph": {
@@ -228,7 +228,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.709,
+      "seconds": 0.921,
       "peak_mb": 88.1
     },
     "behavior.laps": {
@@ -237,7 +237,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.034,
+      "seconds": 0.044,
       "peak_mb": 28.6
     },
     "behavior.turn_sequence": {
@@ -255,7 +255,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.103,
+      "seconds": 0.142,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -264,7 +264,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.009,
       "peak_mb": 0.3
     },
     "io.read_pose": {
@@ -273,7 +273,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 0.0
     },
     "imaging.rates": {
@@ -367,7 +367,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so occupancy is zero in every bin. Fix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 3095.6854248046875,
@@ -381,7 +381,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so the rate map is empty. Fix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 24,

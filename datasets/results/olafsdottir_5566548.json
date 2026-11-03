@@ -47,7 +47,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
   },
   "load_warnings": [
     {
@@ -69,7 +69,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.048,
+      "seconds": 0.068,
       "peak_mb": 6.6
     },
     "env.occupancy": {
@@ -83,7 +83,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.159,
+      "seconds": 0.258,
       "peak_mb": 11.3
     },
     "env.declared": {
@@ -106,7 +106,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.312,
+      "seconds": 0.469,
       "peak_mb": 11.8
     },
     "rates.spatial_information": {
@@ -119,7 +119,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 2.1
     },
     "rates.information_vs_shifts": {
@@ -134,17 +134,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.076,
-      "peak_mb": 51.9,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 1.251,
+      "peak_mb": 13.9
     },
     "cells.place_screen": {
       "status": "ok",
@@ -155,7 +146,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.008,
       "peak_mb": 12.6
     },
     "cells.grid_score": {
@@ -166,7 +157,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.195,
+      "seconds": 0.245,
       "peak_mb": 7.6
     },
     "cells.border_score": {
@@ -201,7 +192,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.289,
+      "seconds": 0.343,
       "peak_mb": 46.2
     },
     "io.nwb_roundtrip": {
@@ -212,8 +203,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.24,
-      "peak_mb": 5.2
+      "seconds": 2.657,
+      "peak_mb": 5.7
     },
     "env.from_graph": {
       "status": "n/a",
@@ -233,7 +224,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.166,
+      "seconds": 0.193,
       "peak_mb": 7.2
     },
     "behavior.laps": {
@@ -242,7 +233,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.019,
       "peak_mb": 10.4
     },
     "behavior.turn_sequence": {

@@ -10,7 +10,7 @@
     "positions: 13 empty-string samples -> NaN",
     "times: each trial's raw.t (from 0) + 200 s x trial index, trials in day/trial order",
     "times: one NaN sample 0.08 s after each trial's last sample",
-    "environment: declared circle (diameter 190, Experiment.json arena.bounds: circle, radius 95 tracking units); placement fitted: stated_centre_x 134, stated_centre_y 104, centre_offset 2.58, samples_diameter 192, size_residual 0.01"
+    "environment: declared circle (diameter 190, Experiment.json arena.bounds: circle, radius 95 tracking units); placement fitted: stated_centre_x 134, stated_centre_y 104, centre_offset 0.876, samples_diameter 190, size_residual 0.00233"
   ],
   "expectations": [
     {
@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.152,
+      "seconds": 0.188,
       "peak_mb": 4.6
     },
     "env.occupancy": {
@@ -79,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.006,
       "peak_mb": 1.9
     },
     "env.declared": {

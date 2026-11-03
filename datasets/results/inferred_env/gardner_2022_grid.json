@@ -8,7 +8,7 @@
     "positions: x, y in m times 100 -> cm; range checked: -73.0 to 74.8 by -73.5 to 74.0 cm (largest span 147.8, expected 140-160); kept 7457-16045 s (open_field_1)",
     "headings: azimuth in [0, 2pi) rad, wrapped to [-pi, pi]; minus the direction of movement above 10 cm/s: circular mean -4.8 deg, median spread 20.6 deg",
     "analysis epochs: the session's valid times [[7457.0, 14778.0], [14890.0, 16045.0]]",
-    "environment: declared square (150 x 150, Gardner et al. 2022 Methods: 'square open-field (OF) arena of size 1.5 x 1.5 m', 50 cm walls); placement fitted: centre_x 1.01, centre_y -0.106, rotation_rad -1.57, samples_side_a 146, samples_side_b 145, size_residual_a -0.0289, size_residual_b -0.0329"
+    "environment: declared square (150 x 150, Gardner et al. 2022 Methods: 'square open-field (OF) arena of size 1.5 x 1.5 m', 50 cm walls); placement fitted: centre_x 0.749, centre_y 0.162, rotation_rad -3.13, samples_side_a 147, samples_side_b 146, size_residual_a -0.0191, size_residual_b -0.0241"
   ],
   "expectations": [
     {
@@ -39,7 +39,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -53,7 +53,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.365,
+      "seconds": 0.527,
       "peak_mb": 49.9
     },
     "env.occupancy": {
@@ -67,7 +67,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.147,
+      "seconds": 0.232,
       "peak_mb": 107.4
     },
     "env.declared": {
@@ -90,8 +90,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.499,
-      "peak_mb": 628.3
+      "seconds": 8.498,
+      "peak_mb": 628.4
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -103,7 +103,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.034,
+      "seconds": 0.038,
       "peak_mb": 112.1
     },
     "rates.information_vs_shifts": {
@@ -118,17 +118,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 12.458,
-      "peak_mb": 924.1,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 11.097,
+      "peak_mb": 772.7
     },
     "cells.place_screen": {
       "status": "ok",
@@ -139,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.683,
+      "seconds": 0.675,
       "peak_mb": 205.9
     },
     "cells.grid_score": {
@@ -152,7 +143,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.349,
+      "seconds": 5.182,
       "peak_mb": 31.9
     },
     "cells.border_score": {
@@ -161,7 +152,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.01,
       "peak_mb": 14.5
     },
     "hd.tuning": {
@@ -175,7 +166,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.377,
+      "seconds": 2.722,
       "peak_mb": 599.2
     },
     "rates.egocentric_boundary": {
@@ -193,7 +184,7 @@
       "note": "walls = edge of the visited bins (boundary_source='analysis')",
       "gap": null,
       "warnings": [],
-      "seconds": 190.28,
+      "seconds": 220.709,
       "peak_mb": 3660.4
     },
     "decode.position": {
@@ -211,7 +202,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.024,
+      "seconds": 4.187,
       "peak_mb": 1092.4
     },
     "io.nwb_roundtrip": {
@@ -222,7 +213,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.341,
+      "seconds": 3.699,
       "peak_mb": 76.7
     },
     "env.from_graph": {
@@ -240,7 +231,7 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.676,
+      "seconds": 0.592,
       "peak_mb": 21.5
     },
     "behavior.laps": {
@@ -249,7 +240,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.173,
+      "seconds": 0.155,
       "peak_mb": 107.4
     },
     "behavior.turn_sequence": {
@@ -267,7 +258,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.127,
+      "seconds": 0.114,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -276,7 +267,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.006,
       "peak_mb": 0.3
     },
     "io.read_pose": {

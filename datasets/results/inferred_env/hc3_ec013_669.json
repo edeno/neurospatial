@@ -45,7 +45,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -67,8 +67,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.486,
-      "peak_mb": 14.1
+      "seconds": 0.044,
+      "peak_mb": 2.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -81,7 +81,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.034,
+      "seconds": 0.019,
       "peak_mb": 3.9
     },
     "env.declared": {
@@ -112,8 +112,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.222,
-      "peak_mb": 31.0
+      "seconds": 0.156,
+      "peak_mb": 9.0
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -125,7 +125,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 2.6
     },
     "rates.information_vs_shifts": {
@@ -148,7 +148,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.37,
+      "seconds": 0.246,
       "peak_mb": 6.5
     },
     "cells.place_screen": {
@@ -160,7 +160,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.007,
       "peak_mb": 12.0
     },
     "cells.grid_score": {
@@ -171,7 +171,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.758,
+      "seconds": 0.442,
       "peak_mb": 26.8
     },
     "cells.border_score": {
@@ -180,8 +180,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
-      "peak_mb": 0.7
+      "seconds": 0.001,
+      "peak_mb": 0.5
     },
     "hd.tuning": {
       "status": "ok",
@@ -194,7 +194,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.078,
+      "seconds": 0.048,
       "peak_mb": 6.2
     },
     "rates.egocentric_boundary": {
@@ -236,8 +236,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.196,
-      "peak_mb": 15.9
+      "seconds": 0.109,
+      "peak_mb": 15.2
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -255,8 +255,8 @@
           "count": 2
         }
       ],
-      "seconds": 5.142,
-      "peak_mb": 15.9
+      "seconds": 2.553,
+      "peak_mb": 6.0
     },
     "env.from_graph": {
       "status": "n/a",
@@ -276,8 +276,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.01,
-      "peak_mb": 24.6
+      "seconds": 0.019,
+      "peak_mb": 3.3
     },
     "behavior.laps": {
       "status": "error",
@@ -285,7 +285,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.024,
+      "seconds": 0.016,
       "peak_mb": 9.9
     },
     "behavior.turn_sequence": {
@@ -303,8 +303,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.18,
-      "peak_mb": 3.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -312,8 +312,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
-      "peak_mb": 0.3
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -321,7 +321,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 0.0
     },
     "imaging.rates": {

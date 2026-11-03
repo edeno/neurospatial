@@ -10,7 +10,7 @@
     "positions: 13 empty-string samples -> NaN",
     "times: each trial's raw.t (from 0) + 200 s x trial index, trials in day/trial order",
     "times: one NaN sample 0.08 s after each trial's last sample",
-    "environment: declared circle (diameter 190, Experiment.json arena.bounds: circle, radius 95 tracking units); placement fitted: stated_centre_x 134, stated_centre_y 104, centre_offset 2.58, samples_diameter 192, size_residual 0.01"
+    "environment: declared circle (diameter 190, Experiment.json arena.bounds: circle, radius 95 tracking units); placement fitted: stated_centre_x 134, stated_centre_y 104, centre_offset 0.876, samples_diameter 190, size_residual 0.00233"
   ],
   "expectations": [
     {
@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.102,
+      "seconds": 0.121,
       "peak_mb": 4.6
     },
     "env.occupancy": {
@@ -79,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.119,
+      "seconds": 0.15,
       "peak_mb": 4.9
     },
     "env.declared": {
@@ -93,7 +93,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.013,
       "peak_mb": 2.1
     },
     "rates.spatial": {
@@ -170,7 +170,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.017,
       "peak_mb": 1.9
     },
     "behavior.turn_sequence": {

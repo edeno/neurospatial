@@ -9,7 +9,7 @@
     "scale: 0.995 cm per pixel inferred from the stated 180 cm apparatus; used only for bin_size 2.51 px and min_speed 4.02 px/s",
     "headings: first LED in front (back-to-front angle minus movement direction above 10 cm/s: circular mean 0.4 deg, median spread 42.5 deg; the other order gives -179.6 deg); 2.3% of tracked frames have both LEDs at one point -> NaN; frame of the stored pixel axes (y direction unstated)",
     "spikes: .res samples / 20000 Hz; 36 units kept of 37 clusters >= 2 (the cell table's units; 5 listed units have no spikes in this session)",
-    "environment: declared square (180.837 x 180.837, drop edge, crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the inferred scale); placement fitted: centre_x 170, centre_y 117, rotation_rad 3.14, samples_side_a 177, samples_side_b 175, size_residual_a -0.0211, size_residual_b -0.03"
+    "environment: declared square (180.837 x 180.837, drop edge, crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the inferred scale); placement fitted: centre_x 169, centre_y 116, rotation_rad -1.57, samples_side_a 181, samples_side_b 179, size_residual_a 0.000294, size_residual_b -0.00748"
   ],
   "expectations": [
     {
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "deadcc6c1f585acca3a8c28dcbad20d1123c04ba"
+    "git_commit": "a47669fe362b35de6e47e1343b190a9cb7b30fd8"
   },
   "load_warnings": [],
   "operations": {
@@ -72,16 +72,16 @@
           "count": 1
         }
       ],
-      "seconds": 0.334,
-      "peak_mb": 11.7
+      "seconds": 0.319,
+      "peak_mb": 11.5
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 823.5263999999997,
-        "frac_bins_visited": 0.5989866766747983,
-        "median_s_per_visited_bin": 0.17919999999992875,
-        "max_s": 7.193599999999805
+        "total_s": 823.5519999999999,
+        "frac_bins_visited": 0.6150892685736226,
+        "median_s_per_visited_bin": 0.15360000000009677,
+        "max_s": 6.88639999999962
       },
       "note": "",
       "gap": null,
@@ -94,30 +94,30 @@
           "count": 1
         }
       ],
-      "seconds": 0.749,
-      "peak_mb": 25.6
+      "seconds": 0.569,
+      "peak_mb": 25.3
     },
     "env.declared": {
       "status": "ok",
       "summary": {
-        "n_bins": 5329,
+        "n_bins": 5209,
         "n_dims": 2,
         "max_extent": 180.71999999999997,
-        "frac_samples_outside": 0.00012329240025644818
+        "frac_samples_outside": 4.9316960102579274e-05
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.03,
+      "seconds": 0.026,
       "peak_mb": 5.7
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 36,
-        "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 4.915433069308723,
-        "median_mean_hz": 0.2532725283312198
+        "frac_nan_bins": 0.38491073142637744,
+        "median_peak_hz": 4.8981445966729265,
+        "median_mean_hz": 0.25307686656773776
       },
       "note": "",
       "gap": null,
@@ -130,27 +130,27 @@
           "count": 1
         }
       ],
-      "seconds": 124.299,
-      "peak_mb": 700.2
+      "seconds": 72.163,
+      "peak_mb": 665.3
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 1.3912005436916328,
-        "bits_per_spike_max": 7.83896001013845,
+        "bits_per_spike_median": 1.385138599899056,
+        "bits_per_spike_max": 7.80061377521283,
         "bits_per_spike_n_finite": 35
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
-      "peak_mb": 12.9
+      "seconds": 0.004,
+      "peak_mb": 12.6
     },
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 1.3912005436916328,
-        "median_shifted_bits_per_spike": 0.7781250920948948,
+        "median_bits_per_spike": 1.385138599899056,
+        "median_shifted_bits_per_spike": 0.7830187736722831,
         "frac_above_every_shift": 0.7428571428571429,
         "n_units": 35,
         "n_shifts": 4
@@ -166,8 +166,8 @@
           "count": 4
         }
       ],
-      "seconds": 0.754,
-      "peak_mb": 15.4
+      "seconds": 0.501,
+      "peak_mb": 15.0
     },
     "cells.place_screen": {
       "status": "ok",
@@ -178,34 +178,34 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.619,
-      "peak_mb": 192.5
+      "seconds": 1.242,
+      "peak_mb": 193.0
     },
     "cells.grid_score": {
       "status": "ok",
       "summary": {
-        "median": -0.1582121476961851,
-        "max": 0.3959276675944752,
-        "n_finite": 35
+        "median": -0.15182728749124566,
+        "max": 0.4552945245426747,
+        "n_finite": 34
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.491,
+      "seconds": 0.326,
       "peak_mb": 28.6
     },
     "cells.border_score": {
       "status": "ok",
       "summary": {
         "median": -1.0,
-        "max": -0.5292008105065441,
+        "max": -0.20998252377379725,
         "n_finite": 35
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.487,
-      "peak_mb": 9.7
+      "seconds": 0.345,
+      "peak_mb": 9.4
     },
     "hd.tuning": {
       "status": "ok",
@@ -218,8 +218,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.071,
-      "peak_mb": 8.5
+      "seconds": 0.043,
+      "peak_mb": 8.4
     },
     "rates.egocentric_boundary": {
       "status": "error",
@@ -233,14 +233,14 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 74.09724635322993,
-        "chance_median_error": 105.04159843634287,
+        "median_error": 73.82967604155647,
+        "chance_median_error": 104.6109505194558,
         "chance_frac_disconnected": 0.0,
         "frac_actual_outside": 0.0,
         "units": "pixel",
         "n_time_bins": 2072,
-        "median_error_on_declared": 74.09724635322993,
-        "n_on_declared": 2022
+        "median_error_on_declared": 73.82967604155647,
+        "n_on_declared": 2021
       },
       "note": "",
       "gap": null,
@@ -260,13 +260,13 @@
           "count": 1
         }
       ],
-      "seconds": 2.565,
-      "peak_mb": 183.0
+      "seconds": 2.153,
+      "peak_mb": 178.2
     },
     "io.nwb_roundtrip": {
       "status": "ok",
       "summary": {
-        "n_bins": 5329
+        "n_bins": 5209
       },
       "note": "",
       "gap": null,
@@ -279,8 +279,8 @@
           "count": 2
         }
       ],
-      "seconds": 7.471,
-      "peak_mb": 56.7
+      "seconds": 4.23,
+      "peak_mb": 45.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -300,8 +300,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.238,
-      "peak_mb": 32.3
+      "seconds": 0.025,
+      "peak_mb": 11.1
     },
     "behavior.laps": {
       "status": "error",
@@ -309,7 +309,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.048,
+      "seconds": 0.034,
       "peak_mb": 5.1
     },
     "behavior.turn_sequence": {
@@ -327,8 +327,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.211,
-      "peak_mb": 3.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -336,8 +336,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
-      "peak_mb": 0.3
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -345,7 +345,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 0.0
     },
     "imaging.rates": {
@@ -404,16 +404,16 @@
       "message": "",
       "repeated_clean_warnings": 1,
       "clean_summary": {
-        "total_s": 823.5263999999997,
-        "frac_bins_visited": 0.5989866766747983,
-        "median_s_per_visited_bin": 0.17919999999992875,
-        "max_s": 7.193599999999805
+        "total_s": 823.5519999999999,
+        "frac_bins_visited": 0.6150892685736226,
+        "median_s_per_visited_bin": 0.15360000000009677,
+        "max_s": 6.88639999999962
       },
       "hazard_summary": {
-        "total_s": 824.0383999999998,
-        "frac_bins_visited": 0.5989866766747983,
-        "median_s_per_visited_bin": 0.17919999999992875,
-        "max_s": 7.193599999999805
+        "total_s": 824.0639999999999,
+        "frac_bins_visited": 0.6150892685736226,
+        "median_s_per_visited_bin": 0.15360000000009677,
+        "max_s": 6.88639999999962
       }
     },
     {
@@ -424,15 +424,15 @@
       "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 36,
-        "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 4.915433069308723,
-        "median_mean_hz": 0.2532725283312198
+        "frac_nan_bins": 0.38491073142637744,
+        "median_peak_hz": 4.8981445966729265,
+        "median_mean_hz": 0.25307686656773776
       },
       "hazard_summary": {
         "n_units": 36,
-        "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 4.915433069308728,
-        "median_mean_hz": 0.2532333234138597
+        "frac_nan_bins": 0.38491073142637744,
+        "median_peak_hz": 4.898144596672935,
+        "median_mean_hz": 0.2530558142636249
       }
     },
     {
@@ -476,13 +476,13 @@
       "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 36,
-        "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 4.915433069308723,
-        "median_mean_hz": 0.2532725283312198
+        "frac_nan_bins": 0.38491073142637744,
+        "median_peak_hz": 4.8981445966729265,
+        "median_mean_hz": 0.25307686656773776
       },
       "hazard_summary": {
         "n_units": 36,
-        "frac_nan_bins": 0.40101332332520173,
+        "frac_nan_bins": 0.38491073142637744,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
       }
@@ -568,16 +568,16 @@
       "message": "",
       "repeated_clean_warnings": 1,
       "clean_summary": {
-        "total_s": 823.5263999999997,
-        "frac_bins_visited": 0.5989866766747983,
-        "median_s_per_visited_bin": 0.17919999999992875,
-        "max_s": 7.193599999999805
+        "total_s": 823.5519999999999,
+        "frac_bins_visited": 0.6150892685736226,
+        "median_s_per_visited_bin": 0.15360000000009677,
+        "max_s": 6.88639999999962
       },
       "hazard_summary": {
-        "total_s": 824.0383999999998,
-        "frac_bins_visited": 0.5989866766747983,
-        "median_s_per_visited_bin": 0.17919999999992875,
-        "max_s": 7.193599999999805
+        "total_s": 824.0639999999999,
+        "frac_bins_visited": 0.6150892685736226,
+        "median_s_per_visited_bin": 0.15360000000009677,
+        "max_s": 6.88639999999962
       }
     },
     {
@@ -588,15 +588,15 @@
       "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 36,
-        "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 4.915433069308723,
-        "median_mean_hz": 0.2532725283312198
+        "frac_nan_bins": 0.38491073142637744,
+        "median_peak_hz": 4.8981445966729265,
+        "median_mean_hz": 0.25307686656773776
       },
       "hazard_summary": {
         "n_units": 36,
-        "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 4.915433069308728,
-        "median_mean_hz": 0.2532333234138597
+        "frac_nan_bins": 0.38491073142637744,
+        "median_peak_hz": 4.898144596672935,
+        "median_mean_hz": 0.2530558142636249
       }
     },
     {

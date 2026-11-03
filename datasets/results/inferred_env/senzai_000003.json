@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.17,
+      "seconds": 0.138,
       "peak_mb": 49.3
     },
     "env.occupancy": {
@@ -79,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.14,
+      "seconds": 0.137,
       "peak_mb": 83.2
     },
     "env.declared": {
@@ -110,7 +110,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.551,
+      "seconds": 0.504,
       "peak_mb": 84.6
     },
     "rates.spatial_information": {
@@ -141,29 +141,13 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
-          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
-          "count": 1
-        },
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
           "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
           "example": "bandwidth=None resolved to 10 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
-          "count": 5
+          "count": 4
         }
       ],
-      "seconds": 3.857,
-      "peak_mb": 134.1,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
-      }
+      "seconds": 1.333,
+      "peak_mb": 92.4
     },
     "cells.place_screen": {
       "status": "ok",
@@ -174,7 +158,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.014,
       "peak_mb": 26.0
     },
     "cells.grid_score": {
@@ -187,7 +171,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.166,
+      "seconds": 0.145,
       "peak_mb": 4.8
     },
     "cells.border_score": {
@@ -230,7 +214,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.54,
+      "seconds": 0.489,
       "peak_mb": 86.9
     },
     "io.nwb_roundtrip": {
@@ -249,8 +233,8 @@
           "count": 2
         }
       ],
-      "seconds": 2.835,
-      "peak_mb": 7.7
+      "seconds": 2.627,
+      "peak_mb": 7.8
     },
     "env.from_graph": {
       "status": "n/a",
@@ -276,7 +260,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.127,
+      "seconds": 0.129,
       "peak_mb": 83.2
     },
     "behavior.turn_sequence": {
@@ -307,8 +291,8 @@
       "note": "position: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 9.959,
-      "peak_mb": 131.2
+      "seconds": 9.143,
+      "peak_mb": 131.3
     },
     "io.read_pose": {
       "status": "n/a",
@@ -316,8 +300,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 10.443,
-      "peak_mb": 111.4
+      "seconds": 37.349,
+      "peak_mb": 103.9
     },
     "imaging.rates": {
       "status": "n/a",

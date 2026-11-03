@@ -40,7 +40,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
   },
   "load_warnings": [],
   "operations": {
@@ -54,8 +54,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.274,
-      "peak_mb": 12.8
+      "seconds": 0.049,
+      "peak_mb": 3.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -68,7 +68,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.03,
+      "seconds": 0.042,
       "peak_mb": 16.1
     },
     "env.declared": {
@@ -91,8 +91,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.67,
-      "peak_mb": 29.6
+      "seconds": 0.175,
+      "peak_mb": 16.1
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -119,7 +119,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.172,
+      "seconds": 0.206,
       "peak_mb": 16.3
     },
     "cells.place_screen": {
@@ -131,7 +131,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.01,
       "peak_mb": 10.6
     },
     "cells.grid_score": {
@@ -142,7 +142,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.013,
       "peak_mb": 0.5
     },
     "cells.border_score": {
@@ -151,8 +151,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
-      "peak_mb": 0.4
+      "seconds": 0.001,
+      "peak_mb": 0.2
     },
     "hd.tuning": {
       "status": "n/a",
@@ -179,8 +179,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.102,
-      "peak_mb": 22.8
+      "seconds": 0.101,
+      "peak_mb": 22.1
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -190,8 +190,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.826,
-      "peak_mb": 16.2
+      "seconds": 2.475,
+      "peak_mb": 5.5
     },
     "env.from_graph": {
       "status": "ok",
@@ -214,8 +214,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.603,
-      "peak_mb": 38.0
+      "seconds": 0.026,
+      "peak_mb": 16.8
     },
     "behavior.laps": {
       "status": "error",
@@ -241,8 +241,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.109,
-      "peak_mb": 3.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -250,8 +250,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
-      "peak_mb": 0.3
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.read_pose": {
       "status": "n/a",

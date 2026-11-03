@@ -1,10 +1,5 @@
 {
   "warnings": {
-    "neurospatial UserWarning: #/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.": {
-      "verdict": "false alarm",
-      "gap": "G-001",
-      "reason": "Sleep spikes outside the wake tracking window; epochs=wake was passed, and the advice (check units) is wrong here."
-    },
     "third-party DeprecationWarning: The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.": {
       "verdict": "third-party",
       "gap": null,
@@ -14,21 +9,6 @@
       "verdict": "false alarm",
       "gap": "G-001",
       "reason": "Spikes outside the maze epoch's tracking (sleep before and after); the advice to check units does not apply."
-    },
-    "neurospatial UserWarning: #/# spike_times (#%) fell outside the decode time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.": {
-      "verdict": "noisy",
-      "gap": "G-001",
-      "reason": "Second warning in the same decode.position call for the spikes outside tracking (sleep); same false alarm as the position-window one."
-    },
-    "neurospatial UserWarning: About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.": {
-      "verdict": "correct",
-      "gap": null,
-      "reason": "The authors removed samples slower than 5 cm/s, so the series really is boolean-masked; the message's own fix (max_gap below the shortest removed run) applies."
-    },
-    "neurospatial UserWarning: About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.": {
-      "verdict": "correct",
-      "gap": null,
-      "reason": "The authors removed samples slower than 5 cm/s, so the series really is boolean-masked; the message's own fix (max_gap below the shortest removed run) applies."
     },
     "neurospatial UserWarning: Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).": {
       "verdict": "false alarm",
@@ -64,6 +44,21 @@
       "verdict": "correct",
       "gap": null,
       "reason": "These five recordings are in video pixels (hc-2, hc-3, hc-18, 001754, 000003), so the 5 cm default cannot apply and the smoothing follows 2.5 bins; the fix is right: hc-2 and hc-3 have a scale from a stated size, the others only bandwidth= in pixels."
+    },
+    "loader UserWarning: suspect tracking, positions kept as stored: # runs of #+ identical samples (# samples, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)": {
+      "verdict": "correct",
+      "gap": "G-158",
+      "reason": "The survey loader's own report (001880, 000568, 000987): held runs and fast samples counted, positions kept as stored. Whether a held run is lost tracking or stillness is not tested (G-158)."
+    },
+    "neurospatial UserWarning: About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run.": {
+      "verdict": "correct",
+      "gap": null,
+      "reason": "Vollan's authors removed samples slower than 5 cm/s, and 001754's positions are sampled at spike times (G-053), so both series really are masked; the message names both causes and the fix (min_speed=/epochs=, or max_gap below the shortest removed run)."
+    },
+    "neurospatial UserWarning: About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s. They are either boolean-masked samples (for example times[speed > #]) or dropped tracking frames (for example df[df.likelihood > #] during occlusions).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: for boolean-masked samples, pass the full arrays and select with the function's min_speed= or epochs= where it has them. For dropped tracking frames, bridging them is intended up to max_gap; to exclude them instead, pass a max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.": {
+      "verdict": "correct",
+      "gap": null,
+      "reason": "Vollan's authors removed samples slower than 5 cm/s, and 001754's positions are sampled at spike times (G-053), so both series really are masked; the message names both causes and the fix (min_speed=/epochs=, or max_gap below the shortest removed run)."
     }
   },
   "hazards": {
@@ -142,11 +137,6 @@
       "gap": "G-017",
       "reason": "Jumps to (0, 0) add movement segments: 2936 instead of 2637."
     },
-    "rosenberg_labyrinth/missing_positions_as_zero/behavior.laps": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "Same three (spurious, G-015) laps."
-    },
     "rosenberg_labyrinth/missing_positions_as_zero/behavior.turn_sequence": {
       "verdict": "silent",
       "gap": "G-017",
@@ -161,11 +151,6 @@
       "verdict": "no effect",
       "gap": null,
       "reason": "Speeds do not depend on the mirror."
-    },
-    "rosenberg_labyrinth/image_y_down/behavior.laps": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "Counts unchanged (one clockwise, one counter-clockwise, one unknown; the laps themselves are spurious, G-015)."
     },
     "rosenberg_labyrinth/image_y_down/behavior.turn_sequence": {
       "verdict": "no effect",
@@ -187,11 +172,6 @@
       "gap": null,
       "reason": "Rates unchanged in flight (median mean 0.948 Hz): the zeros fall outside flights."
     },
-    "yartsev_bat_demo/missing_positions_as_zero/behavior.laps": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "No laps either way."
-    },
     "yartsev_bat_demo/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
@@ -211,21 +191,6 @@
       "verdict": "caught",
       "gap": null,
       "reason": "Raised: positions 100 times too large lie outside the declared room, every interval is excluded and the error says to check the coordinates."
-    },
-    "yartsev_bat_demo/length_unit_off_by_100/behavior.laps": {
-      "verdict": "caught upstream",
-      "gap": null,
-      "reason": "Same refusal while building the environment."
-    },
-    "sargolini_000582/missing_positions_as_zero/behavior.laps": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "Same single (spurious, G-015) lap."
-    },
-    "sargolini_000582/length_unit_off_by_100/behavior.laps": {
-      "verdict": "caught upstream",
-      "gap": null,
-      "reason": "env.from_samples already warned; detect_laps then refuses the 4-bin space as having no loop."
     },
     "yartsev_bat_demo/missing_positions_as_zero/behavior.segment_by_velocity": {
       "verdict": "silent",
@@ -247,11 +212,6 @@
       "gap": null,
       "reason": "Raised: positions 100 times too small (0.1-1.05 cm) lie outside the declared circle (centre 58, 57 cm), so every interval is excluded and the error says to check the coordinates."
     },
-    "miniscope_002030/length_unit_off_by_100/behavior.laps": {
-      "verdict": "caught upstream",
-      "gap": null,
-      "reason": "env.from_samples already warned; detect_laps then refuses the 4-bin space as having no loop."
-    },
     "giocomo_000405/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
       "gap": null,
@@ -262,11 +222,6 @@
       "gap": "G-132",
       "reason": "Positions 100 times too small fall in the centre of the declared 1.5 x 1.3 m field: occupancy piles into 2 of 3121 bins (1017 s in one), no warning. The from_samples warning that caught this does not run when the environment is declared."
     },
-    "giocomo_000405/length_unit_off_by_100/behavior.laps": {
-      "verdict": "caught upstream",
-      "gap": null,
-      "reason": "env.from_samples already warned; detect_laps then refuses the 4-bin space as having no loop."
-    },
     "giocomo_000405/positions_read_as_mm/env.from_samples": {
       "verdict": "undetectable",
       "gap": null,
@@ -276,11 +231,6 @@
       "verdict": "silent",
       "gap": "G-132",
       "reason": "Positions 10 times too small cover 1.3% of the declared 1.5 x 1.3 m field (max 324 s in one bin); the declared size makes the error visible, but nothing warns."
-    },
-    "giocomo_000405/positions_read_as_mm/behavior.laps": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "detect_laps now refuses the shrunken arena as having no loop (#265) instead of finding spurious laps; not a units check."
     },
     "giocomo_001701/headings_in_degrees/hd.tuning": {
       "verdict": "caught",
@@ -301,11 +251,6 @@
       "verdict": "no effect",
       "gap": null,
       "reason": "Barely changes on the declared track"
-    },
-    "giocomo_001701/missing_positions_as_zero/behavior.laps": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "No laps either way."
     },
     "giocomo_001701/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
@@ -331,11 +276,6 @@
       "verdict": "caught",
       "gap": null,
       "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, samples out of bounds or at NaN positions), so the rate map is empty; the run fails loudly, but the message does not point at the units"
-    },
-    "giocomo_001701/length_unit_off_by_100/behavior.laps": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "No laps either way."
     },
     "giocomo_001701/headings_read_as_degrees/hd.tuning": {
       "verdict": "silent",
@@ -627,11 +567,6 @@
       "gap": "G-132",
       "reason": "Same collapse into the centre of the declared 150 cm circle: 99.9% of bins NaN, no warning (the bandwidth warning needs a 5 cm environment, which a declared one is not)."
     },
-    "vollan_of/length_unit_off_by_100/behavior.laps": {
-      "verdict": "caught",
-      "gap": null,
-      "reason": "Raised: InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no h"
-    },
     "vollan_of/times_rebuilt_from_dt/env.from_samples": {
       "verdict": "no effect",
       "gap": null,
@@ -651,11 +586,6 @@
       "verdict": "caught",
       "gap": null,
       "reason": "New warning: All 644 units are silent from 3520.1 s to 3590.4 s (70 s) while position is tracked. If the electrophysiology was not recording then, pass spike_windo"
-    },
-    "vollan_of/times_rebuilt_from_dt/behavior.laps": {
-      "verdict": "silent",
-      "gap": "G-015",
-      "reason": "0 -> 1 lap in an open arena once the gaps are closed (laps in open arenas, decision 5)."
     },
     "hc11_achilles/missing_positions_as_zero/env.from_samples": {
       "verdict": "silent",
@@ -812,11 +742,6 @@
       "gap": "G-017",
       "reason": "289 -> 294 segments. Check 1 would fire."
     },
-    "hc2_ec013_527/missing_positions_as_zero/behavior.laps": {
-      "verdict": "silent",
-      "gap": "G-017",
-      "reason": "The one open-arena 'lap' flips from clockwise to counter-clockwise (G-015 already counts a lap where there is no loop)."
-    },
     "hc2_ec013_527/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
@@ -856,11 +781,6 @@
       "verdict": "silent",
       "gap": "G-096",
       "reason": "289 -> 294 segments."
-    },
-    "hc2_ec013_527/whl_minus_one_kept/behavior.laps": {
-      "verdict": "silent",
-      "gap": "G-096",
-      "reason": "The one open-arena 'lap' flips direction (G-015)."
     },
     "hc28_hpa/missing_positions_as_zero/env.from_samples": {
       "verdict": "silent",
@@ -1742,11 +1662,6 @@
       "gap": "G-132",
       "reason": "Same collapse into the centre of the declared 1 m box: 99.9% of bins NaN, no warning (the bandwidth warning needs a 5 cm environment, which a declared one is not)."
     },
-    "kanter_2025/length_unit_off_by_100/behavior.laps": {
-      "verdict": "caught",
-      "gap": null,
-      "reason": "Raised: no loop in the 4-bin environment (the clean run's 1 lap is itself G-015)."
-    },
     "kanter_2025/units_merged_by_id/rates.spatial": {
       "verdict": "undetectable",
       "gap": "G-057",
@@ -1932,21 +1847,6 @@
       "gap": null,
       "reason": "Barely changes on the samples' grid"
     },
-    "jadhav_000447/missing_positions_as_zero/behavior.turn_sequence": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "Identical summary on the declared track (turns 226 clean, 226 with the hazard)"
-    },
-    "jadhav_000447/length_unit_off_by_100/behavior.turn_sequence": {
-      "verdict": "silent",
-      "gap": "G-014",
-      "reason": "No warning on the declared track: turns 226 clean, 0 with the hazard"
-    },
-    "jadhav_000447/speed_read_as_a_dimension/behavior.turn_sequence": {
-      "verdict": "caught",
-      "gap": null,
-      "reason": "Raised on the declared track: ValueError: graph_turn_sequence(): positions have 3 coordinate(s) per sample; the environment has 2"
-    },
     "jadhav_000447_familiar/missing_positions_as_zero/env.from_samples": {
       "verdict": "silent",
       "gap": "G-017",
@@ -2067,26 +1967,6 @@
       "gap": "G-014",
       "reason": "No warning on the declared track: frac left 0.599 -> 0.475; turns 329 -> 40 (clean -> hazard)"
     },
-    "olafsdottir_5566548/missing_positions_as_zero/behavior.turn_sequence": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "Identical summary on the declared track (turns 310 clean, 310 with the hazard)"
-    },
-    "olafsdottir_5566548/length_unit_off_by_100/behavior.turn_sequence": {
-      "verdict": "silent",
-      "gap": "G-014",
-      "reason": "No warning on the declared track: turns 310 clean, 0 with the hazard"
-    },
-    "olafsdottir_5566548/pixels_labelled_cm/behavior.turn_sequence": {
-      "verdict": "silent",
-      "gap": "G-014",
-      "reason": "No warning on the declared track: turns 310 clean, 13 with the hazard"
-    },
-    "olafsdottir_5566548/image_y_down/behavior.turn_sequence": {
-      "verdict": "undetectable",
-      "gap": "G-020",
-      "reason": "No warning on the declared track: turns 310 clean, 299 with the hazard"
-    },
     "giocomo_001701/missing_positions_as_zero/behavior.turn_sequence": {
       "verdict": "no effect",
       "gap": null,
@@ -2122,46 +2002,6 @@
       "gap": "G-132",
       "reason": "2975 turns (frac_left 0.50) -> 0 with metres labelled cm: the head positions collapse into a 1.5-1.7 cm box, and turn_sequence reports no turns without a warning."
     },
-    "valero_000568/missing_positions_as_zero/env.from_samples": {
-      "verdict": "silent",
-      "gap": "G-017",
-      "reason": "4.9 % NaN samples (held tracking the loader set to NaN) become (0, 0), a corner left of the tracked 4.2-20.7 by 0.5-116.5 cm: 186 -> 188 bins, no warning. Check 1 would fire."
-    },
-    "valero_000568/missing_positions_as_zero/env.occupancy": {
-      "verdict": "silent",
-      "gap": "G-017",
-      "reason": "Occupancy on the declared track 932.1 -> 919.1 s (max bin 80.2 -> 80.5 s); no warning."
-    },
-    "valero_000568/missing_positions_as_zero/rates.spatial": {
-      "verdict": "silent",
-      "gap": "G-017",
-      "reason": "Median peak 1.25 -> 1.31 Hz, median mean 0.543 -> 0.565 Hz, no warning."
-    },
-    "valero_000568/missing_positions_as_zero/behavior.segment_by_velocity": {
-      "verdict": "silent",
-      "gap": "G-017",
-      "reason": "Jumps to and from (0, 0) read as running: 445 -> 485 segments, running 985 -> 1030 s. Check 1 would fire."
-    },
-    "valero_000568/missing_positions_as_zero/behavior.turn_sequence": {
-      "verdict": "no effect",
-      "gap": null,
-      "reason": "A straight track has no junction, so no turns either way"
-    },
-    "rsc_000987/missing_positions_as_zero/env.from_samples": {
-      "verdict": "silent",
-      "gap": "G-017",
-      "reason": "0.45 % NaN samples (held motion capture the loader set to NaN) become (0, 0), which lies inside the tracked -24.2-28.5 by -42.1-11.0 cm arena: 453 bins both ways, no warning. Check 1 would fire (a repeated coordinate at the origin)."
-    },
-    "rsc_000987/missing_positions_as_zero/env.occupancy": {
-      "verdict": "silent",
-      "gap": "G-017",
-      "reason": "1.0 s more occupancy (1,201.8 -> 1,202.8 s), piled at the origin inside the arena; no warning."
-    },
-    "rsc_000987/missing_positions_as_zero/rates.spatial": {
-      "verdict": "silent",
-      "gap": "G-017",
-      "reason": "Median peak 5.565 -> 5.574 Hz; too few samples to move the maps, no warning."
-    },
     "grieves_2020_lattice/headings_in_degrees/hd.tuning": {
       "verdict": "caught",
       "gap": null,
@@ -2174,9 +2014,6 @@
     }
   },
   "cells": {
-    "sargolini_000582/cells.border_score": {
-      "gap": "G-005"
-    },
     "yartsev_bat_demo/cells.grid_score": {
       "gap": "G-024"
     },
@@ -2206,9 +2043,6 @@
     },
     "yartsev_bat_demo/behavior.laps": {
       "gap": "G-015"
-    },
-    "gardner_2022_grid/cells.border_score": {
-      "gap": "G-005"
     },
     "gardner_2022_grid/behavior.laps": {
       "gap": "G-015"
@@ -2240,9 +2074,6 @@
     "vollan_lt/behavior.laps": {
       "gap": "G-015"
     },
-    "vollan_of/cells.border_score": {
-      "gap": "G-005"
-    },
     "hc11_achilles/cells.border_score": {
       "gap": "G-005"
     },
@@ -2254,9 +2085,6 @@
     },
     "hc3_ec013_669/behavior.laps": {
       "gap": "G-015"
-    },
-    "hc2_ec013_527/cells.border_score": {
-      "gap": "G-005"
     },
     "hc28_hpa/cells.border_score": {
       "gap": "G-005"
@@ -2309,9 +2137,6 @@
     "j16_23020757/behavior.laps": {
       "gap": "G-015"
     },
-    "grieves_2020_lattice/behavior.laps": {
-      "gap": "G-015"
-    },
     "grieves_2020_lattice/cells.grid_score": {
       "gap": "G-024"
     },
@@ -2345,9 +2170,6 @@
     "gonzalez_001695/behavior.laps": {
       "gap": "G-015"
     },
-    "gonzalez_001695/replay.compare_methods": {
-      "gap": "G-038"
-    },
     "gonzalez_001695/io.nwb_readers": {
       "gap": "G-052"
     },
@@ -2357,17 +2179,11 @@
     "neurolab_001754/behavior.laps": {
       "gap": "G-015"
     },
-    "neurolab_001754/io.nwb_readers": {
-      "gap": "G-053"
-    },
     "valero_000568/cells.border_score": {
       "gap": "G-005"
     },
     "valero_000568/behavior.laps": {
       "gap": "G-015"
-    },
-    "valero_000568/replay.compare_methods": {
-      "gap": "G-038"
     },
     "aeryjones_000165/cells.border_score": {
       "gap": "G-005"
@@ -2396,9 +2212,6 @@
     "senzai_000003/io.nwb_readers": {
       "gap": "G-032"
     },
-    "kanter_2025/cells.border_score": {
-      "gap": "G-005"
-    },
     "kanter_2025/io.nwb_readers": {
       "gap": "G-057"
     },
@@ -2422,9 +2235,6 @@
     },
     "hc2_ec013_527/rates.egocentric_boundary": {
       "gap": "G-133"
-    },
-    "jadhav_000447/behavior.laps": {
-      "gap": "G-015"
     },
     "jadhav_000447_familiar/behavior.laps": {
       "gap": "G-015"
@@ -2607,9 +2417,6 @@
     },
     "neurolab_001754/cells.border_score": {
       "gap": "G-005"
-    },
-    "neurolab_001754/io.nwb_readers": {
-      "gap": "G-053"
     },
     "olafsdottir_5566548/behavior.laps": {
       "gap": "G-015"

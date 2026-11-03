@@ -8,7 +8,7 @@
     "times: rate 30 Hz; 21,427 frames = 714 s, the stated ~12 min session",
     "headings: processing/behavior/headdirection (radians), wrapped to [-pi, pi]; 0.7 % of stored samples lie outside it",
     "activity: processing/ophys/Fluorescence/Calcium (dF/F), frame times from rate",
-    "environment: declared circle (diameter 96, DANDI 002030 description: 'circular open-field arena (96 cm in diameter)'); placement fitted: centre_x 57.8, centre_y 56.2, samples_diameter 95.9, size_residual -0.00087"
+    "environment: declared circle (diameter 96, DANDI 002030 description: 'circular open-field arena (96 cm in diameter)'); placement fitted: centre_x 57.9, centre_y 56.2, samples_diameter 96, size_residual 6.05e-06"
   ],
   "expectations": [
     {
@@ -39,7 +39,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -53,7 +53,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.033,
+      "seconds": 0.049,
       "peak_mb": 1.5
     },
     "env.occupancy": {
@@ -67,7 +67,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.007,
       "peak_mb": 2.7
     },
     "env.declared": {
@@ -156,8 +156,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
-      "peak_mb": 4.1
+      "seconds": 0.026,
+      "peak_mb": 3.6
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -183,8 +183,8 @@
       "note": "head_direction: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.263,
-      "peak_mb": 2.0
+      "seconds": 0.381,
+      "peak_mb": 2.7
     },
     "io.read_pose": {
       "status": "n/a",
@@ -192,8 +192,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.245,
-      "peak_mb": 0.4
+      "seconds": 0.366,
+      "peak_mb": 0.5
     },
     "imaging.rates": {
       "status": "missing",
@@ -214,7 +214,7 @@
       "note": "one event per dF/F transient: onset above median + 3 robust SD (1.4826 x MAD), end below median + 1 SD; then compute_spatial_rates (harness heuristic, no published source)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.392,
+      "seconds": 0.578,
       "peak_mb": 5.9
     }
   },

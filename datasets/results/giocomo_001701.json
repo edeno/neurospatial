@@ -6,7 +6,7 @@
   "conversions": [
     "positions: read_position, cm; range checked: 3.6 to 79.1 by 3.9 to 93.7 cm (largest span 89.9, expected 65-140)",
     "headings: CompassDirection/head direction labelled degrees, values in [-pi, pi]; kept as radians (read with pynwb)",
-    "environment: declared X maze: two junctions joined by a centre segment, two arms each (Aery Jones et al. 2026 Methods: '130-cm X-maze with 20-cm walls' (what the 130 cm spans and the arm width are not stated)); tracked point: not stated; physical width not stated; placement tolerance 5.68 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: node positions fitted to the samples; edges (cm): junction_0-junction_1 19.3; junction_0-arm_0 49.7; junction_0-arm_1 49.7; junction_1-arm_2 50.2; junction_1-arm_3 50.8 (fitted to the samples); fit: median |lateral offset| 0.92 cm, worst stretch bias 0.38 cm (limit 2.5), worst unsupported share of a segment 0%; track length 219.6 cm"
+    "environment: declared X maze: two junctions joined by a centre segment, two arms each (Aery Jones et al. 2026 Methods: '130-cm X-maze with 20-cm walls' (what the 130 cm spans and the arm width are not stated)); tracked point: not stated; physical width not stated; placement tolerance 5.68 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: node positions fitted to the samples; edges (cm): junction_0-junction_1 19.3; junction_0-arm_0 49.7; junction_0-arm_1 49.7; junction_1-arm_2 50.2; junction_1-arm_3 50.8 (fitted to the samples); fit: median |lateral offset| 0.92 cm, worst stretch bias 0.03 cm (limit 2.5), worst unsupported share of a segment 0%; track length 219.6 cm"
   ],
   "expectations": [
     {
@@ -37,7 +37,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
+    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
   },
   "load_warnings": [
     {
@@ -59,7 +59,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.028,
+      "seconds": 0.033,
       "peak_mb": 4.3
     },
     "env.occupancy": {
@@ -73,7 +73,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.025,
+      "seconds": 0.032,
       "peak_mb": 7.9
     },
     "env.declared": {
@@ -87,7 +87,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.015,
       "peak_mb": 8.6
     },
     "rates.spatial": {
@@ -101,7 +101,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.106,
+      "seconds": 0.138,
       "peak_mb": 25.4
     },
     "rates.spatial_information": {
@@ -114,7 +114,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 1.9
     },
     "rates.information_vs_shifts": {
@@ -129,17 +129,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.059,
-      "peak_mb": 44.3,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 0.737,
+      "peak_mb": 32.0
     },
     "cells.place_screen": {
       "status": "ok",
@@ -150,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 1.9
     },
     "cells.grid_score": {
@@ -182,7 +173,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.147,
+      "seconds": 0.212,
       "peak_mb": 25.3
     },
     "rates.egocentric_boundary": {
@@ -209,7 +200,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.155,
+      "seconds": 0.235,
       "peak_mb": 38.1
     },
     "io.nwb_roundtrip": {
@@ -220,8 +211,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.755,
-      "peak_mb": 2.7
+      "seconds": 2.22,
+      "peak_mb": 3.3
     },
     "env.from_graph": {
       "status": "ok",
@@ -250,7 +241,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.015,
+      "seconds": 0.021,
       "peak_mb": 7.7
     },
     "behavior.turn_sequence": {
@@ -262,7 +253,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.056,
+      "seconds": 0.066,
       "peak_mb": 7.7
     },
     "replay.compare_methods": {
@@ -292,8 +283,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.411,
-      "peak_mb": 19.6
+      "seconds": 0.497,
+      "peak_mb": 19.7
     },
     "io.read_pose": {
       "status": "n/a",
@@ -309,8 +300,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.261,
-      "peak_mb": 0.3
+      "seconds": 0.309,
+      "peak_mb": 0.4
     },
     "imaging.rates": {
       "status": "n/a",
@@ -491,7 +482,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, samples out of bounds or at NaN positions), so occupancy is zero in every bin. Fix: check that positions use the environment's coordinates.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 955.716666666667,
@@ -505,7 +496,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, samples out of bounds or at NaN positions), so the rate map is empty. Fix: check that positions use the environment's coordinates.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 320,

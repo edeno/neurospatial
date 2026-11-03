@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
   },
   "load_warnings": [],
   "operations": {
@@ -57,7 +57,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.025,
       "peak_mb": 2.8
     },
     "env.occupancy": {
@@ -71,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.034,
+      "seconds": 0.029,
       "peak_mb": 12.7
     },
     "env.declared": {
@@ -85,7 +85,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.007,
       "peak_mb": 7.2
     },
     "rates.spatial": {
@@ -107,7 +107,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.17,
+      "seconds": 0.147,
       "peak_mb": 94.0
     },
     "rates.spatial_information": {
@@ -140,20 +140,11 @@
           "origin": "neurospatial",
           "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
           "example": "2906816/3891350 spike_times (75%) across all neurons fell outside the position time window [4583.49, 6474.36]; spike_times.min()=0.0027 spike_times.max()=11037.7. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "count": 5
+          "count": 4
         }
       ],
-      "seconds": 1.604,
-      "peak_mb": 138.5,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 1.187,
+      "peak_mb": 125.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -210,7 +201,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.297,
+      "seconds": 0.285,
       "peak_mb": 137.2
     },
     "io.nwb_roundtrip": {
@@ -221,8 +212,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.156,
-      "peak_mb": 2.2
+      "seconds": 1.96,
+      "peak_mb": 1.9
     },
     "env.from_graph": {
       "status": "ok",
@@ -245,7 +236,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.02,
+      "seconds": 0.017,
       "peak_mb": 13.2
     },
     "behavior.laps": {
@@ -254,7 +245,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.009,
       "peak_mb": 6.5
     },
     "behavior.turn_sequence": {
@@ -266,7 +257,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.007,
       "peak_mb": 6.5
     },
     "replay.compare_methods": {
@@ -284,7 +275,7 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.285,
+      "seconds": 0.261,
       "peak_mb": 137.2
     },
     "io.nwb_readers": {
@@ -297,7 +288,7 @@
       "note": "position: mismatch: values differ",
       "gap": null,
       "warnings": [],
-      "seconds": 0.554,
+      "seconds": 0.534,
       "peak_mb": 93.9
     },
     "io.read_pose": {
@@ -306,7 +297,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.45,
+      "seconds": 0.423,
       "peak_mb": 0.4
     },
     "imaging.rates": {
@@ -362,7 +353,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 544.9229178526057,
@@ -376,7 +367,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 110,
@@ -446,7 +437,7 @@
       "hazard": "conversion_applied_labelled_cm",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 544.9229178526057,
@@ -460,7 +451,7 @@
       "hazard": "conversion_applied_labelled_cm",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 110,

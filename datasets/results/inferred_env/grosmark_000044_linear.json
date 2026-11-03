@@ -8,7 +8,7 @@
     "params['linearized']: 1.6mLinearMazeLinearizedPosition, m times 100 -> cm, 0 to 160 cm; 0.01% of finite samples are exactly 0",
     "epochs: intervals/epochs labels without 'Epoch', lower case; sleep states from processing/behavior/states",
     "events['candidate_events']: first 200 of 1646 population bursts in POST non-REM (rule in population_bursts); the file has no ripple table",
-    "environment: declared straight track: 15 cm reward area, 1.6 m stem, 15 cm reward area (Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1.9 m wooden linear maze ... 15 cm reward areas on either end ... and a 1.6 m stem'; width not stated); tracked point: not stated; physical width not stated; placement tolerance 55 cm (track_width: twice the samples' 95% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 5.0% of samples are dropped by construction); placement: the stem centred on a least-squares line from the file's linearized coordinate to the positions (0.963 cm of 2-D distance per linearized cm), the reward areas beyond its ends (file's linearized coordinate); fit: median |lateral offset| 9.04 cm, worst stretch bias 1.53 cm (limit 2.5), worst unsupported share of a segment 44%; track length 190.0 cm"
+    "environment: declared straight track: 15 cm reward area, 1.6 m stem, 15 cm reward area (Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1.9 m wooden linear maze ... 15 cm reward areas on either end ... and a 1.6 m stem'; width not stated); tracked point: not stated; physical width not stated; placement tolerance 55 cm (track_width: twice the samples' 95% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 5.0% of samples are dropped by construction); placement: the stem centred on a least-squares line from the file's linearized coordinate to the positions (0.963 cm of 2-D distance per linearized cm), the reward areas beyond its ends (file's linearized coordinate); fit: median |lateral offset| 9.04 cm, worst stretch bias 1.53 cm (limit 2.5), worst unsupported share of a segment 0%; track length 190.0 cm"
   ],
   "expectations": [
     {
@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -58,8 +58,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.11,
-      "peak_mb": 5.9
+      "seconds": 0.132,
+      "peak_mb": 6.0
     },
     "env.occupancy": {
       "status": "ok",
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.102,
+      "seconds": 0.169,
       "peak_mb": 8.7
     },
     "env.declared": {
@@ -95,8 +95,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.693,
-      "peak_mb": 298.5
+      "seconds": 0.992,
+      "peak_mb": 298.6
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.004,
       "peak_mb": 10.1
     },
     "rates.information_vs_shifts": {
@@ -123,17 +123,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.491,
-      "peak_mb": 398.7,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 3.49,
+      "peak_mb": 367.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -144,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.038,
+      "seconds": 0.03,
       "peak_mb": 49.2
     },
     "cells.grid_score": {
@@ -157,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.118,
+      "seconds": 1.132,
       "peak_mb": 37.4
     },
     "cells.border_score": {
@@ -194,7 +185,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.774,
+      "seconds": 0.698,
       "peak_mb": 298.4
     },
     "io.nwb_roundtrip": {
@@ -205,7 +196,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.025,
+      "seconds": 2.806,
       "peak_mb": 11.7
     },
     "env.from_graph": {
@@ -226,7 +217,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.119,
+      "seconds": 0.099,
       "peak_mb": 5.1
     },
     "behavior.laps": {
@@ -235,7 +226,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.03,
+      "seconds": 0.026,
       "peak_mb": 15.3
     },
     "behavior.turn_sequence": {
@@ -262,8 +253,8 @@
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 4.15,
-      "peak_mb": 296.1
+      "seconds": 3.483,
+      "peak_mb": 296.2
     },
     "io.nwb_readers": {
       "status": "error",
@@ -275,7 +266,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries', 'processing/behavior/1.6mLinearMazePosition/1.6mLinearMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 25.374,
+      "seconds": 56.314,
       "peak_mb": 334.4
     },
     "io.read_pose": {
@@ -284,8 +275,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 35.06,
-      "peak_mb": 81.8
+      "seconds": 34.077,
+      "peak_mb": 89.2
     },
     "imaging.rates": {
       "status": "n/a",
@@ -428,7 +419,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bin. Fix: 15373 of 80761 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 25.98 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: 15373 of 80761 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 25.98 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 1052.079536142497,
@@ -442,7 +433,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty. Fix: 15373 of 80761 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 25.98 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: 15373 of 80761 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 25.98 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 137,

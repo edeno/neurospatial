@@ -52,7 +52,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
   },
   "load_warnings": [],
   "operations": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.293,
+      "seconds": 0.238,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -80,7 +80,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.008,
+      "seconds": 0.628,
       "peak_mb": 227.7
     },
     "env.declared": {
@@ -103,7 +103,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.791,
+      "seconds": 2.275,
       "peak_mb": 227.7
     },
     "rates.spatial_information": {
@@ -131,17 +131,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 7.126,
-      "peak_mb": 295.2,
-      "versions": {
-        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
-        "numpy": "2.3.4",
-        "scipy": "1.16.3",
-        "pynwb": "3.1.2",
-        "pynapple": "0.11.3",
-        "opexebo": "0.7.2",
-        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
-      }
+      "seconds": 8.117,
+      "peak_mb": 264.6
     },
     "cells.place_screen": {
       "status": "ok",
@@ -152,8 +143,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.065,
-      "peak_mb": 66.8
+      "seconds": 0.069,
+      "peak_mb": 66.7
     },
     "cells.grid_score": {
       "status": "error",
@@ -198,7 +189,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.047,
+      "seconds": 5.267,
       "peak_mb": 227.7
     },
     "io.nwb_roundtrip": {
@@ -209,8 +200,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.951,
-      "peak_mb": 24.3
+      "seconds": 4.589,
+      "peak_mb": 25.1
     },
     "env.from_graph": {
       "status": "n/a",
@@ -230,7 +221,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.68,
+      "seconds": 0.887,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -239,7 +230,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.141,
+      "seconds": 0.164,
       "peak_mb": 100.7
     },
     "behavior.turn_sequence": {
