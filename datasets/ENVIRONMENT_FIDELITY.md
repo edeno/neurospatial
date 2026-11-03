@@ -312,7 +312,19 @@ straddle it the verdict is "not verified: the frame offset depends on the
 estimator", unless another check gives a mismatch. On the test cases a
 single step exceeds one bin only for a shift of about 2 bins on a grid of
 15 cm corridors and about 3 bins on a tilted lattice of 16 cm bars, so a
-layout moved by 1 to 2-3 bins there is not verified, not a mismatch. A shift found by
+layout moved by 1 to 2-3 bins there is not verified, not a mismatch; at
+the real recordings' scatter the single step stays under a bin, so this
+check gives at most "not verified" on a misplaced layout. The offset is
+resolved only below half the smallest spacing between two distinct
+parallel pieces (corridors or bars side by side over at least a bin, not
+joined along the graph within a bin; from the declared geometry,
+`_tracks.piece_spacing`): samples moved farther
+are nearer the neighbouring piece and read as its offset, the other way,
+so a shift of one spacing reads as none. When the 3-bin reading window is
+wider than half that spacing the check passes no verdict ("not verified:
+the frame offset cannot be read beyond half the corridor spacing",
+G-160), and a refit that has not settled after 50 steps is not verified
+either. A shift found by
 searching for the one that brings the samples closest to the track (the
 median distance) is not used: it moves the track onto the densest band of
 samples (+10 cm across 000044's linear track) and has several near-equal
@@ -344,7 +356,7 @@ is to misfits of known size is not measured here: that is the survey's
 simulation ladder (phase 6, rungs 2-3, planted misfits). Of the 20
 declared tracks:
 
-- 12 match, and the frame offset passes on each. On a stated size against the samples' own: Vollan's linear
+- 11 match, and the frame offset passes on each. On a stated size against the samples' own: Vollan's linear
   track +5.5 %, 000568 +5.1 %, 000165 -1.6 %, the 000044 circle's diameter
   -0.2 % (its worst stretch 2.38 cm to one side, against a 2.5 cm limit:
   close to it), 000447's familiar W-track (base -1.2 %, arms +6.5 %),
@@ -352,10 +364,9 @@ declared tracks:
   W-maze (base +14 %, arms +7 %: close to the limit) and Shipley's eight
   arms (-5.9 to +3.4 %). On the authors' geometry or the file's coordinate
   as stated: J16's graph, hc-31's track coordinate (length +0.3 %),
-  Takigawa's centrelines and the labyrinth's graph. Their frame offsets are
+  and Takigawa's centrelines. Their frame offsets are
   0.42 bin or less by either estimator (refitted: the 000044 circle
-  1.04 cm, hc-28 0.90 cm, Takigawa 1.59 cm of a 4 cm bin, the labyrinth
-  0.105 of a cell, 0.21 bin, over 127 pieces); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
+  1.04 cm, hc-28 0.90 cm, Takigawa 1.59 cm of a 4 cm bin); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
   one piece reads nothing, and the stated length, the stretch bias and the
   reach past the ends judge them.
 - 000044's linear track is not verified: its frame offset depends on the
@@ -364,8 +375,13 @@ declared tracks:
   bin). Its samples scatter from -12 to +25 cm across it (5th-95th
   percentile), far wider than the 7.5 cm window the offset is read in, and
   the refitted window follows the heavier side (G-160). It matched on the
-  file's linearized coordinate before. The
-  labyrinth was a mismatch in the tracks round: its graph ended at the
+  file's linearized coordinate before.
+- The labyrinth is not verified: its corridors lie 1 cell apart, and the
+  3-bin (1.5-cell) window the frame offset is read in is wider than half
+  of that, so a shift past half a cell would read as the next corridor's
+  (G-160). Its frame offset reads 0.105 cell (0.21 bin) over 127 pieces,
+  under the limit, and it otherwise matches on the authors' graph; it
+  matched before the spacing rule. It was a mismatch in the tracks round: its graph ended at the
   centre of each dead-end cell, and the samples reached 15.6 % of its
   length past its ends; the loader now moves each of the 64 dead ends half
   a cell on, to the end wall `MazeWall` draws, and the samples reach 3.0 %
@@ -378,10 +394,11 @@ declared tracks:
   no stretch of its centrelines reaches 20 bins, and none of the
   labyrinth's corridors does (worst 0.49 cell to one side, reported), so on
   these two neither a stretch's bias nor its support is judged. The frame
-  offset now judges both as a whole (above), and both pass it: Takigawa
-  (+0.94, -2.07) cm over 8 pieces, the labyrinth (-0.11, +0.03) cell over
-  127.
-- 7 are not verified: no stated size compared and no independent
+  offset now judges both as a whole (above): Takigawa passes it
+  (+0.94, -2.07) cm over 8 pieces; on the labyrinth it reads (-0.11,
+  +0.03) cell over 127 but cannot be read beyond half its corridor
+  spacing, so it is not verified.
+- 9 are not verified: the labyrinth and 000044's linear track (above), and 7 with no stated size compared and no independent
   reference (the figure-8, the X maze, Agarwal's maze, 001695, hc-3, whose
   pixel scale comes from the same 250 cm), hc-18's circuit, whose shape no
   source states, and Hafting's line, drawn in the file's frame: the frame
@@ -492,7 +509,10 @@ room is a mismatch and the lattice is not verified:
   (reported), over 738 bar segments; in one step (-1.4, +0.6) cm, 0.38 bin,
   over 792. On a synthetic tilted lattice moved 1.5 bins, a single step
   reads under a bin too (0.78), so a single step cannot tell this lattice
-  from one moved by a few cm. Until this round its placement was not
+  from one moved by a few cm. Its parallel bars also lie 16 cm apart,
+  closer than twice the 12 cm window the offset is read in, so a shift
+  past 8 cm would read as the next bar's and the check passes no verdict
+  there in any case (G-160). Until this round its placement was not
   judged and it matched on its side alone.
 - The bat's room is a mismatch on its faces: `r_lim`'s sizes match the
   paper's room (x +3.6 %, y +0.0 %, z -8.0 %), but of the 57 flight samples

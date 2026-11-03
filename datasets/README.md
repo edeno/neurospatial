@@ -176,3 +176,22 @@ operation cells; each writes to `results/studies/`:
    (`studies/declared_vs_inferred.py`).
 4. Run the driver, give every non-`ok` cell and every new warning or hazard row
    a gap entry or verdict, and commit the results.
+
+## Follow-ups
+
+Left from the second review of the frame-offset and record fixes:
+
+- The frame offset's pieces depend on how the graph is cut: `_straight_pieces`
+  gives one sliding window per segment, so a straight track cut at 15 and
+  85 cm reads its cross direction while the same track as one segment does
+  not, and a 72-sector circle counts as many overlapping pieces. Merge
+  windows on the same straight run into one piece before the frame fit.
+- `frame_offset`'s read-direction rule tests each eigenvector of
+  `sum P_k`, which `eigh` returns in an arbitrary basis when `sum P_k` is
+  isotropic (a symmetric Y, an 8-arm maze); make the rule
+  basis-independent (the leave-one-out minimum eigenvalue on each
+  eigenspace) and test it on rotated copies of both.
+- The frame check resolves only shifts below half the smallest spacing
+  between parallel pieces, and passes no verdict when its window is wider
+  than that; a shift of about one spacing on a maze whose window fits
+  (15 cm corridors at 2.5 cm bins) still reads as none and can match.

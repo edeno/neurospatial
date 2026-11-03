@@ -106,17 +106,22 @@ from the first five batches; the full rerun after this batch refreshes them.
   97 cm), but judged as a whole its head samples sit 9.4 cm horizontally
   off the authors' bars by the refitted shift (2.35 bins) and 0.38 bin by
   a single step, which on a synthetic lattice reads under a bin for shifts
-  up to about 2.5 bins (G-159). Of 20 declared tracks, 12 match and 8 are
-  not verified (no fact independent of the samples, or a frame offset that
-  depends on the estimator), against 4 matches, 7 mismatches and
+  up to about 2.5 bins (G-159). Of 20 declared tracks, 11 match and 9 are
+  not verified (no fact independent of the samples, a frame offset that
+  depends on the estimator, or corridors closer than twice the window the
+  offset is read in), against 4 matches, 7 mismatches and
   9 not verified built from the samples. Every declared track and the
   lattice is now also judged as a whole: one translation fitted to every
   straight piece's median offset, any length, read by a single
   least-squares step and refitted until it settles; both over one bin is a
   mismatch, straddling it not verified. The
-  labyrinth (0.21 bin over 127 pieces) and Takigawa's tracks (0.40 bin),
-  which have no stretch of the 20 bins a stretch's bias needs, now have a
-  check that can fail them, and pass it. On 000044's linear track the two
+  labyrinth and Takigawa's tracks, which have no stretch of the 20 bins a
+  stretch's bias needs, now have a whole-track check. Takigawa's passes
+  (0.40 bin); the labyrinth's reads 0.21 bin over 127 pieces but its
+  corridors lie 1 cell apart, so a shift past half a cell would read as
+  the next corridor's, and it is not verified (G-160). At the real
+  recordings' scatter the single step stays under a bin, so this check
+  gives at most "not verified" on a misplaced layout. On 000044's linear track the two
   straddle the limit (0.50 and 1.18 bins across the track), on a lateral
   scatter far wider than the 3-bin window the offset is read in, so it is
   not verified (G-160). Samples cannot show walls thinner than a bin (the

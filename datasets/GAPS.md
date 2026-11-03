@@ -2506,7 +2506,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-160: A track's offset is read in a window narrower than its samples' lateral scatter
 
-- Datasets: grosmark_000044_linear
+- Datasets: grosmark_000044_linear, rosenberg_labyrinth and
+  grieves_2020_lattice (corridor or bar spacing)
 - Operation / step: `_tracks.frame_offset` and the per-stretch bias in
   `_tracks.edge_fit` (fidelity study, declared tracks)
 - Kind: harness-limitation
@@ -2536,7 +2537,20 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   (0.38 and 2.35, G-159) are not verified. On the test cases a single step
   exceeds a bin only from about a 2-bin shift (15 cm corridors) or 3 bins
   (16 cm lattice bars), so smaller misplacements there are not verified,
-  not mismatches. The median-distance search is not used: it moves onto
+  not mismatches. At the real recordings' scatter the single step stays
+  under a bin, so on a misplaced layout the check gives at most "not
+  verified". The median-distance search is not used: it moves onto
   the densest band and has several minima on the lattice.
+- Aliasing (second review, 2026-11-03): each sample is read on its
+  nearest piece, so a shift past half the spacing between two parallel
+  pieces is read on the neighbour, the other way; on 5 cm corridors at
+  2.5 cm bins a 1.5-bin shift read under a bin by both estimators and
+  matched, and a shift of one spacing reads as none. The check now
+  resolves only shifts below half the smallest spacing between distinct
+  parallel pieces (`_tracks.piece_spacing`, from the declared geometry),
+  and when its 3-bin window is wider than half that spacing it adds "not
+  verified: the frame offset cannot be read beyond half the corridor
+  spacing". A refit that has not settled in 50 steps is not verified
+  either.
 - Proposed change: none in neurospatial
 - Status: open

@@ -96,8 +96,8 @@ Each cell: declared / inferred (`results/` / `results/inferred_env/`).
 | vollan_of | 2828 / 2041 | 72 % / 100 % | 0.38 / 0.44 | -1 / refused (G-131) | 5 %, 7.5 cm / 48 %, 42.5 cm | 8.54 / 64.9 cm; 8.54 / 66.0 cm | refused / 0 |
 | kanter_2025 | 1601 / 1049 | 65 % / 100 % | 0.151 / 0.161 | 0.08 / refused | 20 %, 37.5 cm / 38 %, 42.5 cm | 21.2 / 60.0 cm; 21.2 / 60.6 cm | refused / 1 |
 | watermaze_10248158 | 1124 / 1144 | 99 % / 100 % | – (behaviour only) | – | – | – | refused / refused |
-| hc2_ec013_527 | 5329 / 3210 | 60 % / 100 % | 1.44 / 1.66 | -1 / refused (G-131) | refused (pixels, G-133) | 74.1 / 105 px; 83.4 / 110 px | refused / 1 |
-| grieves_2020_lattice | 4410 / 8193 | 57 % / 100 % | 0.86 / 0.78 | refused (3-D) | – | 97.0 / 97.0 cm; 82.7 / 76.8 cm | 1 (G-134) / refused |
+| hc2_ec013_527 | 5329 / 3210 | 60 % / 100 % | 1.44 / 1.66 | -1 / refused (G-131) | refused (pixels, G-133) | 73.8 / 105 px; 83.5 / 110 px | refused / 1 |
+| grieves_2020_lattice | 4410 / 8193 | 57 % / 100 % | 0.86 / 0.78 | refused (3-D) | – | 97.0 / 97.0 cm; 82.3 / 76.8 cm | 1 (G-134) / refused |
 | yartsev_bat_demo | 8294 / 1352 | 14 % / 89 % | 3.52 / 3.47 | refused (3-D) | – | 2.36 / 2.56 m; 2.18 / 2.64 m | refused / refused |
 
 **Occupancy and rate maps.** A declared arena keeps the bins the animal never
@@ -145,10 +145,10 @@ samples leave no holes, barely moves (10 % -> 13 %).
 
 **Decoding** is unchanged in the arenas the animal covered (Gardner, Vollan,
 Kanter: identical median errors; chance within 1 cm) and better on hc-2
-(83.4 -> 74.1 px; chance 110 -> 105 px). On the lattice the bar graph's
+(83.5 -> 73.8 px; chance 110 -> 105 px). On the lattice the bar graph's
 geodesic errors are larger than the voxels' and equal to chance (97.0 cm
 against 97.0; the 10th-90th percentiles of decoded and chance errors are
-45-162 cm both); the 24 CA1 units decode at chance on both (voxels: 82.7
+45-162 cm both); the 24 CA1 units decode at chance on both (voxels: 82.3
 against 76.8 cm). In the bat's room the declared grid decodes worse than the
 visited voxels (2.36 m against 2.18 m; chance 2.56 and 2.64 m): the
 uniform prior now spreads over the 86 % of the room the bat never entered
