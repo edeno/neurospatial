@@ -45,6 +45,15 @@ LOADERS = {
     "grosmark_000044_circular": "load_grosmark_000044_circular",
     "grosmark_000044_linear": "load_grosmark_000044_linear",
     "jadhav_000447": "load_jadhav_000447",
+    "rsc_000987": "load_rsc_000987",
+    "ca1ca3_001880": "load_ca1ca3_001880",
+    "gonzalez_001695": "load_gonzalez_001695",
+    "neurolab_001754": "load_neurolab_001754",
+    "valero_000568": "load_valero_000568",
+    "aeryjones_000165": "load_aeryjones_000165",
+    "dyads_001845": "load_dyads_001845",
+    "senzai_000003": "load_senzai_000003",
+    "kanter_2025": "load_kanter_2025",
 }
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"

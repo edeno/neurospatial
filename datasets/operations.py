@@ -548,13 +548,13 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
         )
 
     def position(value: Any) -> str:
-        if rec.position_units not in _TO_CM or value.units not in _TO_CM:
+        if rec.position_units == "pixel" and value.units == "px":
+            scale = 1.0
+        elif rec.position_units not in _TO_CM or value.units not in _TO_CM:
             return f"units {value.units!r} not comparable with {rec.position_units!r}"
-        scaled = (
-            np.asarray(value.positions)
-            * _TO_CM[value.units]
-            / _TO_CM[rec.position_units]
-        )
+        else:
+            scale = _TO_CM[value.units] / _TO_CM[rec.position_units]
+        scaled = np.asarray(value.positions) * scale
         if scaled.shape != np.shape(rec.positions):
             return (
                 f"different series (shape {scaled.shape} vs {np.shape(rec.positions)})"
@@ -609,6 +609,66 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
         return Outcome("error", found, note=" | ".join(errors))
     problems = [f"{k}: {v}" for k, v in found.items() if not v.startswith(_ACCEPTED)]
     return Outcome("workaround" if problems else "ok", found, note="; ".join(problems))
+
+
+POSE_BINS_PER_SPAN = 50
+
+
+def read_pose_operation(rec: Recording, _cache: dict[str, Any]) -> Outcome:
+    """Read the file's pose keypoints and feed one to the rate or occupancy API.
+
+    ``read_pose`` runs with default arguments. The summary lists the
+    keypoints, the pose unit, and each keypoint's share of samples with any
+    NaN coordinate. The keypoint ``params["pose_keypoint"]`` (else the first
+    by name) is then passed, with the pose's own times, to
+    ``Environment.from_samples`` and ``compute_spatial_rates`` (or
+    ``env.occupancy`` for a recording without spikes). The bin size is the
+    recording's when the pose shares its unit, else 1/50 of the keypoint's
+    largest span. A reader error other than "not found" propagates.
+    """
+    from _fetch import open_nwb
+
+    from neurospatial import Environment
+    from neurospatial.encoding import compute_spatial_rates
+    from neurospatial.io.nwb import read_pose
+
+    source = rec.params.get("nwb_source")
+    if source is None:
+        return Outcome("n/a", note="params has no nwb_source (not an NWB dataset)")
+    with open_nwb(source) as nwbfile:
+        try:
+            pose = read_pose(nwbfile)
+        except KeyError:  # the reader's documented "not found"
+            return Outcome("n/a", note="the file has no PoseEstimation")
+    names = sorted(pose.bodyparts)
+    summary: dict[str, float | int | str] = {
+        "keypoints": ",".join(names),
+        "units": str(pose.units),
+        "n_samples": len(pose.times),
+    }
+    for name in names:
+        xy = np.asarray(pose.bodyparts[name], dtype=float)
+        summary[f"nan_share_{name}"] = float(np.isnan(xy).any(axis=1).mean())
+    chosen = rec.params.get("pose_keypoint", names[0])
+    xy = np.asarray(pose.bodyparts[chosen], dtype=float)
+    times = np.asarray(pose.times, dtype=float)
+    pose_units = (
+        None if pose.units is None else {"px": "pixel"}.get(pose.units, pose.units)
+    )
+    if pose_units == rec.position_units:
+        bin_size = rec.params["bin_size"]
+    else:
+        span = np.nanmax(xy, axis=0) - np.nanmin(xy, axis=0)
+        bin_size = float(span.max()) / POSE_BINS_PER_SPAN
+    env = Environment.from_samples(xy, bin_size=bin_size, name=f"{rec.dataset}-pose")
+    if rec.spike_times is not None:
+        compute_spatial_rates(env, list(rec.spike_times), times, xy)
+        summary["fed"] = "compute_spatial_rates"
+    else:
+        env.occupancy(times, xy)
+        summary["fed"] = "occupancy"
+    summary["keypoint"] = chosen
+    return Outcome("ok", summary)
 
 
 def imaging_rates(_rec: Recording, _cache: dict[str, Any]) -> Outcome:
@@ -733,6 +793,7 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("behavior.turn_sequence", ("positions",), turn_sequence),
     Operation("replay.compare_methods", _SPIKES_AND_POSITIONS, replay_compare_methods),
     Operation("io.nwb_readers", (), nwb_readers),
+    Operation("io.read_pose", (), read_pose_operation),
     Operation("imaging.rates", ("activity", "positions"), imaging_rates),
     Operation(
         "imaging.rates_workaround", ("activity", "positions"), imaging_rates_workaround

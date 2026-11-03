@@ -10,7 +10,13 @@ from operations import nwb_readers
 pynwb = pytest.importorskip("pynwb")
 
 
-def _write(path, *, heading_unit: str, generic_position: bool = False) -> Recording:
+def _write(
+    path,
+    *,
+    heading_unit: str,
+    generic_position: bool = False,
+    position_unit: str = "cm",
+) -> Recording:
     """A small NWB file with position, head direction (radians) and two units."""
     from pynwb.behavior import CompassDirection, Position
 
@@ -40,7 +46,7 @@ def _write(path, *, heading_unit: str, generic_position: bool = False) -> Record
         position.create_spatial_series(
             name="position",
             data=positions,
-            unit="cm",
+            unit=position_unit,
             timestamps=times,
             reference_frame="corner",
         )
@@ -65,7 +71,7 @@ def _write(path, *, heading_unit: str, generic_position: bool = False) -> Record
         license="n/a",
         times=times,
         positions=positions,
-        position_units="cm",
+        position_units="pixel" if position_unit == "pixels" else "cm",
         headings=headings,
         spike_times=tuple(spikes),
         unit_ids=np.arange(2),
@@ -119,3 +125,11 @@ def test_self_comparison_is_labelled(tmp_path):
     assert outcome.summary["units"] == "ok (loader used this reader)"
     assert outcome.summary["position"] == "ok"
     assert outcome.status == "ok"
+
+
+def test_readers_compare_pixels_with_pixels(tmp_path):
+    rec = _write(
+        tmp_path / "pixels.nwb", heading_unit="radians", position_unit="pixels"
+    )
+    outcome = nwb_readers(rec, {})
+    assert outcome.summary["position"] == "ok"

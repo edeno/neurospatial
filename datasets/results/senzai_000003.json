@@ -1,0 +1,380 @@
+{
+  "dataset": "senzai_000003",
+  "session": "YutaMouse41-150829",
+  "source": "https://dandiarchive.org/dandiset/000003/0.260218.2052 sub-YutaMouse41/sub-YutaMouse41_ses-YutaMouse41-150829_behavior+ecephys.nwb (asset 70aaf3be-9f95-40af-8abc-a8316cbe50ca)",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "positions: acquisition/position_sensor0 (a bare SpatialSeries, read with pynwb), labelled metres; range checked: 331-498 by 120-220: pixels, kept as pixels (no calibration)",
+    "times: starting_time 0.0 s + index / 39.0625 Hz; the implied 17050.3 s matches the LFP's 17050.3 s and the last spike at 17050.2 s",
+    "headings: none; the direction between the two sensors does not follow movement",
+    "epochs: sleep-state rows by label; params['analysis_epochs'] the awake rows"
+  ],
+  "expectations": [
+    {
+      "key": "n_units",
+      "passed": true,
+      "detail": "expected 23, got 23"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=39.0, high=39.2), got 39.06250000009104"
+    },
+    {
+      "key": "pixels",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "values_are_not_metres",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3971+g9ce92cfa4",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 840,
+        "n_dims": 2,
+        "max_extent": 168.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        }
+      ],
+      "seconds": 0.159,
+      "peak_mb": 49.3
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 3310.5408000000016,
+        "frac_bins_visited": 0.8940476190476191,
+        "median_s_per_visited_bin": 0.35840000000206373,
+        "max_s": 154.00960000002402
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.132,
+      "peak_mb": 83.2
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 23,
+        "frac_nan_bins": 0.10595238095238095,
+        "median_peak_hz": 5.822037032780389,
+        "median_mean_hz": 1.1475439265789236
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.536,
+      "peak_mb": 84.6
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 0.07459592741270356,
+        "bits_per_spike_max": 0.5467582790149044,
+        "bits_per_spike_n_finite": 23
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 1.3
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 0.07459592741270356,
+        "median_shifted_bits_per_spike": 0.013973415743979981,
+        "frac_above_every_shift": 0.782608695652174,
+        "n_units": 23,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 1.364,
+      "peak_mb": 92.4
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 1,
+        "n_units": 23
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.012,
+      "peak_mb": 26.0
+    },
+    "cells.grid_score": {
+      "status": "ok",
+      "summary": {
+        "median": -0.47183149475310193,
+        "max": -0.26780382286275056,
+        "n_finite": 2
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.155,
+      "peak_mb": 4.8
+    },
+    "cells.border_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 0.4
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 37.65685424949238,
+        "chance_median_error": 61.36586126720196,
+        "units": "pixel",
+        "n_time_bins": 6256
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.459,
+      "peak_mb": 86.9
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 840
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 2
+        }
+      ],
+      "seconds": 2.782,
+      "peak_mb": 8.6
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no min_speed",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.122,
+      "peak_mb": 83.2
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "summary": {},
+      "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.nwb_readers": {
+      "status": "workaround",
+      "summary": {
+        "position": "not found, but the loader found it",
+        "head_direction": "absent (file has none)",
+        "units": "ok (loader used this reader)"
+      },
+      "note": "position: not found, but the loader found it",
+      "gap": null,
+      "warnings": [],
+      "seconds": 23.051,
+      "peak_mb": 131.3
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [],
+      "seconds": 48.191,
+      "peak_mb": 104.0
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_bins": 840,
+        "n_dims": 2,
+        "max_extent": 168.0
+      },
+      "hazard_summary": {
+        "n_bins": 835,
+        "n_dims": 2,
+        "max_extent": 500.0
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 3310.5408000000016,
+        "frac_bins_visited": 0.8940476190476191,
+        "median_s_per_visited_bin": 0.35840000000206373,
+        "max_s": 154.00960000002402
+      },
+      "hazard_summary": {
+        "total_s": 3316.940800000001,
+        "frac_bins_visited": 0.9053892215568863,
+        "median_s_per_visited_bin": 0.3584000000021348,
+        "max_s": 171.5712000000214
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 23,
+        "frac_nan_bins": 0.10595238095238095,
+        "median_peak_hz": 5.822037032780389,
+        "median_mean_hz": 1.1475439265789236
+      },
+      "hazard_summary": {
+        "n_units": 23,
+        "frac_nan_bins": 0.09461077844311377,
+        "median_peak_hz": 5.733586122735141,
+        "median_mean_hz": 1.1495495199170056
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).\nAll 23 units are silent from 15411.8 s to 15569.0 s (157 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n952503/953531 spike_times (100%) across all neurons fell outside the position time window [0, 17050.3]; spike_times.min()=27.15 spike_times.max()=1.70502e+07. The spike times span 1.70502e+07 and reach 1.70502e+07, about 1000 times the 17050.3 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 23,
+        "frac_nan_bins": 0.10595238095238095,
+        "median_peak_hz": 5.822037032780389,
+        "median_mean_hz": 1.1475439265789236
+      },
+      "hazard_summary": {
+        "n_units": 23,
+        "frac_nan_bins": 0.10595238095238095,
+        "median_peak_hz": 0.004794536905062583,
+        "median_mean_hz": 0.0003795934866553308
+      }
+    }
+  ]
+}
