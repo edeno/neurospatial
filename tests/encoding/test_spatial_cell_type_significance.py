@@ -419,16 +419,24 @@ def _rebuilt(result, **changes):
     return CellTypeSignificanceResult(**{**fields, **changes})
 
 
-def test_significant_grid_score_without_a_ring_is_not_grid(grid_and_hexless):
-    """A grid label needs a hexagonal ring as well as a significant score."""
+@pytest.mark.parametrize("seed", range(3))
+def test_significant_grid_score_without_a_ring_is_not_grid(grid_and_hexless, seed):
+    """A grid label needs a hexagonal ring as well as a significant score.
+
+    The ringless cell is a grid too widely spaced for the box. About 0.3%
+    of its shifts reach its score, so with 79 shifts p < 0.05 (at most two
+    reach it) fails at about 2 seeds in 1000. The smoothed-noise cell of the
+    fixture is not used: its score sits near the 95th percentile of its
+    shifts, so whether it is significant depends on the seed.
+    """
     r = grid_and_hexless
     result = spatial_cell_type_significance(
         r.env,
-        r.trains,
+        [r.trains[0], r.wide_grid],
         r.times,
         r.positions,
         n_shuffles=79,
-        rng=1,
+        rng=seed,
         boundary_source="analysis",
     )
     assert np.isfinite(result.grid_spacing[0])

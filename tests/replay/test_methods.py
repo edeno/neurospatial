@@ -261,6 +261,14 @@ class TestPublishedMethods:
 
 class TestCompare:
     def test_table_has_one_row_per_event_and_method(self, place_code):
+        """The sweep is replay under both recipes, whatever the seed.
+
+        Michon et al.'s pseudo-events are drawn from the three events'
+        rows. At 10 time bins one in about 300 of them outscores the sweep,
+        so 199 shuffles, whose floor 0.005 is the only p below alpha = 0.01,
+        miss it at about half the seeds. A 20-bin sweep is outscored by
+        none of 5000, and the recipe's own 500 shuffles allow four.
+        """
         env, rates = place_code
         events, counts = [], []
         for kind, seed in (("sweep", 5), ("random", 6), ("random", 7)):
@@ -269,16 +277,17 @@ class TestCompare:
                 rates,
                 kind,
                 seed=seed,
-                **({"speed": 900.0} if kind == "sweep" else {}),
+                duration=0.4,
+                **({"speed": 450.0} if kind == "sweep" else {}),
             )
             events.append(decoded)
             counts.append(event_counts)
         table = compare_replay_methods(
             env,
             events,
-            replay_methods=[_fast(SILVA_2015), _fast(MICHON_2019)],
+            replay_methods=[SILVA_2015, MICHON_2019],
             spike_counts=counts,
-            rng=1,
+            rng=0,
         )
         assert len(table) == 6
         assert set(table["method"]) == {"silva_2015", "michon_2019"}

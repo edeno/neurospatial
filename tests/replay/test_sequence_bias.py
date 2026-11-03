@@ -279,7 +279,16 @@ def session():
     return env, spike_times, template, events, np.array(kinds), intervals
 
 
-def test_recipe_finds_forward_and_reverse_sequences_in_compare(session):
+@pytest.mark.parametrize("seed", range(5))
+def test_recipe_finds_forward_and_reverse_sequences_in_compare(session, seed):
+    """Sweeps and reverse sweeps are replay; random events score below them.
+
+    The random events' verdicts are not tested. Their cells fire in groups,
+    one group per random position, and the label shuffle breaks the groups,
+    so it is not their null: about a quarter of such events are significant
+    (TestSignificance checks the rate at alpha where labels are
+    exchangeable).
+    """
     env, spike_times, template, events, kinds, _ = session
     method = LIU_2023_BIAS
     table = compare_replay_methods(
@@ -289,14 +298,15 @@ def test_recipe_finds_forward_and_reverse_sequences_in_compare(session):
         spike_times=spike_times,
         template_bias=template,
         dt=DT,
-        rng=1,
+        rng=seed,
     )
     assert (table["error"] == "").all()
     rows = table.set_index("event")
     assert rows["is_replay"][kinds != "random"].all()
     assert (rows["score"][kinds == "sweep"] > 0.5).all()
     assert (rows["score"][kinds == "reverse"] < -0.5).all()
-    assert rows["is_replay"][kinds == "random"].sum() <= 1
+    sequence_scores = rows["score"][kinds != "random"].abs()
+    assert rows["score"][kinds == "random"].abs().max() < sequence_scores.min()
     assert np.allclose(rows["p_value"][kinds != "random"], 1 / 101)
     # The table's verdicts can be recalibrated like any p-value test.
     with pytest.warns(UserWarning, match=r"smallest p-value its"):

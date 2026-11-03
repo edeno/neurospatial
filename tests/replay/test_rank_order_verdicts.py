@@ -258,13 +258,16 @@ def test_spike_order_methods_refuse_the_same_template_inputs(place_code, name):
         run({"left": env}, rates, None)
 
 
+@pytest.mark.parametrize("seed", range(5))
 @pytest.mark.parametrize("name", ["rank_order", "template_match"])
-def test_template_order_does_not_change_the_shuffles(place_code, name):
+def test_template_order_does_not_change_the_shuffles(place_code, name, seed):
     """Each template draws from a stream named for it, as in every replay test.
 
     A weak sequence keeps the p-values between their floor and 1, so a
     template given another template's random draws would get another
-    p-value.
+    p-value. The two templates score differently: template matching
+    breaks a tie of score and p-value by order, so with identical templates
+    the order would decide whenever their p-values happen to tie.
     """
     from neurospatial.replay import detect_template_match_replay
     from neurospatial.replay.methods import LEE_WILSON_2002
@@ -272,8 +275,9 @@ def test_template_order_does_not_change_the_shuffles(place_code, name):
     env, rates = place_code
     order = [12, 30, 14, 11, 25, 16, 13, 33, 18, 15, 20, 28, 17, 22, 19, 35]
     spikes = _firing(order)
+    # Only cells 10-19 have a field on the second template.
     few = rates.copy()
-    few[[c for c in range(40) if not 10 <= c < 20]] *= 0.1
+    few[[c for c in range(40) if not 10 <= c < 20]] = np.nan
     templates = {"forward": rates, "few": few}
     reordered = dict(reversed(list(templates.items())))
 
@@ -289,7 +293,7 @@ def test_template_order_does_not_change_the_shuffles(place_code, name):
                 models,
                 rank_order_method=method,
                 template=template,
-                rng=1,
+                rng=seed,
             )
         # Sampled, not enumerated, match probabilities draw from the stream.
         method = dataclasses.replace(
@@ -305,9 +309,10 @@ def test_template_order_does_not_change_the_shuffles(place_code, name):
             models,
             template_match_method=method,
             template=template,
-            rng=1,
+            rng=seed,
         )
 
+    assert run(templates, "forward").score != run(templates, "few").score
     first, second = run(templates), run(reordered)
     assert first.template == second.template
     assert 1 / 100 < first.p_value < 1.0  # above the floor of 99 shuffles
