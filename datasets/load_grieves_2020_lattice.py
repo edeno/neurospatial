@@ -157,13 +157,14 @@ def load(cache: Path | None = None) -> Recording:
 
 
 def millimetres_labelled_cm(rec: Recording) -> Recording:
-    # The stored positions are mm; a reader that took them as cm makes the
-    # lattice 10 x too large and bins 10 x too fine.
+    """The stored mm taken as cm: the lattice 10 x too large, bins 10 x too fine.
+
+    Not in ``HAZARDS``: probed by hand, ``Environment.from_samples`` warns
+    about the grid (388 x 429 x 371 cells, 109,862 visited bins), and the
+    rate maps then ran for over an hour at 18 GB before the run was stopped.
+    """
     assert rec.positions is not None
     return replace(rec, positions=rec.positions * _MM_PER_CM)
-
-
-HAZARDS = {"millimetres_labelled_cm": millimetres_labelled_cm}
 
 
 if __name__ == "__main__":
