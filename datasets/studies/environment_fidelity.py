@@ -91,6 +91,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _fetch import cache_root  # noqa: E402
+from _geometry import MAX_CENTRE_OFFSET, MAX_SIZE_RESIDUAL  # noqa: E402
 from _record import Recording  # noqa: E402
 from operations import _env, _graph_env, _samples_env, env_kind  # noqa: E402
 from run import LOADERS  # noqa: E402
@@ -112,6 +113,9 @@ ALIGN_DEGREES = 20.0
 # Layouts whose bins are the active cells of a regular grid (``grid_edges`` and
 # ``active_mask``): from samples, and a grid masked by a declared polygon.
 GRID_LAYOUTS = ("RegularGrid", "ShapelyPolygon")
+# A declared environment should place nearly every tracked sample; this allows
+# tracking glitches and a head LED leaning past a wall or edge.
+MAX_SAMPLES_OUTSIDE = 0.02
 
 
 # --- Apparatus stated by a source read for this study ---------------------------
@@ -214,8 +218,9 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "hc2_ec013_527": Apparatus(
         "open",
-        "hc-2 description: ec013.527 180 cm square (pixels; the scale is"
-        " inferred from that side)",
+        "crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x"
+        " 180 cm ...)', ec013.527 180 cm (pixels; the scale is inferred from that"
+        " side)",
         True,
         shape="square",
         notes="placed by the loader in pixels",
@@ -1308,6 +1313,29 @@ def bar_alignment(rec: Recording, ref: Reference) -> dict[str, Any]:
     }
 
 
+def placement_reasons(declared: dict[str, Any]) -> list[str]:
+    """Why a declared environment's placement does not fit the samples, if it does not."""
+    reasons = []
+    outside = declared["frac_samples_outside"]
+    if outside > MAX_SAMPLES_OUTSIDE:
+        reasons.append(
+            f"{outside:.1%} of samples outside the declared environment"
+            f" (limit {MAX_SAMPLES_OUTSIDE:.0%})"
+        )
+    fit = declared.get("fit") or {}
+    for key, value in fit.items():
+        if key.startswith("size_residual") and value < -MAX_SIZE_RESIDUAL:
+            reasons.append(f"samples' fitted size {value:+.0%} of the stated ({key})")
+    if "centre_offset" in fit:
+        radius = fit["samples_diameter"] / (1 + fit["size_residual"]) / 2
+        if fit["centre_offset"] > MAX_CENTRE_OFFSET * radius:
+            reasons.append(
+                f"samples' centre {fit['centre_offset']:.3g} from the stated centre"
+                f" (limit {MAX_CENTRE_OFFSET:.0%} of the radius {radius:.3g})"
+            )
+    return reasons
+
+
 def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     """Verdict against the stated apparatus, and the reasons for a mismatch.
 
@@ -1320,6 +1348,14 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     ``LOOP_CLOSURE_SHARE`` of its length) and that the bins join them (their
     path no longer than the camera distance plus that share). An assumed
     track width is reported but not judged.
+
+    A declared environment covers its own outline by construction, so its
+    coverage is not judged; its placement is instead: the share of tracked
+    samples it cannot place (at most ``MAX_SAMPLES_OUTSIDE``), the samples'
+    fitted size against the stated one (``_geometry.MAX_SIZE_RESIDUAL``
+    short; samples past the wall show up as samples outside), and a stated
+    centre's distance from the samples' (``_geometry.MAX_CENTRE_OFFSET`` of
+    the radius).
     """
     if app is None or not app.verified:
         return "not verified", "no source read here states the geometry"
@@ -1331,8 +1367,11 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
             f"{n} part{'s' if n != 1 else ''} with 1% of the bins or more, apparatus"
             f" has {app.n_parts}"
         )
+    declared = row.get("declared")
+    if declared:
+        reasons += placement_reasons(declared)
     outline = row.get("outline")
-    if outline:
+    if outline and not declared:
         if outline["stated_area_covered"] < 0.9:
             filled = row["open_field_preset"]["stated_area_covered"]
             reasons.append(
@@ -1702,7 +1741,10 @@ def analyse(rec: Recording, *, figures: bool = True) -> dict[str, Any]:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             placed = np.asarray(env.bin_at(samples))
-        row["declared"] = {"frac_samples_outside": float(np.mean(placed < 0))}
+        row["declared"] = {
+            "frac_samples_outside": float(np.mean(placed < 0)),
+            "fit": dict(rec.geometry.get("environment_fit", {})),
+        }
         row["samples_env"] = samples_env_measures(
             rec, cache, samples, app, ref, outline, room
         )
@@ -1732,8 +1774,10 @@ def compare_table(rows: list[dict[str, Any]]) -> list[str]:
         "## Declared against samples-built environments",
         "",
         "Each cell: declared / samples-built. Outside: share of tracked samples"
-        " the declared environment cannot place (`env.bin_at` -1). Covered and wall"
-        " gap: against the outline the loader placed.",
+        " the declared environment cannot place (`env.bin_at` -1), judged against"
+        f" {MAX_SAMPLES_OUTSIDE:.0%}. Covered and wall gap: against the outline the"
+        " loader placed; a declared environment covers its own outline by"
+        " construction, so only the samples-built value is evidence.",
         "",
         "| Dataset | Bins | Components (1 %) | Holes (bins) | Sparse bins | Far links |"
         " Geodesic / straight | Env / track | Covered | Wall gap | Outside |",
@@ -1804,8 +1848,12 @@ def render(rows: list[dict[str, Any]]) -> str:
             if ref
             else "–"
         )
+        by_construction = (
+            " (by construction)" if row.get("env_kind") == "declared" else ""
+        )
         outline_cell = (
-            f"{outline['stated_area_covered']:.0%} / {outline['bin_centres_outside_stated']:.0%} /"
+            f"{outline['stated_area_covered']:.0%}{by_construction} /"
+            f" {outline['bin_centres_outside_stated']:.0%} /"
             f" {outline['wall_gap_median']:.1f} / {outline['hull_over_min_rectangle']:.2f},"
             f" {outline['hull_over_min_circle']:.2f}"
             if outline

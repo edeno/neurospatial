@@ -21,6 +21,7 @@ from studies.environment_fidelity import (
     merge_rows,
     on_track_shares,
     outline_measures,
+    placement_reasons,
     project,
     render,
     verdict,
@@ -304,3 +305,47 @@ def test_merge_rows_replaces_by_dataset_and_keeps_order():
         {"dataset": "b", "v": 2},
         {"dataset": "c", "v": 2},
     ]
+
+
+@pytest.mark.parametrize(("shift", "expected"), [(0.0, "matches"), (30.0, "mismatch")])
+def test_declared_environment_is_judged_by_its_placement(
+    simulated_recording, shift, expected
+):
+    from dataclasses import replace
+    from functools import partial
+
+    from shapely.geometry import box
+
+    # The simulated box spans 0-100 cm; a declared box moved 30 cm leaves
+    # about 30 % of the samples outside it while still covering itself.
+    declared = partial(
+        Environment.from_polygon,
+        box(shift, 0, 100 + shift, 100),
+        bin_size=2.5,
+        units="cm",
+    )
+    rec = replace(simulated_recording, geometry={"environment": declared})
+    row = analyse(rec, figures=False)
+    app = Apparatus("open", "test", True, shape="square", size=100.0)
+    assert row["outline"]["stated_area_covered"] == pytest.approx(1.0, abs=0.01)
+    status, reason = verdict(row, app)
+    assert status == expected
+    if expected == "mismatch":
+        assert "of samples outside the declared environment" in reason
+
+
+def test_placement_reasons_judge_size_and_stated_centre():
+    good = {"frac_samples_outside": 0.0, "fit": {"size_residual_a": -0.05}}
+    assert placement_reasons(good) == []
+    short = {"frac_samples_outside": 0.0, "fit": {"size_residual_a": -0.3}}
+    assert "fitted size -30%" in placement_reasons(short)[0]
+    # A 100-unit circle whose samples sit 10 units off the stated centre.
+    off = {
+        "frac_samples_outside": 0.0,
+        "fit": {
+            "centre_offset": 10.0,
+            "samples_diameter": 95.0,
+            "size_residual": -0.05,
+        },
+    }
+    assert "from the stated centre" in placement_reasons(off)[0]
