@@ -282,9 +282,14 @@ must fire on none of them) and on the hazards. Clean-recording numbers are in
 5. **Spike clock against the analysed span (G-010).** Since #265 the
    spike-drop count is limited to the requested epochs, so ms spike times
    pass silently when `epochs` are given (000165) or when the clean run
-   already warns the same way (001695). Compare the spike span with the
-   analysed span (the ~1000× ratio test), not only the share of spikes
-   outside it. A fix is pending in the UX-fixes work.
+   already warns the same way (001695). Comparing the spike span with the
+   analysed span would catch 000165, but a span-and-magnitude rule also
+   fires on correct seconds data: 10 min of tracking at the start of a 6 h
+   sorted recording is a 36× ratio, and magnitudes alone cannot tell that
+   from 000165 in ms. **Needs a maintainer decision**; until then 000165
+   stays silent. 001695 warns in ms with the same text as the clean run
+   because its 5,800× span ratio is outside the hint's 300–3,200× band (a
+   message follow-up in the UX-fixes work).
 
 Together these would catch 46 of the 59 silent probes. The rest: the bat's
 `segment_by_velocity` ×100, the speed column read as a position axis (4,
@@ -548,6 +553,8 @@ Answered 2026-11-02.
 
 ### New questions from the third batch
 
+- **Spike clock check (check 5).** Whether and how to flag ms spike times
+  when the tracking is a small part of the recording (see check 5).
 - **Check 2 needs a revised rule.** The accepted "fewer than 5 bins along a
   dimension" fires on a clean narrow track (001695, 4 bins across);
   "fewer than 5 along every dimension" keeps every ÷100 catch.
