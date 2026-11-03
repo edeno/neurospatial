@@ -327,16 +327,16 @@ must fire on none of them) and on the hazards. Clean-recording numbers are in
    `conversion` case included); misses the bat's ×100 (668 segments instead
    of 69) and Ólafsdóttir ÷100 (668 → 1 segment of 0.58 s).
 5. **Spike clock against the analysed span (G-010).** Since #265 the
-   spike-drop count is limited to the requested epochs, so ms spike times
-   pass silently when `epochs` are given (000165) or when the clean run
-   already warns the same way (001695). Comparing the spike span with the
-   analysed span would catch 000165, but a span-and-magnitude rule also
-   fires on correct seconds data: 10 min of tracking at the start of a 6 h
-   sorted recording is a 36× ratio, and magnitudes alone cannot tell that
-   from 000165 in ms. **Needs a maintainer decision**; until then 000165
-   stays silent. 001695 warns in ms with the same text as the clean run
-   because its 5,800× span ratio is outside the hint's 300–3,200× band (a
-   message follow-up in the UX-fixes work).
+   spike-drop count was limited to the requested epochs, so ms spike times
+   passed silently when `epochs` were given (000165). Decided and merged
+   (#272): spikes are treated as another clock when their span exceeds
+   10^1.5× the tracked span and their largest value exceeds 10^1.5× every
+   bound; on the survey's clean data the largest ratios are 17× span and 2×
+   reach, ms data at least 307×. Accepted trade-off: a seconds recording more
+   than 32× longer than tracking that starts with it (10 min at the start of
+   6 h) also warns. Still open: 001695 in ms warns with the same text as its
+   clean run, because its 5,800× ratio is outside the hint's 300–3,200×
+   band.
 
 Checks 1–4 would catch 92 of the 139 silent probes (check 5, if adopted, 2
 more). The rest: a −1 untracked marker kept as a coordinate (13, G-096; a
@@ -630,8 +630,6 @@ Answered 2026-11-02.
 
 ### New questions from the third batch
 
-- **Spike clock check (check 5).** Whether and how to flag ms spike times
-  when the tracking is a small part of the recording (see check 5).
 - **Check 2 needs a revised rule.** The accepted "fewer than 5 bins along a
   dimension" fires on a clean narrow track (001695, 4 bins across);
   "fewer than 5 along every dimension" keeps every ÷100 catch.
