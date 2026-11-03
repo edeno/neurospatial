@@ -1313,28 +1313,72 @@ def walk_session() -> tuple[NDArray[np.float64], ...]:
     return spike_times, times, positions
 
 
+def _unitless_env(positions, units, bin_size=5.0):
+    """An environment in ``units``; a custom unit warns that it is free-form."""
+    if units in (None, "px", "cm", "m"):
+        return Environment.from_samples(positions, bin_size=bin_size, units=units)
+    with pytest.warns(UserWarning, match="not in the standard registry"):
+        return Environment.from_samples(positions, bin_size=bin_size, units=units)
+
+
 @pytest.mark.parametrize(
-    ("units", "reason"),
-    [(None, "env.units is unset"), ("px", "env.units='px' is not a metric unit")],
+    ("units", "resolved", "reason", "fix"),
+    [
+        (
+            None,
+            "resolved to 12.5 environment units",
+            "env.units is unset",
+            "declare the units positions are in when building the environment "
+            '(units="cm" gives the 5 cm default)',
+        ),
+        (
+            "px",
+            "resolved to 12.5 px",
+            "env.units='px' is not a metric unit",
+            "convert positions and the environment to a metric unit",
+        ),
+        (
+            "steps",
+            "resolved to 12.5 steps",
+            "env.units='steps' is not a metric unit",
+            "convert positions and the environment to a metric unit",
+        ),
+    ],
+    ids=["unset", "px", "custom"],
 )
-def test_default_bandwidth_without_metric_units_warns(walk_session, units, reason):
+def test_default_bandwidth_without_metric_units_warns(
+    walk_session, units, resolved, reason, fix
+):
     """The bin-spacing fallback is announced with its value and the fix."""
     from neurospatial import compute_spatial_rate
 
     spike_times, times, positions = walk_session
-    env = Environment.from_samples(positions, bin_size=5.0, units=units)
+    env = _unitless_env(positions, units)
     with pytest.warns(UserWarning, match="bandwidth=None resolved") as record:
         result = compute_spatial_rate(env, spike_times, times, positions)
     (caught,) = [w for w in record if "bandwidth=None" in str(w.message)]
     message = str(caught.message)
-    assert "resolved to 12.5 environment units" in message
+    assert resolved in message
     assert "2.5 times the median bin spacing" in message
     assert reason in message
-    assert 'units="cm"' in message
-    assert "bandwidth=" in message.split("Fix:")[1]
+    assert fix in message
+    if units is not None:
+        # Relabelling pixels or a custom unit as cm would not rescale them.
+        assert 'units="cm"' not in message
+        assert f"pass bandwidth= in {units}" in message
     assert caught.filename == __file__
     # The warning announces the fallback; it does not change the value.
     assert result.bandwidth == pytest.approx(12.5)
+
+
+def test_large_pixel_bandwidth_is_written_without_exponent(walk_session):
+    """A camera-scale fallback reads as a plain number of pixels."""
+    from neurospatial import compute_spatial_rate
+
+    spike_times, times, positions = walk_session
+    env = Environment.from_samples(positions * 1000, bin_size=5000.0, units="px")
+    with pytest.warns(UserWarning, match="resolved to 12500 px,"):
+        compute_spatial_rate(env, spike_times, times, positions * 1000)
 
 
 @pytest.mark.parametrize(
@@ -1347,7 +1391,9 @@ def test_default_bandwidth_without_metric_units_warns(walk_session, units, reaso
     ],
     ids=["cm", "m", "explicit-bandwidth", "binned"],
 )
-def test_default_bandwidth_is_silent_when_announced(walk_session, units, kwargs):
+def test_no_fallback_warning_with_metric_units_explicit_bandwidth_or_binned(
+    walk_session, units, kwargs
+):
     """Metric units, an explicit bandwidth or unsmoothed binning do not warn."""
     import warnings
 
@@ -1359,3 +1405,80 @@ def test_default_bandwidth_is_silent_when_announced(walk_session, units, kwargs)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         compute_spatial_rate(env, spike_times, times, positions * scale, **kwargs)
+
+
+def _invalid_unitless_calls(spike_times, times, positions):
+    """Calls on a units-free environment whose input fails validation."""
+    from neurospatial.encoding import compute_spatial_rate, compute_view_rate
+
+    env = Environment.from_samples(positions, bin_size=5.0)
+    infinite = positions.copy()
+    infinite[3, 0] = np.inf
+    headings = np.zeros(len(times))
+    return {
+        "infinite-positions": (
+            ValueError,
+            "infinite value",
+            lambda: compute_spatial_rate(env, spike_times, times, infinite),
+        ),
+        "negative-max-gap": (
+            ValueError,
+            "max_gap must be a positive finite",
+            lambda: compute_spatial_rate(
+                env, spike_times, times, positions, max_gap=-1.0
+            ),
+        ),
+        "negative-min-occupancy": (
+            ValueError,
+            "min_occupancy",
+            lambda: compute_spatial_rate(
+                env, spike_times, times, positions, min_occupancy=-1.0
+            ),
+        ),
+        "view-on-inferred-outline": (
+            NotImplementedError,
+            "Physical boundaries are unknown",
+            lambda: compute_view_rate(env, spike_times, times, positions, headings),
+        ),
+    }
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "infinite-positions",
+        "negative-max-gap",
+        "negative-min-occupancy",
+        "view-on-inferred-outline",
+    ],
+)
+def test_invalid_input_raises_before_the_fallback_warning(walk_session, case):
+    """An input error is reported as itself, not preceded by the warning."""
+    import warnings
+
+    error, match, call = _invalid_unitless_calls(*walk_session)[case]
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        with pytest.raises(error, match=match):
+            call()
+    assert not [w for w in record if "bandwidth=None" in str(w.message)]
+
+
+def test_directional_place_fields_warn_once_per_call(walk_session):
+    """The fallback is resolved once, not once per direction label."""
+    import warnings
+
+    from neurospatial.encoding import compute_directional_place_fields
+
+    spike_times, times, positions = walk_session
+    env = Environment.from_samples(positions, bin_size=5.0)
+    labels = np.where(np.arange(len(times)) % 500 < 250, "out", "in").astype(object)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        result = compute_directional_place_fields(
+            env, spike_times, times, positions, labels
+        )
+    fallback = [w for w in record if "bandwidth=None" in str(w.message)]
+    assert len(result.labels) == 2
+    assert len(fallback) == 1
+    assert fallback[0].filename == __file__

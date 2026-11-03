@@ -269,10 +269,12 @@ These fields survive population indexing, DataFrame and xarray export; xarray
 stores the settings as JSON for NetCDF compatibility. Manually constructed
 results default to `analysis_settings=None`.
 
-Spatial and view smoothing, and smoothed object-vector maps, share a physical
-bandwidth default: 5 cm converted to declared metric units, or 2.5 median
-graph-edge lengths for unspecified/custom units, which warns with the
-resolved value. Object-vector results inherit
+Spatial and view smoothing default to a physical bandwidth: 5 cm converted to
+declared metric units. With unset, pixel or custom units they fall back to 2.5
+median graph-edge lengths and warn with the resolved value. Smoothed
+object-vector and boundary-vector maps share the 5 cm default but have no
+fallback: without metric units a kernel method needs an explicit
+`bandwidth=`. Object-vector results inherit
 the supplied environment's distance units; their angles remain radians.
 Directional smoothing keeps its explicit angular bandwidth, and object-vector
 `method="binned"` applies no smoothing. Supply explicit distance ranges and gaze

@@ -25,7 +25,7 @@ _SPIKES = np.sort(np.random.default_rng(0).uniform(0, _TIMES[-1], 100))
 
 @pytest.fixture(scope="module")
 def env() -> Environment:
-    return Environment.from_samples(_POSITIONS, bin_size=5.0, units="cm")
+    return Environment.from_samples(_POSITIONS, bin_size=5.0)
 
 
 CALLS = {

@@ -535,7 +535,7 @@ class TestValidateTrajectoryRejectsBadTimes:
         from neurospatial.encoding.spatial import compute_spatial_rate
 
         positions = np.linspace(0.0, 100.0, 10).reshape(-1, 1)
-        env = Environment.from_samples(positions, bin_size=10.0, units="cm")
+        env = Environment.from_samples(positions, bin_size=10.0)
         decreasing = np.array([0.0, 1.0, 0.5, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5])
         with pytest.raises(ValueError, match=r"strictly increasing; it decreases"):
             compute_spatial_rate(env, np.array([0.5]), decreasing, positions)

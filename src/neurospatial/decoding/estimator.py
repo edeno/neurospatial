@@ -132,8 +132,8 @@ class BayesianDecoder:
         Smoothing bandwidth (position units) for the ratio-method encoding
         step; ``None`` is 0 (no smoothing) for ``method="binned"``, and 5 cm in
         declared metric units, otherwise 2.5 median bin spacings with a
-        warning, for the kernel methods. A ratio-only param, so it must stay ``None`` when
-        ``method="glm"`` (validated at construction).
+        warning, for the kernel methods. A ratio-only param, so it must stay
+        ``None`` when ``method="glm"`` (validated at construction).
     method : str, default="diffusion_kde"
         Estimator for the encoding step. One of ``"diffusion_kde"``,
         ``"gaussian_kde"``, ``"binned"``, or ``"glm"`` (penalized-Poisson GAM,

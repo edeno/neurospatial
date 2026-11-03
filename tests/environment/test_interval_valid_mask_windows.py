@@ -57,7 +57,7 @@ def test_encoding_refuses_invalid_max_gap():
 
     times = np.linspace(0.0, 10.0, 201)
     positions = np.column_stack([np.linspace(0, 20, 201), np.zeros(201)])
-    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
+    env = Environment.from_samples(positions, bin_size=5.0)
     with pytest.raises(ValueError, match="max_gap must be a positive finite"):
         compute_spatial_rate(env, np.array([1.0, 2.0]), times, positions, max_gap=-1.0)
 
