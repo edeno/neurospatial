@@ -406,6 +406,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             }
             print(f"  {statuses}")
     render()
+    if args.inferred_env:
+        inferred = RESULTS / "inferred_env"
+        records = [json.loads(p.read_text()) for p in sorted(inferred.glob("*.json"))]
+        (inferred / "matrix.md").write_text(render_matrix(records))
 
 
 if __name__ == "__main__":
