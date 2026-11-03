@@ -209,6 +209,31 @@ end; `r_lim` is 5.8 x 5.2 x 2.3 m and both `r_fd` feeders are at x = 2.8 m,
 the +x wall. The voxels outside `r_lim` (to y = -4.2 m) are outside the
 paper's room too.
 
+## Declared tracks and mazes
+
+Twenty-two track and maze loaders now declare their apparatus as a track
+graph (`geometry["environment"]`, [BATCH_FAITHFUL_TRACKS.md](BATCH_FAITHFUL_TRACKS.md)),
+and the study measures that environment beside the samples-built one,
+against the same samples and the same independent reference (table
+"Declared environments" in the results). The rows above for figure8_000552
+(now the camera positions, with `_linearized` the old 1-D view) and
+jadhav_000447 (now the novel W-track; the familiar one is
+jadhav_000447_familiar) are from that rerun. In short:
+
+- Every declared track is one connected part (Takigawa's two tracks two
+  parts, as stated) with no link through a wall or a gap: the labyrinth's
+  path along the graph is 0.95 x the corridor distance where the grid's is
+  0.66 (G-110), Takigawa's 0.97 where the grid's is 0.87, and the 000044
+  circle closes (0.96 x the distance along the centreline).
+- What a declared track loses is samples: those beyond its width are not
+  placed. At a stated width that is 4.6 % (labyrinth) to 63.8 % (J16, whose
+  graph ends where the reward-port patches begin); W-tracks 13-37 %, hc-3
+  26 % (G-152). At a measured width it is 1 % by construction (5 % on
+  000044's linear track, whose pre-track excursion is left off).
+- Far links remain only where the fit runs through sparse samples: 9.5 % on
+  Agarwal's maze (the base fitted beside the wheel), 14.1 % on 001845's 123
+  s of pose, 3.9 % on 000044's reward areas.
+
 ## What should change in neurospatial
 
 - Climbing structures: a constructor (or a documented recipe) for an
@@ -224,12 +249,21 @@ paper's room too.
   documented first step for border and boundary analyses (G-005, G-015).
 - Track-only and per-apparatus environments are harness changes: build one
   environment per apparatus from the samples of its epochs, and use the
-  graph environment where the loader gives one (G-113, G-115).
+  graph environment where the loader gives one (G-113, G-115). The track
+  loaders now do (above); what they need from neurospatial is a placement
+  tolerance separate from the track's width (G-152), laps that bridge a
+  sample outside the track (G-151), a warning when occupancy drops samples
+  outside the environment (G-155), and docstrings that match the refusal of
+  a widthless track (G-150).
 
 ## What could not be checked
 
 The Escher staircase's layout (no dimensions in the dandiset, Knierim et al.
 2000 not available; from one overhead camera at spike times its parts cannot
-be separated, G-053), Gardner's and Hafting's stated sizes (sources not
-read), and 000405, 001695, 001880, 000003 and Shipley's arm lengths (no
-source read).
+be separated, G-053), Gardner's stated size (source not read), and 000405,
+001880 and 000003 (no source read). Since this study was first run,
+Hafting's archive readme ("a linear track (mostly 320 cm)"), Shipley et al.
+2026 (80 x 10 cm arms on a 24.7 cm platform), Aery Jones et al. 2021 (a 36
+cm track) and Gonzalez et al. 2026 (a linear track with a well at either
+end; its size is in a supplementary table not read) were read for the track
+loaders (BATCH_FAITHFUL_TRACKS.md).
