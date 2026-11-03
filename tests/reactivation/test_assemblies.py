@@ -43,6 +43,12 @@ def spike_counts_with_assemblies(rng: np.random.Generator) -> np.ndarray:
     - Neurons 0-4: co-activate together
     - Neurons 10-14: co-activate together
     - Neurons 20-24: co-activate together
+
+    Each assembly fires together in sparse bursts (10 extra spikes in a
+    random 10% of bins), as cell assemblies do. Sparse sources are far from
+    Gaussian, which ICA needs to separate them: with dense Poisson(5) shared
+    drive, nearly Gaussian, FastICA mixed two assemblies for about half of
+    its random starts.
     """
     n_neurons, n_time = 50, 2000
 
@@ -57,8 +63,8 @@ def spike_counts_with_assemblies(rng: np.random.Generator) -> np.ndarray:
     ]
 
     for neurons in assembly_neurons:
-        # Shared modulation for assembly members
-        shared = rng.poisson(5, n_time)
+        # Shared bursts for assembly members
+        shared = 10.0 * (rng.random(n_time) < 0.1)
         for n in neurons:
             spike_counts[n] += shared
 

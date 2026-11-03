@@ -251,15 +251,35 @@ def test_shape_edge_cases_keep_their_precise_messages(session, rates, counts):
         BayesianDecoder(env).fit(padded, times, positions)
 
 
-def test_rectangular_list_of_counts_is_a_count_matrix(session, rates):
+def test_rectangular_list_of_counts_is_a_count_matrix(session):
     """A nested list of whole-number counts decodes like the same ndarray.
 
     Every row here increases, as spike trains do, but the rows have one
-    length and hold non-negative whole numbers: a count matrix.
+    length, hold non-negative whole numbers and are two neurons long: two
+    neurons' counts rise in every time bin by chance one time in four.
     """
-    nested = [[0, 1, 3], [1, 2, 4], [0, 1, 2]]
+    two_units = compute_spatial_rates(
+        session.env, session.spike_times[:2], session.times, session.positions
+    )
+    nested = [[0, 1], [1, 3], [0, 2]]
+    from_list = decode_position(session.env, nested, two_units, dt=0.1)
+    from_array = decode_position(session.env, np.array(nested), two_units, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
+
+
+def test_three_neuron_counts_that_do_not_all_increase_decode(session, rates):
+    """With three neurons, a count list decodes unless every row increases."""
+    nested = [[0, 1, 3], [2, 1, 0], [0, 0, 1]]
     from_list = decode_position(session.env, nested, rates, dt=0.1)
     from_array = decode_position(session.env, np.array(nested), rates, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
+
+
+def test_one_time_bin_of_rising_whole_counts_decodes(session, rates):
+    """One row is one time bin of counts; three neurons may rise by chance."""
+    one_bin = [[0, 1, 3]]
+    from_list = decode_position(session.env, one_bin, rates, dt=0.1)
+    from_array = decode_position(session.env, np.array(one_bin), rates, dt=0.1)
     np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
 
 
@@ -272,6 +292,32 @@ def test_equal_length_spike_trains_are_still_refused_as_counts(session, rates):
     one_spike_each = [[0.5], [1.2], [3.3]]
     with pytest.raises(TypeError, match="got 3 spike trains"):
         decode_position(session.env, one_spike_each, rates, dt=0.1)
+
+
+def test_rate_ordered_counts_that_rise_in_every_bin_decode(session, rates):
+    """Counts of units ordered by rate rise in every time bin, and decode.
+
+    Three units at 1, 20 and 80 Hz in 100 ms bins have Poisson means 0.1, 2
+    and 8, so their counts rise in a bin with probability about 0.80, and in
+    all 4 bins here with probability about 0.42.
+    """
+    nested = [[0, 2, 9], [0, 1, 7], [1, 3, 8], [0, 2, 6]]
+    from_list = decode_position(session.env, nested, rates, dt=0.1)
+    from_array = decode_position(session.env, np.array(nested), rates, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
+
+
+def test_equal_length_sample_index_trains_read_as_counts(session, rates):
+    """Documented limitation: trains as whole-number sample indices.
+
+    Rows of one length holding non-negative whole numbers are a count
+    matrix even when each rises, so spike trains given as sample indices,
+    all of one length, cannot be told from counts and decode as counts.
+    """
+    sample_indices = [[100, 250, 400], [120, 300, 500], [10, 20, 30]]
+    from_list = decode_position(session.env, sample_indices, rates, dt=0.1)
+    from_array = decode_position(session.env, np.array(sample_indices), rates, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
 
 
 def test_list_of_pynapple_trains_passed_as_counts(session, rates):

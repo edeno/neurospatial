@@ -972,9 +972,11 @@ def detect_assemblies(
         weights 0, the members' z-score is ``sqrt((n - k) / k)``.
 
     rng : int or np.random.Generator, optional
-        Random seed or generator for reproducibility. Affects ICA and NMF
-        initialization and the surrogate matrices. Both ``int`` seeds and
-        ``np.random.Generator`` instances are accepted.
+        Random seed or generator for reproducibility, read as
+        ``np.random.default_rng(rng)``: ``rng=0`` and
+        ``rng=np.random.default_rng(0)`` give the same result, and a
+        generator gives new draws on each call. Affects ICA and NMF
+        initialization and the surrogate matrices.
     unit_ids : array-like, shape (n_neurons,), optional
         Label of the unit in each column of ``spike_counts``, for example the
         sorter's unit IDs. Stored on the result and on every pattern, so
@@ -1293,20 +1295,14 @@ def _detect(
         np.sort(linalg.eigvalsh(corr_matrix))[::-1], np.zeros(n_neurons - n_retained)
     ]
 
-    # Derive an integer seed for sklearn from the public ``rng`` argument.
-    # sklearn estimators accept an int seed (or RandomState), not a numpy
-    # Generator, so normalize a Generator to a reproducible integer seed. A
-    # Generator gives the seed before it draws any surrogate.
-    if rng is None:
-        seed: int | None = None
-    elif isinstance(rng, np.random.Generator):
-        seed = int(rng.integers(0, 2**32 - 1))
-    else:
-        seed = int(rng)
-
+    # One generator, read as ``np.random.default_rng(rng)``, draws the
+    # surrogates and then sklearn's int seed (sklearn takes no Generator), so
+    # ``rng=0`` and ``np.random.default_rng(0)`` detect the same patterns.
+    generator = np.random.default_rng(rng)
     threshold, surrogate_max = _eigenvalue_threshold(
-        component_threshold, spike_counts_z, percentile, n_shuffles, rng
+        component_threshold, spike_counts_z, percentile, n_shuffles, generator
     )
+    seed = int(generator.integers(0, 2**32 - 1))
     n_significant = int(np.sum(eigenvalues > threshold))
     n_comp = _n_components(
         n_components,

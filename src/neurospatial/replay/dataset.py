@@ -52,7 +52,13 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._random import _entropy, _stream
+from neurospatial._random import (
+    _concrete_seed,
+    _recorded_seed,
+    _rng_seed,
+    _root,
+    _stream,
+)
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import (
     is_integer_at_least,
@@ -711,11 +717,22 @@ def dataset_values(
     spike_times : array, sequence of arrays, or spike group, optional
         The session's spike times, for a rank-order method.
     rng : numpy.random.Generator, int, or None
-        Random number generator or seed. Each event draws from its own
-        stream, derived from ``rng`` and the event's position, so the
+        Random number generator or seed, read as
+        ``np.random.default_rng(rng)``: ``rng=0`` and
+        ``rng=np.random.default_rng(0)`` give the same table, and a
+        generator gives new draws on each call. Each event draws from its
+        own stream, derived from ``rng`` and the event's position, so the
         values of one event do not depend on the others, and a shared draw
-        from a stream of its own. ``table.attrs["rng_entropy"]`` reproduces
-        the table.
+        from a stream of its own. ``table.attrs["rng_entropy"]`` holds the
+        int every stream derives from, the first draw of
+        ``np.random.default_rng(rng)``: each stream is
+        ``np.random.default_rng(np.random.SeedSequence(rng_entropy,
+        spawn_key=key))`` for its own key. The same int seed, or a
+        generator in the same state, gives the same entropy and table.
+        ``table.attrs["rng_seed"]`` is the int that repeats the table when
+        passed as ``rng`` (drawn from the operating system for ``rng=None``),
+        and None for a generator; passing ``rng_entropy`` itself as ``rng``
+        draws a new entropy from it.
 
     Returns
     -------
@@ -883,7 +900,8 @@ def _dataset_values(
                 fix=f"use one of {list(_SHAREABLE_NULLS)}, or shared=False",
             )
         )
-    entropy = _entropy(rng)
+    rng = _concrete_seed(rng)
+    root = _root(rng)
     if isinstance(method, RankOrderMethod):
         table = _rank_order_values(
             env,
@@ -898,7 +916,7 @@ def _dataset_values(
             dt=dt,
             template=template,
             spike_times=spike_times,
-            entropy=entropy,
+            root=root,
             operation=operation,
         )
     elif isinstance(method, ReplayMethod):
@@ -917,7 +935,7 @@ def _dataset_values(
             prior=prior,
             template=template,
             pseudo_event_pool=pseudo_event_pool,
-            entropy=entropy,
+            root=root,
             fast=fast,
             operation=operation,
         )
@@ -931,7 +949,8 @@ def _dataset_values(
                 "method such as DIBA_BUZSAKI_2007",
             )
         )
-    table.attrs["rng_entropy"] = entropy
+    table.attrs["rng_entropy"] = _recorded_seed(root)
+    table.attrs["rng_seed"] = _rng_seed(rng)
     table.attrs["null"] = null
     table.attrs["method"] = method.name
     return table
@@ -959,7 +978,7 @@ def _replay_values(
     prior: Any,
     template: str | None,
     pseudo_event_pool: NDArray[np.float64] | None,
-    entropy: int,
+    root: np.random.SeedSequence,
     fast: bool,
     operation: str,
 ) -> pd.DataFrame:
@@ -1018,7 +1037,7 @@ def _replay_values(
                 event_counts,
                 method,
                 quantity_columns,
-                _stream(entropy, _REAL_KEY, index),
+                _stream(root, _REAL_KEY, index),
             )
             add(index, np.zeros(1, dtype=np.intp), measured)
     else:
@@ -1034,7 +1053,7 @@ def _replay_values(
             dt=dt,
             prior=prior,
             pseudo_event_pool=pseudo_event_pool,
-            entropy=entropy,
+            root=root,
             operation=operation,
         )
         use_tables = fast and _fast_path_applies(method, null, quantity_columns)
@@ -1118,7 +1137,7 @@ def _null_event_values(
             draws, method, measured
         )
     measured_rows: dict[str, list[float]] = {name: [] for name in ("score", *columns)}
-    stream = _stream(context.entropy, _EVENT_KEY, index, 1)
+    stream = _stream(context.root, _EVENT_KEY, index, 1)
     # The shuffles of an event share its times, so a replay line
     # search is built once for all of them.
     with _reusing_replay_lines():
@@ -1306,8 +1325,8 @@ class _NullContext:
         The null's options, with defaults.
     n_datasets : int
         Null data sets; each shuffles every event once.
-    entropy : int
-        The entropy every event's random stream derives from.
+    root : numpy.random.SeedSequence
+        The seed sequence every event's random stream derives from.
     order : NDArray[np.intp], shape (n_bins,)
         Bin numbers in track order for the nulls that shift rows along the
         track; otherwise bin numbering.
@@ -1325,7 +1344,7 @@ class _NullContext:
     null: str
     options: dict[str, Any]
     n_datasets: int
-    entropy: int
+    root: np.random.SeedSequence
     order: NDArray[np.intp]
     probabilities: NDArray[np.float64] | None = None
     pool: NDArray[np.float64] | None = None
@@ -1374,7 +1393,7 @@ class _NullContext:
         dt: float | None,
         prior: Any,
         pseudo_event_pool: NDArray[np.float64] | None,
-        entropy: int,
+        root: np.random.SeedSequence,
         operation: str,
     ) -> _NullContext:
         from neurospatial.replay.nulls import (
@@ -1428,7 +1447,7 @@ class _NullContext:
                 )
                 raise ValueError(msg)
             if shared:
-                generator = _stream(entropy, _SHARED_KEY)
+                generator = _stream(root, _SHARED_KEY)
                 if null == "unit_identity":
                     n_cells = np.asarray(counts[0]).shape[1]
                     shared_draws = [
@@ -1441,7 +1460,7 @@ class _NullContext:
             null,
             options,
             n_datasets,
-            entropy,
+            root,
             order,
             probabilities=probabilities,
             pool=pool,
@@ -1458,7 +1477,7 @@ class _NullContext:
         ``k`` puts row ``rows[k, t]`` of the event at time bin ``t``, shifted
         along the track by ``shifts[k, t]`` bins.
         """
-        generator = _stream(self.entropy, _EVENT_KEY, index)
+        generator = _stream(self.root, _EVENT_KEY, index)
         n_time = len(posterior)
         n_bins = len(self.order)
         shape = (self.n_datasets, n_time)
@@ -1503,7 +1522,7 @@ class _NullContext:
                     None if counts is None else np.asarray(counts)[rows[k]],
                 )
             return
-        generator = _stream(self.entropy, _EVENT_KEY, index)
+        generator = _stream(self.root, _EVENT_KEY, index)
         if self.null == "pseudo_event":
             assert self.pool is not None
             draws = generator.integers(
@@ -1808,7 +1827,7 @@ def _rank_order_values(
     dt: float | None,
     template: str | None,
     spike_times: Any,
-    entropy: int,
+    root: np.random.SeedSequence,
     operation: str,
 ) -> pd.DataFrame:
     """The table of :func:`dataset_values` for a rank-order method."""
@@ -1845,7 +1864,7 @@ def _rank_order_values(
         _require_same_cells(len(trains), len(positions), operation)
     permutations = None
     if shared:
-        generator = _stream(entropy, _SHARED_KEY)
+        generator = _stream(root, _SHARED_KEY)
         permutations = np.argsort(generator.random((n_datasets, len(trains))), axis=1)
     rows: dict[str, list[Any]] = {
         "dataset": [],
@@ -1887,7 +1906,7 @@ def _rank_order_values(
                     positions,
                     method,
                     permutations,
-                    _stream(entropy, _EVENT_KEY, index, slot),
+                    _stream(root, _EVENT_KEY, index, slot),
                     n_datasets,
                 )
             rows["dataset"].append(datasets)
@@ -2133,7 +2152,7 @@ def shuffle_events(
     decoded = _decoded_events(env, events, operation)
     counts = _event_counts(spike_counts, decoded, operation)
     options = _null_options_of(null, null_options, operation)
-    entropy = _entropy(rng)
+    root = _root(rng)
     context = _NullContext.build(
         env,
         decoded,
@@ -2146,7 +2165,7 @@ def shuffle_events(
         dt=dt,
         prior=prior,
         pseudo_event_pool=pseudo_event_pool,
-        entropy=entropy,
+        root=root,
         operation=operation,
     )
     posteriors: list[list[DecodingResult]] = [[] for _ in range(n_datasets)]

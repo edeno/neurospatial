@@ -6,10 +6,30 @@
 
 **Breaking**
 
-- `PlaceFieldsResult.to_dataframe()` is one row per field bin with a
-  `unit_id` column, as for every rate result; the per-field table is the new
-  `fields_table()`. Field centroids on a track are field bins (geodesic), so
-  a field round a corner no longer gets a centroid off the track.
+- `PlaceFieldsResult.to_dataframe()` is one row per bin, as for every rate
+  result: `unit_id`, `bin`, `bin_center_*`, `field` (the field holding the
+  bin, `<NA>` outside fields) and `firing_rate`. The per-field table is the
+  new `fields_table()`. Fields never share a bin, and `PlaceFieldsResult`
+  refuses fields that do. A field centroid on a track is the rate-weighted
+  mean along the track, mapped back onto it, so a field round a corner no
+  longer gets a centroid off the track; a field across a junction gets its
+  geodesic medoid.
+- Every public function that takes `rng` gives the same result for `rng=0`
+  and `rng=np.random.default_rng(0)`, and successive calls with one
+  generator differ. The shuffle tests (`*_significance`, `run_shuffle_test`),
+  the replay and reactivation recipes, `shuffle_events` and
+  `detect_assemblies` derived a generator's streams differently from an
+  int's. Every stream of a call now derives from one entropy, the first
+  draw of `np.random.default_rng(rng)`, so a generator's state counts: a
+  generator restored to `default_rng(0)`'s state gives `rng=0`'s result,
+  and an advanced one does not. Seeded outputs change. `rng_entropy` is
+  that int for every `rng`, including a generator: each stream is
+  `np.random.default_rng(np.random.SeedSequence(rng_entropy,
+  spawn_key=key))`. The tables of `compare_replay_methods`,
+  `dataset_values` and `compare_reactivation_methods` also record
+  `rng_seed`, the int that repeats the table when passed back as `rng`
+  (drawn from the operating system for `rng=None`); it is None for a
+  generator, which no int seed reproduces.
 - `DirectionalRateResult.preferred_direction_deg` and `.tuning_width_deg`
   are removed; use `np.degrees(result.preferred_direction)`. The
   head-direction simulator's ground truth drops its `preferred_direction_deg`
@@ -48,6 +68,10 @@
   spawned like the rest of the session, so sessions from one generator no
   longer all start on the same arm. An int `rng` now picks a different first
   arm than before (`rng=42` starts on the right).
+- `chebyshev_filter_basis` returns the same floats on every call with the
+  same `rng`. Its spectral-radius estimate started ARPACK from an unseeded
+  random vector, so repeated calls differed by about 1e-15; it now starts
+  from a fixed one.
 - Every public result's `summary()` key reads back from the result:
   `DecodingSummary.mean_peak_probability`, `AssemblyPattern.n_members`,
   `NullSpikeData.n_cells` and `.n_spikes`, `ReplayEventSimulation.n_spikes`
@@ -58,14 +82,21 @@
   are properties. The contract test now covers every `ResultMixin` class.
   `GoalDirectedMetrics(..., interval_ids=...)` accepts the default scalar
   `arrival_tested`.
-- A count matrix passed as a list of rows, such as `[[0, 1], [1, 3]]`, is
-  read as counts; it was refused as spike trains when its rows increased.
+- A count matrix passed as a list of rows, such as `[[0, 2, 9], [0, 1, 7]]`,
+  is read as counts; it was refused as spike trains when its rows increased,
+  as the counts of units ordered by rate often do. Rows of one length are
+  read as spike trains only when they are fractional (times in seconds) and
+  each rises; ragged rows are always trains. Spike trains of one length
+  given as whole-number sample indices are read as counts.
 - The boolean-masking warning catches fragmented masks (kept runs of a few
   frames between long removed runs), which inflated occupancy several-fold
-  with no warning. It reads regular sampling as steps near whole multiples
-  of one interval, with a chance check so irregular sampling stays silent.
-  The message names both causes, a boolean mask or dropped tracking frames,
-  and the fix for each.
+  with no warning. It reads regular sampling as steps that cluster at whole
+  multiples of one sampling interval, estimated from the short steps so
+  camera jitter does not shorten it, with a chance check so irregular
+  sampling stays silent, also when its timestamps are rounded to a clock
+  tick. The percentage it reports is the bridged time. The message names
+  both causes, a boolean mask or dropped tracking frames, and the fix for
+  each.
 - An `Environment` passed in another positional slot is caught, also when
   the call still binds (`decode_position(counts, env, rates, dt=0.1)`), and
   the error says to move it first. The advice to build an environment
@@ -76,11 +107,21 @@
 - A unit with no spikes inside `epochs` no longer gets the "check that
   spike_times and times share units" warning; spikes on another clock still
   warn.
-- The millisecond-`dt` refusal of `decode_position` applies only to
-  `dt > 1` s, so overlapping windows (600 ms windows every 5 ms) decode.
+- The millisecond-`dt` refusal of `decode_position` applies when `dt` is
+  longer than 1 s and at least 1000 steps of `times`, or 5 s or longer and
+  at least 100 steps, so `dt=25` with 1 ms steps and `dt=15` over 60 Hz
+  frames are refused, and overlapping windows (600 ms every 1 ms, 2 s every
+  10 ms, 3 s every 5 ms) decode. A `dt` of 1 s or less is never refused. The fix names the
+  seconds value (`dt=0.025` for 25 ms).
 - `compute_vte_session(..., head_sweep_weight=0.0)` classifies trials on
-  speed alone instead of leaving `is_vte` empty and warning about head
-  sweeps.
+  speed alone, also trials with no headings, instead of leaving `is_vte`
+  empty and warning about head sweeps; `head_sweep_weight=1.0` uses the head
+  sweep alone.
+- `detect_place_fields` refusing a bandwidth for a `method="glm"` map says
+  the map has no kernel and names a kernel method to use instead.
+- `CellTypeSignificanceResult.summary_table(alpha=None)` refuses `None` with
+  an `InputError`, and the small-bandwidth warning also fires for a
+  population with no units.
 - The all-intervals-excluded refusal states what, why and how to fix.
 
 ### The units-free default bandwidth warns

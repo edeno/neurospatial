@@ -2607,6 +2607,11 @@ class TestPlaceFieldsResult:
                 },
                 "cannot have fields",
             ),
+            (
+                {"fields": [np.array([0, 1, 2]), np.array([2, 3])]},
+                "share bin 2",
+            ),
+            ({"fields": [np.array([4, 5, 4])]}, "share bin 4"),
         ],
     )
     def test_invalid_fields_raise(self, kwargs, match):

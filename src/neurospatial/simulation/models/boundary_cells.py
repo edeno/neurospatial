@@ -351,13 +351,17 @@ class BoundaryVectorCellModel:
         Random generator or seed for the random ``preferred_direction``, read
         as ``np.random.default_rng(rng)``: ``rng=0`` and
         ``rng=np.random.default_rng(0)`` draw the same direction. An int
-        reproduces the direction. A generator is advanced by the draw, so
-        successive models built from one generator get different directions;
-        the model then keeps the drawn direction in ``preferred_direction``
-        and sets ``rng`` to None. When None and the direction is drawn, the
-        model draws a seed from the operating system and keeps it in
-        ``rng``. Either way, ``dataclasses.replace`` and pickling keep the
-        drawn direction.
+        reproduces the direction: the model keeps the seed, so
+        ``dataclasses.replace`` with a new ``rng`` draws again. When None
+        and the direction is drawn, the model draws a seed from the
+        operating system and keeps it in ``rng``, as for an int. A generator
+        is advanced by the draw, so successive models built from one
+        generator get different directions; the model then keeps the drawn
+        direction as an explicit ``preferred_direction`` and sets ``rng`` to
+        None, so, as for a direction you pass,
+        ``dataclasses.replace(model, rng=...)`` and
+        ``dataclasses.replace(model, env=other)`` keep it. Pickling keeps
+        the drawn direction in every case.
 
     Attributes
     ----------

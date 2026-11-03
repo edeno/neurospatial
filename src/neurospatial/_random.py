@@ -1,7 +1,13 @@
 """Private random-stream helpers shared by seeded analyses.
 
-Every random stream of one call derives from one entropy value, so a seed
-reproduces the whole call and adding a stream leaves the others unchanged.
+``rng`` is read as ``np.random.default_rng(rng)``. A call that needs several
+random streams draws one entropy value from it,
+``int(np.random.default_rng(rng).integers(2**63))``, and derives every
+stream from ``np.random.SeedSequence(entropy)`` and a key. So ``rng=0`` and a
+fresh ``np.random.default_rng(0)`` give the same streams, a generator's
+state counts (the draw advances it, so successive calls differ, and two
+generators in one state agree), and adding a stream leaves the others
+unchanged. The simulators keep their own derivation (:func:`_seed_sequence`).
 """
 
 from __future__ import annotations
@@ -10,27 +16,6 @@ import zlib
 from typing import cast
 
 import numpy as np
-
-
-def _entropy(rng: np.random.Generator | int | None) -> int:
-    """The entropy every random stream of one call derives from.
-
-    A generator contributes one draw, so the call advances it; a seed or
-    ``None`` gives the entropy of ``np.random.SeedSequence(rng)``.
-    """
-    if isinstance(rng, np.random.Generator):
-        return int(rng.integers(2**63))
-    return int(np.random.SeedSequence(rng).entropy)  # type: ignore[arg-type]
-
-
-def _stream(entropy: int, *key: int) -> np.random.Generator:
-    """An independent random stream derived from ``entropy`` and ``key``."""
-    return np.random.default_rng(np.random.SeedSequence(entropy, spawn_key=key))
-
-
-def _name_key(name: str) -> int:
-    """A stable spawn-key entry for ``name``, independent of other names."""
-    return zlib.crc32(name.encode())
 
 
 def _seed_sequence(rng: np.random.Generator | int | None) -> np.random.SeedSequence:
@@ -43,3 +28,75 @@ def _seed_sequence(rng: np.random.Generator | int | None) -> np.random.SeedSeque
     if isinstance(rng, np.random.Generator):
         return cast("np.random.SeedSequence", rng.bit_generator.seed_seq)
     return np.random.SeedSequence(rng)
+
+
+def _entropy(rng: np.random.Generator | int | None) -> int:
+    """The entropy every random stream of one call derives from.
+
+    The first draw of ``np.random.default_rng(rng)``: an int ``k`` and a
+    fresh ``np.random.default_rng(k)`` give the same value, a generator
+    gives a value set by its state and advances it by one draw, and
+    ``None`` gives fresh entropy.
+    """
+    return int(np.random.default_rng(rng).integers(2**63))
+
+
+def _root(rng: np.random.Generator | int | None) -> np.random.SeedSequence:
+    """The seed sequence every random stream of one call derives from.
+
+    ``np.random.SeedSequence(_entropy(rng))``; see :func:`_entropy`.
+    """
+    return np.random.SeedSequence(_entropy(rng))
+
+
+def _recorded_seed(root: np.random.SeedSequence) -> int:
+    """The entropy of ``root``, recorded as a table's ``rng_entropy``.
+
+    Stream ``key`` of the call is
+    ``np.random.default_rng(np.random.SeedSequence(entropy, spawn_key=key))``
+    (:func:`_stream`), so the entropy determines every draw of the call.
+    Passing it back as ``rng`` gives a new entropy (its own first draw), not
+    the same streams.
+    """
+    return int(cast("int", root.entropy))
+
+
+def _concrete_seed(
+    rng: np.random.Generator | int | None,
+) -> np.random.Generator | int:
+    """``rng`` with ``None`` replaced by an int drawn from the operating system.
+
+    A call that records its seed reads ``rng`` through this first, so a run
+    with ``rng=None`` records the int that repeats it (:func:`_rng_seed`).
+    """
+    if rng is None:
+        return int(np.random.default_rng().integers(2**63))
+    return rng
+
+
+def _rng_seed(rng: np.random.Generator | int) -> int | None:
+    """The int that repeats a call when passed back as ``rng``, recorded as ``rng_seed``.
+
+    The int seed itself (drawn by :func:`_concrete_seed` for ``None``); None
+    for a generator, whose state no int seed reproduces. Its streams still
+    rebuild from the recorded ``rng_entropy`` (:func:`_recorded_seed`).
+    """
+    if isinstance(rng, np.random.Generator):
+        return None
+    return int(rng)
+
+
+def _stream(root: np.random.SeedSequence, *key: int) -> np.random.Generator:
+    """An independent random stream derived from ``root`` and ``key``."""
+    return np.random.default_rng(
+        np.random.SeedSequence(
+            root.entropy,
+            spawn_key=(*root.spawn_key, *key),
+            pool_size=root.pool_size,
+        )
+    )
+
+
+def _name_key(name: str) -> int:
+    """A stable spawn-key entry for ``name``, independent of other names."""
+    return zlib.crc32(name.encode())
