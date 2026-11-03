@@ -300,3 +300,23 @@ def test_declared_track_is_measured_against_the_independent_reference():
     assert out["env"]["components"] == 1
     assert out["reference"]["env_over_track_median"] == pytest.approx(1.0, abs=0.05)
     assert out["verdict"] == "matches"
+
+
+def test_merged_replaces_only_the_rerun_datasets_and_their_views():
+    from studies.environment_fidelity import merged
+
+    previous = [
+        {"dataset": "a"},
+        {"dataset": "figure8"},
+        {"dataset": "figure8_camera"},
+        {"dataset": "b"},
+    ]
+    new = [{"dataset": "figure8", "v": 2}, {"dataset": "figure8_linearized", "v": 2}]
+    out = merged(previous, new, ("figure8",))
+    assert [row["dataset"] for row in out] == [
+        "a",
+        "figure8",
+        "figure8_linearized",
+        "b",
+    ]
+    assert merged(previous, [{"dataset": "c"}], ("c",))[-1] == {"dataset": "c"}

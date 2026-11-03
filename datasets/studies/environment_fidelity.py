@@ -65,7 +65,8 @@ tracked): bins, neighbour links (thinned when there are many; unsupported
 ones in red) and samples, with the reference overlaid; three projections and
 height slices for 3-D recordings.
 
-Writes ``results/studies/environment_fidelity.{md,json}``. Run:
+Writes ``results/studies/environment_fidelity.{md,json}``; given dataset
+keys, it replaces only their rows (``merged``). Run:
 ``MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python
 datasets/studies/environment_fidelity.py [KEY ...]``.
 """
@@ -1834,11 +1835,45 @@ def run(keys: tuple[str, ...]) -> list[dict[str, Any]]:
     return rows
 
 
+def merged(
+    previous: list[dict[str, Any]], new: list[dict[str, Any]], keys: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """``previous`` rows with those of ``keys`` (and their views) replaced by ``new``.
+
+    A row belongs to the longest key that its dataset equals or starts with
+    followed by an underscore (a derived view). Rows keep their earlier order;
+    rows of datasets not seen before are appended.
+    """
+
+    def owner(row: dict[str, Any]) -> str | None:
+        name = row["dataset"]
+        owners = [k for k in keys if name == k or name.startswith(f"{k}_")]
+        return max(owners, key=len) if owners else None
+
+    fresh: dict[str, list[dict[str, Any]]] = {}
+    for row in new:
+        fresh.setdefault(owner(row) or row["dataset"], []).append(row)
+    out: list[dict[str, Any]] = []
+    for row in previous:
+        key = owner(row)
+        if key is None:
+            out.append(row)
+        elif key in fresh:
+            out += fresh.pop(key)
+    for rows in fresh.values():
+        out += rows
+    return out
+
+
 if __name__ == "__main__":
     keys = tuple(sys.argv[1:]) or tuple(LOADERS)
     rows = run(keys)
     RESULTS.mkdir(parents=True, exist_ok=True)
     public = [_public(row) for row in rows]
+    previous_path = RESULTS / "environment_fidelity.json"
+    if sys.argv[1:] and previous_path.exists():
+        # Rerun on some datasets: keep the other rows of the last full run.
+        public = merged(json.loads(previous_path.read_text()), public, keys)
     (RESULTS / "environment_fidelity.json").write_text(
         json.dumps(public, indent=2, default=str) + "\n"
     )
