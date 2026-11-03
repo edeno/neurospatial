@@ -317,6 +317,50 @@ def rate_map_centroid(
     return centroid
 
 
+def _track_centroid(
+    env: Environment[CartesianSystem],
+    firing_rate: NDArray[np.float64],
+    field_bins: NDArray[np.int64],
+) -> NDArray[np.float64] | None:
+    """Rate-weighted mean distance along a track, as a point on the track.
+
+    Parameters
+    ----------
+    env : Environment
+        A linearized track (``env.is_linearized_track``).
+    firing_rate : array, shape (n_bins,)
+        Firing rate map (Hz).
+    field_bins : array, shape (n_field_bins,)
+        Bin indices comprising the field.
+
+    Returns
+    -------
+    ndarray, shape (n_dims,) or None
+        ``env.linear_to_nd`` of the mean linear position of the field bins,
+        each weighted by its rate times its measure (its measure alone when
+        the field has no firing). None when the field's linear positions are
+        not one gap-free stretch of track: sorted by linear position, each
+        step must join neighboring bins and equal the track distance between
+        them. A field over a branch point spreads over arms the linear
+        coordinate puts apart, and one over an ``edge_spacing`` gap has the
+        gap inside its mean; neither mean is a distance along the track.
+    """
+    linear = env.to_linear(env.bin_centers[field_bins])
+    order = np.argsort(linear, kind="stable")
+    bins, linear = field_bins[order], linear[order]
+    graph = env.connectivity
+    for a, b, step in zip(bins[:-1], bins[1:], np.diff(linear), strict=True):
+        edge = graph.get_edge_data(int(a), int(b))
+        if edge is None or not np.isclose(step, edge["distance"], rtol=1e-6, atol=0):
+            return None
+    measures = _relative_measures(env.bin_sizes[bins])
+    mass = firing_rate[bins] * measures
+    weights = mass if np.sum(mass) > 0 else measures
+    mean = np.sum(weights * linear) / np.sum(weights)
+    centroid: NDArray[np.float64] = env.linear_to_nd(np.array([mean]))[0]
+    return centroid
+
+
 # A map whose spread over the compared bins is at most this fraction of its
 # largest rate is flat. Dividing smoothed counts by smoothed occupancy leaves
 # rounding of order 1e-14 relative (a flat map from the package's estimators

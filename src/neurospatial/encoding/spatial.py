@@ -473,11 +473,15 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             (Hz, mean over the field's bins weighted by their measure) and
             ``centroid_x``, ``centroid_y``, ... (the rate-weighted centroid,
             :func:`~neurospatial.encoding.rate_map_centroid`, in environment
-            units; on a track, the geodesic centroid, a field bin, because the
-            mean of a field around a corner lies off the track; on a polar
-            environment ``centroid_distance`` and ``centroid_angle`` (rad) of
-            the geodesic centroid, because averaging angles and distances is
-            not a position). No
+            units). On a track, where the mean of a field around a corner
+            lies off the track, the centroid is the rate-weighted mean
+            distance along the track (``env.to_linear``), mapped back onto it
+            (``env.linear_to_nd``); a field over a branch point or an
+            ``edge_spacing`` gap has no such mean, and its centroid is the
+            geodesic one, a field bin. On a polar environment the columns are
+            ``centroid_distance`` and ``centroid_angle`` (rad) of the geodesic
+            centroid, because averaging angles and distances is not a
+            position. No
             rows when no field was detected. ``df.attrs`` holds
             ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
             :meth:`to_dataframe` has one row per field bin.
@@ -485,13 +489,18 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         import pandas as pd
 
         from neurospatial._results import _coord_dim_names
-        from neurospatial.encoding._field_metrics import field_size, rate_map_centroid
+        from neurospatial.encoding._field_metrics import (
+            _track_centroid,
+            field_size,
+            rate_map_centroid,
+        )
 
         measures = np.asarray(self.env.bin_sizes, dtype=np.float64)
         names = [f"centroid_{name}" for name in _coord_dim_names(self.env)]
-        # Averaging (distance, angle) bin centers is not a position, and the
-        # mean of a field around a track's corner is off the track: there the
-        # centroid is the field bin nearest the rest (the geodesic one).
+        # Averaging (distance, angle) bin centers is not a position: a polar
+        # centroid is the field bin nearest the rest (the geodesic one). The
+        # mean of a field around a track's corner is off the track, so a
+        # track's centroid is the mean distance along it, mapped back onto it.
         method: Literal["euclidean", "geodesic"] = (
             "geodesic"
             if self.env.coordinate_kind == "polar" or self.env.is_linearized_track
@@ -500,9 +509,15 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         rows = []
         for k, bins in enumerate(self.fields):
             rates = self.firing_rate[bins]
-            centroid = rate_map_centroid(
-                self.env, self.firing_rate, bins, method=method
+            centroid = (
+                _track_centroid(self.env, self.firing_rate, bins)
+                if self.env.is_linearized_track
+                else None
             )
+            if centroid is None:
+                centroid = rate_map_centroid(
+                    self.env, self.firing_rate, bins, method=method
+                )
             rows.append(
                 {
                     "unit_id": self._table_unit_id(),
