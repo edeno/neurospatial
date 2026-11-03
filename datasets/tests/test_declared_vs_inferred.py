@@ -35,3 +35,8 @@ def test_rows_pair_the_two_runs():
     assert rows[0] == ("bins", "45", "667")
     assert ("laps (default)", "1", "error") in rows
     assert ("laps (region)", "20", "error") in rows
+    # Without a start region in either run, the region count is not listed.
+    declared["operations"]["behavior.laps"] = {"status": "error", "summary": {}}
+    labels = [row[0] for row in rows_for(declared, inferred)]
+    assert "laps (default)" in labels
+    assert "laps (region)" not in labels

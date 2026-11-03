@@ -62,9 +62,16 @@ def rows_for(
 ) -> list[tuple[str, str, str]]:
     """(label, declared value, inferred value) for each measure either run has."""
     rows = []
+    first_key = {}
+    for op, key, _, _ in MEASURES:
+        first_key.setdefault(op, key)
     for op, key, label, spec in MEASURES:
-        a = cell(declared["operations"].get(op), key, spec)
-        b = cell(inferred["operations"].get(op), key, spec)
+        entries = [run["operations"].get(op) or {} for run in (declared, inferred)]
+        has_key = any(key in (entry.get("summary") or {}) for entry in entries)
+        # A failed operation is shown once, on its first measure.
+        if not has_key and key != first_key[op]:
+            continue
+        a, b = (cell(entry or None, key, spec) for entry in entries)
         if a or b:
             rows.append((label, a, b))
     a = declared["operations"].get("env.declared", {}).get("summary", {}).get("n_bins")
