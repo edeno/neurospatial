@@ -45,6 +45,12 @@ LOADERS = {
     "grosmark_000044_circular": "load_grosmark_000044_circular",
     "grosmark_000044_linear": "load_grosmark_000044_linear",
     "jadhav_000447": "load_jadhav_000447",
+    "hc11_achilles": "load_hc11_achilles",
+    "hc3_ec013_669": "load_hc3_ec013_669",
+    "hc2_ec013_527": "load_hc2_ec013_527",
+    "hc28_hpa": "load_hc28_hpa",
+    "hc31_anm190422": "load_hc31_anm190422",
+    "hc18_train261": "load_hc18_train261",
 }
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
