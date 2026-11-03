@@ -94,3 +94,48 @@ def test_fitted_circle_recovers_centre():
     assert fit["centre_y"] == pytest.approx(60.0, abs=1.0)
     assert fit["samples_diameter"] == pytest.approx(96.0, abs=2.0)
     assert polygon.area == pytest.approx(np.pi * 48.0**2, rel=0.01)
+
+
+def test_one_verdict_judges_an_outline_by_its_walls():
+    # A declared 100 cm box: samples filling it have no misfit; the same
+    # samples moved 8 cm past one wall are misfit evidence, and their share
+    # beyond the outline is reported, not judged.
+    import shapely
+    from _geometry import judge_declared
+
+    box = Environment.from_polygon(
+        shapely.box(0, 0, 100, 100), bin_size=2.5, units="cm"
+    )
+    rng = np.random.default_rng(2)
+    samples = rng.uniform(1, 99, (20000, 2))
+    times = np.arange(len(samples)) / 30.0
+    inside = judge_declared(box, times, samples)
+    assert inside["kind"] == "outline"
+    assert inside["misfit"] == []
+    assert inside["outside"] == 0.0
+    moved = judge_declared(box, times, samples + np.array([8.0, 0.0]))
+    assert moved["outside"] == pytest.approx(0.08, abs=0.01)
+    assert any("beyond one side" in reason for reason in moved["misfit"])
+
+
+def test_one_verdict_judges_a_track_by_its_stretches():
+    from _geometry import graph_environment, judge_declared
+    from _tracks import polyline_graph
+
+    track = graph_environment(
+        polyline_graph(np.array([[0.0, 0.0], [100.0, 0.0]]), closed=False),
+        bin_size=2.5,
+        track_width=30.0,
+        units="cm",
+        name="track",
+    )
+    rng = np.random.default_rng(3)
+    on = np.column_stack([rng.uniform(0, 100, 5000), rng.normal(0, 3.0, 5000)])
+    times = np.arange(len(on)) / 30.0
+    good = judge_declared(track, times, on, physical_width=6.0, speed_thresholds=(4.0,))
+    assert good["kind"] == "track"
+    assert good["misfit"] == []
+    assert good["outside"] == pytest.approx(0.32, abs=0.03)  # 2 x P(N(0, 3) > 3)
+    assert good["outside_by_speed"]["all"] == good["outside"]
+    beside = judge_declared(track, times, on + np.array([0.0, 5.0]), physical_width=6.0)
+    assert any("to one side" in reason for reason in beside["misfit"])

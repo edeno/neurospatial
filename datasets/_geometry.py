@@ -14,6 +14,8 @@ on them. ``graph_edge_order`` lists every edge.
 
 from __future__ import annotations
 
+import itertools
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -22,9 +24,6 @@ from numpy.typing import NDArray
 # A stated size more than this share away from the samples' own fitted size
 # is refused: the stated apparatus, the unit or the session is then wrong.
 MAX_SIZE_RESIDUAL = 0.15
-# A stated centre farther than this share of the radius from the samples'
-# centre is refused: the positions are then in another frame or unit.
-MAX_CENTRE_OFFSET = 0.15
 
 
 def graph_edge_order(graph: Any, root: Any = None) -> list[tuple[Any, Any]]:
@@ -162,3 +161,189 @@ def placement_line(kind: str, stated: str, fit: dict[str, float], source: str) -
     return (
         f"environment: declared {kind} ({stated}, {source}); placement fitted: {values}"
     )
+
+
+def sample_speeds(
+    times: NDArray[np.float64], positions: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Speed at each sample, the mean of the steps to and from it (NaN where untracked).
+
+    Units are the positions' per second.
+    """
+    times = np.asarray(times, dtype=float)
+    positions = np.asarray(positions, dtype=float).reshape(len(times), -1)
+    step = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
+    padded = np.concatenate([[np.nan], step, [np.nan]])
+    return np.nanmean(np.vstack([padded[:-1], padded[1:]]), axis=0)
+
+
+def share_by_speed(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    flag: NDArray[np.bool_],
+    thresholds: Sequence[float],
+) -> dict[str, float]:
+    """Share of tracked samples with ``flag`` in each speed band.
+
+    ``flag`` has one entry per tracked sample (finite position); the bands
+    are below ``thresholds[0]``, between consecutive thresholds and above
+    the last, in the positions' units per second. Keys are ``"all"`` and
+    ``"<lo>-<hi>"``; a band with no sample is left out.
+    """
+    tracked = (
+        np.isfinite(np.asarray(positions, dtype=float))
+        .reshape(len(times), -1)
+        .all(axis=1)
+    )
+    speed = sample_speeds(times, positions)[tracked]
+    flag = np.asarray(flag, dtype=bool)
+    out = {"all": float(np.mean(flag))}
+    edges = [0.0, *thresholds, np.inf]
+    for low, high in itertools.pairwise(edges):
+        band = (speed >= low) & (speed < high)
+        if band.any():
+            out[f"{low:g}-{high:g}"] = float(np.mean(flag[band]))
+    return out
+
+
+# A declared environment's misfit, judged by kind (``judge_declared``): its
+# samples consistently to one side of a track stretch or beyond a wall, by
+# more than this many bins.
+MAX_SIDE_BIAS_BINS = 1.0
+OUTER_QUANTILE = 0.95
+
+
+def judge_declared(
+    env: Any,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    physical_width: float | None = None,
+    speed_thresholds: Sequence[float] = (),
+    stated_residuals: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    """One verdict for any declared environment: misfit evidence, and tracking.
+
+    Misfit is judged by the environment's kind:
+
+    - a track graph (``TrackArena``): the worst straight stretch's median
+      signed lateral offset (over ``_tracks.MIN_PIECE_BINS`` bins, limit one
+      bin) and segments with no sample within a bin over more than
+      ``_tracks.MAX_UNSUPPORTED`` of their length (``_tracks.edge_fit``);
+    - an outline (a polygonal domain): per side, how far the samples nearest
+      it reach past it (their ``OUTER_QUANTILE`` signed distance, positive
+      beyond the wall; limit ``MAX_SIDE_BIAS_BINS`` bins: an outline moved off
+      its samples has them run past one wall), and the share of each side
+      with no sample within three bins (reported);
+    - either: a stated length or size off by more than ``MAX_SIZE_RESIDUAL``
+      (``stated_residuals``: label -> fitted / stated - 1).
+
+    The share of tracked samples beyond the physical apparatus (outside half
+    of ``physical_width`` on a track, outside the outline) is reported as a
+    tracking measure, not judged: a head-mounted LED above an unwalled track
+    swings past its edge, and a 2-D camera projects a raised head outward.
+    It is split by speed (``speed_thresholds``, the positions' units per
+    second) to show whether it comes from stopped posture or movement.
+
+    Returns ``{"kind", "misfit": [reasons], "fit": {...}, "outside": share or
+    None, "outside_by_speed": {...}}``.
+    """
+    from _tracks import edge_fit, misfit_reasons, segment_distance
+
+    positions = np.asarray(positions, dtype=float)
+    tracked = np.isfinite(positions).all(axis=1)
+    samples = positions[tracked]
+    arena = env.arena
+    is_track = type(arena).__name__ == "TrackArena"
+    # A track's bin measure is a length; a grid's or outline's an area or volume.
+    measure = float(np.median(np.asarray(env.bin_sizes)))
+    bin_size = measure if is_track else measure ** (1 / env.n_dims)
+    out: dict[str, Any] = {
+        "misfit": [],
+        "fit": {},
+        "outside": None,
+        "outside_by_speed": {},
+    }
+    beyond = None
+    if is_track:
+        out["kind"] = "track"
+        segments = np.asarray(arena.as_track().segments, dtype=float)
+        graph = _segments_graph(segments)
+        fit = edge_fit(graph, samples, tolerance=bin_size)
+        fit["max_edge_bias_limit"] = bin_size
+        for key, value in (stated_residuals or {}).items():
+            fit[f"size_residual_{key}"] = value
+        out["fit"] = fit
+        out["misfit"] = misfit_reasons(fit, bin_size)
+        if physical_width is not None:
+            nodes = segments.reshape(-1, segments.shape[2])
+            edges = np.arange(len(nodes)).reshape(-1, 2)
+            beyond = segment_distance(samples, nodes, edges) > physical_width / 2
+    else:
+        polygon = (
+            arena.polygonal_domain() if hasattr(arena, "polygonal_domain") else None
+        )
+        if polygon is None:
+            out["kind"] = "unknown"
+        else:
+            import shapely
+            from scipy.spatial import cKDTree
+
+            out["kind"] = "outline"
+            ring = np.asarray(polygon.exterior.coords)
+            points = shapely.points(samples)
+            beyond = ~shapely.contains_xy(polygon, samples[:, 0], samples[:, 1])
+            sides = [shapely.LineString([a, b]) for a, b in itertools.pairwise(ring)]
+            dist = np.column_stack([shapely.distance(side, points) for side in sides])
+            nearest = np.argmin(dist, axis=1)
+            signed = np.where(beyond, 1.0, -1.0) * dist[np.arange(len(dist)), nearest]
+            biases, unsupported = [], []
+            for k, (a, b) in enumerate(itertools.pairwise(ring)):
+                mine = nearest == k
+                if mine.sum() >= 10:
+                    # How far the outermost samples reach past this wall.
+                    biases.append(float(np.quantile(signed[mine], OUTER_QUANTILE)))
+                along = np.linspace(0, 1, 25)[:, None] * (b - a) + a
+                unsupported.append(
+                    float(np.mean(cKDTree(samples).query(along)[0] > 3 * bin_size))
+                )
+            fit = {
+                "max_side_bias": max(biases) if biases else float("nan"),
+                "max_side_bias_limit": MAX_SIDE_BIAS_BINS * bin_size,
+                "max_side_unsupported": max(unsupported) if unsupported else 0.0,
+            }
+            for key, value in (stated_residuals or {}).items():
+                fit[f"size_residual_{key}"] = value
+            out["fit"] = fit
+            if fit["max_side_bias"] > fit["max_side_bias_limit"]:
+                out["misfit"].append(
+                    f"samples reach {fit['max_side_bias']:.3g} beyond one side of the"
+                    f" outline (limit {fit['max_side_bias_limit']:.3g})"
+                )
+            for key, value in (stated_residuals or {}).items():
+                if abs(value) > MAX_SIZE_RESIDUAL:
+                    out["misfit"].append(f"{key} {value:+.0%} of the stated")
+    if beyond is not None:
+        out["outside"] = float(np.mean(beyond))
+        out["outside_by_speed"] = share_by_speed(
+            times, positions, beyond, speed_thresholds
+        )
+    return out
+
+
+def _segments_graph(segments: NDArray[np.float64]) -> Any:
+    """A graph of the segments, joining endpoints that coincide."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    names: dict[tuple[float, ...], int] = {}
+    for a, b in segments:
+        ends = []
+        for point in (a, b):
+            key = tuple(np.round(point, 9))
+            if key not in names:
+                names[key] = len(names)
+                graph.add_node(names[key], pos=tuple(float(v) for v in point))
+            ends.append(names[key])
+        graph.add_edge(*ends)
+    return graph
