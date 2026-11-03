@@ -33,6 +33,7 @@ def test_driver_statuses_on_simulated_recording(simulated_record):
     )
     # Operations that need inputs this recording lacks decide n/a themselves.
     for op_id in (
+        "env.declared",
         "env.from_graph",
         "behavior.segment_by_velocity",
         "behavior.turn_sequence",
@@ -104,7 +105,7 @@ def test_matrix_render(simulated_record):
     assert cells[columns.index("expectations")] == "0/1"
     assert cells[columns.index("env.from_samples")] == "wk G-003 ⚠2"
     assert cells[columns.index("hd.tuning")] == "–"
-    assert "| simulated_open_field | 1/1 | ok" in text
+    assert "| simulated_open_field | 1/1 | inferred | ok" in text
 
 
 def test_error_cell_shows_its_gap(simulated_record):

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
+from _geometry import graph_environment
 from _record import Recording
 
 Status = Literal["ok", "workaround", "missing", "error", "n/a"]
@@ -48,16 +49,39 @@ def _units(rec: Recording) -> str | None:
     return None if rec.position_units == "arbitrary" else rec.position_units
 
 
-def _env(rec: Recording, cache: dict[str, Any]) -> Any:
+def env_kind(rec: Recording, cache: dict[str, Any]) -> str:
+    """``"declared"`` when the loader declares the apparatus and the run uses it."""
+    if "environment" in rec.geometry and not cache.get("inferred_env"):
+        return "declared"
+    return "inferred"
+
+
+def _samples_env(rec: Recording, cache: dict[str, Any]) -> Any:
     from neurospatial import Environment
 
-    if "env" not in cache:
-        cache["env"] = Environment.from_samples(
+    if "samples_env" not in cache:
+        cache["samples_env"] = Environment.from_samples(
             rec.positions,
             bin_size=rec.params["bin_size"],
             units=_units(rec),
             name=rec.dataset,
         )
+    return cache["samples_env"]
+
+
+def _env(rec: Recording, cache: dict[str, Any]) -> Any:
+    """The analysis environment: the declared apparatus when the loader gives one.
+
+    ``rec.geometry["environment"]`` is a zero-argument callable returning the
+    environment built from the source's stated apparatus; otherwise, or when
+    the run sets ``cache["inferred_env"]``, the environment is built from the
+    samples.
+    """
+    if "env" not in cache:
+        if env_kind(rec, cache) == "declared":
+            cache["env"] = rec.geometry["environment"]()
+        else:
+            cache["env"] = _samples_env(rec, cache)
     return cache["env"]
 
 
@@ -89,11 +113,30 @@ def _finite_stats(values: Any) -> dict[str, float | int]:
 
 
 def env_from_samples(rec: Recording, cache: dict[str, Any]) -> Outcome:
-    env = _env(rec, cache)
+    env = _samples_env(rec, cache)
     extent = np.ptp(np.asarray(env.bin_centers), axis=0)
     return Outcome(
         "ok",
         {"n_bins": env.n_bins, "n_dims": env.n_dims, "max_extent": float(extent.max())},
+    )
+
+
+def env_declared(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """The declared environment, and the share of tracked samples it cannot place."""
+    if env_kind(rec, cache) != "declared":
+        return Outcome("n/a", note="the loader declares no apparatus")
+    env = _env(rec, cache)
+    extent = np.ptp(np.asarray(env.bin_centers), axis=0)
+    tracked = rec.positions[np.isfinite(rec.positions).all(axis=1)]
+    outside = float(np.mean(np.asarray(env.bin_at(tracked)) < 0))
+    return Outcome(
+        "ok",
+        {
+            "n_bins": env.n_bins,
+            "n_dims": env.n_dims,
+            "max_extent": float(extent.max()),
+            "frac_samples_outside": outside,
+        },
     )
 
 
@@ -381,27 +424,25 @@ def nwb_roundtrip(rec: Recording, cache: dict[str, Any]) -> Outcome:
 def _graph_env(rec: Recording, cache: dict[str, Any]) -> Any | None:
     """The track-graph environment, or None when the source gives no graph.
 
-    Edges are ordered by a depth-first walk from ``geometry["graph_root"]``
-    (or the graph's first node), which lays a tree out branch by branch.
+    Every edge is kept (``_geometry.graph_edge_order``): a depth-first walk
+    from ``geometry["graph_root"]`` (or the graph's first node), then the
+    edges that close cycles, which ``Environment.from_graph`` would otherwise
+    drop without a word.
     ``geometry["track_width"]``, when the source states it, is the corridor
     width.
     """
-    import networkx as nx
-
-    from neurospatial import Environment
 
     graph = rec.geometry.get("graph")
     if graph is None:
         return None
     if "graph_env" not in cache:
-        root = rec.geometry.get("graph_root", next(iter(graph.nodes)))
-        cache["graph_env"] = Environment.from_graph(
+        cache["graph_env"] = graph_environment(
             graph,
-            list(nx.dfs_edges(graph, source=root)),
             bin_size=rec.params.get("graph_bin_size", rec.params["bin_size"]),
+            track_width=rec.geometry.get("track_width"),
             units=_units(rec),
             name=f"{rec.dataset}-graph",
-            track_width=rec.geometry.get("track_width"),
+            root=rec.geometry.get("graph_root"),
         )
     return cache["graph_env"]
 
@@ -874,6 +915,7 @@ _SPIKES_AND_POSITIONS = ("positions", "spike_times")
 OPERATIONS: tuple[Operation, ...] = (
     Operation("env.from_samples", ("positions",), env_from_samples),
     Operation("env.occupancy", ("positions",), occupancy),
+    Operation("env.declared", ("positions",), env_declared),
     Operation("rates.spatial", _SPIKES_AND_POSITIONS, rates_spatial),
     Operation("rates.spatial_information", _SPIKES_AND_POSITIONS, spatial_information),
     Operation(

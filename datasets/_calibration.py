@@ -158,6 +158,7 @@ def probe_hazards(
     clean_operations: Mapping[str, Mapping[str, Any]],
     operations: tuple[Any, ...] = OPERATIONS,
     probe_ops: tuple[str, ...] = PROBE_OPS,
+    cache_seed: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Re-run ``probe_ops`` on each hazardous version of ``rec``.
 
@@ -167,6 +168,8 @@ def probe_hazards(
     ``silent``. An operation that was not ``ok`` on the clean recording cannot
     respond to the hazard; it gets a ``not probed`` row saying so, as does a
     hazard that reaches no probed operation, so nothing vanishes from the table.
+    ``cache_seed`` starts each probe's operation cache (the run's settings,
+    such as ``inferred_env``).
     """
     rows = []
     for name, make in hazards_for(module, rec).items():
@@ -176,7 +179,7 @@ def probe_hazards(
             for f in fields(Recording)
             if getattr(bad, f.name) is not getattr(rec, f.name)
         }
-        cache: dict[str, Any] = {}
+        cache: dict[str, Any] = dict(cache_seed or {})
         reached = False
         for op in operations:
             if (
