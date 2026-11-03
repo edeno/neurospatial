@@ -97,10 +97,11 @@
 - A unit with no spikes inside `epochs` no longer gets the "check that
   spike_times and times share units" warning; spikes on another clock still
   warn.
-- The millisecond-`dt` refusal of `decode_position` applies when reading
-  `dt` as milliseconds gives a window of 0.5 to 20 steps of `times`, so
-  `dt=1.0` with 1 ms steps is refused, and overlapping windows (600 ms every
-  5 ms, 2 s every 10 ms) decode.
+- The millisecond-`dt` refusal of `decode_position` applies when `dt` is
+  longer than 1 s and at least 1000 steps of `times`, so `dt=25` with 1 ms
+  steps is refused, and overlapping windows (600 ms every 1 ms, 2 s every
+  10 ms) decode. A `dt` of 1 s or less is never refused. The fix names the
+  seconds value (`dt=0.025` for 25 ms).
 - `compute_vte_session(..., head_sweep_weight=0.0)` classifies trials on
   speed alone, also trials with no headings, instead of leaving `is_vte`
   empty and warning about head sweeps; `head_sweep_weight=1.0` uses the head

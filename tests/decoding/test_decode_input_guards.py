@@ -120,14 +120,16 @@ def test_long_overlapping_windows_are_not_called_milliseconds(trained, decode):
         decode(env, counts[:200], rates, dt=0.6, times=times)
 
 
-def _decode_or_refuse(trained, dt, step, refused):
+def _decode_or_refuse(trained, dt, step, refused, *, start=0.0):
     """Decode 200 bins centered ``step`` s apart; check refusal or acceptance."""
     env, rates, counts, _ = trained
-    times = np.arange(200) * step
+    times = start + np.arange(200) * step
     if refused:
         with pytest.raises(ValueError, match="milliseconds") as error:
             decode_position(env, counts[:200], rates, dt=dt, times=times)
-        assert f"{step:g} s spacing" in str(error.value)
+        message = str(error.value)
+        assert f"{float(np.median(np.diff(times))):g} s spacing" in message
+        assert f"dt={dt / 1000:g} for {dt:g} ms" in message
         return
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -140,41 +142,54 @@ def _decode_or_refuse(trained, dt, step, refused):
 @pytest.mark.parametrize(
     ("dt", "step", "refused"),
     [
-        # 1 ms bins with dt=1 meant as 1 ms: read as ms, a one-step window.
-        (1.0, 0.001, True),
-        # 25 ms bins with dt=25 meant as 25 ms.
-        (25.0, 0.025, True),
-        # 600 ms windows stepped by 5 ms: as ms, 0.12 of a step, no window.
-        (0.6, 0.005, False),
-        # 2 s windows stepped by 10 ms: as ms, 0.2 of a step.
+        # dt typed in milliseconds over fine steps: 25000 and 50000 steps.
+        (25.0, 0.001, True),
+        (100.0, 0.002, True),
+        # 2 s windows stepped by 10 ms: 200 steps.
         (2.0, 0.01, False),
+        # A dt of 1 s or less is seconds, however fine the step.
+        (0.6, 0.001, False),
+        (0.8, 0.001, False),
+        (0.3, 0.0005, False),
+        (0.6, 0.005, False),
+        (1.0, 0.001, False),
     ],
-    ids=["1ms-bins-dt-1", "25ms-bins-dt-25", "600ms-by-5ms", "2s-by-10ms"],
+    ids=[
+        "25-by-1ms",
+        "100-by-2ms",
+        "2s-by-10ms",
+        "600ms-by-1ms",
+        "800ms-by-1ms",
+        "300ms-by-0.5ms",
+        "600ms-by-5ms",
+        "1s-by-1ms",
+    ],
 )
-def test_dt_refused_when_read_as_milliseconds_it_fits_the_step(
-    trained, dt, step, refused
-):
+def test_dt_refused_above_one_second_and_1000_steps(trained, dt, step, refused):
     _decode_or_refuse(trained, dt, step, refused)
 
 
-# A step of 2**-7 s makes each edge exact in floating point.
+# A step of 2**-7 s makes each ratio exact in floating point.
 _STEP = 2.0**-7
 
 
 @pytest.mark.parametrize(
-    ("dt", "refused"),
+    ("dt", "step", "start", "refused"),
     [
-        # Lower edge: dt / 1000 is half the step.
-        (500 * _STEP, True),
-        (float(np.nextafter(500 * _STEP, 0.0)), False),
-        # Upper edge: dt / 1000 is 20 steps.
-        (20000 * _STEP, True),
-        (float(np.nextafter(20000 * _STEP, np.inf)), False),
+        # dt is exactly 1000 steps (7.8 s).
+        (1000 * _STEP, _STEP, 0.0, True),
+        # 25 ms bins on a clock near 5e4 s: the median spacing rounds to
+        # 0.02500000000145519, 999.99999994 steps, still refused.
+        (25.0, 0.025, 5e4, True),
+        (998 * _STEP, _STEP, 0.0, False),
+        # dt = 1 s is seconds even at 1024 steps; just above 1 s it is not.
+        (1.0, 2.0**-10, 0.0, False),
+        (float(np.nextafter(1.0, 2.0)), 2.0**-10, 0.0, True),
     ],
-    ids=["half-step", "below-half-step", "twenty-steps", "above-twenty-steps"],
+    ids=["1000-steps", "1000-steps-on-clock", "998-steps", "dt-1", "above-dt-1"],
 )
-def test_milliseconds_band_edges_are_inclusive(trained, dt, refused):
-    _decode_or_refuse(trained, dt, _STEP, refused)
+def test_milliseconds_dt_boundaries(trained, dt, step, start, refused):
+    _decode_or_refuse(trained, dt, step, refused, start=start)
 
 
 @pytest.mark.parametrize(
