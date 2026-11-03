@@ -15,8 +15,9 @@ with ``allow_pickle=True``, letting the file run code. Without executing them,
 their pickles were inspected: they import only
 ``numpy.core.multiarray._reconstruct``, ``numpy.ndarray`` and ``numpy.dtype``
 (dtypes ``O8`` and ``f8``), and hold a dict of unit index to spike times (s).
-They are read with an unpickler that resolves only those names and returns
-NumPy's built-in ``O8`` and ``f8`` dtypes, refusing anything else.
+``read_npz`` lists each pickle's imports first (``pickle_imports``) and
+refuses any outside that set, then unpickles with an unpickler that resolves
+only those names and returns NumPy's built-in ``O8`` and ``f8`` dtypes.
 
 What the loader converts:
 
@@ -37,7 +38,9 @@ alternating 60 s train/test blocks for decoding; each unit's grid module in
 
 from __future__ import annotations
 
+import io
 import pickle
+import pickletools
 import re
 import zipfile
 from dataclasses import replace
@@ -127,6 +130,39 @@ class _SpikeUnpickler(pickle.Unpickler):
             raise pickle.UnpicklingError(msg) from None
 
 
+def pickle_imports(blob: bytes) -> set[str]:
+    """Every global a pickle would import, read from its opcodes without running it.
+
+    Module and name strings are followed through the memo, as protocols 2-5
+    write repeated strings once. ``"<unnamed>"`` marks a ``STACK_GLOBAL``
+    whose names this reading cannot resolve; treat it as unexpected.
+    """
+    found: set[str] = set()
+    memo: dict[int, str | None] = {}
+    recent: list[str] = []
+    top: str | None = None
+    for op, arg, _ in pickletools.genops(blob):
+        if op.name in {"SHORT_BINUNICODE", "BINUNICODE", "UNICODE", "BINUNICODE8"}:
+            top = str(arg)
+            recent = [*recent[-1:], top]
+        elif op.name in {"BINPUT", "LONG_BINPUT", "PUT"}:
+            memo[int(arg)] = top
+        elif op.name == "MEMOIZE":
+            memo[len(memo)] = top
+        elif op.name in {"BINGET", "LONG_BINGET", "GET"}:
+            top = memo.get(int(arg))
+            recent = [*recent[-1:], top] if top is not None else []
+        elif op.name == "GLOBAL":
+            found.add(str(arg).replace(" ", "."))
+            recent, top = [], None
+        elif op.name == "STACK_GLOBAL":
+            found.add(".".join(recent) if len(recent) == 2 else "<unnamed>")
+            recent, top = [], None
+        else:
+            recent, top = [], None
+    return found
+
+
 def read_npz(path: Path) -> dict[str, Any]:
     """Read every array in an ``.npz``; object arrays through the restricted unpickler."""
     from numpy.lib import format as npy
@@ -144,7 +180,12 @@ def read_npz(path: Path) -> dict[str, Any]:
                 shape, fortran, dtype = read_header(stream)
                 name = member.removesuffix(".npy")
                 if dtype.hasobject:
-                    arrays[name] = _SpikeUnpickler(stream).load()
+                    blob = stream.read()
+                    allowed = {".".join(key) for key in _SpikeUnpickler._ALLOWED}
+                    if unexpected := pickle_imports(blob) - allowed:
+                        msg = f"refusing {member}: its pickle imports {sorted(unexpected)}"
+                        raise pickle.UnpicklingError(msg)
+                    arrays[name] = _SpikeUnpickler(io.BytesIO(blob)).load()
                 else:
                     count = int(np.prod(shape))
                     data = np.frombuffer(stream.read(count * dtype.itemsize), dtype)
