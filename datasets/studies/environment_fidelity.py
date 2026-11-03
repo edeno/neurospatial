@@ -1932,6 +1932,7 @@ def measure_declared(
         },
         centre_offset=centre_offset_share(fit),
         bin_size=rec.params.get("graph_bin_size", rec.params["bin_size"]),
+        lattice="lattice_bars_cm" in rec.geometry,
     )
     declared_from = rec.geometry.get("declared_from")
     independent = (
@@ -2139,7 +2140,9 @@ def render(rows: list[dict[str, Any]]) -> str:
             " apparatus (`geometry['environment']`), measured as above against the"
             " same samples. Verdict: misfit evidence (`_geometry.judge_declared`: a"
             " stretch of track whose samples lie to one side by more than a bin, a"
-            " segment with no sample near it, a stated length off by more than 15 %),"
+            " track segment with no sample near it, a stated length off by more than"
+            " 15 %; on an outline or the lattice the share with no sample near it is"
+            " reported, not judged: the tracked head keeps off walls and bars),"
             " the stated parts and an independent reference. Beyond physical: the"
             " share of tracked samples farther than half the physical width from the"
             " track, a tracking measure (the tracked head swings past an unwalled"

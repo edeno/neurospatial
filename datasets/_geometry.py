@@ -470,11 +470,13 @@ def share_by_speed(
 # more than this many bins.
 MAX_SIDE_BIAS_BINS = 1.0
 OUTER_QUANTILE = 0.95
-# A wall with no sample within ``WALL_SUPPORT_BINS`` bins over more than this
-# share of its length: part of the apparatus the animal never came near
-# (both values set after seeing the data; their sensitivity is not measured).
+# The share of a wall with no sample within ``WALL_SUPPORT_BINS`` bins is
+# reported, not judged: a head-mounted LED on a headstage above the animal
+# keeps off walls and bars, so a declared outline or lattice is expected to
+# have unsupported stretches. A misplaced or wrongly sized outline is caught
+# by samples past the opposite wall, the samples' fitted size and the stated
+# centre instead.
 WALL_SUPPORT_BINS = 3.0
-MAX_UNSUPPORTED_SIDE = 0.15
 # Consecutive outline edges turning less than this at their shared vertex
 # are one side: a circle drawn as a polygon is one wall, a square four.
 SIDE_TURN_DEGREES = 10.0
@@ -490,6 +492,7 @@ def judge_declared(
     stated_residuals: Mapping[str, float] | None = None,
     centre_offset: float | None = None,
     bin_size: float | None = None,
+    lattice: bool = False,
 ) -> dict[str, Any]:
     """One verdict for any declared environment: misfit evidence, and tracking.
 
@@ -499,15 +502,17 @@ def judge_declared(
       signed lateral offset (over ``_tracks.MIN_PIECE_BINS`` bins, limit one
       bin) and segments with no sample within a bin over more than
       ``_tracks.MAX_UNSUPPORTED`` of their length (``_tracks.edge_fit``);
+      for a climbing ``lattice`` that segment support is reported, not
+      judged (the tracked head stays a few cm off the bars);
     - an outline (a polygonal domain): per side, how far the samples nearest
       it reach past it (their ``OUTER_QUANTILE`` signed distance, positive
       beyond the wall; limit ``MAX_SIDE_BIAS_BINS`` bins: an outline moved off
-      its samples has them run past one wall), the samples' extent across the
-      outline (they may fall short of a wall, but not by more than
-      ``MAX_SIZE_RESIDUAL`` of the side: an outline drawn too large), and the
+      its samples has them run past one wall), and the samples' extent across
+      the outline (they may fall short of a wall, but not by more than
+      ``MAX_SIZE_RESIDUAL`` of the side: an outline drawn too large). The
       share of each side (``outline_sides``) with no sample within
-      ``WALL_SUPPORT_BINS`` bins (limit ``MAX_UNSUPPORTED_SIDE``: a wall the
-      animal never came near);
+      ``WALL_SUPPORT_BINS`` bins is reported, not judged: a headstage LED
+      keeps off the walls;
     - a room or other box without an outline (a 3-D grid): the samples'
       reach past its bounds is reported, not judged (a bat perching in a
       corner of the room's frame, G-025); only stated sizes judge it;
@@ -561,7 +566,7 @@ def judge_declared(
         for key, value in (stated_residuals or {}).items():
             fit[f"size_residual_{key}"] = value
         out["fit"] = fit
-        out["misfit"] = misfit_reasons(fit, bin_size)
+        out["misfit"] = misfit_reasons(fit, bin_size, judge_support=not lattice)
         if fit["end_overshoot"] > MAX_SIZE_RESIDUAL:
             out["misfit"].append(
                 f"samples reach {fit['end_overshoot']:.0%} of the track's length"
@@ -657,11 +662,6 @@ def judge_declared(
                 out["misfit"].append(
                     f"samples reach {fit['max_side_bias']:.3g} beyond one side of the"
                     f" outline (limit {fit['max_side_bias_limit']:.3g})"
-                )
-            if fit["max_side_unsupported"] > MAX_UNSUPPORTED_SIDE:
-                out["misfit"].append(
-                    f"{fit['max_side_unsupported']:.0%} of a side has no sample within"
-                    f" {WALL_SUPPORT_BINS:g} bins (limit {MAX_UNSUPPORTED_SIDE:.0%})"
                 )
             for key, value in (stated_residuals or {}).items():
                 if abs(value) > MAX_SIZE_RESIDUAL:

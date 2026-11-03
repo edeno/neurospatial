@@ -724,8 +724,14 @@ PLACED_BY = (
 FITTED = ("fitted to the samples", "samples' principal axis")
 
 
-def misfit_reasons(fit: Mapping[str, float], bin_size: float) -> list[str]:
-    """Evidence that a fitted layout does not match its samples (``edge_fit``)."""
+def misfit_reasons(
+    fit: Mapping[str, float], bin_size: float, *, judge_support: bool = True
+) -> list[str]:
+    """Evidence that a fitted layout does not match its samples (``edge_fit``).
+
+    ``judge_support=False`` reports a segment's unsupported share without
+    judging it (a climbing lattice, whose tracked head keeps off the bars).
+    """
     from _geometry import MAX_SIZE_RESIDUAL
 
     reasons = []
@@ -734,7 +740,7 @@ def misfit_reasons(fit: Mapping[str, float], bin_size: float) -> list[str]:
             f"a segment's samples lie {fit['max_edge_bias']:.3g} to one side of it"
             f" (limit {MAX_EDGE_BIAS_BINS:g} bin, {MAX_EDGE_BIAS_BINS * bin_size:.3g})"
         )
-    if fit["max_unsupported"] > MAX_UNSUPPORTED:
+    if judge_support and fit["max_unsupported"] > MAX_UNSUPPORTED:
         reasons.append(
             f"{fit['max_unsupported']:.0%} of a segment has no sample within a bin"
             f" (limit {MAX_UNSUPPORTED:.0%})"

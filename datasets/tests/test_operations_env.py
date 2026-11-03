@@ -303,10 +303,11 @@ def _box_env(side=100.0):
     )
 
 
-def test_an_outline_side_the_samples_never_reach_is_misfit():
-    # A U-shaped probe: samples fill the box but keep 20 cm off its top wall
-    # (a box drawn over a region the animal never entered); every other wall
-    # is reached. The top side is unsupported over its whole length.
+def test_an_outline_side_the_samples_never_reach_is_reported_not_judged():
+    # Samples fill the box but keep 10 cm off its top wall, as a head LED on a
+    # headstage keeps off the walls: the top side is unsupported over its
+    # whole length, which is reported, and the samples' extent (-11 %) stays
+    # within the size tolerance, so there is no misfit.
     from _geometry import judge_declared
 
     rng = np.random.default_rng(4)
@@ -315,10 +316,10 @@ def test_an_outline_side_the_samples_never_reach_is_misfit():
     reached = judge_declared(_box_env(), times, samples)
     assert reached["fit"]["max_side_unsupported"] == 0.0
     assert reached["misfit"] == []
-    probe = samples[samples[:, 1] < 80]
+    probe = samples[samples[:, 1] < 90]
     judged = judge_declared(_box_env(), times[: len(probe)], probe)
     assert judged["fit"]["max_side_unsupported"] == pytest.approx(1.0)
-    assert any("of a side has no sample" in reason for reason in judged["misfit"])
+    assert judged["misfit"] == []
 
 
 def test_outline_sides_split_a_square_at_corners_and_keep_a_circle_whole():
@@ -333,9 +334,9 @@ def test_outline_sides_split_a_square_at_corners_and_keep_a_circle_whole():
     assert len(sides[0]) == len(circle)
 
 
-def test_a_circle_with_one_arc_never_reached_is_misfit():
+def test_a_circle_with_one_arc_never_reached_reports_the_arc():
     # A 100 cm circle whose samples leave out a 90-degree sector: a quarter of
-    # its one wall has no sample near it.
+    # its one wall has no sample near it, reported but not judged.
     import shapely
     from _geometry import judge_declared
 
@@ -351,7 +352,34 @@ def test_a_circle_with_one_arc_never_reached_is_misfit():
     sector = disc[theta < 1.5 * np.pi]
     judged = judge_declared(env, times[: len(sector)], sector)
     assert judged["fit"]["max_side_unsupported"] > 0.15
-    assert any("of a side has no sample" in reason for reason in judged["misfit"])
+    assert not any("no sample" in reason for reason in judged["misfit"])
+
+
+def test_a_track_segment_never_reached_is_misfit_but_a_lattice_bar_is_not():
+    # An L of two 100 cm segments; samples cover only the first. On a track
+    # the bare segment is misfit; on a lattice (``lattice=True``) the same
+    # share is reported, not judged.
+    from _geometry import graph_environment, judge_declared
+    from _tracks import polyline_graph
+
+    track = graph_environment(
+        polyline_graph(
+            np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]]), closed=False
+        ),
+        bin_size=2.5,
+        track_width=10.0,
+        units="cm",
+        name="track",
+    )
+    rng = np.random.default_rng(5)
+    on = np.column_stack([rng.uniform(0, 100, 5000), rng.normal(0, 1.0, 5000)])
+    times = np.arange(len(on)) / 30.0
+    as_track = judge_declared(track, times, on)
+    assert as_track["fit"]["max_unsupported"] > 0.9
+    assert any("of a segment has no sample" in r for r in as_track["misfit"])
+    as_lattice = judge_declared(track, times, on, lattice=True)
+    assert as_lattice["fit"]["max_unsupported"] == as_track["fit"]["max_unsupported"]
+    assert as_lattice["misfit"] == []
 
 
 @pytest.mark.parametrize(
