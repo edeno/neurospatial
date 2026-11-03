@@ -645,8 +645,12 @@ _UnitT = TypeVar("_UnitT", bound="SingleUnitRateMixin")
 _UnitResultT = TypeVar("_UnitResultT", bound="SingleUnitRateMixin")
 
 
-BandwidthRule = Literal["none", "nonnegative", "positive"]
-"""What an estimator requires of ``bandwidth``: ``None``, ``>= 0`` or ``> 0``."""
+BandwidthRule = Literal["none", "zero", "nonnegative", "positive"]
+"""What an estimator requires of ``bandwidth``: ``None``, ``0``, ``>= 0`` or ``> 0``.
+
+``None`` is for estimators with no kernel (``"glm"``); an unsmoothed map
+records ``0``.
+"""
 
 KERNEL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
     {"diffusion_kde": "positive", "gaussian_kde": "positive"}
@@ -655,6 +659,7 @@ KERNEL_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
 _BANDWIDTH_REQUIREMENT: Mapping[BandwidthRule, str] = MappingProxyType(
     {
         "none": "None",
+        "zero": "0, because the map is not smoothed",
         "nonnegative": "a finite number >= 0 in the coordinates' units",
         "positive": "a finite number > 0 in the coordinates' units",
     }
@@ -681,6 +686,8 @@ def _bandwidth_meets(bandwidth: float | None, rule: BandwidthRule) -> bool:
     """Whether a (normalized) ``bandwidth`` satisfies an estimator's rule."""
     if rule == "none" or bandwidth is None:
         return rule == "none" and bandwidth is None
+    if rule == "zero":
+        return bandwidth == 0
     return bool(
         np.isfinite(bandwidth)
         and (bandwidth > 0 or (rule == "nonnegative" and bandwidth == 0))

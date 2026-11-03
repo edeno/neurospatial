@@ -215,6 +215,30 @@ class TestOccupancySpeedFiltering:
         with pytest.raises(InputError, match=r"excluded ALL.*min_speed=2\.0"):
             env.occupancy(times, positions, min_speed=2.0)
 
+    def test_derived_speed_matches_compute_speed_and_rate_maps(self, open_field_120s):
+        """The derived speed is compute_speed's, the one the rate maps gate by."""
+        from neurospatial.behavior import compute_speed
+        from neurospatial.encoding import compute_spatial_rate
+
+        session = open_field_120s
+        env, times, positions = session.env, session.times, session.positions
+        speed = compute_speed(times, positions)
+        # A 5 cm/s gate on this session drops a real share of the time.
+        assert 0.05 < np.mean(speed < 5.0) < 0.95
+        derived = env.occupancy(times, positions, min_speed=5.0)
+        given = env.occupancy(times, positions, speed=speed, min_speed=5.0)
+        assert_allclose(derived, given, rtol=0, atol=0)
+        assert derived.sum() < 0.95 * env.occupancy(times, positions).sum()
+        rate = compute_spatial_rate(
+            env,
+            session.spike_times[0],
+            times,
+            positions,
+            method="binned",
+            min_speed=5.0,
+        )
+        assert_allclose(rate.occupancy, derived, rtol=1e-12, atol=1e-12)
+
     def test_polar_occupancy_min_speed_needs_speed(self):
         """A polar env cannot derive speed: (distance, angle) is not Cartesian."""
         from neurospatial import CartesianOnlyError

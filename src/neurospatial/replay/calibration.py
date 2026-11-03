@@ -1491,13 +1491,23 @@ class NullSpikeData(ReadOnlyArraysMixin, ResultMixin):
         """Number of null events."""
         return len(self.intervals)
 
+    @property
+    def n_cells(self) -> int:
+        """Number of cells, one spike train each."""
+        return len(self.spike_times)
+
+    @property
+    def n_spikes(self) -> int:
+        """Number of spikes over all cells and null events."""
+        return int(sum(train.size for train in self.spike_times))
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
             "kind": self.kind,
             "n_events": self.n_events,
-            "n_cells": len(self.spike_times),
-            "n_spikes": int(sum(train.size for train in self.spike_times)),
+            "n_cells": self.n_cells,
+            "n_spikes": self.n_spikes,
         }
 
 

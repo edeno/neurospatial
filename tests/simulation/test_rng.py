@@ -77,7 +77,9 @@ def test_int_rng_reproduces_the_output_of_the_same_int_seed_before():
     tmaze = tmaze_alternation_session(
         duration=20.0, n_trials=3, n_place_cells=3, rng=42
     )
-    assert tmaze.metadata["trial_choices"] == ("left", "right", "left")
+    # The first choice is the fourth stream spawned from the seed:
+    # default_rng(SeedSequence(42).spawn(4)[3].generate_state(1)[0]).
+    assert tmaze.metadata["trial_choices"] == ("right", "left", "right")
 
 
 def _arena():
@@ -109,7 +111,9 @@ def test_trajectory_and_spike_simulators_match_between_int_and_generator():
                 rng=rng,
             )
         ),
-        "place_cell_center": lambda rng: (PlaceCellModel(env, rng=rng).center,),
+        "place_cell_center": lambda rng: (
+            PlaceCellModel(env, rng=rng).ground_truth["center"],
+        ),
     }
     for run in runs.values():
         first, second = _int_and_generator(3, run)
@@ -171,29 +175,98 @@ def test_the_same_generator_twice_gives_different_sessions():
     assert not np.array_equal(first.positions, second.positions)
 
 
-@pytest.mark.parametrize(
-    "build",
-    [
-        lambda env, rng: PlaceCellModel(env, rng=rng),
-        lambda env, rng: BoundaryVectorCellModel(env, rng=rng),
-        lambda env, rng: HeadDirectionCellModel(rng=rng),
-    ],
-    ids=["place", "boundary_vector", "head_direction"],
-)
-def test_replacing_a_generator_seeded_model_keeps_its_draws(build):
-    import dataclasses
+_DRAWN = {"center", "preferred_direction"}
 
-    env = _arena()
-    generator = np.random.default_rng(5)
-    state = generator.bit_generator.state
-    model = build(env, generator)
-    assert generator.bit_generator.state == state  # the caller's is not advanced
-    drawn = model.ground_truth
-    replaced = dataclasses.replace(model, max_rate=20.0)
-    for key in ("center", "preferred_direction"):
-        if key in drawn:
-            np.testing.assert_array_equal(replaced.ground_truth[key], drawn[key])
-    same = build(env, np.random.default_rng(5)).ground_truth
-    for key in ("center", "preferred_direction"):
-        if key in drawn:
-            np.testing.assert_array_equal(same[key], drawn[key])
+MODEL_BUILDERS = {
+    "place": lambda env, rng: PlaceCellModel(env, rng=rng),
+    "boundary_vector": lambda env, rng: BoundaryVectorCellModel(env, rng=rng),
+    "head_direction": lambda env, rng: HeadDirectionCellModel(rng=rng),
+}
+
+
+def _drawn(model):
+    """The randomly drawn parameter of ``model``, from its ground truth."""
+    truth = model.ground_truth
+    (key,) = _DRAWN.intersection(truth)
+    return np.asarray(truth[key])
+
+
+def _expected_draws(env, name, generator, n_models):
+    """The draws ``n_models`` models should make from ``generator``, in order.
+
+    Derived from the documented distributions, not from the models: a place
+    centre is a uniformly drawn bin centre, and a direction is uniform on
+    [-pi, pi), wrapped to (-pi, pi].
+    """
+    if name == "place":
+        return [
+            env.bin_centers[generator.integers(0, env.n_bins)] for _ in range(n_models)
+        ]
+    directions = generator.uniform(-np.pi, np.pi, n_models)
+    return list(np.where(directions == -np.pi, np.pi, directions))
+
+
+@pytest.mark.parametrize("name", MODEL_BUILDERS)
+def test_successive_models_from_one_generator_differ(name):
+    """A generator is advanced by each model, as ``default_rng`` reads it."""
+    env, build = _arena(), MODEL_BUILDERS[name]
+    generator = np.random.default_rng(0)
+    draws = [_drawn(build(env, generator)) for _ in range(3)]
+    expected = _expected_draws(env, name, np.random.default_rng(0), 3)
+    for drawn, value in zip(draws, expected, strict=True):
+        # Wrapping a direction to (-pi, pi] can move it by one ULP.
+        np.testing.assert_allclose(drawn, value, rtol=0, atol=1e-12)
+    assert not np.array_equal(draws[0], draws[1])
+    assert not np.array_equal(draws[1], draws[2])
+
+
+@pytest.mark.parametrize("name", MODEL_BUILDERS)
+def test_an_int_and_a_generator_seeded_alike_give_the_same_model(name):
+    env, build = _arena(), MODEL_BUILDERS[name]
+    from_int = build(env, 0)
+    from_generator = build(env, np.random.default_rng(0))
+    np.testing.assert_array_equal(_drawn(from_int), _drawn(from_generator))
+    (expected,) = _expected_draws(env, name, np.random.default_rng(0), 1)
+    np.testing.assert_allclose(_drawn(from_int), expected, rtol=0, atol=1e-12)
+    times = np.linspace(0.0, 1.0, 50)
+    positions = np.random.default_rng(9).uniform(5, 95, (50, 2))
+    headings = np.random.default_rng(10).uniform(-np.pi, np.pi, 50)
+    np.testing.assert_array_equal(
+        from_int.firing_rate(times, positions, headings=headings),
+        from_generator.firing_rate(times, positions, headings=headings),
+    )
+
+
+@pytest.mark.parametrize("rng", [None, 5, "generator"])
+@pytest.mark.parametrize("name", MODEL_BUILDERS)
+def test_replace_pickle_and_deepcopy_keep_a_models_draw(name, rng):
+    import copy
+    import dataclasses
+    import pickle
+
+    env, build = _arena(), MODEL_BUILDERS[name]
+    model = build(env, np.random.default_rng(5) if rng == "generator" else rng)
+    drawn = _drawn(model)
+    rebuilt = [
+        dataclasses.replace(model, max_rate=20.0),
+        dataclasses.replace(dataclasses.replace(model), max_rate=20.0),
+        pickle.loads(pickle.dumps(model)),
+        copy.deepcopy(model),
+    ]
+    for other in rebuilt:
+        np.testing.assert_array_equal(_drawn(other), drawn)
+    # Rebuilding again from the same model gives the same draw again.
+    np.testing.assert_array_equal(_drawn(dataclasses.replace(model)), drawn)
+
+
+def test_tmaze_first_choice_varies_across_calls_with_one_generator():
+    """Each call advances the generator, so the first arm is not fixed."""
+    generator = np.random.default_rng(1)
+    sessions = [
+        tmaze_alternation_session(
+            duration=4.0, n_trials=2, n_place_cells=1, rng=generator
+        )
+        for _ in range(8)
+    ]
+    first_choices = {session.metadata["trial_choices"][0] for session in sessions}
+    assert first_choices == {"left", "right"}

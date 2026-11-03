@@ -803,6 +803,41 @@ class TestGoalDirectedDistances:
         assert geodesic.min_distance_to_goal < geodesic.goal_distance_at_start
 
 
+def test_interval_summary_reads_back_and_scalar_arrival_broadcasts():
+    """Interval summary keys are properties; a scalar arrival_tested applies to all.
+
+    Two intervals toward the region "east": one reaches it after 0.4 s with
+    goal bias 1, one never moves (goal bias NaN) and never reaches it.
+    """
+    from neurospatial.behavior import GoalDirectedMetrics
+
+    fields = {
+        "goal_bias": [1.0, np.nan],
+        "mean_approach_rate": [-10.0, 0.0],
+        "time_to_reach_goal": [0.4, np.nan],
+        "min_distance_to_goal": [1.0, 6.0],
+        "goal_distance_at_start": [5.0, 6.0],
+        "goal_distance_at_end": [1.0, 6.0],
+        "goal": ("east", "east"),
+        "metric": "euclidean",
+        "interval_ids": [0, 1],
+    }
+    metrics = GoalDirectedMetrics(**fields)  # arrival_tested defaults to True
+    assert metrics.arrival_tested.tolist() == [True, True]
+    expected = {
+        "n_intervals": 2,
+        "n_reached": 1,
+        "n_arrival_tested": 2,
+        "mean_goal_bias": 1.0,  # the interval without movement has no bias
+    }
+    assert metrics.summary() == expected
+    for key, value in expected.items():
+        assert getattr(metrics, key) == value, key
+    untested = GoalDirectedMetrics(**fields, arrival_tested=False)
+    assert untested.arrival_tested.tolist() == [False, False]
+    assert untested.n_arrival_tested == 0
+
+
 def test_goal_directed_metrics_single_return_type():
     """With or without intervals the result is a GoalDirectedMetrics.
 

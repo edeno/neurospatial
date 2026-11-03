@@ -470,7 +470,7 @@ def test_speed_without_min_speed_raises_batch(env_1d, two_speed_trajectory) -> N
 # When it excludes every interval the rate map would be empty, so the call
 # raises InputError naming the active gate, whatever warn_on_drop.
 
-_EMPTY_MAP = "excluded ALL trajectory intervals.*the rate map is empty"
+_EMPTY_MAP = r"excluded ALL trajectory intervals[\s\S]*the rate map is empty"
 
 
 @pytest.fixture

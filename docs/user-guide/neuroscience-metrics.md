@@ -43,7 +43,8 @@ fields = detect_place_fields(env, rates,
 # Result: iterable PlaceFieldsResult with bin arrays and optional exclusion metadata
 # fields[0] = np.array([10, 11, 12, 23, 24, 25])  # Bin indices for field 1
 # fields[1] = np.array([45, 46, 56, 57])          # Bin indices for field 2
-fields.to_dataframe()  # one row per field: area, peak_rate, mean_rate, centroid
+fields.fields_table()  # one row per field: area, peak_rate, mean_rate, centroid
+fields.to_dataframe()  # one row per field bin: field, bin, bin center, firing_rate
 fields.plot()          # the rate map with each field's bins marked
 ```
 
@@ -1223,8 +1224,9 @@ firing_rate = rates.firing_rate
 fields = detect_place_fields(env, rates, detect_subfields=True)
 print(f"Detected {len(fields)} place fields")
 
-# 3. Field properties: field_size and rate_map_centroid of each field
-print(fields.to_dataframe()[["field", "area", "peak_rate", "centroid_x", "centroid_y"]])
+# 3. One row per field: its area (cm^2), peak rate (Hz) and rate-weighted
+#    centroid (cm)
+print(fields.fields_table()[["field", "area", "peak_rate", "centroid_x", "centroid_y"]])
 
 # 4. Compute single-cell metrics
 occupancy = env.occupancy(times, positions, return_seconds=True)

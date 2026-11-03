@@ -112,7 +112,9 @@ def test_no_observed_interval_says_that_samples_are_missing(observed):
     """Missing samples, not the gates, leave nothing usable: say so."""
     x = np.full(5, np.nan)
     x[observed] = 1.0
-    with pytest.raises(InputError, match=r"excluded ALL.*samples are finite") as caught:
+    with pytest.raises(
+        InputError, match=r"excluded ALL[\s\S]*samples are finite"
+    ) as caught:
         _support(np.arange(5) * 0.1, x)
     message = str(caught.value)
     assert f"{len(observed)} of 5 samples are observed" in message

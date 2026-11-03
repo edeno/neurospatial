@@ -102,9 +102,19 @@ class ReplayEventSimulation(ReadOnlyArraysMixin, ResultMixin):
             "drop_fraction": self.drop_fraction,
             "n_dropped_spikes": self.n_dropped_spikes,
             "n_noise_spikes": self.n_noise_spikes,
-            "n_spikes": int(sum(train.size for train in self.spike_times)),
-            "n_active_cells": int(sum(train.size > 0 for train in self.spike_times)),
+            "n_spikes": self.n_spikes,
+            "n_active_cells": self.n_active_cells,
         }
+
+    @property
+    def n_spikes(self) -> int:
+        """Number of spikes over all cells, noise spikes included."""
+        return int(sum(train.size for train in self.spike_times))
+
+    @property
+    def n_active_cells(self) -> int:
+        """Number of cells that fire at least one spike."""
+        return int(sum(train.size > 0 for train in self.spike_times))
 
 
 def simulate_replay_event(

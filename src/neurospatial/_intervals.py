@@ -134,16 +134,34 @@ DEFAULT_MAX_GAP = 1.0
 #: boolean masking. A speed mask (speed > 5 cm/s) on a simulated 100 Hz open
 #: field removes pauses with a median of 24 samples (0.24 s); its runs of at
 #: least this length make up about 9% of the analysed time.
-#: DeepLabCut-style deletions of 1-6 frames last at most 0.2 s at 30 Hz and
-#: stay below it.
+#: Dropped tracking frames can last longer: low-likelihood frames removed
+#: during an occlusion (``df[df.likelihood > 0.9]``) span 0.3-0.8 s, so the
+#: warning names them as the other cause of such runs.
 MASKED_RUN_MIN_DURATION = 0.25
 
-#: Least share of sampling steps within half of the median step for the
-#: boolean-masking check to read the median as the sampling interval. Masked
-#: regular recordings keep at least 0.9 of their steps there, also with 10 ms
-#: of timestamp jitter at 30 Hz; uniform or exponential irregular steps keep
-#: about 0.5 or 0.35, and positions sampled at spike times (DANDI 001754) 0.17.
+#: Largest distance, as a fraction of the sampling interval, from a sampling
+#: step to a whole multiple of the interval for the step to count as a
+#: whole number of samples.
+MASKED_MULTIPLE_TOLERANCE = 0.25
+
+#: Least share of sampling steps within ``MASKED_MULTIPLE_TOLERANCE`` of a
+#: whole multiple of the sampling interval for the boolean-masking check to
+#: read the sampling as regular. Measured on simulated 30 Hz recordings
+#: (``test_masking_gate_calibration``): a speed mask keeps 1.0, 0.97 with
+#: timestamps jittered within a 10 ms window and 0.86 with Gaussian jitter of
+#: 4 ms SD; a fragmented mask (kept runs of 1-4 frames between removed runs
+#: of 10-40) keeps 1.0, though only 0.6 of its steps are within half of the
+#: median step. Uniform or exponential irregular steps, and positions
+#: sampled at spike times (0.17 of steps within half of the median step, as
+#: in DANDI 001754), keep about 0.5, the share of random steps that land
+#: near a multiple.
 MASKED_REGULAR_SHARE = 0.75
+
+#: Largest probability that random steps put at least as many steps near a
+#: multiple, for the boolean-masking check to read the sampling as regular.
+#: Without it, 41 in 40,000 short runs (11-54 steps) of uniform irregular
+#: steps reached ``MASKED_REGULAR_SHARE`` by chance and warned.
+MASKED_REGULAR_CHANCE = 1e-4
 
 
 def validate_max_gap(max_gap: Any) -> float | None:
@@ -1788,8 +1806,9 @@ def excluded_intervals_message(
     - Otherwise, when the kept intervals bridge runs of removed samples
       lasting from ``MASKED_RUN_MIN_DURATION`` to ``max_gap`` that add up to
       more than ``DISCARD_WARN_FRACTION`` of the analysed time, ``times``
-      were probably boolean-masked (for example ``times[speed > 5]``), and
-      the time and spikes inside the removed runs still count. With
+      were boolean-masked (for example ``times[speed > 5]``) or tracking
+      frames were dropped, and the time and spikes inside the removed runs
+      still count. With
       ``max_gap=None`` every gap is bridged on purpose, so this check is
       skipped.
     - Otherwise, when most sampling intervals exceed ``max_gap``, they count
@@ -1840,7 +1859,9 @@ def excluded_intervals_message(
             # nothing is wrong with the clock, and the empty result is the
             # answer, so say what happened without raising.
             return empty_selection_message(empty, result)
-        refusal = _all_excluded_message(gates, dt, samples=samples, result=result)
+        refusal = _all_excluded_message(
+            gates, dt, samples=samples, result=result, raised=raise_if_empty
+        )
         if raise_if_empty:
             raise InputError(refusal)
         return refusal
@@ -1905,20 +1926,57 @@ def _rounded_fix(median_dt: float) -> str:
     )
 
 
+def _sampling_interval(dt: NDArray[np.float64]) -> float:
+    """The sampling interval of steps that may skip removed samples.
+
+    The median step is a gap when most steps skip samples (a fragmented
+    mask keeps runs of one or two frames), so the interval is read from the
+    shortest steps: the median of the steps within half of the
+    shortest-steps median, which are the steps of one sample.
+
+    Parameters
+    ----------
+    dt : ndarray, shape (n_steps,)
+        Positive sampling steps in seconds.
+
+    Returns
+    -------
+    float
+        The interval in seconds.
+
+    Examples
+    --------
+    Most steps skip samples, but the interval is still the 0.1 s step:
+
+    >>> import numpy as np
+    >>> dt = np.r_[np.full(3, 0.1), np.full(7, 1.2)]
+    >>> float(np.median(dt)), round(_sampling_interval(dt), 6)
+    (1.2, 0.1)
+    """
+    low = float(np.quantile(dt, 0.1))
+    # An element of dt, so the steps near it below include it.
+    shortest = float(np.quantile(dt[dt <= 1.5 * low], 0.5, method="lower"))
+    one_sample = dt[(dt > 0.5 * shortest) & (dt < 1.5 * shortest)]
+    return float(np.median(one_sample))
+
+
 def _masked_sample_fraction(
     times: NDArray[np.float64], kept: NDArray[np.bool_], max_gap: float
 ) -> float:
     """Fraction of the analysed time spent in long, bridged runs of removed samples.
 
     Boolean masking (``times[speed > 5]``) removes whole samples, so the
-    steps left are whole multiples of the median sampling interval. Only
-    kept steps no longer than ``max_gap`` whose removed run lasts at least
-    ``MASKED_RUN_MIN_DURATION`` count: shorter runs are dropped frames,
-    longer steps are recording gaps, and steps outside the kept intervals
-    (between epochs, for example) are not bridged. The median is the
-    sampling interval only when ``MASKED_REGULAR_SHARE`` of the steps lie
-    within half of it; irregular sampling, whose steps say nothing about
-    removed samples, counts nothing.
+    steps left are whole multiples of the sampling interval
+    (:func:`_sampling_interval`). Only kept steps no longer than ``max_gap``
+    whose removed run lasts at least ``MASKED_RUN_MIN_DURATION`` count:
+    shorter runs are dropped frames, longer steps are recording gaps, and
+    steps outside the kept intervals (between epochs, for example) are not
+    bridged. The sampling counts as regular only when at least
+    ``MASKED_REGULAR_SHARE`` of the steps lie within
+    ``MASKED_MULTIPLE_TOLERANCE`` of a whole multiple of the interval, and
+    random steps would put that many there with probability at most
+    ``MASKED_REGULAR_CHANCE``; irregular sampling, whose steps say nothing
+    about removed samples, counts nothing.
 
     Parameters
     ----------
@@ -1960,11 +2018,25 @@ def _masked_sample_fraction(
     dt = np.diff(times)
     if dt.size < 10:
         return 0.0
-    step = float(np.median(dt))
+    step = _sampling_interval(dt)
     if not np.isfinite(step) or step <= 0:
         return 0.0
     ratio = dt / step
-    if np.mean((ratio > 0.5) & (ratio < 1.5)) < MASKED_REGULAR_SHARE:
+    n_near = int(
+        np.count_nonzero(
+            (ratio >= 0.5)
+            & (np.abs(ratio - np.round(ratio)) < MASKED_MULTIPLE_TOLERANCE)
+        )
+    )
+    if n_near < MASKED_REGULAR_SHARE * dt.size:
+        return 0.0
+    # Random steps land near a multiple with probability 2 * tolerance, so a
+    # few steps can reach the share by chance: also require at least n_near
+    # of them to be improbable for random steps.
+    from scipy.special import bdtrc
+
+    chance = float(bdtrc(n_near - 1, dt.size, 2 * MASKED_MULTIPLE_TOLERANCE))
+    if chance > MASKED_REGULAR_CHANCE:
         return 0.0
     skipped_time = (ratio - 1.0) * step
     skipped = (
@@ -1983,7 +2055,7 @@ def _masked_sample_fraction(
 def _masked_samples_message(
     times: NDArray[np.float64], kept: NDArray[np.bool_], max_gap: float | None
 ) -> str | None:
-    """The warning for boolean-masked ``times``, or None."""
+    """The warning for masked samples or dropped tracking frames, or None."""
     if max_gap is None:
         return None
     fraction = _masked_sample_fraction(times, kept, max_gap)
@@ -1992,13 +2064,15 @@ def _masked_samples_message(
     return _format_error(
         f"About {100 * fraction:.0f}% of the analysed time is in runs of "
         f"removed samples lasting {MASKED_RUN_MIN_DURATION:g} s to "
-        f"max_gap={max_gap} s, which looks like times were boolean-masked "
-        "(for example times[speed > 5]).",
+        f"max_gap={max_gap} s. They are either boolean-masked samples (for "
+        "example times[speed > 5]) or dropped tracking frames (for example "
+        "df[df.likelihood > 0.9] during occlusions).",
         why="runs shorter than max_gap are bridged as continuous occupancy, so "
         "the time and spikes inside the removed runs still count.",
-        fix="pass the full arrays and select with the function's min_speed= or "
-        "epochs= where it has them, or set max_gap below the shortest removed "
-        "run.",
+        fix="for boolean-masked samples, pass the full arrays and select with "
+        "the function's min_speed= or epochs= where it has them. For dropped "
+        "tracking frames, bridging them is intended up to max_gap; to exclude "
+        "them instead, pass a max_gap below the shortest removed run.",
     )
 
 
@@ -2062,19 +2136,30 @@ def _all_excluded_message(
     *,
     samples: Literal["positions", "headings", "values"],
     result: str,
+    raised: bool,
 ) -> str:
-    """The message for a selection that excludes every interval."""
+    """The message for a selection that excludes every interval.
+
+    ``raised`` says whether the message is raised: then the call returns no
+    ``result``, and the message says it refuses.
+    """
     times, max_gap, sample_valid = gates.times, gates.max_gap, gates.sample_valid
     min_speed, break_before = gates.min_speed, gates.break_before
+    consequence = (
+        f"; rather than return a result in which {result}, the call refuses"
+        if raised
+        else f", so {result}"
+    )
     if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():
         # No interval has an observed sample on each side: the missing samples
         # leave nothing to gate, whatever the gates are.
         n_observed = int(np.count_nonzero(sample_valid))
-        return (
+        return _format_error(
             "Interval filtering excluded ALL trajectory intervals: only "
-            f"{n_observed} of {times.size} samples are observed, and an interval "
-            f"needs an observed sample on each side, so {result}. Fix: "
-            f"{_HEADINGS_FIX if samples == 'headings' else _SAMPLES_FIX}."
+            f"{n_observed} of {times.size} samples are observed.",
+            why="an interval needs an observed sample on each side, and no "
+            f"sampling interval is left to analyse{consequence}.",
+            fix=f"{_HEADINGS_FIX if samples == 'headings' else _SAMPLES_FIX}.",
         )
 
     n_long, n_rounded, slow_clock = _gap_excess(times, dt, max_gap)
@@ -2148,7 +2233,8 @@ def _all_excluded_message(
     if not fixes:
         fixes.append("check that the samples are finite, observed values")
     active = f" (active gate(s) {', '.join(named)})" if named else ""
-    return (
-        f"Interval filtering excluded ALL trajectory intervals{active}, so "
-        f"{result}. Fix: {'; '.join(fixes)}."
+    return _format_error(
+        f"Interval filtering excluded ALL trajectory intervals{active}.",
+        why=f"no sampling interval is left to analyse{consequence}.",
+        fix=f"{'; '.join(fixes)}.",
     )

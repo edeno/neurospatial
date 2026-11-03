@@ -1002,8 +1002,9 @@ def time_window_drops(
     spikes, so every spike counts. Another clock is: spans and magnitudes
     about 1000 times apart (:func:`_clock_ratio_hint`), spike times that
     span more than ``_OTHER_CLOCK_FACTOR`` times the tracked time and reach
-    more than that times every time and window bound, no spike inside the
-    analysed windows, or no spike inside the tracked time.
+    more than that times every time and window bound, or no spike inside the
+    tracked time. A unit with tracked spikes but none inside the analysed
+    windows is silent there and drops no spike.
     A deliberately empty selection (a window set with no rows) counts no
     spike.
 
@@ -1048,13 +1049,15 @@ def time_window_drops(
         # A deliberately empty selection drops every spike by choice; its own
         # message says so.
         return 0, 0, ""
+    if outside.all():
+        # No spike in the tracked time at all: the spikes are on another clock
+        # (an offset, as from a misaligned NWB file), not outside a selection.
+        # Count every one.
+        return int(np.count_nonzero(outside)), int(spikes.size), ""
+    # Some spikes are tracked, so none in the analysed windows is a unit
+    # silent there (a cell active only in sleep), which drops nothing.
     analysed = windows[0] if len(windows) == 1 else intersect_intervals(*windows)
     inside = times_in_intervals(analysed, spikes)
-    if not inside.any() or outside.all():
-        # No spike in the analysed windows, or none in the tracked time at
-        # all: the spikes are on another clock (an offset, as from a
-        # misaligned NWB file), not outside a selection. Count every one.
-        return int(np.count_nonzero(outside)), int(spikes.size), ""
     names = " and ".join(
         name
         for name, value in (("epochs", epochs), ("spike_window", spike_window))

@@ -59,6 +59,42 @@ def test_result_screens_take_no_criterion(significance_family, significance_reco
                 rate.is_place_cell(criterion=criterion)
 
 
+@pytest.mark.filterwarnings("ignore:The animal never faced:UserWarning")
+def test_result_screens_refuse_none_thresholds(
+    significance_family, significance_recording
+):
+    """None is not a cutoff: each screen says so instead of a bare TypeError."""
+    from neurospatial import InputError
+
+    f, r = significance_family, significance_recording
+    method_name = _names(f)[1]
+    rates = f.compute(*f.args(r), **f.defaults)
+    names = ("min_mvl", "alpha") if f.name == "head_direction" else ("min_info",)
+    for name in names:
+        for screen in (getattr(rates[0], method_name), rates.classify):
+            with pytest.raises(InputError, match=rf"{name}=None is not a threshold"):
+                screen(**{name: None})
+
+
+def test_cell_type_labels_refuse_none_thresholds(significance_recording):
+    from neurospatial import InputError
+
+    r = significance_recording
+    rates = encoding.compute_spatial_rates(r.env, r.trains, r.times, r.positions)
+    for name in ("min_spatial_info", "min_grid_score", "min_border_score"):
+        with pytest.raises(InputError, match=rf"{name}=None is not a threshold"):
+            rates.label_cell_types(**{name: None})
+    args = (r.env, r.trains, r.times, r.positions)
+    place = encoding.place_cell_significance(*args, n_shuffles=19, rng=0)
+    for name in ("alpha", "min_info"):
+        with pytest.raises(InputError, match=rf"{name}=None is not a threshold"):
+            place.classify(**{name: None})
+    types = encoding.spatial_cell_type_significance(*args, n_shuffles=19, rng=0)
+    for name in ("alpha", "min_spatial_info"):
+        with pytest.raises(InputError, match=rf"{name}=None is not a threshold"):
+            types.label_cell_types(**{name: None})
+
+
 def test_default_predicate_matches_explicit_shuffle(
     ou_2min_env, ou_2min, noise_trains, strong_field_spikes
 ):

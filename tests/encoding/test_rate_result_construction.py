@@ -168,12 +168,19 @@ def test_every_family_reports_its_estimator(population: Any) -> None:
 def test_polar_kernel_estimate_records_its_bandwidth(
     family_name: str, recording: dict[str, Any]
 ) -> None:
-    """A smoothed polar map carries the bandwidth it was smoothed with."""
+    """A smoothed polar map carries the bandwidth it was smoothed with.
+
+    An unsmoothed binned map records 0, as a spatial binned map does, and
+    refuses a positive bandwidth it was not smoothed with.
+    """
     binned = FAMILIES[family_name](recording)
     smoothed = FAMILIES[family_name](recording, method="gaussian_kde", bandwidth=8.0)
-    assert (binned.method, binned.bandwidth) == ("binned", None)
+    assert (binned.method, binned.bandwidth) == ("binned", 0.0)
     assert (smoothed.method, smoothed.bandwidth) == ("gaussian_kde", 8.0)
     assert smoothed[2].bandwidth == 8.0
+    for result in (binned, binned[0]):
+        with pytest.raises(ValueError, match=r"bandwidth=8.0 is not valid for method"):
+            dataclasses.replace(result, bandwidth=8.0)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +218,9 @@ def test_single_unit_refuses_rates_of_other_bins(population: Any) -> None:
 def test_refuses_bandwidth_the_estimator_cannot_use(
     population: Any, bandwidth: Any
 ) -> None:
-    """Every default estimator needs a positive bandwidth or none at all."""
+    """Every default estimator needs a positive bandwidth, 0 or none at all."""
+    if bandwidth == 0.0 and population.bandwidth == 0.0:
+        pytest.skip("an unsmoothed binned map records bandwidth 0")
     for result in (population, population[0]):
         with pytest.raises(ValueError, match=r"bandwidth=.* is not valid for method"):
             dataclasses.replace(result, bandwidth=bandwidth)

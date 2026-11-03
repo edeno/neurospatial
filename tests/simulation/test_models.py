@@ -1296,12 +1296,7 @@ def _every_model(env):
     }
 
 
-_DERIVED_KEYS = {
-    "cell_type",
-    "preferred_direction_deg",
-    "tuning_width",
-    "tuning_width_deg",
-}
+_DERIVED_KEYS = {"cell_type", "tuning_width"}
 _NEEDS_HEADINGS = {"head_direction", "object_vector", "spatial_view"}
 
 
