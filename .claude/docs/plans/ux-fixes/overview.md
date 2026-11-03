@@ -156,6 +156,18 @@ defaults, renamed arguments) are listed as **Breaking**.
   bound).
 - **`keyword_hint` has no hook for unexpected keywords**, so a result screen
   called with `criterion=` gives a plain `TypeError`.
+- **Regressions found after the plan merged, both fixed:** #270 (the masking
+  warning fired on irregular `times`) and #272 (spike times in milliseconds
+  passed silently with `epochs` when tracking outlasts the spike recording).
+  Under #272's rule, a seconds recording over 32 times longer than tracking
+  that starts with it also warns; the maintainer accepted that.
+- **Spike times in milliseconds can warn with the same text as correct
+  units** (DANDI 001695): the "divide by 1000" hint in `_clock_ratio_hint`
+  needs both ratios within 300–3,200, and 001695's span ratio is 5,800. The
+  warning still fires, but nothing says milliseconds.
+- **`test_a_hundred_thousand_bins_draw_in_seconds` fails on main**: the
+  large-grid memory warning becomes an error. It is a wall-clock test the
+  default marker filter excludes, so CI never runs it.
 
 ## Estimated Effort
 
