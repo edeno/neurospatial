@@ -621,6 +621,381 @@
       "verdict": "silent",
       "gap": "G-015",
       "reason": "0 -> 1 lap in an open arena once the gaps are closed (laps in open arenas, decision 5)."
+    },
+    "watermaze_10248158/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "43 untracked samples (13 empty strings and 30 trial-end markers, 0.29 %) become (0, 0), outside the pool: 1144 -> 1147 bins, extent 190 -> 225. Check 1 would fire."
+    },
+    "watermaze_10248158/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Bins at the origin gain time: total 1185.7 -> 1187.8 s, largest bin 6.0 -> 6.48 s. Check 1 would fire."
+    },
+    "watermaze_10248158/trials_back_to_back/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Positions are the same samples; 1144 bins either way."
+    },
+    "watermaze_10248158/trials_back_to_back/env.occupancy": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Total occupancy 1185.7 -> 1186.9 s: the 30 jumps between trials add 0.08 s each; the per-bin median is unchanged (0.96 s)."
+    },
+    "hafting_2008_nird/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 8628/8629 spike_times (100%) across all neurons fell outside the position time window [0, 1199.98]; spike_times.min()=839.24 spike_times.max()=1.1999e+06. The s"
+    },
+    "hafting_2008_nird/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=4.0 is at least the per-axis data extent [3.2, 0.3624569249198752] in every dimension. Why: this produces very few bins and may indicate a units mismat"
+    },
+    "hafting_2008_nird/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": "G-014",
+      "reason": "Occupancy itself does not warn (655.6 -> 0.24 s), but Environment.from_samples warns in the same workflow (bin_size at least the data extent)."
+    },
+    "hafting_2008_nird/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught upstream",
+      "gap": "G-014",
+      "reason": "Rate maps flatten (median peak 26.5 -> 5.9 Hz, 25 % NaN bins) with no warning of their own; Environment.from_samples warned first."
+    },
+    "hafting_2008_nird/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "281 -> 0 running segments; no environment built, so check 2 cannot see it."
+    },
+    "takigawa_7114733/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "The 85 % of samples off the tracks become (0, 0): one bin at the origin, extent 252 -> 300 cm. Check 1 would fire."
+    },
+    "takigawa_7114733/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Running time at the origin bin: total 1103 -> 1128 s, largest bin 21.5 -> 30.2 s. Check 1 would fire."
+    },
+    "takigawa_7114733/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Spikes during rest are binned at the origin: median peak 11.7 -> 12.5 Hz, NaN bins 2.0 -> 0.8 %. Check 1 would fire."
+    },
+    "takigawa_7114733/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to and from the origin read as running: 603 -> 614 segments, 1101 -> 1130 s. Check 1 would fire."
+    },
+    "takigawa_7114733/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 109 units are silent from 7516.6 s to 8479.7 s (963 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start,"
+    },
+    "takigawa_7114733/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=4.0 is at least the per-axis data extent [2.5133411146174938, 2.3940639091780196] in every dimension. Why: this produces very few bins and may indicate"
+    },
+    "takigawa_7114733/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs), so occupancy is zero in every bin. Fix: 17"
+    },
+    "takigawa_7114733/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs), so the rate map is empty. Fix: 17622 of 31"
+    },
+    "takigawa_7114733/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "603 -> 0 running segments; no environment built, so check 2 cannot see it."
+    },
+    "takigawa_7114733/pixels_labelled_cm/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Pixels called cm (x 2.35): 1000 -> 3994 bins, extent 252 -> 592 'cm' for two 2 m tracks; nothing compares the span with a stated apparatus."
+    },
+    "takigawa_7114733/pixels_labelled_cm/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Speeds 2.35 x too high pass the 5 cm/s gate more often: total 1103 -> 1510 s, per-bin median 0.72 -> 0.20 s."
+    },
+    "takigawa_7114733/pixels_labelled_cm/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Smaller effective bins and more running time: median peak 11.7 -> 25.3 Hz."
+    },
+    "takigawa_7114733/pixels_labelled_cm/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Running time 1101 -> 1504 s (603 -> 605 segments)."
+    },
+    "olafsdottir_5566548/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "29 % untracked samples become (0, 0), a corner of the tracking window inside the bounding box: 556 -> 550 bins. Check 1 would fire."
+    },
+    "olafsdottir_5566548/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Untracked time lands at the origin: total 1266 -> 1499 s, largest bin 43.9 -> 291.1 s. Check 1 would fire."
+    },
+    "olafsdottir_5566548/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Spikes while untracked are binned at the origin: median peak 3.77 -> 3.12 Hz, NaN bins 1.4 -> 0.5 %. Check 1 would fire."
+    },
+    "olafsdottir_5566548/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to and from the origin read as running: 668 -> 835 segments, 1269 -> 1497 s. Check 1 would fire."
+    },
+    "olafsdottir_5566548/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 203348/203462 spike_times (100%) across all neurons fell outside the position time window [0, 2275.98]; spike_times.min()=71.125 spike_times.max()=2.27574e+06. "
+    },
+    "olafsdottir_5566548/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=4.0 is at least the per-axis data extent [1.7, 1.3461538461538463] in every dimension. Why: this produces very few bins and may indicate a units mismat"
+    },
+    "olafsdottir_5566548/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": "G-014",
+      "reason": "Occupancy itself does not warn (1266 -> 0.84 s), but Environment.from_samples warns in the same workflow."
+    },
+    "olafsdottir_5566548/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught upstream",
+      "gap": "G-014",
+      "reason": "Rate maps go to 0 (median peak 3.77 -> 0 Hz) with no warning of their own; Environment.from_samples warned first."
+    },
+    "olafsdottir_5566548/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "668 -> 1 running segment (0.58 s); no environment built, so check 2 cannot see it."
+    },
+    "olafsdottir_5566548/pixels_labelled_cm/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Pixels called cm (x 3.9): 556 -> 4281 bins, extent 172 -> 664 'cm'; nothing compares the span with a stated apparatus."
+    },
+    "olafsdottir_5566548/pixels_labelled_cm/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Speeds 3.9 x too high pass the 5 cm/s gate: total 1266 -> 1702 s, per-bin median 0.68 -> 0.16 s."
+    },
+    "olafsdottir_5566548/pixels_labelled_cm/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Bins 3.9 x smaller in effect: median peak 3.77 -> 30.2 Hz from sparse bins."
+    },
+    "olafsdottir_5566548/pixels_labelled_cm/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "668 -> 469 segments, running time 1269 -> 1694 s."
+    },
+    "olafsdottir_5566548/image_y_down/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Mirroring keeps the bin count (556)."
+    },
+    "olafsdottir_5566548/image_y_down/env.occupancy": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Mirroring does not change speeds or occupancy (1266 s, same per-bin values)."
+    },
+    "olafsdottir_5566548/image_y_down/rates.spatial": {
+      "verdict": "undetectable",
+      "gap": "G-020",
+      "reason": "Maps are mirrored, every summary identical (median peak 3.77 Hz); no value check can see a mirror."
+    },
+    "olafsdottir_5566548/image_y_down/behavior.segment_by_velocity": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Speeds do not depend on the mirror (668 segments)."
+    },
+    "shipley_30902972/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 71 units are silent from 930.1 s to 1118.6 s (188 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, s"
+    },
+    "shipley_30902972/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=3.0 is at least the per-axis data extent [1.7502366869649397, 1.7411727714172722] in every dimension. Why: this produces very few bins and may indicate"
+    },
+    "shipley_30902972/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so occupancy is zero in every bin. Fix: ch"
+    },
+    "shipley_30902972/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so the rate map is empty. Fix: check that "
+    },
+    "shipley_30902972/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "491 -> 0 running segments; no environment built, so check 2 cannot see it."
+    },
+    "shipley_30902972/clock_from_header_rate/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Positions are unchanged; the environment does not use times."
+    },
+    "shipley_30902972/clock_from_header_rate/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-081",
+      "reason": "Occupancy barely moves (1349.5 -> 1349.5 s, median 1.198 -> 1.200 s); the error is spike alignment, up to 8 s late by the end."
+    },
+    "shipley_30902972/clock_from_header_rate/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-081",
+      "reason": "Positions drift up to 8 s against spikes: median peak 16.7 -> 10.7 Hz, with no warning (the last spike is still inside the tracking span)."
+    },
+    "shipley_30902972/clock_from_header_rate/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-081",
+      "reason": "Trial boundaries shift: 491 -> 516 segments, 1600 -> 1615 s."
+    },
+    "shipley_30902972/pixels_labelled_cm/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Pixels called cm (x 2.74): 697 -> 3488 bins, extent 177 -> 480 'cm'; nothing compares the span with a stated apparatus."
+    },
+    "shipley_30902972/pixels_labelled_cm/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Speeds 2.74 x too high pass the 3 cm/s gate: total 1350 -> 1737 s, per-bin median 1.20 -> 0.30 s."
+    },
+    "shipley_30902972/pixels_labelled_cm/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "Median peak 16.7 -> 60.1 Hz from sparse bins."
+    },
+    "shipley_30902972/pixels_labelled_cm/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-080",
+      "reason": "491 -> 697 segments, running time 1600 -> 2293 s."
+    },
+    "grieves_2020_lattice/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 24 units are silent from 2120.4 s to 2486.5 s (366 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, "
+    },
+    "grieves_2020_lattice/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=4.0 is at least the per-axis data extent [1.5453277740478515, 1.7081422729492188, 1.4779346160888671] in every dimension. Why: this produces very few b"
+    },
+    "grieves_2020_lattice/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so occupancy is zero in every bin. Fix: ch"
+    },
+    "grieves_2020_lattice/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so the rate map is empty. Fix: check that "
+    },
+    "grieves_2020_lattice/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "715 -> 0 running segments; no environment built, so check 2 cannot see it."
+    },
+    "agarwal_24757638/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "0.20 % untracked samples (NaN) at (0, 0), outside the maze: 449 -> 429 bins, extent 204 -> 220 cm. Check 1 would fire."
+    },
+    "agarwal_24757638/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Time at the origin: total 1053 -> 1054 s, largest bin 79.7 -> 86.6 s. Check 1 would fire."
+    },
+    "agarwal_24757638/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median peak 3.89 -> 3.86 Hz, NaN bins 0.67 -> 0.70 %: small, but spikes land at a corner the rat never visited. Check 1 would fire."
+    },
+    "agarwal_24757638/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to and from the origin: 516 -> 517 segments. Check 1 would fire."
+    },
+    "agarwal_24757638/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 3185572/3189404 spike_times (100%) across all neurons fell outside the position time window [0.0008, 3795.48]; spike_times.min()=0.75 spike_times.max()=3.7955e+"
+    },
+    "agarwal_24757638/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=4.0 is at least the per-axis data extent [2.0320300000000002, 1.0292100000000002] in every dimension. Why: this produces very few bins and may indicate"
+    },
+    "agarwal_24757638/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0), so occupancy is zero in every bin. Fix: check that"
+    },
+    "agarwal_24757638/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0), so the rate map is empty. Fix: check that min_spee"
+    },
+    "agarwal_24757638/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "516 -> 0 running segments; no environment built, so check 2 cannot see it."
+    },
+    "agarwal_24757638/untracked_as_origin/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "0.20 % untracked samples (the file's xMM = yMM = 0) at (0, 0), outside the maze: 449 -> 429 bins, extent 204 -> 220 cm. Check 1 would fire."
+    },
+    "agarwal_24757638/untracked_as_origin/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Time at the origin: total 1053 -> 1054 s, largest bin 79.7 -> 86.6 s. Check 1 would fire."
+    },
+    "agarwal_24757638/untracked_as_origin/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median peak 3.89 -> 3.86 Hz, NaN bins 0.67 -> 0.70 %: small, but spikes land at a corner the rat never visited. Check 1 would fire."
+    },
+    "agarwal_24757638/untracked_as_origin/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to and from the origin: 516 -> 517 segments. Check 1 would fire."
+    },
+    "j16_23020757/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 203 units are silent from 1625935757.7 s to 1625937176.3 s (1419 s) while position is tracked. If the electrophysiology was not recording then, pass spike_w"
+    },
+    "j16_23020757/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=4.0 is at least the per-axis data extent [2.0263053303199383, 1.8961499132812527] in every dimension. Why: this produces very few bins and may indicate"
+    },
+    "j16_23020757/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: check that"
+    },
+    "j16_23020757/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: check that min_spee"
+    },
+    "j16_23020757/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "290 -> 0 running segments; no environment built, so check 2 cannot see it."
     }
   },
   "cells": {
@@ -695,6 +1070,60 @@
     },
     "vollan_of/cells.border_score": {
       "gap": "G-005"
+    },
+    "watermaze_10248158/behavior.laps": {
+      "gap": "G-015"
+    },
+    "takigawa_7114733/behavior.laps": {
+      "gap": "G-015"
+    },
+    "olafsdottir_5566548/behavior.laps": {
+      "gap": "G-015"
+    },
+    "shipley_30902972/behavior.laps": {
+      "gap": "G-015"
+    },
+    "agarwal_24757638/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hafting_2008_nird/cells.border_score": {
+      "gap": "G-005"
+    },
+    "takigawa_7114733/cells.border_score": {
+      "gap": "G-005"
+    },
+    "olafsdottir_5566548/cells.border_score": {
+      "gap": "G-005"
+    },
+    "shipley_30902972/cells.border_score": {
+      "gap": "G-005"
+    },
+    "agarwal_24757638/cells.border_score": {
+      "gap": "G-005"
+    },
+    "j16_23020757/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hafting_2008_nird/behavior.laps": {
+      "gap": "G-016"
+    },
+    "hafting_2008_nird/behavior.turn_sequence": {
+      "gap": "G-016"
+    },
+    "j16_23020757/behavior.laps": {
+      "gap": "G-016"
+    },
+    "j16_23020757/behavior.turn_sequence": {
+      "gap": "G-016"
+    },
+    "grieves_2020_lattice/behavior.laps": {
+      "gap": "G-015"
+    },
+    "grieves_2020_lattice/cells.grid_score": {
+      "gap": "G-024"
+    },
+    "grieves_2020_lattice/cells.border_score": {
+      "gap": "G-024"
     }
   }
 }

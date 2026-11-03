@@ -1,0 +1,352 @@
+{
+  "dataset": "grieves_2020_lattice",
+  "session": "926_06042018 lattice",
+  "source": "https://doi.org/10.5522/04/9926477.v1 Summary data.zip/926_06042018.mat",
+  "license": "CC0",
+  "conversions": [
+    "positions: lattice_3d pox, poy, poz / 10 (mm -> cm; unit inferred: position speed / pov median 10.03)",
+    "range checked: -15.8 to 138.8 by -66.9 to 104.0 by -20.2 to 127.6 cm (largest span 170.8, expected 120-200)",
+    "times: lattice_3d pot as stored (s)",
+    "units: 24 tetrode/cluster fields; cluster 0 of each tetrode (5712584 spikes, unsorted) left out",
+    "headings: none (lattice.poh is in the overhead camera's frame, not the 3-D frame)"
+  ],
+  "expectations": [
+    {
+      "key": "n_units",
+      "passed": true,
+      "detail": "expected 24, got 24"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 3, got 3"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=49.0, high=51.0), got 49.951219512195124"
+    },
+    {
+      "key": "duration_s",
+      "passed": true,
+      "detail": "expected Range(low=3000.0, high=4000.0), got 3641.9599609375"
+    },
+    {
+      "key": "lattice_extent_cm_per_axis",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3972+gad3f42a0a",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "e54a643f0537431314693e0eaf4c48bfc15e4133"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 8193,
+        "n_dims": 3,
+        "max_extent": 172.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 1.274,
+      "peak_mb": 58.2
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 3095.6854248046875,
+        "frac_bins_visited": 0.9986573904552667,
+        "median_s_per_visited_bin": 0.229736328125,
+        "max_s": 28.23876953125
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.14,
+      "peak_mb": 64.7
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 24,
+        "frac_nan_bins": 0.0013426095447333088,
+        "median_peak_hz": 9.850237146598776,
+        "median_mean_hz": 0.631716804438369
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 40.009,
+      "peak_mb": 1640.0
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 0.7779412195833665,
+        "bits_per_spike_max": 4.602592562093754,
+        "bits_per_spike_n_finite": 24
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.004,
+      "peak_mb": 13.2
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 0.7779412195833665,
+        "median_shifted_bits_per_spike": 0.5225277940162929,
+        "frac_above_every_shift": 0.75,
+        "n_units": 24,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.932,
+      "peak_mb": 68.0
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 6,
+        "n_units": 24
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 4.611,
+      "peak_mb": 205.9
+    },
+    "cells.grid_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's RegularGrid layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 1.6
+    },
+    "cells.border_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 6.7
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 82.72573518778081,
+        "chance_median_error": 76.48382345852053,
+        "units": "cm",
+        "n_time_bins": 7200
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 6.121,
+      "peak_mb": 950.9
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 8193
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 5.924,
+      "peak_mb": 118.5
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "ok",
+      "summary": {
+        "n_segments": 715,
+        "running_s": 3182.6170654296875
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.112,
+      "peak_mb": 66.7
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.036,
+      "peak_mb": 28.6
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "summary": {},
+      "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.nwb_readers": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "All 24 units are silent from 2120.4 s to 2486.5 s (366 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n162689/162743 spike_times (100%) across all neurons fell outside the position time window [1816.02, 5457.98]; spike_times.min()=7.54167 spike_times.max()=6.6972e+06. The spike times span 6.6972e+06 and reach 6.6972e+06, about 1000 times the 3641.96 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 24,
+        "frac_nan_bins": 0.0013426095447333088,
+        "median_peak_hz": 9.850237146598776,
+        "median_mean_hz": 0.631716804438369
+      },
+      "hazard_summary": {
+        "n_units": 24,
+        "frac_nan_bins": 0.0013426095447333088,
+        "median_peak_hz": 0.0,
+        "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.from_samples",
+      "response": "warned",
+      "message": "bin_size=4.0 is at least the per-axis data extent [1.5453277740478515, 1.7081422729492188, 1.4779346160888671] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0341628 (in the same units as positions), or choose a size below the data extent",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 8193,
+        "n_dims": 3,
+        "max_extent": 172.0
+      },
+      "hazard_summary": {
+        "n_bins": 8,
+        "n_dims": 3,
+        "max_extent": 4.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "raised",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so occupancy is zero in every bin. Fix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 3095.6854248046875,
+        "frac_bins_visited": 0.9986573904552667,
+        "median_s_per_visited_bin": 0.229736328125,
+        "max_s": 28.23876953125
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "rates.spatial",
+      "response": "raised",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so the rate map is empty. Fix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 24,
+        "frac_nan_bins": 0.0013426095447333088,
+        "median_peak_hz": 9.850237146598776,
+        "median_mean_hz": 0.631716804438369
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 715,
+        "running_s": 3182.6170654296875
+      },
+      "hazard_summary": {
+        "n_segments": 0,
+        "running_s": 0.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}
