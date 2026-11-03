@@ -138,6 +138,13 @@ DEFAULT_MAX_GAP = 1.0
 #: stay below it.
 MASKED_RUN_MIN_DURATION = 0.25
 
+#: Least share of sampling steps within half of the median step for the
+#: boolean-masking check to read the median as the sampling interval. Masked
+#: regular recordings keep at least 0.9 of their steps there, also with 10 ms
+#: of timestamp jitter at 30 Hz; uniform or exponential irregular steps keep
+#: about 0.5 or 0.35, and positions sampled at spike times (DANDI 001754) 0.17.
+MASKED_REGULAR_SHARE = 0.75
+
 
 def validate_max_gap(max_gap: Any) -> float | None:
     """Return ``max_gap`` as a float, or None; refuse any other value.
@@ -1908,7 +1915,10 @@ def _masked_sample_fraction(
     kept steps no longer than ``max_gap`` whose removed run lasts at least
     ``MASKED_RUN_MIN_DURATION`` count: shorter runs are dropped frames,
     longer steps are recording gaps, and steps outside the kept intervals
-    (between epochs, for example) are not bridged.
+    (between epochs, for example) are not bridged. The median is the
+    sampling interval only when ``MASKED_REGULAR_SHARE`` of the steps lie
+    within half of it; irregular sampling, whose steps say nothing about
+    removed samples, counts nothing.
 
     Parameters
     ----------
@@ -1938,6 +1948,14 @@ def _masked_sample_fraction(
     >>> kept = times[:-1] < 5.0
     >>> round(_masked_sample_fraction(times, kept, 1.0), 4)
     0.0588
+
+    Irregular sampling counts nothing, even where two steps are three times
+    the median step:
+
+    >>> steps = [0.02, 0.05, 0.08, 0.11, 0.125, 0.125, 0.14, 0.17, 0.2, 0.375, 0.38]
+    >>> irregular = np.cumsum(np.r_[0.0, steps])
+    >>> _masked_sample_fraction(irregular, np.ones(len(steps), bool), 0.5)
+    0.0
     """
     dt = np.diff(times)
     if dt.size < 10:
@@ -1946,6 +1964,8 @@ def _masked_sample_fraction(
     if not np.isfinite(step) or step <= 0:
         return 0.0
     ratio = dt / step
+    if np.mean((ratio > 0.5) & (ratio < 1.5)) < MASKED_REGULAR_SHARE:
+        return 0.0
     skipped_time = (ratio - 1.0) * step
     skipped = (
         kept
