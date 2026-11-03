@@ -1,10 +1,11 @@
-"""Tests that bin_size / pixel_size are required (no defaults) for the
-grid-inferring Environment factories.
+"""Tests for the factories' size arguments and the oversized bin_size warning.
 
-These tests assert behavior — calling the factory without the size argument
-raises ``TypeError: missing ... required ... bin_size`` (or ``pixel_size``).
-Signature-introspection variants and docstring-prose audits were removed:
-both are guaranteed once the behavioral test passes.
+``bin_size`` / ``pixel_size`` have no defaults for the grid-inferring
+Environment factories. ``from_samples`` without ``bin_size`` raises a
+What/Why/Fix ``TypeError``; the other factories raise Python's own
+``TypeError: missing ... required ... bin_size`` (or ``pixel_size``). A
+``bin_size`` at least as large as the data extent warns with the extent, the
+likely units mistake and a rounded suggestion.
 """
 
 import numpy as np
@@ -17,8 +18,15 @@ from neurospatial import Environment
 def test_from_samples_requires_bin_size():
     rng = np.random.default_rng(42)
     data = rng.random((100, 2)) * 10
-    with pytest.raises(TypeError, match=r"missing.*required.*bin_size"):
+    with pytest.raises(TypeError) as caught:
         Environment.from_samples(data)
+    message = str(caught.value)
+    assert message.startswith("Environment.from_samples() needs bin_size=.")
+    assert "in the units of positions" in message
+    assert message.splitlines()[-1] == (
+        "Fix: pass bin_size= in the units of positions, as in "
+        'Environment.from_samples(positions, bin_size=2.0, units="cm")'
+    )
 
 
 def test_from_samples_accepts_explicit_bin_size():
@@ -77,3 +85,29 @@ def test_bare_environment_raises_beginner_grade_error():
     ) as exc_info:
         Environment()
     assert "from_samples" in str(exc_info.value)
+
+
+def test_oversized_bin_size_warning_rounds_and_names_the_units_mistake():
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(1.0, 98.0, size=(200, 2))
+    positions[:2] = [[0.0, 0.0], [99.9987654, 99.9976543]]
+    extent = np.ptp(positions, axis=0)
+    assert extent.min() > 99.99  # the raw extent would print many digits
+
+    with pytest.warns(UserWarning, match="is at least the per-axis") as caught:
+        Environment.from_samples(positions, bin_size=1000)
+    message = str(caught[0].message)
+
+    # Extent is shown to 3 significant figures, not as raw floats.
+    assert "bin_size=1000 is at least the per-axis data extent [100, 100]" in message
+    assert str(extent[0]) not in message
+    # The units mistake is named, and the suggestion is a rounded size.
+    assert "often a units mistake: positions in m but bin_size meant in cm" in message
+    assert message.splitlines()[-1].endswith("such as bin_size=2.0")
+    assert "1.999" not in message
+
+
+def test_oversized_bin_size_warning_prints_thousands_without_exponent():
+    positions = np.array([[0.0, 0.0], [1481.234, 1999.9], [700.0, 900.0]])
+    with pytest.warns(UserWarning, match=r"extent \[1481, 2000\] in every"):
+        Environment.from_samples(positions, bin_size=5000)

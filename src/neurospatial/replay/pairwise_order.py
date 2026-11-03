@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
     ReadOnlyArraysMixin,
@@ -346,6 +347,7 @@ class PairwiseOrderMethod:
             )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def pairwise_order_score(
     env: Environment,
@@ -524,6 +526,7 @@ def pairwise_order_score(
     return _observed(event, fields, direction, max_time_lag, operation)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def pairwise_order_significance(
     env: Environment,
@@ -668,6 +671,7 @@ def pairwise_order_significance(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def detect_pairwise_order_replay(
     env: Environment | Mapping[str, Environment],

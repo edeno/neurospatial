@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### First-run mistakes get a What/Why/Fix error
+
+**Fixed**
+
+- `Environment.from_samples(positions)` without `bin_size` and
+  `Environment.animate_fields(fields)` without `frame_times` now say what is
+  missing, why there is no default and show a runnable call, instead of
+  Python's bare "missing keyword-only argument" message.
+- Calling a function without the environment, such as
+  `compute_spatial_rate(spike_times, times, positions)`, used to blame the
+  last argument (`missing 1 required positional argument: 'positions'`). It
+  now says the first argument is the environment and shows the canonical
+  order, `compute_spatial_rate(env, spike_times, times, positions)`. An
+  environment passed in the wrong place (`env=` after positional data, or as
+  the second argument) gets "env must be the first positional argument". A
+  misspelled option, or an `env` of `None` or a mapping of environments where
+  the function accepts one, keeps Python's own message, including its "Did you
+  mean" hint. Covered: every function with a leading `env` in `encoding`
+  that reads recordings (`compute_spatial_rate(s)`, `compute_directional_place_fields`,
+  `compute_view_rate(s)`, `compute_egocentric_rate(s)`,
+  `compute_object_vector_rate(s)`, `compute_boundary_vector_rate(s)`,
+  `has_place_field`, the `is_*_cell` predicates and the `*_significance`
+  functions), in `decoding` (`decode_position`, `decode_position_summary`,
+  `decode_session`, `decode_session_summary`, `decode_jointly`,
+  `decoding_error`, `median_decoding_error`, `decoding_correlation`) and in
+  `replay` (every public function that takes `env` first and reads
+  recordings, among them `detect_replay`, `rank_order_significance`,
+  `pairwise_order_significance`, `replay_significance` and
+  `decode_intervals`). Valid calls and errors raised inside the function are
+  unchanged.
+
+**Changed**
+
+- The warning for a `bin_size` at least as large as the data extent now shows
+  the extent to four significant figures, says it is often a units mistake
+  (positions in m but `bin_size` meant in cm, for example) and suggests a
+  rounded size (`bin_size=2.0`, not `1.999`).
+- An option passed by position to one of the decorated functions above now
+  gets the list of keyword-only options instead of Python's short "takes N
+  positional arguments" message. `Environment.animate_fields` names
+  `frame_times=` for a time array passed by position.
+
 ### A place screen in arenas without measured walls
 
 **Added**

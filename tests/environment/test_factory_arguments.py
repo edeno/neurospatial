@@ -515,7 +515,8 @@ def test_other_argument_errors_keep_their_python_message(positions):
         Environment.from_samples(positions, bin_sizee=4.0)
     assert str(caught.value) == str(expected.value)
     assert "bin_sizee" in str(caught.value)
-    with pytest.raises(TypeError, match="missing 1 required keyword-only argument"):
+    # A genuinely missing bin_size gets the guided message instead.
+    with pytest.raises(TypeError, match=r"needs bin_size=\."):
         Environment.from_samples(positions)
     # A TypeError raised while the factory runs is not rewritten.
     with pytest.raises(TypeError, match="takes bin_size as a number"):
