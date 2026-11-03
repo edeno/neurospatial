@@ -73,6 +73,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _seed_sequence
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
@@ -509,6 +510,7 @@ def _decoded_positions(
     return np.asarray(posterior @ centers, dtype=np.float64)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def fit_isotonic_trajectory(
     env: Environment,
@@ -710,6 +712,7 @@ def _compute_r_squared(
     return float(1.0 - ss_res / ss_tot)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def fit_linear_trajectory(
     env: Environment,
@@ -1053,6 +1056,7 @@ the 2w + 1 = 7 position bins of 3 cm that their code (nelpy's
 """
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def regression_line_score(
     env: Environment,
@@ -1597,6 +1601,7 @@ _SCORE_TIE = 1e-3
 count as equally good when choosing the reported trajectory."""
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def detect_trajectory_radon(
     env: Environment,

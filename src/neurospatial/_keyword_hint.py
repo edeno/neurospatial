@@ -180,11 +180,37 @@ def keyword_hint(
                 )
             )
 
-        def env_missing_error(args: tuple[Any, ...]) -> TypeError | None:
-            """Blame the environment when the call fails to bind without one."""
+        def env_error(
+            args: tuple[Any, ...], kwargs: dict[str, Any], bind_error: TypeError
+        ) -> TypeError | None:
+            """Explain a call that failed to bind because env is not first.
+
+            Returns ``None`` to leave Python's own error, which stays right
+            when the first value is a valid non-Environment ``env`` (``None``
+            or a mapping of environments) or the failure is not a missing
+            argument, such as a misspelled keyword.
+            """
             from neurospatial.environment import Environment
 
             if not args or isinstance(args[0], Environment):
+                return None
+            fix = f"call {title}({canonical}, ...), with env first."
+            misplaced = any(isinstance(value, Environment) for value in args[1:]) or (
+                isinstance(kwargs.get("env"), Environment)
+            )
+            if misplaced:
+                return TypeError(
+                    _format_error(
+                        f"{title}() got an Environment that is not the first "
+                        "positional argument.",
+                        why="Why: env must be the first positional argument; "
+                        "every value before it is read as the wrong input.",
+                        fix=fix,
+                    )
+                )
+            if args[0] is None or isinstance(args[0], Mapping):
+                return None
+            if "missing a required argument" not in str(bind_error):
                 return None
             return TypeError(
                 _format_error(
@@ -192,7 +218,7 @@ def keyword_hint(
                     f"argument is {_shown(args[0])}, not an Environment.",
                     why="Why: the first argument is the environment, then the "
                     "data, so every value after it is read as the wrong input.",
-                    fix=f"call {title}({canonical}, ...), with env first.",
+                    fix=fix,
                 )
             )
 
@@ -203,10 +229,10 @@ def keyword_hint(
             if env_first:
                 try:
                     signature.bind(*args, **kwargs)
-                except TypeError:
-                    error = env_missing_error(args)
+                except TypeError as bind_error:
+                    error = env_error(args, kwargs, bind_error)
                     if error is not None:
-                        raise error from None
+                        raise error from bind_error
             for name, (reason, advice) in required.items():
                 if name not in kwargs:
                     raise TypeError(

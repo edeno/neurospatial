@@ -6225,7 +6225,7 @@ class Environment(Generic[_C]):
             **kwargs,
         )
 
-    @keyword_hint(missing={"frame_times": _FRAME_TIMES_CHOICE})
+    @keyword_hint("frame_times", missing={"frame_times": _FRAME_TIMES_CHOICE})
     @reads_pynapple_samples
     def animate_fields(
         self,

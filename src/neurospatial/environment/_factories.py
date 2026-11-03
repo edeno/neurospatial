@@ -508,11 +508,20 @@ def _from_samples(
             # (2.0, not 1.999). One-figure rounding moves it by at most a
             # third, which does not change the scale of the suggestion.
             suggested = float(f"{float(np.max(extent)) / 50.0:.1g}")
-            shown_extent = "[" + ", ".join(f"{value:.3g}" for value in extent) + "]"
+            # Four significant figures, written in full up to the thousands so
+            # extents in mm or pixels do not print as 1.48e+03.
+            shown_extent = (
+                "["
+                + ", ".join(
+                    f"{value:.4g}" if value < 1e4 else f"{value:.0f}"
+                    for value in extent
+                )
+                + "]"
+            )
             warnings.warn(
                 _format_error(
                     f"bin_size={bin_size} is at least the per-axis data extent {shown_extent} in every dimension.",
-                    why="Why: this produces very few bins, and it is often a units mistake: positions in cm but bin_size meant in m, or the reverse.",
+                    why="Why: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.",
                     fix=f"check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size={suggested!r}",
                 ),
                 UserWarning,

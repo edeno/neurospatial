@@ -95,3 +95,59 @@ def test_public_env_first_functions_show_canonical_order(name, canonical):
     assert "was called without an environment" in message
     assert f"Fix: call {name}({canonical}, ...)" in message
     assert "missing 1 required positional argument" not in message
+
+
+@pytest.fixture
+def env_first(monkeypatch):
+    import neurospatial.environment as environment_module
+
+    monkeypatch.setattr(environment_module, "Environment", _Env)
+
+    @keyword_hint()
+    def rate(env, spike_times, times, positions, *, dt=None):
+        return env
+
+    @keyword_hint()
+    def joint(env, counts, models, *, dt):
+        return env
+
+    return rate, joint
+
+
+def test_none_env_with_a_typo_keeps_pythons_did_you_mean(env_first):
+    rate, _ = env_first
+    with pytest.raises(TypeError, match="Did you mean 'dt'") as caught:
+        rate(None, [1.0], [0.0], "p", d=1)
+    assert "environment" not in str(caught.value)
+
+
+def test_mapping_env_with_missing_option_keeps_pythons_message(env_first):
+    _, joint = env_first
+    with pytest.raises(TypeError, match="missing 1 required keyword-only") as caught:
+        joint({"a": _Env()}, [1], [2])
+    assert "environment" not in str(caught.value)
+
+
+def test_env_by_keyword_after_positional_data_says_env_goes_first(env_first):
+    rate, _ = env_first
+    with pytest.raises(TypeError) as caught:
+        rate([1.0], [0.0], "p", env=_Env())
+    message = str(caught.value)
+    assert "not the first positional argument" in message
+    assert "without an environment" not in message
+    assert message.endswith(
+        "(env, spike_times, times, positions, ...), with env first."
+    )
+    assert isinstance(caught.value.__cause__, TypeError)
+
+
+def test_env_in_second_position_says_env_goes_first(env_first):
+    rate, _ = env_first
+    with pytest.raises(TypeError, match="not the first positional argument"):
+        rate([1.0], _Env(), [0.0], "p", d=1)
+
+
+def test_env_first_with_typo_is_not_blamed_on_the_environment(env_first):
+    rate, _ = env_first
+    with pytest.raises(TypeError, match="Did you mean 'dt'"):
+        rate(_Env(), [1.0], [0.0], "p", d=1)

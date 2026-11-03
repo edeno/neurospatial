@@ -515,3 +515,11 @@ def test_animate_fields_without_frame_times_names_the_argument(recording):
         "Fix: pass frame_times= with one time per frame, as in "
         "env.animate_fields(fields, frame_times=np.arange(n_frames) / fps)"
     )
+
+
+def test_animate_fields_frame_times_by_position_names_the_keyword(recording):
+    env = recording.env
+    fields = np.ones((2, env.n_bins))
+    with pytest.raises(TypeError, match="pass frame_times=") as caught:
+        env.animate_fields(fields, np.array([0.0, 0.1]))
+    assert "backend=" not in str(caught.value)

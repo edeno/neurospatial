@@ -1,10 +1,11 @@
-"""Tests that bin_size / pixel_size are required (no defaults) for the
-grid-inferring Environment factories.
+"""Tests for the factories' size arguments and the oversized bin_size warning.
 
-These tests assert behavior — calling the factory without the size argument
-raises ``TypeError: missing ... required ... bin_size`` (or ``pixel_size``).
-Signature-introspection variants and docstring-prose audits were removed:
-both are guaranteed once the behavioral test passes.
+``bin_size`` / ``pixel_size`` have no defaults for the grid-inferring
+Environment factories. ``from_samples`` without ``bin_size`` raises a
+What/Why/Fix ``TypeError``; the other factories raise Python's own
+``TypeError: missing ... required ... bin_size`` (or ``pixel_size``). A
+``bin_size`` at least as large as the data extent warns with the extent, the
+likely units mistake and a rounded suggestion.
 """
 
 import numpy as np
@@ -101,6 +102,12 @@ def test_oversized_bin_size_warning_rounds_and_names_the_units_mistake():
     assert "bin_size=1000 is at least the per-axis data extent [100, 100]" in message
     assert str(extent[0]) not in message
     # The units mistake is named, and the suggestion is a rounded size.
-    assert "often a units mistake: positions in cm but bin_size meant in m" in message
+    assert "often a units mistake: positions in m but bin_size meant in cm" in message
     assert message.splitlines()[-1].endswith("such as bin_size=2.0")
     assert "1.999" not in message
+
+
+def test_oversized_bin_size_warning_prints_thousands_without_exponent():
+    positions = np.array([[0.0, 0.0], [1481.234, 1999.9], [700.0, 900.0]])
+    with pytest.warns(UserWarning, match=r"extent \[1481, 2000\] in every"):
+        Environment.from_samples(positions, bin_size=5000)
