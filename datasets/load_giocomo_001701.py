@@ -41,6 +41,7 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
+    checked_span,
     validate_recording,
 )
 from _tracks import (
@@ -107,6 +108,10 @@ def load(cache: Path | None = None) -> Recording:
         msg = "head direction no longer matches the radians-labelled-degrees quirk; recheck"
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=float)
+    positions = np.asarray(position.positions, dtype=float)
+    # The stated "130-cm X-maze": the tracked span must lie between half of
+    # it and it plus a 10 cm margin (what the 130 cm spans is not stated).
+    span = checked_span(positions, 65.0, 140.0)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
     rec = Recording(
         dataset=DATASET["key"],
@@ -114,7 +119,7 @@ def load(cache: Path | None = None) -> Recording:
         source=f"{DATASET['source']} {_PATH}",
         license=DATASET["license"],
         times=times,
-        positions=np.asarray(position.positions, dtype=float),
+        positions=positions,
         position_units="cm",
         headings=headings,
         spike_times=tuple(np.asarray(s, dtype=float) for s in units.spike_times),
@@ -128,7 +133,7 @@ def load(cache: Path | None = None) -> Recording:
             "readers_used": ("position", "units"),
         },
         conversions=(
-            "positions: read_position, cm; range checked: 3.6-79 by 3.9-94 cm",
+            f"positions: read_position, cm; {span}",
             "headings: CompassDirection/head direction labelled degrees, values in"
             " [-pi, pi]; kept as radians (read with pynwb)",
         ),

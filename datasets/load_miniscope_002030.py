@@ -36,7 +36,13 @@ from typing import Any
 import numpy as np
 from _fetch import dandi_asset_url, fetch, open_nwb
 from _geometry import declared_circle, with_environment
-from _record import Range, Recording, check_expectations, validate_recording
+from _record import (
+    Range,
+    Recording,
+    check_expectations,
+    checked_span,
+    validate_recording,
+)
 
 DATASET = {
     "key": "miniscope_002030",
@@ -88,13 +94,16 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"expected cm positions, got {position.units!r}"
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=float)
+    positions = np.asarray(position.positions, dtype=float)
+    # The stated 96 cm circle: the tracked span must be within 10 % of it.
+    span = checked_span(positions, 86.0, 106.0)
     rec = Recording(
         dataset=DATASET["key"],
         session="FOF_F53_1D",
         source=f"{DATASET['source']} {_PATH}",
         license=DATASET["license"],
         times=times,
-        positions=np.asarray(position.positions, dtype=float),
+        positions=positions,
         position_units="cm",
         headings=np.asarray(wrap_angle(headings)),
         activity=dff,
@@ -107,7 +116,7 @@ def load(cache: Path | None = None) -> Recording:
             "readers_used": ("position",),
         },
         conversions=(
-            "positions: read_position, cm; range checked: 10-105 by 9-103 cm in the 96 cm arena",
+            f"positions: read_position, cm; {span} (the 96 cm arena)",
             "times: rate 30 Hz; 21,427 frames = 714 s, the stated ~12 min session",
             "headings: processing/behavior/headdirection (radians), wrapped to [-pi, pi];"
             " 0.7 % of stored samples lie outside it",
