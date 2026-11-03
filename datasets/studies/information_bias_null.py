@@ -46,7 +46,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _record import Recording  # noqa: E402
-from operations import _env, _rates, shifted_trains  # noqa: E402
+from operations import _env, _rates, counted_intervals, shifted_trains  # noqa: E402
 
 RESULTS = HERE.parent / "results" / "studies"
 DATASETS = (
@@ -148,10 +148,14 @@ def shift_null(rec: Recording, cache: dict[str, Any]) -> dict[str, Any]:
     real = _rates(rec, cache)
     info = np.asarray(real.spatial_information(), dtype=float)
     bias = np.asarray(real.spatial_information_bias(), dtype=float)
+    intervals = counted_intervals(real)
+    trains = list(rec.spike_times or ())
     null = np.vstack(
         [
             np.asarray(
-                _rates_for(rec, cache, shifted_trains(rec, seed)).spatial_information(),
+                _rates_for(
+                    rec, cache, shifted_trains(trains, intervals, seed)
+                ).spatial_information(),
                 dtype=float,
             )
             for seed in range(N_SHIFTS)

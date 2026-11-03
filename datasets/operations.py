@@ -13,7 +13,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -194,40 +194,75 @@ REPLAY_ON_LINEARIZED_GAP = "G-038"
 MIN_SHIFT_S = 20.0
 
 
-def shifted_trains(rec: Recording, seed: int) -> list[np.ndarray]:
-    """Each unit's spikes inside the tracking span, circularly shifted (seeded).
+def counted_intervals(rates: Any) -> np.ndarray:
+    """The half-open intervals a rate result counts, shape (n_intervals, 2)."""
+    return np.asarray(
+        rates.analysis_settings["observed_intervals"], dtype=float
+    ).reshape(-1, 2)
 
-    The shift is uniform between ``MIN_SHIFT_S`` and the span minus
-    ``MIN_SHIFT_S``, one per unit, wrapping around; spikes outside the span
-    stay put.
+
+def shifted_trains(
+    trains: Sequence[np.ndarray], intervals: np.ndarray, seed: int
+) -> list[np.ndarray]:
+    """Each unit's counted spikes, circularly shifted within the counted time (seeded).
+
+    ``intervals``, shape (n_intervals, 2), are the half-open time intervals
+    the rate maps count (``analysis_settings["observed_intervals"]``: the
+    analysis epochs, the speed gate, tracking gaps and the environment's
+    bounds). They are joined end to end into one axis, each unit's spikes on
+    it are shifted by one amount drawn uniformly between ``MIN_SHIFT_S`` and
+    the counted length minus ``MIN_SHIFT_S``, wrapping around, and mapped
+    back. Shifted spikes stay inside counted time, so the shifted maps have
+    the real maps' spike counts; spikes outside it are counted in neither
+    and stay put. Spike-to-spike intervals are kept except across a join,
+    but firing locked to the intervals themselves (a flight's or a run's
+    start) is not.
     """
-    start, stop = float(rec.times[0]), float(rec.times[-1])
-    span = stop - start
+    intervals = np.asarray(intervals, dtype=float).reshape(-1, 2)
+    starts, stops = intervals[:, 0], intervals[:, 1]
+    cum = np.concatenate([[0.0], np.cumsum(stops - starts)])
+    total = float(cum[-1])
+    if total <= 2 * MIN_SHIFT_S:
+        message = (
+            f"the counted time is {total:.3g} s, too short for shifts of at least"
+            f" {MIN_SHIFT_S:g} s each way"
+        )
+        raise ValueError(message)
     rng = np.random.default_rng(seed)
-    trains = []
-    for train in rec.spike_times or ():
-        inside = (train >= start) & (train <= stop)
+    out = []
+    for train in trains:
+        train = np.asarray(train, dtype=float)
+        run = np.searchsorted(starts, train, side="right") - 1
+        inside = (run >= 0) & (train < stops[np.maximum(run, 0)])
+        on_axis = cum[run[inside]] + train[inside] - starts[run[inside]]
+        on_axis = (on_axis + rng.uniform(MIN_SHIFT_S, total - MIN_SHIFT_S)) % total
+        back = np.minimum(
+            np.searchsorted(cum, on_axis, side="right") - 1, len(starts) - 1
+        )
         moved = train.copy()
-        shift = rng.uniform(MIN_SHIFT_S, span - MIN_SHIFT_S)
-        moved[inside] = (train[inside] - start + shift) % span + start
-        trains.append(np.sort(moved))
-    return trains
+        moved[inside] = starts[back] + on_axis - cum[back]
+        out.append(np.sort(moved))
+    return out
 
 
 def information_vs_shifts(rec: Recording, cache: dict[str, Any]) -> Outcome:
     """Spatial information against circularly shifted spikes (seeded).
 
-    Each unit's spikes inside the tracking span are shifted by a random
-    amount between 20 s and the span minus 20 s, wrapping around, ``N_SHIFTS``
-    times (seeds 0, 1, …); spikes outside the span stay put. A unit whose
-    information does not beat its shifts carries no more than sampling noise.
+    Each unit's spikes are shifted within the time the maps count
+    (``shifted_trains``: the analysis epochs, the speed gate and tracking
+    gaps joined end to end) by a random amount between 20 s and that length
+    minus 20 s, wrapping around, ``N_SHIFTS`` times (seeds 0, 1, …). A unit
+    whose information does not beat its shifts carries no more than sampling
+    noise.
     """
     from neurospatial.encoding import compute_spatial_rates
 
-    real = np.asarray(_rates(rec, cache).spatial_information(), dtype=float)
+    real_rates = _rates(rec, cache)
+    real = np.asarray(real_rates.spatial_information(), dtype=float)
+    intervals = counted_intervals(real_rates)
     shifted_info = []
     for seed in range(N_SHIFTS):
-        trains = shifted_trains(rec, seed)
+        trains = shifted_trains(list(rec.spike_times or ()), intervals, seed)
         rates = compute_spatial_rates(
             _env(rec, cache),
             trains,
