@@ -311,7 +311,15 @@ def rate_map_centroid(
             # an infinite one, never wins.
             costs = field_mass @ distances
         finite = costs < np.inf
-        best = int(np.argmin(np.where(finite, costs, np.inf))) if finite.any() else 0
+        if finite.any():
+            # Costs that differ only by rounding are a tie, which goes to the
+            # first field bin, so symmetric fields give the same bin on every
+            # platform.
+            costs = np.where(finite, costs, np.inf)
+            lowest = float(np.min(costs))
+            best = int(np.flatnonzero(costs <= lowest + 1e-9 * abs(lowest))[0])
+        else:
+            best = 0
         centroid = field_positions[best]
 
     return centroid

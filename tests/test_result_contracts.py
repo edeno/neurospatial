@@ -327,8 +327,12 @@ def test_track_field_centroid_across_a_junction_is_a_field_bin():
     # distance between them is the sum of their distances to it.
     track = distance[bins][:, None] + distance[bins][None, :]
     np.fill_diagonal(track, 0.0)
-    medoid = bins[np.argmin(track @ rate[bins])]
-    np.testing.assert_allclose(centroid, env.bin_centers[medoid])
+    cost = track @ rate[bins]
+    # The field is symmetric about the junction, so the bins beside it on
+    # each arm tie; the centroid is one of them.
+    tied = bins[cost <= cost.min() * (1 + 1e-9)]
+    assert any(np.allclose(centroid, env.bin_centers[b]) for b in tied)
+    assert np.linalg.norm(centroid - junction) <= 1.0 + 1e-9
 
 
 def test_detect_place_fields_array_needs_bandwidth(open_field, open_field_rates):
