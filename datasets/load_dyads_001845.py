@@ -27,6 +27,12 @@ eight repeats. ``processed_position/tail_end`` is labelled centimeters but
 spans 13-522 by 179-908, the raw pixel range: it was not converted.
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s.
+
+Declared environment (``geometry["environment"]``): the left rat's W-maze
+(Shukla et al. 2026, the paper the dandiset names: 80 x 80 cm with about
+7 cm wide sections) as three parallel arms joined by a base, its node
+positions fitted to the head samples with the stated 7 cm width. With 123 s
+of pose the base is thinly sampled; the fit is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -38,6 +44,14 @@ from typing import Any
 import numpy as np
 from _fetch import dandi_asset_url, fetch, open_nwb
 from _record import Range, Recording, check_expectations, validate_recording
+from _tracks import (
+    arms_text,
+    declared_geometry,
+    edge_lengths,
+    fitted_maze,
+    parallel_arm_candidates,
+    with_declared,
+)
 
 DATASET = {
     "key": "dyads_001845",
@@ -68,6 +82,8 @@ _KEYPOINT = "head"
 _PROCESSED = "processing/behavior/processed_position"
 # A rat W-maze in cm: the tracked span along each axis must lie here.
 _MAZE_CM = (50.0, 200.0)
+_TRACK_WIDTH_CM = 7.0
+_FIT_CAP_CM = 10.0
 
 
 def load(cache: Path | None = None) -> Recording:
@@ -105,7 +121,7 @@ def load(cache: Path | None = None) -> Recording:
         )
         raise ValueError(msg)
     nan_share = float(np.isnan(positions).any(axis=1).mean())
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="FXM110-ses-15-rc100",
         source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",
@@ -134,6 +150,21 @@ def load(cache: Path | None = None) -> Recording:
             "events: behavioral_events timestamps by name; epochs: reward_well_visits",
         ),
     )
+    graph = fitted_maze(parallel_arm_candidates(positions), positions, cap=_FIT_CAP_CM)
+    entries, line = declared_geometry(
+        graph,
+        positions,
+        kind="W-maze: three parallel arms joined by a base",
+        source="Shukla et al. 2026 Methods: 'elevated W-shaped mazes (80 x 80 cm)"
+        " with ~7-cm-wide track sections'",
+        bin_size=2.5,
+        track_width=_TRACK_WIDTH_CM,
+        units="cm",
+        name=DATASET["key"],
+        placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')};"
+        f" stated 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
+    )
+    return with_declared(rec, entries, line)
 
 
 def _tail_end_keypoint(rec: Recording) -> Recording:

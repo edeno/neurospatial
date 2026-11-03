@@ -44,6 +44,13 @@ What the loader converts:
 
 Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s;
 ``dt`` 0.25 s and alternating 60 s train/test blocks; ``region`` per unit.
+
+Declared environment (``geometry["environment"]``): the Z-track (Olafsdottir
+et al. 2016, Online Methods: 10 cm wide runways, two parallel 190 cm
+sections joined by a 220 cm diagonal) as a path of three segments whose four
+nodes are fitted to the samples, with the stated 10 cm width. The fitted
+sections are shorter than stated (``conversions``), so lengths come from the
+samples, not the paper.
 """
 
 from __future__ import annotations
@@ -61,6 +68,13 @@ from _record import (
     check_expectations,
     checked_span,
     validate_recording,
+)
+from _tracks import (
+    declared_geometry,
+    edge_lengths,
+    fitted_maze,
+    with_declared,
+    z_track_candidates,
 )
 
 DATASET = {
@@ -127,6 +141,8 @@ _FILES = {
 _N_TETRODES = 16
 _HIPPOCAMPAL_TETRODES = range(1, 9)
 _SPAN_CM = (100.0, 190.0)
+_RUNWAY_WIDTH_CM = 10.0
+_FIT_CAP_CM = 10.0
 _UNTRACKED = 1023
 _DATA_START = b"data_start"
 _DATA_END = b"\r\ndata_end\r\n"
@@ -251,7 +267,7 @@ def load(cache: Path | None = None) -> Recording:
             ids.append(f"t{tetrode}c{cluster}")
             regions.append("HPC" if tetrode in _HIPPOCAMPAL_TETRODES else "MEC")
     train, test = alternating_blocks(times[0], times[-1], 60.0)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session=_TRIAL,
         source=f"{DATASET['source']} {_FOLDER}/{_TRIAL}",
@@ -290,6 +306,22 @@ def load(cache: Path | None = None) -> Recording:
             " (unassigned) left out",
         ),
     )
+    graph = fitted_maze(z_track_candidates(positions), positions, cap=_FIT_CAP_CM)
+    entries, line = declared_geometry(
+        graph,
+        positions,
+        kind="Z-track: two parallel sections joined by a diagonal",
+        source="Olafsdottir et al. 2016 Online Methods: '10 cm wide runways', 'two"
+        " parallel sections of the Z (190 cm each) were connected by a diagonal"
+        " section (220 cm)'",
+        bin_size=4.0,
+        track_width=_RUNWAY_WIDTH_CM,
+        units="cm",
+        name=DATASET["key"],
+        placement="node positions fitted to the samples; sections (cm):"
+        f" {edge_lengths(graph)} (stated 190, 220, 190)",
+    )
+    return with_declared(rec, entries, line)
 
 
 def pixels_labelled_cm(rec: Recording) -> Recording:

@@ -34,6 +34,12 @@ What the loader converts:
 Analysis choices (``params``): ``bin_size`` 3 cm; ``min_speed`` 3 cm/s
 (mouse running); ``analysis_epochs`` the 11 maze trials; even and odd trials
 train and test the decoder at ``dt`` 0.25 s.
+
+Declared environment (``geometry["environment"]``): the radial maze (Shipley
+et al. 2026, Methods: eight 80 x 10 cm arms on an octagonal centre platform
+24.7 cm across) as a star of eight arms from one centre node, fitted to the
+maze trials' samples, with the stated 10 cm arm width; the platform is
+represented by the arms' shared centre. The fit is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -51,6 +57,13 @@ from _record import (
     check_expectations,
     checked_span,
     validate_recording,
+)
+from _tracks import (
+    declared_geometry,
+    densest_point,
+    fitted_maze,
+    star_candidates,
+    with_declared,
 )
 
 DATASET = {
@@ -88,6 +101,8 @@ _FILES = {
 }
 _SAMPLING_HZ = 30000.0
 _SPAN_CM = (140.0, 220.0)
+_ARM_WIDTH_CM = 10.0
+_FIT_CAP_CM = 10.0
 _MAX_RESIDUAL_S = 0.05
 
 
@@ -180,7 +195,7 @@ def load(cache: Path | None = None) -> Recording:
     windows = np.column_stack([times[starts], times[ends - 1]])
     maze = np.array([not n.startswith("S") for n in names])
     maze_trials = windows[maze]
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="m4005_2020-09-26",
         source=f"{DATASET['source']} {_FOLDER}",
@@ -211,6 +226,29 @@ def load(cache: Path | None = None) -> Recording:
             "headings: none (pos.dir equals dir_disp, the displacement direction)",
         ),
     )
+    in_maze = np.zeros(len(times), dtype=bool)
+    for start, stop in maze_trials:
+        in_maze |= (times >= start) & (times <= stop)
+    maze_xy = np.where(in_maze[:, None], positions, np.nan)
+    graph = fitted_maze(
+        star_candidates(maze_xy, 8, densest_point(maze_xy)), maze_xy, cap=_FIT_CAP_CM
+    )
+    arms = [d for _, _, d in graph.edges(data="distance")]
+    entries, line = declared_geometry(
+        graph,
+        maze_xy,
+        kind="8-arm radial maze: eight arms from a centre",
+        source="Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an"
+        " octagonal centre platform (24.7cm diameter, 10cm sides)'",
+        bin_size=3.0,
+        track_width=_ARM_WIDTH_CM,
+        units="cm",
+        name=DATASET["key"],
+        placement="node positions fitted to the maze trials' samples; centre to arm"
+        f" end {min(arms):.1f}-{max(arms):.1f} cm (stated 80 cm arms from a 24.7 cm"
+        " platform: 92.35 cm); the platform is the arms' shared centre node",
+    )
+    return with_declared(rec, entries, line)
 
 
 def clock_from_header_rate(rec: Recording) -> Recording:

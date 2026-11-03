@@ -45,6 +45,7 @@ LOADERS = {
     "grosmark_000044_circular": "load_grosmark_000044_circular",
     "grosmark_000044_linear": "load_grosmark_000044_linear",
     "jadhav_000447": "load_jadhav_000447",
+    "jadhav_000447_familiar": "load_jadhav_000447_familiar",
     "hc11_achilles": "load_hc11_achilles",
     "hc3_ec013_669": "load_hc3_ec013_669",
     "hc2_ec013_527": "load_hc2_ec013_527",

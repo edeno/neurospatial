@@ -63,7 +63,8 @@ HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 | `vollan_of` | Rat MEC Neuropixels grid modules in an open field, with the authors' grid scores (EBRAINS 10.25493/R5FR-EDG) | 205.7 MB | CC-BY-SA-4.0 |
 | `grosmark_000044_circular` | Rat CA1 on a 1 m circular track with sleep before and after (DANDI 000044) | streamed from 9.2 GB | CC-BY-4.0 |
 | `grosmark_000044_linear` | Rat CA1 on a 1.6 m linear track with sleep before and after (DANDI 000044) | streamed from 8.7 GB | CC-BY-4.0 |
-| `jadhav_000447` | Rat CA1 and PFC units on a W-track (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
+| `jadhav_000447` | Rat CA1 and PFC units on the novel W-track, runs 1 and 3 (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
+| `jadhav_000447_familiar` | The same session on the familiar W-track, run 2 (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
 | `hc11_achilles` | Rat CA1 on a 1.6 m linear track, sleep before and after; the session of `grosmark_000044_linear` (CRCNS hc-11) | 38.5 MB from a 277.5 MB archive | CRCNS terms |
 | `hc3_ec013_669` | Rat CA1 and entorhinal units on a 250 cm linear track, two LEDs (CRCNS hc-3) | 5.5 MB from a 233.8 MB archive, plus a 1.1 MB cell table | CRCNS terms |
 | `hc2_ec013_527` | Rat CA1 units in a 180 cm open field, two LEDs (CRCNS hc-2) | 6 MB from a 211.8 MB archive | CRCNS terms |

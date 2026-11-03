@@ -18,6 +18,20 @@ cm/s (its values match the speed computed from x and y; see
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s, as
 for the other tracks; ``dt`` 0.25 s; trajectories alternate between training
 and testing the decoder.
+
+Two apparatus, two recordings. The file's run epochs are on two W-tracks
+(the dandiset description: a novel W-track in runs 1 and 3, a familiar one
+in run 2) that lie rotated 90 degrees in one camera frame, so one
+environment cannot hold both: their arms cross. This loader returns the
+novel W-track (runs 1 and 3); ``load_jadhav_000447_familiar`` returns run 2
+(``load_maze``). Positions outside the maze's runs are NaN, trajectories are
+the maze's own, and ``analysis_epochs`` are its runs.
+
+Declared environment (``geometry["environment"]``): the W-track as a graph
+of three parallel arms joined by a base, its node positions fitted to the
+maze's samples, with the 7 cm track width Tang, Shin & Jadhav 2023 (the
+paper the dandiset is described by, STAR Methods) state for both mazes
+("~80 x 80 cm with ~7-cm wide tracks").
 """
 
 from __future__ import annotations
@@ -35,10 +49,17 @@ from _record import (
     checked_span,
     validate_recording,
 )
+from _tracks import (
+    arms_text,
+    declared_geometry,
+    edge_lengths,
+    fitted_maze,
+    parallel_arm_candidates,
+)
 
 DATASET = {
     "key": "jadhav_000447",
-    "title": "Shin & Jadhav, rat JDS-NFN-AM2, CA1 and PFC units on a W-track",
+    "title": "Shin & Jadhav, rat JDS-NFN-AM2, CA1 and PFC units on the novel W-track",
     "source": "https://dandiarchive.org/dandiset/000447/0.250724.2224",
     "license": "CC-BY-4.0",
     "download_size": "5.05 GB (streamed)",
@@ -57,11 +78,22 @@ _SHA256 = "aac7a7c12e7d129f6c6733b462c1e4fa6ee1d4e6d0893af347c78baf3f7ec97d"
 _PATH = "sub-JDS-NFN-AM2/sub-JDS-NFN-AM2_behavior+ecephys.nwb"
 
 
+# Rows of the file's run epochs ('epoch intervals') on each maze.
+MAZE_RUNS = {"novel": (0, 2), "familiar": (1,)}
+TRACK_WIDTH_CM = 7.0
+FIT_CAP_CM = 10.0
+
+
 def load(cache: Path | None = None) -> Recording:
-    """Stream the session; x, y in cm, spikes, trajectories."""
+    """Stream the session; the novel W-track's runs, x, y in cm, spikes, trajectories."""
+    del cache  # read by byte range: nothing is cached
+    return load_maze("novel", DATASET)
+
+
+def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
+    """One maze's runs: positions outside them NaN, its trajectories, its declared W."""
     from neurospatial.io.nwb import read_units
 
-    del cache  # read by byte range: nothing is cached
     source = dandi_stream_url(_ASSET_ID, sha256=_SHA256)
     with open_nwb(source) as nwbfile:
         series = nwbfile.processing["behavior"]["Position"]["SpatialSeries"]
@@ -88,20 +120,49 @@ def load(cache: Path | None = None) -> Recording:
             f"column 2 is not the speed of x, y (scale {scale:.2f}, r {agreement:.2f})"
         )
         raise ValueError(msg)
-    windows = trials[["start_time", "stop_time"]].to_numpy(dtype=float)
+    runs = run_epochs[["start_time", "stop_time"]].to_numpy(dtype=float)
+    if len(runs) != 3:
+        msg = f"expected three run epochs (novel, familiar, novel), got {len(runs)}"
+        raise ValueError(msg)
+    maze_runs = runs[list(MAZE_RUNS[maze])]
+    in_maze = np.zeros(len(times), dtype=bool)
+    for start, stop in maze_runs:
+        in_maze |= (times >= start) & (times < stop)
+    positions = np.where(in_maze[:, None], positions, np.nan)
+    all_windows = trials[["start_time", "stop_time"]].to_numpy(dtype=float)
+    mine = np.zeros(len(all_windows), dtype=bool)
+    for start, stop in maze_runs:
+        mine |= (all_windows[:, 0] >= start) & (all_windows[:, 1] <= stop)
+    trials = trials[mine]
+    windows = all_windows[mine]
     inbound = trials["trajectory_type"].to_numpy() == 1
+    graph = fitted_maze(parallel_arm_candidates(positions), positions, cap=FIT_CAP_CM)
+    declared, declared_line = declared_geometry(
+        graph,
+        positions,
+        kind="W-track: three parallel arms joined by a base",
+        source="Tang, Shin & Jadhav 2023 STAR Methods: 'the W-maze (~80 x 80 cm with"
+        " ~7-cm wide tracks)'",
+        bin_size=2.5,
+        track_width=TRACK_WIDTH_CM,
+        units="cm",
+        name=dataset["key"],
+        placement=f"node positions fitted to this maze's samples ({arms_text(graph, 'cm')};"
+        f" stated about 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
+    )
     return Recording(
-        dataset=DATASET["key"],
-        session="JDS-NFN-AM2",
-        source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",
-        license=DATASET["license"],
+        dataset=dataset["key"],
+        session=f"JDS-NFN-AM2 {maze} W-track",
+        source=f"{dataset['source']} {_PATH} (asset {_ASSET_ID})",
+        license=dataset["license"],
         times=times,
         positions=positions,
         position_units="cm",
         spike_times=tuple(np.asarray(s, dtype=float) for s in units.spike_times),
         unit_ids=np.asarray(units.unit_ids),
         epochs={
-            "run": run_epochs[["start_time", "stop_time"]].to_numpy(dtype=float),
+            "run": runs,
+            "maze": maze_runs,
             "trials": windows,
             "inbound": windows[inbound],
             "outbound": windows[~inbound],
@@ -111,10 +172,12 @@ def load(cache: Path | None = None) -> Recording:
             "end_well": trials["end_well"].to_numpy(dtype=float),
             "correct": trials["correct"].to_numpy(dtype=float),
         },
+        geometry=declared,
         params={
             "bin_size": 2.5,
             "min_speed": 4.0,
             "dt": 0.25,
+            "analysis_epochs": maze_runs,
             "train_epochs": windows[::2],
             "test_epochs": windows[1::2],
             "nwb_source": source,
@@ -126,6 +189,11 @@ def load(cache: Path | None = None) -> Recording:
             f" moving, r = {agreement:.2f}), dropped",
             "epochs: trials table rows as trials, split by trajectory_type"
             " (1 inbound, 0 outbound); 'epoch intervals' as run",
+            f"maze: the {maze} W-track, run epochs"
+            f" {[i + 1 for i in MAZE_RUNS[maze]]}; positions outside them -> NaN"
+            f" ({in_maze.mean():.1%} of samples kept); {int(mine.sum())} of"
+            f" {len(all_windows)} trajectories inside them",
+            declared_line,
         ),
     )
 

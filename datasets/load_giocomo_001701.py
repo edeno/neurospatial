@@ -19,6 +19,13 @@ Analysis choices (``params``):
 - ``bin_size`` 2.5 cm.
 - ``dt`` 0.25 s and alternating 60 s ``train_epochs``/``test_epochs``, as for
   the other open recordings.
+
+Declared environment (``geometry["environment"]``): the X maze as its
+samples show it, two junctions joined by a short centre segment with two
+arms each, the six node positions fitted to the samples. Aery Jones et al.
+2026 (Methods) state a "130-cm X-maze with 20-cm walls" but not what the
+130 cm spans or how wide the arms are, so the width is measured from the
+samples (``_tracks.declared_geometry``).
 """
 
 from __future__ import annotations
@@ -35,6 +42,13 @@ from _record import (
     alternating_blocks,
     check_expectations,
     validate_recording,
+)
+from _tracks import (
+    declared_geometry,
+    edge_lengths,
+    fitted_maze,
+    with_declared,
+    x_maze_candidates,
 )
 
 DATASET = {
@@ -94,7 +108,7 @@ def load(cache: Path | None = None) -> Recording:
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=float)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="BaggySweatpantsDY15-g1",
         source=f"{DATASET['source']} {_PATH}",
@@ -119,6 +133,21 @@ def load(cache: Path | None = None) -> Recording:
             " [-pi, pi]; kept as radians (read with pynwb)",
         ),
     )
+    graph = fitted_maze(x_maze_candidates(rec.positions), rec.positions, cap=10.0)
+    entries, line = declared_geometry(
+        graph,
+        rec.positions,
+        kind="X maze: two junctions joined by a centre segment, two arms each",
+        source="Aery Jones et al. 2026 Methods: '130-cm X-maze with 20-cm walls'"
+        " (what the 130 cm spans and the arm width are not stated)",
+        bin_size=2.5,
+        track_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placement=f"node positions fitted to the samples; edges (cm):"
+        f" {edge_lengths(graph)}",
+    )
+    return with_declared(rec, entries, line)
 
 
 def _headings_read_as_degrees(rec: Recording) -> Recording:
