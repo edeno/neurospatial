@@ -19,7 +19,10 @@ pynwb from ``processing/ecephys/Ripples``; ``onMaze`` intervals are the maze
 epochs. Lost tracking is set to NaN (``_record.mask_lost_tracking``): 29 % of
 the frames repeat the one before in runs of 10 or more (up to 82 s held),
 which the tracker filled with its last fix, and samples reached faster than
-100 cm/s, which a mouse does not run. The counts are in ``conversions``.
+100 cm/s, which a mouse does not run. The held-run rule needs sub-pixel
+positions, and these are: about 154,000 distinct values per axis, none on
+integer coordinates (``_record.position_grid``). The counts are in
+``conversions``.
 
 Analysis choices (``params``):
 

@@ -162,9 +162,13 @@ def test_heading_vs_movement_refuses_a_lag_below_one(pixel_circle):
 
 
 def _still(n: int = 60) -> tuple[np.ndarray, np.ndarray]:
-    """``n`` frames at 10 Hz moving 1 cm a frame along x (10 cm/s)."""
+    """``n`` frames at 10 Hz moving 1 cm a frame along x (10 cm/s).
+
+    A sub-pixel jitter of under 0.01 cm keeps the positions off a grid.
+    """
     times = np.arange(n) / 10.0
-    return times, np.column_stack([np.arange(n, dtype=float), np.zeros(n)])
+    jitter = np.random.default_rng(0).uniform(0.0, 0.01, (n, 2))
+    return times, np.column_stack([np.arange(n, dtype=float), np.zeros(n)]) + jitter
 
 
 def _lost(masked: np.ndarray) -> list[int]:
@@ -185,6 +189,19 @@ def test_mask_lost_tracking_removes_held_runs():
     assert np.isfinite(positions).all()  # the input is not changed
     assert "12 samples" in line
     assert "1 runs" in line
+
+
+def test_mask_lost_tracking_refuses_quantized_positions():
+    from _record import mask_lost_tracking, position_grid
+
+    times, positions = _still()
+    assert not position_grid(positions)[0]
+    pixels = np.round(positions * 3.0) / 3.0  # a 1/3 cm grid
+    quantized, line = position_grid(pixels)
+    assert quantized
+    assert "positions quantized" in line
+    with pytest.raises(ValueError, match="assumes sub-pixel positions"):
+        mask_lost_tracking(times, pixels, min_frozen=10, max_speed=100.0)
 
 
 def test_mask_lost_tracking_checks_the_step_after_a_held_run():

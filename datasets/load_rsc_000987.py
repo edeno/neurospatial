@@ -19,7 +19,9 @@ loader converts to cm. Lost tracking is set to NaN, positions and heading
 together (``_record.mask_lost_tracking``): runs of 10 or more identical
 frames (0.4 % of the frames, in 22 runs of up to 1 s), which the
 motion-capture system filled with its last fix, and samples reached faster
-than 100 cm/s, which a mouse does not run. ``ry``, rotation about the vertical axis, is the yaw;
+than 100 cm/s, which a mouse does not run. The positions are not quantized
+(about 100,000 distinct values per axis on the file's 1 um resolution,
+``_record.position_grid``), as the held-run rule needs. ``ry``, rotation about the vertical axis, is the yaw;
 of the three angles it alone tracks the direction of movement. Motion-capture
 systems with y up are right-handed, so seen from above x points East and -z
 North; the loader returns (x, -z) and ``ry`` wrapped to [-pi, pi]. Under that

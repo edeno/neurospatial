@@ -21,8 +21,10 @@ moves with the head. Lost tracking is set to NaN
 (``_record.mask_lost_tracking``): 46 runs of 10 or more identical frames
 (the longest held 6 s), which the tracker filled with its last fix, and
 samples reached faster than 100 cm/s (a mouse does not run that fast; the
-fast steps are the straight-line bridges after a held run). The counts are
-in ``conversions``.
+fast steps are the straight-line bridges after a held run). The held-run
+rule needs sub-pixel positions, and these are: about 64,000 distinct values
+per axis, none on integer coordinates (``_record.position_grid``). The counts
+are in ``conversions``.
 
 Analysis choices (``params``):
 

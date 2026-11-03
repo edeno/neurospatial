@@ -347,6 +347,46 @@ def intersect_intervals(
     return np.column_stack([start[keep], stop[keep]])
 
 
+def position_grid(
+    positions: NDArray[np.float64], *, units: str = "cm"
+) -> tuple[bool, str]:
+    """Whether tracked positions are quantized, and the line saying so.
+
+    Per axis, the gaps between consecutive distinct values: positions are
+    quantized (pixels or another grid) when on some axis the median gap
+    equals the smallest one (to a relative 1e-6), that is the values fill a
+    grid and the grid, not the animal, sets the resolution. Positions from a
+    sub-pixel estimate have distinct values scattered far more finely than
+    their typical spacing. Also reports the share of samples whose
+    coordinates are all integers.
+
+    Returns
+    -------
+    quantized : bool
+    line : str
+        The measure, for ``conversions``.
+    """
+    tracked = positions[np.isfinite(positions).all(axis=1)]
+    quantized = False
+    parts = []
+    for axis in tracked.T:
+        gaps = np.diff(np.unique(axis))
+        if not len(gaps):
+            continue
+        smallest, median = float(gaps.min()), float(np.median(gaps))
+        quantized |= bool(np.isclose(median, smallest, rtol=1e-6, atol=0.0))
+        parts.append(
+            f"{len(gaps) + 1} distinct values, gaps median {median:.3g} and smallest"
+            f" {smallest:.3g} {units}"
+        )
+    integer = float(np.mean(np.all(tracked == np.round(tracked), axis=1)))
+    state = "quantized" if quantized else "not quantized"
+    return quantized, (
+        f"positions {state} ({'; '.join(parts)}; {integer:.2%} of samples on"
+        " integer coordinates)"
+    )
+
+
 def mask_lost_tracking(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -360,7 +400,9 @@ def mask_lost_tracking(
     A tracker that loses the animal often keeps reporting the last fix
     (identical samples) and then joins it to the next fix with a straight
     line or a jump. On positions with sub-pixel values, an animal at rest
-    still moves the estimate, so identical samples are a held value:
+    still moves the estimate, so identical samples are a held value. The
+    positions are first checked for a grid (``position_grid``) and refused
+    when quantized, since on a grid a still animal repeats one value:
 
     - frozen: a sample identical in every coordinate to the one before it,
       in a run of at least ``min_frozen`` such repeats; the run's first
@@ -396,6 +438,15 @@ def mask_lost_tracking(
         The rule and its counts, for ``conversions``.
     """
     positions = np.array(positions, dtype=float)
+    quantized, grid_line = position_grid(positions, units=units)
+    if quantized:
+        msg = (
+            f"{grid_line}: on a grid a still animal repeats one value, so"
+            " identical samples are not held tracking; mask_lost_tracking"
+            " assumes sub-pixel positions. Leave the held-run rule out for this"
+            " recording or state another rule for lost tracking"
+        )
+        raise ValueError(msg)
     repeat = np.r_[False, np.all(np.diff(positions, axis=0) == 0, axis=1)]
     edges = np.diff(np.r_[0, repeat.astype(np.int8), 0])
     starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
@@ -423,7 +474,7 @@ def mask_lost_tracking(
                 fast[k] = True
     positions[fast] = np.nan
     line = (
-        f"tracking: {int(frozen.sum())} samples repeating the one before in runs of"
+        f"tracking: {grid_line}; {int(frozen.sum())} samples repeating the one before in runs of"
         f" {min_frozen}+ frames ({int(long_runs.sum())} runs, longest held"
         f" {longest:.1f} s) and {int(fast.sum())} samples reached faster than"
         f" {max_speed:g} {units}/s from the last kept sample set to NaN (held, then"
