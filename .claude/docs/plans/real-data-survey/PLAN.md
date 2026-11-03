@@ -1,6 +1,6 @@
 # Real-data survey Implementation Plan
 
-**Status:** In progress — phases 1–3 merged (#260, #261, #263); next: phase 4 (gap synthesis).
+**Status:** Complete — phases 1–3 merged (#260, #261, #263); phase 4 findings in `datasets/FINDINGS.md` (54befceb3), awaiting the maintainer decisions listed there.
 
 Build a tracked `datasets/` folder that loads public spatial-neuroscience
 recordings into plain arrays, runs a fixed set of neurospatial operations on
