@@ -17,7 +17,7 @@ import re
 
 import numpy as np
 import pytest
-from result_instances import RESULT_FACTORIES, public_result_classes
+from result_instances import RESULT_FACTORIES, RESULT_VARIANTS, public_result_classes
 
 from neurospatial import Environment
 from neurospatial.encoding.directional import DirectionalRatesResult
@@ -254,6 +254,7 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "AssemblyDetectionResult": ("summary",),
         "AssemblyEventResponseResult": ("summary",),
         "AssemblyMemberCofiringResult": ("summary",),
+        "AssemblyPattern": ("summary",),
         "AssemblyReactivationResult": ("summary",),
         "AssemblySimilarityResult": ("summary",),
         "BiasSimilarityResult": ("summary",),
@@ -273,17 +274,23 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "CumulativeDistanceResult": ("summary",),
         "DatasetTestResult": ("summary", "plot"),
         "DecisionAnalysisResult": ("summary",),
+        "DecisionBoundaryMetrics": ("summary",),
         "DecodingResult": ("summary", "to_dataframe", "to_xarray", "plot"),
+        "DecodingSummary": ("summary", "to_dataframe", "to_xarray", "plot"),
+        "DirectionalPlaceFields": ("summary", "to_dataframe", "plot"),
         "DirectionalRateResult": RATE_VERBS,
         "DirectionalRatesResult": RATE_VERBS,
         "DistributionTestResult": ("summary",),
         "ExplainedVarianceContributionResult": ("summary",),
         "ExplainedVarianceResult": ("summary",),
+        "GoalDirectedMetrics": ("summary", "summary_table"),
+        "GridProperties": ("summary",),
         "IsotonicFitResult": ("summary",),
         "JointDecodingResult": ("summary",),
         "LinearFitResult": ("summary",),
         "MSDResult": ("summary",),
         "MatchingIndexResult": ("summary",),
+        "NullSpikeData": ("summary",),
         "ObjectVectorRateResult": RATE_VERBS,
         "ObjectVectorRatesResult": RATE_VERBS,
         "PairwiseBiasResult": ("summary",),
@@ -297,6 +304,7 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "PlaceFieldsResult": ("summary", "to_dataframe", "summary_table", "plot"),
         "PopulationCoverageResult": ("summary",),
         "PopulationPeriEventResult": PSTH_VERBS,
+        "PreDecisionMetrics": ("summary",),
         "RadonDetectionResult": ("summary",),
         "RankOrderResult": ("summary",),
         "RankOrderSignificanceResult": ("summary",),
@@ -305,10 +313,12 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "RecurringSequencesSignificanceResult": ("summary",),
         "RegressionLineScoreResult": ("summary",),
         "ReplayDetectionResult": ("summary",),
+        "ReplayEventSimulation": ("summary",),
         "ReplaySegmentsResult": ("summary",),
         "ReplaySignificanceResult": ("summary",),
         "ResampledPathResult": ("summary", "samples_table"),
         "SequenceMatchResult": ("summary",),
+        "ShuffledDataset": ("summary",),
         "ShuffleTestResult": ("summary", "plot"),
         "SimulationValidationResult": ("summary", "summary_table", "plot"),
         "SpatialFeatureResult": ("summary", "samples_table"),
@@ -318,6 +328,7 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "SubgoalEfficiencyResult": ("summary",),
         "TemplateMatchDatasetResult": ("summary", "groups_table"),
         "TrackGraphResult": (),
+        "TrajectoryMetrics": ("summary",),
         "TuningCurveResult": RATE_VERBS,
         "TuningCurvesResult": RATE_VERBS,
         "VTESessionResult": ("summary", "trials_table"),
@@ -330,6 +341,8 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
 }
 
 _PUBLIC_RESULTS = public_result_classes()
+# Each public class, and each further form whose summary has other keys.
+_REPR_CASES = sorted([*_PUBLIC_RESULTS, *RESULT_VARIANTS])
 # Population results whose units are 2-D maps (or own nulls): plot() needs a unit.
 _PLOT_NEEDS_UNIT = {
     "SpatialRatesResult",
@@ -343,12 +356,13 @@ _SCALARS = (bool, int, float, str, type(None), np.generic)
 
 @pytest.fixture(scope="module")
 def result_instances():
-    """One instance per public result class, built once for the module."""
+    """One instance per public result class or variant, built once for the module."""
     cache: dict[str, object] = {}
+    factories = {**RESULT_FACTORIES, **RESULT_VARIANTS}
 
     def build(name: str) -> object:
         if name not in cache:
-            cache[name] = RESULT_FACTORIES[name]()
+            cache[name] = factories[name]()
         return cache[name]
 
     return build
@@ -389,8 +403,10 @@ def test_result_class_matches_its_expected_verb_row(name, result_instances):
             ax = result.plot(0)
         else:
             ax = result.plot()
-        # A 2-D decode draws its x and y marginals on a pair of axes.
-        axes = ax if name == "DecodingResult" and isinstance(ax, tuple) else (ax,)
+        # A 2-D decode draws its x and y marginals on a pair of axes, and
+        # directional place fields one map per direction.
+        several = name in ("DecodingResult", "DirectionalPlaceFields")
+        axes = ax if several and isinstance(ax, tuple) else (ax,)
         assert all(isinstance(each, Axes) for each in axes)
         plt.close("all")
 
@@ -423,7 +439,7 @@ def _same(read: object, shown: object) -> bool:
     return bool(read == shown)
 
 
-@pytest.mark.parametrize("name", sorted(_PUBLIC_RESULTS))
+@pytest.mark.parametrize("name", _REPR_CASES)
 def test_repr_names_are_accessible(name, result_instances):
     """Every ``summary()`` key reads back from the result as the repr shows it.
 
@@ -464,6 +480,44 @@ def test_repr_names_are_accessible(name, result_instances):
         if isinstance(shown, list):
             shown = tuple(shown)
         assert _same(read, shown), f"{name}: {key} reads {read!r}, summary {shown!r}"
+
+
+# Units written by hand, for results whose recordings are in cm. The repr
+# test above checks that each value shows its declared unit; these check the
+# declarations and the ``{units}`` substitution themselves.
+_PINNED_UNITS = [
+    ("SpatialRateResult", "peak_firing_rate", "Hz"),
+    ("SpatialRateResult", "spatial_information", "bits/spike"),
+    ("SpatialRateResult", "total_occupancy", "s"),
+    ("DirectionalRateResult", "preferred_direction", "rad"),
+    ("ObjectVectorRateResult", "preferred_distance", "cm"),
+    ("TuningCurveResult", "peak_location()[0]", "cm"),
+    ("DirectionalPlaceFields", "peak_firing_rates[first]", "Hz"),
+    ("DecodingResult", "mean_entropy", "bits"),
+    ("DecodingSummary", "max_entropy", "bits"),
+    ("PreDecisionMetrics", "heading_mean_direction", "rad"),
+    ("PreDecisionMetrics", "window_duration", "s"),
+    ("VTESessionResult", "mean_speed", "cm/s"),
+    ("VTESessionResult", "mean_head_sweep", "rad"),
+    ("GoalDirectedMetrics", "mean_approach_rate", "cm/s"),
+    ("GoalDirectedMetrics", "goal_distance_at_start", "cm"),
+    ("GoalDirectedMetrics", "time_to_reach_goal", "s"),
+    ("PathEfficiencyResult[intervals]", "mean_shortest_length", "cm"),
+    ("TrajectoryMetrics", "track_length", "cm"),
+    ("TrajectoryMetrics", "duration", "s"),
+]
+
+
+@pytest.mark.parametrize(("name", "key", "unit"), _PINNED_UNITS)
+def test_repr_shows_the_physical_unit(name, key, unit, result_instances):
+    """A physical summary value is followed by its unit in the repr."""
+    result = result_instances(name)
+    summary = result.summary()
+    assert np.isfinite(summary[key]), f"{name}: pick a finite {key}"
+    text = _repr_values(result, summary)[key]
+    match = _NUMBER_WITH_UNIT.fullmatch(text)
+    assert match, f"{name}: repr shows {key}={text!r}"
+    assert match["unit"] == unit, f"{name}: repr shows {key}={text}, not in {unit}"
 
 
 def _repr_values(result: object, summary: dict) -> dict[str, str]:
@@ -522,7 +576,7 @@ def _check_repr_value(name: str, key: str, text: str, shown: object, unit: str) 
         )
 
 
-@pytest.mark.parametrize("name", sorted(_PUBLIC_RESULTS))
+@pytest.mark.parametrize("name", _REPR_CASES)
 def test_repr_units_agree_with_table_units(name, result_instances):
     """A key's repr unit is the unit its table column declares.
 

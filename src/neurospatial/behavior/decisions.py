@@ -347,6 +347,16 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
         """Number of decision boundary crossings."""
         return len(self.crossing_times)
 
+    @property
+    def mean_distance_to_decision_boundary(self) -> float:
+        """Mean ``distance_to_decision_boundary`` over the samples inside a bin.
+
+        In environment units; NaN when no sample is inside a bin.
+        """
+        distances = self.distance_to_decision_boundary
+        inside = distances[~np.isnan(distances)]
+        return float(inside.mean()) if inside.size else np.nan
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar decision-boundary metrics.
 
@@ -354,8 +364,8 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
         """
         return {
             "n_crossings": self.n_crossings,
-            "mean_distance_to_decision_boundary": float(
-                np.nanmean(self.distance_to_decision_boundary)
+            "mean_distance_to_decision_boundary": (
+                self.mean_distance_to_decision_boundary
             ),
         }
 
@@ -364,7 +374,7 @@ class DecisionBoundaryMetrics(ReadOnlyArraysMixin, ResultMixin):
             f"Decision boundary: {self.n_crossings} crossing"
             f"{'s' if self.n_crossings != 1 else ''}, "
             "mean distance to boundary: "
-            f"{np.nanmean(self.distance_to_decision_boundary):.1f}"
+            f"{self.mean_distance_to_decision_boundary:.1f}"
         )
 
 

@@ -1790,6 +1790,11 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         """Mean posterior entropy over decoded time bins (bits); NaN without any."""
         return _mean_over(self.posterior_entropy, self.map_bin >= 0)
 
+    @property
+    def mean_peak_probability(self) -> float:
+        """Mean ``peak_probability`` over decoded time bins; NaN without any."""
+        return _mean_over(self.peak_probability, self.map_bin >= 0)
+
     def summary(self) -> dict[str, Any]:
         """Scalar headline metrics for the streamed decode.
 
@@ -1819,9 +1824,7 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             "n_bins": self.n_bins,
             "mean_entropy": self.mean_entropy,
             "max_entropy": self.max_entropy,
-            "mean_peak_probability": _mean_over(
-                self.peak_probability, self.map_bin >= 0
-            ),
+            "mean_peak_probability": self.mean_peak_probability,
             **self._window_summary(),
         }
 

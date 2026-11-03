@@ -268,18 +268,16 @@ def test_place_cell_significance_matches_the_dict_it_replaced(open_field):
     returned a result object, on the same seeded session and shuffles.
     """
     s = open_field
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)  # warnings of the short map
-        result = encoding.place_cell_significance(
-            s.env, s.spike_times, s.times, s.positions, n_shuffles=49, rng=0
-        )
+    result = encoding.place_cell_significance(
+        s.env, s.spike_times, s.times, s.positions, n_shuffles=49, rng=0
+    )
     with pytest.warns(UserWarning, match="information bias is unknown"):
         screen = result.classify()
     np.testing.assert_array_equal(
         result.p_value, [0.02, 0.02, 0.02, 0.12, 0.02, 0.02, 0.02, 0.02]
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
+    # Unit 0 is significant but has too few spikes to estimate its bias.
+    with pytest.warns(UserWarning, match="information bias is unknown"):
         verdicts = [
             encoding.is_place_cell(
                 s.env, train, s.times, s.positions, unit_id=unit, n_shuffles=49, rng=0
@@ -296,9 +294,9 @@ def test_tables_carry_units(open_field, tmaze, tmaze_trials):
     from neurospatial.events import peri_event_histogram
 
     s = open_field
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        decoded = decode_session(s.env, s.spike_times, s.times, s.positions)
+    decoded = decode_session(s.env, s.spike_times, s.times, s.positions)
+    # The simulated runs are straight, so no trial has a head sweep to rank.
+    with pytest.warns(UserWarning, match="No variation in head sweep magnitude"):
         vte = compute_vte_session(
             tmaze.env,
             tmaze.times,
