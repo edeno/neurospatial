@@ -327,3 +327,28 @@ def test_declared_loop_keeps_every_edge_and_counts_laps_by_region(loop_recording
 def test_area_scores_are_na_on_a_declared_track(loop_recording):
     assert grid_scores(loop_recording, {}).status == "n/a"
     assert border_scores(loop_recording, {}).status == "n/a"
+
+
+@pytest.fixture(scope="module")
+def ring_samples():
+    """A 50 cm radius ring sampled with 2 cm scatter; over a 20 degree reward
+    area (17 cm) the head leans 4 cm outward."""
+    rng = np.random.default_rng(9)
+    angle = rng.uniform(0, 2 * np.pi, 20000)
+    radius = 50.0 + rng.normal(0, 2.0, angle.size)
+    radius[(angle > 0) & (angle < np.radians(20))] += 4.0
+    return np.column_stack([radius * np.cos(angle), radius * np.sin(angle)])
+
+
+def test_a_loop_is_judged_over_stretches_not_polygon_sides(ring_samples):
+    loop = polyline_graph(circle_points(np.zeros(2), 50.0, 72), closed=True)
+    entries, line = _declare(loop, ring_samples, track_width=None)
+    # The reward area's lean is local: a 4.4 cm side shows it, a 50 cm stretch
+    # does not, and the loop is kept.
+    assert entries, line
+    assert entries["environment_fit"]["max_edge_bias"] < 2.5
+    # The same circle moved 4 cm sideways is refused.
+    moved = polyline_graph(circle_points(np.array([4.0, 0.0]), 50.0, 72), closed=True)
+    entries, line = _declare(moved, ring_samples, track_width=None)
+    assert entries == {}
+    assert "side" in line

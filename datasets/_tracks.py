@@ -38,6 +38,9 @@ EDGE_POINTS = 25
 MAX_EDGE_BIAS_BINS = 1.0
 MAX_UNSUPPORTED = 0.25
 BIAS_WINDOW_BINS = 3.0
+# A stretch as long as a maze arm (about 50 cm at 2.5 cm bins): local
+# features (a reward area, a junction, a rounded corner) are shorter.
+MIN_PIECE_BINS = 20.0
 BASE_OFFSETS = (0.05, 0.1, 0.15, 0.2)
 
 
@@ -136,6 +139,67 @@ def edge_offsets(
     return segment, lateral, along
 
 
+def _straight_pieces(
+    nodes: NDArray[np.float64],
+    edges: NDArray[np.intp],
+    *,
+    min_length: float,
+    max_turn: float = np.radians(20.0),
+) -> list[list[tuple[int, float]]]:
+    """For each segment, the nearly straight stretch of track around it.
+
+    A segment is extended, through nodes joining exactly two segments, into
+    neighbours that continue it within ``max_turn``, until the stretch is at
+    least ``min_length`` long (or cannot grow). Each entry pairs a segment
+    with +1 or -1, the sign that orients it along the stretch. A curve drawn
+    as a polygon of short segments (a loop) is judged over stretches as long
+    as an arm, not over each short side; a corner is not crossed.
+    """
+    lengths = np.linalg.norm(nodes[edges[:, 1]] - nodes[edges[:, 0]], axis=1)
+    by_node: dict[int, list[int]] = {}
+    for k, (u, v) in enumerate(edges):
+        by_node.setdefault(int(u), []).append(k)
+        by_node.setdefault(int(v), []).append(k)
+
+    def direction(k: int, sign: float) -> NDArray[np.float64]:
+        d = (nodes[edges[k, 1]] - nodes[edges[k, 0]]) * sign
+        return d / max(np.linalg.norm(d), 1e-12)
+
+    pieces = []
+    for k in range(len(edges)):
+        piece = [(k, 1.0)]
+        total = lengths[k]
+        # (segment, sign, node at the open end) for the head and the tail.
+        ends = [(k, 1.0, int(edges[k, 1])), (k, -1.0, int(edges[k, 0]))]
+        grown = True
+        while total < min_length and grown:
+            grown = False
+            for i, (seg, sign, node) in enumerate(ends):
+                nxt = [j for j in by_node[node] if j != seg]
+                if (
+                    len(by_node[node]) != 2
+                    or not nxt
+                    or any(j == q for j, _ in piece for q in nxt)
+                ):
+                    continue
+                j = nxt[0]
+                # Orient j to continue away from ``node``.
+                sign_j = 1.0 if int(edges[j, 0]) == node else -1.0
+                turn = np.arccos(
+                    np.clip(direction(seg, sign) @ direction(j, sign_j), -1, 1)
+                )
+                if turn > max_turn:
+                    continue
+                far = int(edges[j, 1]) if sign_j > 0 else int(edges[j, 0])
+                # On the tail the stretch runs backwards: keep one orientation.
+                piece.append((j, sign_j if i == 0 else -sign_j))
+                ends[i] = (j, sign_j, far)
+                total += lengths[j]
+                grown = True
+        pieces.append(piece)
+    return pieces
+
+
 def edge_fit(
     graph: Any, positions: NDArray[np.float64], *, tolerance: float
 ) -> dict[str, float]:
@@ -145,13 +209,16 @@ def edge_fit(
 
     - ``median_abs_lateral``: median distance of samples from the track's line,
       over samples that project inside a segment.
-    - ``max_edge_bias``: the largest absolute per-segment median of the
-      signed lateral offset, over samples within ``BIAS_WINDOW_BINS`` bins of
-      the segment (so tracking jumps between arms do not count): a segment
-      drawn beside its samples. A layout moved, scaled or rotated off its
-      samples shifts most of its segments sideways; a bend or a rounded
-      corner the straight segments cut is local and does not move a
-      segment's median.
+    - ``max_edge_bias``: the largest absolute median of the signed lateral
+      offset over a stretch of nearly straight track at least
+      ``MIN_PIECE_BINS`` bins long around each segment (``_straight_pieces``:
+      the segment itself on a maze, several sides of a polygon on a loop),
+      using samples within ``BIAS_WINDOW_BINS`` bins of it (so tracking jumps
+      between arms do not count): track drawn beside its samples. A layout
+      moved, scaled or rotated off its samples shifts most of its stretches
+      sideways; a bend or a rounded corner the straight segments cut, or a
+      reward area where the head leans out, is local and does not move a
+      stretch's median.
     - ``max_unsupported``: the largest per-segment share of points along it
       with no sample within ``tolerance``: a segment where the animal never
       was.
@@ -162,11 +229,13 @@ def edge_fit(
     segment, lateral, along = edge_offsets(graph, positions)
     inside = (along > 0) & (along < 1)
     near = inside & (np.abs(lateral) <= BIAS_WINDOW_BINS * tolerance)
-    biases = [
-        float(np.median(lateral[near & (segment == k)]))
-        for k in range(len(edges))
-        if np.sum(near & (segment == k)) >= 10
-    ]
+    biases = []
+    for piece in _straight_pieces(nodes, edges, min_length=MIN_PIECE_BINS * tolerance):
+        offsets = np.concatenate(
+            [sign * lateral[near & (segment == j)] for j, sign in piece]
+        )
+        if len(offsets) >= 10:
+            biases.append(float(np.median(offsets)))
     tree = cKDTree(tracked(positions))
     steps = np.linspace(0.0, 1.0, EDGE_POINTS)
     unsupported = []
