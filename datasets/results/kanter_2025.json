@@ -53,7 +53,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "cc8af6df63a32f6244e01fa42466f52f8869bd86"
+    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
   },
   "load_warnings": [],
   "operations": {
@@ -67,7 +67,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.165,
+      "seconds": 0.269,
       "peak_mb": 14.2
     },
     "env.occupancy": {
@@ -81,7 +81,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.093,
+      "seconds": 0.071,
       "peak_mb": 30.4
     },
     "rates.spatial": {
@@ -95,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.912,
+      "seconds": 1.188,
       "peak_mb": 50.1
     },
     "rates.spatial_information": {
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
+      "seconds": 0.012,
       "peak_mb": 26.7
     },
     "rates.information_vs_shifts": {
@@ -123,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.645,
+      "seconds": 3.914,
       "peak_mb": 65.7
     },
     "cells.place_screen": {
@@ -135,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.059,
+      "seconds": 0.091,
       "peak_mb": 45.3
     },
     "cells.grid_score": {
@@ -148,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.035,
+      "seconds": 6.642,
       "peak_mb": 11.6
     },
     "cells.border_score": {
@@ -171,7 +171,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.731,
+      "seconds": 1.04,
       "peak_mb": 51.2
     },
     "decode.position": {
@@ -185,7 +185,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.921,
+      "seconds": 1.399,
       "peak_mb": 112.7
     },
     "io.nwb_roundtrip": {
@@ -196,8 +196,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.488,
-      "peak_mb": 17.7
+      "seconds": 7.22,
+      "peak_mb": 16.9
     },
     "env.from_graph": {
       "status": "n/a",
@@ -226,7 +226,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.27,
+      "seconds": 0.314,
       "peak_mb": 30.4
     },
     "behavior.turn_sequence": {
@@ -257,7 +257,7 @@
       "note": "units: ValueError: The units table repeats id(s) [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 31, 32, 34, 35, 36, 37, 40, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 61, 62, 63, 64, 65, 66, 68, 69, 70, 71, 72, 73, 74, 75, 76, 78, 79, 81, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 103, 104, 105, 108, 109, 110, 111, 112, 113, 115, 118, 119, 121, 123, 124, 125, 126, 127, 128, 129, 130, 131, 133, 135, 136, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 152, 153, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173].\nWhy: unit_ids names table identities, so each id must name one row.\nFix: rewrite the units table with one unique id per unit.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.162,
+      "seconds": 2.737,
       "peak_mb": 17.3
     },
     "io.read_pose": {
@@ -266,8 +266,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 1.098,
-      "peak_mb": 1.8
+      "seconds": 2.196,
+      "peak_mb": 1.7
     },
     "imaging.rates": {
       "status": "n/a",

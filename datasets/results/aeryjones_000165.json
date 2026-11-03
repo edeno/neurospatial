@@ -5,6 +5,7 @@
   "license": "CC-BY-4.0",
   "conversions": [
     "times: 45114 samples on 32340 distinct timestamps; samples sharing a timestamp averaged",
+    "spike_times: ASSUMED on the tracking clock with offset 0 (every channel has a spike at exactly 0.0 s; the LFP starts at 0); a constant-offset scan of 1-D Skaggs information ranks offset 0 11th of 247",
     "positions: read_position, labelled cm; range checked (1st-99th percentile span 35.1 by 4.9): too short for a mouse linear track in cm to confirm the label, kept as arbitrary units",
     "spike_times: read_units (32 channel multi-unit trains); the spike at exactly 0.0 s dropped from 31 trains; spikes end at 462.1 s of 1504 s tracked; every channel is silent from 269.6 s to 460.3 s, then 553 spikes fall in 1.7 s",
     "params['analysis_epochs']: 0 to 269.6 s, the end of the continuous spike recording"
@@ -38,7 +39,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "cc8af6df63a32f6244e01fa42466f52f8869bd86"
+    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
   },
   "load_warnings": [
     {
@@ -60,7 +61,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.04,
+      "seconds": 0.023,
       "peak_mb": 1.9
     },
     "env.occupancy": {
@@ -74,7 +75,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.007,
       "peak_mb": 4.0
     },
     "rates.spatial": {
@@ -88,7 +89,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.191,
+      "seconds": 0.089,
       "peak_mb": 19.9
     },
     "rates.spatial_information": {
@@ -116,7 +117,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.585,
+      "seconds": 0.239,
       "peak_mb": 24.4
     },
     "cells.place_screen": {
@@ -128,7 +129,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.001,
       "peak_mb": 1.0
     },
     "cells.grid_score": {
@@ -139,7 +140,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.168,
+      "seconds": 0.112,
       "peak_mb": 0.2
     },
     "cells.border_score": {
@@ -167,7 +168,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.167,
+      "seconds": 0.067,
       "peak_mb": 19.9
     },
     "io.nwb_roundtrip": {
@@ -178,8 +179,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.985,
-      "peak_mb": 2.1
+      "seconds": 2.738,
+      "peak_mb": 2.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -205,7 +206,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.018,
+      "seconds": 0.008,
       "peak_mb": 4.0
     },
     "behavior.turn_sequence": {
@@ -244,7 +245,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.591,
+      "seconds": 0.359,
       "peak_mb": 13.8
     },
     "io.read_pose": {
@@ -261,8 +262,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.461,
-      "peak_mb": 0.3
+      "seconds": 0.335,
+      "peak_mb": 0.4
     },
     "imaging.rates": {
       "status": "n/a",

@@ -42,7 +42,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "48a0afffef94e5e97e01761e9b5a610b4d356eda"
+    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
   },
   "load_warnings": [
     {
@@ -71,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.018,
       "peak_mb": 0.6
     },
     "env.occupancy": {
@@ -85,7 +85,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.005,
       "peak_mb": 0.5
     },
     "rates.spatial": {
@@ -160,7 +160,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.006,
       "peak_mb": 3.4
     },
     "behavior.turn_sequence": {
@@ -202,8 +202,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.611,
-      "peak_mb": 5.0
+      "seconds": 1.886,
+      "peak_mb": 4.5
     },
     "io.read_pose": {
       "status": "error",
@@ -226,8 +226,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.686,
-      "peak_mb": 5.1
+      "seconds": 1.876,
+      "peak_mb": 4.6
     },
     "imaging.rates": {
       "status": "n/a",

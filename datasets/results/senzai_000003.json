@@ -5,7 +5,7 @@
   "license": "CC-BY-4.0",
   "conversions": [
     "positions: acquisition/position_sensor0 (a bare SpatialSeries, read with pynwb), labelled metres; range checked: 331-498 by 120-220: pixels, kept as pixels (no calibration)",
-    "times: starting_time 0.0 s + index / 39.0625 Hz",
+    "times: starting_time 0.0 s + index / 39.0625 Hz; the implied 17050.3 s matches the LFP's 17050.3 s and the last spike at 17050.2 s",
     "headings: none; the direction between the two sensors does not follow movement",
     "epochs: sleep-state rows by label; params['analysis_epochs'] the awake rows"
   ],
@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "cc8af6df63a32f6244e01fa42466f52f8869bd86"
+    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
   },
   "load_warnings": [],
   "operations": {
@@ -65,8 +65,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.167,
-      "peak_mb": 73.5
+      "seconds": 0.159,
+      "peak_mb": 49.3
     },
     "env.occupancy": {
       "status": "ok",
@@ -79,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.147,
+      "seconds": 0.132,
       "peak_mb": 83.2
     },
     "rates.spatial": {
@@ -93,8 +93,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.674,
-      "peak_mb": 92.4
+      "seconds": 0.536,
+      "peak_mb": 84.6
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.555,
+      "seconds": 1.364,
       "peak_mb": 92.4
     },
     "cells.place_screen": {
@@ -133,7 +133,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.018,
+      "seconds": 0.012,
       "peak_mb": 26.0
     },
     "cells.grid_score": {
@@ -146,7 +146,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.181,
+      "seconds": 0.155,
       "peak_mb": 4.8
     },
     "cells.border_score": {
@@ -155,8 +155,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
-      "peak_mb": 0.5
+      "seconds": 0.001,
+      "peak_mb": 0.4
     },
     "hd.tuning": {
       "status": "n/a",
@@ -174,8 +174,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.616,
-      "peak_mb": 87.5
+      "seconds": 0.459,
+      "peak_mb": 86.9
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -193,8 +193,8 @@
           "count": 2
         }
       ],
-      "seconds": 2.929,
-      "peak_mb": 8.1
+      "seconds": 2.782,
+      "peak_mb": 8.6
     },
     "env.from_graph": {
       "status": "n/a",
@@ -211,8 +211,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.971,
-      "peak_mb": 17.5
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "behavior.laps": {
       "status": "error",
@@ -220,7 +220,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.198,
+      "seconds": 0.122,
       "peak_mb": 83.2
     },
     "behavior.turn_sequence": {
@@ -238,8 +238,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.151,
-      "peak_mb": 3.2
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "workaround",
@@ -251,8 +251,8 @@
       "note": "position: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 27.888,
-      "peak_mb": 131.5
+      "seconds": 23.051,
+      "peak_mb": 131.3
     },
     "io.read_pose": {
       "status": "n/a",
@@ -260,8 +260,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 20.997,
-      "peak_mb": 111.7
+      "seconds": 48.191,
+      "peak_mb": 104.0
     },
     "imaging.rates": {
       "status": "n/a",
