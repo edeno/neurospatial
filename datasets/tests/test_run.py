@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
 import pytest
 from operations import OPERATIONS, Operation
-from run import render_matrix, run_recording
+from run import load_fingerprint, render_matrix, run_recording
 
 
 @pytest.fixture(scope="session")
@@ -223,6 +224,94 @@ def test_subset_run_refuses_a_changed_load(simulated_recording, tmp_path, change
         )
     # The stored record is left as it was.
     assert json.loads(path.read_text())["operations"] == stored["operations"]
+
+
+def _changed_load(rec, part):
+    import dataclasses
+
+    if part == "params":
+        train = rec.params["train_epochs"].copy()
+        train[0, 1] -= 1.0  # one train epoch a second shorter
+        return dataclasses.replace(rec, params={**rec.params, "train_epochs": train})
+    if part == "positions":
+        positions = rec.positions.copy()
+        positions[5] = np.nan
+        return dataclasses.replace(rec, positions=positions)
+    if part == "times":
+        return dataclasses.replace(rec, times=rec.times + 1.0)
+    if part == "spike_counts":
+        trains = (rec.spike_times[0][1:], *rec.spike_times[1:])
+        return dataclasses.replace(rec, spike_times=trains)
+    if part == "unit_ids":
+        return dataclasses.replace(rec, unit_ids=rec.unit_ids[::-1].copy())
+    return dataclasses.replace(rec, geometry={**rec.geometry, "size_cm": 100.0})
+
+
+@pytest.mark.parametrize(
+    "part",
+    ["params", "positions", "times", "spike_counts", "unit_ids", "geometry"],
+)
+def test_subset_run_refuses_a_load_with_another_fingerprint(
+    simulated_recording, tmp_path, part
+):
+    ops, module = _probe_setup()
+    run_recording(simulated_recording, module, operations=ops, results=tmp_path)
+    path = tmp_path / f"{simulated_recording.dataset}.json"
+    stored = json.loads(path.read_text())
+    with pytest.raises(ValueError, match=f"the load's {part} differ"):
+        run_recording(
+            _changed_load(simulated_recording, part),
+            module,
+            op_ids=["other.op"],
+            operations=ops,
+            results=tmp_path,
+        )
+    assert json.loads(path.read_text()) == stored
+
+
+def test_subset_run_passes_the_same_load_and_skips_callables(
+    simulated_recording, tmp_path
+):
+    import dataclasses
+
+    ops, module = _probe_setup()
+    rec = dataclasses.replace(
+        simulated_recording, geometry={"size_cm": 100.0, "environment": lambda: 1}
+    )
+    run_recording(rec, module, operations=ops, results=tmp_path)
+    # The same load, read again: new arrays, a new callable.
+    again = dataclasses.replace(
+        rec,
+        positions=rec.positions.copy(),
+        params={
+            k: v.copy() if isinstance(v, np.ndarray) else v
+            for k, v in rec.params.items()
+        },
+        geometry={"size_cm": 100.0, "environment": lambda: 2},
+    )
+    partial = run_recording(
+        again, module, op_ids=["other.op"], operations=ops, results=tmp_path
+    )
+    assert partial["load_fingerprint"]["params"] == load_fingerprint(rec)["params"]
+
+
+def test_subset_run_refuses_a_record_without_a_fingerprint(
+    simulated_recording, tmp_path
+):
+    ops, module = _probe_setup()
+    run_recording(simulated_recording, module, operations=ops, results=tmp_path)
+    path = tmp_path / f"{simulated_recording.dataset}.json"
+    stored = json.loads(path.read_text())
+    del stored["load_fingerprint"]
+    path.write_text(json.dumps(stored))
+    with pytest.raises(ValueError, match="rerun the recording in full once"):
+        run_recording(
+            simulated_recording,
+            module,
+            op_ids=["other.op"],
+            operations=ops,
+            results=tmp_path,
+        )
 
 
 def test_subset_run_stamps_only_the_cells_it_reran(simulated_recording, tmp_path):

@@ -14,17 +14,20 @@ probes, joined with the verdicts in ``verdicts.json``).
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import hashlib
 import importlib
 import importlib.metadata
 import json
 import subprocess
 import time
 import tracemalloc
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import networkx as nx
 import numpy as np
 from _calibration import PROBE_OPS, captured, probe_hazards
 from _record import check_expectations, validate_recording
@@ -117,6 +120,89 @@ def _versions() -> dict[str, str]:
     return versions
 
 
+def _digest(value: Any, sha: Any) -> None:
+    """Feed ``value`` to ``sha`` deterministically (callables are skipped)."""
+    if callable(value) and not isinstance(value, type):
+        return
+    if isinstance(value, np.ndarray):
+        array = np.asarray(value)
+        sha.update(f"array {array.dtype.str} {array.shape};".encode())
+        if array.dtype.kind in "biufc":
+            sha.update(np.ascontiguousarray(array).tobytes())
+        else:
+            _digest(array.tolist(), sha)
+    elif isinstance(value, Mapping):
+        sha.update(f"mapping {len(value)};".encode())
+        for key in sorted(value, key=str):
+            if callable(value[key]):
+                continue
+            _digest(str(key), sha)
+            _digest(value[key], sha)
+    elif isinstance(value, list | tuple):
+        sha.update(f"sequence {len(value)};".encode())
+        for item in value:
+            _digest(item, sha)
+    elif isinstance(value, set | frozenset):
+        _digest(sorted(value, key=repr), sha)
+    elif isinstance(value, float | np.floating):
+        sha.update(b"float " + np.float64(value).tobytes())
+    elif (
+        isinstance(value, bool | int | str | bytes | np.generic | Path) or value is None
+    ):
+        sha.update(f"{type(value).__name__} {value!r};".encode())
+    elif isinstance(value, nx.Graph):
+        _digest(
+            {
+                "nodes": sorted((str(n), d) for n, d in value.nodes(data=True)),
+                "edges": sorted(
+                    (sorted((str(u), str(v))), d) for u, v, d in value.edges(data=True)
+                ),
+            },
+            sha,
+        )
+    elif hasattr(value, "wkb"):  # a shapely geometry
+        sha.update(b"geometry " + value.wkb)
+    elif dataclasses.is_dataclass(value):
+        _digest(
+            {f.name: getattr(value, f.name) for f in dataclasses.fields(value)}, sha
+        )
+    else:
+        msg = f"no deterministic fingerprint for a {type(value).__name__}"
+        raise TypeError(msg)
+
+
+def _hash(value: Any) -> str:
+    sha = hashlib.sha256()
+    _digest(value, sha)
+    return sha.hexdigest()
+
+
+def load_fingerprint(rec: Any) -> dict[str, Any]:
+    """What a subset rerun's kept cells depend on, beyond ``conversions``.
+
+    The analysis ``params`` (arrays included), the positions' shape and NaN
+    count, the tracked time span, each unit's spike count, the unit ids and
+    the geometry's stated entries (callables, such as
+    ``geometry["environment"]``, skipped), each hashed (SHA-256) or stated.
+    """
+    times = rec.times
+    positions = rec.positions
+    return {
+        "params": _hash(dict(rec.params)),
+        "positions": None
+        if positions is None
+        else [list(np.shape(positions)), int(np.isnan(positions).sum())],
+        "times": None
+        if times is None or len(times) == 0
+        else [float(times[0]), float(times[-1]), len(times)],
+        "spike_counts": None
+        if rec.spike_times is None
+        else _hash(np.array([len(train) for train in rec.spike_times])),
+        "unit_ids": None if rec.unit_ids is None else _hash(np.asarray(rec.unit_ids)),
+        "geometry": _hash(dict(rec.geometry)),
+    }
+
+
 def run_dataset(
     key: str,
     op_ids: Sequence[str] | None = None,
@@ -152,10 +238,11 @@ def run_recording(
     their last results. Only the rerun operations are probed, against their
     fresh clean results; the other hazard rows are kept. The record keeps
     the earlier run's ``versions``, and each rerun cell and probe row carries
-    its own. A subset run is refused when the load's ``conversions`` or
-    ``env_kind`` differ from the stored record: the cells it keeps describe
-    the stored load. With ``inferred_env``, every operation uses the environment
-    built from the samples even when the loader declares one.
+    its own. A subset run is refused when the load's ``conversions``,
+    ``env_kind`` or ``load_fingerprint`` differ from the stored record, or the
+    record has no fingerprint: the cells it keeps describe the stored load.
+    With ``inferred_env``, every operation uses the environment built from the
+    samples even when the loader declares one.
     """
     path = results / f"{rec.dataset}.json"
     previous_record = (
@@ -173,6 +260,7 @@ def run_recording(
         "expectations": check_expectations(rec, getattr(module, "EXPECTATIONS", {})),
         "versions": previous_record.get("versions", versions) if subset else versions,
         "load_warnings": load_warnings or [],
+        "load_fingerprint": load_fingerprint(rec),
         "operations": dict(previous),
     }
     seed = {"inferred_env": True} if inferred_env else {}
@@ -181,14 +269,26 @@ def run_recording(
     if previous_record:
         # The cells not rerun come from the stored load; a different load
         # would mix two recordings in one record.
+        if "load_fingerprint" not in previous_record:
+            msg = (
+                f"{rec.dataset}: {path} was written before records kept a load"
+                " fingerprint, so a subset run cannot tell whether the load"
+                " changed; rerun the recording in full once (without --ops)"
+            )
+            raise ValueError(msg)
+        stored = previous_record["load_fingerprint"]
         changed = [
             key
             for key in ("conversions", "env_kind")
             if previous_record.get(key) != record[key]
+        ] + [
+            key
+            for key, value in json.loads(json.dumps(record["load_fingerprint"])).items()
+            if stored.get(key) != value
         ]
         if changed:
             msg = (
-                f"{rec.dataset}: the load's {' and '.join(changed)} differ from"
+                f"{rec.dataset}: the load's {', '.join(changed)} differ from"
                 f" {path}, so the operations not rerun describe another load;"
                 " rerun the recording in full (without --ops)"
             )

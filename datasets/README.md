@@ -22,7 +22,13 @@ MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python datas
 ```
 
 `run.py --datasets KEY ... --ops OP_ID ...` runs a subset; `run.py --render-only`
-rebuilds the Markdown tables from the JSON results. One loader alone:
+rebuilds the Markdown tables from the JSON results. A subset run keeps the
+other cells of the stored record, so it is refused when the load differs
+from the stored one: its `conversions`, `env_kind` or `load_fingerprint`
+(hashes of `params` and the geometry's stated entries, the positions' shape
+and NaN count, the tracked span, each unit's spike count and the unit ids).
+Records written before the fingerprint have none; each needs one full rerun
+(without `--ops`) before `--ops` works on it. One loader alone:
 `uv run --group datasets --extra nwb python datasets/load_sargolini_000582.py`.
 
 Offline tests (simulated data, no network):
