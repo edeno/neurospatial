@@ -47,6 +47,13 @@ def test_two_led_heading_frame():
     assert np.isnan(two_led_heading(front, back)[4])
 
 
+def test_two_led_heading_has_no_direction_where_the_leds_coincide():
+    # One blob given to both LEDs: arctan2(0, 0) would say 0 (east).
+    back = np.array([[5.0, 5.0], [5.0, 5.0], [0.0, 0.0]])
+    front = np.array([[5.0, 5.0], [6.0, 5.0], [0.0, 0.0]])
+    np.testing.assert_array_equal(two_led_heading(front, back), [np.nan, 0.0, np.nan])
+
+
 def test_two_led_heading_matches_movement_only_with_leds_in_order():
     # An animal running a circle with the front LED ahead of the back LED.
     times = np.arange(0.0, 20.0, 0.025)

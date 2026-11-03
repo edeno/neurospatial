@@ -84,7 +84,9 @@ def two_led_heading(
     of the coordinates given: 0 along +x, +pi/2 along +y. With y pointing up
     (north) that is the package's allocentric convention; coordinates with y
     pointing down a video image give the mirror image. NaN where either LED is
-    missing.
+    missing, and where both LEDs have the same coordinates (a tracker that
+    gave one blob to both): there is no direction there, and ``arctan2(0, 0)``
+    would call it 0, east.
 
     Parameters
     ----------
@@ -92,4 +94,5 @@ def two_led_heading(
         (x, y) of the front and back LED.
     """
     step = front - back
-    return np.arctan2(step[:, 1], step[:, 0])
+    coincident = np.all(step == 0, axis=1)
+    return np.where(coincident, np.nan, np.arctan2(step[:, 1], step[:, 0]))

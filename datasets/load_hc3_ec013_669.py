@@ -167,7 +167,8 @@ def led_track(
     Position is the LEDs' midpoint where both are tracked. The order whose
     front-minus-back angle follows the direction of movement above
     ``min_speed`` is used, and refused unless it passes the frame check.
-    Frames with both LEDs at the same coordinates have NaN direction.
+    Frames with both LEDs at the same coordinates have NaN direction
+    (``two_led_heading``).
     """
     first, second = frames[:, :2], frames[:, 2:4]
     positions = (first + second) / 2.0
@@ -177,7 +178,7 @@ def led_track(
         "first": (first, second),
         "second": (second, first),
     }.items():
-        headings = np.where(coincident, np.nan, two_led_heading(front, back))
+        headings = two_led_heading(front, back)
         offset, spread = heading_vs_movement(
             times, positions, headings, min_speed=min_speed
         )
