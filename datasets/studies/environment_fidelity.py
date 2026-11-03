@@ -115,13 +115,13 @@ ALIGN_DEGREES = 20.0
 # Layouts whose bins are the active cells of a regular grid (``grid_edges`` and
 # ``active_mask``): from samples, and a grid masked by a declared polygon.
 GRID_LAYOUTS = ("RegularGrid", "ShapelyPolygon")
-# Declared from the authors' geometry or the file's own coordinates, used as
-# stated: a fact a verdict can rest on.
+# Declared from the authors' geometry, used as stated: a fact a verdict can
+# rest on. A layout drawn in the file's coordinate frame ("file's
+# coordinates") is not one: only a stated size checks it.
 AUTHORS_GEOMETRY = (
     "authors' graph",
     "authors' centrelines",
     "file's linearized coordinate",
-    "file's coordinates",
     "authors' bars (file)",
 )
 # The reference each kind of declared placement would compare with itself:
@@ -1908,7 +1908,7 @@ def measure_declared(
         rec.times,
         positions,
         physical_width=rec.geometry.get("declared_physical_width"),
-        speed_thresholds=rec.geometry.get("declared_speed_thresholds", ()),
+        speed_thresholds=speed_thresholds(rec),
         stated_residuals={
             k.removeprefix("size_residual_"): v
             for k, v in fit.items()
@@ -1983,6 +1983,20 @@ def measure_declared(
         )
     out["verdict"], out["verdict_reason"] = status, reason
     return out
+
+
+def speed_thresholds(rec: Recording) -> tuple[float, ...]:
+    """Speed bands for the share of samples outside a declared environment.
+
+    The loader's (``geometry["declared_speed_thresholds"]``), else its
+    ``min_speed`` and, in cm, 30 cm/s, the bands the track loaders use.
+    """
+    if (stated := rec.geometry.get("declared_speed_thresholds")) is not None:
+        return tuple(stated)
+    bands = [] if rec.params.get("min_speed") is None else [rec.params["min_speed"]]
+    if rec.position_units == "cm":
+        bands.append(30.0)
+    return tuple(sorted(set(bands)))
 
 
 def centre_offset_share(fit: dict[str, Any]) -> float | None:
