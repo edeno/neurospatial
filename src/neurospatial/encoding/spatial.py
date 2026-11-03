@@ -4926,6 +4926,9 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         recorded wherever position was.
     missing_label : hashable or None
         The label value treated as missing, besides ``None`` and ``NaN``.
+    unit_id : int or str or None, default=None
+        The unit the maps belong to, written to the ``unit_id`` column of
+        :meth:`to_dataframe` (``<NA>`` when None).
 
     Raises
     ------
@@ -4964,6 +4967,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         default=None, kw_only=True, compare=False
     )
     missing_label: Hashable | None = field(default=None, kw_only=True, compare=False)
+    unit_id: int | str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         """Validate, own each direction's arrays and prevent replacing entries."""
@@ -5247,21 +5251,22 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         return super()._repr_unit(key)
 
     def to_dataframe(self) -> pd.DataFrame:
-        """Tidy/long-form table: one row per (direction, bin).
+        """Tidy/long-form table: one row per (unit, direction, bin).
 
         Stacks the per-direction rate maps into long form with a ``direction``
         identifier column, so directional results ``pandas.concat`` cleanly
-        with other tidy result tables. Bin-center coordinates are emitted as
-        ``coord_0``, ``coord_1``, ... columns.
+        with other tidy result tables.
 
         Returns
         -------
         pandas.DataFrame
-            Long-form table with columns ``direction`` (the label), ``bin`` (int),
-            ``coord_0`` ... (float), ``firing_rate`` (float, Hz), and
-            ``occupancy`` (float, seconds). ``df.attrs["units"]`` gives each
-            column's unit: the environment's ``units`` for the coordinates
-            (``""`` when unset), ``"Hz"`` and ``"s"``.
+            Long-form table with columns ``unit_id`` (``<NA>`` without one),
+            ``direction`` (the label), ``bin`` (int), the bin-center columns
+            (``bin_center_x``, ``bin_center_y``, ...), ``firing_rate``
+            (float, Hz) and ``occupancy`` (float, seconds).
+            ``df.attrs["units"]`` gives each column's unit: the environment's
+            ``units`` for the bin centers (``""`` when unset), ``"Hz"`` and
+            ``"s"``.
 
         Examples
         --------
@@ -5279,8 +5284,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ...     },
         ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         ...     env=env,
+        ...     unit_id=7,
         ... )
         >>> df = result.to_dataframe()
+        >>> list(df.columns)
+        ['unit_id', 'direction', 'bin', 'bin_center_x', 'firing_rate', 'occupancy']
         >>> sorted(df["direction"].unique())
         ['fwd', 'rev']
         >>> len(df) == 2 * n
@@ -5288,46 +5296,46 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         """
         import pandas as pd
 
-        bin_centers = np.asarray(self.env.bin_centers)
-        if bin_centers.ndim == 1:
-            bin_centers = bin_centers[:, None]
-        n_bins, n_dims = bin_centers.shape
+        from neurospatial._results import _bin_center_coords
 
-        frames: list[pd.DataFrame] = []
-        for label in self.labels:
-            rate = _to_numpy(self.firing_rates[label]).ravel()
-            occ = _to_numpy(self.occupancy[label]).ravel()
-            direction = np.empty(n_bins, dtype=object)
-            direction[:] = [label] * n_bins
-            data: dict[str, Any] = {
+        n_bins = self.env.n_bins
+        centers = {
+            name: np.asarray(values)
+            for name, (_dim, values) in _bin_center_coords(self.env, n_bins).items()
+        }
+        unit_id = pd.NA if self.unit_id is None else self.unit_id
+        n_rows = n_bins * len(self.labels)
+        direction = np.empty(n_rows, dtype=object)
+        direction[:] = [label for label in self.labels for _ in range(n_bins)]
+
+        def stacked(maps: Mapping[Hashable, NDArray[np.float64]]) -> NDArray[Any]:
+            if not self.labels:
+                return np.array([], dtype=np.float64)
+            return np.concatenate(
+                [_to_numpy(maps[label]).ravel() for label in self.labels]
+            )
+
+        df = pd.DataFrame(
+            {
+                "unit_id": pd.Series([unit_id] * n_rows, dtype=object),
                 "direction": direction,
-                "bin": np.arange(n_bins, dtype=np.int64),
+                "bin": np.tile(np.arange(n_bins, dtype=np.int64), len(self.labels)),
+                **{
+                    name: np.tile(values.astype(np.float64), len(self.labels))
+                    for name, values in centers.items()
+                },
+                "firing_rate": stacked(self.firing_rates),
+                "occupancy": stacked(self.occupancy),
             }
-            for d in range(n_dims):
-                data[f"coord_{d}"] = bin_centers[:, d]
-            data["firing_rate"] = rate
-            data["occupancy"] = occ
-            frames.append(pd.DataFrame(data))
-        if not frames:
-            # No labelled directions (e.g. every label passed to
-            # compute_directional_place_fields was missing, leaving
-            # labels == ()). Return an empty frame with the documented column
-            # schema instead of letting pd.concat([]) raise "No objects to
-            # concatenate".
-            empty: dict[str, NDArray[Any]] = {
-                "direction": np.array([], dtype=object),
-                "bin": np.array([], dtype=np.int64),
-            }
-            for d in range(n_dims):
-                empty[f"coord_{d}"] = np.array([], dtype=np.float64)
-            empty["firing_rate"] = np.array([], dtype=np.float64)
-            empty["occupancy"] = np.array([], dtype=np.float64)
-            frames.append(pd.DataFrame(empty))
-        df = pd.concat(frames, ignore_index=True)
+        )
         df.attrs["units"] = {
+            "unit_id": "",
             "direction": "",
             "bin": "",
-            **{f"coord_{d}": self.env.units or "" for d in range(n_dims)},
+            **{
+                name: "rad" if name == "bin_center_angle" else self.env.units or ""
+                for name in centers
+            },
             "firing_rate": "Hz",
             "occupancy": "s",
         }
