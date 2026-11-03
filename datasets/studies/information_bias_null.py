@@ -2,17 +2,28 @@
 
 ``SpatialRatesResult.spatial_information_bias()`` is the expected Skaggs
 information of an untuned *Poisson* cell at the unit's mean rate on the
-recording's occupancy. On the sparse 3-D bat occupancy, circularly shifted
-spikes keep far more information (median 3.55 bits/spike) than that estimate
-(median 0.37). Two explanations are separated here:
+recording's occupancy. The question is whether that estimate is the right
+null on sparse occupancy (the bat's 3-D flights, the Grieves lattice), where
+it sits well below the information of circularly shifted spikes. Two
+explanations are separated here:
 
 1. Sparse occupancy breaks the estimate's second-order expansion. Then
-   simulated untuned Poisson cells on the bat's own occupancy show much more
-   information than the estimate.
-2. Temporal structure that circular shifts keep (bursts, firing locked to
-   flights or runs) adds information that an untuned Poisson null does not
-   have. Then the estimate matches simulated Poisson cells, simulated bursty
-   cells show more, and real units' shift null sits above the estimate.
+   simulated untuned Poisson cells on the recording's own occupancy show
+   much more information than the estimate.
+2. Temporal structure that circular shifts keep adds information that an
+   untuned Poisson null does not have. Shifts keep a unit's spike-to-spike
+   intervals (bursts), except across the joins of the counted time; they do
+   not keep firing locked to the counted intervals themselves (a flight's or
+   a run's start), since a shifted spike lands elsewhere in that time. Then
+   the estimate matches simulated Poisson cells, simulated bursty cells show
+   more, and real units' shift null sits above the estimate.
+
+An earlier version shifted spikes over the whole tracking span, while the
+maps count only the analysis epochs, the speed gate and tracking gaps (on
+the bat 121 s of a 5,356 s span); where a unit fires mostly in counted time
+(Vollan's speed-filtered recordings) most shifted spikes then fell outside
+it, and fewer spikes inflate bits per spike. Shifts are now within the counted time
+(``operations.shifted_trains``).
 
 Steps (all seeds fixed; written to ``results/studies/information_bias_null.{md,json}``):
 
@@ -21,8 +32,9 @@ Steps (all seeds fixed; written to ``results/studies/information_bias_null.{md,j
   bursty units (burst onsets Poisson, a geometric number of spikes per burst
   with mean ``BURST_MEAN``, ``BURST_ISI`` apart) at each rate in ``RATES_HZ``.
   Reported: mean information, mean bias estimate, and their ratio.
-- Real units: ``N_SHIFTS`` circular shifts each, by the rule of the
-  ``rates.information_vs_shifts`` operation (seeds 0, 1, …). Reported per
+- Real units: ``N_SHIFTS`` circular shifts each within the time the maps
+  count, by the rule of the ``rates.information_vs_shifts`` operation
+  (seeds 0, 1, …). Reported per
   dataset: median of shift-null mean / bias estimate, and the share of units
   whose information minus bias exceeds ``CLASSIFY_CUTOFF`` while their
   information is below the 95th percentile of their shifts.
