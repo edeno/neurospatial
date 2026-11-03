@@ -15,7 +15,9 @@ radians from 0 to 2 pi. Nothing in the file says which axis is vertical, so
 the value ranges decide: x and z span about 0.5 m each and y 0.07 m (head
 height), so y is vertical, the floor is (x, z), and the values are metres
 (a mouse at a median 6 cm/s, 90th percentile 14 cm/s, read as metres). The
-loader converts to cm. Positions and headings are kept as stored. Suspect
+loader converts to cm. Positions and headings are kept as stored: the file
+has no NaN position or yaw sample, and its series have no description or
+comments, so nothing in it marks a yaw sample invalid. Suspect
 tracking is reported as a load warning (``_record.find_suspect_tracking``):
 runs of 11 or more identical frames (10 or more repeats: 0.4 % of the
 frames, in 22 runs of up to 1 s), which may be the motion-capture system repeating its last fix or a
@@ -167,10 +169,7 @@ def load(cache: Path | None = None) -> Recording:
     positions = np.column_stack([xyz["x"], -xyz["z"]]) * 100.0
     _, suspect = find_suspect_tracking(times, positions, min_frozen=10, max_speed=100.0)
     warnings.warn(suspect, UserWarning, stacklevel=1)
-    # The yaw is NaN where the position is.
-    headings = np.where(
-        np.isfinite(positions).all(axis=1), np.angle(np.exp(1j * yaw)), np.nan
-    )
+    headings = np.angle(np.exp(1j * yaw))
     mean, spread = heading_vs_movement(
         times[::10], positions[::10], headings[::10], min_speed=10.0
     )
@@ -213,7 +212,6 @@ def load(cache: Path | None = None) -> Recording:
             f" vertical (span {np.ptp(xyz['y']) * 100:.1f} cm); range checked:"
             f" {np.nanmin(positions[:, 0]):.1f}-{np.nanmax(positions[:, 0]):.1f} by"
             f" {np.nanmin(positions[:, 1]):.1f}-{np.nanmax(positions[:, 1]):.1f} cm",
-            "headings NaN where the position is",
             "headings: CompassDirection/ry (radian, 0-2 pi) wrapped to [-pi, pi];"
             " frame not verified: heading_vs_movement mean"
             f" {mean:+.2f} rad, spread {np.degrees(spread):.0f} deg (10 Hz, > 10 cm/s)",
