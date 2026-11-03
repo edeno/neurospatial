@@ -44,8 +44,8 @@ centrelines, the lattice's bars), and these papers: Grosmark & Buzsaki 2016
 (Zotero PDF), Tirole et al. 2022 (Zotero PDF), Vollan et al. 2025 (Zotero
 PDF), Shin et al. 2019 (Zotero PDF), Aery Jones et al. 2026 (Zotero PDF) and
 Grieves et al. 2020 with its Supplementary Methods (open access, downloaded).
-Not read, so not verified: Forli et al. 2025 (in Zotero, but its PDF is not
-on disk), Knierim et al. 2000 (no PDF), Gardner et al. 2022, Hafting et al.
+Forli et al. 2025 was read from Zotero's full-text cache (its PDF is not on
+disk). Not read, so not verified: Knierim et al. 2000 (no PDF), Gardner et al. 2022, Hafting et al.
 2008's archive readme, Shipley et al. 2025, and any source for 000405,
 000165's length, 001695, 001880 and 000003.
 
@@ -53,9 +53,10 @@ on disk), Knierim et al. 2000 (no PDF), Gardner et al. 2022, Hafting et al.
 
 Components: connected parts (in brackets, parts with 1 % of the bins or
 more). Far links: links whose midpoint has no sample within one bin.
-Geodesic / straight: median over random sample pairs. On-track: samples /
-bins within one track width of the reference (`*` an assumed 10 cm width,
-not judged). Env / track: median path through the bins over the distance
+Geodesic / straight: median over random sample pairs. On-track: samples
+within half the track width of the reference / bins within half the width
+plus half a bin (`*` an assumed 10 cm width, not judged; none for the
+lattice, where every point is within 11.4 cm of a bar). Env / track: median path through the bins over the distance
 along the reference. Covered: share of the stated square or circle the bins
 cover (with holes filled by `Environment.open_field`). Rows ending in
 `_camera`, `_novel`, `_familiar`, `_escher` or `_linearized` are the derived
@@ -66,27 +67,27 @@ views.
 | sargolini_000582 | 2-D | 1399 | 1 (1) | 72 (136) | 0.10% | 12 | 1.06 | – | – | 86% (94% filled) | mismatch: bins cover 86% of the stated square (94% with holes filled) |
 | figure8_000552 | 1-D | 112 | 1 (1) | – | 0.00% | 0 | 1.00 | – | – | – | mismatch: loop ends 222 apart along the bins, 3 in the camera |
 | figure8_000552_camera | 2-D | 667 | 3 (1) | 7 (806) | 0.00% | 6 | 1.21 | – | – | – | matches |
-| rosenberg_labyrinth | 2-D | 2780 | 1 (1) | 41 (185) | 0.05% | 8 | 1.08 | 100% / 100% | 0.66 | – | mismatch: geodesic 0.66 x the distance along the track |
+| rosenberg_labyrinth | 2-D | 2780 | 1 (1) | 41 (185) | 0.05% | 8 | 1.08 | 95% / 99% | 0.66 | – | mismatch: geodesic 0.66 x the distance along the track |
 | yartsev_bat_demo | 3-D | 1352 | 1 (1) | – | 0.73% | 211 | 1.10 | – | – | – | mismatch: 4.4% of bins outside the room bounds |
 | miniscope_002030 | 2-D | 455 | 1 (1) | 19 (722) | 0.09% | 8 | 1.21 | – | – | 37% (99% filled) | mismatch: bins cover 37% of the stated circle (99% with holes filled) |
 | giocomo_000405 | 2-D | 2076 | 1 (1) | 105 (446) | 0.03% | 22 | 1.06 | – | – | – | not verified: no source read here states the geometry |
 | giocomo_001701 | 2-D | 266 | 1 (1) | 0 (0) | 0.00% | 0 | 1.12 | – | – | – | matches |
 | gardner_2022_grid | 2-D | 3463 | 1 (1) | 0 (0) | 0.00% | 0 | 1.06 | – | – | 96% (96% filled) | not verified: no source read here states the geometry |
-| vollan_lt | 2-D | 556 | 1 (1) | 11 (34) | 0.06% | 3 | 1.04 | 82% / 79%* | 1.04 | – | matches |
+| vollan_lt | 2-D | 556 | 1 (1) | 11 (34) | 0.06% | 3 | 1.04 | 57% / 58%* | 1.04 | – | matches |
 | vollan_of | 2-D | 2041 | 1 (1) | 131 (297) | 0.12% | 17 | 1.07 | – | – | 57% (65% filled) | mismatch: bins cover 57% of the stated square (65% with holes filled) |
-| grosmark_000044_circular | 2-D | 1547 | 2 (1) | 17 (609) | 0.02% | 10 | 1.09 | 92% / 68%* | 0.93 | – | matches |
+| grosmark_000044_circular | 2-D | 1547 | 2 (1) | 17 (609) | 0.02% | 10 | 1.09 | 69% / 43%* | 0.93 | – | matches |
 | grosmark_000044_circular_linearized | 1-D | 117 | 1 (1) | – | 0.00% | 0 | 1.00 | – | – | – | mismatch: loop ends 290 apart along the bins, 27 in the camera |
-| grosmark_000044_linear | 2-D | 1096 | 21 (3) | 13 (49) | 0.06% | 11 | 1.04 | 27% / 41%* | 1.19 | – | mismatch: 3 parts with 1% of the bins or more, apparatus has 1 |
+| grosmark_000044_linear | 2-D | 1096 | 21 (3) | 13 (49) | 0.06% | 11 | 1.04 | 13% / 27%* | 1.19 | – | mismatch: 3 parts with 1% of the bins or more, apparatus has 1 |
 | grosmark_000044_linear_linearized | 1-D | 65 | 1 (1) | – | 0.00% | 0 | 1.00 | – | – | – | matches |
 | jadhav_000447 | 2-D | 1465 | 1 (1) | 29 (240) | 0.02% | 7 | 1.07 | – | – | – | mismatch: 1 part with 1% of the bins or more, apparatus has 2 |
 | jadhav_000447_novel | 2-D | 1172 | 1 (1) | 20 (81) | 0.00% | 5 | 1.19 | – | – | – | matches |
 | jadhav_000447_familiar | 2-D | 788 | 1 (1) | 21 (140) | 0.00% | 8 | 2.53 | – | – | – | matches |
-| grieves_2020_lattice | 3-D | 8193 | 1 (1) | – | 0.66% | 921 | 1.14 | 94% / 93%* | 0.77 | – | mismatch: geodesic 0.77 x the distance along the bars |
+| grieves_2020_lattice | 3-D | 8193 | 1 (1) | – | 0.66% | 921 | 1.14 | – | 0.77 | – | mismatch: geodesic 0.77 x the distance along the bars |
 | watermaze_10248158 | 2-D | 1144 | 1 (1) | 8 (9) | 0.02% | 1 | 1.05 | – | – | 99% (99% filled) | matches |
 | olafsdottir_5566548 | 2-D | 556 | 7 (2) | 3 (3) | 0.00% | 13 | 1.05 | – | – | – | mismatch: 2 parts with 1% of the bins or more, apparatus has 1 |
-| takigawa_7114733 | 2-D | 952 | 13 (2) | 8 (9) | 0.13% | 15 | 1.09 | 79% / 53%* | 0.87 | – | mismatch: geodesic 0.87 x the distance along the track |
-| hafting_2008_nird | 2-D | 507 | 1 (1) | 1 (2) | 0.00% | 1 | 1.01 | 90% / 74%* | 1.01 | – | not verified: no source read here states the geometry |
-| j16_23020757 | 2-D | 545 | 1 (1) | 16 (48) | 0.13% | 5 | 1.14 | 87% / 73%* | 1.01 | – | matches |
+| takigawa_7114733 | 2-D | 952 | 13 (2) | 8 (9) | 0.13% | 15 | 1.09 | 59% / 37%* | 0.87 | – | mismatch: geodesic 0.87 x the distance along the track |
+| hafting_2008_nird | 2-D | 507 | 1 (1) | 1 (2) | 0.00% | 1 | 1.01 | 64% / 47%* | 1.01 | – | not verified: no source read here states the geometry |
+| j16_23020757 | 2-D | 545 | 1 (1) | 16 (48) | 0.13% | 5 | 1.14 | 69% / 63%* | 1.01 | – | matches |
 | j16_23020757_linearized | 1-D | 129 | 9 (9) | – | 0.00% | 0 | 1.01 | – | – | – | mismatch: 9 parts with 1% of the bins or more, apparatus has 1 |
 | agarwal_24757638 | 2-D | 449 | 1 (1) | 3 (3) | 0.00% | 1 | 1.10 | – | – | – | matches |
 | shipley_30902972 | 2-D | 697 | 1 (1) | 5 (10) | 0.00% | 6 | 1.08 | – | – | – | not verified: no source read here states the geometry |
@@ -95,7 +96,7 @@ views.
 | gonzalez_001695 | 2-D | 95 | 1 (1) | 0 (0) | 0.00% | 0 | 1.01 | – | – | – | not verified: no source read here states the geometry |
 | neurolab_001754 | 2-D | 2174 | 9 (1) | 117 (217) | 0.03% | 90 | 1.07 | – | – | – | not verified: no source read here states the geometry |
 | neurolab_001754_escher | 2-D | 1233 | 23 (2) | 74 (228) | 0.06% | 76 | 1.10 | – | – | – | not verified: no source read here states the geometry |
-| valero_000568 | 2-D | 190 | 1 (1) | 0 (0) | 0.00% | 1 | 1.02 | 99% / 93% | 1.02 | – | matches |
+| valero_000568 | 2-D | 190 | 1 (1) | 0 (0) | 0.00% | 1 | 1.02 | 88% / 78% | 1.02 | – | mismatch: 78% of bins within the stated track width |
 | aeryjones_000165 | 2-D | 163 | 1 (1) | 0 (0) | 0.00% | 0 | 1.03 | – | – | – | matches |
 | dyads_001845 | 2-D | 245 | 4 (3) | 6 (32) | 0.00% | 9 | 1.04 | – | – | – | mismatch: 3 parts with 1% of the bins or more, apparatus has 1 |
 | senzai_000003 | 2-D | 840 | 1 (1) | 17 (33) | 0.00% | 0 | 1.04 | – | – | – | not verified: no source read here states the geometry |
@@ -127,7 +128,10 @@ and the path lengths keep the detours of a maze (each W-track alone: 95th
 percentile 4.3-4.9 x the straight line; the 3-arm maze 8.5). Straight tracks follow their axis (000568,
 Vollan's linear track and Hafting: path through the bins 1.01-1.04 x the
 distance along the track axis; 001695 and 000165 1.01-1.03 x the straight
-line; 000568 has 93 % of its bins within the stated 6.35 cm width). The W-tracks, radial arms, 3-arm maze and J16's graph
+line). On 000568, the one track with a stated width, 88 % of samples and 78 %
+of bins are on the 6.35 cm track: the head LED leans past its edges (the
+loader notes x spans 4-21 cm), so the bins are wider than the track and the
+verdict is a mismatch. The W-tracks, radial arms, 3-arm maze and J16's graph
 come out as one connected track each with maze-like detours (J16: 1.01 x the
 distance along the authors' graph). The failures are of three kinds:
 
@@ -141,12 +145,14 @@ distance along the authors' graph). The failures are of three kinds:
   percentile up to 4.9). 001754's three apparatus, 000003's open field and
   maze, and 000044's pre-track excursion are merged the same way (G-113).
 - Samples that are not on the track. 000044's linear track: 84 % of samples
-  are at the two reward ends or before the run, so only 41 % of the bins lie
-  within 10 cm of the stem (G-039); the Z-track's tracking jumps add a sparse
+  are at the two reward ends or before the run, so only 27 % of the bins lie
+  on a 10 cm wide stem (G-039); the Z-track's tracking jumps add a sparse
   second diagonal and a second part (G-117); 001845's 123 s of head
   positions leave its W in three parts (G-116). Takigawa's two tracks are two
   parts (511 and 411 bins) as they should be, with wide sample clouds that
-  cut the bends (0.87 x the centreline distance).
+  cut the bends (0.87 x the centreline distance). Their centrelines are 2 m
+  long, but that is not a check of the scale: the authors derived
+  `cm_per_pixel` from the 2 m length.
 
 **1-D inputs.** The figure-8's linearized position and 000044's circular
 coordinate are covered without gaps (bins over range 1.01), but each loop's
@@ -169,15 +175,17 @@ between bars, so the 8,193 voxels (one part) are supported by samples (0.66 %
 far links; 31 % of voxels have no sample within 2 cm of their centre, which
 is sparse 3-D sampling, not air). The voxel graph is not the climbing
 structure: for random pairs the path through the voxels is a median 0.77 x
-the distance along the bars (5th percentile 0.62), and for 10,339 pairs of
-samples at the middle of adjacent parallel bars, 16.7 cm apart, it is 19.3
-cm against 30.7 cm along the bars (below 0.75 x for 55 %). A bar graph built
-from the file (343 crossings, 882 bars) with `Environment.from_graph` and 3-D
-node positions gives 4,410 bins in one part, and places every head position
-with `track_width` = 2 x the 99th percentile offset (30.8 cm); 57 % of its
-bins get occupancy. It only works if `edge_order` lists every bar: the
-depth-first order the driver uses keeps 342 of 882 bars, a spanning tree,
-silently (G-112). Verdict: the voxel environment represents the head's
+the distance along the bars (5th percentile 0.62), and for 5,478 pairs of
+samples at the middle of parallel bars that bound one cube face, 16.6 cm
+apart (about two spacings along the bars), it is 18.2 cm against 31.1 cm
+along the bars (below 0.75 x for 83 %). A bar graph built from the file (343
+crossings, 882 bar segments) with `Environment.from_graph` and 3-D
+node positions gives 4,410 bins in one part and, with `track_width` = 2 x
+the 99th percentile offset (30.8 cm), places 99.0 % of head positions; 57 %
+of its bins get occupancy. It only works if `edge_order` lists every
+segment: the depth-first order the driver uses keeps 342 of 882, a spanning
+tree, silently, and still counts positions on the dropped segments as on the
+track, putting them in the wrong bins (G-112). Verdict: the voxel environment represents the head's
 space, not the bars; which one an analysis wants depends on whether place
 is the head or the body on the lattice, and neurospatial offers only the
 first directly (G-111). The movement direction itself is only weakly
@@ -195,8 +203,11 @@ from the nearest one. The room's walls are not part of the environment. Air
 links are expected for a flying animal; 0.73 % of links have no sample
 within a bin of their midpoint, and 34 % of voxels none within half a bin of
 their centre: flights follow stereotyped paths through a mostly empty room.
-Room dimensions could only be checked against the file's own `r_lim`; the
-paper's PDF is not on disk.
+Forli et al. 2025 (Methods, read from Zotero's full-text cache) give the
+indoor flight room as 5.6 x 5.2 x 2.5 m with two feeders on the wall at one
+end; `r_lim` is 5.8 x 5.2 x 2.3 m and both `r_fd` feeders are at x = 2.8 m,
+the +x wall. The voxels outside `r_lim` (to y = -4.2 m) are outside the
+paper's room too.
 
 ## What should change in neurospatial
 
@@ -220,5 +231,5 @@ paper's PDF is not on disk.
 The Escher staircase's layout (no dimensions in the dandiset, Knierim et al.
 2000 not available; from one overhead camera at spike times its parts cannot
 be separated, G-053), Gardner's and Hafting's stated sizes (sources not
-read), 000405, 001695, 001880, 000003 and Shipley's arm lengths (no source
-read), and the bat room against the paper.
+read), and 000405, 001695, 001880, 000003 and Shipley's arm lengths (no
+source read).

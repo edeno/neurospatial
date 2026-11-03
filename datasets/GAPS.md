@@ -523,15 +523,20 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (positions kept as recorded; rate maps use flights)
 - Proposed change: none
 - Status: open
-- More evidence (environment fidelity): the 0.2 m voxel environment from
+- More evidence (environment fidelity): Forli et al. 2025 (Methods) give
+  the indoor flight room as 5.6 x 5.2 x 2.5 m with two feeders on the wall
+  at one end; `r_lim` spans 5.8 x 5.2 x 2.3 m, so its y range is the room's
+  width, and the samples down to y = -4.2 m lie outside the room the paper
+  describes as well. The 0.2 m voxel environment from
   all samples has 4.4 % of its 1,352 voxels outside `r_lim`: a corridor of
   voxels runs out of the room to y = -4.2 m (1.77 m past the wall) at
   x = -2.6 m, z = 0.9 m, where 2.4 % of the resting samples sit. 97.6 % of
   the samples are rest, mostly at one perch on the -x wall
   (-2.7 to -2.4, 1.5, 1.8 m). Of the two feeders `NP_Bat_Demo.m` places
-  (`r_fd`), one lies in a voxel and the other 0.17 m from the nearest voxel
-  centre, outside the environment (the script itself corrects `r_fd` to the
-  nearest rest cluster within 0.2 m). The voxels reach the x walls and the
+  (`r_fd`, both at x = 2.8 m, the +x wall: the paper's "wall at one end"),
+  one lies in a voxel and the other 0.17 m from the nearest voxel centre,
+  outside the environment (the script itself corrects `r_fd` to the nearest
+  rest cluster within 0.2 m). The voxels reach the x walls and the
   ceiling (within 0.11 m) but stop 0.12 m above the floor. The room's walls
   are not part of the environment, only the visited voxels.
 
@@ -1520,12 +1525,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   and only 0.7 % of voxel links have no sample within a bin of their
   midpoint. But the voxel graph has no notion of the bars the rat stood on:
   for random sample pairs (seeded) its path length is a median 0.77 x the distance
-  along the bars (5th percentile 0.62); for 10,339 pairs of samples at the
-  middle of adjacent parallel bars (16.7 cm apart in a straight line) it is
-  a median 19.3 cm against 30.7 cm along the bars, and below 0.75 x the bar
-  distance for 55 % of them. `Environment.from_graph` with 3-D node
+  along the bars (5th percentile 0.62); for 5,478 pairs of samples at the
+  middle of parallel bars that bound one cube face (16.6 cm apart in a
+  straight line; about two spacings, 32 cm, along the bars) it is a median
+  18.2 cm against 31.1 cm along the bars, and below 0.75 x the bar distance
+  for 83 % of them. `Environment.from_graph` with 3-D node
   positions builds the bar network (343 crossings, 882 bar segments: 4,410
-  bins, one component) and places head positions on it with `track_width=`, but no
+  bins, one component) and, with `track_width=` twice the 99th-percentile
+  offset (30.8 cm), places 99.0 % of head positions on it, but no
   constructor takes a set of bars, and the edge order must list every
   segment (G-112). Head movement is only weakly aligned with the bars (22 %
   of 0.2 s steps within 20 degrees of a bar axis, 18 % for random
@@ -1537,22 +1544,45 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   climbing paths
 - Status: open
 
-## G-112: `Environment.from_graph` silently drops graph edges missing from `edge_order`
+## G-112: `Environment.from_graph` silently drops graph edges missing from `edge_order`, but still counts positions on them as on the track
 
-- Datasets: grieves_2020_lattice (a bar graph built for this study)
+- Datasets: grieves_2020_lattice (a bar graph built for this study); any
+  graph with a loop
 - Operation / step: env.from_graph
-- Kind: silent-hazard
-- Evidence: with `edge_order=list(nx.dfs_edges(graph))`, the order the
-  driver's `_graph_env` uses, the lattice's graph of 882 bar segments becomes
-  1,710 bins over 342 segments, a spanning tree: the 540 that close its loops
-  are left out, with no warning. Listing every edge gives 4,410 bins. The
-  docstring says only that `edge_order` "defines the 1D bin ordering". The
-  driver's graphs so far are trees (labyrinth, J16, Hafting), so its results
-  are unaffected; a graph with a loop (a figure-8, a W-track with a closing
-  arm, a lattice) would lose it.
+- Kind: wrong-result
+- Evidence: bins and links come only from `edge_order`
+  (`src/neurospatial/layout/helpers/graph.py:142` loops over it;
+  `track_pairs`, line 285, joins only its segments' ends), but the track
+  footprint (`TrackArena`) is built from every graph edge
+  (`src/neurospatial/environment/_factories.py:805-808`). With
+  `edge_order=list(nx.dfs_edges(graph))`, the order the driver's `_graph_env`
+  uses, the lattice's graph of 882 bar segments becomes 1,710 bins over 342
+  segments, a spanning tree: the 540 that close its loops are left out, with
+  no warning; listing every edge gives 4,410 bins. A 100 cm square loop shows
+  the consequence (repro below): the depth-first order keeps 3 of its 4
+  edges (60 bins against 80), with 0 warnings, and with `track_width=10`
+  `contains` still accepts (0, 50) on the dropped edge, while `bin_at` puts
+  (0, 10) and (0, 50) both in bin 0 at (2.5, 0) and `occupancy` counts them
+  there. A loop always loses its closing edge this way. The docstring says
+  only that `edge_order` "defines the 1D bin ordering". The driver's graphs
+  so far are trees (labyrinth, J16, Hafting), so its results are unaffected.
+
+  ```python
+  import networkx as nx, numpy as np
+  from neurospatial import Environment
+  g = nx.Graph()
+  for k, p in enumerate([(0, 0), (100, 0), (100, 100), (0, 100)]):
+      g.add_node(k, pos=p)
+  g.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 0)])
+  order = list(nx.dfs_edges(g, source=0))  # [(0, 1), (1, 2), (2, 3)]
+  env = Environment.from_graph(g, order, bin_size=5.0, track_width=10.0)
+  pts = np.array([[0.0, 10.0], [0.0, 50.0]])  # on the dropped edge (3, 0)
+  env.n_bins, env.contains(pts), env.bin_at(pts)  # 60, [True True], [0 0]
+  ```
 - Harness workaround: the study lists every edge after the depth-first ones
-- Proposed change: refuse, or warn and append, when `edge_order` leaves
-  graph edges out; in the harness, order every edge (depth-first first)
+- Proposed change: refuse an `edge_order` that leaves graph edges out (or
+  build the footprint from `edge_order` only and warn); in the harness, order
+  every edge (depth-first first)
 - Status: open
 
 ## G-113: The driver builds one environment from every sample, merging apparatus that share a camera frame
@@ -1585,15 +1615,16 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Operation / step: env.from_samples (`studies/environment_fidelity.py`)
 - Kind: data-quirk
 - Evidence: Vollan et al. 2025 Methods state a 150 x 150 cm square box for the
-  open-field rats and one exception, a 150 cm circular arena in a dark room.
+  open-field rats and two exceptions: a 150 cm circular arena in a dark room
+  and a 1 m x 1 m square with a transparent floor.
   Rat 26018's samples (`of/26018_2.mat`) fill a disc: their convex hull is
   0.81 of its minimum rotated rectangle and 0.94 of its minimum enclosing
   circle (a square explored to its corners gives about 1 and 0.64; Kanter's
   1 m square gives 0.98 and 0.65), the hull spans 139.7 by 135.0 cm, and a 150
   cm square placed on the samples is 57 % covered by bins with a median
-  13.5 cm between its wall and the nearest bin. Either this is the circular
-  session or the rat avoided the corners; the file does not say which arena
-  it is.
+  13.5 cm between its wall and the nearest bin. The 1 m square is ruled out
+  by the 1.4 m span. Either this is the circular session or the rat avoided
+  the corners; the file does not say which arena it is.
 - Harness workaround: none (the loader says "an open field about 1.5 m
   across")
 - Proposed change: none in neurospatial; record the arena per session in the
