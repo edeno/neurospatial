@@ -32,7 +32,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
+    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
   },
   "load_warnings": [
     {
@@ -103,7 +103,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.249,
+      "seconds": 0.199,
       "peak_mb": 105.6
     },
     "decode.position": {
@@ -139,6 +139,37 @@
     "replay.compare_methods": {
       "status": "n/a",
       "note": "needs positions",
+      "warnings": []
+    },
+    "io.nwb_readers": {
+      "status": "ok",
+      "summary": {
+        "position": "absent (file has none)",
+        "head_direction": "ok (loader used this reader)",
+        "units": "ok (loader used this reader)"
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "DeprecationWarning",
+          "origin": "third-party",
+          "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "count": 9
+        }
+      ],
+      "seconds": 0.721,
+      "peak_mb": 106.0
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity, positions",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity, positions",
       "warnings": []
     }
   },

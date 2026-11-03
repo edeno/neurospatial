@@ -93,7 +93,12 @@ def load(cache: Path | None = None) -> Recording:
         ),
         unit_ids=np.asarray(units.unit_ids),
         epochs=epochs,
-        params={"analysis_epochs": epochs["wake"], "dt": 0.1, "nwb_path": str(path)},
+        params={
+            "analysis_epochs": epochs["wake"],
+            "dt": 0.1,
+            "nwb_path": str(path),
+            "readers_used": ("head_direction", "units"),
+        },
         conversions=(
             "headings: wrapped from [0, 2pi) to [-pi, pi] with neurospatial.stats.wrap_angle",
             "headings: reference frame unstated in the file; not rotated",

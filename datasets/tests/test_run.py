@@ -36,6 +36,9 @@ def test_driver_statuses_on_simulated_recording(simulated_record):
         "behavior.segment_by_velocity",
         "behavior.turn_sequence",
         "replay.compare_methods",
+        "io.nwb_readers",
+        "imaging.rates",
+        "imaging.rates_workaround",
     ):
         assert statuses.pop(op_id) == "n/a", op_id
         assert simulated_record["operations"][op_id]["note"]

@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
+    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
   },
   "load_warnings": [],
   "operations": {
@@ -65,17 +65,22 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.33,
+      "seconds": 0.236,
       "peak_mb": 68.5
     },
     "env.occupancy": {
-      "status": "error",
-      "summary": {},
-      "note": "ValueError: min_speed=0.5 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
+      "status": "ok",
+      "summary": {
+        "total_s": 121.00000184388746,
+        "frac_bins_visited": 0.8883136094674556,
+        "median_s_per_visited_bin": 0.06666667312606478,
+        "max_s": 3.1916666601173347
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
-      "peak_mb": 1.9
+      "seconds": 0.623,
+      "peak_mb": 227.7
     },
     "rates.spatial": {
       "status": "ok",
@@ -88,7 +93,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.839,
+      "seconds": 2.018,
       "peak_mb": 227.7
     },
     "rates.spatial_information": {
@@ -101,7 +106,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.007,
       "peak_mb": 26.2
     },
     "rates.information_vs_shifts": {
@@ -116,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.55,
+      "seconds": 4.291,
       "peak_mb": 264.7
     },
     "cells.place_screen": {
@@ -128,7 +133,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.073,
+      "seconds": 0.04,
       "peak_mb": 66.8
     },
     "cells.grid_score": {
@@ -146,7 +151,7 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 3.9
     },
     "hd.tuning": {
@@ -165,7 +170,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.712,
+      "seconds": 1.125,
       "peak_mb": 227.7
     },
     "io.nwb_roundtrip": {
@@ -176,7 +181,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.241,
+      "seconds": 3.045,
       "peak_mb": 24.2
     },
     "env.from_graph": {
@@ -197,7 +202,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.805,
+      "seconds": 0.669,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -208,7 +213,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.22,
+      "seconds": 0.14,
       "peak_mb": 100.7
     },
     "behavior.turn_sequence": {
@@ -228,6 +233,25 @@
       "warnings": [],
       "seconds": 0.0,
       "peak_mb": 0.0
+    },
+    "io.nwb_readers": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_path (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
     }
   },
   "hazards": [
@@ -251,11 +275,21 @@
     {
       "hazard": "missing_positions_as_zero",
       "op": "env.occupancy",
-      "response": "not probed",
-      "message": "the clean run was error",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
+      "clean_summary": {
+        "total_s": 121.00000184388746,
+        "frac_bins_visited": 0.8883136094674556,
+        "median_s_per_visited_bin": 0.06666667312606478,
+        "max_s": 3.1916666601173347
+      },
+      "hazard_summary": {
+        "total_s": 121.00000184388746,
+        "frac_bins_visited": 0.8836174944403261,
+        "median_s_per_visited_bin": 0.06666667514639357,
+        "max_s": 3.1916666601173347
+      }
     },
     {
       "hazard": "missing_positions_as_zero",
@@ -348,10 +382,15 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
-      "response": "not probed",
-      "message": "the clean run was error",
+      "response": "raised",
+      "message": "ValueError: A regular grid over these positions would have 8,994,640,980 bins in 3 dimension(s), and its bin centers would need 215,871,383,520 bytes, more than the 8 GiB limit.\nWhy: each column of positions is one spatial dimension, so a transposed array of shape (n_dims, n_samples) reads as one dimension per sample; a bin_size far smaller than the arena has the same effect.\nFix: pass positions with shape (n_samples, n_dims), for example positions.T, and check that bin_size is in the units of positions",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
+      "clean_summary": {
+        "total_s": 121.00000184388746,
+        "frac_bins_visited": 0.8883136094674556,
+        "median_s_per_visited_bin": 0.06666667312606478,
+        "max_s": 3.1916666601173347
+      },
       "hazard_summary": null
     },
     {

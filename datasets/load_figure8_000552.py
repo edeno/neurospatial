@@ -145,6 +145,7 @@ def load(cache: Path | None = None) -> Recording:
             "train_epochs": trial_windows[::2],
             "test_epochs": trial_windows[1::2],
             "nwb_path": str(path),
+            "readers_used": ("units",),
         },
         conversions=(
             f"positions: {_LINEAR} (cm), reshaped to (n, 1)",
