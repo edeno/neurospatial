@@ -288,7 +288,23 @@ off (`MAX_SIZE_RESIDUAL`, one tolerance for every stated size). A stretch
 that cannot grow to 20 bins (a reward arm between a junction and its end)
 has its bias and support reported, not judged; support is judged per
 stretch, not per segment, so it does not depend on how the graph is cut
-into segments. An outline
+into segments. Every declared track and the lattice is also judged as a
+whole (`_tracks.frame_offset`): each straight piece of any length with 10
+samples near it (assigned as for the stretch bias: nearest segment, within
+3 bins) gives the median of its samples' offsets perpendicular to it, and
+one translation `s` of the samples is fitted to those medians by least
+squares, each piece weighted once (`(sum P_k) s = sum m_k`, `P_k` the
+projection across piece k). One step recovered only half to two thirds of
+a planted shift on short corridors (samples moved off one are taken by its
+neighbours), so the fit is repeated on the samples less the shift found
+until a step is below 0.001 bin. No single piece decides: a direction is
+read only where, with any one piece left out, the others still add up to
+one piece lying across it, and the judged norm is the smallest over the
+fits with one piece left out. More than one bin is a mismatch, over both
+axes in 2-D and the horizontal ones on the lattice, where a head above the
+bars raises the vertical, which is reported. A track whose pieces all run
+one way (a straight track) cannot have its along-track offset read this
+way; the reach past its free ends covers that direction. An outline
 is also judged by how far its samples fall short of its side (at most
 15 %; they may fall short of the walls but not reach past them). The
 share of samples beyond the physical width is not misfit: the tracked
@@ -314,15 +330,27 @@ is to misfits of known size is not measured here: that is the survey's
 simulation ladder (phase 6, rungs 2-3, planted misfits). Of the 20
 declared tracks:
 
-- 13 match. On a stated size against the samples' own: Vollan's linear
+- 12 match. On a stated size against the samples' own: Vollan's linear
   track +5.5 %, 000568 +5.1 %, 000165 -1.6 %, the 000044 circle's diameter
   -0.2 % (its worst stretch 2.38 cm to one side, against a 2.5 cm limit:
   close to it), 000447's familiar W-track (base -1.2 %, arms +6.5 %),
   hc-28's W-track (base -10.5 %, arms -11.1 %, within the 15 %), 001845's
   W-maze (base +14 %, arms +7 %: close to the limit) and Shipley's eight
   arms (-5.9 to +3.4 %). On the authors' geometry or the file's coordinate
-  as stated: J16's graph, hc-31's track coordinate (length +0.3 %), 000044's
-  linear track, Takigawa's centrelines and the labyrinth's graph. The
+  as stated: J16's graph, hc-31's track coordinate (length +0.3 %),
+  Takigawa's centrelines and the labyrinth's graph. Their frame offsets are
+  0.42 bin or less (the 000044 circle 1.04 cm, hc-28 0.90 cm, Takigawa
+  1.59 cm of a 4 cm bin, the labyrinth 0.105 of a cell, 0.21 bin, over 127
+  pieces); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
+  one piece reads nothing, and the stated length, the stretch bias and the
+  reach past the ends judge them.
+- 000044's linear track is a mismatch on its frame offset: 3.22 cm across
+  the track (2.95 cm with any one of its 3 pieces left out, 1.18 bins).
+  Its samples scatter from -12 to +25 cm across it (5th-95th percentile),
+  far wider than the 7.5 cm window the offset is read in; the stretch's
+  median in the window is 1.53 cm, and the refitted window follows the
+  heavier side (G-160). It matched on the file's linearized coordinate
+  before. The
   labyrinth was a mismatch in the tracks round: its graph ended at the
   centre of each dead-end cell, and the samples reached 15.6 % of its
   length past its ends; the loader now moves each of the 64 dead ends half
@@ -335,9 +363,10 @@ declared tracks:
   side of its samples (limit one 4 cm bin) is shorter than 20 bins (80 cm);
   no stretch of its centrelines reaches 20 bins, and none of the
   labyrinth's corridors does (worst 0.49 cell to one side, reported), so on
-  these two neither the bias nor the support is judged, and only the reach
-  past the free ends can fail them. Whether a shorter stretch should be
-  judged is a maintainer decision.
+  these two neither a stretch's bias nor its support is judged. The frame
+  offset now judges both as a whole (above), and both pass it: Takigawa
+  (+0.94, -2.07) cm over 8 pieces, the labyrinth (-0.11, +0.03) cell over
+  127.
 - 7 are not verified: no stated size compared and no independent
   reference (the figure-8, the X maze, Agarwal's maze, 001695, hc-3, whose
   pixel scale comes from the same 250 cm), hc-18's circuit, whose shape no
@@ -422,13 +451,16 @@ outline or room is a tracking measure, reported split by speed, not judged
 is, per face: each judged sample is assigned to the face it lies farthest
 past (inside, the nearest face), and the 95th percentile of a face's
 samples' distance past it more than one bin is a mismatch; and on its
-stated sizes. The lattice's placement is not judged: in 3-D a side of a bar
-is not defined, its bars are tilted (no bar is vertical, so a horizontal
-frame offset cannot be read from vertical bars), and a head held above a
-bar biases the offset, so its verdict rests on the stated side alone.
+stated sizes. In 3-D a side of a bar is not defined, so no lattice
+stretch has a bias; the lattice is judged as a whole as the tracks are
+(`_tracks.frame_offset`): each bar segment's median head offset
+perpendicular to it, one translation fitted to all of them, its horizontal
+part judged at one bin. Its bars are tilted about 35 degrees, in three
+directions, so every direction is read; the vertical part, raised by a
+head held above the bars, is reported.
 
-Nine of the ten declared arenas and 3-D environments match, and the bat's
-room is a mismatch:
+Eight of the ten declared arenas and 3-D environments match; the bat's
+room and the lattice are mismatches:
 
 - On the stated size against the samples' own: 000582 (sides -0.1 % and
   -2.6 %), 002030 (diameter +0.0 %), 000405 (-6.9 %, -6.3 %), Gardner
@@ -438,9 +470,14 @@ room is a mismatch:
   -0.8 %) and the water maze (+0.2 %, centre 0.9 % of the radius from the
   stated one). The stated shapes are placed after a radial trim of the
   samples (`_geometry._tracked`), which moved these residuals by up to 2
-  points. 0-0.34 % of their judged samples lie outside the outline. The
-  lattice matches on the authors' bars (side +0.0 % of the stated 97 cm);
-  its placement is not judged (above).
+  points. 0-0.34 % of their judged samples lie outside the outline.
+- The lattice's side matches (+0.0 % of the stated 97 cm, the authors'
+  bars), but its head samples sit (-8.2, +4.6) cm horizontally off the
+  bars, 9.4 cm or 2.35 bins, and +2.2 cm vertically (reported), from 738
+  bar segments (G-159). A grid search for the shift bringing the samples
+  closest to the bars agrees ((-8, +4 to +6, +2) cm; median distance 6.0 ->
+  3.4 cm). Until this round its placement was not judged and it matched on
+  its side alone.
 - The bat's room is a mismatch on its faces: `r_lim`'s sizes match the
   paper's room (x +3.6 %, y +0.0 %, z -8.0 %), but of the 57 flight samples
   nearest the y-low face, 17 lie 1.4 m past it (the perch beyond `r_lim`,

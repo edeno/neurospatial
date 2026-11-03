@@ -187,11 +187,15 @@ the animal (the maintainer's rule, G-157). Samples outside the outline or
 room are a tracking measure, reported by speed, not judged. A verdict of
 "matches" needs a stated fact (a size, or the authors' bars). A room is
 judged as an outline is, per face (the 95th percentile of the samples
-nearest a face more than one bin past it is a mismatch); the lattice's
-placement is not judged (its bars are tilted, so no bar is vertical, and a
-head held above a bar biases any offset), so its match rests on its stated
-side. Nine of the ten match and the bat's room is a mismatch. Shares are
-over the judged samples (`analysis_epochs`):
+nearest a face more than one bin past it is a mismatch). The lattice is
+judged as a whole, as the tracks are (`_tracks.frame_offset`): one
+translation fitted to every bar segment's median head offset perpendicular
+to it, each segment weighted once, its horizontal part more than one bin a
+mismatch; the vertical part, raised by a head held above the bars, is
+reported. Its bars run in three directions about 35 degrees from
+horizontal, so every direction is read. Eight of the ten match; the bat's
+room and the lattice are mismatches. Shares are over the judged samples
+(`analysis_epochs`):
 
 | Recording | Verdict | Stated fact (fitted vs stated) | Samples outside | Worst side: no sample within 3 bins (reported) | Outermost samples inside the wall (95th percentile, worst side) |
 | --- | --- | --- | --- | --- | --- |
@@ -203,7 +207,7 @@ over the judged samples (`analysis_epochs`):
 | kanter_2025 | matches | -2.1 %, -2.3 % | 0 % | 0 % | 1.9 cm |
 | watermaze_10248158 | matches | diameter +0.2 %, centre 0.9 % of the radius | 0.34 % | 0 % | 0.2 units |
 | hc2_ec013_527 | matches | +0.0 %, -0.8 % | 0.00 % | 48 % | 3.7 px |
-| grieves_2020_lattice | matches | side +0.0 % of 97 cm (the file's bars); placement not judged | 1.0 % (placement tolerance) | every bar segment is shorter than a judged stretch; the worst has no head sample within 4 cm (reported) | – |
+| grieves_2020_lattice | mismatch | side +0.0 % of 97 cm (the file's bars) matches; but the head samples sit (-8.2, +4.6) cm horizontally off the bars (9.4 cm, 2.35 bins, over 738 segments; +2.2 cm vertically, reported; G-159) | 1.0 % (placement tolerance) | every bar segment is shorter than a judged stretch; the worst has no head sample within 4 cm (reported) | – |
 | yartsev_bat_demo | mismatch | `r_lim` against the paper's room: +3.6 %, +0.0 %, -8.0 %; but 17 of the 57 flight samples nearest the y-low face lie 1.4 m past it (95th percentile 1.41 m, limit 0.2 m) | 0.11 % of flight samples (3.66 % of all) | – | – |
 
 The residuals moved by up to 2 points from the faithful-arenas round: the

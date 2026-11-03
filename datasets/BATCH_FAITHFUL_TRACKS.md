@@ -61,6 +61,25 @@ the environment, built in `load()` from the clean samples
   support (`max_short_unsupported`) reported. Support was judged per
   segment until this round, so it depended on where the graph's nodes fell;
   it is now judged over the same stretches as the bias.
+- **The whole track judged as one piece of apparatus.** Short stretches
+  are reported, so on the labyrinth and Takigawa's tracks (no stretch of
+  20 bins) only the reach past the free ends could fail a misplaced track.
+  The fidelity study therefore also fits one translation of the samples
+  off the whole track (`_tracks.frame_offset`, in `judge_declared`): each
+  straight piece of any length with 10 samples within 3 bins gives the
+  median of their offsets across it, each piece weighted once, and the
+  least-squares translation is refitted on the samples less the shift found
+  until it settles (one step recovered only half to two thirds of a planted
+  shift on short corridors). More than one bin (the stretch bias's limit)
+  is a mismatch. No single piece decides: a direction is read only where,
+  with any one piece left out, the others still add up to one piece across
+  it, and the judged norm is the smallest with any one piece left out, so a
+  lean on one short reward arm stays a reported local feature. A track
+  whose pieces all run one way (a straight track) cannot have its
+  along-track offset read; the reach past its free ends covers that
+  direction, and a single-segment track (one piece) reads nothing here.
+  Loaders do not refuse a fitted layout on it; on every declared fitted
+  layout it is 0.42 bin or less (the 000044 circle).
 - **Thresholds set after seeing the data.** The 20-bin stretch was 10 bins
   until the 000044 circle was refused on one short side under its reward
   area (commit 4b865baca); it was then widened. The stretch, bias and
@@ -122,7 +141,7 @@ run, not estimates to compare.
 | j16_23020757 | declared | the authors' graph, 10 nodes, 9 corridors (file) | 6.5 cm stated | 63.8 % (87 / 64 / 35) | 36.9 (1.0%) | 2.73, 1.81 | 792 / 802 | 2.05 / 2.58 | 2.0 / 5.7 | – | – / – | matches |
 | takigawa_7114733 | declared | two tracks, the authors' centrelines (file); Tirole et al. 2022: 2 m | not stated | – | 41.4 (1.0%) | 4.57, 4.12 | 1069 / 1093 | 1.66 / 2.22 | 7.6 / 11.3 | – | – / – | matches |
 | hafting_2008_nird | declared | straight 320 cm (archive readme), the file's frame | not stated | – | 31 (1.0%) | 3.21, 1.24 | 650 / 656 | 0.98 / 1.05 | 104.0 / 157.0 | – | – / – | not verified |
-| grosmark_000044_linear | declared | 15 cm reward area + 1.6 m stem + 15 cm reward area (Grosmark & Buzsaki 2016), on the file's linearization | not stated | – | 55 (5.0%) | 9.04, 1.53 | 981 / 1052 | 0.38 / 0.81 | 2.5 / 8.5 | – | 0.250 / 0.150 (wk) | matches |
+| grosmark_000044_linear | declared | 15 cm reward area + 1.6 m stem + 15 cm reward area (Grosmark & Buzsaki 2016), on the file's linearization | not stated | – | 55 (5.0%) | 9.04, 1.53 | 981 / 1052 | 0.38 / 0.81 | 2.5 / 8.5 | – | 0.250 / 0.150 (wk) | mismatch (frame offset 1.18 bins across, G-160) |
 | vollan_lt | declared | straight 200 cm (Vollan et al. 2025) | not stated | – | 31.3 (1.0%) | 3.19, 0.21 | 316 / 319 | 0.15 / 0.29 | 5.0 / 8.5 | – | – / – | matches |
 | valero_000568 | declared | straight 110 cm (NWB description) | 6.35 cm stated | 12.4 % (12 / 14 / 9) | 12.9 (1.0%) | 1.22, 0.07 | 944 / 950 | 0.28 / 0.29 | 34.2 / 32.1 | – | 0.000 / error | matches |
 | aeryjones_000165 | declared | straight 36 cm (Aery Jones et al. 2021) | not stated | – | 5.42 (0.9%) | 0.39, 0.15 | 270 / 270 | 0.01 / 0.01 | 16.0 / 17.0 | – | – / – | matches |
@@ -302,16 +321,21 @@ a tolerance).
   that could not be read.
 - hc-3's length is not an independent check: its pixel scale comes from the
   same 250 cm.
-- Fidelity verdicts of the 20 declared tracks: 13 match, 7 not verified
-  (ENVIRONMENT_FIDELITY.md). Under the per-stretch rule 000044's linear
+- Fidelity verdicts of the 20 declared tracks: 12 match, 1 mismatch,
+  7 not verified (ENVIRONMENT_FIDELITY.md). 000044's linear track matched
+  until the whole-track frame offset (3.22 cm across it, 2.95 cm with any
+  one piece left out, against a 2.5 cm bin), on a lateral scatter far wider
+  than the 3-bin window the offset is read in (G-160). Before it, under the
+  per-stretch rule 000044's linear
   track and Takigawa's tracks went from mismatch to matches (their misfit
   was on stretches shorter than 20 bins, now reported), and 001845 is
   declared and matches (base +14 %, arms +7 %); before it, 10, 2 and 7
   (the tracks round alone gave 10, 3 and 6: the labyrinth now matches with
   its dead ends at their walls, and Hafting is not verified). On
   Takigawa's tracks and the labyrinth no stretch reaches 20 bins, so
-  neither lateral bias nor support is judged there; only the reach past
-  the free ends is. A match rests on a stated size against the
+  neither lateral bias nor support is judged per stretch; the frame offset
+  judges them as a whole and both pass (Takigawa 1.59 cm of a 4 cm bin
+  over 8 pieces, the labyrinth 0.21 bin over 127). A match rests on a stated size against the
   samples' own or on the authors' geometry as stated; the references built
   from the samples (principal axis, linearized centreline, Hafting's line
   in a frame scaled to the samples) judge nothing. hc-31's length (+0.3 %)
