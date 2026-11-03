@@ -221,6 +221,7 @@ def judge_declared(
     physical_width: float | None = None,
     speed_thresholds: Sequence[float] = (),
     stated_residuals: Mapping[str, float] | None = None,
+    bin_size: float | None = None,
 ) -> dict[str, Any]:
     """One verdict for any declared environment: misfit evidence, and tracking.
 
@@ -245,6 +246,10 @@ def judge_declared(
     It is split by speed (``speed_thresholds``, the positions' units per
     second) to show whether it comes from stopped posture or movement.
 
+    ``bin_size`` is the nominal bin the environment was built with (its
+    bins along a graph's edges can be shorter); by default the median bin's
+    length, or its measure's root for a grid or outline.
+
     Returns ``{"kind", "misfit": [reasons], "fit": {...}, "outside": share or
     None, "outside_by_speed": {...}}``.
     """
@@ -256,8 +261,9 @@ def judge_declared(
     arena = env.arena
     is_track = type(arena).__name__ == "TrackArena"
     # A track's bin measure is a length; a grid's or outline's an area or volume.
-    measure = float(np.median(np.asarray(env.bin_sizes)))
-    bin_size = measure if is_track else measure ** (1 / env.n_dims)
+    if bin_size is None:
+        measure = float(np.median(np.asarray(env.bin_sizes)))
+        bin_size = measure if is_track else measure ** (1 / env.n_dims)
     out: dict[str, Any] = {
         "misfit": [],
         "fit": {},

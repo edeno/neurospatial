@@ -1729,6 +1729,7 @@ def measure_declared(
             for k, v in fit.items()
             if k.startswith("size_residual")
         },
+        bin_size=rec.params.get("graph_bin_size", rec.params["bin_size"]),
     )
     independent = ref is not None and REFERENCE_SOURCE.get(
         ref.label
