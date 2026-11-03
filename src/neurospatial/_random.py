@@ -61,6 +61,31 @@ def _recorded_seed(root: np.random.SeedSequence) -> int:
     return int(cast("int", root.entropy))
 
 
+def _concrete_seed(
+    rng: np.random.Generator | int | None,
+) -> np.random.Generator | int:
+    """``rng`` with ``None`` replaced by an int drawn from the operating system.
+
+    A call that records its seed reads ``rng`` through this first, so a run
+    with ``rng=None`` records the int that repeats it (:func:`_rng_seed`).
+    """
+    if rng is None:
+        return int(np.random.default_rng().integers(2**63))
+    return rng
+
+
+def _rng_seed(rng: np.random.Generator | int) -> int | None:
+    """The int that repeats a call when passed back as ``rng``, recorded as ``rng_seed``.
+
+    The int seed itself (drawn by :func:`_concrete_seed` for ``None``); None
+    for a generator, whose state no int seed reproduces. Its streams still
+    rebuild from the recorded ``rng_entropy`` (:func:`_recorded_seed`).
+    """
+    if isinstance(rng, np.random.Generator):
+        return None
+    return int(rng)
+
+
 def _stream(root: np.random.SeedSequence, *key: int) -> np.random.Generator:
     """An independent random stream derived from ``root`` and ``key``."""
     return np.random.default_rng(

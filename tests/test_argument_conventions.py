@@ -613,10 +613,10 @@ def test_rng_is_keyword_only_on_functions():
 # ``rng`` is read as ``np.random.default_rng(rng)``: ``rng=0`` and a fresh
 # ``np.random.default_rng(0)`` give the same result, and a generator advances,
 # so two calls with one generator differ. Each public function taking ``rng``
-# runs here on a small input. The record of the seed (a ``rng`` or
-# ``rng_entropy`` entry) is left out of the comparison: a generator has no
+# runs here on a small input. The record of the seed (a ``rng``,
+# ``rng_entropy`` or ``rng_seed`` entry) is left out of the comparison: a generator has no
 # int to record.
-_RECORD_KEYS = frozenset({"rng", "rng_entropy"})
+_RECORD_KEYS = frozenset({"rng", "rng_entropy", "rng_seed"})
 
 
 def _canonical(value, depth=0):
@@ -1252,6 +1252,27 @@ def test_rng_entropy_of_a_generator_determines_the_table(name, monkeypatch):
     assert entropy == int(np.random.default_rng(5).integers(2**63))
     monkeypatch.setattr(_random, "_entropy", lambda rng: entropy)
     assert _canonical(call(None)) == _canonical(table), name
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "neurospatial.replay.compare_replay_methods",
+        "neurospatial.replay.dataset_values",
+        "neurospatial.reactivation.compare_reactivation_methods",
+    ],
+)
+def test_rng_seed_repeats_a_run_without_a_seed(name):
+    """``rng_seed`` repeats an ``rng=None`` run and an int run; None for a generator."""
+    import numpy as np
+
+    call = _rng_calls()[name]
+    unseeded = call(None)
+    seed = unseeded.attrs["rng_seed"]
+    assert type(seed) is int
+    assert _canonical(call(seed)) == _canonical(unseeded), name
+    assert call(7).attrs["rng_seed"] == 7
+    assert call(np.random.default_rng(7)).attrs["rng_seed"] is None
 
 
 def test_one_generator_advances_a_shuffle_verdict():

@@ -52,7 +52,13 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._random import _recorded_seed, _root, _stream
+from neurospatial._random import (
+    _concrete_seed,
+    _recorded_seed,
+    _rng_seed,
+    _root,
+    _stream,
+)
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import (
     is_integer_at_least,
@@ -723,8 +729,10 @@ def dataset_values(
         ``np.random.default_rng(np.random.SeedSequence(rng_entropy,
         spawn_key=key))`` for its own key. The same int seed, or a
         generator in the same state, gives the same entropy and table.
-        Passing ``rng_entropy`` itself as ``rng`` draws a new entropy from
-        it, so seed a run you want to repeat.
+        ``table.attrs["rng_seed"]`` is the int that repeats the table when
+        passed as ``rng`` (drawn from the operating system for ``rng=None``),
+        and None for a generator; passing ``rng_entropy`` itself as ``rng``
+        draws a new entropy from it.
 
     Returns
     -------
@@ -892,6 +900,7 @@ def _dataset_values(
                 fix=f"use one of {list(_SHAREABLE_NULLS)}, or shared=False",
             )
         )
+    rng = _concrete_seed(rng)
     root = _root(rng)
     if isinstance(method, RankOrderMethod):
         table = _rank_order_values(
@@ -941,6 +950,7 @@ def _dataset_values(
             )
         )
     table.attrs["rng_entropy"] = _recorded_seed(root)
+    table.attrs["rng_seed"] = _rng_seed(rng)
     table.attrs["null"] = null
     table.attrs["method"] = method.name
     return table

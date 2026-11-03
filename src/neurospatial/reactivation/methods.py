@@ -56,7 +56,14 @@ from neurospatial._intervals import (
     times_in_intervals,
 )
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._random import _name_key, _recorded_seed, _root, _stream
+from neurospatial._random import (
+    _concrete_seed,
+    _name_key,
+    _recorded_seed,
+    _rng_seed,
+    _root,
+    _stream,
+)
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
@@ -1097,8 +1104,10 @@ def compare_reactivation_methods(
         method ``m`` are ``np.random.default_rng(np.random.SeedSequence(
         rng_entropy, spawn_key=(zlib.crc32(m.name.encode()), ...)))``. The
         same int seed, or a generator in the same state, gives the same
-        entropy and table. Passing ``rng_entropy`` itself as ``rng`` draws
-        a new entropy from it, so seed a run you want to repeat.
+        entropy and table. ``rng_seed`` is the int that repeats the table
+        when passed as ``rng`` (drawn from the operating system for
+        ``rng=None``), and None for a generator; passing ``rng_entropy``
+        itself as ``rng`` draws a new entropy from it.
 
     Raises
     ------
@@ -1229,6 +1238,7 @@ def compare_reactivation_methods(
         n_units * (n_units - 1) // 2, None, pair_mask, call=_CALL
     )
 
+    rng = _concrete_seed(rng)
     root = _root(rng)
 
     rows: list[dict[str, Any]] = []
@@ -1261,6 +1271,7 @@ def compare_reactivation_methods(
     table["is_reactivated"] = table["is_reactivated"].astype("boolean")
     table["error"] = table["error"].fillna("").astype(str)
     table.attrs["rng_entropy"] = _recorded_seed(root)
+    table.attrs["rng_seed"] = _rng_seed(rng)
     return table
 
 

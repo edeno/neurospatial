@@ -25,8 +25,11 @@
   and an advanced one does not. Seeded outputs change. `rng_entropy` is
   that int for every `rng`, including a generator: each stream is
   `np.random.default_rng(np.random.SeedSequence(rng_entropy,
-  spawn_key=key))`. Passing `rng_entropy` back as `rng` starts a new run;
-  repeat a run with the same seed or a generator in the same state.
+  spawn_key=key))`. The tables of `compare_replay_methods`,
+  `dataset_values` and `compare_reactivation_methods` also record
+  `rng_seed`, the int that repeats the table when passed back as `rng`
+  (drawn from the operating system for `rng=None`); it is None for a
+  generator, which no int seed reproduces.
 - `DirectionalRateResult.preferred_direction_deg` and `.tuning_width_deg`
   are removed; use `np.degrees(result.preferred_direction)`. The
   head-direction simulator's ground truth drops its `preferred_direction_deg`
