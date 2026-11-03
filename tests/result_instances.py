@@ -128,9 +128,9 @@ def _directional_rates() -> Any:
 def _object_vector_rates() -> Any:
     from neurospatial.encoding import compute_egocentric_rates
 
-    _, times, positions, headings, trains = _open_field()
+    env, times, positions, headings, trains = _open_field()
     return compute_egocentric_rates(
-        None,
+        env,
         trains,
         times,
         positions,
@@ -178,10 +178,15 @@ def _tuning_curves() -> Any:
 
     rng = np.random.default_rng(0)
     times = np.linspace(0, 100, 1000)
-    progress = (times % 10) / 10
+    distance = 10.0 * (times % 10)  # cm along a 100 cm run, every 10 s
     trains = [np.sort(rng.uniform(0, 100, k)) for k in (100, 150, 50)]
     return compute_tuning_curves(
-        trains, times, progress, bin_edges=np.linspace(0, 1, 11)
+        trains,
+        times,
+        distance,
+        bin_edges=np.linspace(0, 100, 11),
+        variable="distance",
+        units="cm",
     )
 
 
@@ -203,7 +208,7 @@ def _vte_inputs() -> tuple[Any, np.ndarray, np.ndarray, Any]:
 
     stem = np.column_stack([np.full(30, 50.0), np.linspace(0, 50, 30)])
     bar = np.column_stack([np.linspace(0, 100, 60), np.full(60, 55.0)])
-    env = Environment.from_samples(np.vstack([stem, bar]), bin_size=5.0)
+    env = Environment.from_samples(np.vstack([stem, bar]), bin_size=5.0, units="cm")
     regions = Regions()
     regions.add("center", point=(50.0, 55.0))
     regions.add("left", point=(5.0, 55.0))

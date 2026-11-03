@@ -482,6 +482,44 @@ def test_repr_names_are_accessible(name, result_instances):
         assert _same(read, shown), f"{name}: {key} reads {read!r}, summary {shown!r}"
 
 
+# Units written by hand, for results whose recordings are in cm. The repr
+# test above checks that each value shows its declared unit; these check the
+# declarations and the ``{units}`` substitution themselves.
+_PINNED_UNITS = [
+    ("SpatialRateResult", "peak_firing_rate", "Hz"),
+    ("SpatialRateResult", "spatial_information", "bits/spike"),
+    ("SpatialRateResult", "total_occupancy", "s"),
+    ("DirectionalRateResult", "preferred_direction", "rad"),
+    ("ObjectVectorRateResult", "preferred_distance", "cm"),
+    ("TuningCurveResult", "peak_location()[0]", "cm"),
+    ("DirectionalPlaceFields", "peak_firing_rates[first]", "Hz"),
+    ("DecodingResult", "mean_entropy", "bits"),
+    ("DecodingSummary", "max_entropy", "bits"),
+    ("PreDecisionMetrics", "heading_mean_direction", "rad"),
+    ("PreDecisionMetrics", "window_duration", "s"),
+    ("VTESessionResult", "mean_speed", "cm/s"),
+    ("VTESessionResult", "mean_head_sweep", "rad"),
+    ("GoalDirectedMetrics", "mean_approach_rate", "cm/s"),
+    ("GoalDirectedMetrics", "goal_distance_at_start", "cm"),
+    ("GoalDirectedMetrics", "time_to_reach_goal", "s"),
+    ("PathEfficiencyResult[intervals]", "mean_shortest_length", "cm"),
+    ("TrajectoryMetrics", "track_length", "cm"),
+    ("TrajectoryMetrics", "duration", "s"),
+]
+
+
+@pytest.mark.parametrize(("name", "key", "unit"), _PINNED_UNITS)
+def test_repr_shows_the_physical_unit(name, key, unit, result_instances):
+    """A physical summary value is followed by its unit in the repr."""
+    result = result_instances(name)
+    summary = result.summary()
+    assert np.isfinite(summary[key]), f"{name}: pick a finite {key}"
+    text = _repr_values(result, summary)[key]
+    match = _NUMBER_WITH_UNIT.fullmatch(text)
+    assert match, f"{name}: repr shows {key}={text!r}"
+    assert match["unit"] == unit, f"{name}: repr shows {key}={text}, not in {unit}"
+
+
 def _repr_values(result: object, summary: dict) -> dict[str, str]:
     """Each summary key's value text in ``repr(result)``, unit included.
 
