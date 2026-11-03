@@ -68,6 +68,7 @@ from neurospatial._results import (
 )
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import refuse_none_thresholds
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
     BandwidthRule,
@@ -276,8 +277,13 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     >>> fields = detect_place_fields(env, rate, bandwidth=0.0)
     >>> fields.n_fields
     1
-    >>> list(fields.to_dataframe().columns[:5])
+    >>> list(fields.fields_table().columns[:5])
     ['unit_id', 'field', 'n_bins', 'area', 'peak_rate']
+    >>> table = fields.to_dataframe()  # one row per field bin
+    >>> list(table.columns)
+    ['unit_id', 'field', 'bin', 'bin_center_x', 'firing_rate']
+    >>> len(table) == fields.total_bins
+    True
     """
 
     fields: Sequence[NDArray[np.int64]]
@@ -385,8 +391,11 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         """Unit of each table column: Hz, env units, measure units or none."""
         length = self.env.units or ""
         units = {
+            "field": "",
+            "bin": "",
             "n_bins": "",
             "area": _measure_units(self.env),
+            "firing_rate": "Hz",
             "peak_rate": "Hz",
             "mean_rate": "Hz",
             "n_fields": "",
@@ -398,13 +407,60 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
                 "rad"
                 if name.endswith("angle")
                 else length
-                if name.startswith("centroid_")
+                if name.startswith(("centroid_", "bin_center_"))
                 else "",
             )
             for name in columns
         }
 
     def to_dataframe(self) -> pd.DataFrame:
+        """One row per field bin: which field each bin belongs to, and its rate.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``unit_id`` (``<NA>`` without one), ``field`` (0 for the
+            field with the highest peak), ``bin`` (the bin index),
+            ``bin_center_x``, ``bin_center_y``, ... (environment units;
+            ``bin_center_distance`` and ``bin_center_angle`` (rad) on a polar
+            environment) and ``firing_rate`` (Hz). Rows follow the fields in
+            order, then each field's bins. No rows when no field was
+            detected. ``df.attrs`` holds ``units`` (per column), ``bandwidth``
+            and ``excluded_reason``. :meth:`fields_table` has one row per
+            field.
+        """
+        import pandas as pd
+
+        from neurospatial._results import _coord_dim_names
+
+        names = [f"bin_center_{name}" for name in _coord_dim_names(self.env)]
+        bins = (
+            np.concatenate(self.fields) if self.fields else np.empty(0, dtype=np.int64)
+        )
+        field = np.repeat(
+            np.arange(len(self.fields), dtype=np.int64),
+            [len(f) for f in self.fields],
+        )
+        centers = np.asarray(self.env.bin_centers, dtype=np.float64)[bins]
+        columns = ["unit_id", "field", "bin", *names, "firing_rate"]
+        df = pd.DataFrame(
+            {
+                "unit_id": pd.Series([self._table_unit_id()] * len(bins), dtype=object),
+                "field": field,
+                "bin": bins,
+                **{name: centers[:, i] for i, name in enumerate(names)},
+                "firing_rate": self.firing_rate[bins],
+            },
+            columns=columns,
+        )
+        df.attrs.update(
+            units=self._columns_units(columns[1:]),
+            bandwidth=self.bandwidth,
+            excluded_reason=self.excluded_reason,
+        )
+        return df
+
+    def fields_table(self) -> pd.DataFrame:
         """One row per detected field, with its size, rates and centroid.
 
         Returns
@@ -417,11 +473,14 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             (Hz, mean over the field's bins weighted by their measure) and
             ``centroid_x``, ``centroid_y``, ... (the rate-weighted centroid,
             :func:`~neurospatial.encoding.rate_map_centroid`, in environment
-            units; on a polar environment ``centroid_distance`` and
-            ``centroid_angle`` (rad) of the geodesic centroid, a field bin,
-            because averaging angles and distances is not a position). No
+            units; on a track, the geodesic centroid, a field bin, because the
+            mean of a field around a corner lies off the track; on a polar
+            environment ``centroid_distance`` and ``centroid_angle`` (rad) of
+            the geodesic centroid, because averaging angles and distances is
+            not a position). No
             rows when no field was detected. ``df.attrs`` holds
             ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
+            :meth:`to_dataframe` has one row per field bin.
         """
         import pandas as pd
 
@@ -430,10 +489,13 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
 
         measures = np.asarray(self.env.bin_sizes, dtype=np.float64)
         names = [f"centroid_{name}" for name in _coord_dim_names(self.env)]
-        # Averaging (distance, angle) bin centers is not a position: a polar
-        # map's centroid is the field bin nearest the rest (the geodesic one).
+        # Averaging (distance, angle) bin centers is not a position, and the
+        # mean of a field around a track's corner is off the track: there the
+        # centroid is the field bin nearest the rest (the geodesic one).
         method: Literal["euclidean", "geodesic"] = (
-            "geodesic" if self.env.coordinate_kind == "polar" else "euclidean"
+            "geodesic"
+            if self.env.coordinate_kind == "polar" or self.env.is_linearized_track
+            else "euclidean"
         )
         rows = []
         for k, bins in enumerate(self.fields):
@@ -3049,6 +3111,11 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             "min_grid_score": min_grid_score,
             "min_border_score": min_border_score,
         }
+        refuse_none_thresholds(
+            min_spatial_info=min_spatial_info,
+            min_grid_score=min_grid_score,
+            min_border_score=min_border_score,
+        )
         given: dict[str, NDArray[np.float64] | None] = {}
         for name, value in (
             ("grid_scores", grid_scores),
@@ -3813,7 +3880,7 @@ def _spatial_rate_maps(
     )
     from neurospatial.encoding._smoothing import (
         smooth_rate_maps_batch,
-        warn_if_default_bandwidth_fallback,
+        warn_about_bandwidth,
     )
     from neurospatial.encoding._spatial_counts import (
         _warn_if_population_silent,
@@ -3958,9 +4025,9 @@ def _spatial_rate_maps(
         )
         return maps(empty, occupancy, None)
 
-    # The inputs are valid, so a units-free default bandwidth is announced
-    # here rather than ahead of an input error.
-    warn_if_default_bandwidth_fallback(env, bandwidth, resolved_bandwidth, method)
+    # The inputs are valid, so a bandwidth below a bin or a units-free
+    # default is announced here rather than ahead of an input error.
+    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
     # Apply batch smoothing to compute firing rates
     # When backend="jax", uses JAX for the core rate computation
     firing_rates = smooth_rate_maps_batch(
@@ -5640,7 +5707,7 @@ def compute_directional_place_fields(
     from neurospatial._intervals import intersect_intervals
     from neurospatial.encoding._smoothing import (
         resolve_spatial_bandwidth,
-        warn_if_default_bandwidth_fallback,
+        warn_about_bandwidth,
     )
     from neurospatial.encoding._spatial_counts import require_allocentric
 
@@ -5708,7 +5775,7 @@ def compute_directional_place_fields(
         # A units-free default warns here, once per call; the per-label maps
         # then get the resolved value, so they do not warn once per label.
         resolved = resolve_spatial_bandwidth(env, None)
-        if warn_if_default_bandwidth_fallback(env, None, resolved, method):
+        if warn_about_bandwidth(env, None, resolved, method):
             bandwidth = resolved
     for code in order:
         label = values[code]
@@ -5850,8 +5917,8 @@ def detect_place_fields(
         peak rate, with the map, its bandwidth and unit, and
         ``excluded_reason``, which says whether the ``max_mean_rate`` filter
         excluded the map. The result is iterable, indexable and sized like a
-        list of fields; ``to_dataframe()`` tabulates each field's size, rates
-        and centroid.
+        list of fields; ``fields_table()`` tabulates each field's size, rates
+        and centroid, and ``to_dataframe()`` lists each field's bins.
 
     Raises
     ------
@@ -5990,16 +6057,19 @@ def detect_place_fields(
         )
     unit_ids: list[Any] | None
     if isinstance(firing_rate, SpatialRateResult):
+        # A glm map has no kernel and records None; it is unsmoothed (0).
         recorded = (
             0.0 if firing_rate.bandwidth is None else float(firing_rate.bandwidth)
         )
         if bandwidth is None:
             bandwidth = recorded
-        elif firing_rate.bandwidth is not None and bandwidth != recorded:
+        elif bandwidth != recorded:
             raise ValueError(
                 _format_error(
                     f"detect_place_fields got bandwidth={bandwidth!r}, but the "
-                    f"rate result was estimated with bandwidth={recorded!r}.",
+                    "rate result was estimated with "
+                    f"bandwidth={firing_rate.bandwidth!r} "
+                    f"(method={firing_rate.method!r}).",
                     why="Why: the bandwidth sets the smallest field one noisy "
                     "bin makes after smoothing, so it must be the map's own",
                     fix="drop bandwidth= to use the result's, or recompute the "
@@ -7541,6 +7611,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         min_info: float,
         correction: Literal["holm", "fdr_bh"] | None,
     ) -> dict[str, NDArray[np.float64]]:
+        refuse_none_thresholds(alpha=level, min_spatial_info=min_info)
         adjusted, cannot_reject = self._adjusted(level, correction)
         with np.errstate(invalid="ignore"):
             passed = adjusted < level
@@ -8035,6 +8106,7 @@ class PlaceCellSignificanceResult(UnitSelectionMixin, ResultMixin):
         """
         from neurospatial.encoding._metrics import _warn_unknown_bias
 
+        refuse_none_thresholds(alpha=alpha, min_info=min_info)
         with np.errstate(invalid="ignore"):
             significant = self.p_value < alpha
         debiased = self.observed - self.spatial_information_bias

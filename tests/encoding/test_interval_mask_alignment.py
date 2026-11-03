@@ -251,7 +251,6 @@ def test_max_gap_alignment_against_hand_masked_reference(
     np.testing.assert_allclose(occ, ref_occ)
 
 
-@pytest.mark.filterwarnings("ignore:bandwidth=.* is far below:UserWarning")
 def test_max_gap_rate_not_inflated(env_1d, gap_trajectory) -> None:
     """The full rate-map path does not inflate the gap bin's rate."""
     times = gap_trajectory["times"]
@@ -261,14 +260,13 @@ def test_max_gap_rate_not_inflated(env_1d, gap_trajectory) -> None:
     t_gap = 0.5 * (times[gap_interval] + times[gap_interval + 1])
     spike_times = np.array([t_gap])
 
-    # binned smoothing keeps a clean numerator/denominator relationship.
+    # Unsmoothed binning keeps a clean numerator/denominator relationship.
     res_default = compute_spatial_rate(
         env_1d,
         spike_times,
         times,
         positions,
         method="binned",
-        bandwidth=1.0,
         warn_on_drop=False,
     )
     res_no_gap = compute_spatial_rate(
@@ -277,7 +275,6 @@ def test_max_gap_rate_not_inflated(env_1d, gap_trajectory) -> None:
         times,
         positions,
         method="binned",
-        bandwidth=1.0,
         max_gap=None,
         warn_on_drop=False,
     )
@@ -791,7 +788,6 @@ def test_environment_occupancy_is_the_rate_denominator():
     assert occupancy.sum() == pytest.approx(0.5)
 
 
-@pytest.mark.filterwarnings("ignore:bandwidth=.* is far below:UserWarning")
 def test_isolated_tracking_dropouts_do_not_bias_rate():
     """20% isolated NaN frames used to read a 5 Hz unit as about 3.97 Hz."""
     rng = np.random.default_rng(0)
@@ -800,9 +796,7 @@ def test_isolated_tracking_dropouts_do_not_bias_rate():
     env = Environment.from_samples(positions, bin_size=5.0)
     spikes = np.sort(rng.uniform(0, 599, 3000))
     positions[rng.random(len(times)) < 0.2] = np.nan
-    result = compute_spatial_rate(
-        env, spikes, times, positions, method="binned", bandwidth=1e-6
-    )
+    result = compute_spatial_rate(env, spikes, times, positions, method="binned")
     occupied = result.occupancy > 1
     pooled = np.nansum(result.firing_rate[occupied] * result.occupancy[occupied])
     assert pooled / result.occupancy[occupied].sum() == pytest.approx(5.0, rel=0.05)

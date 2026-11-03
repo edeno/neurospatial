@@ -1411,7 +1411,7 @@ bandwidth, min_occupancy, backend, boundary_source
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         resolve_spatial_bandwidth,
-        warn_if_default_bandwidth_fallback,
+        warn_about_bandwidth,
     )
     from neurospatial.encoding._validation import validate_trajectory
     from neurospatial.encoding._view_counts import prepare_view_binning
@@ -1491,9 +1491,9 @@ bandwidth, min_occupancy, backend, boundary_source
         boundary_source=boundary_source,
         break_before=breaks,
     )
-    # The inputs are valid, so a units-free default bandwidth is announced
-    # here rather than ahead of an input error.
-    warn_if_default_bandwidth_fallback(env, bandwidth, resolved_bandwidth, method)
+    # The inputs are valid, so a bandwidth below a bin or a units-free
+    # default is announced here rather than ahead of an input error.
+    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
     return _ViewSetup(
         trains,
         resolved_unit_ids,

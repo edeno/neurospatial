@@ -486,6 +486,50 @@ def validate_draw_count(value: object, *, name: str, owner: str) -> None:
     )
 
 
+def refuse_none_thresholds(
+    *, why: str | None = None, fix: str | None = None, **thresholds: object
+) -> None:
+    """Refuse ``None`` for a threshold argument, which has no None default.
+
+    A cutoff compared with ``>=`` or ``<`` would otherwise raise a bare
+    ``TypeError`` about ``NoneType``.
+
+    Parameters
+    ----------
+    why, fix : str, optional
+        The message's reason and fix; by default, that the argument is a
+        cutoff and to pass a number or omit it for its default.
+    **thresholds : object
+        Each threshold argument by its public name.
+
+    Raises
+    ------
+    InputError
+        If any threshold is None.
+
+    Examples
+    --------
+    >>> refuse_none_thresholds(min_info=0.5)
+    >>> refuse_none_thresholds(min_info=None)
+    Traceback (most recent call last):
+    ...
+    neurospatial._exceptions.InputError: min_info=None is not a threshold.
+    Why: min_info is the cutoff each value is compared with; it has no None default.
+    Fix: pass a number, or omit min_info for its default.
+    """
+    for name, value in thresholds.items():
+        if value is None:
+            raise InputError(
+                _format_error(
+                    f"{name}=None is not a threshold.",
+                    why=why
+                    or f"{name} is the cutoff each value is compared with; it has "
+                    "no None default.",
+                    fix=fix or f"pass a number, or omit {name} for its default.",
+                )
+            )
+
+
 def validate_alpha(alpha: object, *, owner: str) -> None:
     """Require a significance level strictly between 0 and 1.
 

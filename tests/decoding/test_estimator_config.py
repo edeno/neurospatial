@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import pickle
+import warnings
 from dataclasses import replace
 
 import numpy as np
@@ -130,3 +131,45 @@ def test_hand_built_models_keep_configuration_guard(recording):
     decoder = BayesianDecoder.from_models(env, np.ones((2, env.n_bins)))
     with pytest.raises(ValueError, match=r"bandwidth.*fitted"):
         replace(decoder, bandwidth=2.0)
+
+
+def _fallback_warnings(record) -> list[str]:
+    return [
+        str(w.message) for w in record if "bandwidth=None resolved" in str(w.message)
+    ]
+
+
+@pytest.fixture(scope="module")
+def unitless_recording():
+    """A random walk on an environment without units, 5-unit bins."""
+    rng = np.random.default_rng(3)
+    times = np.arange(0.0, 60.0, 0.02)
+    positions = np.cumsum(rng.normal(0.0, 1.0, (times.size, 2)), axis=0) % 50.0
+    env = Environment.from_samples(positions, bin_size=5.0)
+    spike_rng = np.random.default_rng(4)
+    spikes = [np.sort(spike_rng.uniform(0.0, 60.0, n)) for n in (150, 200, 250)]
+    return env, spikes, times, positions
+
+
+def test_decoder_announces_the_bandwidth_fallback_once(unitless_recording):
+    """Fit encodes once and predict reuses the models: one warning in all."""
+    env, spikes, times, positions = unitless_recording
+    assert env.units is None
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        decoder = BayesianDecoder(env).fit(spikes, times, positions, epochs=(0.0, 40.0))
+        decoder.predict(spikes, times, epochs=(40.0, 60.0))
+    (message,) = _fallback_warnings(record)
+    # 2.5 median bin spacings of 5-unit bins.
+    assert "resolved to 12.5 environment units" in message
+
+
+def test_decode_session_announces_the_bandwidth_fallback_once(unitless_recording):
+    from neurospatial.decoding import decode_session
+
+    env, spikes, times, positions = unitless_recording
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        decode_session(env, spikes, times, positions)
+    (message,) = _fallback_warnings(record)
+    assert "resolved to 12.5 environment units" in message

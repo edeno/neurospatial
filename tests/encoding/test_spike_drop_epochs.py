@@ -13,7 +13,7 @@ import warnings
 import numpy as np
 import pytest
 
-from neurospatial import compute_spatial_rates
+from neurospatial import compute_spatial_rate, compute_spatial_rates
 from neurospatial.decoding import decode_session
 from neurospatial.encoding import compute_directional_rate, compute_directional_rates
 from neurospatial.simulation import open_field_session
@@ -33,6 +33,22 @@ def wake_tracking():
     spike_rng = np.random.default_rng(1)
     spikes = np.sort(spike_rng.uniform(0.0, 1000.0, 5000))
     return times, headings, spikes
+
+
+@pytest.fixture(scope="module")
+def session_100s():
+    """A seeded 100 s open-field session with two place cells."""
+    return open_field_session(duration=100.0, n_place_cells=2, rng=0)
+
+
+@pytest.fixture(scope="module")
+def session_60s():
+    return open_field_session(duration=60.0, n_place_cells=4, rng=0)
+
+
+@pytest.fixture(scope="module")
+def session_600s():
+    return open_field_session(duration=600.0, n_place_cells=1, rng=0)
 
 
 def _drop_warnings(caught):
@@ -121,8 +137,8 @@ def test_warn_on_drop_false_silences_directional_spike_drop(wake_tracking):
     assert _drop_warnings(caught) == []
 
 
-def test_spatial_and_decoding_spike_drop_ignore_spikes_outside_epochs():
-    session = open_field_session(duration=100.0, n_place_cells=2, rng=0)
+def test_spatial_and_decoding_spike_drop_ignore_spikes_outside_epochs(session_100s):
+    session = session_100s
     sleep_rng = np.random.default_rng(1)
     with_sleep = [
         np.sort(np.r_[train, sleep_rng.uniform(100.0, 1000.0, 900)])
@@ -140,7 +156,9 @@ def test_spatial_and_decoding_spike_drop_ignore_spikes_outside_epochs():
 
 @pytest.mark.parametrize("window", ["epochs", "spike_window"])
 @pytest.mark.parametrize("family", ["spatial", "directional"])
-def test_spike_clock_offset_still_warns_with_windows(wake_tracking, window, family):
+def test_spike_clock_offset_still_warns_with_windows(
+    wake_tracking, session_100s, window, family
+):
     """Spikes 1000 s later than the tracking (a misaligned file) are all lost.
 
     No spike falls inside the analysed window, so the window cannot explain
@@ -154,7 +172,7 @@ def test_spike_clock_offset_still_warns_with_windows(wake_tracking, window, fami
             compute_directional_rates([in_wake], times, headings, **{window: [WAKE]})
 
     else:
-        session = open_field_session(duration=100.0, n_place_cells=1, rng=0)
+        session = session_100s
 
         def call():
             compute_spatial_rates(
@@ -169,11 +187,11 @@ def test_spike_clock_offset_still_warns_with_windows(wake_tracking, window, fami
         call()
 
 
-def test_decoder_fit_and_predict_warn_once_each_and_not_for_epochs():
+def test_decoder_fit_and_predict_warn_once_each_and_not_for_epochs(session_60s):
     """Each call warns at most once; spikes outside its epochs are not lost."""
     from neurospatial.decoding import BayesianDecoder
 
-    session = open_field_session(duration=60.0, n_place_cells=4, rng=0)
+    session = session_60s
     sleep_rng = np.random.default_rng(1)
     with_sleep = [
         np.sort(np.r_[train, sleep_rng.uniform(60.0, 600.0, 5 * len(train))])
@@ -200,14 +218,14 @@ def test_decoder_fit_and_predict_warn_once_each_and_not_for_epochs():
         assert len(_drop_warnings(caught)) == 1
 
 
-def test_partial_offset_inside_epochs_is_not_detected():
+def test_partial_offset_inside_epochs_is_not_detected(session_600s):
     """A known limit: spikes outside ``epochs`` are not checked.
 
     Spikes shifted 300 s later still leave half of them inside the tracked
     epoch, and the half outside it looks like untracked (sleep) spikes, so no
     warning can tell the offset apart. The docs say to compare the ranges.
     """
-    session = open_field_session(duration=600.0, n_place_cells=1, rng=0)
+    session = session_600s
     shifted = session.spike_times[0] + 300.0
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -222,3 +240,45 @@ def test_partial_offset_inside_epochs_is_not_detected():
     # Without epochs the same spikes are lost to the analysis, so it warns.
     with pytest.warns(UserWarning, match="fell outside the position"):
         compute_spatial_rates(session.env, [shifted], session.times, session.positions)
+
+
+def _silent_in_epochs(session):
+    """One unit over 0-300 s, tracked 0-100 s, with no spike in 20-80 s.
+
+    A cell active outside the analysed epochs (in sleep, say) is ordinary
+    data, not spike times on another clock.
+    """
+    rng = np.random.default_rng(5)
+    spikes = np.sort(np.r_[rng.uniform(0.0, 20.0, 20), rng.uniform(80.0, 300.0, 200)])
+    assert not np.any((spikes >= 20.0) & (spikes < 80.0))
+    assert np.any(spikes < session.times[-1])  # some spikes are tracked
+    return spikes
+
+
+@pytest.mark.parametrize("family", ["spatial", "directional"])
+def test_unit_silent_inside_epochs_does_not_warn(session_100s, family):
+    session = session_100s
+    spikes = _silent_in_epochs(session)
+    headings = np.zeros(session.times.size)
+
+    def call(train):
+        if family == "spatial":
+            return compute_spatial_rate(
+                session.env, train, session.times, session.positions, epochs=(20, 80)
+            )
+        return compute_directional_rate(train, session.times, headings, epochs=(20, 80))
+
+    maxima = []
+    for train in (spikes, np.sort(np.r_[spikes, 50.0])):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = call(train)
+        assert _drop_warnings(caught) == []
+        maxima.append(np.nanmax(np.asarray(result.firing_rate)))
+    # Silent in the analysed time: a zero rate where visited, not missing;
+    # the one spike at 50 s is counted.
+    assert maxima[0] == 0.0
+    assert maxima[1] > 0.0
+    # The same unit in milliseconds is on another clock and still warns.
+    with pytest.warns(UserWarning, match=r"\(100%\) fell outside the position"):
+        call(spikes * 1000)

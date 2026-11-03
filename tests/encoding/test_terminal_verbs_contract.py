@@ -239,6 +239,7 @@ _VERBS = (
     "category_counts_table",
     "words_table",
     "groups_table",
+    "fields_table",
 )
 _TABLE_VERBS = tuple(verb for verb in _VERBS if verb.endswith(("table", "dataframe")))
 RATE_VERBS = ("summary", "to_dataframe", "summary_table", "to_xarray", "plot")
@@ -301,7 +302,13 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "PeriEventResult": PSTH_VERBS,
         "PhasePrecessionResult": ("summary",),
         "PlaceCellSignificanceResult": ("summary", "summary_table", "plot"),
-        "PlaceFieldsResult": ("summary", "to_dataframe", "summary_table", "plot"),
+        "PlaceFieldsResult": (
+            "summary",
+            "to_dataframe",
+            "summary_table",
+            "fields_table",
+            "plot",
+        ),
         "PopulationCoverageResult": ("summary",),
         "PopulationPeriEventResult": PSTH_VERBS,
         "PreDecisionMetrics": ("summary",),
