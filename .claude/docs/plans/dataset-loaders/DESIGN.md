@@ -64,6 +64,7 @@ down. It is also the package's own evidence that it works on real data.
 - **A full summary on print:** printing a loaded recording shows the full
   summary, including its "watch out" list (below).
 - **An overview figure:** one call draws the session.
+- **An interactive view and movie:** one call builds an animation scene of the session, on the existing animation module.
 - **One worked result per dataset,** from the paper, where possible.
 - **Showcase datasets** (3-D, complex mazes, changing environments, the
   animal's own frame, pose) show what the package can do and prove it works
@@ -131,6 +132,25 @@ Printing a loaded recording shows the full summary, in this order:
 
 A mockup of the summary and figure is in
 `.superpowers/brainstorm/*/content/first-look.html` (not committed).
+
+### Interactive view and movie
+
+The maintainer added this at planning time. A student can overlay the data
+on the environment and explore it interactively or as a movie, as well as
+in the static overview figure. This uses the package's existing animation
+module (`neurospatial.animation`); it is not a new viewer:
+
+- `rec.animation()` builds an `Animation` scene with:
+  - the environment, with its regions;
+  - occupancy as the spatial field;
+  - overlays for position with a trail, head direction, the spike raster,
+    events and epochs.
+- From that scene:
+  - `.show(backend="fastplotlib" | "napari" | "widget")` opens it
+    interactively, in 1-D, 2-D or 3-D;
+  - `.export("session.mp4", time_range=...)` writes a movie.
+- Users can add their own fields to the same scene, for example a decoded
+  posterior.
 
 ### Attributes: plain arrays in the order functions take them
 
