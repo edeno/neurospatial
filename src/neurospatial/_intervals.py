@@ -140,45 +140,56 @@ DEFAULT_MAX_GAP = 1.0
 #: warning names them as the other cause of such runs.
 MASKED_RUN_MIN_DURATION = 0.25
 
-#: Number of sampling steps in each span whose phase the boolean-masking
-#: check reads. On a clock, a span of any length is a whole number of
-#: intervals plus the jitter of its two ends, whether or not samples were
-#: removed inside it, so its phase stays as concentrated as a single
-#: step's. A spike train's spans are sums of independent steps, so their
-#: phases spread as the spans lengthen, while single steps after a
-#: refractory period concentrate: with 5 ms of dead time and a 2 ms free
-#: mean the steps' resultant length is 0.46. Spans of ten steps keep at
-#: most 0.054 over dead times of 1-5 ms, free means of 2-50 ms and 1-20% of
-#: steps being pauses of 0.3-0.9 s, on a 30 kHz clock (180 runs of 20,000
-#: spikes).
+#: Number of consecutive short steps in each span whose phase the
+#: boolean-masking check reads, besides the steps long enough to count as
+#: removed runs (``MASKED_RUN_MIN_DURATION``), which are spans of their own.
+#: On a clock, a span is a whole number of intervals plus the jitter of its
+#: two ends, so its phase is as concentrated as a single step's; a long step
+#: on its own keeps drift of the clock from piling up over many steps (a
+#: fragmented mask's ten steps cover about 110 frames). A spike
+#: train's spans are sums of independent steps, so their phases spread,
+#: while single steps after a refractory period concentrate: with 5 ms of
+#: dead time and a 2 ms free mean their mean cosine is 0.43. The spans keep
+#: a resultant length of at most 0.039 over dead times of 1-5 ms, free
+#: means of 2-50 ms and 1-20% of steps being pauses of 0.3-0.9 s, on a
+#: 30 kHz clock (180 runs of 20,000 spikes).
 MASKED_SPAN_STEPS = 10
 
-#: Least resultant length of the phases ``2 pi span / interval`` of disjoint
-#: spans of ``MASKED_SPAN_STEPS`` steps for the boolean-masking check to
-#: read the sampling as regular. Timestamp jitter spreads the phases without
-#: moving their centre, and a slightly misread interval turns them all
-#: alike, which leaves the resultant length unchanged. Measured on
-#: simulated recordings with 0.4 s removed every 2 s, over 10 seeds:
-#: Gaussian timestamp jitter of 4 ms SD at 30 Hz gives 0.57, 6 ms SD at
-#: 30 Hz and 3 ms SD at 60 Hz 0.28, 2 ms SD at 120 Hz 0.11 (0.08 with times
-#: rounded to 1 ms), and 60 Hz times rounded to 10 ms 0.44. Irregular steps
-#: reach at most 0.065, where ``MASKED_REGULAR_CHANCE`` keeps them silent:
-#: uniform or exponential steps, positions read at spike times (log-uniform
-#: steps on a 30 kHz clock, as in DANDI 001754; 0.027), gamma spike trains
-#: of shape 2-5, the refractory spike trains of ``MASKED_SPAN_STEPS``,
-#: pooled spike times rounded to 0.1 ms, and a logger whose steps vary
-#: independently by +-40% (0.034). A logger whose steps vary by +-10%
-#: keeps 0.53 and reads as regular; a long step there is a dropout, so the
-#: warning applies.
+#: Least coherence for the boolean-masking check to read the sampling as
+#: regular. Both the single steps' phases ``2 pi dt / interval`` (their mean
+#: cosine) and the spans' phases (``MASKED_SPAN_STEPS``; their resultant
+#: length, which a slightly misread interval leaves unchanged) must reach
+#: it. Timestamp jitter spreads the phases without moving their centre.
+#: Measured over 5-10 seeds as steps / spans: speed masks (0.4 s removed
+#: every 2 s) with Gaussian timestamp jitter of 4 ms SD at 30 Hz give
+#: 0.56 / 0.57, 6 ms SD at 30 Hz and 3 ms SD at 60 Hz 0.28 / 0.27, 2 ms SD
+#: at 120 Hz 0.10 / 0.10 (0.08 / 0.08 with times rounded to 1 ms), and 60 Hz
+#: times rounded to 10 ms 0.44 / 0.46 (resultant lengths). Fragmented masks
+#: at 30 Hz (kept runs of 1-4 frames between removed runs of 10-40) on an
+#: imperfect clock give 0.84 / 0.60 with a +-1% linear drift of the frame
+#: interval, 0.69 / 0.29 and 0.65 / 0.21 with frames varying independently
+#: by 5% SD and by up to +-10%, 0.55 / 0.11 with a +-2% sinusoidal frame
+#: rate, and 0.09 / 0.08 with 8 ms SD jitter (4 ms at 60 Hz, 2 ms at
+#: 120 Hz). Frames varying by 10% SD read as irregular: a step of 40
+#: frames then spreads by 0.6 intervals, as a renewal process does. Single
+#: irregular steps stay below 0.04: uniform or exponential steps, positions
+#: read at spike times (log-uniform steps on a 30 kHz clock, as in
+#: DANDI 001754) and gamma spike trains of shape 2-5; their spans reach
+#: 0.12, where ``MASKED_REGULAR_CHANCE`` keeps them silent. A logger whose
+#: steps vary independently by +-40% reaches 0.23 / 0.03 and reads as
+#: irregular; one that varies by +-10% (0.94 / 0.51) reads as regular, and a
+#: long step there is a dropout, so the warning applies.
 MASKED_REGULAR_COHERENCE = 0.05
 
-#: Largest probability that irregular spans reach the measured resultant
-#: length, for the boolean-masking check to read the sampling as regular:
-#: the Rayleigh test of the disjoint spans, with Zar's approximation (as in
-#: :func:`~neurospatial.stats.rayleigh_test`). It binds for fewer than about
-#: 3700 spans (37,000 steps) and ``MASKED_REGULAR_COHERENCE`` for more.
-#: Without it, 1872-1908 of 2000 short runs (11-60 steps) of uniform,
-#: exponential or log-uniform irregular steps warned; with it, none
+#: Largest probability that phases spread evenly reach the measured
+#: coherence, for the boolean-masking check to read the sampling as
+#: regular: the V test with expected direction 0 for the single steps, and
+#: the Rayleigh test (Zar's approximation, as in
+#: :func:`~neurospatial.stats.rayleigh_test`) for the spans. It binds for
+#: fewer than about 2800 steps or 3700 spans, and
+#: ``MASKED_REGULAR_COHERENCE`` for more. Without it, 977-1027 of 2000
+#: short runs (11-60 steps) of uniform, exponential or log-uniform
+#: irregular steps warned; with it, none
 #: (``test_masking_check_rarely_calls_short_irregular_runs_masked``).
 MASKED_REGULAR_CHANCE = 1e-4
 
@@ -2041,6 +2052,77 @@ def _one_valued(dt: NDArray[np.float64], interval: float) -> bool:
     return bool(np.ptp(one_sample) <= MASKED_TICK_TOLERANCE * interval)
 
 
+def _spans(dt: NDArray[np.float64], interval: float) -> NDArray[np.float64]:
+    """Durations of the spans whose phases the boolean-masking check reads.
+
+    A step long enough to count as a removed run (``MASKED_RUN_MIN_DURATION``)
+    is a span of its own. The shorter steps between two such steps are
+    grouped ``MASKED_SPAN_STEPS`` at a time, from the first; a last group with
+    fewer steps is dropped.
+
+    Parameters
+    ----------
+    dt : ndarray, shape (n_steps,)
+        Sampling steps in seconds.
+    interval : float
+        The sampling interval in seconds.
+
+    Returns
+    -------
+    ndarray, shape (n_spans,)
+        Span durations in seconds: the groups, then the long steps.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> dt = np.r_[np.full(25, 0.1), 3.0, np.full(4, 0.1)]
+    >>> np.round(_spans(dt, 0.1), 6).tolist()
+    [1.0, 1.0, 3.0]
+    """
+    long = dt - interval >= MASKED_RUN_MIN_DURATION
+    # Each run of short steps ends at a long step (or the last step); its
+    # complete groups are its first steps, a multiple of MASKED_SPAN_STEPS.
+    ends = np.r_[np.flatnonzero(long), dt.size]
+    n_short = np.diff(np.r_[-1, ends]) - 1
+    n_grouped = n_short // MASKED_SPAN_STEPS * MASKED_SPAN_STEPS
+    counts = np.c_[n_grouped, n_short - n_grouped + 1].ravel()
+    in_group = np.repeat(np.tile([True, False], ends.size), counts)[: dt.size]
+    grouped = dt[in_group].reshape(-1, MASKED_SPAN_STEPS).sum(axis=1)
+    return np.concatenate((grouped, dt[long]))
+
+
+def _locked(
+    durations: NDArray[np.float64],
+    interval: float,
+    *,
+    centre: Literal["whole numbers", "any"],
+) -> bool:
+    """Whether ``durations`` are whole numbers of ``interval``, give or take jitter.
+
+    Their phases ``2 pi duration / interval`` must concentrate: their mean
+    cosine (``centre="whole numbers"``) or their resultant length
+    (``centre="any"``, for phases a misread interval turns alike) is at
+    least ``MASKED_REGULAR_COHERENCE``, and phases spread evenly reach it
+    with probability at most ``MASKED_REGULAR_CHANCE``. These are the V test
+    with expected direction 0 (normal approximation, variance ``1 / (2 n)``)
+    and the Rayleigh test (Zar's approximation, as in
+    :func:`~neurospatial.stats.rayleigh_test`, its exponent written there
+    to avoid cancellation).
+    """
+    phases = 2.0 * np.pi * durations / interval
+    n = phases.size
+    cosine = float(np.mean(np.cos(phases)))
+    if centre == "whole numbers":
+        coherence = cosine
+        chance = 0.5 * math.erfc(coherence * math.sqrt(n))
+    else:
+        coherence = math.hypot(cosine, float(np.mean(np.sin(phases))))
+        r_n = n * coherence
+        root = math.sqrt(1 + 4 * n + 4 * (n**2 - r_n**2))
+        chance = math.exp(-4 * r_n**2 / (root + 1 + 2 * n))
+    return coherence >= MASKED_REGULAR_COHERENCE and chance <= MASKED_REGULAR_CHANCE
+
+
 def _masked_sample_fraction(
     times: NDArray[np.float64], kept: NDArray[np.bool_], max_gap: float
 ) -> float:
@@ -2057,12 +2139,15 @@ def _masked_sample_fraction(
 
     Irregular sampling, whose steps say nothing about removed samples,
     counts nothing. The sampling counts as regular when it keeps time like a
-    clock: the phases ``2 pi span / interval`` of disjoint spans of
-    ``MASKED_SPAN_STEPS`` steps concentrate, with a resultant length of at
-    least ``MASKED_REGULAR_COHERENCE`` that irregular spans would reach with
-    probability at most ``MASKED_REGULAR_CHANCE`` (the Rayleigh test). The
-    steps of a spike train with a refractory period concentrate one by
-    one, but its spans spread. When the one-interval steps are all one value
+    clock: the phases ``2 pi dt / interval`` of single steps centre on whole
+    numbers (or, read against a tick lattice, concentrate), and the phases
+    of spans (:func:`_spans`) concentrate, each span a step
+    long enough to count as a removed run or ``MASKED_SPAN_STEPS``
+    consecutive shorter steps. Both reach a coherence of
+    ``MASKED_REGULAR_COHERENCE`` that phases spread evenly would reach with
+    probability at most ``MASKED_REGULAR_CHANCE``. The steps of a spike
+    train with a refractory period concentrate one by one, but its spans
+    spread. When the one-interval steps are all one value
     (``MASKED_TICK_TOLERANCE``), the timestamps are rounded to a tick or come
     from an exact clock. The interval is then the mean of the steps of one
     and two ticks, which for a clock rounded to a tick that does not divide
@@ -2114,27 +2199,27 @@ def _masked_sample_fraction(
     interval = _sampling_interval(dt)
     if not np.isfinite(interval) or interval <= 0:
         return 0.0
+    # Single steps centre on whole numbers of the interval, except on a
+    # clock rounded to a tick that does not divide it, whose steps the
+    # rounding moves by a repeating pattern of ticks.
+    step_centre: Literal["whole numbers", "any"] = "whole numbers"
     if _one_valued(dt, interval):
         # The window around the mean of the steps of one and two ticks holds
         # one of them, so the shifts can start there.
         ticks = dt[(dt > 0.5 * interval) & (dt < 2.5 * interval)]
         interval = _sampling_interval(dt, start=float(np.mean(ticks)))
+        step_centre = "any"
     if _one_valued(dt, interval):
         ratio = dt / interval
         if np.mean((ratio > 0.5) & (ratio < 1.5)) < MASKED_REGULAR_SHARE:
             return 0.0
-    else:
-        phases = 2.0 * np.pi * np.diff(times[::MASKED_SPAN_STEPS]) / interval
-        n_spans = phases.size
-        coherence = math.hypot(np.mean(np.cos(phases)), np.mean(np.sin(phases)))
-        # The Rayleigh test of the disjoint spans' phases, with Zar's
-        # approximation as in stats.rayleigh_test (written there to avoid
-        # cancellation): irregular spans have phases spread evenly.
-        r_n = n_spans * coherence
-        root = math.sqrt(1 + 4 * n_spans + 4 * (n_spans**2 - r_n**2))
-        chance = math.exp(-4 * r_n**2 / (root + 1 + 2 * n_spans))
-        if coherence < MASKED_REGULAR_COHERENCE or chance > MASKED_REGULAR_CHANCE:
-            return 0.0
+    # The steps are read from at most 100,000 evenly spaced ones, enough to
+    # read a coherence of 0.05 to within 0.003.
+    elif not (
+        _locked(dt[:: dt.size // 100_000 + 1], interval, centre=step_centre)
+        and _locked(_spans(dt, interval), interval, centre="any")
+    ):
+        return 0.0
     removed_time = dt - interval
     skipped = kept & (removed_time >= MASKED_RUN_MIN_DURATION) & (dt <= max_gap)
     analysed = float(dt[kept].sum())

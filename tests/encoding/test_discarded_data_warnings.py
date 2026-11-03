@@ -517,7 +517,7 @@ def test_masking_check_rarely_calls_short_irregular_runs_masked(draw):
 
     A few random steps can look locked to an interval by chance; the
     chance check (``MASKED_REGULAR_CHANCE``) keeps that below 0.5% of runs
-    (none of 2000 measured). Without it, 1872-1908 of the 2000 runs of each
+    (none of 2000 measured). Without it, 977-1027 of the 2000 runs of each
     kind warn.
     """
     from neurospatial._constants import DISCARD_WARN_FRACTION
@@ -528,6 +528,50 @@ def test_masking_check_rarely_calls_short_irregular_runs_masked(draw):
         times = 10.0 + np.cumsum(np.r_[0.0, draw(rng, rng.integers(11, 61))])
         n_warned += _bridged_fraction(times) > DISCARD_WARN_FRACTION
     assert n_warned <= 10
+
+
+def _frame_times(rng, n, fs, clock):
+    """Times of ``n`` frames of a camera at ``fs`` whose clock is ``clock``."""
+    frame = np.arange(n)
+    if clock == "jitter":
+        # Gaussian timestamp jitter of 0.24 intervals: 8 ms SD at 30 Hz.
+        return np.sort(frame / fs + rng.normal(0.0, 0.24 / fs, n))
+    rate_error = {
+        "1% linear drift": lambda: 0.01 * (2.0 * frame / n - 1.0),
+        "frames vary by 5% SD": lambda: rng.normal(0.0, 0.05, n),
+        "frames vary by 10%": lambda: rng.uniform(-0.1, 0.1, n),
+        "2% sinusoidal rate": lambda: 0.02 * np.sin(2.0 * np.pi * frame / fs / 60.0),
+    }[clock]()
+    return np.r_[0.0, np.cumsum((1.0 + rate_error[:-1]) / fs)]
+
+
+@pytest.mark.parametrize(
+    ("fs", "clock"),
+    [
+        (30.0, "1% linear drift"),
+        (30.0, "frames vary by 5% SD"),
+        (30.0, "frames vary by 10%"),
+        (30.0, "2% sinusoidal rate"),
+        (30.0, "jitter"),
+        (60.0, "jitter"),
+        (120.0, "jitter"),
+    ],
+)
+def test_fragmented_mask_warns_on_an_imperfect_clock(fs, clock):
+    """A fragmented mask (kept runs of 1-4 frames) on a clock that is not exact.
+
+    Most steps cross a removed run of 10-40 frames, and each is a span of its
+    own, so the clock's drift or the frames' variation adds up over one step,
+    not over ten. The jitter is 8 ms SD at 30 Hz, 4 ms at 60 Hz and 2 ms at
+    120 Hz. Three seeds each.
+    """
+    for seed in range(3):
+        rng = np.random.default_rng(seed)
+        _, sampled = _fragmented(rng)
+        times = _frame_times(rng, sampled.size, fs, clock)[sampled]
+        np.testing.assert_allclose(
+            _bridged_fraction(times), _removed_share(sampled, fs), rtol=0.1
+        )
 
 
 def test_fragmented_mask_warns_and_inflates_occupancy():
