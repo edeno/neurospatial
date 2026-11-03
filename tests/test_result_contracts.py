@@ -209,6 +209,21 @@ def test_detect_place_fields_array_needs_bandwidth(open_field, open_field_rates)
         encoding.detect_place_fields(open_field.env, open_field_rates[0], bandwidth=1.0)
 
 
+def test_detect_place_fields_glm_refuses_a_bandwidth(open_field):
+    """A glm map has no kernel: only bandwidth None or 0 is its own."""
+    s = open_field
+    glm = encoding.compute_spatial_rate(
+        s.env, s.spike_times[0], s.times, s.positions, method="glm"
+    )
+    assert glm.bandwidth is None
+    default = encoding.detect_place_fields(s.env, glm)
+    zero = encoding.detect_place_fields(s.env, glm, bandwidth=0.0)
+    assert default.bandwidth == zero.bandwidth == 0.0
+    assert default.n_fields == zero.n_fields
+    with pytest.raises(ValueError, match=r"estimated with bandwidth=None"):
+        encoding.detect_place_fields(s.env, glm, bandwidth=50.0)
+
+
 def test_binned_rates_give_unsmoothed_fields(open_field):
     """A ``method="binned"`` result records bandwidth 0: the peak bin is the floor."""
     s = open_field

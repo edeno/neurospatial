@@ -5953,16 +5953,19 @@ def detect_place_fields(
         )
     unit_ids: list[Any] | None
     if isinstance(firing_rate, SpatialRateResult):
+        # A glm map has no kernel and records None; it is unsmoothed (0).
         recorded = (
             0.0 if firing_rate.bandwidth is None else float(firing_rate.bandwidth)
         )
         if bandwidth is None:
             bandwidth = recorded
-        elif firing_rate.bandwidth is not None and bandwidth != recorded:
+        elif bandwidth != recorded:
             raise ValueError(
                 _format_error(
                     f"detect_place_fields got bandwidth={bandwidth!r}, but the "
-                    f"rate result was estimated with bandwidth={recorded!r}.",
+                    "rate result was estimated with "
+                    f"bandwidth={firing_rate.bandwidth!r} "
+                    f"(method={firing_rate.method!r}).",
                     why="Why: the bandwidth sets the smallest field one noisy "
                     "bin makes after smoothing, so it must be the map's own",
                     fix="drop bandwidth= to use the result's, or recompute the "
