@@ -22,6 +22,9 @@ from numpy.typing import NDArray
 # A stated size more than this share away from the samples' own fitted size
 # is refused: the stated apparatus, the unit or the session is then wrong.
 MAX_SIZE_RESIDUAL = 0.15
+# A stated centre farther than this share of the radius from the samples'
+# centre is refused: the positions are then in another frame or unit.
+MAX_CENTRE_OFFSET = 0.15
 
 
 def graph_edge_order(graph: Any, root: Any = None) -> list[tuple[Any, Any]]:

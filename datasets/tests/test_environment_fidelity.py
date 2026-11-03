@@ -255,18 +255,9 @@ def test_verdict_tests_loop_closure():
     assert verdict(row(10.0, 3.0), loop)[0] == "matches"
 
 
-def test_declared_track_is_measured_against_the_independent_reference():
-    # A 100 cm straight track sampled 2 cm about its axis, declared 6 cm wide;
-    # the reference is the samples' own axis, not the declared graph.
+def _declared_track(positions, *, placed_by, geometry=None, width=6.0):
     from _tracks import declared_geometry, straight_track
-    from studies.environment_fidelity import (
-        measure_declared,
-        reference_for,
-        tracked,
-    )
 
-    rng = np.random.default_rng(5)
-    positions = np.column_stack([rng.uniform(0, 100, 8000), rng.normal(0, 2.0, 8000)])
     graph, _ = straight_track(positions, 100.0)
     entries, _ = declared_geometry(
         graph,
@@ -274,13 +265,13 @@ def test_declared_track_is_measured_against_the_independent_reference():
         kind="track",
         source="test",
         bin_size=2.5,
-        track_width=6.0,
+        track_width=width,
         units="cm",
         name="track",
         placement="p",
-        placed_by="samples' principal axis",
+        placed_by=placed_by,
     )
-    rec = Recording(
+    return Recording(
         dataset="track",
         session="s",
         source="s",
@@ -288,19 +279,73 @@ def test_declared_track_is_measured_against_the_independent_reference():
         times=np.arange(len(positions)) / 30.0,
         positions=positions,
         position_units="cm",
-        geometry=entries,
+        geometry={**(geometry or {}), **entries},
         params={"bin_size": 2.5},
     )
-    app = Apparatus("track", "test", True, track_length=100.0, track_width=6.0)
-    samples = tracked(rec)
-    out = measure_declared(rec, app, samples, reference_for(rec, app))
-    # Samples beyond 3 cm of the axis: 2 x P(N(0, 2) > 3) = 13.4 %.
-    assert out["frac_samples_outside"] == pytest.approx(0.134, abs=0.02)
-    assert out["track_width"] == 6.0
+
+
+def _measure(rec, app):
+    from studies.environment_fidelity import measure_declared, reference_for, tracked
+
+    return measure_declared(rec, app, tracked(rec), reference_for(rec, app))
+
+
+@pytest.fixture(scope="module")
+def track_samples():
+    """A 100 cm straight track sampled 1 cm about its axis."""
+    rng = np.random.default_rng(5)
+    return np.column_stack([rng.uniform(0, 100, 8000), rng.normal(0, 1.0, 8000)])
+
+
+TRACK = Apparatus("track", "test", True, track_length=100.0, track_width=6.0)
+
+
+def test_declared_track_against_an_independent_reference_can_match(track_samples):
+    # The authors' graph (here the true axis) checks a layout fitted to the samples.
+    graph = nx.Graph()
+    graph.add_node("a", pos=(0.0, 0.0))
+    graph.add_node("b", pos=(100.0, 0.0))
+    graph.add_edge("a", "b", distance=100.0)
+    rec = _declared_track(
+        track_samples, placed_by="fitted to the samples", geometry={"graph": graph}
+    )
+    out = _measure(rec, TRACK)
+    assert out["reference_independent"] is True
+    assert out["frac_samples_outside"] < 0.01
     assert out["track_width_kind"] == "stated"
-    assert out["env"]["components"] == 1
     assert out["reference"]["env_over_track_median"] == pytest.approx(1.0, abs=0.05)
     assert out["verdict"] == "matches"
+
+
+def test_declared_track_without_an_independent_reference_is_not_verified(
+    track_samples,
+):
+    # Placed on the samples' axis, which is also the study's reference.
+    out = _measure(
+        _declared_track(track_samples, placed_by="samples' principal axis"), TRACK
+    )
+    assert out["reference_independent"] is False
+    assert out["verdict"] == "not verified"
+    assert "no independent reference" in out["verdict_reason"]
+    # No reference at all (no stated length): not verified either.
+    no_length = Apparatus("track", "test", True, track_width=6.0)
+    out = _measure(
+        _declared_track(track_samples, placed_by="fitted to the samples"), no_length
+    )
+    assert "reference" not in out
+    assert out["verdict"] == "not verified"
+
+
+def test_declared_track_with_many_samples_outside_is_a_mismatch(track_samples):
+    # The head leans 5 cm past a 6 cm track that the authors' graph declares
+    # (not fitted, so not refused by the loader): most samples are outside.
+    leaning = track_samples.copy()
+    leaning[::2, 1] += 5.0
+    leaning[1::2, 1] -= 5.0
+    out = _measure(_declared_track(leaning, placed_by="authors' graph"), TRACK)
+    assert out["frac_samples_outside"] > 0.5
+    assert out["verdict"] == "mismatch"
+    assert "outside the declared environment" in out["verdict_reason"]
 
 
 def test_merged_replaces_only_the_rerun_datasets_and_their_views():

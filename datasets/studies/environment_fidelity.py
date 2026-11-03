@@ -92,7 +92,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _fetch import cache_root  # noqa: E402
+from _geometry import MAX_CENTRE_OFFSET, MAX_SIZE_RESIDUAL  # noqa: E402
 from _record import Recording  # noqa: E402
+from _tracks import MAX_UNSUPPORTED  # noqa: E402
 from operations import _graph_env, _samples_env, env_kind  # noqa: E402
 from run import LOADERS  # noqa: E402
 
@@ -110,6 +112,17 @@ ALIGN_STEP_SAMPLES = 10
 LOOP_CLOSURE_SHARE = 0.1
 ALIGN_MIN_SPEED = 10.0
 ALIGN_DEGREES = 20.0
+# A declared environment should place nearly every tracked sample; this allows
+# tracking glitches and a head LED leaning past a wall or edge.
+MAX_SAMPLES_OUTSIDE = 0.02
+# The reference each kind of declared placement would compare with itself:
+# a declared track is not judged against its own geometry.
+REFERENCE_SOURCE = {
+    "authors' track graph": "authors' graph",
+    "authors' track centrelines (file)": "authors' centrelines",
+    "centreline from the file's linearized position": "file's linearized coordinate",
+    "principal axis of the samples (straight track)": "samples' principal axis",
+}
 
 
 # --- Apparatus stated by a source read for this study ---------------------------
@@ -1337,6 +1350,47 @@ def bar_alignment(rec: Recording, ref: Reference) -> dict[str, Any]:
     }
 
 
+def placement_reasons(declared: dict[str, Any]) -> list[str]:
+    """Why a declared environment's placement does not fit the samples, if it does not."""
+    reasons = []
+    outside = declared["frac_samples_outside"]
+    if outside > MAX_SAMPLES_OUTSIDE:
+        reasons.append(
+            f"{outside:.1%} of samples outside the declared environment"
+            f" (limit {MAX_SAMPLES_OUTSIDE:.0%})"
+        )
+    fit = declared.get("fit") or {}
+    for key, value in fit.items():
+        if key.startswith("size_residual") and value < -MAX_SIZE_RESIDUAL:
+            reasons.append(f"samples' fitted size {value:+.0%} of the stated ({key})")
+    if "centre_offset" in fit:
+        radius = fit["samples_diameter"] / (1 + fit["size_residual"]) / 2
+        if fit["centre_offset"] > MAX_CENTRE_OFFSET * radius:
+            reasons.append(
+                f"samples' centre {fit['centre_offset']:.3g} from the stated centre"
+                f" (limit {MAX_CENTRE_OFFSET:.0%} of the radius {radius:.3g})"
+            )
+    # A track's fit (``_tracks.edge_fit``): a length counts both ways, a
+    # segment beside its samples or with none near it is misplaced.
+    if "max_edge_bias" in fit:
+        for key, value in fit.items():
+            if key.startswith("size_residual") and value > MAX_SIZE_RESIDUAL:
+                reasons.append(
+                    f"samples' fitted size {value:+.0%} of the stated ({key})"
+                )
+        if fit["max_edge_bias"] > fit["max_edge_bias_limit"]:
+            reasons.append(
+                f"a segment's samples lie {fit['max_edge_bias']:.3g} to one side of it"
+                f" (limit one bin, {fit['max_edge_bias_limit']:.3g})"
+            )
+        if fit["max_unsupported"] > MAX_UNSUPPORTED:
+            reasons.append(
+                f"{fit['max_unsupported']:.0%} of a segment has no sample within a"
+                f" bin (limit {MAX_UNSUPPORTED:.0%})"
+            )
+    return reasons
+
+
 def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     """Verdict against the stated apparatus, and the reasons for a mismatch.
 
@@ -1349,6 +1403,15 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     ``LOOP_CLOSURE_SHARE`` of its length) and that the bins join them (their
     path no longer than the camera distance plus that share). An assumed
     track width is reported but not judged.
+
+    A declared environment covers its own outline by construction, so its
+    coverage is not judged; its placement is instead: the share of tracked
+    samples it cannot place (at most ``MAX_SAMPLES_OUTSIDE``), the samples'
+    fitted size against the stated one (``_geometry.MAX_SIZE_RESIDUAL``
+    short; samples past the wall show up as samples outside), and a stated
+    centre's distance from the samples' (``_geometry.MAX_CENTRE_OFFSET`` of
+    the radius). A declared track is also judged by its fit
+    (``placement_reasons``).
     """
     if app is None or not app.verified:
         return "not verified", "no source read here states the geometry"
@@ -1360,6 +1423,9 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
             f"{n} part{'s' if n != 1 else ''} with 1% of the bins or more, apparatus"
             f" has {app.n_parts}"
         )
+    declared = row.get("declared")
+    if declared:
+        reasons += placement_reasons(declared)
     outline = row.get("outline")
     if outline:
         if outline["stated_area_covered"] < 0.9:
@@ -1690,29 +1756,49 @@ def measure_declared(
     samples: NDArray[np.float64],
     ref: Reference | None,
 ) -> dict[str, Any]:
-    """The declared environment, measured as the samples-built one is.
+    """The declared environment, measured as the samples-built one is, and judged.
 
     Adds the share of tracked samples it cannot place (``bin_at`` -1), its
-    track width and whether a source states it, and the verdict against the
-    stated apparatus. The reference is the same independent one the
-    samples-built environment is compared with (the authors' graph, the
-    file's linearized centreline or a straight track's axis), never the
-    declared graph itself.
+    track width and how it was set (stated, chosen or measured), the
+    loader's fit (``geometry["environment_fit"]``) and the verdict: the
+    stated parts, the placement (``placement_reasons``) and, where there is
+    one, an independent reference. A reference is independent only when it
+    is not the geometry the track was declared from (``REFERENCE_SOURCE``
+    against ``geometry["declared_from"]``): the authors' graph or
+    centreline, or the samples' axis a straight track is placed on, compared
+    with the environment built from it measures only that environment's
+    binning. Without an independent reference, a placement that fits is
+    "not verified".
     """
     env = rec.geometry["environment"]()
     measures = measure_env(env, samples, np.random.default_rng(SEED))
+    independent = ref is not None and REFERENCE_SOURCE.get(
+        ref.label
+    ) != rec.geometry.get("declared_from")
     out: dict[str, Any] = {
         "layout": env.layout_type,
         "frac_samples_outside": float(np.mean(np.asarray(env.bin_at(samples)) < 0)),
         "track_width": rec.geometry.get("declared_track_width"),
         "track_width_kind": rec.geometry.get("declared_track_width_kind"),
+        "declared_from": rec.geometry.get("declared_from"),
+        "fit": dict(rec.geometry.get("environment_fit", {})),
+        "reference_independent": independent,
         "env": measures,
     }
-    view: dict[str, Any] = {"env": measures}
     if ref is not None:
-        view["reference"] = against_reference(measures, env, samples, ref)
-        out["reference"] = view["reference"]
+        # Against its own geometry this measures the binning, not the placement.
+        out["reference"] = against_reference(measures, env, samples, ref)
+    view: dict[str, Any] = {"env": measures, "declared": out}
+    if independent:
+        view["reference"] = out["reference"]
     out["verdict"], out["verdict_reason"] = verdict(view, app)
+    if out["verdict"] == "matches" and not independent:
+        out["verdict"] = "not verified"
+        out["verdict_reason"] = (
+            "the placement fits the samples, but no independent reference"
+            " checks the layout"
+            + (f" ({ref.label} is what it was declared from)" if ref else "")
+        )
     return out
 
 
@@ -1780,24 +1866,34 @@ def render(rows: list[dict[str, Any]]) -> str:
             "",
             "The environment the driver analyses where the loader declares the"
             " apparatus (`geometry['environment']`), measured as above against the"
-            " same samples and the same independent reference. Outside: share of"
-            " tracked samples it cannot place. Width: the track width it was built"
-            " with (`stated` from a source, else measured from the samples).",
+            " same samples. Outside: share of tracked samples it cannot place,"
+            f" judged against {MAX_SAMPLES_OUTSIDE:.0%}. Width: stated by a source,"
+            " chosen by the loader, or measured (a placement tolerance that drops"
+            " about 1 % of samples by construction). Lateral: the median |lateral"
+            " offset| of samples from the track and the worst segment's median"
+            " signed offset (its limit is one bin). Env / track: against the"
+            " reference; `own` when the reference is the geometry the track was"
+            " declared from, which then measures only its binning.",
             "",
-            "| Dataset | Layout | Bins | Components (1 % of bins or more) | Samples outside | Width | Far links | Geodesic / straight (median, p95) | Env / track (median, p5) | Verdict |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Dataset | Declared from | Bins | Components (1 % of bins or more) | Samples outside | Width | Lateral: median, worst segment | Far links | Geodesic / straight (median, p95) | Env / track (median, p5) | Verdict |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for row in declared:
             dec = row["declared"]
-            env, ref = dec["env"], dec.get("reference", {})
+            env, ref, fit = dec["env"], dec.get("reference", {}), dec.get("fit", {})
             width = (
                 "–"
                 if dec["track_width"] is None
-                else f"{dec['track_width']:.3g}"
-                 f" {dec['track_width_kind']}"
+                else f"{dec['track_width']:.3g} {dec['track_width_kind']}"
+            )
+            lateral = (
+                f"{fit['median_abs_lateral']:.2f}, {fit['max_edge_bias']:.2f}"
+                if "max_edge_bias" in fit
+                else "–"
             )
             track = (
                 f"{_fmt(ref.get('env_over_track_median'), '.2f')}, {_fmt(ref.get('env_over_track_p05'), '.2f')}"
+                + ("" if dec.get("reference_independent") else " (own)")
                 if ref
                 else "–"
             )
@@ -1805,9 +1901,9 @@ def render(rows: list[dict[str, Any]]) -> str:
                 f": {dec['verdict_reason']}" if dec["verdict_reason"] else ""
             )
             lines.append(
-                f"| {row['dataset']} | {dec['layout']} | {env['n_bins']} |"
-                f" {env['components']} ({env['major_components']}) |"
-                f" {dec['frac_samples_outside']:.1%} | {width} |"
+                f"| {row['dataset']} | {dec.get('declared_from') or '–'} |"
+                f" {env['n_bins']} | {env['components']} ({env['major_components']}) |"
+                f" {dec['frac_samples_outside']:.1%} | {width} | {lateral} |"
                 f" {env['far_edges']:.2%} |"
                 f" {_fmt(env['geodesic_ratio_median'], '.2f')}, {_fmt(env['geodesic_ratio_p95'], '.2f')} |"
                 f" {track} | {verdict_cell} |"
