@@ -21,9 +21,9 @@ from neurospatial.simulation.models.base import (
     _check_metric,
     _check_point,
     _draw_rng,
+    _keep_draw,
     _model_inputs,
     _set_rates,
-    _snapshot_rng,
     _tuned_rate,
     geodesic_lookup_bins,
 )
@@ -101,11 +101,15 @@ class PlaceCellModel:
         - Trial-type: ``lambda pos, t: is_correct_trial``, where
           ``is_correct_trial`` is a bool array with one entry per sample
     rng : numpy.random.Generator or int or None, optional
-        Random generator or seed for reproducible random center selection. When None
-        and the center is drawn, the model draws a seed from the operating
-        system and keeps it in ``rng``, so ``dataclasses.replace`` and
-        pickling keep the drawn center. A generator is copied when the model is built: the caller's generator
-        is not advanced, and ``replace`` draws the same values.
+        Random generator or seed for the random center, read as
+        ``np.random.default_rng(rng)``: ``rng=0`` and
+        ``rng=np.random.default_rng(0)`` draw the same center. An int
+        reproduces the center. A generator is advanced by the draw, so
+        successive models built from one generator get different centers;
+        the model then keeps the drawn center in ``center`` and sets ``rng``
+        to None. When None and the center is drawn, the model draws a seed
+        from the operating system and keeps it in ``rng``. Either way,
+        ``dataclasses.replace`` and pickling keep the drawn center.
 
     Attributes
     ----------
@@ -114,7 +118,8 @@ class PlaceCellModel:
         default ``width`` here. Every parameter is also an attribute holding
         the argument as passed (``center`` and a per-dimension ``width`` as
         read-only float arrays), so ``center`` and ``width`` read None when
-        left to their defaults.
+        left to their defaults; a center drawn from a generator is kept in
+        ``center``.
 
     Raises
     ------
@@ -251,7 +256,6 @@ class PlaceCellModel:
     _distance_field: NDArray[np.float64] | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        _snapshot_rng(self)
         env = self.env
         _set_rates(self)
         _check_metric(self.metric, "PlaceCellModel()")
@@ -260,6 +264,7 @@ class PlaceCellModel:
         if self.center is None:
             center_idx = _draw_rng(self).integers(0, env.n_bins)
             center = read_only_copy(env.bin_centers[center_idx], np.float64)
+            _keep_draw(self, "center", center)
         else:
             center = _check_point("center", self.center, env.n_dims)
             object.__setattr__(self, "center", center)

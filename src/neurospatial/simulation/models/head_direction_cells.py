@@ -14,10 +14,10 @@ from neurospatial.simulation.models.base import (
     _check_angle,
     _check_positive,
     _draw_rng,
+    _keep_draw,
     _model_headings,
     _model_inputs,
     _set_rates,
-    _snapshot_rng,
     _tuned_rate,
 )
 
@@ -61,11 +61,16 @@ class HeadDirectionCellModel:
         0.01). An illustrative value: Taube et al. (1990) report little
         firing outside the directional range but no single rate.
     rng : numpy.random.Generator or int or None, optional
-        Random generator or seed for reproducible random direction selection. When None
-        and the direction is drawn, the model draws a seed from the
-        operating system and keeps it in ``rng``, so
-        ``dataclasses.replace`` and pickling keep the drawn direction. A generator is copied when the model is built: the caller's generator
-        is not advanced, and ``replace`` draws the same values.
+        Random generator or seed for the random preferred direction, read as
+        ``np.random.default_rng(rng)``: ``rng=0`` and
+        ``rng=np.random.default_rng(0)`` draw the same direction. An int
+        reproduces the direction. A generator is advanced by the draw, so
+        successive models built from one generator get different directions;
+        the model then keeps the drawn direction in ``preferred_direction``
+        and sets ``rng`` to None. When None and the direction is drawn, the
+        model draws a seed from the operating system and keeps it in
+        ``rng``. Either way, ``dataclasses.replace`` and pickling keep the
+        drawn direction.
 
     Attributes
     ----------
@@ -73,9 +78,11 @@ class HeadDirectionCellModel:
         The values the model fires with: read the drawn preferred direction,
         wrapped to (-π, π], here. Every parameter is also an attribute
         holding the argument as passed, so ``preferred_direction`` reads None
-        when it is drawn from ``rng``, and ``dataclasses.replace(model,
-        rng=2)`` draws again, as the constructor would. Only ``rng``
-        differs: a seed drawn for ``rng=None`` is kept there.
+        when it is drawn from an int or None ``rng``, and
+        ``dataclasses.replace(model, rng=2)`` draws again, as the constructor
+        would. Only ``rng`` differs: a seed drawn for ``rng=None`` is kept
+        there. A direction drawn from a generator is kept in
+        ``preferred_direction`` instead.
 
     Raises
     ------
@@ -200,10 +207,10 @@ class HeadDirectionCellModel:
     _preferred_direction: float = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        _snapshot_rng(self)
         direction = self.preferred_direction
         if direction is None:
             direction = float(_draw_rng(self).uniform(-np.pi, np.pi))
+            _keep_draw(self, "preferred_direction", direction)
         _check_angle("preferred_direction", direction)
         _check_positive("concentration", self.concentration, units=None)
         _set_rates(self)
