@@ -678,6 +678,9 @@ def _information_screen(
     ndarray of bool, shape (n_units,)
         Whether each unit passes.
     """
+    from neurospatial._validation import refuse_none_thresholds
+
+    refuse_none_thresholds(min_info=min_info)
     passed: NDArray[np.bool_] = _debiased_information(result, bias) >= min_info
     return passed
 

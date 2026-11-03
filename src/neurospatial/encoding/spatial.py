@@ -68,6 +68,7 @@ from neurospatial._results import (
 )
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import refuse_none_thresholds
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
     BandwidthRule,
@@ -3110,6 +3111,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             "min_grid_score": min_grid_score,
             "min_border_score": min_border_score,
         }
+        refuse_none_thresholds(**thresholds)
         given: dict[str, NDArray[np.float64] | None] = {}
         for name, value in (
             ("grid_scores", grid_scores),
@@ -7568,6 +7570,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         min_info: float,
         correction: Literal["holm", "fdr_bh"] | None,
     ) -> dict[str, NDArray[np.float64]]:
+        refuse_none_thresholds(alpha=level, min_spatial_info=min_info)
         adjusted, cannot_reject = self._adjusted(level, correction)
         with np.errstate(invalid="ignore"):
             passed = adjusted < level
@@ -8062,6 +8065,7 @@ class PlaceCellSignificanceResult(UnitSelectionMixin, ResultMixin):
         """
         from neurospatial.encoding._metrics import _warn_unknown_bias
 
+        refuse_none_thresholds(alpha=alpha, min_info=min_info)
         with np.errstate(invalid="ignore"):
             significant = self.p_value < alpha
         debiased = self.observed - self.spatial_information_bias

@@ -917,16 +917,15 @@ def validate_min_occupancy(min_occupancy: float) -> float:
         compares False with every occupancy, so it would mask every bin
         without the fully-masked warning.
     """
-    if min_occupancy is None:
-        raise InputError(
-            _format_error(
-                "min_occupancy=None is not a threshold.",
-                why="Why: min_occupancy is the seconds a bin must be occupied for "
-                "its rate to count; it has no None default",
-                fix="pass min_occupancy=0.0 for no masking, or a dwell time in "
-                "seconds such as 0.5",
-            )
-        )
+    from neurospatial._validation import refuse_none_thresholds
+
+    refuse_none_thresholds(
+        min_occupancy=min_occupancy,
+        why="min_occupancy is the seconds a bin must be occupied for its rate "
+        "to count; it has no None default",
+        fix="pass min_occupancy=0.0 for no masking, or a dwell time in seconds "
+        "such as 0.5",
+    )
     value = float(min_occupancy)
     if not (np.isfinite(value) and value >= 0.0):
         raise InputError(

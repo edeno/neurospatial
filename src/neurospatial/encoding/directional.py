@@ -588,6 +588,9 @@ def _head_direction_classify(
     alpha: float,
 ) -> NDArray[np.bool_]:
     """The shared MVL and occupancy-corrected tuning-test screen."""
+    from neurospatial._validation import refuse_none_thresholds
+
+    refuse_none_thresholds(min_mvl=min_mvl, alpha=alpha)
     inputs = _tuning_inputs(result)
     _warn_if_headings_incomplete(inputs["occupancy"])
     mvls = _mean_vector_lengths(inputs["rates"], inputs["centers"])
