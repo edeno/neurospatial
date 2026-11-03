@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
+    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
   },
   "load_warnings": [],
   "operations": {
@@ -52,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.035,
+      "seconds": 0.036,
       "peak_mb": 1.5
     },
     "env.occupancy": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.005,
       "peak_mb": 2.7
     },
     "rates.spatial": {
@@ -141,8 +141,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
-      "peak_mb": 2.7
+      "seconds": 0.016,
+      "peak_mb": 3.6
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -168,7 +168,7 @@
       "note": "head_direction: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.23,
+      "seconds": 0.258,
       "peak_mb": 2.0
     },
     "imaging.rates": {
@@ -190,7 +190,7 @@
       "note": "one event per dF/F transient: onset above median + 3 robust SD (1.4826 x MAD), end below median + 1 SD; then compute_spatial_rates (harness heuristic, no published source)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.368,
+      "seconds": 0.386,
       "peak_mb": 5.9
     }
   },
@@ -252,16 +252,14 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "raised",
+      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 1,
         "n_counter-clockwise": 1
       },
-      "hazard_summary": {
-        "n_laps": 0
-      }
+      "hazard_summary": null
     },
     {
       "hazard": "length_unit_off_by_100",

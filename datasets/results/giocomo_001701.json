@@ -36,7 +36,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
+    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
   },
   "load_warnings": [
     {
@@ -58,7 +58,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.028,
+      "seconds": 0.026,
       "peak_mb": 4.3
     },
     "env.occupancy": {
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.009,
       "peak_mb": 7.1
     },
     "rates.spatial": {
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.128,
+      "seconds": 0.122,
       "peak_mb": 25.4
     },
     "rates.spatial_information": {
@@ -114,7 +114,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.487,
+      "seconds": 0.473,
       "peak_mb": 32.5
     },
     "cells.place_screen": {
@@ -126,7 +126,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.003,
       "peak_mb": 5.7
     },
     "cells.grid_score": {
@@ -137,7 +137,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.219,
+      "seconds": 1.171,
       "peak_mb": 1.3
     },
     "cells.border_score": {
@@ -160,7 +160,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.148,
+      "seconds": 0.145,
       "peak_mb": 25.3
     },
     "decode.position": {
@@ -174,7 +174,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.129,
+      "seconds": 0.146,
       "peak_mb": 41.7
     },
     "io.nwb_roundtrip": {
@@ -185,8 +185,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.358,
-      "peak_mb": 4.4
+      "seconds": 2.212,
+      "peak_mb": 5.1
     },
     "env.from_graph": {
       "status": "n/a",
@@ -207,14 +207,12 @@
       "peak_mb": 0.0
     },
     "behavior.laps": {
-      "status": "ok",
-      "summary": {
-        "n_laps": 0
-      },
-      "note": "",
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
+      "seconds": 0.011,
       "peak_mb": 7.1
     },
     "behavior.turn_sequence": {
@@ -253,7 +251,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.418,
+      "seconds": 0.395,
       "peak_mb": 19.6
     },
     "imaging.rates": {
@@ -354,15 +352,11 @@
     {
       "hazard": "missing_positions_as_zero",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 0
-      },
-      "hazard_summary": {
-        "n_laps": 0
-      }
+      "clean_summary": {},
+      "hazard_summary": null
     },
     {
       "hazard": "missing_positions_as_zero",
@@ -478,15 +472,11 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 0
-      },
-      "hazard_summary": {
-        "n_laps": 0
-      }
+      "clean_summary": {},
+      "hazard_summary": null
     },
     {
       "hazard": "length_unit_off_by_100",

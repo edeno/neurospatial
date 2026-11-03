@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
+    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
   },
   "load_warnings": [],
   "operations": {
@@ -62,7 +62,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.006,
       "peak_mb": 1.6
     },
     "env.occupancy": {
@@ -76,7 +76,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.013,
       "peak_mb": 8.3
     },
     "rates.spatial": {
@@ -89,17 +89,9 @@
       },
       "note": "",
       "gap": null,
-      "warnings": [
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "count": 1
-        }
-      ],
-      "seconds": 0.184,
-      "peak_mb": 135.9
+      "warnings": [],
+      "seconds": 0.193,
+      "peak_mb": 198.5
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -125,17 +117,9 @@
       },
       "note": "",
       "gap": null,
-      "warnings": [
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "count": 4
-        }
-      ],
-      "seconds": 1.32,
-      "peak_mb": 181.4
+      "warnings": [],
+      "seconds": 1.22,
+      "peak_mb": 244.0
     },
     "cells.place_screen": {
       "status": "ok",
@@ -182,24 +166,9 @@
       },
       "note": "",
       "gap": null,
-      "warnings": [
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "count": 1
-        },
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "#/# spike_times (#%) fell outside the decode time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "example": "5053296/5637087 spike_times (90%) fell outside the decode time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "count": 1
-        }
-      ],
-      "seconds": 0.212,
-      "peak_mb": 135.8
+      "warnings": [],
+      "seconds": 0.265,
+      "peak_mb": 198.4
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -209,7 +178,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.581,
+      "seconds": 1.826,
       "peak_mb": 2.5
     },
     "env.from_graph": {
@@ -230,16 +199,16 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.02,
+      "seconds": 0.015,
       "peak_mb": 8.8
     },
     "behavior.laps": {
       "status": "error",
       "summary": {},
-      "note": "ValueError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its bins connect without a cycle.\nWhy: on a track the animal runs back and forth, every trip out comes back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.004,
       "peak_mb": 4.3
     },
     "behavior.turn_sequence": {
@@ -262,16 +231,8 @@
       },
       "note": "",
       "gap": null,
-      "warnings": [
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "example": "5053296/5637087 spike_times (90%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=0.0114667 spike_times.max()=18557.5. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "count": 1
-        }
-      ],
-      "seconds": 14.208,
+      "warnings": [],
+      "seconds": 10.786,
       "peak_mb": 225.2
     },
     "io.nwb_readers": {
@@ -284,7 +245,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.204,
+      "seconds": 1.005,
       "peak_mb": 137.3
     },
     "imaging.rates": {
@@ -302,9 +263,9 @@
     {
       "hazard": "spike_times_in_ms",
       "op": "rates.spatial",
-      "response": "silent",
-      "message": "",
-      "repeated_clean_warnings": 1,
+      "response": "warned",
+      "message": "5636827/5637087 spike_times (100%) across all neurons fell outside the position time window [7891.26, 9482.78]; spike_times.min()=11.4667 spike_times.max()=1.85575e+07. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 113,
         "frac_nan_bins": 0.0,
@@ -359,7 +320,7 @@
       "op": "rates.spatial",
       "response": "silent",
       "message": "",
-      "repeated_clean_warnings": 1,
+      "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 113,
         "frac_nan_bins": 0.0,

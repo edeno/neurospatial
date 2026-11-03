@@ -32,7 +32,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
+    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
   },
   "load_warnings": [
     {
@@ -94,17 +94,9 @@
       },
       "note": "",
       "gap": null,
-      "warnings": [
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
-          "example": "3995515/4398008 spike_times (91%) across all neurons fell outside the position time window [8812.42, 10771.3]; spike_times.min()=0.0015 spike_times.max()=22025. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
-          "count": 1
-        }
-      ],
-      "seconds": 0.199,
-      "peak_mb": 105.6
+      "warnings": [],
+      "seconds": 0.158,
+      "peak_mb": 154.8
     },
     "decode.position": {
       "status": "n/a",
@@ -159,7 +151,7 @@
           "count": 9
         }
       ],
-      "seconds": 0.721,
+      "seconds": 0.524,
       "peak_mb": 106.0
     },
     "imaging.rates": {
@@ -179,7 +171,7 @@
       "op": "hd.tuning",
       "response": "warned",
       "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 359.9, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".",
-      "repeated_clean_warnings": 1,
+      "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 49,
         "mean_vector_length_median": 0.4356787549135757,
@@ -196,9 +188,9 @@
     {
       "hazard": "spike_times_in_ms",
       "op": "hd.tuning",
-      "response": "silent",
-      "message": "",
-      "repeated_clean_warnings": 1,
+      "response": "warned",
+      "message": "4397642/4398008 spike_times (100%) across all neurons fell outside the position time window [8812.42, 10771.3]; spike_times.min()=1.5 spike_times.max()=2.2025e+07. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 49,
         "mean_vector_length_median": 0.4356787549135757,

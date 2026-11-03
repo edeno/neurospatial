@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
+    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
   },
   "load_warnings": [],
   "operations": {
@@ -57,8 +57,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.175,
-      "peak_mb": 8.1
+      "seconds": 0.171,
+      "peak_mb": 8.0
     },
     "env.occupancy": {
       "status": "ok",
@@ -71,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.012,
       "peak_mb": 8.2
     },
     "rates.spatial": {
@@ -172,7 +172,7 @@
       "note": "position: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.109,
+      "seconds": 0.103,
       "peak_mb": 0.2
     },
     "imaging.rates": {
@@ -194,7 +194,7 @@
       "note": "occupancy-weighted mean binned rate per spatial bin (harness)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.046,
+      "seconds": 0.039,
       "peak_mb": 9.3
     }
   },
@@ -247,15 +247,13 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "raised",
+      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 0
       },
-      "hazard_summary": {
-        "n_laps": 0
-      }
+      "hazard_summary": null
     },
     {
       "hazard": "length_unit_off_by_100",
@@ -314,17 +312,13 @@
     {
       "hazard": "positions_read_as_mm",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "raised",
+      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 0
       },
-      "hazard_summary": {
-        "n_laps": 3,
-        "n_clockwise": 2,
-        "n_counter-clockwise": 1
-      }
+      "hazard_summary": null
     },
     {
       "hazard": "positions_read_as_mm",

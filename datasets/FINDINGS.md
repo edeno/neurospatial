@@ -2,7 +2,7 @@
 
 Eight public recordings were loaded into plain arrays and run through 19
 operations (18 calls into neurospatial and one harness workaround), each
-recording was re-run with known defects put back (58 probes), and three results
+recording was re-run with known defects put back (52 probes), and three results
 were compared with pynapple and opexebo. This document ranks what that showed
 into proposed changes to neurospatial. The evidence lives in
 [GAPS.md](GAPS.md) (gap entries `G-###`) and [results/](results/)
@@ -25,18 +25,18 @@ X maze, mislabelled head direction).
   recording that had the inputs, in 1-D, 2-D and 3-D, in seconds and under
   300 MB (traced). Decoding is accurate where the data allow it (figure-8
   8.0 cm, 001701 3.5 cm median error).
-- **Warnings are not too aggressive.** Across the eight clean recordings only
-  one neurospatial warning fired that should not have (the spike-drop warning
-  when tracking covers part of the session, G-001, being fixed).
-- **Warnings are not aggressive enough.** Of 58 probes, 19 defects passed
+- **Warnings are not too aggressive.** Across the eight clean recordings no
+  neurospatial warning fires that should not. The one false alarm the survey
+  found (the spike-drop warning when tracking covers part of the session,
+  G-001) is fixed on `main` (#265).
+- **Warnings are not aggressive enough.** Of 52 probes, 16 defects passed
   silently and changed the result. Three checks calibrated below (exact-origin
   samples, too few bins, squeezed headings) fire on none of the clean
-  recordings and would catch 15 of the 19; a fourth (spike span vs epochs)
-  waits on G-001's fix.
+  recordings and would catch 15 of the 16.
 - **Two wrong results need fixing first**: `read_head_direction` turns radians
   labelled "degrees" into a 6° arc, after which every unit looks like a sharp
   head-direction cell (G-030/G-031); and `detect_laps` finds laps where there is
-  no loop (G-015, being fixed).
+  no loop (G-015, partly fixed on `main`: open arenas still give laps).
 - **Two candidate wrong results need a decision**: grid scores differ from
   opexebo by up to 0.38 on the same map (G-006), and spatial information on
   sparse 3-D occupancy is at the shuffle level while its bias estimate is small
@@ -80,13 +80,22 @@ dataset is the evidence, the section says why that is enough.
 
 ### 2. `detect_laps` counts laps where there is no loop (G-015)
 
-- **Problem.** The loop test treats any cycle in the bin graph as a loop.
-- **Evidence.** Three-bin cycles at the 63 junctions of the binary-tree
-  labyrinth give 3 "laps"; grid neighbours give one "lap" in the 000582 box and
-  one in the 002030 arena; the shrunken 000405 arena gives 3. Four datasets.
-- **Change.** Test for a loop on the track (or ignore cycles confined to one
-  junction or to grid neighbours). Being fixed in the UX-fixes work (branch
-  `fix/ux-error-gaps`).
+- **Problem.** Before #265 the loop test treated any cycle in the bin graph as
+  a loop. #265 tests the track graph's cycles or holes in a 2-D area instead.
+- **Evidence.** Before #265: three-bin cycles at the 63 junctions of the
+  binary-tree labyrinth gave 3 "laps"; grid neighbours gave one "lap" in the
+  000582 box and one in the 002030 arena; the shrunken 000405 arena gave 3.
+  After #265 the labyrinth, the 001701 maze and the 3-D bat space are refused,
+  as they should be. Two open arenas still give laps: one clockwise in the
+  000582 box and one counter-clockwise in the 002030 arena (000405 returns
+  0 laps rather than a refusal). An environment built from samples leaves
+  patches of unvisited bins inside the arena, and these count as holes to run
+  around (*loader-computed*, approximate: 72 enclosed patches in 000582, 105
+  in 000405, 19 in 002030 including a 412-bin unvisited centre, where the
+  mouse kept to the wall).
+- **Needs a decision.** Whether running around an unvisited part of an open
+  arena counts as a lap. If not, holes should come from the declared arena
+  (walls, obstacles), not from where the animal happened not to go.
 - **Module.** `behavior`. **Changes results.** Yes: spurious laps disappear.
 
 ### 3. Grid scores disagree with opexebo because of the autocorrelogram (G-006)
@@ -134,27 +143,35 @@ dataset is the evidence, the section says why that is enough.
 
 ### Too aggressive
 
-Only two neurospatial warning messages fired on correctly loaded data, both
-the spike-drop warning when tracking covers part of a long recording (Mouse32
-sleep spikes, figure-8 sleep spikes): a false alarm whose advice ("check that
-spike_times and times share units") is wrong there, and a second copy of it
-inside the same `decode.position` call (G-001). Both are being fixed in the
-UX-fixes work (branch `fix/ux-error-gaps`: count only spikes inside the
-requested epochs, one discarded-data warning per call). No threshold needs loosening. The only other warning was
-hdmf's own deprecation notice while reading a 2022 file.
+Before #265, two neurospatial warning messages fired on correctly loaded data,
+both the spike-drop warning when tracking covers part of a long recording
+(Mouse32 sleep spikes, figure-8 sleep spikes): a false alarm whose advice
+("check that spike_times and times share units") was wrong there, and a second
+copy of it inside the same `decode.position` call (G-001). #265 counts only
+spikes inside the requested epochs and warns once per call; on the current
+`main` no neurospatial warning fires on any of the eight clean recordings. No
+threshold needs loosening. The only warning left is hdmf's own deprecation
+notice while reading a 2022 file.
 
 ### Not aggressive enough
 
 | Defect put back | Probes | Caught (incl. upstream) | Silent | No effect | Undetectable |
 | --- | --- | --- | --- | --- | --- |
-| Length unit off by 100 | 23 | 16 | 5 | 2 | 0 |
-| Missing positions stored as 0 | 18 | 0 | 10 | 5 | 3 |
-| Spike times in ms | 6 | 4 | 2 | 0 | 0 |
+| Length unit off by 100 | 21 | 16 | 5 | 0 | 0 |
+| Missing positions stored as 0 | 15 | 0 | 10 | 2 | 3 |
+| Spike times in ms | 6 | 6 | 0 | 0 | 0 |
 | Headings in degrees | 2 | 2 | 0 | 0 | 0 |
 | Headings read as degrees (radians shrunk) | 1 | 0 | 1 | 0 | 0 |
-| Positions read as mm (÷10) | 3 | 0 | 1 | 0 | 2 |
-| Mirrored frame (image y down) | 5 | 0 | 0 | 4 | 1 |
-| **Total** | **58** | **22** | **19** | **11** | **6** |
+| Positions read as mm (÷10) | 3 | 0 | 0 | 1 | 2 |
+| Mirrored frame (image y down) | 4 | 0 | 0 | 3 | 1 |
+| **Total** | **52** | **24** | **16** | **6** | **6** |
+
+Counts are for the current `main`. Probes are skipped when the operation
+already fails on the clean recording, so the six `behavior.laps` probes on
+mazes that `detect_laps` now refuses are no longer counted. Spike times in ms
+(G-010) are now caught everywhere: with the clean-run false alarm gone (#265),
+the spike-drop warning flags 100 % of spikes outside tracking on Mouse32 and
+the figure-8 too.
 
 Proposed checks, each with its hits on the clean recordings (a new warning
 must fire on none of them) and on the hazards. The calibration numbers are
@@ -182,20 +199,12 @@ must fire on none of them) and on the hazards. The calibration numbers are
    refused (bat, 9 × 10⁹ bins), but a speed threshold alone still hides it:
    `segment_by_velocity` on the bat finds 668 segments instead of 69 without
    building an environment. Module: `environment`.
-3. **Spike times in ms (G-010).** Compare the spike span with the span of the
-   requested epochs (or the whole tracking) rather than with `times` alone.
-   Today the clock-ratio hint catches it when tracking covers the recording
-   (000582, bat, 001701) and misses it when tracking covers part: on the
-   figure-8 rates drop to 0, on Mouse32 the median mean vector length moves
-   from 0.436 to 0.389 and 10 units lose a value, both with only the usual
-   warning. Clean-run hits cannot be measured yet: the clean Mouse32 and
-   figure-8 runs already emit the spike-drop warning this check would refine
-   (G-001). Module: `encoding/_spatial_counts`.
-4. **Headings squeezed into a small arc (G-031)** — see Wrong results 1; covers
+3. **Headings squeezed into a small arc (G-031)** — see Wrong results 1; covers
    the one silent probe of that defect.
 
-The remaining silent probe (positions read as mm, `behavior.laps`) is the
-spurious-lap bug of proposal 2, not the unit error. Undetectable by values, so
+The remaining silent probe is the bat's `segment_by_velocity` with positions
+×100: no environment is built, so check 2 does not see it. Undetectable by
+values, so
 the answer is documentation: a mirrored frame flips every left and right turn
 while the share of left turns stays near 0.5 (G-020); positions read as mm look
 like a plausible small arena (000405 ÷10).
@@ -359,7 +368,7 @@ one recording, or never.
 
 | Gap | Where it is addressed |
 | --- | --- |
-| G-001, G-010 | Warning calibration (too aggressive; check 3); G-001 being fixed on branch `fix/ux-error-gaps` |
+| G-001, G-010 | Warning calibration; both fixed (#265) |
 | G-002 | Fixed (#262) |
 | G-003 | Docs |
 | G-004 | Proposal 7 |
@@ -370,7 +379,7 @@ one recording, or never.
 | G-011, G-012, G-032 | Proposal 6 |
 | G-013 | Fixed (#262) |
 | G-014 | Warning calibration, check 2 |
-| G-015 | Proposal 2 (being fixed on branch `fix/ux-error-gaps`) |
+| G-015 | Proposal 2; partly fixed (#265), open arenas remain |
 | G-017 | Warning calibration, check 1 |
 | G-018 | Warning calibration, separate rule |
 | G-020 | Docs; undetectable |
@@ -394,10 +403,13 @@ one recording, or never.
 4. **Warnings:** add checks 1 and 2 as calibrated here (origin share ≥ 0.1 %
    after the start-of-track case is checked; fewer than 5 bins per dimension)
    and the separate rule for replay events shorter than the score needs?
-   Check 3 waits for G-001's fix, check 4 for proposal 1.
-5. **New capabilities:** which of continuous-signal rate maps (5), NWB reader
+   Check 3 comes with proposal 1.
+5. **Laps in open arenas (proposal 2):** does running around an unvisited part
+   of an open arena count as a lap, or should holes come only from the
+   declared arena?
+6. **New capabilities:** which of continuous-signal rate maps (5), NWB reader
    coverage (6), heading decoding (7) and periodic tracks (8) to plan, and in
    what order?
-6. **Next batch:** run the six datasets above, and accept the restricted
+7. **Next batch:** run the six datasets above, and accept the restricted
    unpickler for Gardner 2022?
-7. **Tutorial:** promote `load_sargolini_000582.py` to `examples/` now?
+8. **Tutorial:** promote `load_sargolini_000582.py` to `examples/` now?

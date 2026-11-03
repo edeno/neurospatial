@@ -29,7 +29,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: count as dropped only spikes inside the requested
   `epochs ∩ spike_window` that fall outside tracking; keep the clock-ratio hint
   for the units case; add `warn_on_drop=` to the directional entry points.
-- Status: promoted (UX fixes phase 6, branch `fix/ux-error-gaps`; the ms-clock case must still warn; at most one discarded-data warning per call)
+- Status: fixed (#265): the count is epochs-aware and warns once per call; no neurospatial warning fires on the clean recordings now
 
 ## G-002: `method="binned"` smoothed with a 5 cm bandwidth unless `bandwidth=0` was passed
 
@@ -183,7 +183,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: compare the spike span with the span of the requested
   epochs (or the whole tracked session) rather than with `times` alone; fixing
   G-001 removes the clean-run warning that hides this case.
-- Status: open (linked to G-001)
+- Status: fixed (#265): with the clean-run warning gone, the spike-drop warning flags the ms case on Mouse32 and the figure-8
 
 ## G-011: `read_intervals` does not search processing modules
 
@@ -275,7 +275,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none
 - Proposed change: test for a loop on the track graph (or ignore cycles that
   stay within one junction's bins) before counting laps.
-- Status: promoted (UX fixes phase 6 fix round)
+- Status: partly fixed (#265): mazes and 3-D spaces are refused; open arenas
+  (000582 box, 002030 arena) still give one lap each, apparently because
+  unvisited patches inside an arena built from samples count as holes
 
 ## G-016: A track graph without `track_width` cannot place positions
 

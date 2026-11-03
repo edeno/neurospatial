@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
+    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
   },
   "load_warnings": [],
   "operations": {
@@ -52,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.309,
+      "seconds": 0.244,
       "peak_mb": 18.3
     },
     "env.occupancy": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.282,
+      "seconds": 0.211,
       "peak_mb": 32.5
     },
     "rates.spatial": {
@@ -123,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.083,
+      "seconds": 0.061,
       "peak_mb": 0.8
     },
     "behavior.segment_by_velocity": {
@@ -135,21 +135,16 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.317,
+      "seconds": 0.219,
       "peak_mb": 16.1
     },
     "behavior.laps": {
-      "status": "ok",
-      "summary": {
-        "n_laps": 3,
-        "n_clockwise": 1,
-        "n_counter-clockwise": 1,
-        "n_unknown": 1
-      },
-      "note": "",
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 2.323,
+      "seconds": 1.46,
       "peak_mb": 32.2
     },
     "behavior.turn_sequence": {
@@ -161,7 +156,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.175,
+      "seconds": 1.028,
       "peak_mb": 32.2
     },
     "replay.compare_methods": {
@@ -244,21 +239,11 @@
     {
       "hazard": "missing_positions_as_zero",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 3,
-        "n_clockwise": 1,
-        "n_counter-clockwise": 1,
-        "n_unknown": 1
-      },
-      "hazard_summary": {
-        "n_laps": 3,
-        "n_clockwise": 1,
-        "n_counter-clockwise": 1,
-        "n_unknown": 1
-      }
+      "clean_summary": {},
+      "hazard_summary": null
     },
     {
       "hazard": "missing_positions_as_zero",
@@ -329,21 +314,11 @@
     {
       "hazard": "image_y_down",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 3,
-        "n_clockwise": 1,
-        "n_counter-clockwise": 1,
-        "n_unknown": 1
-      },
-      "hazard_summary": {
-        "n_laps": 3,
-        "n_clockwise": 1,
-        "n_counter-clockwise": 1,
-        "n_unknown": 1
-      }
+      "clean_summary": {},
+      "hazard_summary": null
     },
     {
       "hazard": "image_y_down",

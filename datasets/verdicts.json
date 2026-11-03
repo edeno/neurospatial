@@ -63,14 +63,14 @@
       "reason": "New warning names the evidence (largest 180, steps of 359.9) and the fix (np.radians or angle_unit='deg'); the clean run's spike-drop warning repeats."
     },
     "peyrache_mouse32/spike_times_in_ms/hd.tuning": {
-      "verdict": "silent",
+      "verdict": "caught",
       "gap": "G-010",
-      "reason": "Only the spike-drop warning the clean run already emits; no clock-ratio hint. Mean vector lengths change quietly (median 0.436 to 0.389, 10 units lose a value)."
+      "reason": "With the clean-run warning gone (#265), the spike-drop warning now flags it: 100% of spikes outside tracking, check units."
     },
     "figure8_000552/spike_times_in_ms/rates.spatial": {
-      "verdict": "silent",
+      "verdict": "caught",
       "gap": "G-010",
-      "reason": "Only the clean run's spike-drop warning; median peak rate falls from 4.67 to 0 Hz."
+      "reason": "With the clean-run warning gone (#265), the spike-drop warning now flags it: 100% of spikes outside tracking, check units."
     },
     "figure8_000552/length_unit_off_by_100/env.from_samples": {
       "verdict": "silent",
@@ -180,7 +180,7 @@
     "sargolini_000582/length_unit_off_by_100/behavior.laps": {
       "verdict": "caught upstream",
       "gap": null,
-      "reason": "The 4-bin environment already warned in env.from_samples; no lap is found on it."
+      "reason": "env.from_samples already warned; detect_laps then refuses the 4-bin space as having no loop."
     },
     "yartsev_bat_demo/missing_positions_as_zero/behavior.segment_by_velocity": {
       "verdict": "silent",
@@ -205,7 +205,7 @@
     "miniscope_002030/length_unit_off_by_100/behavior.laps": {
       "verdict": "caught upstream",
       "gap": null,
-      "reason": "env.from_samples already warned; the spurious lap (G-015) disappears on 4 bins."
+      "reason": "env.from_samples already warned; detect_laps then refuses the 4-bin space as having no loop."
     },
     "giocomo_000405/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
@@ -218,9 +218,9 @@
       "reason": "env.from_samples already warned."
     },
     "giocomo_000405/length_unit_off_by_100/behavior.laps": {
-      "verdict": "no effect",
+      "verdict": "caught upstream",
       "gap": null,
-      "reason": "No laps either way."
+      "reason": "env.from_samples already warned; detect_laps then refuses the 4-bin space as having no loop."
     },
     "giocomo_000405/positions_read_as_mm/env.from_samples": {
       "verdict": "undetectable",
@@ -233,9 +233,9 @@
       "reason": "Same: occupancy per bin rises (median 0.22 to 15.9 s) as bins grow relative to the arena."
     },
     "giocomo_000405/positions_read_as_mm/behavior.laps": {
-      "verdict": "silent",
-      "gap": "G-015",
-      "reason": "3 laps on the shrunken open field instead of 0: the spurious-lap bug, not the units."
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "detect_laps now refuses the shrunken arena as having no loop (#265) instead of finding spurious laps; not a units check."
     },
     "giocomo_001701/headings_in_degrees/hd.tuning": {
       "verdict": "caught",
@@ -340,6 +340,15 @@
     },
     "giocomo_001701/cells.border_score": {
       "gap": "G-005"
+    },
+    "giocomo_001701/behavior.laps": {
+      "gap": "G-015"
+    },
+    "rosenberg_labyrinth/behavior.laps": {
+      "gap": "G-015"
+    },
+    "yartsev_bat_demo/behavior.laps": {
+      "gap": "G-015"
     }
   }
 }

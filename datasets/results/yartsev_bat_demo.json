@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
+    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.236,
+      "seconds": 0.216,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -79,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.623,
+      "seconds": 0.58,
       "peak_mb": 227.7
     },
     "rates.spatial": {
@@ -93,7 +93,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.018,
+      "seconds": 1.949,
       "peak_mb": 227.7
     },
     "rates.spatial_information": {
@@ -106,7 +106,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.006,
       "peak_mb": 26.2
     },
     "rates.information_vs_shifts": {
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.291,
+      "seconds": 4.118,
       "peak_mb": 264.7
     },
     "cells.place_screen": {
@@ -133,7 +133,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.04,
+      "seconds": 0.036,
       "peak_mb": 66.8
     },
     "cells.grid_score": {
@@ -170,7 +170,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.125,
+      "seconds": 1.114,
       "peak_mb": 227.7
     },
     "io.nwb_roundtrip": {
@@ -181,8 +181,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.045,
-      "peak_mb": 24.2
+      "seconds": 2.809,
+      "peak_mb": 24.4
     },
     "env.from_graph": {
       "status": "n/a",
@@ -202,18 +202,16 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.669,
+      "seconds": 0.484,
       "peak_mb": 234.8
     },
     "behavior.laps": {
-      "status": "ok",
-      "summary": {
-        "n_laps": 0
-      },
-      "note": "",
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.14,
+      "seconds": 0.119,
       "peak_mb": 100.7
     },
     "behavior.turn_sequence": {
@@ -328,15 +326,11 @@
     {
       "hazard": "missing_positions_as_zero",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 0
-      },
-      "hazard_summary": {
-        "n_laps": 0
-      }
+      "clean_summary": {},
+      "hazard_summary": null
     },
     {
       "hazard": "missing_positions_as_zero",
@@ -425,12 +419,10 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "raised",
-      "message": "ValueError: A regular grid over these positions would have 8,994,640,980 bins in 3 dimension(s), and its bin centers would need 215,871,383,520 bytes, more than the 8 GiB limit.\nWhy: each column of positions is one spatial dimension, so a transposed array of shape (n_dims, n_samples) reads as one dimension per sample; a bin_size far smaller than the arena has the same effect.\nFix: pass positions with shape (n_samples, n_dims), for example positions.T, and check that bin_size is in the units of positions",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 0
-      },
+      "clean_summary": {},
       "hazard_summary": null
     },
     {
