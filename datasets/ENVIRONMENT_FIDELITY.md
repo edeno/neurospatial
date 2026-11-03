@@ -122,9 +122,21 @@ and centre segment in one part; the paper's "130-cm X-maze" does not say what
 the 130 cm spans (the samples span 112 cm tip to tip), so its size is not
 compared.
 
-**Tracks and mazes.** No track or maze has its arms linked through the gaps
-between them: the far-link share is 0-0.13 %, corner-only links number 0-15,
-and the path lengths keep the detours of a maze (each W-track alone: 95th
+**Tracks and mazes.** The far-link share (0-0.13 %) cannot show arms linked
+through a gap: when every bin holds a sample, a link's midpoint is at most
+about 1.4 bins from one, so two 10 cm corridors behind a 0.5-3 cm wall merge
+with no far link (`test_jump_links_find_corridors_joined_through_a_thin_wall`).
+The rerun counts instead the links whose two bins the stated layout puts far
+apart along the track (`jump_links`: more than 3 x the link plus both bins'
+offsets), where a layout is known: the labyrinth has 795 (8.1 % of its
+links, G-110), Takigawa's two tracks 2, and the seven other recordings
+with a reference none; the W-tracks, radial, 3-arm, X and Z mazes have no
+independent layout, so their links are not checked. The rerun also judges
+loops: holes of 1 % of the bins or more are loops in a grid from samples,
+and a tree or straight track should have none, but J16, Vollan's linear
+track, both 000447 W-tracks (2 and 8), 001845 (3) and 000044's linear track
+have some; the circle has its 1 and the figure-8 its 2. Corner-only links
+number 0-15, and the path lengths keep the detours of a maze (each W-track alone: 95th
 percentile 4.3-4.9 x the straight line; the 3-arm maze 8.5). Straight tracks follow their axis (000568,
 Vollan's linear track and Hafting: path through the bins 1.01-1.04 x the
 distance along the track axis; 001695 and 000165 1.01-1.03 x the straight
@@ -135,10 +147,11 @@ verdict is a mismatch. The W-tracks, radial arms, 3-arm maze and J16's graph
 come out as one connected track each with maze-like detours (J16: 1.01 x the
 distance along the authors' graph). The failures are of three kinds:
 
-- Walls thinner than a bin are invisible. The labyrinth's environment joins
-  neighbouring corridors: the path through its bins is 0.66 x the corridor
-  distance (5th percentile 0.28), while no link is "far" (G-110). The
-  graph environment the driver also builds is right.
+- Walls thinner than a bin are invisible to the samples. The labyrinth's
+  environment joins neighbouring corridors: the path through its bins is
+  0.66 x the corridor distance (5th percentile 0.28), and 795 of its links
+  join bins far apart along the corridors, while no link is "far" from the
+  samples (G-110). The graph environment the driver also builds is right.
 - One environment for several apparatus. 000447's novel and familiar
   W-tracks, rotated 90 degrees in one camera frame, merge into one 110 x 105
   cm block (path / straight 1.07); each alone is a W (1.19 and 2.53, 95th
