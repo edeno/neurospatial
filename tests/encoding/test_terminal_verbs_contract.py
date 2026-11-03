@@ -254,6 +254,7 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "AssemblyDetectionResult": ("summary",),
         "AssemblyEventResponseResult": ("summary",),
         "AssemblyMemberCofiringResult": ("summary",),
+        "AssemblyPattern": ("summary",),
         "AssemblyReactivationResult": ("summary",),
         "AssemblySimilarityResult": ("summary",),
         "BiasSimilarityResult": ("summary",),
@@ -273,17 +274,23 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "CumulativeDistanceResult": ("summary",),
         "DatasetTestResult": ("summary", "plot"),
         "DecisionAnalysisResult": ("summary",),
+        "DecisionBoundaryMetrics": ("summary",),
         "DecodingResult": ("summary", "to_dataframe", "to_xarray", "plot"),
+        "DecodingSummary": ("summary", "to_dataframe", "to_xarray", "plot"),
+        "DirectionalPlaceFields": ("summary", "to_dataframe", "plot"),
         "DirectionalRateResult": RATE_VERBS,
         "DirectionalRatesResult": RATE_VERBS,
         "DistributionTestResult": ("summary",),
         "ExplainedVarianceContributionResult": ("summary",),
         "ExplainedVarianceResult": ("summary",),
+        "GoalDirectedMetrics": ("summary", "summary_table"),
+        "GridProperties": ("summary",),
         "IsotonicFitResult": ("summary",),
         "JointDecodingResult": ("summary",),
         "LinearFitResult": ("summary",),
         "MSDResult": ("summary",),
         "MatchingIndexResult": ("summary",),
+        "NullSpikeData": ("summary",),
         "ObjectVectorRateResult": RATE_VERBS,
         "ObjectVectorRatesResult": RATE_VERBS,
         "PairwiseBiasResult": ("summary",),
@@ -297,6 +304,7 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "PlaceFieldsResult": ("summary", "to_dataframe", "summary_table", "plot"),
         "PopulationCoverageResult": ("summary",),
         "PopulationPeriEventResult": PSTH_VERBS,
+        "PreDecisionMetrics": ("summary",),
         "RadonDetectionResult": ("summary",),
         "RankOrderResult": ("summary",),
         "RankOrderSignificanceResult": ("summary",),
@@ -305,10 +313,12 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "RecurringSequencesSignificanceResult": ("summary",),
         "RegressionLineScoreResult": ("summary",),
         "ReplayDetectionResult": ("summary",),
+        "ReplayEventSimulation": ("summary",),
         "ReplaySegmentsResult": ("summary",),
         "ReplaySignificanceResult": ("summary",),
         "ResampledPathResult": ("summary", "samples_table"),
         "SequenceMatchResult": ("summary",),
+        "ShuffledDataset": ("summary",),
         "ShuffleTestResult": ("summary", "plot"),
         "SimulationValidationResult": ("summary", "summary_table", "plot"),
         "SpatialFeatureResult": ("summary", "samples_table"),
@@ -318,6 +328,7 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
         "SubgoalEfficiencyResult": ("summary",),
         "TemplateMatchDatasetResult": ("summary", "groups_table"),
         "TrackGraphResult": (),
+        "TrajectoryMetrics": ("summary",),
         "TuningCurveResult": RATE_VERBS,
         "TuningCurvesResult": RATE_VERBS,
         "VTESessionResult": ("summary", "trials_table"),
@@ -389,8 +400,10 @@ def test_result_class_matches_its_expected_verb_row(name, result_instances):
             ax = result.plot(0)
         else:
             ax = result.plot()
-        # A 2-D decode draws its x and y marginals on a pair of axes.
-        axes = ax if name == "DecodingResult" and isinstance(ax, tuple) else (ax,)
+        # A 2-D decode draws its x and y marginals on a pair of axes, and
+        # directional place fields one map per direction.
+        several = name in ("DecodingResult", "DirectionalPlaceFields")
+        axes = ax if several and isinstance(ax, tuple) else (ax,)
         assert all(isinstance(each, Axes) for each in axes)
         plt.close("all")
 

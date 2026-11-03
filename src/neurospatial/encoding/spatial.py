@@ -4936,6 +4936,30 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         """Direction labels in iteration order."""
         return tuple(self.firing_rates)
 
+    @property
+    def n_directions(self) -> int:
+        """Number of direction labels."""
+        return len(self.firing_rates)
+
+    @property
+    def n_bins(self) -> int:
+        """Number of spatial bins of each direction's map (``env.n_bins``)."""
+        return int(self.env.n_bins)
+
+    @property
+    def peak_firing_rates(self) -> Mapping[Hashable, float]:
+        """Each direction's peak firing rate in Hz, keyed by label.
+
+        The largest rate over the bins with a rate (not NaN); NaN for a
+        direction with none.
+        """
+        peaks: dict[Hashable, float] = {}
+        for label in self.labels:
+            rate = _to_numpy(self.firing_rates[label])
+            supported = rate[~np.isnan(rate)]
+            peaks[label] = float(supported.max()) if supported.size else np.nan
+        return MappingProxyType(peaks)
+
     def __getstate__(self) -> dict[str, Any]:
         """Serialize read-only mappings as ordinary dictionaries."""
         state = vars(self).copy()
@@ -5109,10 +5133,10 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         dict
             Mapping with ``n_directions`` (int), ``n_bins`` (int), the
             analysis settings ``spike_window``, ``spike_window_assumed`` and
-            ``missing_label``, and one ``peak_<label>`` entry per direction
-            giving that direction's peak firing rate (Hz). When exactly two
-            directions are present, a ``correlation`` entry (Pearson r between
-            the two maps) is also included.
+            ``missing_label``, and one ``peak_firing_rates[<label>]`` entry
+            per direction giving that direction's peak firing rate (Hz), as
+            read from :attr:`peak_firing_rates`. Compare two directions'
+            maps with :meth:`correlation` and :meth:`directionality_index`.
 
         Examples
         --------
@@ -5137,20 +5161,23 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         True
         """
         out: dict[str, Any] = {
-            "n_directions": len(self.labels),
+            "n_directions": self.n_directions,
             "spike_window_assumed": self.spike_window_assumed,
             "spike_window": None
             if self.spike_window is None
             else self.spike_window.tolist(),
             "missing_label": self.missing_label,
-            "n_bins": int(self.env.n_bins),
+            "n_bins": self.n_bins,
         }
-        for label in self.labels:
-            rate = _to_numpy(self.firing_rates[label])
-            out[f"peak_{label}"] = float(np.nanmax(rate))
-        if len(self.labels) == 2:
-            out["correlation"] = self.correlation(self.labels[0], self.labels[1])
+        for label, peak in self.peak_firing_rates.items():
+            out[f"peak_firing_rates[{label}]"] = peak
         return out
+
+    def _repr_unit(self, key: str) -> str:
+        """``"Hz"`` for each direction's peak firing rate."""
+        if key.startswith("peak_firing_rates["):
+            return "Hz"
+        return super()._repr_unit(key)
 
     def to_dataframe(self) -> pd.DataFrame:
         """Tidy/long-form table: one row per (direction, bin).
@@ -5165,7 +5192,9 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         pandas.DataFrame
             Long-form table with columns ``direction`` (the label), ``bin`` (int),
             ``coord_0`` ... (float), ``firing_rate`` (float, Hz), and
-            ``occupancy`` (float, seconds).
+            ``occupancy`` (float, seconds). ``df.attrs["units"]`` gives each
+            column's unit: the environment's ``units`` for the coordinates
+            (``""`` when unset), ``"Hz"`` and ``"s"``.
 
         Examples
         --------
@@ -5226,8 +5255,16 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
                 empty[f"coord_{d}"] = np.array([], dtype=np.float64)
             empty["firing_rate"] = np.array([], dtype=np.float64)
             empty["occupancy"] = np.array([], dtype=np.float64)
-            return pd.DataFrame(empty)
-        return pd.concat(frames, ignore_index=True)
+            frames.append(pd.DataFrame(empty))
+        df = pd.concat(frames, ignore_index=True)
+        df.attrs["units"] = {
+            "direction": "",
+            "bin": "",
+            **{f"coord_{d}": self.env.units or "" for d in range(n_dims)},
+            "firing_rate": "Hz",
+            "occupancy": "s",
+        }
+        return df
 
     def plot(
         self, *, ax: Axes | Sequence[Axes] | None = None, **kwargs: Any

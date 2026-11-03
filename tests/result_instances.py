@@ -24,18 +24,23 @@ _SNAPSHOT = Path(__file__).parent / "data" / "public_api.txt"
 
 
 def public_result_classes() -> dict[str, type]:
-    """Every public class whose name ends in ``Result``, keyed by ``__name__``.
+    """Every public result class, keyed by ``__name__``.
 
-    Re-exports of one class under several paths count once.
+    A result class is a ``ResultMixin`` subclass, whatever its name
+    (``DecodingSummary``, ``GridProperties``), or a class whose name ends in
+    ``Result``. Re-exports of one class under several paths count once.
     """
+    from neurospatial._results import ResultMixin
+
     classes: dict[str, type] = {}
     for line in _SNAPSHOT.read_text().splitlines():
         parts = line.strip().rsplit(" ", 1)
-        if len(parts) != 2 or parts[1] != "(class)" or not parts[0].endswith("Result"):
+        if len(parts) != 2 or parts[1] != "(class)":
             continue
         module, _, attr = parts[0].rpartition(".")
         cls = getattr(importlib.import_module(module), attr)
-        classes.setdefault(cls.__name__, cls)
+        if issubclass(cls, ResultMixin) or cls.__name__.endswith("Result"):
+            classes.setdefault(cls.__name__, cls)
     return classes
 
 
@@ -257,12 +262,55 @@ def _correlations() -> tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------------------
 
 
+def _decode_counts() -> np.ndarray:
+    return np.random.default_rng(0).poisson(0.5, (10, len(_spatial_rates())))
+
+
 def _decoding_result() -> Any:
     from neurospatial.decoding import decode_position
 
     rates = _spatial_rates()
-    counts = np.random.default_rng(0).poisson(0.5, (10, len(rates)))
-    return decode_position(rates.env, counts, rates, dt=0.1)
+    return decode_position(rates.env, _decode_counts(), rates, dt=0.1)
+
+
+def _decoding_summary() -> Any:
+    from neurospatial.decoding import decode_position_summary
+
+    rates = _spatial_rates()
+    return decode_position_summary(rates.env, _decode_counts(), rates, dt=0.1)
+
+
+def _grid_properties() -> Any:
+    from neurospatial import Environment
+    from neurospatial.encoding import (
+        autocorrelation_pixel_size,
+        grid_properties,
+        spatial_autocorrelation,
+    )
+
+    edges = np.arange(0.0, 102.5, 2.5)  # 100 cm box, 2.5 cm bins
+    env = Environment.from_grid_mask(
+        np.ones((40, 40), dtype=bool), grid_edges=(edges, edges), units="cm"
+    )
+    wavenumber = 4 * np.pi / (np.sqrt(3) * 40.0)  # 40 cm grid spacing
+    rate = sum(
+        np.cos(wavenumber * env.bin_centers @ [np.cos(a), np.sin(a)])
+        for a in (0.3, 0.3 + np.pi / 3, 0.3 + 2 * np.pi / 3)
+    )
+    return grid_properties(
+        spatial_autocorrelation(env, np.exp(rate)),
+        pixel_size=autocorrelation_pixel_size(env),
+    )
+
+
+def _directional_place_fields() -> Any:
+    from neurospatial.encoding import compute_directional_place_fields
+
+    env, times, positions, _, trains = _open_field()
+    labels = np.where(times < 25.0, "first", "second").astype(object)
+    return compute_directional_place_fields(
+        env, trains[0], times, positions, labels, bandwidth=10.0
+    )
 
 
 def _peri_event_result() -> Any:
@@ -337,14 +385,38 @@ def _msd() -> Any:
     return mean_square_displacement(np.arange(100) * 0.1, positions, max_tau=5.0)
 
 
-def _path_efficiency() -> Any:
+@cache
+def _line() -> tuple[Any, np.ndarray, np.ndarray]:
+    """A 10 cm run East at 10 cm/s, sampled every 0.1 s, on a 1 cm grid."""
     from neurospatial import Environment
-    from neurospatial.behavior import compute_path_efficiency
 
     positions = np.column_stack([np.arange(11.0), np.zeros(11)])
     env = Environment.from_samples(positions, bin_size=1.0, units="cm")
-    return compute_path_efficiency(
-        env, np.arange(11) / 10, positions, goal=positions[-1]
+    return env, np.arange(11) / 10, positions
+
+
+def _path_efficiency() -> Any:
+    from neurospatial.behavior import compute_path_efficiency
+
+    env, times, positions = _line()
+    return compute_path_efficiency(env, times, positions, goal=positions[-1])
+
+
+def _goal_directed() -> Any:
+    from neurospatial.behavior import compute_goal_directed_metrics
+
+    env, times, positions = _line()
+    return compute_goal_directed_metrics(
+        env, times, positions, goal=positions[-1], goal_radius=1.5
+    )
+
+
+def _pre_decision() -> Any:
+    from neurospatial.behavior import compute_pre_decision_metrics
+
+    _, times, positions = _line()
+    return compute_pre_decision_metrics(
+        times, positions, entry_time=0.8, window_duration=0.5, min_speed=5.0
     )
 
 
@@ -764,6 +836,35 @@ def _weighted_correlation() -> Any:
     return weighted_correlation(*_sweep())
 
 
+def _trajectory_metrics() -> Any:
+    from neurospatial.replay import trajectory_metrics
+
+    return trajectory_metrics(*_sweep())
+
+
+def _null_spike_data() -> Any:
+    from neurospatial.replay import null_events
+
+    trains = [np.array([0.01, 0.05, 0.12]), np.array([0.03, 0.15]), np.array([])]
+    return null_events(trains, np.array([[0.0, 0.2]]), kind="spike_shift", rng=0)
+
+
+def _shuffled_dataset() -> Any:
+    from neurospatial.decoding import DecodingResult
+    from neurospatial.replay import shuffle_events
+
+    env, posterior, times = _sweep()
+    event = DecodingResult(posterior=posterior, env=env, times=times)
+    (dataset,) = shuffle_events(env, [event], null="time_bin_permutation", rng=0)
+    return dataset
+
+
+def _replay_event_simulation() -> Any:
+    from neurospatial.simulation import simulate_replay_event
+
+    return simulate_replay_event(_track(), _track_rates(), speed=500.0, rng=0)
+
+
 def _simulation_validation() -> Any:
     from neurospatial.simulation import linear_track_session, validate_simulation
 
@@ -786,6 +887,7 @@ def _shuffle_test() -> Any:
 
 RESULT_FACTORIES: dict[str, Callable[[], Any]] = {
     "DecodingResult": _decoding_result,
+    "DecodingSummary": _decoding_summary,
     "PeriEventResult": _peri_event_result,
     "SpatialRateResult": lambda: _spatial_rates()[0],
     "SpatialRatesResult": _spatial_rates,
@@ -793,8 +895,11 @@ RESULT_FACTORIES: dict[str, Callable[[], Any]] = {
     "TrackGraphResult": _track_graph_result,
     "CumulativeDistanceResult": _cumulative_distance,
     "DecisionAnalysisResult": _decision_analysis,
+    "DecisionBoundaryMetrics": lambda: _decision_analysis().boundary,
+    "GoalDirectedMetrics": _goal_directed,
     "MSDResult": _msd,
     "PathEfficiencyResult": _path_efficiency,
+    "PreDecisionMetrics": _pre_decision,
     "ResampledPathResult": _resampled_path,
     "SubgoalEfficiencyResult": _subgoal_efficiency,
     "VTESessionResult": _vte_session,
@@ -806,6 +911,8 @@ RESULT_FACTORIES: dict[str, Callable[[], Any]] = {
     "PlaceCellSignificanceResult": _place_cell_significance,
     "DirectionalRateResult": lambda: _directional_rates()[0],
     "DirectionalRatesResult": _directional_rates,
+    "DirectionalPlaceFields": _directional_place_fields,
+    "GridProperties": _grid_properties,
     "ObjectVectorRateResult": lambda: _object_vector_rates()[0],
     "ObjectVectorRatesResult": _object_vector_rates,
     "PhasePrecessionResult": _phase_precession,
@@ -822,6 +929,7 @@ RESULT_FACTORIES: dict[str, Callable[[], Any]] = {
     "SpatialFeatureResult": _spatial_feature,
     "ViewshedResult": _viewshed,
     "AssemblyDetectionResult": _assemblies,
+    "AssemblyPattern": lambda: _assemblies().patterns[0],
     "AssemblyEventResponseResult": _assembly_event_response,
     "AssemblyMemberCofiringResult": _assembly_member_cofiring,
     "AssemblyReactivationResult": _assembly_reactivation,
@@ -851,6 +959,10 @@ RESULT_FACTORIES: dict[str, Callable[[], Any]] = {
     "SpikeWordsResult": _spike_words,
     "TemplateMatchDatasetResult": _template_match_dataset,
     "WeightedCorrelationResult": _weighted_correlation,
+    "TrajectoryMetrics": _trajectory_metrics,
+    "NullSpikeData": _null_spike_data,
+    "ShuffledDataset": _shuffled_dataset,
+    "ReplayEventSimulation": _replay_event_simulation,
     "SimulationValidationResult": _simulation_validation,
     "CircularBasisResult": _circular_basis,
     "ShuffleTestResult": _shuffle_test,

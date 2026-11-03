@@ -122,17 +122,21 @@ def test_directional_correlation_of_a_map_flat_up_to_rounding_is_nan(
     assert np.isnan(result.correlation("rev", "fwd"))
 
 
-def test_directional_summary_includes_correlation(linear_env: Environment) -> None:
+def test_directional_summary_reads_back_each_peak(linear_env: Environment) -> None:
+    """Each direction's peak is a summary entry and a ``peak_firing_rates`` entry."""
     n = linear_env.n_bins
-    result = _directional(
-        linear_env, np.linspace(1.0, 5.0, n), np.linspace(5.0, 1.0, n)
-    )
+    outbound = np.linspace(1.0, 5.0, n)
+    outbound[0] = np.nan  # an unsupported bin is not a peak
+    result = _directional(linear_env, outbound, np.linspace(5.0, 2.0, n))
     s = result.summary()
-    assert s["n_directions"] == 2
-    assert s["n_bins"] == n
-    assert np.isclose(s["correlation"], -1.0)
-    assert "peak_fwd" in s
-    assert "peak_rev" in s
+    assert s["n_directions"] == result.n_directions == 2
+    assert s["n_bins"] == result.n_bins == n
+    assert s["peak_firing_rates[fwd]"] == result.peak_firing_rates["fwd"] == 5.0
+    assert s["peak_firing_rates[rev]"] == result.peak_firing_rates["rev"] == 5.0
+    assert "peak_firing_rates[fwd]=5 Hz" in repr(result)
+    # A two-label comparison needs its labels, so it is a method, not a key.
+    assert "correlation" not in s
+    assert np.isclose(result.correlation("fwd", "rev"), -1.0)
 
 
 def test_result_to_dataframe_tidy(
