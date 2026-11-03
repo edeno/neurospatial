@@ -9,7 +9,7 @@
     "scale: 0.995 cm per pixel inferred from the stated 180 cm apparatus; used only for bin_size 2.51 px and min_speed 4.02 px/s",
     "headings: first LED in front (back-to-front angle minus movement direction above 10 cm/s: circular mean 0.4 deg, median spread 42.5 deg; the other order gives -179.6 deg); 2.3% of tracked frames have both LEDs at one point -> NaN; frame of the stored pixel axes (y direction unstated)",
     "spikes: .res samples / 20000 Hz; 37 units kept of 37 clusters >= 2",
-    "environment: declared square (180.837 x 180.837, hc-2 description: ec013.527 180 cm square; side in pixels from the inferred scale); placement fitted: centre_x 170, centre_y 117, rotation_rad 3.14, samples_side_a 177, samples_side_b 175, size_residual_a -0.0211, size_residual_b -0.03"
+    "environment: declared square (180.837 x 180.837, drop edge, crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the inferred scale); placement fitted: centre_x 170, centre_y 117, rotation_rad 3.14, samples_side_a 177, samples_side_b 175, size_residual_a -0.0211, size_residual_b -0.03"
   ],
   "expectations": [
     {
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
   },
   "load_warnings": [],
   "operations": {
@@ -72,8 +72,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.268,
-      "peak_mb": 11.6
+      "seconds": 0.442,
+      "peak_mb": 11.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -94,8 +94,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.705,
-      "peak_mb": 25.5
+      "seconds": 0.821,
+      "peak_mb": 25.6
     },
     "env.declared": {
       "status": "ok",
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.029,
+      "seconds": 0.039,
       "peak_mb": 5.7
     },
     "rates.spatial": {
@@ -122,7 +122,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 204.483,
+      "seconds": 133.831,
       "peak_mb": 696.0
     },
     "rates.spatial_information": {
@@ -135,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.008,
       "peak_mb": 13.2
     },
     "rates.information_vs_shifts": {
@@ -150,7 +150,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.501,
+      "seconds": 0.746,
       "peak_mb": 15.7
     },
     "cells.place_screen": {
@@ -162,7 +162,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.71,
+      "seconds": 2.661,
       "peak_mb": 192.5
     },
     "cells.grid_score": {
@@ -175,7 +175,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.98,
+      "seconds": 0.67,
       "peak_mb": 28.7
     },
     "cells.border_score": {
@@ -188,7 +188,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.854,
+      "seconds": 0.535,
       "peak_mb": 9.6
     },
     "hd.tuning": {
@@ -202,7 +202,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.128,
+      "seconds": 0.062,
       "peak_mb": 8.4
     },
     "rates.egocentric_boundary": {
@@ -226,7 +226,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.568,
+      "seconds": 1.735,
       "peak_mb": 182.4
     },
     "io.nwb_roundtrip": {
@@ -245,8 +245,8 @@
           "count": 2
         }
       ],
-      "seconds": 11.362,
-      "peak_mb": 46.2
+      "seconds": 4.897,
+      "peak_mb": 46.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -266,7 +266,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.064,
+      "seconds": 0.027,
       "peak_mb": 11.1
     },
     "behavior.laps": {
@@ -275,7 +275,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.066,
+      "seconds": 0.037,
       "peak_mb": 5.1
     },
     "behavior.turn_sequence": {

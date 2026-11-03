@@ -50,7 +50,16 @@
       "stated_area_covered": 0.948046875
     },
     "declared": {
-      "frac_samples_outside": 0.0001666722224074136
+      "frac_samples_outside": 0.0001666722224074136,
+      "fit": {
+        "centre_x": 0.04258527437326102,
+        "centre_y": 0.13475576762276203,
+        "rotation_rad": 1.5713060842416031,
+        "samples_side_a": 99.45537940589817,
+        "samples_side_b": 97.09998170918405,
+        "size_residual_a": -0.005446205941018301,
+        "size_residual_b": -0.029000182908159533
+      }
     },
     "samples_env": {
       "n_bins": 1399,
@@ -217,23 +226,23 @@
     "source": "Forli et al. 2025 Methods (Zotero full-text cache): indoor flight room 5.6 x 5.2 x 2.5 m, two feeders on the wall at one end; file r_lim ('boundaries of the room', NP_Bat_Demo.m) 5.8 x 5.2 x 2.3 m and the feeder coordinates r_fd in NP_Bat_Demo.m",
     "env_kind": "declared",
     "env": {
-      "n_bins": 9048,
+      "n_bins": 8294,
       "n_dims": 3,
-      "n_edges": 105296,
-      "bin_size": 0.2,
+      "n_edges": 95983,
+      "bin_size": 0.19999999999999998,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        9048
+        8294
       ],
-      "sparse_bins": 0.906498673740053,
-      "unsupported_edges": 0.8945638960644279,
-      "far_edges": 0.7201223218355873,
-      "edge_gap_max_bins": 9.119206383246865,
+      "sparse_bins": 0.9012539184952978,
+      "unsupported_edges": 0.8904180948709667,
+      "far_edges": 0.7073752643697322,
+      "edge_gap_max_bins": 8.920977583802985,
       "corner_links": 0,
-      "thin_bins": 0.8941202475685235,
-      "geodesic_ratio_median": 1.0564867962523972,
-      "geodesic_ratio_p95": 1.150220991930014,
+      "thin_bins": 0.8866650590788522,
+      "geodesic_ratio_median": 1.0631858593628865,
+      "geodesic_ratio_p95": 1.149579248922066,
       "n_pairs": 1239
     },
     "room": {
@@ -254,28 +263,29 @@
       "bins_outside_room": 0.0,
       "samples_outside_room": 0.03658074387396535,
       "gap_to_low_walls_m": [
-        -0.0,
         0.0,
-        -0.05
+        0.0,
+        0.0
       ],
       "gap_to_high_walls_m": [
-        -0.0,
         0.0,
-        -0.05
+        0.0,
+        0.0
       ],
       "feeders_in_env": [
         true,
         true
       ],
       "feeder_to_nearest_bin_centre_m": [
-        0.13,
-        0.09
+        0.09,
+        0.12
       ],
       "rest_share_of_samples": 0.9756923811172614,
       "rest_samples_within_0.3m_of_feeder": 0.03188601791640291
     },
     "declared": {
-      "frac_samples_outside": 0.03658074387396535
+      "frac_samples_outside": 0.03658074387396535,
+      "fit": {}
     },
     "samples_env": {
       "n_bins": 1352,
@@ -325,8 +335,8 @@
         "rest_samples_within_0.3m_of_feeder": 0.03188601791640291
       }
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "mismatch",
+    "verdict_reason": "3.7% of samples outside the declared environment (limit 2%)",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/yartsev_bat_demo.png"
   },
   {
@@ -345,17 +355,17 @@
       "component_sizes": [
         1153
       ],
-      "sparse_bins": 0.6773633998265395,
-      "unsupported_edges": 0.6921338155515371,
-      "far_edges": 0.5325497287522604,
-      "edge_gap_max_bins": 8.176440045730155,
+      "sparse_bins": 0.6747614917606245,
+      "unsupported_edges": 0.6932640144665461,
+      "far_edges": 0.5302893309222423,
+      "edge_gap_max_bins": 8.195081907701061,
       "corner_links": 0,
       "holes": 0,
       "hole_bins": 0,
       "largest_hole_bins": 0,
       "thin_bins": 0.7398091934084996,
-      "geodesic_ratio_median": 1.047877168817194,
-      "geodesic_ratio_p95": 1.0962117349010667,
+      "geodesic_ratio_median": 1.0515286595003621,
+      "geodesic_ratio_p95": 1.099291064709992,
       "n_pairs": 2518
     },
     "outline": {
@@ -370,9 +380,9 @@
       "sample_rectangle_angle_deg": 26.1,
       "stated_area_covered": 1.0,
       "bin_centres_outside_stated": 0.0,
-      "wall_gap_median": 0.36091465002109113,
-      "wall_gap_p90": 0.5517544869952621,
-      "wall_gap_bins_median": 0.14436586000843646
+      "wall_gap_median": 0.36091465002109074,
+      "wall_gap_p90": 0.5517544869952629,
+      "wall_gap_bins_median": 0.1443658600084363
     },
     "open_field_preset": {
       "n_bins": 1177,
@@ -380,7 +390,13 @@
       "stated_area_covered": 0.9913462058521283
     },
     "declared": {
-      "frac_samples_outside": 0.00728053390581976
+      "frac_samples_outside": 0.0003266906239790918,
+      "fit": {
+        "centre_x": 57.83130832872712,
+        "centre_y": 56.150104621115375,
+        "samples_diameter": 95.9164999704431,
+        "size_residual": -0.0008697919745510596
+      }
     },
     "samples_env": {
       "n_bins": 455,
@@ -405,9 +421,9 @@
         "sample_rectangle_angle_deg": 26.1,
         "stated_area_covered": 0.366542268375791,
         "bin_centres_outside_stated": 0.0,
-        "wall_gap_median": 0.3050035061429943,
-        "wall_gap_p90": 1.0138320774521836,
-        "wall_gap_bins_median": 0.12200140245719773
+        "wall_gap_median": 0.30500350614299226,
+        "wall_gap_p90": 1.0138320774521852,
+        "wall_gap_bins_median": 0.1220014024571969
       }
     },
     "verdict": "matches",
@@ -465,7 +481,16 @@
       "stated_area_covered": 0.8006410256410257
     },
     "declared": {
-      "frac_samples_outside": 0.0
+      "frac_samples_outside": 0.0,
+      "fit": {
+        "centre_x": -2.105940328221017,
+        "centre_y": 64.4565934113532,
+        "rotation_rad": 1.570904528194755,
+        "samples_side_a": 137.67913348152314,
+        "samples_side_b": 119.63422407505854,
+        "size_residual_a": -0.0821391101231791,
+        "size_residual_b": -0.07973673788416502
+      }
     },
     "samples_env": {
       "n_bins": 2076,
@@ -582,7 +607,16 @@
       "stated_area_covered": 0.9611805555555556
     },
     "declared": {
-      "frac_samples_outside": 0.0
+      "frac_samples_outside": 0.0,
+      "fit": {
+        "centre_x": 1.0087358911401876,
+        "centre_y": -0.10561721736345717,
+        "rotation_rad": -1.5707548601774028,
+        "samples_side_a": 145.6692577428817,
+        "samples_side_b": 145.06410187885243,
+        "size_residual_a": -0.02887161504745528,
+        "size_residual_b": -0.032905987474317167
+      }
     },
     "samples_env": {
       "n_bins": 3463,
@@ -713,7 +747,14 @@
       "stated_area_covered": 0.8349022126735919
     },
     "declared": {
-      "frac_samples_outside": 0.0
+      "frac_samples_outside": 0.0,
+      "fit": {
+        "stated_centre_x": 0.0,
+        "stated_centre_y": 0.0,
+        "centre_offset": 1.6452363748832632,
+        "samples_diameter": 143.60155752740528,
+        "size_residual": -0.042656283150631524
+      }
     },
     "samples_env": {
       "n_bins": 2041,
@@ -1100,7 +1141,8 @@
       }
     },
     "declared": {
-      "frac_samples_outside": 0.0100000549151835
+      "frac_samples_outside": 0.0100000549151835,
+      "fit": {}
     },
     "samples_env": {
       "n_bins": 8193,
@@ -1188,7 +1230,14 @@
       "stated_area_covered": 0.9897294312534511
     },
     "declared": {
-      "frac_samples_outside": 0.0033697263782180888
+      "frac_samples_outside": 0.0033697263782180888,
+      "fit": {
+        "stated_centre_x": 133.655,
+        "stated_centre_y": 103.5381,
+        "centre_offset": 2.5763749673652603,
+        "samples_diameter": 191.90586126100172,
+        "size_residual": 0.010030848742114351
+      }
     },
     "samples_env": {
       "n_bins": 1144,
@@ -1909,7 +1958,16 @@
       "stated_area_covered": 0.93921875
     },
     "declared": {
-      "frac_samples_outside": 0.0
+      "frac_samples_outside": 0.0,
+      "fit": {
+        "centre_x": 8.7202782696183,
+        "centre_y": -24.772605022537526,
+        "rotation_rad": 3.1415880201031254,
+        "samples_side_a": 97.42288480131387,
+        "samples_side_b": 96.56446517910946,
+        "size_residual_a": -0.025771151986861307,
+        "size_residual_b": -0.0343553482089054
+      }
     },
     "samples_env": {
       "n_bins": 1049,
@@ -1947,7 +2005,7 @@
     "dataset": "hc2_ec013_527",
     "units": "pixel",
     "kind": "open",
-    "source": "hc-2 description: ec013.527 180 cm square (pixels; the scale is inferred from that side)",
+    "source": "crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm (pixels; the scale is inferred from that side)",
     "env_kind": "declared",
     "env": {
       "n_bins": 5329,
@@ -1994,7 +2052,16 @@
       "stated_area_covered": 0.8702859760802469
     },
     "declared": {
-      "frac_samples_outside": 0.00012329240025644818
+      "frac_samples_outside": 0.00012329240025644818,
+      "fit": {
+        "centre_x": 169.50953517090815,
+        "centre_y": 117.12092726695981,
+        "rotation_rad": 3.1415663657331327,
+        "samples_side_a": 177.02292945293362,
+        "samples_side_b": 175.41504918842517,
+        "size_residual_a": -0.021093426117230862,
+        "size_residual_b": -0.02998472944052244
+      }
     },
     "samples_env": {
       "n_bins": 3210,

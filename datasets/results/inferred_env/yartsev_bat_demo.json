@@ -11,7 +11,7 @@
     "epochs['neural_recording']: first to last spike of any unit",
     "params flights: flights clipped to the neural recording",
     "unit_ids: probe<n>-<kilosort cluster id>",
-    "environment: declared room, every voxel inside r_lim [5.8, 5.2, 2.3] m (NP_Bat_Demo.m: 'boundaries of the room'); 3.66% of tracked samples lie outside it; Forli et al. 2025 Methods state 5.6 x 5.2 x 2.5 m: that size centred on r_lim in x and y, from r_lim's floor in z, leaves 3.77% outside; placement: the file's frame (not fitted)"
+    "environment: declared room, every voxel of a grid tiling r_lim [5.8, 5.2, 2.3] m (NP_Bat_Demo.m: 'boundaries of the room') exactly: [29, 26, 11] cells of [0.2, 0.2, 0.209] m; 3.66% of tracked samples lie outside it; Forli et al. 2025 Methods state 5.6 x 5.2 x 2.5 m: that size centred on r_lim in x and y, from r_lim's floor in z, leaves 3.77% outside; placement: the file's frame (not fitted)"
   ],
   "expectations": [
     {
@@ -52,7 +52,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
   },
   "load_warnings": [],
   "operations": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.411,
+      "seconds": 0.418,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -80,7 +80,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.406,
+      "seconds": 1.06,
       "peak_mb": 227.7
     },
     "env.declared": {
@@ -103,7 +103,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.66,
+      "seconds": 2.611,
       "peak_mb": 227.7
     },
     "rates.spatial_information": {
@@ -116,7 +116,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.011,
       "peak_mb": 26.2
     },
     "rates.information_vs_shifts": {
@@ -131,7 +131,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 13.792,
+      "seconds": 6.633,
       "peak_mb": 264.6
     },
     "cells.place_screen": {
@@ -143,7 +143,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.229,
+      "seconds": 0.1,
       "peak_mb": 66.7
     },
     "cells.grid_score": {
@@ -152,7 +152,7 @@
       "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's RegularGrid layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 3.1
     },
     "cells.border_score": {
@@ -186,7 +186,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.838,
+      "seconds": 1.77,
       "peak_mb": 227.7
     },
     "io.nwb_roundtrip": {
@@ -197,7 +197,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 10.443,
+      "seconds": 4.415,
       "peak_mb": 24.2
     },
     "env.from_graph": {
@@ -218,7 +218,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.312,
+      "seconds": 0.785,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -227,7 +227,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.295,
+      "seconds": 0.164,
       "peak_mb": 100.7
     },
     "behavior.turn_sequence": {

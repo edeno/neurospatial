@@ -9,7 +9,7 @@
     "scale: 0.995 cm per pixel inferred from the stated 180 cm apparatus; used only for bin_size 2.51 px and min_speed 4.02 px/s",
     "headings: first LED in front (back-to-front angle minus movement direction above 10 cm/s: circular mean 0.4 deg, median spread 42.5 deg; the other order gives -179.6 deg); 2.3% of tracked frames have both LEDs at one point -> NaN; frame of the stored pixel axes (y direction unstated)",
     "spikes: .res samples / 20000 Hz; 37 units kept of 37 clusters >= 2",
-    "environment: declared square (180.837 x 180.837, hc-2 description: ec013.527 180 cm square; side in pixels from the inferred scale); placement fitted: centre_x 170, centre_y 117, rotation_rad 3.14, samples_side_a 177, samples_side_b 175, size_residual_a -0.0211, size_residual_b -0.03"
+    "environment: declared square (180.837 x 180.837, drop edge, crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the inferred scale); placement fitted: centre_x 170, centre_y 117, rotation_rad 3.14, samples_side_a 177, samples_side_b 175, size_residual_a -0.0211, size_residual_b -0.03"
   ],
   "expectations": [
     {
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
   },
   "load_warnings": [],
   "operations": {
@@ -72,8 +72,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.572,
-      "peak_mb": 11.5
+      "seconds": 0.353,
+      "peak_mb": 11.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.044,
+      "seconds": 0.034,
       "peak_mb": 10.6
     },
     "env.declared": {
@@ -109,7 +109,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 7.329,
+      "seconds": 4.93,
       "peak_mb": 254.6
     },
     "rates.spatial_information": {
@@ -122,7 +122,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.003,
       "peak_mb": 8.0
     },
     "rates.information_vs_shifts": {
@@ -137,7 +137,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.476,
+      "seconds": 0.404,
       "peak_mb": 12.5
     },
     "cells.place_screen": {
@@ -149,7 +149,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.461,
+      "seconds": 0.993,
       "peak_mb": 205.7
     },
     "cells.grid_score": {
@@ -162,7 +162,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.564,
+      "seconds": 0.385,
       "peak_mb": 28.3
     },
     "cells.border_score": {
@@ -185,7 +185,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.085,
+      "seconds": 0.065,
       "peak_mb": 8.4
     },
     "rates.egocentric_boundary": {
@@ -209,7 +209,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.508,
+      "seconds": 1.832,
       "peak_mb": 110.2
     },
     "io.nwb_roundtrip": {
@@ -228,7 +228,7 @@
           "count": 2
         }
       ],
-      "seconds": 5.581,
+      "seconds": 5.249,
       "peak_mb": 24.2
     },
     "env.from_graph": {
@@ -249,7 +249,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.028,
+      "seconds": 0.059,
       "peak_mb": 11.1
     },
     "behavior.laps": {
@@ -261,7 +261,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.081,
+      "seconds": 0.114,
       "peak_mb": 12.7
     },
     "behavior.turn_sequence": {

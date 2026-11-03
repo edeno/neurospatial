@@ -165,12 +165,12 @@
     "yartsev_bat_demo/missing_positions_as_zero/env.occupancy": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "The declared room keeps every voxel; occupancy summaries unchanged (120.9 s, 13% of voxels visited, max 3.28 s)."
+      "reason": "The declared room keeps every voxel; occupancy summaries unchanged (120.9 s, 14% of voxels visited, max 3.22 s)."
     },
     "yartsev_bat_demo/missing_positions_as_zero/rates.spatial": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "Rates unchanged in flight (median mean 0.926 Hz): the zeros fall outside flights."
+      "reason": "Rates unchanged in flight (median mean 0.948 Hz): the zeros fall outside flights."
     },
     "yartsev_bat_demo/missing_positions_as_zero/behavior.laps": {
       "verdict": "no effect",

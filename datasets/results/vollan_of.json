@@ -9,7 +9,7 @@
     "times: t as stored; speed-filtered at 5 cm/s by the authors, so 173 gaps longer than 2 dt (longest 253.5 s)",
     "sessions: ['open_field_light_1'] [[3449.0, 5400.0]]; 0.0% of samples lie outside the listed sessions and are kept",
     "units: 644 from areas ['mec'], Kilosort labels ['good', 'mua'] kept",
-    "environment: declared circle (diameter 150, Vollan et al. 2025 Methods: 'a circular arena 150 cm in diameter' (dark-room session; the lit session after it in the same arena); file session type 'open_field_light'); placement fitted: stated_centre_x 0, stated_centre_y 0, centre_offset 0.899, samples_diameter 140, size_residual -0.0657"
+    "environment: declared circle (diameter 150, Vollan et al. 2025 Methods: 'a circular arena 150 cm in diameter' (dark-room session; the lit session after it in the same arena); file session type 'open_field_light'); placement fitted: stated_centre_x 0, stated_centre_y 0, centre_offset 1.65, samples_diameter 144, size_residual -0.0427"
   ],
   "expectations": [
     {
@@ -45,7 +45,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
   },
   "load_warnings": [],
   "operations": {
@@ -59,7 +59,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.351,
+      "seconds": 0.244,
       "peak_mb": 7.9
     },
     "env.occupancy": {
@@ -81,7 +81,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.663,
+      "seconds": 0.494,
       "peak_mb": 15.5
     },
     "env.declared": {
@@ -95,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.073,
+      "seconds": 0.058,
       "peak_mb": 8.5
     },
     "rates.spatial": {
@@ -117,7 +117,7 @@
           "count": 1
         }
       ],
-      "seconds": 7.508,
+      "seconds": 5.432,
       "peak_mb": 227.1
     },
     "rates.spatial_information": {
@@ -130,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.077,
+      "seconds": 0.04,
       "peak_mb": 122.0
     },
     "rates.information_vs_shifts": {
@@ -153,8 +153,8 @@
           "count": 4
         }
       ],
-      "seconds": 2.903,
-      "peak_mb": 143.5
+      "seconds": 2.515,
+      "peak_mb": 143.4
     },
     "cells.place_screen": {
       "status": "ok",
@@ -165,7 +165,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.716,
+      "seconds": 0.683,
       "peak_mb": 172.2
     },
     "cells.grid_score": {
@@ -178,7 +178,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 9.791,
+      "seconds": 8.547,
       "peak_mb": 32.8
     },
     "cells.border_score": {
@@ -191,8 +191,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.478,
-      "peak_mb": 19.2
+      "seconds": 1.371,
+      "peak_mb": 19.3
     },
     "hd.tuning": {
       "status": "ok",
@@ -213,7 +213,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.402,
+      "seconds": 0.331,
       "peak_mb": 24.7
     },
     "rates.egocentric_boundary": {
@@ -239,7 +239,7 @@
           "count": 1
         }
       ],
-      "seconds": 24.285,
+      "seconds": 25.512,
       "peak_mb": 256.5
     },
     "decode.position": {
@@ -269,8 +269,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.88,
-      "peak_mb": 96.6
+      "seconds": 1.19,
+      "peak_mb": 97.3
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -280,8 +280,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.673,
-      "peak_mb": 65.7
+      "seconds": 4.669,
+      "peak_mb": 66.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -315,7 +315,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.05,
+      "seconds": 0.06,
       "peak_mb": 7.5
     },
     "behavior.turn_sequence": {
@@ -333,8 +333,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.17,
+      "peak_mb": 2.9
     },
     "io.nwb_readers": {
       "status": "n/a",

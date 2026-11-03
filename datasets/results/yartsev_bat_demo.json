@@ -11,7 +11,7 @@
     "epochs['neural_recording']: first to last spike of any unit",
     "params flights: flights clipped to the neural recording",
     "unit_ids: probe<n>-<kilosort cluster id>",
-    "environment: declared room, every voxel inside r_lim [5.8, 5.2, 2.3] m (NP_Bat_Demo.m: 'boundaries of the room'); 3.66% of tracked samples lie outside it; Forli et al. 2025 Methods state 5.6 x 5.2 x 2.5 m: that size centred on r_lim in x and y, from r_lim's floor in z, leaves 3.77% outside; placement: the file's frame (not fitted)"
+    "environment: declared room, every voxel of a grid tiling r_lim [5.8, 5.2, 2.3] m (NP_Bat_Demo.m: 'boundaries of the room') exactly: [29, 26, 11] cells of [0.2, 0.2, 0.209] m; 3.66% of tracked samples lie outside it; Forli et al. 2025 Methods state 5.6 x 5.2 x 2.5 m: that size centred on r_lim in x and y, from r_lim's floor in z, leaves 3.77% outside; placement: the file's frame (not fitted)"
   ],
   "expectations": [
     {
@@ -52,7 +52,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
   },
   "load_warnings": [],
   "operations": {
@@ -66,90 +66,90 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.903,
+      "seconds": 0.264,
       "peak_mb": 68.5
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
         "total_s": 120.85833514072318,
-        "frac_bins_visited": 0.129973474801061,
-        "median_s_per_visited_bin": 0.06666667466612353,
-        "max_s": 3.2833333620324083
+        "frac_bins_visited": 0.14058355437665782,
+        "median_s_per_visited_bin": 0.0666666689575095,
+        "max_s": 3.216666712357096
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 10.705,
-      "peak_mb": 295.7
+      "seconds": 3.234,
+      "peak_mb": 289.8
     },
     "env.declared": {
       "status": "ok",
       "summary": {
-        "n_bins": 9048,
+        "n_bins": 8294,
         "n_dims": 3,
-        "max_extent": 5.6000000000000005,
+        "max_extent": 5.6,
         "frac_samples_outside": 0.03658074387396535
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.292,
+      "seconds": 0.116,
       "peak_mb": 112.6
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 289,
-        "frac_nan_bins": 0.870026525198939,
-        "median_peak_hz": 75.98906907225555,
-        "median_mean_hz": 0.9259038782352013
+        "frac_nan_bins": 0.8594164456233422,
+        "median_peak_hz": 74.12833392506738,
+        "median_mean_hz": 0.948443448263454
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 586.821,
-      "peak_mb": 2055.2
+      "seconds": 63.984,
+      "peak_mb": 1734.3
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 3.4960278879193654,
-        "bits_per_spike_max": 10.240620962142685,
+        "bits_per_spike_median": 3.516766572807471,
+        "bits_per_spike_max": 11.440979793769399,
         "bits_per_spike_n_finite": 283
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.124,
-      "peak_mb": 175.2
+      "seconds": 0.049,
+      "peak_mb": 160.6
     },
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 3.369167175628384,
-        "median_shifted_bits_per_spike": 3.4955982236827587,
-        "frac_above_every_shift": 0.32592592592592595,
+        "median_bits_per_spike": 3.375542736068322,
+        "median_shifted_bits_per_spike": 3.4642262148059686,
+        "frac_above_every_shift": 0.32222222222222224,
         "n_units": 270,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 20.696,
-      "peak_mb": 282.5
+      "seconds": 8.741,
+      "peak_mb": 280.7
     },
     "cells.place_screen": {
       "status": "ok",
       "summary": {
-        "n_place_screen": 3,
+        "n_place_screen": 4,
         "n_units": 289
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.696,
-      "peak_mb": 176.8
+      "seconds": 2.332,
+      "peak_mb": 177.0
     },
     "cells.grid_score": {
       "status": "error",
@@ -157,8 +157,8 @@
       "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's RegularGrid layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
-      "peak_mb": 20.9
+      "seconds": 0.003,
+      "peak_mb": 19.2
     },
     "cells.border_score": {
       "status": "error",
@@ -166,8 +166,8 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
-      "peak_mb": 29.1
+      "seconds": 0.004,
+      "peak_mb": 26.6
     },
     "hd.tuning": {
       "status": "n/a",
@@ -182,8 +182,8 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 2.1170843917394793,
-        "chance_median_error": 2.5535169427003224,
+        "median_error": 2.358711277221465,
+        "chance_median_error": 2.55884391068024,
         "chance_frac_disconnected": 0.009523809523809525,
         "units": "m",
         "n_time_bins": 210
@@ -191,19 +191,19 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 7.008,
-      "peak_mb": 245.5
+      "seconds": 2.679,
+      "peak_mb": 240.7
     },
     "io.nwb_roundtrip": {
       "status": "ok",
       "summary": {
-        "n_bins": 9048
+        "n_bins": 8294
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 30.725,
-      "peak_mb": 231.6
+      "seconds": 8.823,
+      "peak_mb": 211.7
     },
     "env.from_graph": {
       "status": "n/a",
@@ -223,7 +223,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.34,
+      "seconds": 0.834,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -232,7 +232,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.439,
+      "seconds": 0.129,
       "peak_mb": 97.2
     },
     "behavior.turn_sequence": {
@@ -309,15 +309,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 120.85833514072318,
-        "frac_bins_visited": 0.129973474801061,
-        "median_s_per_visited_bin": 0.06666667466612353,
-        "max_s": 3.2833333620324083
+        "frac_bins_visited": 0.14058355437665782,
+        "median_s_per_visited_bin": 0.0666666689575095,
+        "max_s": 3.216666712357096
       },
       "hazard_summary": {
         "total_s": 120.85833514072318,
-        "frac_bins_visited": 0.129973474801061,
-        "median_s_per_visited_bin": 0.06666667466612353,
-        "max_s": 3.2833333620324083
+        "frac_bins_visited": 0.14058355437665782,
+        "median_s_per_visited_bin": 0.0666666689575095,
+        "max_s": 3.216666712357096
       }
     },
     {
@@ -328,15 +328,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 289,
-        "frac_nan_bins": 0.870026525198939,
-        "median_peak_hz": 75.98906907225555,
-        "median_mean_hz": 0.9259038782352013
+        "frac_nan_bins": 0.8594164456233422,
+        "median_peak_hz": 74.12833392506738,
+        "median_mean_hz": 0.948443448263454
       },
       "hazard_summary": {
         "n_units": 289,
-        "frac_nan_bins": 0.870026525198939,
-        "median_peak_hz": 75.98906907225555,
-        "median_mean_hz": 0.9259038782352013
+        "frac_nan_bins": 0.8594164456233422,
+        "median_peak_hz": 74.12833392506738,
+        "median_mean_hz": 0.948443448263454
       }
     },
     {
@@ -380,13 +380,13 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 289,
-        "frac_nan_bins": 0.870026525198939,
-        "median_peak_hz": 75.98906907225555,
-        "median_mean_hz": 0.9259038782352013
+        "frac_nan_bins": 0.8594164456233422,
+        "median_peak_hz": 74.12833392506738,
+        "median_mean_hz": 0.948443448263454
       },
       "hazard_summary": {
         "n_units": 289,
-        "frac_nan_bins": 0.870026525198939,
+        "frac_nan_bins": 0.8594164456233422,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
       }
@@ -412,9 +412,9 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 120.85833514072318,
-        "frac_bins_visited": 0.129973474801061,
-        "median_s_per_visited_bin": 0.06666667466612353,
-        "max_s": 3.2833333620324083
+        "frac_bins_visited": 0.14058355437665782,
+        "median_s_per_visited_bin": 0.0666666689575095,
+        "max_s": 3.216666712357096
       },
       "hazard_summary": null
     },
@@ -426,9 +426,9 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 289,
-        "frac_nan_bins": 0.870026525198939,
-        "median_peak_hz": 75.98906907225555,
-        "median_mean_hz": 0.9259038782352013
+        "frac_nan_bins": 0.8594164456233422,
+        "median_peak_hz": 74.12833392506738,
+        "median_mean_hz": 0.948443448263454
       },
       "hazard_summary": null
     },
