@@ -169,6 +169,28 @@ defaults, renamed arguments) are listed as **Breaking**.
   large-grid memory warning becomes an error. It is a wall-clock test the
   default marker filter excludes, so CI never runs it.
 
+### UX review of 2026-11-03
+
+Fixed: #275 (guided errors for a missing `bin_size`, `frame_times` or
+`env`), #276 (`is_place` column), #277 (units in result reprs), #278
+(warning for the units-free default bandwidth). Still open:
+
+- **A per-unit NaN grid score counts as a failed grid test**
+  (`_screen_outcomes`). On a 2 cm `from_samples` grid, every simulated grid
+  cell has a NaN score, so it reads `is_place=True`, and "place" where walls
+  are declared. Treat a NaN score from a well-sampled unit as unknown.
+- **`encoding/border.py` has a silent units-free fallback** (a 9-bin minimum
+  field size), like the bandwidth one #278 now warns about.
+- **The "spans the environment" and "below bin length" bandwidth warnings**
+  still fire before input validation.
+- **Result classes with missing verbs** give a plain AttributeError:
+  `PlaceFieldsResult` has no `to_xarray`, `PhasePrecessionResult` has no
+  `plot`, and others. A guided error or a thin delegating method would help.
+- **Free-form raises** (about 1,290, against about 1,047 through
+  `_format_error`), progress output for video export, colourblind-safe
+  overlay defaults (`hsv` heading, `tab10` events, red marker), and the
+  `summary_table` width: the medium and low items of the review.
+
 ## Estimated Effort
 
 | Phase | Approx. diff |
