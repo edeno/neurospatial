@@ -577,18 +577,20 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   ceiling (within 0.11 m) but stop 0.12 m above the floor. The room's walls
   are not part of the environment, only the visited voxels.
 - More evidence (faithful arenas batch): the loader now declares the room,
-  every 0.2 m voxel inside `r_lim` (9,048 voxels, `from_samples` with
-  `dimension_ranges=r_lim` and `infer_active_bins=False`), so the corridor
-  of voxels to y = -4.2 m is gone (0 % of voxels outside the room, against
-  4.4 %) and both feeders lie in the environment. The 3.66 % of samples
-  outside `r_lim` are not placed (`env.declared` `frac_samples_outside`).
-  Forli et al. 2025 state the indoor room as 5.6 x 5.2 x 2.5 m and an
-  outdoor enclosure 10.1 m long; `r_lim` and the samples' 5.7 m span place
-  this session indoors. The paper's size centred on `r_lim` would leave
-  3.77 % outside, cutting samples at the x walls (they reach x = +-2.85 m),
-  so `r_lim` is used. Decoding is unchanged (median 2.12 m against 2.18 m;
-  chance 2.55 and 2.64 m) and 13 % of the room's voxels are visited in
-  flight.
+  every voxel of a grid tiling `r_lim` exactly (8,294 voxels, 29 x 26 x 11
+  cells of 0.2 x 0.2 x 0.209 m; `from_samples` with `dimension_ranges=r_lim`
+  and `infer_active_bins=False`), so the corridor of voxels to y = -4.2 m is
+  gone (0 % of voxels outside the room, against 4.4 %) and both feeders lie
+  in the environment. The 3.66 % of samples outside `r_lim` are not placed
+  (`env.declared` `frac_samples_outside`), which the fidelity study judges a
+  mismatch (limit 2 %). Forli et al. 2025 state the indoor room as 5.6 x
+  5.2 x 2.5 m and an outdoor enclosure 10.1 m long; `r_lim` and the
+  samples' 5.7 m span place this session indoors. The paper's size centred
+  on `r_lim` would leave 3.77 % outside, cutting samples at the x walls
+  (they reach x = +-2.85 m), so `r_lim` is used. Decoding is worse on the
+  room (median 2.36 m against 2.18 m on the visited voxels; chance 2.56 and
+  2.64 m): 14 % of the room's voxels are visited in flight, and the uniform
+  prior covers the rest.
 
 ## G-026: The figure-8's linearized position wraps around
 
@@ -1906,8 +1908,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   loader declares a 150 cm circle centred at the origin (`mat_files.md`:
   positions "relative to arena center"). The paper names no rat or file, so
   this is an inference from the session type and the samples' shape. The
-  samples' fitted circle is 140 cm across (residual -6.6 %) and its centre
-  0.9 cm from the origin.
+  samples' bounding circle is 144 cm across (residual -4.3 %) and its centre
+  1.65 cm from the origin.
 
 ## G-115: A 1-D environment from a linearized coordinate with gaps between edges falls into one part per corridor
 
@@ -2078,4 +2080,38 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none
 - Proposed change: refuse a graph whose node positions are 3-D, as for 3-D
   grids, or ask for the loop explicitly
+- Status: open
+
+## G-135: Fewer finite grid scores on a declared arena with unvisited bins, from the smoothed maps
+
+- Datasets: kanter_2025 (also vollan_of, sargolini_000582)
+- Operation / step: cells.grid_score on a declared environment
+- Kind: wrong-result (cause partly traced)
+- Evidence: Kanter's finite grid scores fall from 235 (samples-built
+  environment) to 144 (declared 1 m box, 35 % of its bins unvisited, NaN);
+  Vollan's from 611 to 593, 000582's from 6 to 5. The units that lose a
+  score are not grid cells (Kanter: a median -0.37 and at most 0.38 on the
+  samples-built environment; Vollan at most -0.02; Gardner's grid cells keep
+  every score). A check on Kanter
+  (`compute_spatial_rates` on four environments, default and binned rates)
+  separates the causes:
+
+  | Environment | Bins (NaN) | Finite, `diffusion_kde` | Finite, `binned` |
+  | --- | --- | --- | --- |
+  | declared box | 1601 (35 %) | 144 | 361 |
+  | samples-built | 1049 (0 %) | 235 | 364 |
+  | samples-built on the declared grid's alignment | 1053 (0 %) | 262 | 361 |
+  | the same with holes filled | 1512 (30 %) | 176 | 361 |
+
+  The grid alignment is not the cause (aligned with the declared grid, the
+  samples-built environment keeps 262). With unsmoothed rates the counts
+  agree (361-364). The drop comes with the default `diffusion_kde` maps on
+  an environment that holds unvisited bins (declared, or holes filled): the
+  smoothing domain then includes those bins. Why the autocorrelogram of
+  those maps yields a NaN score (the score's result reports no failure; one
+  000582 unit had 2 peaks found) was not traced.
+- Harness workaround: none (scores reported as computed; behaviour unchanged)
+- Proposed change: trace in neurospatial how `grid_score` handles a
+  smoothed map with NaN bins inside the arena, and say in its docs when a
+  score is NaN rather than low
 - Status: open
