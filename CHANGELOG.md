@@ -10,6 +10,20 @@
   (`%LOCALAPPDATA%\neurospatial\datasets` on Windows). The survey harness's
   download code moved into the package; the survey's default cache is no longer
   the repository's `data/datasets/`.
+- `neurospatial.datasets.Recording` holds a loaded session as the arrays
+  analyses take (`times`, `positions`, `headings`, `spike_times`, `epochs`,
+  `events`, ...), the unit table (`units`, indexed by `unit_id`, with
+  `n_spikes` and `fires_in_epochs`), every conversion the loader applied
+  (`Conversion(text, basis, evidence)`, `basis` `"stated"` or `"inferred"`,
+  evidence required when inferred), where the file came from (`Provenance`)
+  and the session's pitfalls (`watch_outs`). Its arrays are read-only. Bad
+  shapes, unsorted times, repeated unit ids and headings outside [−π, π] raise
+  `InputError` naming each field. `summary()` gives `n_units`, `duration`,
+  `n_dims`, `sampling_rate`, `tracked_fraction`, `longest_gap`,
+  `median_speed`, `speed_p95` and `verified`, each also a property.
+  Printing a recording shows its full summary: identity, time and epochs,
+  tracking, environment, neurons, and "Watch out" (headed "Not yet checked
+  by hand" for a session nobody has checked).
 
 ### Fixes from the review of the result contract, warnings and simulators
 

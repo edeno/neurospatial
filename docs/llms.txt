@@ -257,6 +257,12 @@ required.
 - `TransformedLocator` (class): Find bins of affinely mapped cells by mapping points back to them.
 - `TriangleShapes` (class): Mesh points ``(n_points, 2)`` and active triangles ``(n_bins, 3)``.
 
+### neurospatial.datasets
+
+- `Conversion` (class): One change a loader made to the file's values, and why it is right.
+- `Provenance` (class): Where a session's file came from and when it was fetched.
+- `Recording` (class): One session of a public dataset, as the arrays analyses take.
+
 ### neurospatial.decoding
 
 - `BayesianDecoder` (class): Immutable Bayesian position decoder over the functional decode core.
