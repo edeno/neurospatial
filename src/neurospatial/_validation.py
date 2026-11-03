@@ -972,11 +972,16 @@ def _refuse_wrong_kind(
           trains, or a 2-D array of two or more equal-length trains, is
           refused and ``population`` named.
         - ``"spike_counts"``: a ``(n_time_bins, n_neurons)`` count matrix. A
-          list or tuple of spike trains (lengths that differ, or every row in
-          time order with some value not a non-negative whole number) is
-          refused with the binning call, and so is the ``(counts,
-          bin_edges)`` tuple ``bin_spikes_in_time`` returns. Rows of one
-          length holding non-negative whole numbers are a count matrix.
+          list or tuple of spike trains is refused with the binning call:
+          rows of different lengths, or rows of one length that each
+          strictly increase and either hold a value that is not a
+          non-negative whole number (times in seconds) or are at least 3
+          long (whole-number sample indices; counts of 3 or more neurons
+          rising in every time bin are implausible). So is the ``(counts,
+          bin_edges)`` tuple ``bin_spikes_in_time`` returns. Other rows of
+          one length holding non-negative whole numbers are a count matrix,
+          including rising rows shorter than 3 (``[[0, 1], [1, 3], [0, 2]]``
+          is 2 neurons' counts); an ndarray is always read as counts.
         - ``"spike_times"``: spike times of several units. A 2-D array of
           non-negative whole numbers, some above 1, with a value repeated in
           a row is a count matrix, not spike times (one unit cannot fire
@@ -1057,16 +1062,20 @@ def _refuse_wrong_kind(
             ]
             ragged = len({row.size for row in rows}) > 1
             # Spike trains are ragged; a count matrix is rectangular and holds
-            # non-negative whole numbers, even when every row increases (as
-            # one-unit rows do vacuously). Equal-length trains in time order
-            # with fractional times are still trains, and fractional counts
-            # out of order get the fractional-count refusal.
+            # non-negative whole numbers. Equal-length rows that each strictly
+            # increase are trains when they are fractional (times in seconds)
+            # or at least 3 long: 3 or more neurons' counts rising in every
+            # time bin is implausible, but whole-number sample indices do.
+            # Shorter whole rows that rise are counts (2 neurons rise by
+            # chance, 1 neuron vacuously), and fractional counts out of order
+            # get the fractional-count refusal.
             whole = all(
                 np.all(np.isfinite(row) & (row >= 0) & (row == np.round(row)))
                 for row in rows
             )
             increasing = all(np.all(np.diff(row) > 0) for row in rows)
-            if ragged or (increasing and not whole):
+            long_rows = rows[0].size >= 3
+            if ragged or (increasing and (long_rows or not whole)):
                 raise TypeError(
                     _format_error(
                         f"{caller}() takes a spike count matrix of shape "
@@ -1076,7 +1085,8 @@ def _refuse_wrong_kind(
                         "neuron in each time bin with the rate maps.",
                         fix="bin them first with bin_spikes_in_time(spike_times, "
                         "dt=...), which returns (counts, bin_edges), and pass "
-                        "the counts.",
+                        "the counts. If these rows are already counts, pass "
+                        f"np.asarray({name}).",
                     )
                 )
     elif expected == "spike_times" and isinstance(value, np.ndarray):
