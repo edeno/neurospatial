@@ -342,7 +342,8 @@ def test_lansink_verdict_is_the_lower_percentile_of_ev_minus_rev(reactivated) ->
     generator = np.random.default_rng(
         np.random.SeedSequence(
             table.attrs["rng_entropy"],
-            spawn_key=(zlib.crc32(b"lansink_2009"), 0, 0),
+            # 0: the call's streams derive from the seed's first child.
+            spawn_key=(0, zlib.crc32(b"lansink_2009"), 0, 0),
         )
     )
     differences = _bootstrap_ev_minus_rev(*vectors, 500, generator)

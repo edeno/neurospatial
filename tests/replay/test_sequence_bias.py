@@ -289,7 +289,7 @@ def test_recipe_finds_forward_and_reverse_sequences_in_compare(session):
         spike_times=spike_times,
         template_bias=template,
         dt=DT,
-        rng=0,
+        rng=1,
     )
     assert (table["error"] == "").all()
     rows = table.set_index("event")

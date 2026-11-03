@@ -107,7 +107,8 @@ def test_compare_table_reports_values_and_z_scores(track, session):
         stream = np.random.default_rng(
             np.random.SeedSequence(
                 table.attrs["rng_entropy"],
-                spawn_key=(index, zlib.crc32(b"silva_2015")),
+                # 0: the call's streams derive from the seed's first child.
+                spawn_key=(0, index, zlib.crc32(b"silva_2015")),
             )
         )
         result = detect_replay(

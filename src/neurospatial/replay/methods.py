@@ -44,7 +44,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._random import _entropy, _name_key, _stream
+from neurospatial._random import _name_key, _recorded_seed, _root, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._validation import (
@@ -3726,7 +3726,10 @@ def compare_replay_methods(
         :func:`~neurospatial.replay.mean_pairwise_bias` of the task's theta
         cycles, with the cells in the order of ``spike_times``.
     rng : numpy.random.Generator, int, or None
-        Random number generator or seed for the shuffles. Each (event, method)
+        Random number generator or seed for the shuffles, read as
+        ``np.random.default_rng(rng)``: ``rng=0`` and
+        ``rng=np.random.default_rng(0)`` give the same table, and a
+        generator gives new draws on each call. Each (event, method)
         pair draws from its own stream, derived from ``rng``, the event's
         position and the method's name, so adding, removing or reordering
         methods does not change the other pairs' results.
@@ -3776,9 +3779,10 @@ def compare_replay_methods(
         arm method's checks are named by the event's arms and pairs, so an
         arm event too short to score has none (its ``criteria[...]`` are
         NaN).
-        ``table.attrs["rng_entropy"]`` holds the seed the streams derive
-        from; passing it as ``rng`` reproduces the table, also when ``rng``
-        was None.
+        ``table.attrs["rng_entropy"]`` holds the int seed the streams derive
+        from (the one given, or the one drawn for None); passing it as
+        ``rng`` reproduces the table. It is None for a generator, whose
+        draws no int seed repeats.
 
         ``is_replay`` follows each method's rule (see
         :class:`ReplayDetectionResult`). For the pooled-SSI test it compares
@@ -3853,10 +3857,10 @@ def compare_replay_methods(
         },
     )
     pool = _pseudo_event_pool(events) if needs_pool else None
-    entropy = _entropy(rng)
+    root = _root(rng)
 
     def stream_for(index: int, method: _AnyReplayMethod) -> Any:
-        return _stream(entropy, index, _name_key(method.name))
+        return _stream(root, index, _name_key(method.name))
 
     windows = (
         None if dt is None else [_spike_window(times, dt) for times in event_times]
@@ -3903,7 +3907,7 @@ def compare_replay_methods(
                     result = method._compare(compared, stream)
                 rows.append({"event": index, **result.summary()})
     table = pd.DataFrame(rows)
-    table.attrs["rng_entropy"] = entropy
+    table.attrs["rng_entropy"] = _recorded_seed(rng, root)
     return table
 
 

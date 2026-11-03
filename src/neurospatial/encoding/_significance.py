@@ -13,7 +13,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import TimeWindows, resolve_time_windows
-from neurospatial._random import _entropy, _stream
+from neurospatial._random import _root, _stream
 from neurospatial._results import plain_value
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial.stats import _validate_circular_shift_settings
@@ -123,14 +123,14 @@ def run_shuffle_test(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Recompute observed/null statistics using a random stream per unit label."""
     _validate_circular_shift_settings(n_shuffles, min_shift)
-    entropy = _entropy(rng)
+    root = _root(rng)
     streams = [
         shuffle_spike_times_circular(
             train,
             windows,
             n_shuffles=n_shuffles,
             min_shift=min_shift,
-            rng=_stream(entropy, _stream_key(uid)),
+            rng=_stream(root, _stream_key(uid)),
         )
         for train, uid in zip(spike_times, unit_ids, strict=True)
     ]

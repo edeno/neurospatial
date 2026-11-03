@@ -56,7 +56,7 @@ from neurospatial._intervals import (
     times_in_intervals,
 )
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._random import _entropy, _name_key, _stream
+from neurospatial._random import _name_key, _recorded_seed, _root, _stream
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
@@ -1031,7 +1031,9 @@ def compare_reactivation_methods(
         Combined with each method's ``pairs`` rule.
     rng : numpy.random.Generator, int, or None
         Seed or generator for ICA, bootstraps, shuffles and rate
-        subsamples. Each method draws from its own streams, derived from
+        subsamples, read as ``np.random.default_rng(rng)``: ``rng=0`` and
+        ``rng=np.random.default_rng(0)`` give the same table, and a
+        generator gives new draws on each call. Each method draws from its own streams, derived from
         ``rng`` and the method's name: one for pattern detection and one
         per match window for its bootstrap, shuffles or subsamples, so
         adding, removing or reordering methods does not change the other
@@ -1090,8 +1092,10 @@ def compare_reactivation_methods(
           windows keep their rows.
 
         Columns that do not apply to a method are NaN. ``table.attrs``
-        holds ``rng_entropy``, the seed the streams derive from: passing it
-        as ``rng`` reproduces the table.
+        holds ``rng_entropy``, the int seed the streams derive from (the
+        one given, or the one drawn for None): passing it as ``rng``
+        reproduces the table. It is None for a generator, whose draws no
+        int seed repeats.
 
     Raises
     ------
@@ -1222,7 +1226,7 @@ def compare_reactivation_methods(
         n_units * (n_units - 1) // 2, None, pair_mask, call=_CALL
     )
 
-    entropy = _entropy(rng)
+    root = _root(rng)
 
     rows: list[dict[str, Any]] = []
     if methods:
@@ -1234,7 +1238,7 @@ def compare_reactivation_methods(
         key = _name_key(method.name)
 
         def stream(*indices: int, key: int = key) -> np.random.Generator:
-            return _stream(entropy, key, *indices)
+            return _stream(root, key, *indices)
 
         with _warnings_with_context(f"{_CALL}: method {method.name!r}"):
             try:
@@ -1253,7 +1257,7 @@ def compare_reactivation_methods(
         table[name] = table[name].astype("Int64")
     table["is_reactivated"] = table["is_reactivated"].astype("boolean")
     table["error"] = table["error"].fillna("").astype(str)
-    table.attrs["rng_entropy"] = entropy
+    table.attrs["rng_entropy"] = _recorded_seed(rng, root)
     return table
 
 

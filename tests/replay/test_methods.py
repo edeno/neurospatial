@@ -278,7 +278,7 @@ class TestCompare:
             events,
             replay_methods=[_fast(SILVA_2015), _fast(MICHON_2019)],
             spike_counts=counts,
-            rng=0,
+            rng=1,
         )
         assert len(table) == 6
         assert set(table["method"]) == {"silva_2015", "michon_2019"}

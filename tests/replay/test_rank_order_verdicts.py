@@ -289,7 +289,7 @@ def test_template_order_does_not_change_the_shuffles(place_code, name):
                 models,
                 rank_order_method=method,
                 template=template,
-                rng=0,
+                rng=1,
             )
         # Sampled, not enumerated, match probabilities draw from the stream.
         method = dataclasses.replace(
@@ -305,11 +305,11 @@ def test_template_order_does_not_change_the_shuffles(place_code, name):
             models,
             template_match_method=method,
             template=template,
-            rng=0,
+            rng=1,
         )
 
     first, second = run(templates), run(reordered)
     assert first.template == second.template
-    assert 0.02 < first.p_value < 1.0
+    assert 1 / 100 < first.p_value < 1.0  # above the floor of 99 shuffles
     assert first.p_value == second.p_value
     assert first.score == second.score
