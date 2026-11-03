@@ -20,6 +20,13 @@
   parameter is `env`. Valid calls and errors raised inside the function are
   unchanged.
 
+**Changed**
+
+- The warning for a `bin_size` at least as large as the data extent now shows
+  the extent to three significant figures, says it is often a units mistake
+  (positions in cm but `bin_size` meant in m, or the reverse) and suggests a
+  rounded size (`bin_size=2.0`, not `1.999`).
+
 ### Spike times in milliseconds warn with `epochs`
 
 **Fixed**

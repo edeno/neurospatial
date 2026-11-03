@@ -84,3 +84,23 @@ def test_bare_environment_raises_beginner_grade_error():
     ) as exc_info:
         Environment()
     assert "from_samples" in str(exc_info.value)
+
+
+def test_oversized_bin_size_warning_rounds_and_names_the_units_mistake():
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(1.0, 98.0, size=(200, 2))
+    positions[:2] = [[0.0, 0.0], [99.9987654, 99.9976543]]
+    extent = np.ptp(positions, axis=0)
+    assert extent.min() > 99.99  # the raw extent would print many digits
+
+    with pytest.warns(UserWarning, match="is at least the per-axis") as caught:
+        Environment.from_samples(positions, bin_size=1000)
+    message = str(caught[0].message)
+
+    # Extent is shown to 3 significant figures, not as raw floats.
+    assert "bin_size=1000 is at least the per-axis data extent [100, 100]" in message
+    assert str(extent[0]) not in message
+    # The units mistake is named, and the suggestion is a rounded size.
+    assert "often a units mistake: positions in cm but bin_size meant in m" in message
+    assert message.splitlines()[-1].endswith("such as bin_size=2.0")
+    assert "1.999" not in message
