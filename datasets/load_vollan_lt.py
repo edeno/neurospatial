@@ -159,6 +159,7 @@ def read_session(path: Path) -> dict[str, Any]:
         "module_ids": np.arange(1, grid.size + 1),
         "module_median_grid_score": per_module("medianGridScore"),
         "module_grid_score": per_module("gridScore"),
+        "module_spacing_cm": per_module("gridSpacingMeters") * 100.0,
     }
 
 
@@ -216,6 +217,7 @@ def to_recording(
             "module_ids": raw["module_ids"],
             "module_median_grid_score": raw["module_median_grid_score"],
             "module_grid_score": raw["module_grid_score"],
+            "module_spacing_cm": raw["module_spacing_cm"],
         },
         conversions=(
             f"positions: x, y in m relative to the arena centre, times 100 -> cm; {span}",
