@@ -46,7 +46,7 @@ MEASURES: tuple[tuple[str, str, str, str], ...] = (
     (
         "decode.position",
         "median_error_on_declared",
-        "decode error (the declared track's samples)",
+        "decode error (time bins both environments place)",
         ".1f",
     ),
     ("decode.position", "frac_actual_outside", "true positions outside", ".1%"),
