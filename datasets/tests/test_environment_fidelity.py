@@ -670,6 +670,23 @@ def test_declared_box_is_judged_by_its_walls(
         assert declared["verdict_reason"].startswith("on a ")  # the stated size
 
 
+def test_misfit_on_an_unverified_apparatus_is_named_but_not_a_verdict(
+    simulated_recording, monkeypatch
+):
+    # No source read states this box (the apparatus is unverified), so a
+    # declared box moved 30 cm stays "not verified", and the reason names
+    # the samples past its wall.
+    from studies import environment_fidelity
+
+    box = Apparatus("open", "test", False, shape="square", size=100.0)
+    monkeypatch.setitem(environment_fidelity.APPARATUS, "simulated_open_field", box)
+    declared = analyse(_declared_box(simulated_recording, 30.0), figures=False)[
+        "declared"
+    ]
+    assert declared["verdict"] == "not verified"
+    assert "beyond one side of the outline" in declared["verdict_reason"]
+
+
 def test_declared_box_without_a_stated_size_is_not_verified(
     simulated_recording, monkeypatch
 ):

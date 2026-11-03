@@ -1983,7 +1983,10 @@ def measure_declared(
         facts.append(f"the {declared_from} as stated")
     out["facts"] = facts
     if status == "not verified" and (app is None or not app.verified):
-        pass
+        # Nothing stated checks the layout, so misfit cannot make a mismatch
+        # (it could not fail on a correct layout either); it is named.
+        if judged["misfit"]:
+            reason += "; misfit against the samples: " + "; ".join(judged["misfit"])
     elif status == "mismatch" or judged["misfit"]:
         reasons = ([reason] if status == "mismatch" else []) + judged["misfit"]
         status, reason = "mismatch", "; ".join(reasons)
