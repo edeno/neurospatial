@@ -262,9 +262,16 @@ def _one_dimensional(rec: Recording) -> bool:
     return rec.positions is not None and rec.positions.shape[1] == 1
 
 
+def _on_track(rec: Recording, cache: dict[str, Any]) -> bool:
+    """Whether the analysis environment is a track graph (positions along a track)."""
+    return bool(_env(rec, cache).is_linearized_track)
+
+
 def grid_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
     if _one_dimensional(rec):
         return Outcome("n/a", note="grid score needs 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome("n/a", note="grid score needs a 2-D area, not a track graph")
     scores = _rates(rec, cache).grid_scores().scores
     return Outcome("ok", _finite_stats(scores))
 
@@ -272,6 +279,8 @@ def grid_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
 def border_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
     if _one_dimensional(rec):
         return Outcome("n/a", note="border score needs 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome("n/a", note="border score needs a 2-D area, not a track graph")
     scores = _rates(rec, cache).border_scores().scores
     return Outcome("ok", _finite_stats(scores))
 
@@ -429,12 +438,15 @@ def _graph_env(rec: Recording, cache: dict[str, Any]) -> Any | None:
     edges that close cycles, which ``Environment.from_graph`` would otherwise
     drop without a word.
     ``geometry["track_width"]``, when the source states it, is the corridor
-    width.
+    width. Without ``geometry["graph"]``, a declared environment that is a
+    track graph is the graph environment.
     """
 
     graph = rec.geometry.get("graph")
     if graph is None:
-        return None
+        # A declared track (a graph the loader fitted to a stated layout).
+        env = _env(rec, cache) if env_kind(rec, cache) == "declared" else None
+        return env if env is not None and env.is_linearized_track else None
     if "graph_env" not in cache:
         cache["graph_env"] = graph_environment(
             graph,
@@ -474,19 +486,42 @@ def segment_by_velocity(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     )
 
 
+def _lap_counts(found: Any, prefix: str) -> dict[str, int]:
+    directions = list(found.intervals_table()["direction"]) if len(found.start) else []
+    return {
+        f"n_{prefix}": len(directions),
+        **{f"n_{prefix}_{d}": directions.count(d) for d in sorted(set(directions))},
+    }
+
+
 def laps(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Laps with ``detect_laps``' defaults and, where the loader states one, by start region.
+
+    ``geometry["lap_start_region"]`` is a ``Region`` drawn across the loop
+    (where the source puts the start, or a stated cut); the second count is
+    ``method="region"`` with it added to the environment's regions, inside
+    ``params["analysis_epochs"]``. The default count keeps its earlier call
+    (no epochs), so it stays comparable with recordings not rerun.
+    """
     from neurospatial.behavior import detect_laps
 
     env = _graph_env(rec, cache) or _env(rec, cache)
+    summary: dict[str, float | int | str] = {}
+    region = rec.geometry.get("lap_start_region")
+    if region is not None:
+        with_start = env.with_regions({**env.regions, region.name: region})
+        found = detect_laps(
+            with_start,
+            rec.times,
+            rec.positions,
+            method="region",
+            start_region=region.name,
+            epochs=rec.params.get("analysis_epochs"),
+        )
+        summary.update(_lap_counts(found, "laps_region"))
     found = detect_laps(env, rec.times, rec.positions)
-    directions = list(found.intervals_table()["direction"]) if len(found.start) else []
-    return Outcome(
-        "ok",
-        {
-            "n_laps": len(directions),
-            **{f"n_{d}": directions.count(d) for d in sorted(set(directions))},
-        },
-    )
+    summary = {**_lap_counts(found, "laps"), **summary}
+    return Outcome("ok", summary)
 
 
 def turn_sequence(rec: Recording, cache: dict[str, Any]) -> Outcome:
@@ -532,7 +567,14 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
         )
     dt = rec.params["replay_dt"]
     positions, status, gap, note = rec.positions, "ok", None, ""
-    if positions.shape[1] > 1 and "linearized" in rec.params:
+    declared_track = env_kind(rec, cache) == "declared" and bool(
+        _env(rec, cache).is_linearized_track
+    )
+    if declared_track:
+        # The declared track graph gives the position along the track.
+        env = _env(rec, cache)
+        note = "decoded on the declared track graph"
+    elif positions.shape[1] > 1 and "linearized" in rec.params:
         # Replay scores need a position along a track; a track recorded in 2-D
         # is decoded on the file's own linearized coordinate instead.
         from neurospatial import Environment
@@ -870,6 +912,10 @@ def egocentric_boundary(rec: Recording, cache: dict[str, Any]) -> Outcome:
 
     if rec.positions.shape[1] != 2:
         return Outcome("n/a", note="egocentric boundary maps need 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome(
+            "n/a", note="egocentric boundary maps need a 2-D area, not a track graph"
+        )
     rates = compute_boundary_vector_rates(
         _env(rec, cache),
         list(rec.spike_times or ()),
