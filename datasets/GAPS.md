@@ -2114,3 +2114,34 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   samples), naming the share and the fix (the frame, the units or the track
   width)
 - Status: open
+
+## G-156: The fidelity study's `jump_links` flags links inside an open hub, where the arms' corridors overlap
+
+- Datasets: none in this batch (no radial maze has an independent layout);
+  a synthetic 8-arm star (the probe below)
+- Operation / step: studies/environment_fidelity.py `jump_links`
+- Kind: harness-limitation
+- Evidence: `jump_links` projects each bin centre onto the nearest segment
+  of the stated layout and calls a link a jump when the distance along the
+  layout between its two bins is more than 3 x the link plus both bins'
+  offsets. At a hub the arms' corridors overlap (8 arms 10 cm wide overlap
+  out to 5 / tan(22.5 deg) = 12 cm from the centre), so two neighbouring
+  bins there project onto different arms and are a detour through the hub
+  apart along the layout. On 8 arms of 70 x 10 cm sampled uniformly, with
+  `Environment.from_samples` at 2.5 cm, 128 of 3,504 links are flagged, all
+  within 17.4 cm of the centre (72 within 12 cm); 6 arms give 35 of 2,679;
+  a sampled 8 cm platform at the hub changes nothing (128). None joins
+  corridors through a wall. The probe: arms at angles 2 pi k / n from the
+  origin, samples uniform 0-70 cm along and +/-5 cm across each, the
+  reference a star of n segments from (0, 0), counting `jump_links` and the
+  radius of each flagged link's midpoint.
+- Harness workaround: none; only references with an open hub are affected
+  and none of this batch's judged references has one (the labyrinth's and
+  Takigawa's are corridors; on J16's graph, whose junctions join three
+  edges, no link is flagged). A radial or star maze judged against an independent
+  layout would need the hub drawn as a platform polygon, or links inside
+  the overlap of two corridors excused, which needs the corridor width.
+- Proposed change: harness only (not neurospatial); give `Reference` an
+  optional corridor width and excuse links whose bins both lie within half
+  of it of a shared node
+- Status: open
