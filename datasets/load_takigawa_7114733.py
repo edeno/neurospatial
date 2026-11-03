@@ -28,6 +28,9 @@ What the loader converts:
   no bin holds both. Each track's extent along its principal axis is range
   checked (170-205 cm; the tracks are not straight, so it is less than the
   2 m path length).
+- Each track's ``track_mask_x``/``track_mask_y`` is not a mask outline but
+  its centreline, 1 pixel apart and 2 m long once scaled: kept, in cm with
+  the same factor, as ``geometry["track_centrelines_cm"]``.
 - Spike times (s, the same Neuralynx clock) are split by ``spike_id``;
   ``unit_ids`` are ``id_conversion``'s 1000 x tetrode + cluster.
 
@@ -107,7 +110,7 @@ def load(cache: Path | None = None) -> Recording:
     times = np.asarray(clean.t, dtype=float)
     pixels = np.column_stack([clean.x, clean.y]).astype(float)
     positions = np.full_like(pixels, np.nan)
-    epochs, factors, extents = {}, [], []
+    epochs, factors, extents, centrelines = {}, [], [], []
     for k, track in enumerate(position.linear, start=1):
         if float(track.length) != _TRACK_M:
             msg = f"track {k} length {track.length} m, not the README's 2 m"
@@ -125,6 +128,10 @@ def load(cache: Path | None = None) -> Recording:
         epochs[f"track_{k}"] = np.array([[times[on[0]], times[on[-1]]]])
         factors.append(factor)
         extents.append(extent)
+        centrelines.append(
+            np.column_stack([track.track_mask_x, track.track_mask_y]).astype(float)
+            * factor
+        )
     interpolated = np.zeros(len(times), dtype=bool)
     interpolated[np.asarray(position.interpolated_indices, dtype=int) - 1] = True
     on_track = np.isfinite(positions).all(axis=1)
@@ -147,7 +154,10 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=spikes,
         unit_ids=conversion[:, 1],
         epochs=epochs,
-        geometry={"cm_per_pixel_per_track": factors},
+        geometry={
+            "cm_per_pixel_per_track": factors,
+            "track_centrelines_cm": centrelines,
+        },
         params={
             "bin_size": 4.0,
             "min_speed": 5.0,
@@ -167,6 +177,13 @@ def load(cache: Path | None = None) -> Recording:
             f" ({on_track.mean():.1%} of samples on a track)",
             f"positions: {np.mean(interpolated[on_track]):.1%} of on-track samples"
             " were interpolated by the authors (interpolated_indices), kept",
+            "geometry['track_centrelines_cm']: track_mask_x, track_mask_y x the"
+            " track's cm_per_pixel; lengths "
+            + ", ".join(
+                f"{np.linalg.norm(np.diff(c, axis=0), axis=1).sum():.1f}"
+                for c in centrelines
+            )
+            + " cm",
             "times: clean.t as stored (s)",
             f"spike_times: split by spike_id into {len(spikes)} units",
             "unit_ids: id_conversion column 2 (1000 x tetrode + cluster)",
