@@ -100,6 +100,21 @@ def _reconstruct() -> Any:
     return reconstruct
 
 
+# NumPy pickles every array as ``_reconstruct(numpy.ndarray, (0,), b"b")``
+# followed by a BUILD that sets shape, dtype and data. The stream may name
+# ``numpy.ndarray`` only as that first argument: resolving it to the real class
+# would let a REDUCE call ``ndarray(shape, "O", buffer=...)`` and read raw
+# bytes as object pointers.
+_NDARRAY = object()
+
+
+def _safe_reconstruct(cls: Any, shape: Any, dtype_code: Any) -> np.ndarray:
+    if cls is not _NDARRAY or shape != (0,) or dtype_code != b"b":
+        msg = f"refusing _reconstruct({cls!r}, {shape!r}, {dtype_code!r})"
+        raise pickle.UnpicklingError(msg)
+    return _reconstruct()(np.ndarray, (0,), b"b")
+
+
 # The files' arrays are int64 and float64 only. Returning NumPy's built-in
 # dtype objects (whose pickled state cannot be changed) instead of calling
 # np.dtype keeps a crafted stream from building a dtype whose flags let raw
@@ -119,9 +134,9 @@ class _TrajUnpickler(pickle.Unpickler):
 
     _ALLOWED: ClassVar[dict[tuple[str, str], Any]] = {
         ("MM_Traj_Utils", "Traj"): _Traj,
-        ("numpy.core.multiarray", "_reconstruct"): _reconstruct(),
-        ("numpy._core.multiarray", "_reconstruct"): _reconstruct(),
-        ("numpy", "ndarray"): np.ndarray,
+        ("numpy.core.multiarray", "_reconstruct"): _safe_reconstruct,
+        ("numpy._core.multiarray", "_reconstruct"): _safe_reconstruct,
+        ("numpy", "ndarray"): _NDARRAY,
         ("numpy", "dtype"): _dtype,
     }
 
