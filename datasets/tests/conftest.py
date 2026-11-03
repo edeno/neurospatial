@@ -44,3 +44,32 @@ def simulated_recording() -> Recording:
 def loader_module() -> SimpleNamespace:
     """A stand-in loader module with no expectations or dataset hazards."""
     return SimpleNamespace(EXPECTATIONS={}, HAZARDS={})
+
+
+IMAGING_FIELD = np.array([30.0, 70.0])  # cm
+
+
+@pytest.fixture(scope="session")
+def imaging_recording() -> Recording:
+    """A 100 cm box covered by a seeded random walk; one cell with a field at IMAGING_FIELD."""
+    rng = np.random.default_rng(4)
+    times = np.arange(30_000) / 30.0
+    steps = rng.normal(0, 1.5, (times.size, 2))
+    positions = np.abs(
+        (np.cumsum(steps, axis=0) + 50.0) % 200.0 - 100.0
+    )  # reflect into [0, 100]
+    distance2 = np.sum((positions - IMAGING_FIELD) ** 2, axis=1)
+    rate = 0.2 + 15.0 * np.exp(-distance2 / (2 * 8.0**2))
+    return Recording(
+        dataset="imaging_sim",
+        session="0",
+        source="simulated",
+        license="n/a",
+        times=times,
+        positions=positions,
+        position_units="cm",
+        activity=rate[:, None],
+        activity_times=times.copy(),
+        activity_kind="binned_rate",
+        params={"bin_size": 5.0},
+    )

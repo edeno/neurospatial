@@ -3,8 +3,9 @@
 Scripts that load public spatial-neuroscience recordings into plain arrays, run
 a fixed set of neurospatial operations on each, and record what worked, what
 needed a workaround, what neurospatial's warnings said, and where neurospatial
-disagrees with another tool. The findings are in [GAPS.md](GAPS.md); the
-tables are in [results/](results/). This folder is not part of the installed
+disagrees with another tool. The ranked proposals are in
+[FINDINGS.md](FINDINGS.md), the evidence in [GAPS.md](GAPS.md), and the
+tables in [results/](results/). This folder is not part of the installed
 package and is not run by the test suite or CI.
 
 Each `load_<dataset>.py` also works on its own as an example of bringing a
@@ -47,6 +48,14 @@ float64 NumPy arrays, and refuses every other global or dtype.
 | `figure8_000552` | Mouse CA1 on a figure-8 maze, ripples and sleep states (DANDI 000552) | 96.0 MB | CC-BY-4.0 |
 | `rosenberg_labyrinth` | Mouse exploring a binary-tree labyrinth, behavior only (Rosenberg et al. 2021 repository) | 6.3 MB | MIT |
 | `yartsev_bat_demo` | Bat CA1 during 3-D flight (Zenodo 15738988; members of a 3.3 GB zip read by byte range) | 260 MB | CC-BY-4.0 |
+| `miniscope_002030` | Mouse CA1 one-photon calcium imaging (ΔF/F), circular open field (DANDI 002030) | 4.9 MB | CC-BY-4.0 |
+| `giocomo_000405` | Rat open field with binned firing rates and mislabelled tracking (DANDI 000405, draft) | 27.1 MB | unstated (draft) |
+| `giocomo_001701` | Mouse MEC and CA1 units on an X maze, head direction labelled degrees (DANDI 001701) | 13.0 MB | CC-BY-4.0 |
+
+NWB loaders set `params["nwb_path"]` to the cached file. The `io.nwb_readers`
+operation then runs neurospatial's position, head-direction and unit readers
+on it with default arguments and compares what they return with the loader's
+range-checked arrays.
 
 ## Read the results
 

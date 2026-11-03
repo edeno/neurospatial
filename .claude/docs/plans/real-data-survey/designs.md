@@ -477,9 +477,10 @@ def probe_hazards(module, rec, clean_operations):
 Verdicts are hand-written in `datasets/verdicts.json`, in three sections:
 `"warnings"` keyed by `"<origin> <category>: <template>"` (table 1),
 `"hazards"` keyed by `"<dataset>/<hazard>/<op>"` (table 2), each
-`{"verdict": ..., "gap": "G-###" | null, "reason": ...}`, and `"errors"`
-keyed by `"<dataset>/<op>"` with the gap id of each `err` cell, which the
-matrix prints. The renderer prints `unreviewed` for rows without a verdict, so
+`{"verdict": ..., "gap": "G-###" | null, "reason": ...}`, and `"cells"`
+keyed by `"<dataset>/<op>"` with the gap id of each non-`ok` cell that has
+none of its own (errors, and workarounds whose gap depends on the dataset),
+which the matrix prints. The renderer prints `unreviewed` for rows without a verdict, so
 verdicts survive regeneration. As implemented, a probe counts as `warned` only
 for warnings the clean run of that operation did not emit, every operation
 reading a changed field (its `requires` plus `times`, `position_units`,

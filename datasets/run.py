@@ -36,6 +36,9 @@ LOADERS = {
     "figure8_000552": "load_figure8_000552",
     "rosenberg_labyrinth": "load_rosenberg_labyrinth",
     "yartsev_bat_demo": "load_yartsev_bat_demo",
+    "miniscope_002030": "load_miniscope_002030",
+    "giocomo_000405": "load_giocomo_000405",
+    "giocomo_001701": "load_giocomo_001701",
 }
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
@@ -160,9 +163,9 @@ def run_recording(
     return record
 
 
-def _cell(entry: dict[str, Any], error_gap: str | None = None) -> str:
+def _cell(entry: dict[str, Any], cell_gap: str | None = None) -> str:
     text = _STATUS_CODE[entry["status"]]
-    if gap := entry.get("gap") or (error_gap if entry["status"] == "error" else None):
+    if gap := entry.get("gap") or (cell_gap if entry["status"] != "ok" else None):
         text += f" {gap}"
     if entry.get("warnings"):
         text += f" ⚠{len(entry['warnings'])}"
@@ -170,14 +173,16 @@ def _cell(entry: dict[str, Any], error_gap: str | None = None) -> str:
 
 
 def render_matrix(
-    records: Sequence[dict[str, Any]], error_gaps: dict[str, Any] | None = None
+    records: Sequence[dict[str, Any]], cell_gaps: dict[str, Any] | None = None
 ) -> str:
     """Render the dataset × operation status and cost tables.
 
-    ``error_gaps`` maps ``"<dataset>/<op>"`` to ``{"gap": "G-###"}`` for error
-    cells, whose gap entry is written after the run.
+    ``cell_gaps`` maps ``"<dataset>/<op>"`` to ``{"gap": "G-###"}`` for cells
+    that are not ``ok`` and carry no gap of their own (errors, and
+    workarounds whose gap depends on the dataset); the gap entry is written
+    after the run.
     """
-    error_gaps = error_gaps or {}
+    cell_gaps = cell_gaps or {}
     op_ids = [op.op_id for op in OPERATIONS]
     head = "| dataset | expectations | " + " | ".join(op_ids) + " |"
     rule = "| --- " * (len(op_ids) + 2) + "|"
@@ -198,7 +203,7 @@ def render_matrix(
         cells = [
             _cell(
                 record["operations"][op_id],
-                error_gaps.get(f"{record['dataset']}/{op_id}", {}).get("gap"),
+                cell_gaps.get(f"{record['dataset']}/{op_id}", {}).get("gap"),
             )
             if op_id in record["operations"]
             else ""
@@ -330,7 +335,7 @@ def render(results: Path = RESULTS, verdicts_path: Path = VERDICTS) -> None:
     """Regenerate ``matrix.md`` and ``warnings.md`` from every results JSON."""
     records = [json.loads(path.read_text()) for path in sorted(results.glob("*.json"))]
     verdicts = json.loads(verdicts_path.read_text()) if verdicts_path.exists() else {}
-    (results / "matrix.md").write_text(render_matrix(records, verdicts.get("errors")))
+    (results / "matrix.md").write_text(render_matrix(records, verdicts.get("cells")))
     (results / "warnings.md").write_text(render_warnings(records, verdicts))
 
 

@@ -85,7 +85,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-005: Border score refuses an environment built from samples
 
-- Datasets: sargolini_000582
+- Datasets: sargolini_000582, giocomo_001701
 - Operation / step: cells.border_score
 - Kind: friction
 - Evidence: `rates.border_scores()` raises `NotImplementedError: Physical
@@ -204,13 +204,16 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 ## G-012: `read_position(position_name=)` rejects the `Position` container name
 
 - Datasets: figure8_000552
-- Operation / step: loader (`read_position`)
+- Operation / step: loader (`read_position`), io.nwb_readers
 - Kind: error-message
 - Evidence: with two position series, `read_position(nwbfile)` refuses to
   choose (good). `position_name="LinearizedPosition"` (the container's name)
   then raises "Position series 'LinearizedPosition' not found … pass
   position_name= with a name or path from this list", and the list holds only
   full series paths. The container name is what a user sees first in the file.
+  With default arguments (`io.nwb_readers`) the refusal is the right
+  behavior; the cell is an error because a reader raised, as the operation
+  defines it.
 - Harness workaround: the loader passes the full series path
 - Proposed change: accept a `Position` container name when it holds one series.
 - Status: open
@@ -229,7 +232,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (cell is `err`)
 - Proposed change: compute speed in `occupancy` as the rate functions do (or
   require `speed=` everywhere).
-- Status: promoted (UX fixes phase 3b: every sibling taking min_speed derives speed the same way)
+- Status: fixed (UX fixes phase 3b, #262): `env.occupancy(min_speed=)` now derives speed like the rate functions; the occupancy cells are `ok` on all three datasets
 
 ## G-014: A length unit off by 100 on a 1-D track builds 3 bins without a warning
 
@@ -245,7 +248,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   the bat (cm labelled m, positions ×100) the environment refuses a 9e9-bin
   grid, but `segment_by_velocity` with the file's 0.5 m/s threshold silently
   finds 668 movement segments (882 s) instead of 69 (146 s): speeds 100 times
-  too high pass any threshold.
+  too high pass any threshold. With the speed gate in `env.occupancy` (G-013
+  fixed), the figure-8's occupancy above 4 cm/s silently falls from 521.8 s
+  to 14.0 s: speeds 100 times too low fail it.
 - Harness workaround: none
 - Proposed change: warn when the environment has fewer than a handful of bins
   along a dimension (the existing check only fires at one bin or fewer).
@@ -253,7 +258,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-015: `detect_laps` finds laps on a maze with no loop
 
-- Datasets: rosenberg_labyrinth, sargolini_000582
+- Datasets: rosenberg_labyrinth, sargolini_000582, miniscope_002030
 - Operation / step: behavior.laps
 - Kind: wrong-result
 - Evidence: the labyrinth is a binary tree (`nx.is_tree` on the track graph is
@@ -265,7 +270,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   connectivity graph has no cycle"; the cycles here are the junction cliques,
   not loops of the maze. On sargolini_000582, an open 1 m box with no track,
   `detect_laps` likewise accepts the grid's bin cycles as a loop and reports
-  one clockwise "lap".
+  one clockwise "lap"; on miniscope_002030 (a 96 cm circular open field) it
+  reports one counter-clockwise lap.
 - Harness workaround: none
 - Proposed change: test for a loop on the track graph (or ignore cycles that
   stay within one junction's bins) before counting laps.
@@ -288,7 +294,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-017: Missing positions stored as 0 silently change movement segments and turns
 
-- Datasets: rosenberg_labyrinth, yartsev_bat_demo (hazard probe `missing_positions_as_zero`)
+- Datasets: rosenberg_labyrinth, yartsev_bat_demo, giocomo_001701 (hazard probe `missing_positions_as_zero`)
 - Operation / step: behavior.segment_by_velocity, behavior.turn_sequence
 - Kind: silent-hazard
 - Evidence: 4.9 % of the labyrinth's frames have no nose keypoint (NaN). With
@@ -298,7 +304,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   is undetectable; here the zeros are 12,400 samples at exactly (0, 0). On
   the bat (0.24 % missing), the zeros land at (0, 0, 0), below the lowest
   tracked height (0.28 m): the environment loses 3 bins and the median mean
-  rate in flight drops 4 % (0.945 → 0.909 Hz), with no warning.
+  rate in flight drops 4 % (0.945 → 0.909 Hz), with no warning. With the
+  speed gate in `env.occupancy`, the labyrinth's occupancy above 1 cell/s
+  rises from 4,808 s to 5,115 s, the jumps to (0, 0) counting as movement.
 - Harness workaround: none
 - Proposed change: warn when a sizeable share of samples sit at exactly the
   same coordinate (or at exactly 0) between moving samples.
@@ -477,3 +485,145 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: `datasets/load_yartsev_bat_demo.py` clips the analysis flights to the first–last spike span
 - Proposed change: none for neurospatial (`spike_window=` handles it when the recording span is known)
 - Status: open
+
+## G-029: No spatial map from a continuous signal (calcium imaging, binned rates)
+
+- Datasets: miniscope_002030, giocomo_000405
+- Operation / step: imaging.rates
+- Kind: missing-feature
+- Evidence: every public rate function (`compute_spatial_rates`,
+  `compute_tuning_curve(s)`, the decoder) takes spike times; no entry point
+  accepts ΔF/F, deconvolved activity or binned rates sampled on frames, and
+  `docs/user-guide/` never mentions calcium imaging. The harness workaround
+  (`imaging.rates_workaround`) builds maps two ways: for 000405's binned rates,
+  an occupancy-weighted mean per spatial bin (46 cells, median peak 63 Hz);
+  for 002030's ΔF/F, one event per transient (onset above median + 3 robust
+  SD, end below median + 1 SD), passed to `compute_spatial_rates` as spike
+  times (26 cells, median peak 0.58 events/s; counting every re-crossing of
+  the onset level instead gave 0.97). Both throw away amplitude or rely on
+  threshold choices the library cannot see, and the event rule has no
+  published source. On simulated transients it recovers a field (map vs true
+  field r ≈ 0.6–0.8, ≈ 0 for a time-shifted trace) only at modest event rates:
+  when transients overlap (≫ 2 events/s with a 0.5 s decay) the trace never
+  falls back and a whole field visit counts once.
+- Harness workaround: `datasets/operations.py:imaging_rates_workaround`
+- Proposed change: undecided — a value-weighted rate map (occupancy-normalized
+  mean of a signal per bin) sharing the rate maps' bins, NaN rules and
+  smoothing; and a documented recipe for ΔF/F.
+- Status: open
+
+## G-030: `read_head_direction` trusts a "degrees" label on values that are radians
+
+- Datasets: giocomo_001701
+- Operation / step: io.nwb_readers (`read_head_direction`)
+- Kind: wrong-result
+- Evidence: `CompassDirection/head direction` is labelled `unit="degrees"`
+  with values in −3.140 to 3.142. `read_head_direction(nwbfile)` converts
+  them as degrees and returns −0.055 to 0.055 rad, with no warning, so a
+  user's head direction collapses to a 6° arc. Fed to
+  `compute_directional_rates`, it makes every unit look like a perfect
+  head-direction cell (G-031).
+- Harness workaround: `datasets/load_giocomo_001701.py` reads the values with pynwb and keeps them as radians
+- Proposed change: refuse (or warn on) a degrees-labelled series whose finite
+  values all lie within ±π and span most of it, naming both readings.
+- Status: open (UX-fixes declined it for its plan; follow-up PR after that plan merges)
+
+## G-031: Head directions squeezed into a small arc pass unnoticed
+
+- Datasets: giocomo_001701 (hazard probe `headings_read_as_degrees`)
+- Operation / step: hd.tuning
+- Kind: silent-hazard
+- Evidence: with the headings `read_head_direction` returns (radians read as
+  degrees, all within ±0.055 rad), `compute_directional_rates` reports a
+  median mean vector length of 0.999 over the 320 units instead of 0.12, with
+  no warning: every unit looks like a sharp head-direction cell. Its unit
+  check catches the opposite error (degrees read as radians, the
+  `headings_in_degrees` probes), not headings confined to a few degrees.
+- Harness workaround: none
+- Proposed change: warn when the tracked headings cover only a small part of
+  the circle, naming a radians/degrees mix-up as a likely cause. The rule
+  needs calibrating first: on a linear track headings cluster in two
+  opposite directions, so a naive arc-coverage measure would misfire; a
+  circular spread, or the share of direction bins with occupancy, measured on
+  the survey's real datasets would make the threshold defensible.
+- Status: open (UX-fixes declined it for its plan; follow-up PR after that plan merges)
+
+## G-032: The NWB readers miss data stored outside the standard containers
+
+- Datasets: miniscope_002030, giocomo_000405
+- Operation / step: io.nwb_readers
+- Kind: missing-feature
+- Evidence: 002030 stores head direction as a bare `SpatialSeries`
+  (`processing/behavior/headdirection`, radians, frame stated) next to its
+  `Position`; `read_head_direction` searches only `CompassDirection`
+  containers and raises "No CompassDirection data found". 000405 keeps
+  position and head direction in one generic `TimeSeries`
+  (`acquisition/track_data`, columns named only in the description) and its
+  activity as binned rates; `read_position`, `read_head_direction` and
+  `read_units` all find nothing.
+- Harness workaround: both loaders read the series with pynwb
+- Proposed change: accept an explicit path to any `SpatialSeries` or
+  `TimeSeries` (with a column choice) in the readers; consider finding a
+  `SpatialSeries` whose name says head direction.
+- Status: open
+
+## G-033: 000405's labels disagree with its values
+
+- Datasets: giocomo_000405
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: `track_data` is labelled `unit="mm"` but spans −62 to 60 by −5
+  to 134 (a rat open field in cm, not 12 cm); its `rate` attribute is 0.02,
+  the sampling period (`firing_rates`, the same length, has `rate=50`);
+  `firing_rates` is labelled `unit="uv"`, and its values reach 3,079 Hz
+  (median 0, 99th percentile 47.5) with almost no values on the 50 Hz grid a
+  count per 20 ms bin would give, so they look smoothed; the session start is
+  in the year 18. The column `hd` is not head direction: it equals the
+  direction of movement computed from x, y (median difference 0.00°, 90th
+  percentile at most 1.5° in every speed band from 0 to over 10 cm/s), so the
+  loader leaves `headings` empty; what `ha` holds is not stated. The `sp`
+  column agrees with the speed computed from x, y as cm at 0.02 s per sample
+  (r = 0.91), supporting both the cm and the period readings. The dandiset is
+  a draft with no license stated.
+- Harness workaround: `datasets/load_giocomo_000405.py` reads positions as cm and times from the period
+- Proposed change: none for neurospatial
+- Status: open
+
+## G-034: 002030's ΔF/F scale is unclear
+
+- Datasets: miniscope_002030
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: the `Calcium` series is labelled dF/F, "stored exactly as they
+  enter the analysis of the paper, negative values included". Values run from
+  −16.9 to 979 (1st–99th percentile −13.4 to 171; per-cell medians −3.9 to
+  13.1), larger than ΔF/F as a fraction; 0.7 % of its head-direction samples
+  lie outside [−π, π], as the file says.
+- Harness workaround: the ΔF/F event rule is relative to each trace's median and robust SD, so the scale does not change it
+- Proposed change: none
+- Status: open
+
+## G-035: 001701's LFP conversion factor looks inverted
+
+- Datasets: giocomo_001701
+- Operation / step: loader (not used)
+- Kind: data-quirk
+- Evidence: `processing/probe_0_channel_160/LFP/LFP` is labelled `unit="volts"`
+  with `conversion=1000000.0`; a raw value of 1 would be a megavolt. The
+  survey does not use LFP.
+- Harness workaround: none
+- Proposed change: none
+- Status: open
+
+## G-036: 000405's pre-registered head-direction expectation assumed `hd` was head direction
+
+- Datasets: giocomo_000405
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: "headings span the circle" was registered from the survey
+  appendix, which read the `hd` column as head direction. It is the
+  direction of movement (G-033), so the loader keeps no headings and the
+  expectation fails ("check raised TypeError").
+- Harness workaround: none (the expectation stays as registered)
+- Proposed change: none
+- Status: won't fix (the expectation, not the loader, was wrong)

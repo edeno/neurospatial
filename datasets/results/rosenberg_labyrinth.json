@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "59a8f224520fb4c234a7eefeb2104ae0afdded17"
+    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
   },
   "load_warnings": [],
   "operations": {
@@ -52,17 +52,22 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.5,
+      "seconds": 0.309,
       "peak_mb": 18.3
     },
     "env.occupancy": {
-      "status": "error",
-      "summary": {},
-      "note": "ValueError: min_speed=1.0 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
+      "status": "ok",
+      "summary": {
+        "total_s": 4807.666666666693,
+        "frac_bins_visited": 0.9744604316546762,
+        "median_s_per_visited_bin": 0.8999999999996362,
+        "max_s": 28.99999999997908
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 0.5
+      "seconds": 0.282,
+      "peak_mb": 32.5
     },
     "rates.spatial": {
       "status": "n/a",
@@ -118,8 +123,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.128,
-      "peak_mb": 0.9
+      "seconds": 0.083,
+      "peak_mb": 0.8
     },
     "behavior.segment_by_velocity": {
       "status": "ok",
@@ -130,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.435,
+      "seconds": 0.317,
       "peak_mb": 16.1
     },
     "behavior.laps": {
@@ -144,7 +149,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.134,
+      "seconds": 2.323,
       "peak_mb": 32.2
     },
     "behavior.turn_sequence": {
@@ -156,12 +161,31 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.107,
+      "seconds": 1.175,
       "peak_mb": 32.2
     },
     "replay.compare_methods": {
       "status": "n/a",
       "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_readers": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_path (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
       "warnings": []
     }
   },
@@ -186,11 +210,21 @@
     {
       "hazard": "missing_positions_as_zero",
       "op": "env.occupancy",
-      "response": "not probed",
-      "message": "the clean run was error",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
+      "clean_summary": {
+        "total_s": 4807.666666666693,
+        "frac_bins_visited": 0.9744604316546762,
+        "median_s_per_visited_bin": 0.8999999999996362,
+        "max_s": 28.99999999997908
+      },
+      "hazard_summary": {
+        "total_s": 5115.26666666666,
+        "frac_bins_visited": 0.9748201438848921,
+        "median_s_per_visited_bin": 0.9000000000014552,
+        "max_s": 183.43333333327246
+      }
     },
     {
       "hazard": "missing_positions_as_zero",
@@ -261,11 +295,21 @@
     {
       "hazard": "image_y_down",
       "op": "env.occupancy",
-      "response": "not probed",
-      "message": "the clean run was error",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
+      "clean_summary": {
+        "total_s": 4807.666666666693,
+        "frac_bins_visited": 0.9744604316546762,
+        "median_s_per_visited_bin": 0.8999999999996362,
+        "max_s": 28.99999999997908
+      },
+      "hazard_summary": {
+        "total_s": 4807.666666666693,
+        "frac_bins_visited": 0.9744604316546762,
+        "median_s_per_visited_bin": 0.8999999999996362,
+        "max_s": 28.99999999997908
+      }
     },
     {
       "hazard": "image_y_down",
