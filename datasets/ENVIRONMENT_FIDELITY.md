@@ -213,7 +213,8 @@ apart (about two spacings along the bars), it is 18.2 cm against 31.1 cm
 along the bars (below 0.75 x for 83 %). A bar graph built from the file (343
 crossings, 882 bar segments) with `Environment.from_graph` and 3-D
 node positions gives 4,410 bins in one part and, with `track_width` = 2 x
-the 99th percentile offset (30.8 cm), places 99.0 % of head positions; 57 %
+the 99th percentile offset (30.8 cm), places 99.0 % of head positions (by
+construction, at that width); 57 %
 of its bins get occupancy. It only works if `edge_order` lists every
 segment: the depth-first order the driver uses keeps 342 of 882, a spanning
 tree, silently, and still counts positions on the dropped segments as on the

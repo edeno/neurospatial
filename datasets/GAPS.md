@@ -1960,7 +1960,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   measured 35 px width (1.0 % of travel samples outside) 31 laps, 33 with
   `max_gap=None`; at 60 px (0 % outside) 92 and 97; at 120 px 93 and 99.
 - Harness workaround: the placement tolerance is twice the 99th percentile
-  sample distance (1 % outside), not the 95th
+  sample distance (1 % outside by construction), not the 95th
 - Proposed change: treat a position outside the environment like a missing
   one, bridged up to `max_gap`, or warn with the share of the recording lost
   to splits
@@ -2017,7 +2017,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   reading). No shift or scale is applied.
 - Harness workaround: every declared track is built with a placement
   tolerance measured from the samples (twice their 99th percentile distance
-  from the track, at least the physical width and a bin), and the stated
+  from the track, at least the physical width and a bin, so it places 99 %
+  of them by construction), and the stated
   physical width is recorded apart (`geometry["declared_physical_width"]`)
   with the share beyond it reported as a tracking measure, not judged
 - Proposed change: separate the apparatus's width from how far off it a
