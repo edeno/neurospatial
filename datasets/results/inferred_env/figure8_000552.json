@@ -8,7 +8,7 @@
     "params['linearized']: processing/behavior/LinearizedPosition/LinearizedSpatialSeries (cm), 0 and 222 cm the same place",
     "events['ripples']: Ripples table rows inside the maze epoch; every row in events['all_ripples']",
     "epochs: sleep states by label from processing/behavior/SleepStates (pynwb)",
-    "environment: declared figure-8: a rectangle with a bar across its middle, both loops closed (DANDI 000552 (figure-8 maze); no size or width stated); track width not stated; measured 12.5 cm, twice the samples' 99% quantile distance from the track; placement: node positions fitted to the camera samples; edges (cm): corner_0-corner_1 71.9; corner_0-bar_0 38.5; corner_1-bar_1 35.0; corner_2-bar_1 30.7; corner_2-corner_3 67.2; corner_3-bar_0 31.2; bar_0-bar_1 70.5; fit: samples a median 1.00 cm from the track (95th percentile 3.29), track length 345.0 cm, 99.0% of samples within half the track width",
+    "environment: declared figure-8: a rectangle with a bar across its middle, both loops closed (DANDI 000552 (figure-8 maze); no size or width stated); tracked point: not stated; physical width not stated; placement tolerance 12.5 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: node positions fitted to the camera samples; edges (cm): corner_0-corner_1 71.9; corner_0-bar_0 38.5; corner_1-bar_1 35.0; corner_2-bar_1 30.7; corner_2-corner_3 67.2; corner_3-bar_0 31.2; bar_0-bar_1 70.5 (fitted to the samples); fit: median |lateral offset| 0.99 cm, worst stretch bias 0.60 cm (limit 2), worst unsupported share of a segment 0%; track length 345.0 cm",
     "geometry['lap_start_region']: across the centre bar at its middle"
   ],
   "expectations": [
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
   },
   "load_warnings": [],
   "operations": {
@@ -64,7 +64,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.063,
+      "seconds": 0.06,
       "peak_mb": 2.8
     },
     "env.occupancy": {
@@ -78,7 +78,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.029,
+      "seconds": 0.022,
       "peak_mb": 12.5
     },
     "env.declared": {
@@ -101,7 +101,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.389,
+      "seconds": 0.329,
       "peak_mb": 199.5
     },
     "rates.spatial_information": {
@@ -114,7 +114,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 5.1
     },
     "rates.information_vs_shifts": {
@@ -129,7 +129,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.49,
+      "seconds": 1.307,
       "peak_mb": 245.4
     },
     "cells.place_screen": {
@@ -141,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.017,
+      "seconds": 0.01,
       "peak_mb": 18.2
     },
     "cells.grid_score": {
@@ -152,7 +152,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.592,
+      "seconds": 0.491,
       "peak_mb": 9.9
     },
     "cells.border_score": {
@@ -179,14 +179,17 @@
       "summary": {
         "median_error": 8.828427124746188,
         "chance_median_error": 50.97056274847714,
-        "chance_frac_disconnected": 0.0013227513227513227,
+        "chance_frac_disconnected": 0.0006615944426066821,
+        "frac_actual_outside": 0.00033068783068783067,
         "units": "cm",
-        "n_time_bins": 3024
+        "n_time_bins": 3024,
+        "median_error_on_declared": 8.828427124746188,
+        "n_on_declared": 3022
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.612,
+      "seconds": 0.431,
       "peak_mb": 199.4
     },
     "io.nwb_roundtrip": {
@@ -197,8 +200,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.826,
-      "peak_mb": 6.7
+      "seconds": 2.519,
+      "peak_mb": 7.6
     },
     "env.from_graph": {
       "status": "n/a",
@@ -218,7 +221,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.025,
+      "seconds": 0.02,
       "peak_mb": 13.0
     },
     "behavior.laps": {
@@ -232,7 +235,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.051,
+      "seconds": 0.045,
       "peak_mb": 5.9
     },
     "behavior.turn_sequence": {
@@ -257,7 +260,7 @@
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 16.157,
+      "seconds": 11.645,
       "peak_mb": 225.5
     },
     "io.nwb_readers": {
@@ -270,7 +273,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.159,
+      "seconds": 1.024,
       "peak_mb": 137.3
     },
     "io.read_pose": {
@@ -279,8 +282,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 1.052,
-      "peak_mb": 2.0
+      "seconds": 0.935,
+      "peak_mb": 1.9
     },
     "imaging.rates": {
       "status": "n/a",

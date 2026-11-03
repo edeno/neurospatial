@@ -8,7 +8,7 @@
     "range checked: -160.0 to 160.0 by -18.1 to 18.1 cm (largest span 320.0, expected 300-340)",
     "times, spike_times: post and ts as stored (s)",
     "unit_ids: tetrode and cluster from the file names",
-    "environment: declared straight track 320 cm (readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; width not stated); track width not stated; measured 31 cm, twice the samples' 99% quantile distance from the track; placement: the file's own frame (posx spans -160 to 160, posy is centred on 0); fit: samples a median 3.21 cm from the track (95th percentile 12.36), track length 320.0 cm, 99.0% of samples within half the track width"
+    "environment: declared straight track 320 cm (readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; width not stated); tracked point: one tracking LED (readme_hafting2008.txt: 'the tracking LED'); physical width not stated; placement tolerance 31 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the file's own frame (posx spans -160 to 160, posy is centred on 0) (authors' graph); fit: median |lateral offset| 3.21 cm, worst stretch bias 1.24 cm (limit 4), worst unsupported share of a segment 0%, length +0% of the stated; track length 320.0 cm"
   ],
   "expectations": [
     {
@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
+    "git_commit": "095a98a6da89ce8cd3b907a911d70cf6143232ac"
   },
   "load_warnings": [],
   "operations": {
@@ -58,7 +58,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.119,
+      "seconds": 0.052,
       "peak_mb": 3.5
     },
     "env.occupancy": {
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.112,
+      "seconds": 0.037,
       "peak_mb": 16.1
     },
     "env.declared": {
@@ -95,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.4,
+      "seconds": 0.155,
       "peak_mb": 16.1
     },
     "rates.spatial_information": {
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.1
     },
     "rates.information_vs_shifts": {
@@ -123,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.627,
+      "seconds": 0.227,
       "peak_mb": 16.3
     },
     "cells.place_screen": {
@@ -135,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.017,
+      "seconds": 0.006,
       "peak_mb": 10.6
     },
     "cells.grid_score": {
@@ -146,7 +146,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
+      "seconds": 0.014,
       "peak_mb": 0.5
     },
     "cells.border_score": {
@@ -155,7 +155,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.001,
       "peak_mb": 0.2
     },
     "hd.tuning": {
@@ -174,13 +174,16 @@
         "median_error": 156.97056274847714,
         "chance_median_error": 129.65685424949237,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 2394
+        "n_time_bins": 2394,
+        "median_error_on_declared": 156.97056274847714,
+        "n_on_declared": 2388
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.224,
+      "seconds": 0.108,
       "peak_mb": 22.1
     },
     "io.nwb_roundtrip": {
@@ -191,8 +194,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.737,
-      "peak_mb": 5.6
+      "seconds": 2.787,
+      "peak_mb": 5.5
     },
     "env.from_graph": {
       "status": "ok",
@@ -203,7 +206,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.006,
       "peak_mb": 0.1
     },
     "behavior.segment_by_velocity": {
@@ -215,7 +218,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.079,
+      "seconds": 0.032,
       "peak_mb": 16.8
     },
     "behavior.laps": {

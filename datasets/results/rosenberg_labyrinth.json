@@ -8,7 +8,7 @@
     "positions: y flipped to point up (y = 14 - y)",
     "times: frames / 30 s; bouts concatenated",
     "geometry['graph']: rebuilt from NewMaze (MM_Maze_Utils.py) plus an entrance node",
-    "environment: declared binary-tree labyrinth, the repository's track graph (Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py): corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)' on a 1.5 inch grid); track width 1 units (stated); placement: the maze cells of the repository's own alignment (not fitted); fit: samples a median 0.21 units from the track (95th percentile 0.49), track length 175.0 units, 95.4% of samples within half the track width"
+    "environment: declared binary-tree labyrinth, the repository's track graph (Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py): corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)' on a 1.5 inch grid); tracked point: the nose (the repository's trajectory keypoints); physical width 1 units (chosen: the corridor pitch, so a corridor's footprint ends at the wall it shares with its neighbour; the paper's corridors are 1-1/8 in on a 1.5 in grid, 0.75 cell, at which 18% of nose samples fall outside), 4.6% of samples beyond half of it (11% at 0-1 units/s, 1% at 1-inf units/s); placement tolerance 1.26 units (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the maze cells of the repository's own alignment (authors' graph); fit: median |lateral offset| 0.16 units, worst stretch bias 0.34 units (limit 0.5), worst unsupported share of a segment 0%; track length 175.0 units"
   ],
   "expectations": [
     {
@@ -39,7 +39,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "86cc76379e61efbd03439179c53989d1a066f368"
+    "git_commit": "3337409671746cf93c7ce7d8c7d4b460cee0e9dc"
   },
   "load_warnings": [],
   "operations": {
@@ -53,22 +53,22 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.566,
-      "peak_mb": 41.3
+      "seconds": 0.305,
+      "peak_mb": 18.3
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 4722.000000000071,
+        "total_s": 4796.766666666693,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 9.616666666664514,
-        "max_s": 133.7333333333154
+        "median_s_per_visited_bin": 9.649999999997362,
+        "max_s": 145.90000000003056
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.478,
-      "peak_mb": 34.9
+      "seconds": 2.215,
+      "peak_mb": 36.0
     },
     "env.declared": {
       "status": "ok",
@@ -76,13 +76,13 @@
         "n_bins": 350,
         "n_dims": 2,
         "max_extent": 14.0,
-        "frac_samples_outside": 0.04560205586076815
+        "frac_samples_outside": 0.010003377014883576
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.435,
-      "peak_mb": 36.0
+      "seconds": 0.935,
+      "peak_mb": 37.1
     },
     "rates.spatial": {
       "status": "n/a",
@@ -143,8 +143,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.149,
-      "peak_mb": 0.8
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "behavior.segment_by_velocity": {
       "status": "ok",
@@ -155,8 +155,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.266,
-      "peak_mb": 34.1
+      "seconds": 0.394,
+      "peak_mb": 16.1
     },
     "behavior.laps": {
       "status": "error",
@@ -164,20 +164,20 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 5.449,
-      "peak_mb": 32.2
+      "seconds": 1.304,
+      "peak_mb": 33.3
     },
     "behavior.turn_sequence": {
       "status": "ok",
       "summary": {
-        "n_turns": 4415,
-        "frac_left": 0.5001132502831257
+        "n_turns": 4548,
+        "frac_left": 0.4980211081794195
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.92,
-      "peak_mb": 32.2
+      "seconds": 1.934,
+      "peak_mb": 33.3
     },
     "replay.compare_methods": {
       "status": "n/a",
@@ -190,8 +190,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 2.982,
-      "peak_mb": 23.0
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -199,8 +199,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.319,
-      "peak_mb": 3.5
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "imaging.rates": {
       "status": "n/a",
@@ -239,16 +239,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 4722.000000000071,
+        "total_s": 4796.766666666693,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 9.616666666664514,
-        "max_s": 133.7333333333154
+        "median_s_per_visited_bin": 9.649999999997362,
+        "max_s": 145.90000000003056
       },
       "hazard_summary": {
-        "total_s": 4953.400000000025,
+        "total_s": 5066.3666666666495,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 9.616666666664514,
-        "max_s": 188.09999999994488
+        "median_s_per_visited_bin": 9.649999999997362,
+        "max_s": 234.9666666666817
       }
     },
     {
@@ -282,12 +282,12 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_turns": 4415,
-        "frac_left": 0.5001132502831257
+        "n_turns": 4548,
+        "frac_left": 0.4980211081794195
       },
       "hazard_summary": {
-        "n_turns": 4604,
-        "frac_left": 0.5006516072980017
+        "n_turns": 4651,
+        "frac_left": 0.5026875940657923
       }
     },
     {
@@ -314,16 +314,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 4722.000000000071,
+        "total_s": 4796.766666666693,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 9.616666666664514,
-        "max_s": 133.7333333333154
+        "median_s_per_visited_bin": 9.649999999997362,
+        "max_s": 145.90000000003056
       },
       "hazard_summary": {
-        "total_s": 4722.000000000071,
+        "total_s": 4796.766666666693,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 9.616666666664514,
-        "max_s": 133.7333333333154
+        "median_s_per_visited_bin": 9.649999999997362,
+        "max_s": 145.90000000003056
       }
     },
     {
@@ -357,12 +357,12 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_turns": 4415,
-        "frac_left": 0.5001132502831257
+        "n_turns": 4548,
+        "frac_left": 0.4980211081794195
       },
       "hazard_summary": {
-        "n_turns": 4415,
-        "frac_left": 0.4998867497168743
+        "n_turns": 4548,
+        "frac_left": 0.5019788918205804
       }
     }
   ]

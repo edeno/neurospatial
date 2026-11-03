@@ -11,7 +11,7 @@
     "times: sample index / 50.0 hz (.pos header)",
     "spike_times: first channel's 4-byte timestamps / 96000 (timebase)",
     "units: tetrode x .cut cluster >= 1; 275202 spikes in cluster 0 (unassigned) left out",
-    "environment: declared Z-track: two parallel sections joined by a diagonal (Olafsdottir et al. 2016 Online Methods: '10 cm wide runways', 'two parallel sections of the Z (190 cm each) were connected by a diagonal section (220 cm)'); track width 10 cm (stated); placement: node positions fitted to the samples; sections (cm): end_0-turn_0 165.4; turn_0-turn_1 204.3; turn_1-end_1 159.1 (stated 190, 220, 190); fit: samples a median 1.56 cm from the track (95th percentile 6.39), track length 528.9 cm, 92.4% of samples within half the track width"
+    "environment: inferred; the Z-track: two parallel sections joined by a diagonal fit (Olafsdottir et al. 2016 Online Methods: '10 cm wide runways', 'two parallel sections of the Z (190 cm each) were connected by a diagonal section (220 cm)'; node positions fitted to the samples; sections (cm): end_0-turn_0 165.4; turn_0-turn_1 204.3; turn_1-end_1 159.1 (stated 190, 220, 190)) was refused: last section -16% of the stated length (limit 15%); tracked point: the big LED spot of Axona two-spot tracking (the .pos header); on the refused layout, physical width 10 cm (stated), 7.6% of samples beyond half of it (30% at 0-5 cm/s, 9% at 5-30 cm/s, 7% at 30-inf cm/s)"
   ],
   "expectations": [
     {
@@ -52,7 +52,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+    "git_commit": "c992c116cbe8b3a9b123d2760f34444c072ae4d6"
   },
   "load_warnings": [
     {
@@ -74,7 +74,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.056,
+      "seconds": 0.098,
       "peak_mb": 6.6
     },
     "env.occupancy": {
@@ -88,7 +88,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.226,
+      "seconds": 0.358,
       "peak_mb": 11.3
     },
     "env.declared": {
@@ -111,7 +111,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.374,
+      "seconds": 0.59,
       "peak_mb": 11.8
     },
     "rates.spatial_information": {
@@ -139,7 +139,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.159,
+      "seconds": 1.462,
       "peak_mb": 13.9
     },
     "cells.place_screen": {
@@ -151,7 +151,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.016,
       "peak_mb": 12.6
     },
     "cells.grid_score": {
@@ -162,7 +162,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.243,
+      "seconds": 0.374,
       "peak_mb": 7.6
     },
     "cells.border_score": {
@@ -190,13 +190,14 @@
         "median_error": 115.25483399593907,
         "chance_median_error": 141.65685424949237,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
         "n_time_bins": 4543
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.392,
+      "seconds": 0.559,
       "peak_mb": 46.2
     },
     "io.nwb_roundtrip": {
@@ -207,8 +208,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.857,
-      "peak_mb": 5.1
+      "seconds": 5.284,
+      "peak_mb": 5.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -228,7 +229,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.237,
+      "seconds": 0.628,
       "peak_mb": 7.2
     },
     "behavior.laps": {
@@ -237,7 +238,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.02,
+      "seconds": 0.041,
       "peak_mb": 10.4
     },
     "behavior.turn_sequence": {

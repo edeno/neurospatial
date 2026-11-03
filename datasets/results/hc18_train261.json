@@ -8,7 +8,7 @@
     "positions: one LED, video pixels as stored, -1 -> NaN (0.44%); range checked: 3.0 to 707.0 by 6.0 to 570.0 pixel (largest span 704.0, expected 400-768)",
     "spikes: .res samples / 32552.1 Hz (the .xml clock); 46 clusters >= 2 on 8 shanks; last spike 19964 s",
     "epochs: .cat.evt ms / 1000; travel = PassiveForward + PseudoActiveForward (7, 1512 s)",
-    "environment: declared closed circuit as a 72-segment loop (hc-18: a model train on a closed circuit (no shape or size stated)); track width not stated; measured 35.2 pixel, twice the samples' 99% quantile distance from the track; placement: the travel samples' median radius in each of 72 equal angular sectors around their centre; lap cut (geometry['lap_start_region']) at the loop's westmost point, a stated cut, not a start the source names; fit: samples a median 2.86 pixel from the track (95th percentile 11.61), track length 1994.8 pixel, 99.0% of samples within half the track width"
+    "environment: declared closed circuit as a 72-segment loop (hc-18: a model train on a closed circuit (no shape or size stated)); tracked point: one head LED (hc-18, per the loader); physical width not stated; placement tolerance 35.2 pixel (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the travel samples' median radius in each of 72 equal angular sectors around their centre; lap cut (geometry['lap_start_region']) at the loop's westmost point, a stated cut, not a start the source names (fitted to the samples); fit: median |lateral offset| 2.84 pixel, worst stretch bias 1.20 pixel (limit 5), worst unsupported share of a segment 0%; track length 1994.8 pixel"
   ],
   "expectations": [
     {
@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
+    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
   },
   "load_warnings": [],
   "operations": {
@@ -66,7 +66,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.343,
+      "seconds": 0.372,
       "peak_mb": 58.1
     },
     "env.occupancy": {
@@ -88,7 +88,7 @@
           "count": 1
         }
       ],
-      "seconds": 5.705,
+      "seconds": 4.76,
       "peak_mb": 117.9
     },
     "env.declared": {
@@ -102,7 +102,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.385,
+      "seconds": 5.086,
       "peak_mb": 129.7
     },
     "rates.spatial": {
@@ -116,7 +116,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 10.795,
+      "seconds": 12.416,
       "peak_mb": 118.9
     },
     "rates.spatial_information": {
@@ -144,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 43.107,
+      "seconds": 50.943,
       "peak_mb": 132.5
     },
     "cells.place_screen": {
@@ -191,10 +191,13 @@
       "status": "ok",
       "summary": {
         "median_error": 275.3716339994661,
-        "chance_median_error": 484.9535656712186,
-        "chance_frac_disconnected": 0.024915824915824916,
+        "chance_median_error": 504.25132091352907,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.012794612794612794,
         "units": "pixel",
-        "n_time_bins": 3138
+        "n_time_bins": 3138,
+        "median_error_on_declared": 276.0553545466586,
+        "n_on_declared": 2932
       },
       "note": "",
       "gap": null,
@@ -204,10 +207,10 @@
           "origin": "neurospatial",
           "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
           "example": "decoding_error(): 6 of 3138 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
-          "count": 2
+          "count": 1
         }
       ],
-      "seconds": 10.879,
+      "seconds": 9.358,
       "peak_mb": 118.9
     },
     "io.nwb_roundtrip": {
@@ -226,8 +229,8 @@
           "count": 2
         }
       ],
-      "seconds": 2.214,
-      "peak_mb": 3.2
+      "seconds": 4.01,
+      "peak_mb": 4.0
     },
     "env.from_graph": {
       "status": "ok",
@@ -269,7 +272,7 @@
           "count": 1
         }
       ],
-      "seconds": 10.885,
+      "seconds": 19.69,
       "peak_mb": 117.4
     },
     "behavior.turn_sequence": {
@@ -281,7 +284,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.354,
+      "seconds": 7.181,
       "peak_mb": 117.3
     },
     "replay.compare_methods": {

@@ -8,7 +8,7 @@
     "params['linearized']: CircularMazeLinearizedPosition, m times 100 -> cm, 0 to 290 cm; 0.23% of finite samples are exactly 0",
     "epochs: intervals/epochs labels without 'Epoch', lower case; sleep states from processing/behavior/states",
     "events['candidate_events']: first 200 of 2010 population bursts in POST non-REM (rule in population_bursts); the file has no ripple table",
-    "environment: declared circle 100 cm in diameter as a 72-gon loop (Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1 m in diameter wooden circular maze'; width not stated); track width not stated; measured 33.9 cm, twice the samples' 99% quantile distance from the track; placement: centre (47.3, 50.5) cm from a robust circle fit to the on-track samples (their own radius 49.9 cm); lap start region across the track at the file's linearized zero, 1 deg from the centre; fit: samples a median 3.15 cm from the track (95th percentile 13.24), track length 314.1 cm, 99.0% of samples within half the track width"
+    "environment: declared circle 100 cm in diameter as a 72-gon loop (Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1 m in diameter wooden circular maze'; width not stated); tracked point: not stated; physical width not stated; placement tolerance 33.9 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: centre (47.3, 50.5) cm from a robust circle fit to the on-track samples (their own radius 49.9 cm); lap start region across the track at the file's linearized zero, 1 deg from the centre (fitted to the samples); fit: median |lateral offset| 3.05 cm, worst stretch bias 2.38 cm (limit 2.5), worst unsupported share of a segment 0%, diameter -0% of the stated; track length 314.1 cm"
   ],
   "expectations": [
     {
@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
   },
   "load_warnings": [],
   "operations": {
@@ -58,7 +58,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.162,
+      "seconds": 0.152,
       "peak_mb": 8.6
     },
     "env.occupancy": {
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.068,
+      "seconds": 0.059,
       "peak_mb": 11.7
     },
     "env.declared": {
@@ -95,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.173,
+      "seconds": 1.03,
       "peak_mb": 272.9
     },
     "rates.spatial_information": {
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.004,
       "peak_mb": 10.8
     },
     "rates.information_vs_shifts": {
@@ -123,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.353,
+      "seconds": 2.184,
       "peak_mb": 335.8
     },
     "cells.place_screen": {
@@ -135,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.141,
+      "seconds": 0.063,
       "peak_mb": 98.1
     },
     "cells.grid_score": {
@@ -148,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.853,
+      "seconds": 0.769,
       "peak_mb": 15.9
     },
     "cells.border_score": {
@@ -176,13 +176,16 @@
         "median_error": 12.071067811865476,
         "chance_median_error": 64.92640687119285,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 5258
+        "n_time_bins": 5258,
+        "median_error_on_declared": 11.035533905932738,
+        "n_on_declared": 4205
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.009,
+      "seconds": 1.223,
       "peak_mb": 272.8
     },
     "io.nwb_roundtrip": {
@@ -193,7 +196,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.103,
+      "seconds": 2.937,
       "peak_mb": 15.2
     },
     "env.from_graph": {
@@ -214,7 +217,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.068,
+      "seconds": 0.076,
       "peak_mb": 9.1
     },
     "behavior.laps": {
@@ -229,7 +232,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.128,
+      "seconds": 0.13,
       "peak_mb": 10.8
     },
     "behavior.turn_sequence": {
@@ -254,8 +257,8 @@
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 831.207,
-      "peak_mb": 363.7
+      "seconds": 655.736,
+      "peak_mb": 363.6
     },
     "io.nwb_readers": {
       "status": "error",
@@ -267,7 +270,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/CircularMazeLinearizedPosition/CircularMazeLinearizedTimeSeries', 'processing/behavior/CircularMazePosition/CircularMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/CircularMazeLinearizedPosition/CircularMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 51.657,
+      "seconds": 52.059,
       "peak_mb": 319.1
     },
     "io.read_pose": {
@@ -276,8 +279,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 32.755,
-      "peak_mb": 88.7
+      "seconds": 10.279,
+      "peak_mb": 88.6
     },
     "imaging.rates": {
       "status": "n/a",

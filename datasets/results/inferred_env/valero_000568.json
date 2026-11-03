@@ -8,7 +8,7 @@
     "times: position timestamps, not the video timestamps (22.55-23.12 s earlier for the same frames); spatial information peaks at the position timestamps",
     "events['ripples']: the 24 of 49 RippleTimeIntervals rows inside the track tracking",
     "epochs: the epoch holding the tracking as track; SleepStates by label",
-    "environment: declared straight track 110 cm (NWB series description '110 cm long, 6.35 cm wide'); track width 6.35 cm (stated); placement: along the samples' principal axis at -87.6 deg, centred between their 0.5th and 99.5th percentiles along it (span 115.6 cm); 26.2% of samples lie beyond the ends; fit: samples a median 1.58 cm from the track (95th percentile 4.97), track length 110.0 cm, 87.6% of samples within half the track width"
+    "environment: declared straight track 110 cm (NWB series description '110 cm long, 6.35 cm wide'); tracked point: not stated; physical width 6.35 cm (stated), 12.4% of samples beyond half of it (12% at 0-4 cm/s, 14% at 4-30 cm/s, 9% at 30-inf cm/s); placement tolerance 12.9 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: along the samples' principal axis at -87.6 deg, centred between their 0.5th and 99.5th percentiles along it (span 115.6 cm); 26.2% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 1.22 cm, worst stretch bias 0.07 cm (limit 2.5), worst unsupported share of a segment 0%, length +5% of the stated; track length 110.0 cm"
   ],
   "expectations": [
     {
@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4346ff38eabae5631cd5760360c873c3029880d7"
+    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
   },
   "load_warnings": [
     {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.024,
+      "seconds": 0.023,
       "peak_mb": 3.9
     },
     "env.occupancy": {
@@ -80,7 +80,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.037,
+      "seconds": 0.031,
       "peak_mb": 18.0
     },
     "env.declared": {
@@ -111,7 +111,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.11,
+      "seconds": 0.09,
       "peak_mb": 18.0
     },
     "rates.spatial_information": {
@@ -147,7 +147,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.334,
+      "seconds": 0.314,
       "peak_mb": 21.6
     },
     "cells.place_screen": {
@@ -159,7 +159,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 1.6
     },
     "cells.grid_score": {
@@ -170,7 +170,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.135,
+      "seconds": 0.119,
       "peak_mb": 0.3
     },
     "cells.border_score": {
@@ -196,15 +196,18 @@
       "status": "ok",
       "summary": {
         "median_error": 32.07106781186548,
-        "chance_median_error": 46.55330085889911,
-        "chance_frac_disconnected": 0.0004572473708276177,
+        "chance_median_error": 47.071067811865476,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.00022862368541380886,
         "units": "cm",
-        "n_time_bins": 4374
+        "n_time_bins": 4374,
+        "median_error_on_declared": 32.071067811865476,
+        "n_on_declared": 4343
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.183,
+      "seconds": 0.142,
       "peak_mb": 18.0
     },
     "io.nwb_roundtrip": {
@@ -215,7 +218,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.759,
+      "seconds": 2.667,
       "peak_mb": 2.4
     },
     "env.from_graph": {
@@ -245,7 +248,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.015,
       "peak_mb": 8.4
     },
     "behavior.turn_sequence": {
@@ -263,7 +266,7 @@
       "note": "ValueError: replay_significance() needs a position along a track, but this is a 2-D RegularGrid environment that is not a linearized track.\nWhy: it orders bins by their distance along one axis; bin numbers have no spatial order, and a 2-D or 3-D arena has no single axis to order them by\nFix: use a 1-D environment or build the track, for example Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, track_width=8.0), or Environment.maze(...) or Environment.from_graph(...) for other tracks; a 2-D arena has no single axis to fit a replay line along, so decode on a linearized track (Environment.linear_track, Environment.maze or Environment.from_graph)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.103,
+      "seconds": 0.071,
       "peak_mb": 18.0
     },
     "io.nwb_readers": {
@@ -284,7 +287,7 @@
           "count": 1
         }
       ],
-      "seconds": 1.247,
+      "seconds": 1.115,
       "peak_mb": 13.4
     },
     "io.read_pose": {
@@ -301,7 +304,7 @@
           "count": 1
         }
       ],
-      "seconds": 1.216,
+      "seconds": 1.114,
       "peak_mb": 3.1
     },
     "imaging.rates": {

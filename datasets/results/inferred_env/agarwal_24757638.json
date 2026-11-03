@@ -12,7 +12,7 @@
     "headings: headDirDeg not used: 78% of tracked samples are exactly 0; minus movement direction above 10 cm/s: mean -0.6 deg, median spread 89.4 deg",
     "epochs['trials']: Laps.startLfpInd, endLfpInd / 1250",
     "params region: CA1 for shanks 1-32 (184 units), mPFC above",
-    "environment: declared 3-arm maze: three parallel arms joined by a base (Figshare 24757638 description (3-arm maze and a wheel); Agarwal et al. 2026 Methods: 'The 2.13m-long maze' (what the length spans is not stated); width not stated); track width not stated; measured 28.8 cm, twice the samples' 99% quantile distance from the track; placement: node positions fitted to the samples (fitted base 74.8 cm, arms 179.8-185.0 cm); edges (cm): base_0-base_1 41.5; base_0-arm_0 185.0; base_1-base_2 33.3; base_1-arm_1 182.8; base_2-arm_2 179.8; fit: samples a median 1.03 cm from the track (95th percentile 8.16), track length 622.4 cm, 99.0% of samples within half the track width"
+    "environment: declared 3-arm maze: three parallel arms joined by a base (Figshare 24757638 description (3-arm maze and a wheel); Agarwal et al. 2026 Methods: 'The 2.13m-long maze' (what the length spans is not stated); width not stated); tracked point: not stated (the file's Track xMM, yMM); physical width not stated; placement tolerance 16.8 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: node positions fitted to the samples (fitted base 116.7 cm, arms 137.1-184.9 cm); edges (cm): base_0-base_1 54.7; base_0-arm_0 145.8; base_1-base_2 62.0; base_1-arm_1 184.9; base_2-arm_2 137.1 (fitted to the samples); fit: median |lateral offset| 0.70 cm, worst stretch bias 0.80 cm (limit 4), worst unsupported share of a segment 0%; track length 584.5 cm"
   ],
   "expectations": [
     {
@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
   },
   "load_warnings": [
     {
@@ -70,7 +70,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.062,
+      "seconds": 0.074,
       "peak_mb": 14.1
     },
     "env.occupancy": {
@@ -84,7 +84,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.181,
+      "seconds": 0.171,
       "peak_mb": 50.6
     },
     "env.declared": {
@@ -107,7 +107,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.571,
+      "seconds": 0.608,
       "peak_mb": 104.0
     },
     "rates.spatial_information": {
@@ -120,7 +120,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.004,
       "peak_mb": 13.2
     },
     "rates.information_vs_shifts": {
@@ -135,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.259,
+      "seconds": 2.128,
       "peak_mb": 131.4
     },
     "cells.place_screen": {
@@ -147,7 +147,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.008,
       "peak_mb": 13.2
     },
     "cells.grid_score": {
@@ -158,7 +158,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.918,
+      "seconds": 1.91,
       "peak_mb": 7.0
     },
     "cells.border_score": {
@@ -186,13 +186,16 @@
         "median_error": 5.656854249492381,
         "chance_median_error": 192.2842712474619,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 7614
+        "n_time_bins": 7614,
+        "median_error_on_declared": 5.656854249492381,
+        "n_on_declared": 7543
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.725,
+      "seconds": 0.769,
       "peak_mb": 179.1
     },
     "io.nwb_roundtrip": {
@@ -203,7 +206,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.938,
+      "seconds": 3.828,
       "peak_mb": 8.6
     },
     "env.from_graph": {
@@ -224,7 +227,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.152,
+      "seconds": 0.149,
       "peak_mb": 52.7
     },
     "behavior.laps": {
@@ -233,7 +236,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.037,
+      "seconds": 0.052,
       "peak_mb": 23.7
     },
     "behavior.turn_sequence": {

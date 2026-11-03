@@ -9,7 +9,7 @@
     "scale: 0.870 cm per pixel inferred from the stated 250 cm apparatus; used only for bin_size 2.87 px and min_speed 4.60 px/s",
     "headings: first LED in front (back-to-front angle minus movement direction above 10 cm/s: circular mean 6.2 deg, median spread 17.8 deg; the other order gives -173.8 deg); 5.1% of tracked frames have both LEDs at one point -> NaN; frame of the stored pixel axes (y direction unstated)",
     "spikes: .res samples / 20000 Hz; 72 units kept of 77 clusters >= 2 (the cell table's units; 53 listed units have no spikes in this session)",
-    "environment: declared straight track 250 x 7 cm (Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7 cm2)'; in pixels at the inferred scale, which comes from the same 250 cm); track width 8.04355 pixel (stated); placement: along the samples' principal axis at 36.9 deg, centred between their 0.5th and 99.5th percentiles along it (span 280.3 pixel); 0.1% of samples lie beyond the ends; fit: samples a median 2.13 pixel from the track (95th percentile 11.80), track length 287.3 pixel, 73.7% of samples within half the track width"
+    "environment: declared straight track 250 x 7 cm (Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7 cm2)'; in pixels at the inferred scale, which comes from the same 250 cm); tracked point: the midpoint of two head-mounted LEDs (hc-3 .whl: two LEDs per frame); physical width 8.04355 pixel (stated), 26.3% of samples beyond half of it (19% at 0-4.59631 pixel/s, 34% at 4.59631-34.4723 pixel/s, 15% at 34.4723-inf pixel/s); placement tolerance 29.3 pixel (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: along the samples' principal axis at 36.9 deg, centred between their 0.5th and 99.5th percentiles along it (span 280.3 pixel); 0.1% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 2.13 pixel, worst stretch bias 0.03 pixel (limit 2.87), worst unsupported share of a segment 0%; track length 287.3 pixel"
   ],
   "expectations": [
     {
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
+    "git_commit": "bed5be9ceb43cd86a8ff283e43f1ee06e3c61a74"
   },
   "load_warnings": [],
   "operations": {
@@ -72,16 +72,16 @@
           "count": 1
         }
       ],
-      "seconds": 0.061,
+      "seconds": 0.048,
       "peak_mb": 2.6
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 379.0591999999997,
+        "total_s": 530.3807999999999,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 2.739200000000288,
-        "max_s": 39.93599999999965
+        "median_s_per_visited_bin": 3.2767999999997173,
+        "max_s": 62.33600000000031
       },
       "note": "",
       "gap": null,
@@ -94,8 +94,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.046,
-      "peak_mb": 3.4
+      "seconds": 0.034,
+      "peak_mb": 4.4
     },
     "env.declared": {
       "status": "ok",
@@ -103,34 +103,34 @@
         "n_bins": 101,
         "n_dims": 2,
         "max_extent": 227.4167638962356,
-        "frac_samples_outside": 0.263389807350731
+        "frac_samples_outside": 0.010008197841235142
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
-      "peak_mb": 3.5
+      "seconds": 0.005,
+      "peak_mb": 4.5
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 72,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.4096106840914693,
-        "median_mean_hz": 0.4852627235123043
+        "median_peak_hz": 1.5125794468265545,
+        "median_mean_hz": 0.47573453454878867
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.073,
+      "seconds": 0.06,
       "peak_mb": 4.9
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.5381500294264436,
-        "bits_per_spike_max": 2.754667938789202,
-        "bits_per_spike_n_finite": 67
+        "bits_per_spike_median": 0.5662019325232984,
+        "bits_per_spike_max": 3.791762527176987,
+        "bits_per_spike_n_finite": 69
       },
       "note": "",
       "gap": null,
@@ -141,22 +141,22 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.5381500294264436,
-        "median_shifted_bits_per_spike": 0.08013854935592406,
-        "frac_above_every_shift": 0.9253731343283582,
-        "n_units": 67,
+        "median_bits_per_spike": 0.5662019325232984,
+        "median_shifted_bits_per_spike": 0.06961324656718873,
+        "frac_above_every_shift": 0.8840579710144928,
+        "n_units": 69,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.327,
+      "seconds": 0.218,
       "peak_mb": 6.2
     },
     "cells.place_screen": {
       "status": "ok",
       "summary": {
-        "n_place_screen": 27,
+        "n_place_screen": 25,
         "n_units": 72
       },
       "note": "",
@@ -194,7 +194,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.056,
+      "seconds": 0.058,
       "peak_mb": 6.2
     },
     "rates.egocentric_boundary": {
@@ -210,10 +210,13 @@
       "status": "ok",
       "summary": {
         "median_error": 8.532759426968552,
-        "chance_median_error": 99.54885998129973,
-        "chance_frac_disconnected": 0.37176799440950387,
+        "chance_median_error": 105.23736626594534,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.013277428371767994,
         "units": "pixel",
-        "n_time_bins": 1507
+        "n_time_bins": 1507,
+        "median_error_on_declared": 8.532759426968564,
+        "n_on_declared": 1412
       },
       "note": "",
       "gap": null,
@@ -222,11 +225,11 @@
           "category": "UserWarning",
           "origin": "neurospatial",
           "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
-          "example": "decoding_error(): 214 of 1507 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
-          "count": 2
+          "example": "decoding_error(): 1 of 1507 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "count": 1
         }
       ],
-      "seconds": 0.091,
+      "seconds": 0.086,
       "peak_mb": 8.0
     },
     "io.nwb_roundtrip": {
@@ -245,8 +248,8 @@
           "count": 2
         }
       ],
-      "seconds": 2.133,
-      "peak_mb": 2.3
+      "seconds": 2.099,
+      "peak_mb": 2.1
     },
     "env.from_graph": {
       "status": "ok",
@@ -269,7 +272,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.028,
+      "seconds": 0.019,
       "peak_mb": 3.3
     },
     "behavior.laps": {
@@ -278,8 +281,8 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
-      "peak_mb": 3.1
+      "seconds": 0.006,
+      "peak_mb": 4.0
     },
     "behavior.turn_sequence": {
       "status": "ok",
@@ -290,8 +293,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
-      "peak_mb": 3.1
+      "seconds": 0.006,
+      "peak_mb": 4.0
     },
     "replay.compare_methods": {
       "status": "n/a",
@@ -376,16 +379,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 379.0591999999997,
+        "total_s": 530.3807999999999,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 2.739200000000288,
-        "max_s": 39.93599999999965
+        "median_s_per_visited_bin": 3.2767999999997173,
+        "max_s": 62.33600000000031
       },
       "hazard_summary": {
-        "total_s": 379.77599999999967,
+        "total_s": 532.0191999999997,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 2.7903999999997424,
-        "max_s": 39.93599999999965
+        "median_s_per_visited_bin": 3.2768000000002004,
+        "max_s": 62.412800000000246
       }
     },
     {
@@ -397,14 +400,14 @@
       "clean_summary": {
         "n_units": 72,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.4096106840914693,
-        "median_mean_hz": 0.4852627235123043
+        "median_peak_hz": 1.5125794468265545,
+        "median_mean_hz": 0.47573453454878867
       },
       "hazard_summary": {
         "n_units": 72,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.409610651359558,
-        "median_mean_hz": 0.4857553053940162
+        "median_peak_hz": 1.5125622793973017,
+        "median_mean_hz": 0.4752151049990876
       }
     },
     {
@@ -455,8 +458,8 @@
       "clean_summary": {
         "n_units": 72,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.4096106840914693,
-        "median_mean_hz": 0.4852627235123043
+        "median_peak_hz": 1.5125794468265545,
+        "median_mean_hz": 0.47573453454878867
       },
       "hazard_summary": {
         "n_units": 72,
@@ -546,16 +549,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 379.0591999999997,
+        "total_s": 530.3807999999999,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 2.739200000000288,
-        "max_s": 39.93599999999965
+        "median_s_per_visited_bin": 3.2767999999997173,
+        "max_s": 62.33600000000031
       },
       "hazard_summary": {
-        "total_s": 379.77599999999967,
+        "total_s": 532.0191999999997,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 2.7903999999997424,
-        "max_s": 39.93599999999965
+        "median_s_per_visited_bin": 3.2768000000002004,
+        "max_s": 62.412800000000246
       }
     },
     {
@@ -567,14 +570,14 @@
       "clean_summary": {
         "n_units": 72,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.4096106840914693,
-        "median_mean_hz": 0.4852627235123043
+        "median_peak_hz": 1.5125794468265545,
+        "median_mean_hz": 0.47573453454878867
       },
       "hazard_summary": {
         "n_units": 72,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.409610651359558,
-        "median_mean_hz": 0.4857553053940162
+        "median_peak_hz": 1.5125622793973017,
+        "median_mean_hz": 0.4752151049990876
       }
     },
     {

@@ -8,7 +8,7 @@
     "params['linearized']: 1.6mLinearMazeLinearizedPosition, m times 100 -> cm, 0 to 160 cm; 0.01% of finite samples are exactly 0",
     "epochs: intervals/epochs labels without 'Epoch', lower case; sleep states from processing/behavior/states",
     "events['candidate_events']: first 200 of 1646 population bursts in POST non-REM (rule in population_bursts); the file has no ripple table",
-    "environment: declared straight track: 15 cm reward area, 1.6 m stem, 15 cm reward area (Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1.9 m wooden linear maze ... 15 cm reward areas on either end ... and a 1.6 m stem'; width not stated); track width not stated; measured 55 cm, twice the samples' 95% quantile distance from the track; placement: the stem centred on a least-squares line from the file's linearized coordinate to the positions (0.963 cm of 2-D distance per linearized cm), the reward areas beyond its ends; fit: samples a median 9.35 cm from the track (95th percentile 27.48), track length 190.0 cm, 95.0% of samples within half the track width"
+    "environment: declared straight track: 15 cm reward area, 1.6 m stem, 15 cm reward area (Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1.9 m wooden linear maze ... 15 cm reward areas on either end ... and a 1.6 m stem'; width not stated); tracked point: not stated; physical width not stated; placement tolerance 55 cm (track_width: twice the samples' 95% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 5.0% of samples are dropped by construction); placement: the stem centred on a least-squares line from the file's linearized coordinate to the positions (0.963 cm of 2-D distance per linearized cm), the reward areas beyond its ends (file's linearized coordinate); fit: median |lateral offset| 9.04 cm, worst stretch bias 1.53 cm (limit 2.5), worst unsupported share of a segment 44%; track length 190.0 cm"
   ],
   "expectations": [
     {
@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
+    "git_commit": "095a98a6da89ce8cd3b907a911d70cf6143232ac"
   },
   "load_warnings": [],
   "operations": {
@@ -58,7 +58,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.31,
+      "seconds": 0.099,
       "peak_mb": 6.0
     },
     "env.occupancy": {
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.429,
+      "seconds": 0.114,
       "peak_mb": 9.3
     },
     "env.declared": {
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
+      "seconds": 0.013,
       "peak_mb": 9.4
     },
     "rates.spatial": {
@@ -100,7 +100,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.572,
+      "seconds": 0.369,
       "peak_mb": 296.3
     },
     "rates.spatial_information": {
@@ -113,7 +113,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.7
     },
     "rates.information_vs_shifts": {
@@ -128,7 +128,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 8.655,
+      "seconds": 2.259,
       "peak_mb": 363.9
     },
     "cells.place_screen": {
@@ -140,7 +140,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.001,
       "peak_mb": 0.7
     },
     "cells.grid_score": {
@@ -175,10 +175,13 @@
       "status": "ok",
       "summary": {
         "median_error": 2.500000000000001,
-        "chance_median_error": 24.464285714285698,
-        "chance_frac_disconnected": 0.06872190109184328,
+        "chance_median_error": 24.46428571428571,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.03628773281952473,
         "units": "cm",
-        "n_time_bins": 4063
+        "n_time_bins": 4063,
+        "median_error_on_declared": 2.500000000000001,
+        "n_on_declared": 3001
       },
       "note": "",
       "gap": null,
@@ -188,10 +191,10 @@
           "origin": "neurospatial",
           "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
           "example": "decoding_error(): 112 of 4063 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
-          "count": 2
+          "count": 1
         }
       ],
-      "seconds": 2.218,
+      "seconds": 0.526,
       "peak_mb": 296.2
     },
     "io.nwb_roundtrip": {
@@ -202,8 +205,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.442,
-      "peak_mb": 2.8
+      "seconds": 1.914,
+      "peak_mb": 2.1
     },
     "env.from_graph": {
       "status": "ok",
@@ -226,7 +229,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.305,
+      "seconds": 0.096,
       "peak_mb": 5.1
     },
     "behavior.laps": {
@@ -235,7 +238,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.09,
+      "seconds": 0.021,
       "peak_mb": 8.5
     },
     "behavior.turn_sequence": {
@@ -247,7 +250,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.101,
+      "seconds": 0.015,
       "peak_mb": 8.5
     },
     "replay.compare_methods": {
@@ -263,7 +266,7 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 803.769,
+      "seconds": 446.429,
       "peak_mb": 359.4
     },
     "io.nwb_readers": {
@@ -276,7 +279,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries', 'processing/behavior/1.6mLinearMazePosition/1.6mLinearMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 23.289,
+      "seconds": 52.549,
       "peak_mb": 334.4
     },
     "io.read_pose": {
@@ -285,7 +288,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 19.261,
+      "seconds": 32.269,
       "peak_mb": 89.1
     },
     "imaging.rates": {

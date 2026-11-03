@@ -7,7 +7,7 @@
     "positions: processing/behavior/AnimalPosition/Position stored values (h5py, conversion 0.01 not applied), cm; range checked: 6.6-114.4 by 13.4-19.4 cm; the file's Speed (cm/s) / speed from the stored values: median 0.90",
     "events['ripples']: the first 200 SleepStates rows with state 'Ripple' after the maze (200 of 2798; 6 fall inside the maze session)",
     "epochs: SleepStates rows WAKE, NREM, REM by label",
-    "environment: declared straight track, length fitted (Gonzalez et al. 2026 Methods: a linear track with a water well at either end; its length and width (Supplementary Table 1) were not read); track width not stated; measured 3.16 cm, twice the samples' 99% quantile distance from the track; placement: along the samples' principal axis at 179.0 deg, centred between their 0.5th and 99.5th percentiles along it (span 105.6 cm); 1.0% of samples lie beyond the ends; fit: samples a median 0.42 cm from the track (95th percentile 1.21), track length 105.6 cm, 99.0% of samples within half the track width"
+    "environment: declared straight track, length fitted (Gonzalez et al. 2026 Methods: a linear track with a water well at either end; its length and width (Supplementary Table 1) were not read); tracked point: not stated; physical width not stated; placement tolerance 3.16 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: along the samples' principal axis at 179.0 deg, centred between their 0.5th and 99.5th percentiles along it (span 105.6 cm); 1.0% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 0.42 cm, worst stretch bias 0.02 cm (limit 2.5), worst unsupported share of a segment 0%; track length 105.6 cm"
   ],
   "expectations": [
     {
@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
+    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
   },
   "load_warnings": [],
   "operations": {
@@ -57,7 +57,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.018,
+      "seconds": 0.017,
       "peak_mb": 2.8
     },
     "env.occupancy": {
@@ -71,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
+      "seconds": 0.033,
       "peak_mb": 12.8
     },
     "env.declared": {
@@ -85,7 +85,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.007,
       "peak_mb": 7.2
     },
     "rates.spatial": {
@@ -107,7 +107,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.18,
+      "seconds": 0.162,
       "peak_mb": 94.0
     },
     "rates.spatial_information": {
@@ -143,7 +143,7 @@
           "count": 4
         }
       ],
-      "seconds": 1.153,
+      "seconds": 0.983,
       "peak_mb": 125.3
     },
     "cells.place_screen": {
@@ -190,15 +190,18 @@
       "status": "ok",
       "summary": {
         "median_error": 17.18996368260583,
-        "chance_median_error": 39.29134556024184,
-        "chance_frac_disconnected": 0.019417475728155338,
+        "chance_median_error": 39.291345560241865,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.009978425026968716,
         "units": "cm",
-        "n_time_bins": 3708
+        "n_time_bins": 3708,
+        "median_error_on_declared": 17.18996368260583,
+        "n_on_declared": 3671
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.339,
+      "seconds": 0.259,
       "peak_mb": 137.2
     },
     "io.nwb_roundtrip": {
@@ -209,7 +212,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.167,
+      "seconds": 1.887,
       "peak_mb": 2.1
     },
     "env.from_graph": {
@@ -233,7 +236,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.023,
+      "seconds": 0.018,
       "peak_mb": 13.2
     },
     "behavior.laps": {
@@ -242,7 +245,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.008,
       "peak_mb": 6.5
     },
     "behavior.turn_sequence": {
@@ -254,7 +257,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.007,
       "peak_mb": 6.5
     },
     "replay.compare_methods": {
@@ -270,7 +273,7 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 37.921,
+      "seconds": 28.833,
       "peak_mb": 137.2
     },
     "io.nwb_readers": {
@@ -283,8 +286,8 @@
       "note": "position: mismatch: values differ",
       "gap": null,
       "warnings": [],
-      "seconds": 0.566,
-      "peak_mb": 93.9
+      "seconds": 0.504,
+      "peak_mb": 93.8
     },
     "io.read_pose": {
       "status": "n/a",
@@ -292,7 +295,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.463,
+      "seconds": 0.403,
       "peak_mb": 0.4
     },
     "imaging.rates": {

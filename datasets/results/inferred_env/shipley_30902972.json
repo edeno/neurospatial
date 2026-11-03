@@ -10,7 +10,7 @@
     "spike_times: spike_times.npy / 30000 Hz for the 71 clusters labelled good; identical to trialData tetrode timestamps",
     "epochs: trials ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'S2'] from trialFinalInd; S* is sleep",
     "headings: none (pos.dir equals dir_disp, the displacement direction)",
-    "environment: declared 8-arm radial maze: eight arms from a centre (Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an octagonal centre platform (24.7cm diameter, 10cm sides)'); track width 10 cm (stated); placement: node positions fitted to the maze trials' samples; centre to arm end 85.8-99.3 cm (stated 80 cm arms from a 24.7 cm platform: 92.35 cm); the platform is the arms' shared centre node; fit: samples a median 1.20 cm from the track (95th percentile 54.97), track length 734.0 cm, 80.9% of samples within half the track width"
+    "environment: declared 8-arm radial maze: eight arms joined at a centre (Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an octagonal centre platform (24.7cm diameter, 10cm sides)'); tracked point: one tracking LED (per the loader; trialData.pos); physical width 10 cm (stated), 0.7% of samples beyond half of it (1% at 0-3 cm/s, 0% at 3-30 cm/s, 1% at 30-inf cm/s); placement tolerance 10 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 0.7% of samples are dropped by construction); placement: a star fitted to the maze trials' samples, then each arm the principal axis of its own samples beyond the platform, joined to the centre; centre to arm end 86.9-95.5 cm (stated 80 cm arms from a 24.7 cm platform: 92.35 cm) (fitted to the samples); fit: median |lateral offset| 1.06 cm, worst stretch bias 0.97 cm (limit 3), worst unsupported share of a segment 0%, arm 0 -5% of the stated, arm 1 -1% of the stated, arm 2 +3% of the stated, arm 3 +3% of the stated, arm 4 +3% of the stated, arm 5 -2% of the stated, arm 6 -5% of the stated, arm 7 -6% of the stated; track length 740.3 cm"
   ],
   "expectations": [
     {
@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+    "git_commit": "c992c116cbe8b3a9b123d2760f34444c072ae4d6"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.078,
+      "seconds": 0.166,
       "peak_mb": 8.6
     },
     "env.occupancy": {
@@ -79,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.092,
+      "seconds": 0.196,
       "peak_mb": 39.1
     },
     "env.declared": {
@@ -102,7 +102,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.38,
+      "seconds": 0.892,
       "peak_mb": 45.4
     },
     "rates.spatial_information": {
@@ -115,7 +115,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.004,
       "peak_mb": 3.3
     },
     "rates.information_vs_shifts": {
@@ -130,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.977,
+      "seconds": 2.154,
       "peak_mb": 55.5
     },
     "cells.place_screen": {
@@ -142,7 +142,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.027,
+      "seconds": 0.03,
       "peak_mb": 20.0
     },
     "cells.grid_score": {
@@ -153,7 +153,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.458,
+      "seconds": 1.056,
       "peak_mb": 18.6
     },
     "cells.border_score": {
@@ -181,13 +181,16 @@
         "median_error": 51.94112549695427,
         "chance_median_error": 93.94112549695427,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 3010
+        "n_time_bins": 3010,
+        "median_error_on_declared": 52.242640687119284,
+        "n_on_declared": 3004
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.397,
+      "seconds": 0.736,
       "peak_mb": 46.4
     },
     "io.nwb_roundtrip": {
@@ -198,8 +201,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.936,
-      "peak_mb": 6.2
+      "seconds": 5.757,
+      "peak_mb": 6.6
     },
     "env.from_graph": {
       "status": "n/a",
@@ -219,7 +222,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.073,
+      "seconds": 0.121,
       "peak_mb": 40.7
     },
     "behavior.laps": {
@@ -228,7 +231,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.03,
+      "seconds": 0.047,
       "peak_mb": 18.3
     },
     "behavior.turn_sequence": {

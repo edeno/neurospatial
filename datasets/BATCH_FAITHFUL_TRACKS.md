@@ -1,12 +1,13 @@
 # Faithful environments: tracks and mazes
 
-Twenty-two track and maze recordings now hand the driver the apparatus their
-sources state, as a track graph, instead of a grid built from the samples.
-This page lists, per recording, what was declared and why, the source, how
-the layout was placed and how well it fits, and what changed between the
-run on the declared environment and the run on the samples' grid
+Twenty-two track and maze recordings were given the apparatus their sources
+state, as a track graph, in place of a grid built from the samples. 19 are
+declared; 3 fitted layouts were refused on misfit evidence and stay
+inferred. This page lists, per recording, what was declared and why, the
+source, how the layout was placed and how well it fits, and what changed
+between the run on the declared environment and the run on the samples' grid
 (`run.py --inferred-env`). The evidence is in [GAPS.md](GAPS.md) (G-150 to
-G-154), [results/](results/) (declared), [results/inferred_env/](results/inferred_env/)
+G-155), [results/](results/) (declared), [results/inferred_env/](results/inferred_env/)
 (inferred), `results/studies/declared_vs_inferred.md` (every value side by
 side) and `results/studies/environment_fidelity.md` (the fidelity study of
 both environments). [FINDINGS.md](FINDINGS.md) is not edited here.
@@ -15,88 +16,99 @@ both environments). [FINDINGS.md](FINDINGS.md) is not edited here.
 
 A loader sets `geometry["environment"]`, a zero-argument callable returning
 the environment, built in `load()` from the clean samples
-(`datasets/_tracks.py`):
+(`datasets/_tracks.py`, `declared_geometry`):
 
-- **Topology and stated sizes from a source; placement from the samples.**
-  Where the file holds the authors' graph or centreline (labyrinth, J16,
-  Takigawa, Hafting's normalised frame) it is used as stored. A straight
-  track of stated length lies along the samples' principal axis, centred
-  between their 0.5th and 99.5th percentiles, or along the file's own
-  linearized coordinate (000044 linear, hc-31). A maze whose layout is
-  stated (a W, a radial maze, a Z, an X, a figure-8) starts from candidate
-  layouts drawn on the samples' minimum rotated rectangle and has its node
-  positions fitted: the mean of a truncated squared distance from the
-  samples to the graph plus the distance from points along each edge to the
-  nearest sample (so an arm cannot run past the samples), minimised with
-  L-BFGS-B on a seeded 6,000-sample subsample. The circle is the stated 1 m
-  diameter placed by a robust circle fit; the train circuit, whose shape no
-  source states, is the samples' median radius in 72 angular sectors.
+- **Topology and stated sizes from a source; placement from the samples or
+  the file.** Where the file holds the authors' graph or centreline
+  (labyrinth, J16, Takigawa, Hafting's normalised frame) or its own
+  coordinate (hc-31, and 000044's linear track placed along its linearized
+  coordinate), it is used as stored. A straight track of stated length lies
+  along the samples' principal axis, centred between their 0.5th and 99.5th
+  percentiles. A maze whose layout is stated (a W, a radial maze, a Z, an X,
+  a figure-8, a 3-arm maze) starts from candidate layouts drawn on the
+  samples and has its node positions fitted (a truncated squared distance
+  from the samples to the graph plus from points along each edge to the
+  nearest sample, L-BFGS-B on a seeded 6,000-sample subsample); the radial
+  maze's arms are then refitted to their own samples. The circle is the
+  stated 1 m diameter placed by a robust circle fit; the train circuit,
+  whose shape no source states, is the samples' median radius in 72
+  sectors.
 - **Every edge kept.** `Environment.from_graph` drops edges missing from
   `edge_order` (G-112); `_geometry.graph_environment` lists all of them, so
   the figure-8, the circle and the circuit are cyclic graphs.
-- **Width.** The stated width where a source gives one. Otherwise it is
-  measured: twice the samples' 99th percentile distance from the graph (at
-  least one bin), because neurospatial will not place positions on a track
-  without a width although its docstrings say it will (G-150). The 99th, not
-  the 95th, because every sample outside a track splits `detect_laps`'
-  recording (G-151).
-- **Residual and refusal.** Each declaration writes one `conversions` line:
-  the layout, its source, the width (stated or measured), the placement and
-  the fit (median and 95th percentile sample distance to the track, the
-  track's length, the share of samples within half the width). A fitted
-  placement whose median sample distance exceeds half the stated width (or
-  two bins without one) is refused and the recording stays inferred; none
-  was refused in the final run. The authors' own graphs and the placement
-  by a file's coordinate are not fitted, so they are not refused.
+- **Physical width apart from the placement tolerance (G-152).** In
+  `Environment.from_graph`, `track_width` only decides which positions are
+  placed and the `TrackArena` footprint; the bins, their lengths, their
+  links, kernels and the occupancy and rates of placed samples do not
+  depend on it (read in `src/`, checked at widths 6 and 30 cm). The tracked
+  point is usually an LED on a headstage above an unwalled track, which
+  swings past its edge, so each track is built with a placement tolerance
+  measured from the samples (twice their 99th percentile distance from the
+  track, at least the physical width and a bin; 000044's linear track the
+  95th, because its first 110 s are an excursion off the track), about 1 %
+  of samples outside by construction. The physical width, stated by a source
+  or chosen by the loader (the labyrinth's one cell), is recorded apart
+  (`geometry["declared_physical_width"]`) with the share of samples beyond
+  half of it, split by speed: a tracking measure, not a verdict. What was
+  tracked is recorded in `geometry["tracked_point"]` ("not stated" where
+  the source does not say).
+- **Refusal on misfit, not scatter.** A layout fitted to the samples is
+  refused when a straight stretch of track (at least 20 bins, not crossing
+  a corner) has its samples a median of more than one bin to one side, when
+  a quarter of a segment has no sample within a bin, or when a stated
+  length is more than 15 % off (`_geometry.MAX_SIZE_RESIDUAL`). The authors'
+  geometry and the files' own coordinates are not fitted, so they are not
+  refused; the fidelity study judges them with the same evidence
+  (`_geometry.judge_declared`, one function for any declared environment).
 
 The driver uses a declared track as the graph environment too (laps, turns),
 decodes replay on it (status `ok` where it was a G-038 workaround on the
 file's linearized coordinate), counts laps a second way, by a start region
 the loader states (`geometry["lap_start_region"]`, `method="region"` in the
-analysis epochs), and reports grid, border and egocentric-boundary scores as
-n/a on a track.
+analysis epochs), reports grid, border and egocentric-boundary scores as
+n/a on a track, and gives the decoding error over the time bins whose true
+position the declared track places in both runs (`median_error_on_declared`).
 
 ## Per recording
 
-Values are declared / inferred. "Outside": share of tracked samples the
-declared environment cannot place (`env.declared`). "Offset": median sample
-distance to the declared track, and the share within half its width.
-Decoding error is the median along the environment (cm, or pixels for hc-3
-and hc-18); on a declared track it is measured only on samples the track
-places, so where many are outside (J16, the W-tracks, hc-3) it describes the
-samples on the track. Information is the median bits per spike.
+Values are declared / inferred. Physical width: stated, chosen, or not
+stated. Beyond: the share of tracked samples farther than half the physical
+width from the track, then the same share stopped / moving (up to 30 cm/s)
+/ fast (the labyrinth: below / above 1 cell/s). Tolerance: the
+`track_width` the track is built with and, in brackets, the share of all
+tracked samples it leaves out (hc-18's 92.8 % are its sleep-box sessions,
+off the circuit; 1 % of its travel samples). Lateral: the samples' median
+|lateral offset| and the worst stretch's median signed offset, in the
+file's units, on the analysed samples. Decoding error: median over the same
+time bins in both runs (those the declared track places), along each run's
+own environment (the track graph, or the samples' grid); pixels for hc-3
+and hc-18. Laps: default, by region. Replay: the `GROSMARK_2016` detection
+rate (`wk`: the G-038 workaround on the linearized coordinate).
 
-| Recording | Declared layout (source) | Width | Placement, fit | Outside | Occupancy (s) | Info | Decoding error (chance) | Laps: default, region | Replay (Grosmark rate) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| rosenberg_labyrinth | binary-tree labyrinth, the repository's NewMaze graph (eLife 2021: corridors 1-1/8 in on a 1.5 in grid) | 1 cell, stated (the corridor pitch) | as stored; offset 0.21 cell, 95.4 % | 4.6 % | 4722 / 4808 | – | – | refused (tree) both | – |
-| j16_23020757 | the authors' graph, 10 nodes, 9 corridors (file; Comrie et al. 2026: 6.5 cm hallways) | 6.5 cm, stated | as stored; offset 4.23 cm, 36.2 % | 63.8 % | 424 / 802 | 2.37 / 2.58 | 2.0 (108) / 5.7 (113) | refused (tree) both | – |
-| takigawa_7114733 | two tracks, the authors' centrelines, two components (file; Tirole et al. 2022: 2 m tracks) | 41.4 cm, measured | as stored; offset 3.70 cm | 1.0 % | 1069 / 1092 | 1.66 / 2.22 | 7.8 (76) / 13.7 (68) | refused both | – |
-| hafting_2008_nird | straight track, 320 cm (archive readme) | 31 cm, measured | the file's frame (posx -160 to 160); offset 3.21 cm | 1.0 % | 650 / 656 | 0.98 / 1.05 | 106 (132) / 157 (130) | refused both | – |
-| grosmark_000044_linear | 15 cm reward area, 1.6 m stem, 15 cm reward area (Grosmark & Buzsaki 2016) | 55 cm, measured (95th percentile, see below) | the file's linearized coordinate; offset 9.35 cm | 5.0 % | 981 / 1053 | 0.38 / 0.81 | 2.5 (24.5) / 8.5 (34.7) | refused both | 0.155 / 0.140 (workaround G-038) |
-| vollan_lt | straight track, 200 cm (Vollan et al. 2025) | 31.3 cm, measured | principal axis, centred; offset 3.97 cm; 11.6 % beyond the ends | 1.0 % | 316 / 319 | 0.15 / 0.29 | 5.0 (62.5) / 8.5 (63.1) | refused both | – |
-| valero_000568 | straight track, 110 x 6.35 cm (NWB description) | 6.35 cm, stated | principal axis, centred; offset 1.58 cm, 87.6 %; 26.2 % beyond the ends | 12.4 % | 819 / 950 | 0.31 / 0.29 | 34.2 (39.1) / 32.1 (46.6) | refused both | 0 / error (G-038) |
-| aeryjones_000165 | straight track, 36 cm (Aery Jones et al. 2021) | 5.42 cm, measured | principal axis, centred; offset 0.44 cm | 0.9 % | 270 / 270 | 0.009 / 0.010 | 16.0 (7.0) / 17.0 (7.4) | refused both | – |
-| gonzalez_001695 | straight track, length fitted (Gonzalez et al. 2026: wells at either end; size not read) | 3.16 cm, measured | principal axis, 105.6 cm; offset 0.42 cm | 1.0 % | 545 / 549 | 0.22 / 0.22 | 17.2 (39.3) / 18.5 (40.0) | refused both | 0.040 / error (G-038) |
-| hc3_ec013_669 | straight track, 250 x 7 cm (Mizuseki et al. 2012), in pixels at the inferred scale | 8.04 px, stated | principal axis, centred; offset 2.13 px, 73.7 % | 26.3 % | 379 / 535 | 0.54 / 0.67 | 8.5 (99.5) / 12.2 (114) px | refused both | – |
-| hc31_anm190422 | 1-D track along the authors' coordinate, 4816 cm (hc-31: 48 m) | one bin (1-D) | the file's coordinate | 0 % | 909 / 909 | 3.26 / 3.25 | 575 (1394) / 572 (1404) | refused both | – |
-| figure8_000552 | figure-8, both loops closed (DANDI 000552; no size stated) | 12.5 cm, measured | 6 nodes fitted; offset 1.00 cm | 1.0 % | 597 / 603 | 0.39 / 0.40 | 7.8 (56.8) / 8.8 (51.0) | 6, 14 / 0, 20 (21 trials) | 0.014 / 0.028 (workaround) |
-| grosmark_000044_circular | 1 m diameter circle, 72-gon loop (Grosmark & Buzsaki 2016) | 33.9 cm, measured | robust circle centre (own radius 49.9 cm); offset 3.15 cm | 1.0 % | 1709 / 1726 | 0.66 / 0.83 | 6.5 (65.4) / 12.1 (64.9) | 67, 65 / 1, 85 (about 97 clockwise, G-037) | 0.055 / 0.095 (workaround) |
-| hc18_train261 | closed circuit, 72-gon loop from the travel samples (hc-18: a model train; no shape stated) | 35.2 px, measured | sector medians; offset 2.86 px | 92.8 % (sleep-box sessions; 1 % of travel) | 1423 / 1441 | 0.18 / 0.19 | 275 (485) / 303 (513) px | 35, 31 / 1, 94 (about 107, G-037) | – |
-| jadhav_000447 (novel W, runs 1 and 3) | W-track (Tang et al. 2023: ~80 x 80 cm, ~7 cm tracks) | 7 cm, stated | 6 nodes fitted; arms 85-101 cm; offset 2.12 cm, 64.1 % | 35.9 % | 441 / 912 | 0.55 / 0.58 | 10.0 (113) / 18.5 (95) | refused / 1 | – |
-| jadhav_000447_familiar (run 2, new) | W-track (as above) | 7 cm, stated | 6 nodes fitted; arms 84-89 cm; offset 0.82 cm, 87.1 % | 12.9 % | 219 / 331 | 1.07 / 1.08 | 61.9 (133) / 40.3 (116) | refused / 0 | – |
-| hc28_hpa | W-track (Jadhav et al. 2016: ~80 x 80 cm, 7 cm sections) | 7 cm, stated | 6 nodes fitted; arms 65-76 cm; offset 2.75 cm, 62.7 % | 37.3 % | 457 / 811 | 1.04 / 0.93 | 16.9 (56.2) / 16.0 (53.5) | refused both | – |
-| agarwal_24757638 | 3-arm maze, parallel arms on a base (Figshare; Agarwal et al. 2026: "2.13m-long", span not stated) | 28.8 cm, measured | 6 nodes fitted; arms 180-185 cm; offset 1.03 cm | 1.0 % | 1025 / 1053 | 0.17 / 0.19 | 4.0 (215) / 5.7 (192) | refused both | – |
-| shipley_30902972 | 8-arm radial maze, a star (Shipley et al. 2026: 80 x 10 cm arms, 24.7 cm platform) | 10 cm, stated | 9 nodes fitted; centre to arm end 86-99 cm (stated 92.35); offset 1.20 cm, 80.9 % | 8.8 % | 1067 / 1350 | 0.27 / 0.24 | 64.6 (99.7) / 51.9 (93.9) | refused both | – |
-| olafsdottir_5566548 | Z-track (Olafsdottir et al. 2016: 10 cm runways, 190/220/190 cm) | 10 cm, stated | 4 nodes fitted; sections 165/204/159 cm; offset 1.56 cm, 92.4 % | 7.6 % | 1152 / 1266 | 0.83 / 0.84 | 66.8 (147) / 115 (142) | refused both | – |
-| giocomo_001701 | X maze, two junctions and four arms (Aery Jones et al. 2026: "130-cm X-maze") | 5.68 cm, measured | 6 nodes fitted; arms 50 cm, centre 19 cm; offset 0.92 cm | 1.0 % | 956 / 967 | 0.12 / 0.13 | 2.5 (64.8) / 3.5 (62.9) | refused both | – |
-| dyads_001845 | W-maze (Shukla et al. 2026: 80 x 80 cm, ~7 cm sections) | 7 cm, stated | 6 nodes fitted; arms 80-94 cm; offset 0.27 cm, 93.9 % | 6.1 % | 24 / 31 | – | – | refused both | – |
-
-Every recording above is declared; none was refused and none stays
-inferred. Two are declared with a layout no source sizes: hc-18's circuit
-(the source says only that the rat rode a model train; the loop is the
-samples' own and its verdict in the fidelity study is "not verified") and
-001695's track (a linear track with wells at either end is stated; its
-length is fitted).
+| Recording | Status | Layout (source) | Physical width | Beyond | Tolerance (outside) | Lateral | Occupancy (s) | Info (bits/spike) | Decoding error | Laps | Replay | Fidelity verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| rosenberg_labyrinth | declared | binary-tree labyrinth, the repository's NewMaze graph | 1 cell chosen | 4.6 % (11 / 1) | 1.26 (1.0%) | 0.16, 0.34 | 4797 / 4808 | – / – | – / – | – | – / – | not verified |
+| j16_23020757 | declared | the authors' graph, 10 nodes, 9 corridors (file) | 6.5 cm stated | 63.8 % (87 / 64 / 35) | 36.9 (1.0%) | 2.73, 1.81 | 792 / 802 | 2.05 / 2.58 | 2.0 / 5.7 | – | – / – | not verified |
+| takigawa_7114733 | declared | two tracks, the authors' centrelines (file); Tirole et al. 2022: 2 m | not stated | – | 41.4 (1.0%) | 4.57, 4.12 | 1069 / 1093 | 1.66 / 2.22 | 7.7 / 13.7 | – | – / – | mismatch |
+| hafting_2008_nird | declared | straight 320 cm (archive readme), the file's frame | not stated | – | 31 (1.0%) | 3.21, 1.24 | 650 / 656 | 0.98 / 1.05 | 104.0 / 157.0 | – | – / – | not verified |
+| grosmark_000044_linear | declared | 15 cm reward area + 1.6 m stem + 15 cm reward area (Grosmark & Buzsaki 2016), on the file's linearization | not stated | – | 55 (5.0%) | 9.04, 1.53 | 981 / 1052 | 0.38 / 0.81 | 2.5 / 8.5 | – | 0.155 / 0.140 (wk) | mismatch |
+| vollan_lt | declared | straight 200 cm (Vollan et al. 2025) | not stated | – | 31.3 (1.0%) | 3.19, 0.21 | 316 / 319 | 0.15 / 0.29 | 5.0 / 8.5 | – | – / – | not verified |
+| valero_000568 | declared | straight 110 cm (NWB description) | 6.35 cm stated | 12.4 % (12 / 14 / 9) | 12.9 (1.0%) | 1.22, 0.07 | 944 / 950 | 0.28 / 0.29 | 34.2 / 32.1 | – | 0.000 / error | not verified |
+| aeryjones_000165 | declared | straight 36 cm (Aery Jones et al. 2021) | not stated | – | 5.42 (0.9%) | 0.39, 0.15 | 270 / 270 | 0.01 / 0.01 | 16.0 / 17.0 | – | – / – | not verified |
+| gonzalez_001695 | declared | straight, length fitted (Gonzalez et al. 2026: wells at either end) | not stated | – | 3.16 (1.0%) | 0.42, 0.02 | 545 / 549 | 0.22 / 0.22 | 17.2 / 18.5 | – | 0.040 / error | not verified |
+| hc3_ec013_669 | declared | straight 250 cm (Mizuseki et al. 2012), pixels | 8.04 px stated (7 cm) | 26.3 % (19 / 34 / 15) | 29.3 (1.0%) | 2.13, 0.03 | 530 / 535 | 0.57 / 0.67 | 8.5 / 12.2 | – | – / – | not verified |
+| hc31_anm190422 | declared | 1-D, the authors' 48 m coordinate (hc-31) | not stated | – | 2.5 (0.0%) | 0.00, 0.00 | 909 / 909 | 3.26 / 3.25 | 574.8 / 572.5 | – | – / – | not verified |
+| figure8_000552 | declared | figure-8, both loops closed (DANDI 000552), fitted | not stated | – | 12.5 (1.0%) | 0.99, 0.60 | 597 / 603 | 0.39 / 0.40 | 7.8 / 8.8 | 6, 14 / 0, 20 | 0.014 / 0.028 (wk) | not verified |
+| grosmark_000044_circular | declared | 1 m circle, 72-gon loop (Grosmark & Buzsaki 2016) | not stated | – | 33.9 (1.0%) | 3.05, 2.38 | 1709 / 1726 | 0.66 / 0.83 | 6.5 / 11.0 | 67, 65 / 1, 85 | 0.055 / 0.095 (wk) | matches |
+| hc18_train261 | declared | closed circuit from the travel samples (no shape stated) | not stated | – | 35.2 (92.8%) | 2.84, 1.20 | 1423 / 1443 | 0.18 / 0.19 | 276.1 / 303.5 | 35, 31 / 1, 94 | – / – | not verified |
+| jadhav_000447 | inferred (refused: base +17% of the stated length; arms +19% of the stated length) | W-track (Tang et al. 2023: ~80 x 80 cm), fitted | 7 cm stated | 35.8 % (22 / 50 / 44) | – | – | 912 / 912 | 0.58 / 0.58 | 18.5 / 18.5 | – | – / – | – |
+| jadhav_000447_familiar | declared | W-track (Tang et al. 2023: ~80 x 80 cm), fitted | 7 cm stated | 13.0 % (2 / 32 / 26) | 29.7 (1.0%) | 0.79, 0.78 | 322 / 331 | 1.00 / 1.08 | 35.9 / 40.6 | – | – / – | not verified |
+| hc28_hpa | declared | W-track (Jadhav et al. 2016: ~80 x 80 cm), fitted | 7 cm stated | 37.3 % (24 / 38 / 57) | 20.8 (1.0%) | 2.68, 1.00 | 800 / 811 | 0.85 / 0.92 | 17.1 / 16.6 | – | – / – | not verified |
+| agarwal_24757638 | declared | 3-arm maze (Figshare; Agarwal et al. 2026), fitted | not stated | – | 16.8 (1.0%) | 0.70, 0.80 | 1028 / 1053 | 0.18 / 0.19 | 3.9 / 5.7 | – | – / – | not verified |
+| shipley_30902972 | declared | 8-arm radial maze (Shipley et al. 2026: 80 cm arms, 24.7 cm platform), fitted | 10 cm stated | 0.7 % (1 / 0 / 1) | 10 (0.3%) | 1.06, 0.97 | 1344 / 1350 | 0.24 / 0.24 | 62.3 / 52.2 | – | – / – | not verified |
+| olafsdottir_5566548 | inferred (refused: last section -16% of the stated length) | Z-track (Olafsdottir et al. 2016: 190/220/190 cm), fitted | 10 cm stated | 7.6 % (30 / 9 / 7) | – | – | 1266 / 1266 | 0.84 / 0.84 | 115.3 / 115.3 | – | – / – | – |
+| giocomo_001701 | declared | X maze (Aery Jones et al. 2026), fitted | not stated | – | 5.68 (1.0%) | 0.92, 0.38 | 956 / 967 | 0.12 / 0.13 | 2.5 / 3.5 | – | – / – | not verified |
+| dyads_001845 | inferred (refused: 80% of a segment has no sample within a bin (limit 25%)) | W-maze (Shukla et al. 2026: 80 x 80 cm), fitted | 7 cm stated | 6.1 % (0 / 16 / 16) | – | – | 31 / 31 | – / – | – / – | – | – / – | – |
 
 ### Choices that changed a recording
 
@@ -107,78 +119,95 @@ length is fitted).
   positions outside them are NaN, its own trajectories, `analysis_epochs`
   its runs), and `jadhav_000447_familiar` is run 2, a new registry entry
   sharing the loader (`load_jadhav_000447.load_maze`). Tang, Shin & Jadhav
-  2023, the paper DANDI lists as describing 000447, give one size for both
-  mazes; the fitted mazes differ (novel arms 85-101 cm, familiar 84-89 cm,
-  G-153).
+  2023 give one size for both; the familiar maze fits it (base -1 %, arms
+  +6 %) and the novel one does not (base +17 %, arms +19 %; G-153), so the
+  novel recording stays inferred.
 - **The figure-8's positions are the camera (x, y).** A loop cannot be
   declared on the linearized line, where 0 and 222 cm are different points
   (G-021); the linearized coordinate moved to `params["linearized"]`, as on
   the other 2-D tracks, and the two range expectations now check it. The
   inferred run is therefore the camera grid (667 bins), not the old 1-D
   environment.
-- **000165 is in cm.** Aery Jones et al. 2021 state "a 36 cm linear track";
-  the tracked span is 35.4 cm along the axis, so the file's cm label is
-  right and the loader no longer returns arbitrary units.
-- **000044 linear: reward areas as end segments, and a 95th percentile
-  width.** The stated 1.9 m maze is a 1.6 m stem with a 15 cm reward area
-  continuing it at each end, placed along the line the file's linearized
-  coordinate traces (0.963 cm of 2-D distance per linearized cm). The
-  reward-end samples spread up to about 27 cm across the track's axis, and
-  the first 110 s (3.5 % of samples) are an excursion 140 cm and more away;
-  a 99th percentile width would make the track 3 m wide, so this loader
-  measures the 95th (55 cm) and the excursion stays outside.
-- **The labyrinth at one cell.** The task named one cell; the paper's
-  corridors are 1-1/8 in on a 1.5 in grid, 0.75 of a cell, at which 18 % of
-  nose samples would be off the track against 4.6 % at one cell.
+- **000165 is in cm.** Aery Jones et al. 2021 (Cell Reports 37:110159,
+  read in the PMC9069800 full text) state "a 36 cm linear track"; the
+  tracked span is 35.4 cm along the axis, so the file's cm label is right
+  and the loader no longer returns arbitrary units.
+- **000044 linear: reward areas as end segments.** The stated 1.9 m maze is
+  a 1.6 m stem with a 15 cm reward area continuing it at each end, placed
+  along the line the file's linearized coordinate traces (0.963 cm of 2-D
+  distance per linearized cm). The reward-end samples spread up to about
+  27 cm across the axis, so the reward segments' centreline is empty over
+  44 % of its length: the study calls this misfit, and the layout has no
+  width or shape for the reward areas to do better.
+- **The labyrinth at one chosen cell.** The paper's corridors are 1-1/8 in
+  on a 1.5 in grid, 0.75 of a cell; one cell, the corridor pitch, is chosen
+  so a corridor ends at the wall it shares with its neighbour. 4.6 % of nose
+  samples lie beyond half a cell (17.9 % beyond half the paper's corridor).
+- **Shipley's centre.** The radial maze is centred on the middle of the
+  samples' extent: the densest point is a reward well, and starting there
+  put three fitted arms on one arm (the first run of this batch reported
+  8.8 % outside for that wrong layout; centred, 0.7 % of maze samples are
+  beyond the 10 cm arms).
 
 ## What changed between declared and inferred
 
 - **Connectivity is the apparatus's.** Every declared track is one part
-  (Takigawa two, as stated) with no link through a wall or a gap. In the
-  fidelity study the labyrinth's path along the declared graph is 0.95 x
-  the corridor distance where the samples' grid gives 0.66 (G-110),
-  Takigawa's 0.97 where the grid gives 0.87, and the 000044 circle 0.96.
-- **Decoding error falls** on most tracks (000044 linear 8.5 -> 2.5 cm,
-  Takigawa 13.7 -> 7.8, Vollan 8.5 -> 5.0, the circle 12.1 -> 6.5, J16 5.7
-  -> 2.0, 000447 novel 18.5 -> 10.0, the Z-track 115 -> 67, Hafting 157 ->
-  106), because the decoder works on one coordinate along the track rather
-  than a 2-D grid, and errors are along the track. Where many samples are
-  off a stated width (J16, the W-tracks, hc-3) the declared error is over
-  the samples on the track only. It rises on Shipley's maze (51.9 -> 64.6),
-  000447's familiar maze (40.3 -> 61.9) and 000568 (32.1 -> 34.2); chance
-  rises with it where the along-track distances are longer than the grid's
-  (Shipley 93.9 -> 99.7, familiar 116 -> 133).
+  (Takigawa two, as stated). Against its own geometry a declared track
+  measures only its binning (the labyrinth's path along its bins 0.95 x the
+  distance along the graph it was built from, Takigawa's 0.97), so these
+  are not evidence of fit; what they replace is the samples' grid, whose
+  path against the same references is 0.66 and 0.87 and which links
+  corridors through walls (`jump_links` in the fidelity study).
+- **Samples placed.** With the placement tolerance, a declared track places
+  99 % of tracked samples (95 % on 000044's linear track): occupancy is
+  within 3 % of the grid's on every declared recording but that one (981
+  against 1,052 s).
+- **Decoding error over the same samples falls on most tracks**: 000044
+  linear 8.5 -> 2.5 cm, the circle 11.0 -> 6.5, Takigawa 13.7 -> 7.7,
+  Vollan 8.5 -> 5.0, J16 5.7 -> 2.0, hc-3 12.2 -> 8.5 px, Hafting 157 ->
+  104 cm, Agarwal 5.7 -> 3.9, the X maze 3.5 -> 2.5, 000447's familiar maze
+  40.6 -> 35.9. It rises on Shipley's maze (52.2 -> 62.3), hc-28 (16.6 ->
+  17.1) and 000568 (32.1 -> 34.2). The metrics differ: the declared error is
+  along the track graph, the inferred one along the grid's bins, which can
+  cut across a maze.
 - **Laps exist on the loops.** `detect_laps`' default, which found 1 lap on
-  the samples' grid of both 000044's circle and hc-18's circuit (G-037),
-  finds 67 and 35 on the declared loops, and 6 on the figure-8 (0 on the
-  grid). By start region the declared loops give 65, 31 and 14, the
-  samples' grids 85, 94 and 20 (truth: about 97 clockwise laps, about 107,
-  and 21 trials). The declared counts are low because 1 % of samples lie
-  outside the measured width and each splits the recording (G-151): at a
-  width with no sample outside, the figure-8 gives 20 and hc-18 92-97. So
-  the declared loop fixes the default method's loop detection but not its
-  undercount (G-037 stays open), and the region method is only as good as
-  the share of samples on the track.
-- **Replay runs on the track.** 000568 and 001695, which had no linearized
-  coordinate and errored (G-038), now decode on the declared track (Grosmark
-  rates 0 and 0.040); 000044 and the figure-8 no longer need the file's
-  coordinate (status `ok` instead of `workaround`): 000044 linear 0.140 ->
-  0.155, the circle 0.095 -> 0.055, the figure-8 0.028 -> 0.014. Davidson
-  rates are 0 on all of them in both runs.
+  the samples' grids of 000044's circle and hc-18's circuit (G-037), finds
+  67 and 35 on the declared loops, and 6 on the figure-8 (0 on the grid). By
+  start region the declared loops give 65, 31 and 14, the samples' grids
+  85, 94 and 20 (truth: about 97 clockwise laps, about 107, and 21 trials).
+  The declared counts are lower because the 1 % of samples outside the
+  tolerance each split the recording (G-151): with no sample outside, the
+  figure-8 gives 20 and hc-18 92-97.
+- **Replay runs on the track.** 000568 and 001695, which errored (G-038),
+  decode on the declared track (Grosmark rates 0 and 0.040); 000044 and the
+  figure-8 no longer need the file's coordinate (`ok` instead of a
+  workaround): 000044 linear 0.140 -> 0.155, the circle 0.095 -> 0.055,
+  the figure-8 0.028 -> 0.014. Davidson rates are 0 everywhere in both
+  runs.
 - **Spatial information is lower on most tracks** (000044 linear 0.81 ->
-  0.38 bits/spike, Vollan 0.29 -> 0.15, Takigawa 2.22 -> 1.66, the circle
-  0.83 -> 0.66), and the same or higher on the mazes with a stated width
-  (hc-28 0.93 -> 1.04, Shipley 0.24 -> 0.27). A track bin pools positions
-  across the track's width that the 2-D grid keeps apart, so the grid's
-  extra information is partly lateral position and the head's swings at
-  the reward ends; that is a hypothesis, not tested here.
-- **Occupancy falls by the share outside.** J16 802 -> 424 s, 000447 novel
-  912 -> 441 s, hc-28 811 -> 457 s, hc-3 535 -> 379 s, 000568 950 -> 819 s,
-  Shipley 1350 -> 1067 s, with no warning from `occupancy` or
-  `compute_spatial_rates` (G-155; G-152 for why).
+  0.38 bits/spike, Vollan 0.29 -> 0.15, Takigawa 2.22 -> 1.66, J16 2.58 ->
+  2.05, the circle 0.83 -> 0.66) and about the same on the mazes. A track
+  bin pools positions across the track that the 2-D grid keeps apart, so
+  the grid's extra information is partly lateral position; that is a
+  hypothesis, not tested here.
 - **Area-only scores are n/a on a track** (grid, border, egocentric
   boundary). On the samples' grids the border score refused on 19 of the 22
   (G-005) and the grid score had a finite value on 5.
+
+## Head scatter past the physical width
+
+On every track with a stated width, a share of head samples is beyond it
+(Beyond, above), and on none is it misplacement: the worst stretch's median
+offset is at most 1.81 cm (J16). On J16 the authors' graph is placed right
+(median signed offset -1.3 to +1.8 cm per corridor), only 13.1 % of samples
+are more than 10 cm off, and neither a uniform scale (1.024, 63.7 % ->
+57.2 % outside) nor a translation (50.4 %) explains it; the share falls
+from 87 % stopped to 35 % above 30 cm/s, and while running it is 61 % in
+the junction-end tenth of each edge against 34 % mid-edge (G-152). On the
+W-tracks and hc-3 it is highest while moving (hc-28 24 / 38 / 57 %), on J16
+and the Z-track while stopped: swings at turns and posture at the wells.
+This is the case for a placement tolerance separate from the physical width
+in neurospatial (G-152).
 
 ## Gaps
 
@@ -186,37 +215,43 @@ length is fitted).
   placement without a width; `bin_at` refuses it (docs).
 - G-151: one sample outside a track's width splits `detect_laps`'
   recording; at 1-5 % outside most laps are lost (figure-8, hc-18).
-- G-152: at a stated width, 5-64 % of head positions are off the track;
-  `track_width` is both the apparatus's width and the placement tolerance.
-- G-153: fitted mazes against their stated sizes (the Z-track 0.84-0.93 of
-  the stated sections; W-tracks 0.8-1.25 of ~80 cm).
+- G-152: one `track_width` is both the physical width and the placement
+  tolerance; head tracking leaves the physical width (J16 63.8 %, hc-28
+  37.3 %, hc-3 26.3 %, with the speed split and the J16 analysis).
+- G-153: fitted mazes against their stated sizes: 000447's novel W-track
+  (+17 / +19 %) and the Z-track (last section -16 %) are refused, 001845 for
+  its unsampled base; hc-28 -11 %, the familiar W-track +6 %, Shipley -6 to
+  +3 %.
 - G-154: 000044's circular coordinate leaves out the 30 cm reward area,
   which explains G-039's 72 % "on track" and its 134 cm extent.
 - G-155: occupancy and rate maps drop positions outside a declared track
   without a warning; `detect_laps` and `decoding_error` do warn.
 
 Existing gaps touched: G-110 and G-113 have a harness answer now (the
-labyrinth's graph, 000447 split); G-021 and G-038 for the figure-8 and
-000044 (declared loops, replay on the track); G-037 (defaults now find
-laps on a declared loop, still too few); G-016 (J16's and Hafting's graphs
-now have widths).
+labyrinth's graph, 000447 split), and G-110's links through the walls are
+found by the layout (`jump_links`), not by sample gaps, which cannot see a
+wall thinner than a bin; G-021 and G-038 for the figure-8 and 000044
+(declared loops, replay on the track); G-037 (defaults now find laps on a
+declared loop, still too few); G-016 (J16's and Hafting's graphs now have
+a tolerance).
 
 ## What could not be verified or done
 
 - Widths: no source read states the width of 000044's tracks, Vollan's
   linear track, 000165, 001695, Hafting's track, Takigawa's tracks, the
-  figure-8, Agarwal's maze or the X maze; those widths are measured from the
-  samples. hc-31's layout (Rich et al. 2014 not readable) and hc-18's
-  circuit (Drieu et al. 2018's supplement not readable) are not stated.
+  figure-8, Agarwal's maze or the X maze; those tracks have no physical
+  width recorded, only the measured tolerance. hc-31's layout (Rich et al.
+  2014 not readable) and hc-18's circuit (Drieu et al. 2018's supplement not
+  readable) are not stated.
 - What Agarwal's "2.13m-long" and the X maze's "130-cm" span is not stated,
   so neither length is compared; 001695's size is in a supplementary table
   that could not be read.
 - hc-3's length is not an independent check: its pixel scale comes from the
   same 250 cm.
-- The W-track and Z-track fits are of a stated topology with free node
-  positions; the stated sizes are compared, not imposed (G-153), since
-  imposing them would move the track off the samples.
-- Lap counts by region depend on the measured width (G-151); the truths
-  quoted are the unwrapped angle (G-037) and the file's trial table.
-- The 000044 recordings were streamed again for every run, so their 15
-  minutes per run were not shortened.
+- Most declared tracks are "not verified" in the fidelity study: their only
+  reference is the geometry they were declared from, or none.
+- The tracked point is "not stated" for 13 recordings; where it is
+  recorded, several strings rest on the loader's reading of its source
+  ("per the loader").
+- Lap counts by region depend on the tolerance (G-151); the truths quoted
+  are the unwrapped angle (G-037) and the file's trial table.

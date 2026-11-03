@@ -7,7 +7,7 @@
     "positions: Position/SpatialSeries columns 0, 1 (cm); range checked: 14.8 to 130.9 by 0.1 to 106.2 cm (largest span 116.1, expected 80-200); column 2 is speed in cm/s (median ratio 0.57 to the speed from x, y while moving, r = 0.71), dropped",
     "epochs: trials table rows as trials, split by trajectory_type (1 inbound, 0 outbound); 'epoch intervals' as run",
     "maze: the novel W-track, run epochs [1, 3]; positions outside them -> NaN (67.7% of samples kept); 55 of 104 trajectories inside them",
-    "environment: declared W-track: three parallel arms joined by a base (Tang, Shin & Jadhav 2023 STAR Methods: 'the W-maze (~80 x 80 cm with ~7-cm wide tracks)'); track width 7 cm (stated); placement: node positions fitted to this maze's samples (fitted base 92.6 cm, arms 84.8-101.4 cm; stated about 80 x 80 cm); edges (cm): base_0-base_1 49.6; base_0-arm_0 101.4; base_1-base_2 42.9; base_1-arm_1 84.8; base_2-arm_2 92.3; fit: samples a median 2.12 cm from the track (95th percentile 12.02), track length 371.1 cm, 64.1% of samples within half the track width"
+    "environment: inferred; the W-track: three parallel arms joined by a base fit (Tang, Shin & Jadhav 2023 STAR Methods: 'the W-maze (~80 x 80 cm with ~7-cm wide tracks)'; node positions fitted to this maze's samples (fitted base 93.5 cm, arms 87.1-105.1 cm; stated about 80 x 80 cm); edges (cm): base_0-base_1 49.7; base_0-arm_0 105.1; base_1-base_2 43.8; base_1-arm_1 87.1; base_2-arm_2 92.4) was refused: base +17% of the stated length (limit 15%); arms +19% of the stated length (limit 15%); tracked point: not stated; on the refused layout, physical width 7 cm (stated), 35.8% of samples beyond half of it (22% at 0-4 cm/s, 50% at 4-30 cm/s, 44% at 30-inf cm/s)"
   ],
   "expectations": [
     {
@@ -33,7 +33,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+    "git_commit": "3337409671746cf93c7ce7d8c7d4b460cee0e9dc"
   },
   "load_warnings": [
     {
@@ -62,8 +62,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.133,
-      "peak_mb": 6.1
+      "seconds": 0.11,
+      "peak_mb": 6.2
     },
     "env.occupancy": {
       "status": "ok",
@@ -76,7 +76,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.048,
+      "seconds": 0.032,
       "peak_mb": 9.6
     },
     "env.declared": {
@@ -99,7 +99,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.548,
+      "seconds": 0.409,
       "peak_mb": 37.2
     },
     "rates.spatial_information": {
@@ -112,7 +112,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.002,
       "peak_mb": 4.5
     },
     "rates.information_vs_shifts": {
@@ -127,7 +127,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.422,
+      "seconds": 0.328,
       "peak_mb": 17.2
     },
     "cells.place_screen": {
@@ -139,7 +139,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.056,
+      "seconds": 0.023,
       "peak_mb": 56.2
     },
     "cells.grid_score": {
@@ -152,7 +152,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.445,
+      "seconds": 0.356,
       "peak_mb": 10.2
     },
     "cells.border_score": {
@@ -179,14 +179,15 @@
       "summary": {
         "median_error": 18.535533905932738,
         "chance_median_error": 95.35533905932738,
-        "chance_frac_disconnected": 0.0006504065040650406,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0003252032520325203,
         "units": "cm",
         "n_time_bins": 3075
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.677,
+      "seconds": 0.37,
       "peak_mb": 65.7
     },
     "io.nwb_roundtrip": {
@@ -197,8 +198,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.085,
-      "peak_mb": 10.2
+      "seconds": 2.682,
+      "peak_mb": 11.1
     },
     "env.from_graph": {
       "status": "n/a",
@@ -218,7 +219,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.034,
+      "seconds": 0.026,
       "peak_mb": 10.5
     },
     "behavior.laps": {
@@ -230,7 +231,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.046,
+      "seconds": 0.039,
       "peak_mb": 7.0
     },
     "behavior.turn_sequence": {
@@ -269,7 +270,7 @@
           "count": 1
         }
       ],
-      "seconds": 11.677,
+      "seconds": 13.228,
       "peak_mb": 31.3
     },
     "io.read_pose": {
@@ -286,7 +287,7 @@
           "count": 1
         }
       ],
-      "seconds": 11.087,
+      "seconds": 12.273,
       "peak_mb": 27.2
     },
     "imaging.rates": {

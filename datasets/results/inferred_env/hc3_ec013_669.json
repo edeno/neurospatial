@@ -9,7 +9,7 @@
     "scale: 0.870 cm per pixel inferred from the stated 250 cm apparatus; used only for bin_size 2.87 px and min_speed 4.60 px/s",
     "headings: first LED in front (back-to-front angle minus movement direction above 10 cm/s: circular mean 6.2 deg, median spread 17.8 deg; the other order gives -173.8 deg); 5.1% of tracked frames have both LEDs at one point -> NaN; frame of the stored pixel axes (y direction unstated)",
     "spikes: .res samples / 20000 Hz; 72 units kept of 77 clusters >= 2 (the cell table's units; 53 listed units have no spikes in this session)",
-    "environment: declared straight track 250 x 7 cm (Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7 cm2)'; in pixels at the inferred scale, which comes from the same 250 cm); track width 8.04355 pixel (stated); placement: along the samples' principal axis at 36.9 deg, centred between their 0.5th and 99.5th percentiles along it (span 280.3 pixel); 0.1% of samples lie beyond the ends; fit: samples a median 2.13 pixel from the track (95th percentile 11.80), track length 287.3 pixel, 73.7% of samples within half the track width"
+    "environment: declared straight track 250 x 7 cm (Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7 cm2)'; in pixels at the inferred scale, which comes from the same 250 cm); tracked point: the midpoint of two head-mounted LEDs (hc-3 .whl: two LEDs per frame); physical width 8.04355 pixel (stated), 26.3% of samples beyond half of it (19% at 0-4.59631 pixel/s, 34% at 4.59631-34.4723 pixel/s, 15% at 34.4723-inf pixel/s); placement tolerance 29.3 pixel (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: along the samples' principal axis at 36.9 deg, centred between their 0.5th and 99.5th percentiles along it (span 280.3 pixel); 0.1% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 2.13 pixel, worst stretch bias 0.03 pixel (limit 2.87), worst unsupported share of a segment 0%; track length 287.3 pixel"
   ],
   "expectations": [
     {
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+    "git_commit": "3337409671746cf93c7ce7d8c7d4b460cee0e9dc"
   },
   "load_warnings": [],
   "operations": {
@@ -72,7 +72,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.05,
+      "seconds": 0.045,
       "peak_mb": 2.6
     },
     "env.occupancy": {
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.027,
+      "seconds": 0.022,
       "peak_mb": 3.9
     },
     "env.declared": {
@@ -109,7 +109,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.179,
+      "seconds": 0.149,
       "peak_mb": 9.0
     },
     "rates.spatial_information": {
@@ -122,7 +122,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 2.6
     },
     "rates.information_vs_shifts": {
@@ -137,7 +137,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.243,
+      "seconds": 0.191,
       "peak_mb": 6.5
     },
     "cells.place_screen": {
@@ -149,7 +149,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.006,
       "peak_mb": 12.0
     },
     "cells.grid_score": {
@@ -160,7 +160,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.542,
+      "seconds": 0.435,
       "peak_mb": 26.8
     },
     "cells.border_score": {
@@ -183,7 +183,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.057,
+      "seconds": 0.049,
       "peak_mb": 6.2
     },
     "rates.egocentric_boundary": {
@@ -201,13 +201,24 @@
         "median_error": 12.176378772032358,
         "chance_median_error": 113.93465140422641,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "pixel",
-        "n_time_bins": 1507
+        "n_time_bins": 1507,
+        "median_error_on_declared": 12.176378772032358,
+        "n_on_declared": 1412
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 0.109,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        }
+      ],
+      "seconds": 0.098,
       "peak_mb": 15.2
     },
     "io.nwb_roundtrip": {
@@ -226,8 +237,8 @@
           "count": 2
         }
       ],
-      "seconds": 2.807,
-      "peak_mb": 6.3
+      "seconds": 2.416,
+      "peak_mb": 5.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -247,7 +258,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.025,
+      "seconds": 0.019,
       "peak_mb": 3.3
     },
     "behavior.laps": {
@@ -256,7 +267,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.014,
       "peak_mb": 9.9
     },
     "behavior.turn_sequence": {

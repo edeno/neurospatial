@@ -12,7 +12,7 @@
     "times: clean.t as stored (s)",
     "spike_times: split by spike_id into 109 units",
     "unit_ids: id_conversion column 2 (1000 x tetrode + cluster)",
-    "environment: declared two tracks, each the authors' centreline as a path (two components) (file: track_mask_x, track_mask_y (each track's centreline); Tirole et al. 2022: 'two novel linear tracks (2 m)'; width not stated); track width not stated; measured 41.4 cm, twice the samples' 99% quantile distance from the track; placement: the centrelines in cm (not fitted), simplified to within 0.5 cm (8 segments); fit: samples a median 3.70 cm from the track (95th percentile 16.80), track length 399.4 cm, 99.0% of samples within half the track width"
+    "environment: declared two tracks, each the authors' centreline as a path (two components) (file: track_mask_x, track_mask_y (each track's centreline); Tirole et al. 2022: 'two novel linear tracks (2 m)'; width not stated); tracked point: not stated; physical width not stated; placement tolerance 41.4 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the centrelines in cm, simplified to within 0.5 cm (8 segments) (authors' centrelines); fit: median |lateral offset| 4.57 cm, worst stretch bias 4.12 cm (limit 4), worst unsupported share of a segment 0%; track length 399.4 cm"
   ],
   "expectations": [
     {
@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "60ab3ec75f137230a630d20f7eeec78979fb8022"
+    "git_commit": "095a98a6da89ce8cd3b907a911d70cf6143232ac"
   },
   "load_warnings": [],
   "operations": {
@@ -62,8 +62,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.16,
-      "peak_mb": 9.3
+      "seconds": 0.096,
+      "peak_mb": 9.2
     },
     "env.occupancy": {
       "status": "ok",
@@ -76,7 +76,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.206,
+      "seconds": 0.087,
       "peak_mb": 24.5
     },
     "env.declared": {
@@ -90,7 +90,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.056,
+      "seconds": 0.016,
       "peak_mb": 7.3
     },
     "rates.spatial": {
@@ -104,7 +104,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.492,
+      "seconds": 0.212,
       "peak_mb": 47.2
     },
     "rates.spatial_information": {
@@ -132,7 +132,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.971,
+      "seconds": 0.922,
       "peak_mb": 57.0
     },
     "cells.place_screen": {
@@ -144,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.001,
       "peak_mb": 0.8
     },
     "cells.grid_score": {
@@ -179,10 +179,13 @@
       "status": "ok",
       "summary": {
         "median_error": 7.786768200301134,
-        "chance_median_error": 76.23806938223468,
-        "chance_frac_disconnected": 0.5186449579831933,
+        "chance_median_error": 76.56863633672474,
+        "chance_frac_disconnected": 0.5103668261562998,
+        "frac_actual_outside": 0.01207983193277311,
         "units": "cm",
-        "n_time_bins": 3997
+        "n_time_bins": 3997,
+        "median_error_on_declared": 7.659005618653923,
+        "n_on_declared": 3762
       },
       "note": "",
       "gap": null,
@@ -192,10 +195,10 @@
           "origin": "neurospatial",
           "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
           "example": "decoding_error(): 36 of 3997 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
-          "count": 2
+          "count": 1
         }
       ],
-      "seconds": 0.582,
+      "seconds": 0.271,
       "peak_mb": 47.1
     },
     "io.nwb_roundtrip": {
@@ -206,7 +209,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.741,
+      "seconds": 2.066,
       "peak_mb": 2.7
     },
     "env.from_graph": {
@@ -230,7 +233,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.094,
+      "seconds": 0.053,
       "peak_mb": 19.9
     },
     "behavior.laps": {
@@ -239,7 +242,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.074,
+      "seconds": 0.035,
       "peak_mb": 18.7
     },
     "behavior.turn_sequence": {
@@ -251,7 +254,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.107,
+      "seconds": 0.048,
       "peak_mb": 9.0
     },
     "replay.compare_methods": {

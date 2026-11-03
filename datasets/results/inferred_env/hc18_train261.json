@@ -8,7 +8,7 @@
     "positions: one LED, video pixels as stored, -1 -> NaN (0.44%); range checked: 3.0 to 707.0 by 6.0 to 570.0 pixel (largest span 704.0, expected 400-768)",
     "spikes: .res samples / 32552.1 Hz (the .xml clock); 46 clusters >= 2 on 8 shanks; last spike 19964 s",
     "epochs: .cat.evt ms / 1000; travel = PassiveForward + PseudoActiveForward (7, 1512 s)",
-    "environment: declared closed circuit as a 72-segment loop (hc-18: a model train on a closed circuit (no shape or size stated)); track width not stated; measured 35.2 pixel, twice the samples' 99% quantile distance from the track; placement: the travel samples' median radius in each of 72 equal angular sectors around their centre; lap cut (geometry['lap_start_region']) at the loop's westmost point, a stated cut, not a start the source names; fit: samples a median 2.86 pixel from the track (95th percentile 11.61), track length 1994.8 pixel, 99.0% of samples within half the track width"
+    "environment: declared closed circuit as a 72-segment loop (hc-18: a model train on a closed circuit (no shape or size stated)); tracked point: one head LED (hc-18, per the loader); physical width not stated; placement tolerance 35.2 pixel (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the travel samples' median radius in each of 72 equal angular sectors around their centre; lap cut (geometry['lap_start_region']) at the loop's westmost point, a stated cut, not a start the source names (fitted to the samples); fit: median |lateral offset| 2.84 pixel, worst stretch bias 1.20 pixel (limit 5), worst unsupported share of a segment 0%; track length 1994.8 pixel"
   ],
   "expectations": [
     {
@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
   },
   "load_warnings": [],
   "operations": {
@@ -66,7 +66,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.376,
+      "seconds": 0.408,
       "peak_mb": 58.1
     },
     "env.occupancy": {
@@ -80,7 +80,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.201,
+      "seconds": 0.199,
       "peak_mb": 97.1
     },
     "env.declared": {
@@ -103,8 +103,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.281,
-      "peak_mb": 185.0
+      "seconds": 2.868,
+      "peak_mb": 184.9
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -116,7 +116,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.003,
       "peak_mb": 8.4
     },
     "rates.information_vs_shifts": {
@@ -131,7 +131,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.424,
+      "seconds": 2.689,
       "peak_mb": 113.0
     },
     "cells.place_screen": {
@@ -143,7 +143,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.607,
+      "seconds": 0.355,
       "peak_mb": 172.2
     },
     "cells.grid_score": {
@@ -156,7 +156,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.733,
+      "seconds": 0.765,
       "peak_mb": 79.3
     },
     "cells.border_score": {
@@ -182,15 +182,26 @@
       "status": "ok",
       "summary": {
         "median_error": 303.2842712474619,
-        "chance_median_error": 512.8858223313767,
-        "chance_frac_disconnected": 0.003367003367003367,
+        "chance_median_error": 505.56349186104046,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0016835016835016834,
         "units": "pixel",
-        "n_time_bins": 3138
+        "n_time_bins": 3138,
+        "median_error_on_declared": 303.492424049175,
+        "n_on_declared": 2932
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 2.001,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        }
+      ],
+      "seconds": 2.304,
       "peak_mb": 141.2
     },
     "io.nwb_roundtrip": {
@@ -209,8 +220,8 @@
           "count": 2
         }
       ],
-      "seconds": 3.721,
-      "peak_mb": 23.1
+      "seconds": 4.551,
+      "peak_mb": 22.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -241,7 +252,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.647,
+      "seconds": 0.712,
       "peak_mb": 97.1
     },
     "behavior.turn_sequence": {

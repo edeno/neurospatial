@@ -9,7 +9,7 @@
     "times: t as stored; speed-filtered at 5 cm/s by the authors, so 132 gaps longer than 2 dt (longest 332.4 s)",
     "sessions: ['linear_track_1'] [[7227.0, 7486.0]]; 55.0% of samples lie outside the listed sessions and are kept",
     "units: 389 from areas ['mec'], Kilosort labels ['good', 'mua'] kept",
-    "environment: declared straight track 200 cm (Vollan et al. 2025 Methods: 'a 200 cm linear track'; width not stated); track width not stated; measured 31.3 cm, twice the samples' 99% quantile distance from the track; placement: along the samples' principal axis at 87.4 deg, centred between their 0.5th and 99.5th percentiles along it (span 210.9 cm); 11.6% of samples lie beyond the ends; fit: samples a median 3.97 cm from the track (95th percentile 13.08), track length 200.0 cm, 99.0% of samples within half the track width"
+    "environment: declared straight track 200 cm (Vollan et al. 2025 Methods: 'a 200 cm linear track'; width not stated); tracked point: the head, OptiTrack motion capture (per the loader, from the dataset's documentation); physical width not stated; placement tolerance 31.3 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: along the samples' principal axis at 87.4 deg, centred between their 0.5th and 99.5th percentiles along it (span 210.9 cm); 11.6% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 3.19 cm, worst stretch bias 0.21 cm (limit 2.5), worst unsupported share of a segment 0%, length +5% of the stated; track length 200.0 cm"
   ],
   "expectations": [
     {
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
+    "git_commit": "66253b33611243fb56cd17f973a688e24b1f02cc"
   },
   "load_warnings": [],
   "operations": {
@@ -64,7 +64,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.053,
+      "seconds": 0.05,
       "peak_mb": 2.1
     },
     "env.occupancy": {
@@ -86,7 +86,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.017,
+      "seconds": 0.014,
       "peak_mb": 4.2
     },
     "env.declared": {
@@ -100,7 +100,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.006,
       "peak_mb": 4.6
     },
     "rates.spatial": {
@@ -122,7 +122,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.083,
+      "seconds": 0.07,
       "peak_mb": 5.2
     },
     "rates.spatial_information": {
@@ -135,7 +135,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 2.1
     },
     "rates.information_vs_shifts": {
@@ -158,7 +158,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.349,
+      "seconds": 0.274,
       "peak_mb": 7.3
     },
     "cells.place_screen": {
@@ -210,7 +210,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.14,
+      "seconds": 0.119,
       "peak_mb": 15.8
     },
     "rates.egocentric_boundary": {
@@ -226,10 +226,13 @@
       "status": "ok",
       "summary": {
         "median_error": 5.000000000000008,
-        "chance_median_error": 62.50000000000004,
-        "chance_frac_disconnected": 0.03866432337434095,
+        "chance_median_error": 52.50000000000002,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.019332161687170474,
         "units": "cm",
-        "n_time_bins": 569
+        "n_time_bins": 569,
+        "median_error_on_declared": 5.000000000000008,
+        "n_on_declared": 558
       },
       "note": "",
       "gap": null,
@@ -249,7 +252,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.119,
+      "seconds": 0.109,
       "peak_mb": 9.7
     },
     "io.nwb_roundtrip": {
@@ -260,8 +263,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.167,
-      "peak_mb": 3.3
+      "seconds": 2.077,
+      "peak_mb": 2.5
     },
     "env.from_graph": {
       "status": "ok",
@@ -298,7 +301,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.009,
+      "seconds": 0.032,
       "peak_mb": 4.1
     },
     "behavior.turn_sequence": {
@@ -310,7 +313,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.032,
       "peak_mb": 4.1
     },
     "replay.compare_methods": {

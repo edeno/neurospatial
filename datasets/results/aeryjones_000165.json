@@ -9,7 +9,7 @@
     "positions: read_position, cm; range checked (1st-99th percentile span 35.1 by 4.9), against the paper's 36 cm track",
     "spike_times: read_units (32 channel multi-unit trains); the spike at exactly 0.0 s dropped from 31 trains; spikes end at 462.1 s of 1504 s tracked; every channel is silent from 269.6 s to 460.3 s, then 553 spikes fall in 1.7 s",
     "params['analysis_epochs']: 0 to 269.6 s, the end of the continuous spike recording",
-    "environment: declared straight track 36 cm (Aery Jones et al. 2021 Methods: 'a 36 cm linear track'; width not stated); track width not stated; measured 5.42 cm, twice the samples' 99% quantile distance from the track; placement: along the samples' principal axis at 4.2 deg, centred between their 0.5th and 99.5th percentiles along it (span 35.4 cm); 0.3% of samples lie beyond the ends; fit: samples a median 0.44 cm from the track (95th percentile 1.52), track length 36.0 cm, 99.1% of samples within half the track width"
+    "environment: declared straight track 36 cm (Aery Jones et al. 2021, Cell Reports 37:110159 (PMC9069800), Methods: 'a 36 cm linear track'; width not stated); tracked point: not stated; physical width not stated; placement tolerance 5.42 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 0.9% of samples are dropped by construction); placement: along the samples' principal axis at 4.2 deg, centred between their 0.5th and 99.5th percentiles along it (span 35.4 cm); 0.3% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 0.44 cm, worst stretch bias 0.15 cm (limit 1), worst unsupported share of a segment 0%, length -2% of the stated; track length 36.0 cm"
   ],
   "expectations": [
     {
@@ -40,7 +40,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
+    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
   },
   "load_warnings": [
     {
@@ -62,7 +62,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.023,
+      "seconds": 0.018,
       "peak_mb": 1.9
     },
     "env.occupancy": {
@@ -76,7 +76,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.013,
       "peak_mb": 4.5
     },
     "env.declared": {
@@ -104,7 +104,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.061,
+      "seconds": 0.046,
       "peak_mb": 19.8
     },
     "rates.spatial_information": {
@@ -132,7 +132,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.279,
+      "seconds": 0.221,
       "peak_mb": 24.3
     },
     "cells.place_screen": {
@@ -181,13 +181,16 @@
         "median_error": 15.999999999999995,
         "chance_median_error": 6.999999999999998,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 478
+        "n_time_bins": 478,
+        "median_error_on_declared": 15.999999999999995,
+        "n_on_declared": 478
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.086,
+      "seconds": 0.065,
       "peak_mb": 19.8
     },
     "io.nwb_roundtrip": {
@@ -198,8 +201,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.13,
-      "peak_mb": 1.7
+      "seconds": 1.998,
+      "peak_mb": 1.6
     },
     "env.from_graph": {
       "status": "ok",
@@ -228,7 +231,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.009,
       "peak_mb": 4.4
     },
     "behavior.turn_sequence": {
@@ -240,7 +243,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.015,
+      "seconds": 0.011,
       "peak_mb": 4.4
     },
     "replay.compare_methods": {
@@ -270,7 +273,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.383,
+      "seconds": 0.372,
       "peak_mb": 13.8
     },
     "io.read_pose": {
@@ -287,7 +290,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.366,
+      "seconds": 0.322,
       "peak_mb": 0.4
     },
     "imaging.rates": {
