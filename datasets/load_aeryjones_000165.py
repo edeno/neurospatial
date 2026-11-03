@@ -28,8 +28,9 @@ What the loader converts:
   cannot name the right offset either. The spike at 0.0 is dropped from each
   train; the late fragment is kept.
 - Length unit: positions are labelled centimeters. The tracked span is 35
-  by 6 (1st-99th percentile) and Aery Jones et al. 2021 (Cell Reports,
-  Methods) state "a 36 cm linear track", so the label is right: cm. The
+  by 6 (1st-99th percentile) and Aery Jones et al. 2021 (Cell Reports
+  37:110159, Methods, read in the PMC9069800 full text) state "a 36 cm
+  linear track", so the label is right: cm. The
   90th percentile speed is 6.6 cm/s.
 
 Analysis choices (``params``):
@@ -143,7 +144,8 @@ def load(cache: Path | None = None) -> Recording:
         graph,
         positions,
         kind=f"straight track {_TRACK_CM:g} cm",
-        source="Aery Jones et al. 2021 Methods: 'a 36 cm linear track'; width not stated",
+        source="Aery Jones et al. 2021, Cell Reports 37:110159 (PMC9069800), Methods:"
+        " 'a 36 cm linear track'; width not stated",
         bin_size=1.0,
         track_width=None,
         units="cm",
