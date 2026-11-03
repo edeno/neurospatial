@@ -74,6 +74,20 @@ def test_counted_time_too_short_for_the_shift_raises():
         shifted_trains([np.array([1.0])], np.array([[0.0, 30.0]]), seed=0)
 
 
+def test_intervals_in_any_order_shift_as_sorted():
+    train = np.linspace(11.0, 555.0, 30)
+    sorted_out = shifted_trains([train], INTERVALS, seed=4)
+    shuffled_out = shifted_trains([train], INTERVALS[::-1], seed=4)
+    np.testing.assert_array_equal(sorted_out[0], shuffled_out[0])
+
+
+def test_overlapping_intervals_raise():
+    with pytest.raises(ValueError, match="overlap"):
+        shifted_trains(
+            [np.array([1.0])], np.array([[0.0, 100.0], [50.0, 200.0]]), seed=0
+        )
+
+
 @pytest.fixture(scope="module")
 def untuned_in_short_epochs(simulated_recording):
     # Untuned Poisson units that fire only in the counted epochs, a fifth of

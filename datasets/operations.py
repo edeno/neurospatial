@@ -216,10 +216,19 @@ def shifted_trains(
     the real maps' spike counts; spikes outside it are counted in neither
     and stay put. Spike-to-spike intervals are kept except across a join,
     but firing locked to the intervals themselves (a flight's or a run's
-    start) is not.
+    start) is not. The intervals are taken in time order; overlapping ones
+    raise ``ValueError`` (their time would be counted twice).
     """
     intervals = np.asarray(intervals, dtype=float).reshape(-1, 2)
+    intervals = intervals[np.argsort(intervals[:, 0], kind="stable")]
     starts, stops = intervals[:, 0], intervals[:, 1]
+    if np.any(starts[1:] < stops[:-1]):
+        k = int(np.flatnonzero(starts[1:] < stops[:-1])[0])
+        message = (
+            f"counted intervals overlap: [{starts[k]:g}, {stops[k]:g}) and"
+            f" [{starts[k + 1]:g}, {stops[k + 1]:g}); merge them before shifting"
+        )
+        raise ValueError(message)
     cum = np.concatenate([[0.0], np.cumsum(stops - starts)])
     total = float(cum[-1])
     if total <= 2 * MIN_SHIFT_S:
