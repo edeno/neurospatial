@@ -1,6 +1,6 @@
 # Dataset loaders: design
 
-Status: design, written 2026-11-03 from a conversation with the maintainer.
+Status: design approved by the maintainer 2026-11-03.
 The implementation plan comes after this is approved.
 
 ## Intent
@@ -20,6 +20,31 @@ data. In their first ten minutes they should be able to:
 3. **Reproduce** a small result or known property from the paper, which is
    their first worked analysis and their evidence that the data and the
    package are right.
+
+Two more uses, added by the maintainer at approval:
+
+- **Meta-analyses across datasets.** Someone comparing place-field size or
+  the share of HD cells across many labs needs:
+  - every loader to return the same attributes in the same units and
+    frames;
+  - a catalogue they can filter by species, brain region, apparatus kind,
+    verified status and license;
+  - to iterate over sessions without loading them all into memory;
+  - each session to record what is needed to reproduce the result: the
+    archive, the file checksum, the loader version, the conversions and
+    whether each is stated or inferred.
+- **Testing a method.** Someone benchmarking a new decoder or cell
+  classifier on real data needs:
+  - the same fixed held-out split per session, so results are comparable
+    across papers (`rec.params` already carries the train and test epochs);
+  - the watch-out list, so they know which sessions are hard and why;
+  - known answers where they exist: the authors' labels, and the worked
+    result.
+
+  Planted-truth sessions, with simulated cells on a recording's real path
+  and declared apparatus (survey phase 6, rung 4), would be the strongest
+  test. Offering them from the loaders is a later step, not part of the
+  first plan.
 
 Every lab that analyzes these datasets rediscovers the same traps: times in
 ms, positions in pixels labelled cm, swapped or coincident LEDs, two tracks
