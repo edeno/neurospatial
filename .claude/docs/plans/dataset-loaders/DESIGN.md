@@ -319,7 +319,7 @@ maintainer expects some to be hard.
    - where a session exists in two archives, both agree (hc-11 against DANDI
      000044 already does).
 
-   A failed check refuses the load; it does not warn.
+   A failed clock check refuses the load (see "Failed checks" below).
 3. **Wrong environment.** The environment is declared from the stated
    apparatus and judged on misfit evidence, not on tracking spread (survey
    phase 5). An inferred environment says so in the summary.
@@ -376,10 +376,25 @@ maintainer expects some to be hard.
 - **The clock check,** "spikes lie within the tracked span", is scoped to
   tracked epochs. Sleep without tracking is normal (Mouse32, hc-11,
   000044).
-- **No override for a failed check.** A failed check refuses with an
-  actionable message: what failed, the numbers, and what would fix it.
-  Sessions nobody has examined by hand still load (see Sessions); a session
-  whose own checks fail does not.
+- **Failed checks: refuse only wrong arrays, with an override.** The
+  maintainer decided this on 2026-11-03, replacing my earlier "no override",
+  in line with the rule to warn about problems in the data rather than
+  create new ones:
+  - **Refusals.** Two checks refuse: the clock (spikes, events or epochs
+    disagree with the tracked span) and units (the position span is outside
+    the dataset's stated range). In both cases the loader's arrays would be
+    wrong. The refusal says what failed, the numbers, what would fix it, and
+    the keyword that loads anyway
+    (`load(..., accept_failed_checks=("clock",))`).
+  - **What an accepted failure does.** The session loads, the failure heads
+    "Watch out" with its numbers, and `rec.failed_checks` names it, so it
+    travels with the recording.
+  - **Warnings only.** Data-quality findings never refuse: samples at
+    exactly (0, 0), frozen or bridged tracking, and units silent in the
+    analysed epochs. They go into "Watch out" with their numbers, and the
+    positions stay as the file stores them.
+  - **Unchecked sessions.** Sessions nobody has examined by hand still
+    load (see Sessions).
 - **Worked results:**
   - The maintainer approves each one at PR review.
   - A dataset may ship before its worked result exists. The page then says

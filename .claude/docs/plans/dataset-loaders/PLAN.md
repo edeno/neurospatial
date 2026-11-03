@@ -68,7 +68,7 @@ Public names, at `neurospatial.datasets`:
 | Name | Signature | Returns |
 | --- | --- | --- |
 | `catalog` | `catalog() -> pandas.DataFrame` | one row per session. Columns: `dataset`, `session`, `species`, `brain_regions`, `apparatus`, `n_units`, `verified`, `default`, `license`, `archive`, `size_bytes`, `citation` |
-| `load` | `load(dataset, session=None, *, cache=None, stream=False) -> Recording` | the session. `session=None` is the dataset's default (tutorial-familiar) session |
+| `load` | `load(dataset, session=None, *, cache=None, stream=False, accept_failed_checks=()) -> Recording` | the session. `session=None` is the dataset's default (tutorial-familiar) session. `accept_failed_checks` names refusing checks (`"clock"`, `"units"`) to load through; each accepted failure is kept in `rec.failed_checks` and heads "Watch out" |
 | `fetch_all` | `fetch_all(dataset, *, cache=None) -> list[Path]` | downloads every session. Logs the total size first and refuses to start if the cache's disk has less free space than that |
 | `Recording` | frozen dataclass | see the attributes below |
 | `DatasetCheckError` | `NeurospatialError` subclass | raised when a session fails its checks |
@@ -100,6 +100,7 @@ Public names, at `neurospatial.datasets`:
 | `params` | `Mapping`: the analysis choices used by the worked result, including `train_epochs` and `test_epochs` |
 | `conversions` | `tuple[Conversion, ...]`. `Conversion(text, basis, evidence)`, with `basis` in `{"stated", "inferred"}` |
 | `watch_outs` | `tuple[str, ...]` |
+| `failed_checks` | `tuple[str, ...]`: refusing checks this session failed and the user accepted with `accept_failed_checks`; empty otherwise |
 | `verified` | `bool` |
 | `provenance` | `Provenance(archive, url, sha256, size_bytes, neurospatial_version, fetched_at)` |
 | `citation` | `str` |
@@ -139,12 +140,14 @@ Methods:
 
      Failures raise `InputError` with `_format_error`.
    - **Summary and repr.** `summary()` keys (each a property): `n_units`, `duration`, `n_dims`, `sampling_rate`, `tracked_fraction`, `longest_gap`, `median_speed`, `speed_p95`, `verified`. Declare their units in `_repr_units`: s, Hz, s, {units}/s.
-4. **The automatic checks (`_checks.py`).** They run on every session before `load` returns, and any failure raises `DatasetCheckError` with what failed, the numbers, and what would fix it. There is no override.
+4. **The automatic checks (`_checks.py`).** They run on every session before `load` returns.
+   - **Refusing checks:** clock and units. A failure raises `DatasetCheckError` with what failed, the numbers, what would fix it, and the keyword that loads anyway: `accept_failed_checks=("clock",)`, for example. An accepted failure goes into `rec.failed_checks` (a `tuple[str, ...]`) and is the first item under "Watch out".
+   - **Warning checks:** the rest. They go into `watch_outs` with their numbers and never change the arrays.
    - **Clock:** spikes lie within the tracked span on tracked epochs (an untracked sleep epoch is not tracked); events lie within the recording; epochs lie within the recording and don't overlap within one name.
    - **Units:** the position span is within the dataset's stated range, using `checked_span`'s logic; the sampling rate matches the stated rate within 1%.
-   - **Missing is not zero:** the share of samples at exactly (0, 0) is not above 0.1%. Lost tracking stored as zeros fails.
+   - **Missing is not zero** (warning): more than 0.1% of samples at exactly (0, 0) is reported as likely lost tracking stored as zeros. The samples are not changed. A loader whose source documents zeros as missing converts them to NaN as a stated `Conversion` instead.
    - **Frozen and bridged tracking:** runs of ≥ 10 identical position samples, and steps faster than the dataset's stated physical speed limit, are counted. They go into `watch_outs` as numbers, not refusals, because some apparatus has the animal still. The survey review found this pattern in Valero 000568 and 001880.
-   - **Unit inventory:** units with no spikes in the analysed epochs are counted in `units.fires_in_epochs` and reported.
+   - **Unit inventory** (warning): units with no spikes in the analysed epochs are counted in `units.fires_in_epochs` and reported.
 
    Tests use synthetic recordings, each failing exactly one check, and assert the message names it.
 5. **Summary text (`_summary.py`).**
@@ -274,9 +277,10 @@ Methods:
 | `tests/datasets/test_recording.py::test_validation_refuses_bad_shapes` | non-increasing `times`, mismatched `positions`, duplicate unit ids and an inferred `Conversion` without evidence each raise `InputError`, naming the field |
 | `test_recording.py::test_summary_keys_read_back` | every `summary()` key is a property of `rec` with that value |
 | `test_recording.py::test_arrays_read_only` | `rec.positions.flags.writeable` is False |
-| `tests/datasets/test_checks.py::test_each_check_fails_alone` | parametrized: for each check, a synthetic recording that fails only that check raises `DatasetCheckError`, naming it, with the numbers |
+| `tests/datasets/test_checks.py::test_each_check_fails_alone` | parametrized: for each refusing check, a synthetic recording that fails only that check raises `DatasetCheckError` naming it, its numbers and the `accept_failed_checks` value; for each warning check, it loads, with a watch-out naming it, and its arrays equal the input |
+| `test_checks.py::test_accepted_failure_travels` | `load(..., accept_failed_checks=("clock",))` on a clock-failing synthetic session returns it with `rec.failed_checks == ("clock",)`, and that failure is the first "Watch out" line; accepting a check that did not fail changes nothing |
 | `test_checks.py::test_untracked_sleep_passes` | spikes in an untracked sleep epoch don't fail the clock check |
-| `test_checks.py::test_origin_zeros_fail` | 1% of samples at exactly (0, 0) fails, and 0.05% passes |
+| `test_checks.py::test_origin_zeros_warn` | 1% of samples at exactly (0, 0) gives a watch-out with the share and leaves the positions unchanged; 0.05% gives none |
 | `tests/datasets/test_summary.py::test_summary_text` | a synthetic recording prints the six sections in order, "Watch out" last; an unverified one prints "Not yet checked by hand" |
 | `tests/datasets/test_overview.py::test_occupancy_panel_is_the_data` | the occupancy panel's array equals `env.occupancy(...)` and its NaNs are masked; a dataset without headings shows "not in this dataset" |
 | `tests/datasets/test_overview.py::test_animation_scene_holds_the_data` | `rec.animation()` on a synthetic recording has the occupancy field and position, raster, event and epoch overlays built from `rec`'s arrays; a heading-only recording raises `InputError` naming what is missing |
