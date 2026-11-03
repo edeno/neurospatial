@@ -582,8 +582,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   and `infer_active_bins=False`), so the corridor of voxels to y = -4.2 m is
   gone (0 % of voxels outside the room, against 4.4 %) and both feeders lie
   in the environment. The 3.66 % of samples outside `r_lim` are not placed
-  (`env.declared` `frac_samples_outside`), which the fidelity study judges a
-  mismatch (limit 2 %). Forli et al. 2025 state the indoor room as 5.6 x
+  (`env.declared` `frac_samples_outside`). The fidelity study first judged
+  that a mismatch (limit 2 %); with one verdict for every declared
+  environment (`_geometry.judge_declared`) it is a tracking and room
+  measure, reported and not judged: 0.11 % of the flight samples the
+  analyses use lie outside `r_lim`, split by speed 0.0 % below and 0.1 %
+  above the loader's 0.5 m/s `v_th`. The room is judged on stated facts
+  only, `r_lim`'s sides against the paper's room (x +3.6 %, y +0.0 %,
+  z -8.0 %, within 15 %): matches. Forli et al. 2025 state the indoor room as 5.6 x
   5.2 x 2.5 m and an outdoor enclosure 10.1 m long; `r_lim` and the
   samples' 5.7 m span place this session indoors. The paper's size centred
   on `r_lim` would leave 3.77 % outside, cutting samples at the x walls
@@ -2357,4 +2363,39 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: harness only (not neurospatial); give `Reference` an
   optional corridor width and excuse links whose bins both lie within half
   of it of a shared node
+- Status: open
+
+## G-157: Wall and segment support cannot tell a tracked point kept off the apparatus from apparatus drawn where the animal never went
+
+- Datasets: giocomo_000405, vollan_of, hc2_ec013_527, grieves_2020_lattice
+- Operation / step: `_geometry.judge_declared` (fidelity study, declared
+  environments)
+- Kind: harness-limitation
+- Evidence: one verdict for every declared environment flags part of the
+  apparatus with no sample near it: an outline side (a run of edges turning
+  less than 10 degrees; a circle is one side) with no sample within 3 bins
+  over more than 15 % of its length, and a track segment with no sample
+  within one bin over more than 25 % of it. Both limits were set before
+  this rerun of the arenas but without measuring their sensitivity; the
+  3 bins come from the tracks round, the 15 % from the maintainer's rule.
+  Four declared environments fail only this check. On 000405 69 % of one
+  side of the 150 x 130 cm field has no sample within 7.5 cm; the samples'
+  own rectangle is 8.2 % and 8.0 % short of the stated sides and their
+  outermost 5 % stay 7.3 cm inside the nearest wall all round. On Vollan's
+  150 cm circle 31 % of the wall has none within 7.5 cm (samples' diameter
+  4.3 % short, centre 2.2 % of the radius from the stated one). On hc-2's
+  elevated 180 cm square 36 % of one side has none within 3 bins (the
+  samples' sides 2.1 % and 3.0 % short). On the lattice 90 % of the 882
+  bar segments have over 25 % of their length with no head sample within
+  one 4 cm bin: the head is a median 6.0 cm from the nearest bar. In each
+  case the tracked point (a head marker) keeps off the walls or bars, which
+  the survey's rules expect, and the same numbers would follow from a wall
+  drawn a few cm too far out, so the check cannot tell them apart at these
+  limits.
+- Harness workaround: none; the verdicts stand as "mismatch" with the
+  reason, and the stated sizes, which all four fit within 15 %, are
+  reported beside them.
+- Proposed change: harness only; measure the check's sensitivity on
+  planted misfits (phase 6, rungs 2-3) and set the support distance from
+  a stated tracking offset where a source gives one
 - Status: open
