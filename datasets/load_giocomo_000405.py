@@ -26,6 +26,15 @@ What the loader converts, trusting value ranges over labels:
   20 ms bin, ``activity_kind="binned_rate"``.
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm.
+
+Environment (``geometry["environment"]``): the open field Gonzalez &
+Giocomo (eLife 2024, 13:RP85646, Methods "Open-Field"; open-access PDF read)
+state, "The dimensions of field are 1.3m x 1.5m", floor panels laid on the
+Tree-Maze frame. Which side is which is not stated: the 1.5 m side is matched
+to the longer side of the samples' fitted rectangle, and centre and rotation
+are fitted (``_geometry.declared_rectangle``); the residuals are in
+``conversions``. Whether the field has walls or open edges is not stated; the
+outline is declared as a wall (border scores treat both alike).
 """
 
 from __future__ import annotations
@@ -36,6 +45,7 @@ from typing import Any
 
 import numpy as np
 from _fetch import dandi_asset_url, fetch
+from _geometry import declared_rectangle, with_environment
 from _record import Range, Recording, check_expectations, validate_recording
 
 DATASET = {
@@ -91,7 +101,7 @@ def load(cache: Path | None = None) -> Recording:
 
     col = {name: data[:, i] for i, name in enumerate(columns)}
     times = _PERIOD_S * np.arange(len(data))
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="Cl_OF_120618",
         source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",
@@ -110,6 +120,18 @@ def load(cache: Path | None = None) -> Recording:
             "times: 0.02 * arange(n) s; track_data's rate attribute (0.02) is the period",
             "headings: none; track_data column hd is the direction of movement from x, y",
             "activity: firing_rates (labelled uv) as binned rates in Hz",
+        ),
+    )
+    return with_environment(
+        rec,
+        *declared_rectangle(
+            rec.positions,
+            150.0,
+            130.0,
+            bin_size=rec.params["bin_size"],
+            units="cm",
+            name=DATASET["key"],
+            source="Gonzalez & Giocomo 2024 eLife Methods: 'The dimensions of field are 1.3m x 1.5m'",
         ),
     )
 

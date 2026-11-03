@@ -39,6 +39,13 @@ Analysis choices (``params``):
   fields).
 - ``dt`` 0.25 s, alternating 60 s ``train_epochs``/``test_epochs``.
 - every unit is kept, "mua" included, as for the other datasets' unit tables.
+
+Environment (``geometry["environment"]``): the 1 m square arena (50 cm
+walls) the file's epochs table states, built with
+``Environment.from_polygon`` at ``bin_size``. The stated frame ("Bottom left of
+the arena") does not hold, so centre and rotation are fitted to the samples
+(``_geometry.declared_rectangle``); the residual of their own fitted sides
+against 100 cm is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -49,6 +56,7 @@ from typing import Any
 
 import numpy as np
 from _fetch import fetch, open_nwb
+from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
     Recording,
@@ -156,7 +164,7 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"expected four novel-object epochs, got {epochs['task'].tolist()}"
         raise ValueError(msg)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="29629_2024-Oct-29_15-05-13",
         source=f"{DATASET['source']} {_PATH}",
@@ -192,6 +200,18 @@ def load(cache: Path | None = None) -> Recording:
             f" probes ({len(table)} rows, {table.index.nunique()} distinct ids)",
             "epochs: the four novel-object epochs in order: empty, object 1-3"
             " (data descriptor); object positions are not in the file",
+        ),
+    )
+    return with_environment(
+        rec,
+        *declared_rectangle(
+            rec.positions,
+            100.0,
+            100.0,
+            bin_size=rec.params["bin_size"],
+            units="cm",
+            name=DATASET["key"],
+            source="NWB epochs table: arena_dimensions [100, 100, 50] cm, square",
         ),
     )
 
