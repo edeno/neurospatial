@@ -6,6 +6,7 @@ import pytest
 from neurospatial import InputError
 from neurospatial._intervals import (
     IntervalGates,
+    excluded_intervals_message,
     interval_gates,
     interval_valid_mask,
     start_allocated_occupancy,
@@ -90,7 +91,8 @@ def test_max_gap_above_the_sampling_interval_is_silent(recwarn, offset):
 
 def test_all_excluded_without_named_gates_reads_cleanly():
     with pytest.raises(
-        InputError, match=r"Interval filtering excluded ALL trajectory intervals, so"
+        InputError,
+        match=r"Interval filtering excluded ALL trajectory intervals\.\nWhy:",
     ) as caught:
         warn_excluded_intervals(IntervalGates(np.arange(4.0), np.zeros(3, bool), None))
     message = str(caught.value)
@@ -177,3 +179,28 @@ def test_start_allocated_occupancy():
     np.testing.assert_array_equal(
         start_allocated_occupancy(bins, dt, mask, 3, return_seconds=False), [1, 1, 0]
     )
+
+
+@pytest.mark.parametrize("raise_if_empty", [True, False])
+def test_all_excluded_message_has_what_why_fix(raise_if_empty):
+    """What was excluded, why it matters for this result, and how to fix it.
+
+    A refusal says it returns nothing rather than the empty result.
+    """
+    times = np.arange(10.0) * 2.0  # every step longer than max_gap=1.0
+    gates = interval_gates(times, max_gap=1.0)
+    assert not gates.mask.any()
+    message = excluded_intervals_message(
+        gates, result="the rate map is empty", raise_if_empty=False
+    )
+    if raise_if_empty:
+        with pytest.raises(InputError) as caught:
+            excluded_intervals_message(gates, result="the rate map is empty")
+        message = str(caught.value)
+    what, why, fix = message.split("\n")
+    assert what.startswith("Interval filtering excluded ALL trajectory intervals")
+    assert what.endswith("(active gate(s) max_gap=1.0).")
+    assert why.startswith("Why: no sampling interval is left to analyse")
+    assert fix.startswith("Fix: the median sampling interval is 2 s")
+    assert "the rate map is empty" in why
+    assert ("the call refuses" in why) is raise_if_empty

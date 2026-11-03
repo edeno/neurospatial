@@ -1030,17 +1030,18 @@ def _cells_have_loop(env: Environment) -> bool | None:
     )
 
 
-def _require_loop(env: Environment, method: str) -> None:
+def _require_loop(env: Environment, method: str, *, has_loop: bool | None) -> None:
     """Refuse lap detection in a space without a loop.
+
+    ``has_loop`` is :func:`_space_has_loop` of ``env``.
 
     Raises
     ------
     InputError
-        If the space has no loop (:func:`_space_has_loop`), as on a linear
+        If the space has no loop (``has_loop`` is False), as on a linear
         track, a tree or plus maze, or an open arena, or if its topology
         cannot be read (3-D).
     """
-    has_loop = _space_has_loop(env)
     if has_loop:
         return
     fix = (
@@ -1069,6 +1070,69 @@ def _require_loop(env: Environment, method: str) -> None:
             why="on a track, a tree maze or in an open arena the animal can "
             "always come back the way it went, so no lap goes round a loop "
             "and the laps found would have direction 'unknown'.",
+            fix=fix,
+        )
+    )
+
+
+def _require_lap_direction(
+    env: Environment,
+    direction: str,
+    *,
+    has_loop: bool | None,
+    linear: NDArray[np.float64] | None,
+) -> None:
+    """Refuse a direction filter that no lap in this environment can match.
+
+    :func:`_detect_lap_direction` labels laps 'increasing' or 'decreasing'
+    when ``linear`` is given (a space without a loop), 'clockwise' or
+    'counter-clockwise' in other 2-D environments, and 'unknown' otherwise,
+    so a filter from another pair would silently return no laps.
+    ``has_loop`` is :func:`_space_has_loop` of ``env`` and only words the
+    error.
+
+    Raises
+    ------
+    ValueError
+        If ``direction`` is not 'both' and not one of the labels laps in
+        ``env`` can get.
+    """
+    if direction == "both":
+        return
+    if linear is not None:
+        valid: tuple[str, ...] = ("increasing", "decreasing")
+        why = (
+            "this environment has no loop, so a lap goes out along the track "
+            "and comes back; its direction is 'increasing' or 'decreasing' "
+            "along the linear coordinate."
+        )
+    elif env.n_dims == 2:
+        valid = ("clockwise", "counter-clockwise")
+        why = (
+            "this environment has a loop, so a lap goes round it 'clockwise' "
+            "or 'counter-clockwise'."
+            if has_loop
+            else "in a 2-D environment a lap's direction is the sign of the "
+            "area its path encloses, 'clockwise' or 'counter-clockwise'."
+        )
+    else:
+        valid = ()
+        why = (
+            f"lap direction is not read in a {env.n_dims}-D environment, so "
+            "every lap's direction is 'unknown'."
+        )
+    if direction in valid:
+        return
+    fix = (
+        f"pass direction={valid[0]!r} or {valid[1]!r}, or 'both' for every lap."
+        if valid
+        else "pass direction='both'."
+    )
+    raise ValueError(
+        _format_error(
+            f"detect_laps(direction={direction!r}) matches no lap here: laps in "
+            f"this environment are {' or '.join(repr(v) for v in valid) or 'unknown'}.",
+            why=why,
             fix=fix,
         )
     )
@@ -1168,8 +1232,14 @@ def detect_laps(
     ------
     ValueError
         If method is not one of 'auto', 'reference', 'region', direction is
-        not one of 'both', 'clockwise', 'counter-clockwise', or min_overlap
-        is not in (0, 1].
+        not one of 'both', 'clockwise', 'counter-clockwise', 'increasing',
+        'decreasing', or min_overlap is not in (0, 1].
+    ValueError
+        If ``direction`` names a pair laps in ``env`` cannot have:
+        'increasing' or 'decreasing' round a loop or in a 2-D area, or
+        'clockwise' or 'counter-clockwise' on a space without a loop
+        (``method='reference'`` on a linear track); any direction but
+        'both' in 3-D.
     ValueError
         If method='reference' but reference_lap is not provided, is empty,
         or holds bins outside the environment.
@@ -1450,8 +1520,12 @@ def detect_laps(
         epochs=epochs,
         break_before=break_before,
     )
+    has_loop = _space_has_loop(env)
     if method in ("auto", "region"):
-        _require_loop(env, method)
+        _require_loop(env, method, has_loop=has_loop)
+    # Without a loop a lap goes out and back: its direction is along the track.
+    linear = None if has_loop else _linear_coordinate(env)
+    _require_lap_direction(env, direction, has_loop=has_loop, linear=linear)
     runs = _event_runs(
         times,
         position_bins,
@@ -1523,8 +1597,6 @@ def detect_laps(
     adjacency = nx.to_scipy_sparse_array(
         env.connectivity, nodelist=range(env.n_bins), weight=None, format="csr"
     )
-    # Without a loop a lap goes out and back: its direction is along the track.
-    linear = None if _space_has_loop(env) else _linear_coordinate(env)
     for run in runs:
         laps.extend(
             _detect_laps_search_contiguous(

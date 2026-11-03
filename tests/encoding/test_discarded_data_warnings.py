@@ -170,6 +170,45 @@ def test_boolean_masked_samples_warn(open_field_120s):
     assert masked.occupancy.sum() > 1.05 * gated.occupancy.sum()
 
 
+def test_occlusion_dropped_frames_warn_with_both_causes():
+    """Occlusions of 0.3-0.8 s dropped as low-likelihood frames, 8% of the time.
+
+    Deleted rows and NaN rows give the same occupancy, but only deleted rows
+    can come from ``times[mask]``, so only they warn. The warning cannot tell
+    a mask from dropped tracking frames, so it names both, each with its fix.
+    """
+    rng = np.random.default_rng(1)
+    times = np.arange(0.0, 600.0, 1 / 30)
+    positions = np.c_[50 + 40 * np.sin(times / 7.0), 50 + 40 * np.cos(times / 11.0)]
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    dropped = np.zeros(times.size, dtype=bool)
+    starts = np.flatnonzero(rng.random(times.size) < 0.006)
+    for start in starts:
+        dropped[start : start + int(rng.uniform(0.3, 0.8) * 30)] = True
+    assert 0.05 < dropped.mean() < 0.15
+    with pytest.warns(UserWarning, match="dropped tracking frames") as record:
+        deleted = env.occupancy(times[~dropped], positions[~dropped])
+    message = str(record[0].message)
+    assert "boolean-masked samples" in message
+    assert "min_speed=" in message
+    assert "bridging them is intended up to max_gap" in message
+    assert "pass a max_gap below the shortest removed run" in message
+    with_nan = positions.copy()
+    with_nan[dropped] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        marked = env.occupancy(times, with_nan)
+    np.testing.assert_allclose(deleted, marked, atol=1e-9)
+    # The fix for dropped frames: a max_gap below the shortest occlusion
+    # (9 frames, 0.3 s) excludes them, and nothing warns.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        excluded = env.occupancy(times[~dropped], positions[~dropped], max_gap=0.25)
+    np.testing.assert_allclose(
+        excluded.sum(), np.count_nonzero(~dropped[:-1] & ~dropped[1:]) / 30, rtol=1e-6
+    )
+
+
 def test_dropped_frames_are_silent():
     rng = np.random.default_rng(11)
     times = np.arange(0.0, 300.0, 1 / 30)
@@ -216,6 +255,130 @@ def test_masked_samples_warn_with_camera_jitter():
     kept = times % 2.0 >= 0.4
     with pytest.warns(UserWarning, match="boolean-masked"):
         env.occupancy(times[kept], positions[kept])
+
+
+_FS = 30.0
+
+
+def _speed_masked(rng, jitter):
+    """30 Hz for 600 s with jittered timestamps, 0.4 s removed every 2 s."""
+    times = np.arange(0.0, 600.0, 1 / _FS)
+    times = np.sort(times + jitter(rng, times.size))
+    return times[times % 2.0 >= 0.4]
+
+
+def _fragmented(rng):
+    """``times[speed > thr]`` for a mostly resting animal at 30 Hz.
+
+    Kept runs of 1-4 frames between removed runs of 10-40 frames.
+    """
+    keep = rng.integers(1, 5, 3000)
+    drop = rng.integers(10, 41, 3000)
+    mask = np.concatenate(
+        [
+            np.r_[np.ones(k, bool), np.zeros(m, bool)]
+            for k, m in zip(keep, drop, strict=True)
+        ]
+    )
+    return (np.arange(mask.size) / _FS)[mask]
+
+
+def _spike_timed(rng):
+    """Positions read at spike times (as in DANDI 001754): steps spread over
+    1 ms to 0.65 s, log-uniformly, on a 30 kHz clock."""
+    steps = np.exp(rng.uniform(np.log(0.001), np.log(0.65), 20000))
+    return np.unique(np.round(np.cumsum(steps) * 30000) / 30000)
+
+
+# name: (simulate(rng) -> times, whether the sampling is regular)
+_GATE_CASES = {
+    "speed mask": (lambda rng: _speed_masked(rng, lambda r, n: np.zeros(n)), True),
+    "speed mask, 10 ms jitter window": (
+        lambda rng: _speed_masked(rng, lambda r, n: r.uniform(-0.005, 0.005, n)),
+        True,
+    ),
+    "speed mask, 4 ms SD jitter": (
+        lambda rng: _speed_masked(rng, lambda r, n: r.normal(0.0, 0.004, n)),
+        True,
+    ),
+    "fragmented mask": (_fragmented, True),
+    "uniform steps": (lambda rng: np.cumsum(rng.uniform(0.001, 0.45, 5000)), False),
+    "exponential steps": (
+        lambda rng: np.cumsum(rng.exponential(1 / _FS, 5000)),
+        False,
+    ),
+    "spike-timed": (_spike_timed, False),
+}
+
+_GATE_SHARES = {
+    "speed mask": (0.99, 1.0),
+    "speed mask, 10 ms jitter window": (0.95, 0.99),
+    "speed mask, 4 ms SD jitter": (0.8, 0.9),
+    "fragmented mask": (0.99, 1.0),
+    "uniform steps": (0.45, 0.55),
+    "exponential steps": (0.45, 0.55),
+    "spike-timed": (0.45, 0.55),
+}
+
+
+@pytest.mark.parametrize("case", list(_GATE_CASES))
+def test_masking_gate_calibration(case):
+    """Masked regular sampling warns; irregular sampling is silent.
+
+    The gate asks whether the steps are near whole multiples of one sampling
+    interval. The shares measured here are the ones the comment on
+    ``MASKED_REGULAR_SHARE`` cites.
+    """
+    from neurospatial._constants import DISCARD_WARN_FRACTION
+    from neurospatial._intervals import (
+        MASKED_MULTIPLE_TOLERANCE,
+        MASKED_REGULAR_SHARE,
+        _masked_sample_fraction,
+        _sampling_interval,
+    )
+
+    simulate, regular = _GATE_CASES[case]
+    times = simulate(np.random.default_rng(3))
+    dt = np.diff(times)
+    interval = _sampling_interval(dt)
+    ratio = dt / interval
+    share = np.mean(
+        (ratio >= 0.5) & (np.abs(ratio - np.round(ratio)) < MASKED_MULTIPLE_TOLERANCE)
+    )
+    low, high = _GATE_SHARES[case]
+    assert low <= share <= high
+    fraction = _masked_sample_fraction(times, np.ones(dt.size, bool), 1.0)
+    if regular:
+        # The interval is the camera's, even where the median step is a gap.
+        np.testing.assert_allclose(interval, 1 / _FS, rtol=0.01)
+        assert share >= MASKED_REGULAR_SHARE
+        assert fraction > DISCARD_WARN_FRACTION
+    else:
+        assert fraction == 0.0
+    if case == "fragmented mask":
+        # Only 0.6 of its steps are one sample, so the median-step gate missed it.
+        median_share = np.mean(np.abs(dt / np.median(dt) - 1.0) < 0.5)
+        assert 0.55 < median_share < 0.65
+    if case == "spike-timed":
+        # Like DANDI 001754: few steps are near the median step.
+        median_share = np.mean(np.abs(dt / np.median(dt) - 1.0) < 0.5)
+        assert 0.15 < median_share < 0.2
+
+
+def test_fragmented_mask_warns_and_inflates_occupancy():
+    """Kept runs of 1-4 frames between removed runs of 10-40 frames at 30 Hz.
+
+    Most of the bridged time is in removed runs, so occupancy is several
+    times the time of the kept frames.
+    """
+    rng = np.random.default_rng(7)
+    times = _fragmented(rng)
+    positions = np.c_[50 + 40 * np.sin(times / 7.0), 50 + 40 * np.cos(times / 11.0)]
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    with pytest.warns(UserWarning, match="boolean-masked"):
+        occupancy = env.occupancy(times, positions)
+    kept_time = times.size / _FS
+    assert occupancy.sum() > 4.0 * kept_time
 
 
 def test_polar_bandwidth_is_compared_with_the_ring_width(

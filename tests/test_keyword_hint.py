@@ -165,3 +165,16 @@ def test_env_first_with_typo_is_not_blamed_on_the_environment(env_first):
     with pytest.raises(TypeError) as caught:
         rate(_Env(), [1.0], [0.0], "p", d=1)
     assert str(caught.value) == _python_message(rate, _Env(), [1.0], [0.0], "p", d=1)
+
+
+@pytest.mark.parametrize("slot", [1, 2, 3])
+def test_env_in_any_later_slot_of_a_call_that_binds_says_env_goes_first(
+    env_first, slot
+):
+    """With every positional slot filled the call binds, so the check cannot
+    wait for a binding error."""
+    rate, _ = env_first
+    args = [[1.0], [0.0], "p"]
+    args.insert(slot, _Env())
+    with pytest.raises(TypeError, match="not the first positional argument"):
+        rate(*args)

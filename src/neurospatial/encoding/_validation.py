@@ -77,7 +77,9 @@ def _validate_env_argument(env: object, *, context: str, arguments: str) -> None
             _format_error(
                 f"{context}() expects an Environment as its first argument, got {description}.",
                 why="Why: spatial analysis needs the environment's geometry and bins.",
-                fix=f"build one with env = Environment.from_samples(positions, bin_size=2.0), then call {context}(env, {arguments}).",
+                fix="build one in the units of your positions, e.g. env = "
+                'Environment.from_samples(positions, bin_size=2.0, units="cm"), '
+                f"then call {context}(env, {arguments}).",
             )
         )
 

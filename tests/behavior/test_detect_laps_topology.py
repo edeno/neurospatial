@@ -69,6 +69,53 @@ def test_annulus_has_a_loop(build):
     assert np.all(np.isin(laps.direction, ["clockwise", "counter-clockwise"]))
 
 
+@pytest.mark.parametrize("direction", ["increasing", "decreasing"])
+def test_loop_refuses_linear_directions(direction):
+    """Laps round a loop are clockwise or counter-clockwise, never increasing."""
+    ring = shapely.Point(50, 50).buffer(40).difference(shapely.Point(50, 50).buffer(25))
+    env = Environment.from_polygon(ring, bin_size=3.0)
+    # Three counter-clockwise turns (theta increases).
+    positions = _circle((50, 50), 32.0, 900)
+    times = np.arange(900) / 30.0
+    laps = detect_laps(env, times, positions, direction="counter-clockwise")
+    assert len(laps) >= 2
+    with pytest.raises(
+        ValueError, match=r"'clockwise' or 'counter-clockwise'[\s\S]*has a loop"
+    ):
+        detect_laps(env, times, positions, direction=direction)
+
+
+@pytest.mark.parametrize("direction", ["clockwise", "counter-clockwise"])
+def test_linear_track_refuses_loop_directions(linear_track, direction):
+    """Round trips on a linear track are increasing or decreasing, never clockwise."""
+    env, times, positions = linear_track.env, linear_track.times, linear_track.positions
+    x = positions[:, 0]
+    far = int(np.argmax(x > x.max() - 5.0))
+    back = far + int(np.argmax(x[far:] < x[0] + 5.0))
+    first = env.bin_at(positions[: back + 1])
+    trips = detect_laps(env, times, positions, method="reference", reference_lap=first)
+    # The template starts at the low end, so every round trip leaves toward
+    # larger linear coordinates.
+    increasing = detect_laps(
+        env,
+        times,
+        positions,
+        method="reference",
+        reference_lap=first,
+        direction="increasing",
+    )
+    assert len(increasing) == np.sum(trips.direction == "increasing") > 0
+    with pytest.raises(ValueError, match=r"'increasing' or 'decreasing'[\s\S]*no loop"):
+        detect_laps(
+            env,
+            times,
+            positions,
+            method="reference",
+            reference_lap=first,
+            direction=direction,
+        )
+
+
 def test_figure_eight_track_has_loops():
     nodes = {
         0: (0, 0),

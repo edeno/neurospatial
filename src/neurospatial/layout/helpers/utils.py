@@ -160,7 +160,7 @@ def _infer_dimension_ranges_from_samples(
                 "NaN or infinite coordinates, or the array is empty; check for "
                 "tracking dropouts.",
                 why="Why: finite positions are required to infer the environment's extent.",
-                fix="remove tracking-dropout rows or interpolate them before calling Environment.from_samples(positions, bin_size=2.0)",
+                fix='remove tracking-dropout rows or interpolate them before calling Environment.from_samples(positions, bin_size=2.0, units="cm")',
             )
         )
 

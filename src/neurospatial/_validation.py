@@ -973,9 +973,10 @@ def _refuse_wrong_kind(
           refused and ``population`` named.
         - ``"spike_counts"``: a ``(n_time_bins, n_neurons)`` count matrix. A
           list or tuple of spike trains (lengths that differ, or every row in
-          time order) is refused with the binning call, and so
-          is the ``(counts, bin_edges)`` tuple ``bin_spikes_in_time``
-          returns.
+          time order with some value not a non-negative whole number) is
+          refused with the binning call, and so is the ``(counts,
+          bin_edges)`` tuple ``bin_spikes_in_time`` returns. Rows of one
+          length holding non-negative whole numbers are a count matrix.
         - ``"spike_times"``: spike times of several units. A 2-D array of
           non-negative whole numbers, some above 1, with a value repeated in
           a row is a count matrix, not spike times (one unit cannot fire
@@ -1055,10 +1056,17 @@ def _refuse_wrong_kind(
                 for item in value
             ]
             ragged = len({row.size for row in rows}) > 1
-            # Spike trains are in time order; rows of counts are not (counts
-            # repeat), so fractional counts get the fractional-count refusal.
+            # Spike trains are ragged; a count matrix is rectangular and holds
+            # non-negative whole numbers, even when every row increases (as
+            # one-unit rows do vacuously). Equal-length trains in time order
+            # with fractional times are still trains, and fractional counts
+            # out of order get the fractional-count refusal.
+            whole = all(
+                np.all(np.isfinite(row) & (row >= 0) & (row == np.round(row)))
+                for row in rows
+            )
             increasing = all(np.all(np.diff(row) > 0) for row in rows)
-            if ragged or increasing:
+            if ragged or (increasing and not whole):
                 raise TypeError(
                     _format_error(
                         f"{caller}() takes a spike count matrix of shape "
