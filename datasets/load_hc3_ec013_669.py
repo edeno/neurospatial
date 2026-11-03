@@ -342,16 +342,19 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         rec.positions,
+        times=rec.times,
         kind=f"straight track {TRACK_CM:g} x {TRACK_WIDTH_CM:g} cm",
         source="Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7"
         " cm2)'; in pixels at the inferred scale, which comes from the same 250 cm",
         bin_size=rec.params["bin_size"],
-        track_width=TRACK_WIDTH_CM / cm_per_px,
+        physical_width=TRACK_WIDTH_CM / cm_per_px,
         units="pixel",
         name=DATASET["key"],
         placement=straight_placement(fit, "pixel"),
         # The pixel scale comes from the same 250 cm, so no length is compared.
         placed_by="samples' principal axis",
+        tracked_point="the midpoint of two head-mounted LEDs (hc-3 .whl: two LEDs per frame)",
+        speed_thresholds=(4.0 / cm_per_px, 30.0 / cm_per_px),
     )
     return with_declared(rec, entries, line)
 

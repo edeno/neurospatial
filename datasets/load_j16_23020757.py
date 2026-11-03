@@ -180,15 +180,18 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         rec.geometry["graph"],
         positions,
+        times=times,
         kind="the authors' track graph (10 nodes, 9 corridors)",
         source="file: track_nodes, track_edges; Comrie et al. 2026 STAR Methods:"
         " 'Hallways were 6.5 cm wide and linear track segments were each 53 cm long'",
         bin_size=rec.params["graph_bin_size"],
-        track_width=_HALLWAY_CM,
+        physical_width=_HALLWAY_CM,
         units="cm",
         name=DATASET["key"],
         placement="the file's node positions",
         placed_by="authors' graph",
+        tracked_point="the head (the file's head_position; how it was tracked is not stated)",
+        speed_thresholds=(4.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

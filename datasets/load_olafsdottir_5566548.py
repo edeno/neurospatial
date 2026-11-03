@@ -310,12 +310,13 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         positions,
+        times=times,
         kind="Z-track: two parallel sections joined by a diagonal",
         source="Olafsdottir et al. 2016 Online Methods: '10 cm wide runways', 'two"
         " parallel sections of the Z (190 cm each) were connected by a diagonal"
         " section (220 cm)'",
         bin_size=4.0,
-        track_width=_RUNWAY_WIDTH_CM,
+        physical_width=_RUNWAY_WIDTH_CM,
         units="cm",
         name=DATASET["key"],
         placed_by="fitted to the samples",
@@ -329,6 +330,8 @@ def load(cache: Path | None = None) -> Recording:
         },
         placement="node positions fitted to the samples; sections (cm):"
         f" {edge_lengths(graph)} (stated 190, 220, 190)",
+        tracked_point="the big LED spot of Axona two-spot tracking (the .pos header)",
+        speed_thresholds=(5.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

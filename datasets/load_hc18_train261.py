@@ -221,10 +221,11 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         travel_xy,
+        times=times,
         kind=f"closed circuit as a {_LOOP_POINTS}-segment loop",
         source="hc-18: a model train on a closed circuit (no shape or size stated)",
         bin_size=5.0,
-        track_width=None,
+        physical_width=None,
         units="pixel",
         name=DATASET["key"],
         placed_by="fitted to the samples",
@@ -232,6 +233,8 @@ def load(cache: Path | None = None) -> Recording:
         f" {_LOOP_POINTS} equal angular sectors around their centre; lap cut"
         " (geometry['lap_start_region']) at the loop's westmost point, a stated"
         " cut, not a start the source names",
+        tracked_point="one head LED (hc-18, per the loader)",
+        speed_thresholds=(),
     )
     return with_declared(rec, {**entries, "lap_start_region": region}, line)
 

@@ -269,15 +269,18 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         rec.positions,
+        times=rec.times,
         kind=f"straight track {TRACK_CM:g} cm",
         source="Vollan et al. 2025 Methods: 'a 200 cm linear track'; width not stated",
         bin_size=rec.params["bin_size"],
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placement=straight_placement(fit, "cm"),
         placed_by="samples' principal axis",
         stated_lengths={"length": (fit["samples_span"], TRACK_CM)},
+        tracked_point="the head, OptiTrack motion capture (per the loader, from the dataset's documentation)",
+        speed_thresholds=(5.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

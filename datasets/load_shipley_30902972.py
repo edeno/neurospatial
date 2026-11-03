@@ -62,7 +62,6 @@ from _record import (
 )
 from _tracks import (
     declared_geometry,
-    densest_point,
     fitted_maze,
     radial_arms,
     star_candidates,
@@ -163,6 +162,16 @@ def position_times(
     return times, np.asarray(rates), worst
 
 
+def _extent_centre(positions: np.ndarray) -> np.ndarray:
+    """Middle of the samples' extent (0.5th to 99.5th percentile per axis).
+
+    Eight arms of equal length put the maze's centre there; the densest
+    point is a reward well, where the mouse waits longest.
+    """
+    low, high = np.nanpercentile(positions, [0.5, 99.5], axis=0)
+    return 0.5 * (low + high)
+
+
 def load(cache: Path | None = None) -> Recording:
     """Fetch m4005's 2020-09-26 session; positions in cm, good units' spikes."""
     from scipy.io import loadmat
@@ -237,7 +246,7 @@ def load(cache: Path | None = None) -> Recording:
         in_maze |= (times >= start) & (times <= stop)
     maze_xy = np.where(in_maze[:, None], positions, np.nan)
     star = fitted_maze(
-        star_candidates(maze_xy, 8, densest_point(maze_xy)), maze_xy, cap=_FIT_CAP_CM
+        star_candidates(maze_xy, 8, _extent_centre(maze_xy)), maze_xy, cap=_FIT_CAP_CM
     )
     graph = radial_arms(star, maze_xy, min_radius=_PLATFORM_CM, window=_FIT_CAP_CM)
     centre = np.asarray(graph.nodes["centre"]["pos"])
@@ -250,11 +259,12 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         maze_xy,
+        times=times,
         kind="8-arm radial maze: eight arms joined at a centre",
         source="Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an"
         " octagonal centre platform (24.7cm diameter, 10cm sides)'",
         bin_size=3.0,
-        track_width=_ARM_WIDTH_CM,
+        physical_width=_ARM_WIDTH_CM,
         units="cm",
         name=DATASET["key"],
         placed_by="fitted to the samples",
@@ -264,6 +274,8 @@ def load(cache: Path | None = None) -> Recording:
         f" centre; centre to arm end {min(reach.values()):.1f}-"
         f"{max(reach.values()):.1f} cm (stated 80 cm arms from a 24.7 cm platform:"
         f" {_ARM_REACH_CM:g} cm)",
+        tracked_point="one tracking LED (per the loader; trialData.pos)",
+        speed_thresholds=(3.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

@@ -143,16 +143,19 @@ def load(cache: Path | None = None) -> Recording:
     declared, declared_line = declared_geometry(
         graph_from_points({"start": ends[:1], "end": ends[1:]}, [("start", "end")]),
         track,
+        times=times,
         kind=f"1-D track along the authors' coordinate, {ends[1] - ends[0]:.0f} cm",
         source="hc-31 data description: 'a novel 48-m long linear track'; width"
         " not stated",
         bin_size=2.5,
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placement="the file's track coordinate, from its smallest to its largest value",
         placed_by="file's coordinates",
         stated_lengths={"length": (float(ends[1] - ends[0]), 4800.0)},
+        tracked_point="not stated (video, the authors' track coordinate)",
+        speed_thresholds=(4.0, 30.0),
     )
     return Recording(
         dataset=DATASET["key"],

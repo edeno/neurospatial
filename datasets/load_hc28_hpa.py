@@ -194,11 +194,12 @@ def load(cache: Path | None = None) -> Recording:
     declared, declared_line = declared_geometry(
         graph,
         positions,
+        times=times,
         kind="W-track: three parallel arms joined by a base",
         source="Jadhav et al. 2016 Supplemental Experimental Procedures: 'The"
         " W-track had dimensions of ~80 x 80 cm', '7 cm wide metal sections'",
         bin_size=2.5,
-        track_width=TRACK_WIDTH_CM,
+        physical_width=TRACK_WIDTH_CM,
         units="cm",
         name=DATASET["key"],
         placed_by="fitted to the samples",
@@ -211,6 +212,8 @@ def load(cache: Path | None = None) -> Recording:
         ),
         placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')};"
         f" stated about 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
+        tracked_point="the midpoint of two head-mounted LEDs (hc-28 rawpos x1, y1, x2, y2)",
+        speed_thresholds=(4.0, 30.0),
     )
     return Recording(
         dataset=DATASET["key"],

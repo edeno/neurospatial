@@ -139,15 +139,18 @@ def load(cache: Path | None = None) -> Recording:
     declared, declared_line = declared_geometry(
         graph,
         stored,
+        times=times,
         kind="straight track, length fitted",
         source="Gonzalez et al. 2026 Methods: a linear track with a water well at"
         " either end; its length and width (Supplementary Table 1) were not read",
         bin_size=2.5,
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placement=straight_placement(fit, "cm"),
         placed_by="samples' principal axis",
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
     )
     return Recording(
         dataset=DATASET["key"],

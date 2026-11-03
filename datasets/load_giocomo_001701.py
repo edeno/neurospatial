@@ -137,16 +137,19 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         rec.positions,
+        times=rec.times,
         kind="X maze: two junctions joined by a centre segment, two arms each",
         source="Aery Jones et al. 2026 Methods: '130-cm X-maze with 20-cm walls'"
         " (what the 130 cm spans and the arm width are not stated)",
         bin_size=2.5,
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placed_by="fitted to the samples",
         placement=f"node positions fitted to the samples; edges (cm):"
         f" {edge_lengths(graph)}",
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

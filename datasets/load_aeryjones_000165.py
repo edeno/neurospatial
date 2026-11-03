@@ -143,16 +143,19 @@ def load(cache: Path | None = None) -> Recording:
     declared, declared_line = declared_geometry(
         graph,
         positions,
+        times=times,
         kind=f"straight track {_TRACK_CM:g} cm",
         source="Aery Jones et al. 2021, Cell Reports 37:110159 (PMC9069800), Methods:"
         " 'a 36 cm linear track'; width not stated",
         bin_size=1.0,
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placement=straight_placement(fit, "cm"),
         placed_by="samples' principal axis",
         stated_lengths={"length": (fit["samples_span"], _TRACK_CM)},
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
     )
     return Recording(
         dataset=DATASET["key"],

@@ -145,15 +145,18 @@ def load(cache: Path | None = None) -> Recording:
     declared, declared_line = declared_geometry(
         graph,
         xy,
+        times=times,
         kind="figure-8: a rectangle with a bar across its middle, both loops closed",
         source="DANDI 000552 (figure-8 maze); no size or width stated",
         bin_size=2.0,
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placed_by="fitted to the samples",
         placement=f"node positions fitted to the camera samples; edges (cm):"
         f" {edge_lengths(graph)}",
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
     )
     epochs = {
         "maze": maze,

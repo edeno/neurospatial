@@ -86,12 +86,13 @@ def declare_track(rec: Recording) -> Recording:
     entries, line = declared_geometry(
         graph,
         rec.positions,
+        times=rec.times,
         kind="straight track: 15 cm reward area, 1.6 m stem, 15 cm reward area",
         source="Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1.9 m wooden"
         " linear maze ... 15 cm reward areas on either end ... and a 1.6 m stem';"
         " width not stated",
         bin_size=rec.params["bin_size"],
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placement="the stem centred on a least-squares line from the file's"
@@ -102,6 +103,8 @@ def declare_track(rec: Recording) -> Recording:
         # reached the track, 140 cm and more from it; a 99th percentile would
         # make the track 3 m wide.
         width_quantile=WIDTH_QUANTILE,
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

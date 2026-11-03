@@ -249,12 +249,13 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         rec.geometry["graph"],
         rec.positions,
+        times=rec.times,
         kind="binary-tree labyrinth, the repository's track graph",
         source="Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py):"
         " corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)'"
         " on a 1.5 inch grid",
         bin_size=rec.params["graph_bin_size"],
-        track_width=rec.geometry["track_width"],
+        physical_width=rec.geometry["track_width"],
         width_kind="chosen",
         width_note="the corridor pitch, so a corridor's footprint ends at the wall"
         " it shares with its neighbour; the paper's corridors are 1-1/8 in on a"
@@ -263,6 +264,8 @@ def load(cache: Path | None = None) -> Recording:
         name=DATASET["key"],
         placement="the maze cells of the repository's own alignment",
         placed_by="authors' graph",
+        tracked_point="the nose (the repository's trajectory keypoints)",
+        speed_thresholds=(1.0,),
     )
     return with_declared(rec, entries, line)
 

@@ -132,15 +132,18 @@ def load(cache: Path | None = None) -> Recording:
     declared, declared_line = declared_geometry(
         graph,
         positions,
+        times=times,
         kind=f"straight track {_LENGTH_CM:g} cm",
         source="NWB series description '110 cm long, 6.35 cm wide'",
         bin_size=2.5,
-        track_width=_WIDTH_CM,
+        physical_width=_WIDTH_CM,
         units="cm",
         name=DATASET["key"],
         placement=straight_placement(fit, "cm"),
         placed_by="samples' principal axis",
         stated_lengths={"length": (fit["samples_span"], _LENGTH_CM)},
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
     )
     return Recording(
         dataset=DATASET["key"],

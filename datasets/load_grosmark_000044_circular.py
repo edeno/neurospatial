@@ -264,11 +264,12 @@ def declare_circle(rec: Recording) -> Recording:
     entries, line = declared_geometry(
         graph,
         rec.positions,
+        times=rec.times,
         kind=f"circle {DIAMETER_CM:g} cm in diameter as a {N_VERTICES}-gon loop",
         source="Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1 m in"
         " diameter wooden circular maze'; width not stated",
         bin_size=rec.params["bin_size"],
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placed_by="fitted to the samples",
@@ -277,6 +278,8 @@ def declare_circle(rec: Recording) -> Recording:
         f" circle fit to the on-track samples (their own radius {radius:.1f} cm);"
         f" lap start region across the track at the file's linearized zero,"
         f" {np.degrees(angle):.0f} deg from the centre",
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
     )
     return with_declared(rec, {**entries, "lap_start_region": region}, line)
 

@@ -185,17 +185,20 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         positions,
+        times=times,
         kind="3-arm maze: three parallel arms joined by a base",
         source="Figshare 24757638 description (3-arm maze and a wheel); Agarwal et"
         " al. 2026 Methods: 'The 2.13m-long maze' (what the length spans is not"
         " stated); width not stated",
         bin_size=4.0,
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placed_by="fitted to the samples",
         placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')});"
         f" edges (cm): {edge_lengths(graph)}",
+        tracked_point="not stated (the file's Track xMM, yMM)",
+        speed_thresholds=(5.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

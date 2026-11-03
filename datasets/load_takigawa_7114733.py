@@ -216,16 +216,19 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         positions,
+        times=times,
         kind="two tracks, each the authors' centreline as a path (two components)",
         source="file: track_mask_x, track_mask_y (each track's centreline); Tirole"
         " et al. 2022: 'two novel linear tracks (2 m)'; width not stated",
         bin_size=4.0,
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placement=f"the centrelines in cm, simplified to within"
         f" {_SIMPLIFY_CM:g} cm ({graph.number_of_edges()} segments)",
         placed_by="authors' centrelines",
+        tracked_point="not stated",
+        speed_thresholds=(5.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

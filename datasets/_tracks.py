@@ -717,95 +717,124 @@ def declared_geometry(
     graph: Any,
     positions: NDArray[np.float64],
     *,
+    times: NDArray[np.float64],
     kind: str,
     source: str,
     bin_size: float,
-    track_width: float | None,
+    physical_width: float | None,
     units: str | None,
     name: str,
     placement: str,
     placed_by: str,
+    tracked_point: str,
     width_kind: str = "stated",
     width_note: str = "",
+    speed_thresholds: Sequence[float] = (),
     stated_lengths: Mapping[str, tuple[float, float]] | None = None,
     regions: Mapping[str, Any] | None = None,
     width_quantile: float = MEASURED_WIDTH_QUANTILE,
 ) -> tuple[dict[str, Any], str]:
     """Geometry entries declaring the track, and its ``conversions`` line.
 
-    The width is one of three kinds:
-
-    - ``"stated"``: ``track_width`` from a source read;
-    - ``"chosen"``: ``track_width`` picked by the loader where a stated value
-      is not used (``width_note`` says why);
-    - ``"measured"`` (``track_width`` None): not a physical width but a
-      placement tolerance, twice the samples' ``width_quantile`` distance from
-      the graph (at least one bin), so that about ``1 - width_quantile`` of
-      the samples are dropped by construction. neurospatial will not place
-      positions on a track without a width (G-150), and ``track_width`` is
-      both the apparatus's width and that tolerance (G-152).
+    Two widths are kept apart (G-152). ``physical_width`` is the apparatus's
+    width, ``width_kind`` ``"stated"`` by a source read or ``"chosen"`` by
+    the loader (``width_note`` says why), or None when no source states it.
+    The environment is built with a placement tolerance instead, measured
+    from the samples: twice their ``width_quantile`` distance from the graph,
+    and at least the physical width and one bin, so that about
+    ``1 - width_quantile`` of the samples are dropped by construction. The
+    tracked point (``tracked_point``, recorded as ``geometry["tracked_point"]``)
+    is usually a head-mounted LED above an unwalled track, which swings past
+    its edge; ``track_width`` only decides which positions are placed and the
+    footprint (``TrackArena``), not the bins, their measure, connectivity or
+    any rate, so the tolerance changes no analysis of the samples it places.
+    The share of samples beyond the physical width is reported, split by
+    speed (``speed_thresholds``, the positions' units per second), as a
+    tracking measure.
 
     ``placed_by`` (one of ``PLACED_BY``) says where the placement comes from.
     Only a layout ``FITTED`` to the samples is refused, on misfit evidence
-    (``misfit_reasons``): a segment drawn beside its samples, a segment with
-    no samples near it, or a length beyond ``_geometry.MAX_SIZE_RESIDUAL`` of
-    a stated one (``stated_lengths``: label -> (fitted, stated)). Scatter
-    across the track is not misfit. The authors' geometry and the file's own
-    coordinates are not fitted, so they are not refused here; the fidelity
-    study judges them.
+    (``misfit_reasons``): a stretch of track drawn beside its samples, a
+    segment with no samples near it, or a length beyond
+    ``_geometry.MAX_SIZE_RESIDUAL`` of a stated one (``stated_lengths``:
+    label -> (fitted, stated)). Scatter across the track is not misfit. The
+    authors' geometry and the file's own coordinates are not fitted, so they
+    are not refused here; the fidelity study judges them.
 
-    Returns the entries (``environment``, ``declared_graph``,
-    ``declared_track_width``, ``declared_track_width_kind``,
-    ``declared_from``, ``environment_fit``) and a line naming the layout, its
-    source, the width, the placement and the fit; or, when the fit is
-    refused, no entries and a line saying why the recording stays inferred.
+    Returns the entries (``tracked_point``, ``declared_physical_width`` and
+    its kind always; when declared also ``environment``, ``declared_graph``,
+    ``declared_track_width``, the tolerance, ``declared_from`` and
+    ``environment_fit``) and a line naming the layout, its source, the
+    widths, the placement and the fit; when the fit is refused, a line saying
+    why the recording stays inferred.
     """
+    from _geometry import share_by_speed
+
     if placed_by not in PLACED_BY:
         msg = f"placed_by must be one of {PLACED_BY}, not {placed_by!r}"
         raise ValueError(msg)
     label = units or "units"
-    if track_width is None:
-        _, nodes, edges = graph_arrays(graph)
-        offsets = segment_distance(tracked(positions), nodes, edges)
-        measured = 2 * float(np.quantile(offsets, width_quantile))
-        width = max(measured, bin_size)
-        width_kind = "measured"
-        width_text = (
-            f"placement tolerance {width:.3g} {label} (measured, not a physical"
-            f" width: twice the samples' {width_quantile:.0%} quantile distance"
-            " from the track"
-            + ("" if measured >= bin_size else ", raised to one bin")
-            + ")"
-        )
-    else:
-        width = track_width
-        width_text = f"track width {track_width:g} {label} ({width_kind}"
-        width_text += f": {width_note})" if width_note else ")"
+    _, nodes, edges = graph_arrays(graph)
+    samples = tracked(positions)
+    offsets = segment_distance(samples, nodes, edges)
+    measured = 2 * float(np.quantile(offsets, width_quantile))
+    tolerance = max(measured, physical_width or 0.0, bin_size)
     fit = edge_fit(graph, positions, tolerance=bin_size)
     fit["max_edge_bias_limit"] = MAX_EDGE_BIAS_BINS * bin_size
     for key, (fitted, stated) in (stated_lengths or {}).items():
         fit[f"size_residual_{key}"] = fitted / stated - 1
-    residual = graph_residual(graph, positions, width)
-    fit["share_within_half_width"] = residual["share_within_half_width"]
+    fit["share_outside_tolerance"] = float(np.mean(offsets > tolerance / 2))
+    entries: dict[str, Any] = {
+        "tracked_point": tracked_point,
+        "declared_physical_width": physical_width,
+        "declared_physical_width_kind": width_kind
+        if physical_width is not None
+        else None,
+    }
+    if physical_width is not None:
+        by_speed = share_by_speed(
+            times, positions, offsets > physical_width / 2, speed_thresholds
+        )
+        fit["outside_physical_width"] = by_speed["all"]
+        fit["outside_physical_width_by_speed"] = by_speed
+        physical = (
+            f"physical width {physical_width:g} {label} ({width_kind}"
+            + (f": {width_note}" if width_note else "")
+            + f"), {by_speed['all']:.1%} of samples beyond half of it"
+            + (
+                " ("
+                + ", ".join(
+                    f"{v:.0%} at {k} {label}/s"
+                    for k, v in by_speed.items()
+                    if k != "all"
+                )
+                + ")"
+                if len(by_speed) > 1
+                else ""
+            )
+        )
+    else:
+        physical = "physical width not stated"
     reasons = misfit_reasons(fit, bin_size) if placed_by in FITTED else []
     if reasons:
-        return {}, (
+        return entries, (
             f"environment: inferred; the {kind} fit ({source}; {placement}) was"
-            f" refused: {'; '.join(reasons)}"
+            f" refused: {'; '.join(reasons)}; tracked point: {tracked_point}"
         )
-    entries = {
+    entries |= {
         "environment": declare(
             graph,
             bin_size=bin_size,
-            track_width=width,
+            track_width=tolerance,
             units=units,
             name=name,
             regions=regions,
         ),
         "declared_graph": graph,
-        "declared_track_width": width,
-        "declared_track_width_kind": width_kind,
+        "declared_track_width": tolerance,
+        "declared_track_width_kind": "placement tolerance",
         "declared_from": placed_by,
+        "declared_speed_thresholds": tuple(speed_thresholds),
         "environment_fit": fit,
     }
     lengths = "".join(
@@ -813,16 +842,19 @@ def declared_geometry(
         for key, value in fit.items()
         if key.startswith("size_residual")
     )
-    within = f"{fit['share_within_half_width']:.1%} of samples within half the width"
-    if width_kind == "measured":
-        within += " (by construction: the tolerance is set from that share)"
     return entries, (
-        f"environment: declared {kind} ({source}); {width_text}; placement:"
+        f"environment: declared {kind} ({source}); tracked point: {tracked_point};"
+        f" {physical}; placement tolerance {tolerance:.3g} {label} (track_width: twice"
+        f" the samples' {width_quantile:.0%} quantile distance from the track,"
+        " at least the physical width and one bin; a tracked head swings past an"
+        f" unwalled track's edge, so {fit['share_outside_tolerance']:.1%} of samples"
+        " are dropped by construction); placement:"
         f" {placement} ({placed_by}); fit: median |lateral offset|"
-        f" {fit['median_abs_lateral']:.2f} {label}, worst segment bias"
+        f" {fit['median_abs_lateral']:.2f} {label}, worst stretch bias"
         f" {fit['max_edge_bias']:.2f} {label} (limit {fit['max_edge_bias_limit']:.3g}),"
         f" worst unsupported share of a segment {fit['max_unsupported']:.0%}{lengths};"
-        f" track length {residual['track_length']:.1f} {label}; {within}"
+        f" track length {graph_residual(graph, positions, None)['track_length']:.1f}"
+        f" {label}"
     )
 
 

@@ -155,11 +155,12 @@ def load(cache: Path | None = None) -> Recording:
     entries, line = declared_geometry(
         graph,
         positions,
+        times=rec.times,
         kind="W-maze: three parallel arms joined by a base",
         source="Shukla et al. 2026 Methods: 'elevated W-shaped mazes (80 x 80 cm)"
         " with ~7-cm-wide track sections'",
         bin_size=2.5,
-        track_width=_TRACK_WIDTH_CM,
+        physical_width=_TRACK_WIDTH_CM,
         units="cm",
         name=DATASET["key"],
         placed_by="fitted to the samples",
@@ -172,6 +173,8 @@ def load(cache: Path | None = None) -> Recording:
         ),
         placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')};"
         f" stated 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
+        tracked_point="the DeepLabCut 'head' keypoint as processed by the authors (processed_position/head)",
+        speed_thresholds=(4.0, 30.0),
     )
     return with_declared(rec, entries, line)
 

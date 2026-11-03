@@ -120,11 +120,12 @@ def load(cache: Path | None = None) -> Recording:
     declared, declared_line = declared_geometry(
         graph,
         positions,
+        times=times,
         kind=f"straight track {2 * _HALF_LENGTH_CM:g} cm",
         source="readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; width"
         " not stated",
         bin_size=4.0,
-        track_width=None,
+        physical_width=None,
         units="cm",
         name=DATASET["key"],
         placement="the file's own frame (posx spans -160 to 160, posy is centred on 0)",
@@ -132,6 +133,8 @@ def load(cache: Path | None = None) -> Recording:
         stated_lengths={
             "length": (float(np.ptp(positions[:, 0])), 2 * _HALF_LENGTH_CM)
         },
+        tracked_point="one tracking LED (readme_hafting2008.txt: 'the tracking LED')",
+        speed_thresholds=(5.0, 30.0),
     )
     return Recording(
         dataset=DATASET["key"],

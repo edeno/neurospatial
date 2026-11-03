@@ -141,11 +141,12 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
     declared, declared_line = declared_geometry(
         graph,
         positions,
+        times=times,
         kind="W-track: three parallel arms joined by a base",
         source="Tang, Shin & Jadhav 2023 STAR Methods: 'the W-maze (~80 x 80 cm with"
         " ~7-cm wide tracks)'",
         bin_size=2.5,
-        track_width=TRACK_WIDTH_CM,
+        physical_width=TRACK_WIDTH_CM,
         units="cm",
         name=dataset["key"],
         placed_by="fitted to the samples",
@@ -158,6 +159,8 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
         ),
         placement=f"node positions fitted to this maze's samples ({arms_text(graph, 'cm')};"
         f" stated about 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
     )
     return Recording(
         dataset=dataset["key"],

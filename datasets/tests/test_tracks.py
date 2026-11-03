@@ -179,11 +179,15 @@ def test_loop_centreline_and_circle_fit_recover_a_ring():
 
 
 def _declare(graph, points, **kwargs):
+    if "track_width" in kwargs:
+        kwargs["physical_width"] = kwargs.pop("track_width")
     options = {
+        "times": np.arange(len(points)) / 30.0,
+        "tracked_point": "test",
         "kind": "track",
         "source": "s",
         "bin_size": 2.5,
-        "track_width": 7.0,
+        "physical_width": 7.0,
         "units": "cm",
         "name": "t",
         "placement": "p",
@@ -192,29 +196,52 @@ def _declare(graph, points, **kwargs):
     return declared_geometry(graph, points, **(options | kwargs))
 
 
-def test_declared_geometry_has_three_kinds_of_width():
+def test_physical_width_and_placement_tolerance_are_kept_apart():
     graph, _ = straight_track(np.array([[0.0, 0.0], [100.0, 0.0]]), 100.0)
-    points = np.column_stack([RNG.uniform(0, 100, 5000), RNG.normal(0, 2.0, 5000)])
+    rng = np.random.default_rng(11)
+    points = np.column_stack([rng.uniform(0, 100, 5000), rng.normal(0, 2.0, 5000)])
+    # Twice the 99th percentile of |N(0, 2)|: 2 * 2.576 * 2 = 10.3 cm.
     stated, line = _declare(graph, points, bin_size=2.0, track_width=6.0)
-    assert stated["declared_track_width"] == 6.0
-    assert stated["declared_track_width_kind"] == "stated"
-    assert "(stated)" in line
+    assert stated["declared_physical_width"] == 6.0
+    assert stated["declared_physical_width_kind"] == "stated"
+    assert stated["declared_track_width"] == pytest.approx(10.3, abs=0.5)
+    assert stated["declared_track_width_kind"] == "placement tolerance"
+    assert "physical width 6 cm (stated)" in line
+    # Beyond 3 cm of the axis: 2 x P(N(0, 2) > 3) = 13.4 %, a tracking measure.
+    fit = stated["environment_fit"]
+    assert fit["outside_physical_width"] == pytest.approx(0.134, abs=0.02)
+    assert fit["share_outside_tolerance"] == pytest.approx(0.01, abs=0.005)
     assert stated["environment"]().n_bins == 50
+    assert stated["tracked_point"] == "test"
     chosen, line = _declare(
-        graph, points, track_width=8.0, width_kind="chosen", width_note="why"
+        graph, points, track_width=12.0, width_kind="chosen", width_note="why"
     )
-    assert chosen["declared_track_width_kind"] == "chosen"
+    assert chosen["declared_physical_width_kind"] == "chosen"
     assert "(chosen: why)" in line
-    measured, line = _declare(graph, points, bin_size=2.0, track_width=None)
-    # Twice the 99th percentile of |N(0, 2)|: 2 * 2.576 * 2.
-    assert measured["declared_track_width"] == pytest.approx(10.3, abs=0.5)
-    assert measured["declared_track_width_kind"] == "measured"
-    assert "placement tolerance" in line
+    # The tolerance is never narrower than the physical width.
+    assert chosen["declared_track_width"] == 12.0
+    unstated, line = _declare(graph, points, bin_size=2.0, track_width=None)
+    assert unstated["declared_physical_width"] is None
+    assert "physical width not stated" in line
     assert "by construction" in line
     # The width-independent fit: |N(0, 2)| has a median of 0.674 x 2.
-    fit = measured["environment_fit"]
+    fit = unstated["environment_fit"]
     assert fit["median_abs_lateral"] == pytest.approx(1.35, abs=0.1)
     assert fit["max_edge_bias"] < 0.2
+
+
+def test_outside_physical_width_is_split_by_speed():
+    # Stopped samples lean 5 cm off a 6 cm track, running ones (10 cm/s) stay on it.
+    from _geometry import share_by_speed
+
+    times = np.arange(2000) / 10.0
+    x = np.concatenate([np.full(1000, 50.0), np.linspace(0, 1000, 1000)])
+    y = np.concatenate([np.full(1000, 5.0), np.zeros(1000)])
+    positions = np.column_stack([x, y])
+    split = share_by_speed(times, positions, np.abs(y) > 3.0, (4.0, 30.0))
+    assert split["all"] == pytest.approx(0.5, abs=0.01)
+    assert split["0-4"] == pytest.approx(1.0, abs=0.01)
+    assert split["4-30"] == pytest.approx(0.0, abs=0.01)
 
 
 @pytest.fixture(scope="module")
@@ -230,7 +257,7 @@ def test_lateral_scatter_is_not_refused(scattered_w):
     truth, points = scattered_w
     entries, line = _declare(truth, points)
     assert entries, line
-    assert entries["environment_fit"]["share_within_half_width"] < 0.8
+    assert entries["environment_fit"]["outside_physical_width"] > 0.2
 
 
 @pytest.mark.parametrize(
@@ -254,7 +281,7 @@ def test_a_subtly_misplaced_layout_is_refused(scattered_w, change, why):
         truth, {n: change(np.asarray(p, float)) for n, p in truth.nodes(data="pos")}
     )
     entries, line = _declare(moved, points)
-    assert entries == {}
+    assert "environment" not in entries
     assert line.startswith("environment: inferred")
     assert why in line
 
@@ -262,7 +289,7 @@ def test_a_subtly_misplaced_layout_is_refused(scattered_w, change, why):
 def test_a_wrong_stated_length_is_refused_but_the_authors_geometry_is_not(scattered_w):
     truth, points = scattered_w
     entries, line = _declare(truth, points, stated_lengths={"arms": (80.0, 95.0)})
-    assert entries == {}
+    assert "environment" not in entries
     assert "arms -16% of the stated length" in line
     entries, _ = _declare(
         truth, points, stated_lengths={"arms": (80.0, 95.0)}, placed_by="authors' graph"
@@ -289,8 +316,10 @@ def loop_recording(simulated_recording):
         positions,
         kind="loop",
         source="test",
+        times=times,
+        tracked_point="simulated",
         bin_size=2.5,
-        track_width=10.0,
+        physical_width=10.0,
         units="cm",
         name="loop",
         placement="p",
@@ -350,5 +379,5 @@ def test_a_loop_is_judged_over_stretches_not_polygon_sides(ring_samples):
     # The same circle moved 4 cm sideways is refused.
     moved = polyline_graph(circle_points(np.array([4.0, 0.0]), 50.0, 72), closed=True)
     entries, line = _declare(moved, ring_samples, track_width=None)
-    assert entries == {}
+    assert "environment" not in entries
     assert "side" in line
