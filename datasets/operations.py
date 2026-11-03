@@ -537,13 +537,13 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
         )
 
     def position(value: Any) -> str:
-        if rec.position_units not in _TO_CM or value.units not in _TO_CM:
+        if rec.position_units == "pixel" and value.units == "px":
+            scale = 1.0
+        elif rec.position_units not in _TO_CM or value.units not in _TO_CM:
             return f"units {value.units!r} not comparable with {rec.position_units!r}"
-        scaled = (
-            np.asarray(value.positions)
-            * _TO_CM[value.units]
-            / _TO_CM[rec.position_units]
-        )
+        else:
+            scale = _TO_CM[value.units] / _TO_CM[rec.position_units]
+        scaled = np.asarray(value.positions) * scale
         if scaled.shape != np.shape(rec.positions):
             return (
                 f"different series (shape {scaled.shape} vs {np.shape(rec.positions)})"
