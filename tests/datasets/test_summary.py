@@ -19,8 +19,8 @@ EXPECTED = """\
 Synthetic et al. (2026), simulated rat s1, session square (synthetic_2026)
 simulated apparatus; CA1. Synthetic 0, CC0-1.0
 Cite: Synthetic A, Simulated B (2026) A simulated session. ... -> rec.citation
-Time        60 s tracked, in seconds on the simulation's clock, from 0 s;
-              position sampled at 100 Hz
+Time        60 s from the first to the last sample, in seconds on the
+              simulation's clock, from 0 s; position sampled at 100 Hz
 Epochs      run (0 to 60 s)
 Tracking    simulated head position (2-D, cm)
             tracked 100.0% of samples, longest gap 0.01 s
@@ -30,15 +30,14 @@ Tracking    simulated head position (2-D, cm)
 Environment declared: 1 m square box (simulation)
             -> rec.env.plot()
 Neurons     6 units (CA1)
-            5 fire in the analysed epochs; 1 have no spikes there
+            5 fire in the analysed epochs; 1 has no spikes there
             area per unit: CA1 6
             authors' labels: pyramidal 6
 Watch out   Not yet checked by hand. Known pitfalls and automatic findings:
   ! headings are the direction of movement, not of the head: they say nothing
     about head scanning
-  ! 1 of 6 units have no spikes in the analysed epochs (the tracked span);
-    they are kept, as the file lists them, and are units['fires_in_epochs']
-    False."""
+  ! 1 of 6 units has no spikes in the analysed epochs (the tracked span); they
+    are kept, as the file lists them, and are units['fires_in_epochs'] False."""
 
 SECTIONS = ("Time ", "Epochs ", "Tracking ", "Environment ", "Neurons ", "Watch out")
 

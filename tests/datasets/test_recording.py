@@ -122,6 +122,34 @@ def test_summary_numbers_match_the_arrays(square_recording):
     assert rec.speed_p95 == pytest.approx(20.0)
 
 
+def test_two_runs_around_a_sleep(square_recording):
+    """Duration spans the sleep; the longest gap is within the tracked runs."""
+    run = square_recording.times
+    times = np.r_[run, run + 3600.0]
+    positions = np.r_[square_recording.positions, square_recording.positions]
+    positions[1000:1050] = np.nan  # a 0.51 s gap inside the first run
+    rec = dataclasses.replace(
+        square_recording,
+        times=times,
+        positions=positions,
+        headings=None,
+        epochs={
+            "run": np.array([[0.0, 60.0], [3600.0, 3660.0]]),
+            "sleep": np.array([[60.0, 3600.0]]),
+        },
+    )
+    assert rec.duration == pytest.approx(times[-1] - times[0])
+    assert rec.longest_gap == pytest.approx(times[1050] - times[999])
+    text = " ".join(repr(rec).split())
+    assert "3660 s from the first to the last sample" in text
+    assert "longest gap 0.51 s" in text
+
+
+def test_conversions_must_be_conversions(square_recording):
+    with pytest.raises(InputError, match=r"- conversions\[0\]: a tuple"):
+        dataclasses.replace(square_recording, conversions=(("x", "inferred", ""),))
+
+
 def test_untracked_session_has_no_speed(square_recording):
     """With no two tracked samples, speed and gap are NaN and the text prints."""
     positions = np.full_like(square_recording.positions, np.nan)

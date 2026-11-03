@@ -105,8 +105,8 @@ def _identity(rec: Recording) -> list[str]:
 def _time(rec: Recording) -> list[str]:
     sampled = "position" if rec.positions is not None else "heading"
     return [
-        f"{rec.duration:.0f} s tracked, in seconds on {rec.clock}; {sampled} "
-        f"sampled at {rec.sampling_rate:.4g} Hz"
+        f"{rec.duration:.0f} s from the first to the last sample, in seconds on "
+        f"{rec.clock}; {sampled} sampled at {rec.sampling_rate:.4g} Hz"
     ]
 
 
@@ -163,10 +163,11 @@ def _neurons(rec: Recording) -> list[str]:
     units = rec.units
     regions = ", ".join(rec.brain_regions) or "brain region not stated"
     n_fire = int(units["fires_in_epochs"].sum())
+    n_silent = rec.n_units - n_fire
     return [
         f"{rec.n_units} units ({regions})",
-        f"{n_fire} fire in the analysed epochs; {rec.n_units - n_fire} have no "
-        "spikes there",
+        f"{n_fire} {'fires' if n_fire == 1 else 'fire'} in the analysed epochs; "
+        f"{n_silent} {'has' if n_silent == 1 else 'have'} no spikes there",
         f"area per unit: {_counts(units['brain_region'])}",
         f"authors' labels: {_counts(units['label'])}",
     ]

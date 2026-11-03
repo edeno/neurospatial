@@ -259,6 +259,9 @@ class Recording(ReadOnlyArraysMixin):
 
     Notes
     -----
+    The stated wells, ports, platforms and boxes are regions of the
+    environment, ``rec.env.regions``; a recording has no regions of its own.
+
     NumPy arrays, including those in ``spike_times``, ``epochs``,
     ``events`` and at the top level of ``params``, are stored as read-only
     copies; copy with ``np.array(...)`` to modify values.
@@ -481,7 +484,14 @@ class Recording(ReadOnlyArraysMixin):
             if not str(getattr(self, name)).strip()
         )
         object.__setattr__(self, "brain_regions", tuple(self.brain_regions))
-        object.__setattr__(self, "conversions", tuple(self.conversions))
+        conversions: tuple[Any, ...] = tuple(self.conversions)
+        problems.extend(
+            f"conversions[{index}]: a {type(item).__name__}, not a "
+            "Conversion(text, basis, evidence)"
+            for index, item in enumerate(conversions)
+            if not isinstance(item, Conversion)
+        )
+        object.__setattr__(self, "conversions", conversions)
         object.__setattr__(self, "watch_outs", tuple(self.watch_outs))
         failed = tuple(self.failed_checks)
         if unknown := sorted(set(failed) - set(REFUSING_CHECKS)):
@@ -537,7 +547,11 @@ class Recording(ReadOnlyArraysMixin):
 
     @property
     def duration(self) -> float:
-        """Seconds from the first to the last sample of ``times``."""
+        """Seconds from the first to the last sample of ``times``.
+
+        This includes any untracked epoch between tracked ones (a sleep
+        between two runs).
+        """
         return float(self.times[-1] - self.times[0])
 
     @property
@@ -559,12 +573,22 @@ class Recording(ReadOnlyArraysMixin):
     def longest_gap(self) -> float:
         """The longest time between consecutive tracked samples, in seconds.
 
-        NaN with fewer than two tracked samples.
+        Only gaps inside the epochs that hold tracking samples count, so an
+        untracked sleep between two tracked runs is not a gap. Without such
+        epochs, every gap from the first to the last sample counts. NaN
+        with no gap to measure.
         """
         tracked_times = self.times[self._tracked]
-        if tracked_times.size < 2:
+        rows = tracked_epoch_rows(self.times, self.epochs)
+        if len(rows) == 0:
+            rows = np.array([[self.times[0], self.times[-1]]])
+        before, after = tracked_times[:-1], tracked_times[1:]
+        starts, stops = merged_rows(rows)
+        index = np.searchsorted(starts, before, side="right") - 1
+        inside = (index >= 0) & (after <= stops[np.maximum(index, 0)])
+        if not np.any(inside):
             return float("nan")
-        return float(np.diff(tracked_times).max())
+        return float(np.max(after[inside] - before[inside]))
 
     @property
     def median_speed(self) -> float:
@@ -772,3 +796,51 @@ def _count_within(times: NDArray[np.float64], intervals: NDArray[np.float64]) ->
     starts = np.searchsorted(times, intervals[:, 0], side="left")
     stops = np.searchsorted(times, intervals[:, 1], side="left")
     return int(np.sum(stops - starts))
+
+
+def tracked_epoch_rows(
+    times: NDArray[np.float64], epochs: Mapping[str, NDArray[np.float64]]
+) -> NDArray[np.float64]:
+    """The epoch rows, of every name, holding a tracking sample, shape (n, 2).
+
+    A row holds tracking when a sample of ``times`` lies strictly inside it,
+    so a sleep epoch that starts at the last tracking sample is untracked.
+    """
+    rows = all_epoch_rows(epochs)
+    return rows[_samples_strictly_inside(times, rows) > 0]
+
+
+def untracked_epoch_rows(
+    times: NDArray[np.float64], epochs: Mapping[str, NDArray[np.float64]]
+) -> NDArray[np.float64]:
+    """The epoch rows with no tracking sample strictly inside, shape (n, 2)."""
+    rows = all_epoch_rows(epochs)
+    untracked: NDArray[np.float64] = rows[_samples_strictly_inside(times, rows) == 0]
+    return untracked
+
+
+def all_epoch_rows(epochs: Mapping[str, NDArray[np.float64]]) -> NDArray[np.float64]:
+    """Every epoch's rows, stacked, shape (n, 2)."""
+    return np.concatenate(list(epochs.values())) if epochs else np.empty((0, 2))
+
+
+def _samples_strictly_inside(
+    times: NDArray[np.float64], rows: NDArray[np.float64]
+) -> NDArray[np.intp]:
+    """How many of the sorted ``times`` lie in each open (start, stop) row."""
+    inside: NDArray[np.intp] = np.searchsorted(
+        times, rows[:, 1], side="left"
+    ) - np.searchsorted(times, rows[:, 0], side="right")
+    return np.maximum(inside, 0)
+
+
+def merged_rows(
+    rows: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """The union of ``[start, stop]`` rows as sorted, disjoint starts and stops."""
+    if len(rows) == 0:
+        return np.empty(0), np.empty(0)
+    rows = rows[np.argsort(rows[:, 0], kind="stable")]
+    reach = np.maximum.accumulate(rows[:, 1])
+    first = np.flatnonzero(np.r_[True, rows[1:, 0] > reach[:-1]])
+    return rows[first, 0], np.maximum.reduceat(rows[:, 1], first)

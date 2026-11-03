@@ -58,7 +58,7 @@ REFUSALS = {
     "epochs overlap": (
         "clock",
         _overlapping_epochs,
-        "epochs['run'] has 1 row overlapping",
+        "epochs['run'] has 1 row starting before",
     ),
     "epochs off the clock": ("clock", _epochs_off_clock, "no epoch holds a tracking"),
     "positions in mm": ("units", _positions_in_mm, "largest position span is 999.1 cm"),
@@ -94,7 +94,7 @@ def _fast_step(rec, stated):
 def _silent_unit(rec, stated):
     trains = list(rec.spike_times)
     trains[2] = np.empty(0)
-    return {"spike_times": tuple(trains)}, stated, "1 of 6 units have no spikes"
+    return {"spike_times": tuple(trains)}, stated, "1 of 6 units has no spikes"
 
 
 WARNINGS = {
@@ -205,6 +205,13 @@ def test_untracked_sleep_passes(square_recording, square_stated):
         epochs={"run": np.array([[0.0, 60.0]]), "sleep": sleep},
     )
     assert run_checks(rec, stated=square_stated).failed_checks == ()
+    # A sleep that starts at the last tracking sample is untracked too.
+    last = float(square_recording.times[-1])
+    touching = dataclasses.replace(
+        rec,
+        epochs={"run": np.array([[0.0, last]]), "sleep": np.array([[last, 600.0]])},
+    )
+    assert run_checks(touching, stated=square_stated).failed_checks == ()
     # The same spikes without the sleep epoch are off the tracked span.
     no_sleep = dataclasses.replace(rec, epochs={"run": np.array([[0.0, 60.0]])})
     with pytest.raises(DatasetCheckError, match="clock"):
@@ -295,3 +302,70 @@ def test_check_error_pickles():
     assert str(restored) == str(error)
     assert restored.checks == ("clock",)
     assert isinstance(restored, ValueError)
+
+
+@pytest.mark.parametrize("events", [np.array([]), np.empty((0, 2))])
+def test_empty_events_pass(square_recording, square_stated, events):
+    rec = dataclasses.replace(square_recording, events={"reward": events})
+    assert run_checks(rec, stated=square_stated).failed_checks == ()
+
+
+@pytest.mark.parametrize(("overrun", "refuses"), [(11.0, True), (6.0, False)])
+def test_clock_slack_is_capped(square_recording, square_stated, overrun, refuses):
+    """On a 20 min session 1% is 12 s; the 10 s cap still refuses 11 s."""
+    times = square_recording.times * 20.0
+    trains = [train * 20.0 for train in square_recording.spike_times]
+    trains[0] = np.append(trains[0], times[-1] + overrun)
+    rec = dataclasses.replace(
+        square_recording,
+        times=times,
+        spike_times=tuple(trains),
+        epochs={"run": np.array([[0.0, 1200.0]])},
+    )
+    stated = dataclasses.replace(square_stated, sampling_rate=5.0)
+    if refuses:
+        with pytest.raises(DatasetCheckError, match="give or take 10 s"):
+            run_checks(rec, stated=stated)
+    else:
+        assert run_checks(rec, stated=stated).failed_checks == ()
+
+
+def test_overlaps_count_every_row_inside_a_long_one(square_recording, square_stated):
+    rec = dataclasses.replace(
+        square_recording,
+        epochs={"run": np.array([[0.0, 50.0], [1.0, 2.0], [3.0, 4.0]])},
+    )
+    with pytest.raises(DatasetCheckError, match="has 2 rows starting before"):
+        run_checks(rec, stated=square_stated)
+
+
+def test_origin_zeros_skip_one_dimensional_tracks(square_recording, square_stated):
+    """On a 1-D track, 0 is a place on the track, not lost tracking."""
+    from neurospatial import Environment
+
+    positions = np.array(square_recording.positions[:, :1])
+    positions[::50] = 0.0  # 2% of samples at the track's start
+    env = Environment.from_samples(positions, bin_size=2.0, units="cm")
+    rec = dataclasses.replace(
+        square_recording, positions=positions, env=env, headings=None
+    )
+    assert not any(
+        "exactly at" in w for w in run_checks(rec, stated=square_stated).watch_outs
+    )
+
+
+def test_checking_twice_refuses(
+    square_recording, square_stated, track_recording, track_stated
+):
+    shifted = dataclasses.replace(
+        square_recording,
+        spike_times=tuple(t + 1000.0 for t in square_recording.spike_times),
+    )
+    accepted = run_checks(
+        shifted, stated=square_stated, accept_failed_checks=("clock",)
+    )
+    with pytest.raises(InputError, match="checked already"):
+        run_checks(accepted, stated=square_stated, accept_failed_checks=("clock",))
+    held = run_checks(track_recording, stated=track_stated)
+    with pytest.raises(InputError, match="checked already"):
+        run_checks(held, stated=track_stated)

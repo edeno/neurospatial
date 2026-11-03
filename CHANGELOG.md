@@ -26,7 +26,8 @@
   by hand" for a session nobody has checked).
 - Every session is checked before it is returned. The clock check (spikes
   within the tracked span or an untracked epoch such as sleep, events within
-  the recording, epochs within it and not overlapping within a name) and the
+  the recording, epochs within it and not overlapping within a name; "within"
+  allows 1% of the span, at most 10 s) and the
   units check (largest position span within the stated range, sampling rate
   within 1% of the stated one) refuse with `DatasetCheckError`, which names
   the numbers and the `accept_failed_checks=("clock",)` value that loads the

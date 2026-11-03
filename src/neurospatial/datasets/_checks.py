@@ -26,17 +26,28 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import InputError, _format_error
 from neurospatial.datasets._errors import REFUSING_CHECKS, DatasetCheckError
-from neurospatial.datasets._recording import Recording
+from neurospatial.datasets._recording import (
+    Recording,
+    all_epoch_rows,
+    merged_rows,
+    tracked_epoch_rows,
+    untracked_epoch_rows,
+)
 
 __all__ = ["Stated", "run_checks"]
 
-#: How far, as a share of a span's length, a time may lie outside the span
-#: and still count as within it. The errors the clock check guards against
-#: (milliseconds read as seconds, a second clock with another zero) put
-#: times off by about the session's length or more; acquisition edges
-#: (ephys running a few seconds past the camera, an epoch starting at 0 s
-#: before the first spike) differ by a small share of it.
+#: How far a time may lie outside a span and still count as within it: a
+#: share of the span's length, ``CLOCK_SLACK``, at most ``CLOCK_SLACK_CAP``
+#: seconds. The errors the clock check guards against (milliseconds read as
+#: seconds, a second clock with another zero) put times off by about the
+#: session's length or more; acquisition edges differ by much less. Strict
+#: containment refused real sessions that are on one clock: hc-11
+#: Achilles' maze epoch ends 0.026 s after the last tracking sample, and
+#: the Yartsev bat's spikes run 6.6 s past its tracking. The cap keeps a
+#: long session's slack from hiding an offset such as 22.6 s.
 CLOCK_SLACK = 0.01
+#: The largest slack in seconds, whatever the span's length.
+CLOCK_SLACK_CAP = 10.0
 #: Largest relative difference between the measured and stated sampling rate.
 RATE_TOLERANCE = 0.01
 #: Share of samples exactly at the origin above which a watch-out is given.
@@ -133,8 +144,8 @@ def run_checks(
     Parameters
     ----------
     rec : Recording
-        The session, with the dataset's own ``watch_outs`` and no
-        ``failed_checks``.
+        The session as its loader built it, with the dataset's own
+        ``watch_outs`` and no ``failed_checks``.
     stated : Stated
         What the dataset states about the session.
     accept_failed_checks : tuple of str, default ()
@@ -154,10 +165,14 @@ def run_checks(
     DatasetCheckError
         If a refusing check fails and is not in ``accept_failed_checks``.
     InputError
-        If ``accept_failed_checks`` names an unknown check, or ``stated``
-        has no ``position_span`` for a recording with positions.
+        If ``accept_failed_checks`` names an unknown check, ``stated`` has
+        no ``position_span`` for a recording with positions, or ``rec`` has
+        been checked already (``failed_checks`` set, or ``watch_outs``
+        holding a finding these checks make).
     """
     accepted = _accepted(accept_failed_checks)
+    if rec.failed_checks:
+        raise _already_checked(rec, f"failed_checks is {rec.failed_checks!r}")
     if rec.positions is not None and stated.position_span is None:
         raise InputError(
             _format_error(
@@ -195,10 +210,23 @@ def run_checks(
         )
         if finding is not None
     ]
+    if repeated := [finding for finding in warnings if finding in rec.watch_outs]:
+        raise _already_checked(rec, f"watch_outs already holds {repeated[0][:60]!r}...")
     return dataclasses.replace(
         rec,
         watch_outs=(*flagged, *rec.watch_outs, *warnings),
         failed_checks=tuple(failures),
+    )
+
+
+def _already_checked(rec: Recording, sign: str) -> InputError:
+    """The error for checking a recording the checks already returned."""
+    return InputError(
+        _format_error(
+            f"{rec.dataset}/{rec.session} has been checked already: {sign}.",
+            why="checking it again would repeat every finding in watch_outs.",
+            fix="call run_checks once, on the recording as the loader built it.",
+        )
     )
 
 
@@ -229,17 +257,16 @@ def _clock_finding(rec: Recording) -> str | None:
     times = rec.times
     first, last = float(times[0]), float(times[-1])
     problems = []
-    rows = np.concatenate(list(rec.epochs.values())) if rec.epochs else np.empty((0, 2))
-    samples_in = np.searchsorted(times, rows[:, 1]) - np.searchsorted(times, rows[:, 0])
-    untracked = rows[samples_in == 0]
-    if len(rows) and not np.any(samples_in > 0):
+    rows = all_epoch_rows(rec.epochs)
+    untracked = untracked_epoch_rows(times, rec.epochs)
+    if len(rows) and not len(tracked_epoch_rows(times, rec.epochs)):
         problems.append(
             f"no epoch holds a tracking sample: epochs run from {rows.min():.6g} to "
             f"{rows.max():.6g} s, tracking from {first:.6g} to {last:.6g} s"
         )
     trains = [train for train in rec.spike_times if train.size]
     spikes = np.concatenate(trains) if trains else np.empty(0)
-    slack = CLOCK_SLACK * (last - first)
+    slack = _slack(last - first)
     near = (spikes >= first - slack) & (spikes <= last + slack)
     outside = ~(near | _within_any(spikes, untracked))
     if n_outside := int(outside.sum()):
@@ -251,7 +278,7 @@ def _clock_finding(rec: Recording) -> str | None:
         )
     start = min(first, float(spikes.min())) if spikes.size else first
     stop = max(last, float(spikes.max())) if spikes.size else last
-    margin = CLOCK_SLACK * (stop - start)
+    margin = _slack(stop - start)
     span = f"the recording ({start:.6g} to {stop:.6g} s, give or take {margin:.3g} s)"
     for name, table in rec.epochs.items():
         beyond = (table[:, 0] < start - margin) | (table[:, 1] > stop + margin)
@@ -262,18 +289,19 @@ def _clock_finding(rec: Recording) -> str | None:
                 f"outside {span}, the first [{row[0]:.6g}, {row[1]:.6g}] s"
             )
         ordered = table[np.argsort(table[:, 0], kind="stable")]
-        overlaps = ordered[1:, 0] < ordered[:-1, 1]
+        reach = np.maximum.accumulate(ordered[:-1, 1])
+        overlaps = ordered[1:, 0] < reach
         if n_overlaps := int(overlaps.sum()):
             at = int(np.argmax(overlaps))
             problems.append(
-                f"epochs[{name!r}] has {_count(n_overlaps, 'row')} overlapping the "
-                f"row before, the first [{ordered[at + 1, 0]:.6g}, "
-                f"{ordered[at + 1, 1]:.6g}] s inside [{ordered[at, 0]:.6g}, "
-                f"{ordered[at, 1]:.6g}] s"
+                f"epochs[{name!r}] has {_count(n_overlaps, 'row')} starting "
+                f"before an earlier row ends, the first [{ordered[at + 1, 0]:.6g}, "
+                f"{ordered[at + 1, 1]:.6g}] s before {reach[at]:.6g} s"
             )
     for name, values in rec.events.items():
         outer = (values < start - margin) | (values > stop + margin)
-        if n_beyond := int(outer.reshape(len(values), -1).any(axis=1).sum()):
+        beyond = np.asarray(outer if outer.ndim == 1 else outer.any(axis=1))
+        if n_beyond := int(beyond.sum()):
             problems.append(
                 f"events[{name!r}] has {_count(n_beyond, 'event')} of {len(values)} "
                 f"outside {span}; its times run from {values.min():.6g} to "
@@ -289,17 +317,18 @@ def _clock_finding(rec: Recording) -> str | None:
     )
 
 
+def _slack(length: float) -> float:
+    """``CLOCK_SLACK`` of a span's ``length``, at most ``CLOCK_SLACK_CAP`` seconds."""
+    return min(CLOCK_SLACK * length, CLOCK_SLACK_CAP)
+
+
 def _within_any(
     values: NDArray[np.float64], rows: NDArray[np.float64]
 ) -> NDArray[np.bool_]:
     """Whether each value lies in any closed ``[start, stop]`` row, shape (n,)."""
     if len(rows) == 0 or values.size == 0:
         return np.zeros(values.size, dtype=bool)
-    rows = rows[np.argsort(rows[:, 0], kind="stable")]
-    reach = np.maximum.accumulate(rows[:, 1])
-    first = np.flatnonzero(np.r_[True, rows[1:, 0] > reach[:-1]])
-    starts = rows[first, 0]
-    stops = np.maximum.reduceat(rows[:, 1], first)
+    starts, stops = merged_rows(rows)
     index = np.searchsorted(starts, values, side="right") - 1
     inside: NDArray[np.bool_] = (index >= 0) & (values <= stops[np.maximum(index, 0)])
     return inside
@@ -339,8 +368,11 @@ def _units_finding(rec: Recording, stated: Stated) -> str | None:
 
 
 def _origin_finding(rec: Recording) -> str | None:
-    """Samples exactly at the origin, when more than ``ZERO_SHARE`` of all."""
-    if rec.positions is None:
+    """Samples exactly at the origin, when more than ``ZERO_SHARE`` of all.
+
+    Only for 2-D and 3-D positions: on a 1-D track, 0 can be the track's end.
+    """
+    if rec.positions is None or rec.n_dims < 2:
         return None
     at_origin = np.all(rec.positions == 0, axis=1)
     share = float(at_origin.mean())
@@ -506,7 +538,8 @@ def _silent_units_finding(rec: Recording) -> str | None:
         else "the tracked span"
     )
     return (
-        f"{n_silent} of {rec.n_units} units have no spikes in the analysed epochs "
+        f"{n_silent} of {rec.n_units} units {'has' if n_silent == 1 else 'have'} no "
+        "spikes in the analysed epochs "
         f"({where}); they are kept, as the file lists them, and are "
         "units['fires_in_epochs'] False."
     )
