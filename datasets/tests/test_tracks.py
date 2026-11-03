@@ -422,3 +422,63 @@ def test_a_loop_is_judged_over_stretches_not_polygon_sides(ring_samples):
     entries, line = _declare(moved, ring_samples, track_width=None)
     assert "environment" not in entries
     assert "side" in line
+
+
+def _judged_line(segments, samples, bin_size=2.5):
+    from _geometry import graph_environment, judge_declared
+
+    graph = polyline_graph(np.asarray(segments, dtype=float), closed=False)
+    env = graph_environment(
+        graph, bin_size=bin_size, track_width=60.0, units="cm", name="t"
+    )
+    return judge_declared(env, np.arange(len(samples)) / 30.0, samples)
+
+
+def test_a_short_reward_arm_leaning_off_a_junction_is_reported_not_judged():
+    # A 100 cm track with a 15 cm reward arm off its middle (a T); the head
+    # leans 3 cm to one side on the arm, more than a 2.5 cm bin. The arm is
+    # shorter than a judged stretch (20 bins, 50 cm), so its lean is reported.
+    from _geometry import graph_environment, judge_declared
+
+    graph = graph_from_points(
+        {"a": (0.0, 0.0), "j": (50.0, 0.0), "b": (100.0, 0.0), "r": (50.0, 15.0)},
+        [("a", "j"), ("j", "b"), ("j", "r")],
+    )
+    env = graph_environment(graph, bin_size=2.5, track_width=60.0, units="cm", name="t")
+    rng = np.random.default_rng(11)
+    main = np.column_stack([rng.uniform(0, 100, 8000), rng.normal(0, 1.0, 8000)])
+    arm = np.column_stack(
+        [50.0 + 3.0 + rng.normal(0, 1.0, 1200), rng.uniform(1, 15, 1200)]
+    )
+    samples = np.vstack([main, arm])
+    judged = judge_declared(env, np.arange(len(samples)) / 30.0, samples, bin_size=2.5)
+    assert judged["fit"]["max_short_stretch_bias"] == pytest.approx(3.0, abs=0.3)
+    assert judged["fit"]["max_edge_bias"] < 1.0
+    assert judged["fit"]["judged_stretches"] == 2  # the two 50 cm halves
+    assert judged["misfit"] == []
+
+
+def test_support_does_not_depend_on_how_the_track_is_cut_into_segments():
+    # Samples along 8-92 cm of a 0-100 cm track: the head stops 8 cm short of
+    # each free end. Drawn as one segment or with 15 cm end segments, the
+    # verdict is the same; the ends' unsupported part is reported.
+    rng = np.random.default_rng(12)
+    samples = np.column_stack([rng.uniform(8, 92, 6000), rng.normal(0, 1.0, 6000)])
+    one = _judged_line([[0, 0], [100, 0]], samples)
+    cut = _judged_line([[0, 0], [15, 0], [85, 0], [100, 0]], samples)
+    assert one["misfit"] == cut["misfit"] == []
+    assert one["fit"]["max_unsupported"] == cut["fit"]["max_unsupported"] == 0.0
+    for judged in (one, cut):
+        assert judged["fit"]["max_end_unsupported"] > 0.5
+
+
+def test_a_track_with_no_samples_near_it_is_misfit():
+    # Every sample 40 cm off the declared line, beyond the 3-bin window of
+    # every stretch: a NaN bias is no evidence of fit.
+    rng = np.random.default_rng(13)
+    samples = np.column_stack(
+        [rng.uniform(0, 100, 3000), 40.0 + rng.normal(0, 1, 3000)]
+    )
+    judged = _judged_line([[0, 0], [100, 0]], samples)
+    assert np.isnan(judged["fit"]["max_edge_bias"])
+    assert any("no samples near the declared geometry" in r for r in judged["misfit"])

@@ -33,8 +33,8 @@ FIT_SAMPLES = 6000
 FIT_SEED = 0
 EDGE_POINTS = 25
 # Refusal of a fitted layout, on misfit evidence (``edge_fit``), not scatter:
-# a segment whose samples sit consistently to one side by more than a bin, or
-# a quarter of a segment's length with no sample within a bin.
+# a stretch whose samples sit consistently to one side by more than a bin, or
+# a quarter of a stretch's length with no sample within a bin.
 MAX_EDGE_BIAS_BINS = 1.0
 MAX_UNSUPPORTED = 0.25
 BIAS_WINDOW_BINS = 3.0
@@ -207,61 +207,110 @@ def _straight_pieces(
     return pieces
 
 
+def _free_end_zone(
+    points: NDArray[np.float64], ends: NDArray[np.float64], reach: float
+) -> NDArray[np.bool_]:
+    """Points within ``reach`` of any free end (``ends``, shape (n_ends, n_dims))."""
+    if not len(ends):
+        return np.zeros(len(points), dtype=bool)
+    return np.min(np.linalg.norm(points[:, None] - ends[None], axis=2), axis=1) <= reach
+
+
 def edge_fit(
     graph: Any, positions: NDArray[np.float64], *, tolerance: float
 ) -> dict[str, float]:
     """Misfit evidence for a layout on its samples, independent of any width.
 
-    ``tolerance`` is one bin along the track.
+    ``tolerance`` is one bin along the track. Both the bias and the support
+    are judged per stretch of nearly straight track at least
+    ``MIN_PIECE_BINS`` bins long (``_straight_pieces``: the segment and the
+    neighbours that continue it, so several sides of a polygon on a loop and
+    the same stretch however the graph cuts it into segments); a stretch
+    that cannot grow that long (between two junctions or corners) is
+    reported, not judged.
 
     - ``median_abs_lateral``: median distance of samples from the track's line,
       over samples that project inside a segment.
-    - ``max_edge_bias``: the largest absolute median of the signed lateral
-      offset over a stretch of nearly straight track at least
-      ``MIN_PIECE_BINS`` bins long around each segment (``_straight_pieces``:
-      the segment itself on a maze, several sides of a polygon on a loop),
-      using samples within ``BIAS_WINDOW_BINS`` bins of it (so tracking jumps
-      between arms do not count): track drawn beside its samples. A layout
-      moved, scaled or rotated off its samples shifts most of its stretches
-      sideways; a bend or a rounded corner the straight segments cut, or a
-      reward area where the head leans out, is local and does not move a
-      stretch's median.
-    - ``max_unsupported``: the largest per-segment share of points along it
-      with no sample within ``tolerance``: a segment where the animal never
-      was; ``share_unsupported_segments`` the share of segments beyond
-      ``MAX_UNSUPPORTED``.
+    - ``max_edge_bias``: the largest absolute median signed lateral offset
+      over a judged stretch, using samples within ``BIAS_WINDOW_BINS`` bins
+      of it (so tracking jumps between arms do not count): track drawn
+      beside its samples. A layout moved, scaled or rotated off its samples
+      shifts most of its stretches sideways; a bend or a rounded corner the
+      straight segments cut, or a reward area where the head leans out, is
+      local and does not move a stretch's median. NaN when no judged
+      stretch has 10 samples near it (``judged_stretches`` counts the
+      stretches, ``biased_stretches`` those with samples), and on positions
+      that are not 2-D, where a side is not defined (``biased_stretches``
+      NaN).
+      ``max_short_stretch_bias`` is the same over the shorter stretches,
+      reported.
+    - ``max_unsupported``: the largest share, over a judged stretch, of points
+      along it (half a bin apart) with no sample within ``tolerance``: a
+      stretch where the animal never was; ``share_unsupported_segments``
+      the share of judged stretches beyond ``MAX_UNSUPPORTED``. Points
+      within ``WALL_SUPPORT_BINS`` bins of a free end are left out of it and
+      reported as ``max_end_unsupported`` (a head stops short of a track's
+      end as it does of a wall); ``max_short_unsupported`` is the support
+      of the shorter stretches, reported.
     - ``end_overshoot``: how far the samples reach past the track's free ends
       (each end's ``REACH_QUANTILE`` reach, summed over the ends), as a share
       of the track's total length: a track drawn shorter than its samples,
       which the lateral and support measures do not see. ``max_end_reach``
       is the largest single end's reach, in the positions' units.
     """
+    from _geometry import WALL_SUPPORT_BINS
     from scipy.spatial import cKDTree
 
     _, nodes, edges = graph_arrays(graph)
+    samples = tracked(positions)
     segment, lateral, along = edge_offsets(graph, positions)
+    lengths = np.linalg.norm(nodes[edges[:, 1]] - nodes[edges[:, 0]], axis=1)
+    degree = np.bincount(edges.ravel(), minlength=len(nodes))
+    free_ends = nodes[degree == 1]
     inside = (along > 0) & (along < 1)
     near = inside & (np.abs(lateral) <= BIAS_WINDOW_BINS * tolerance)
-    biases = []
-    for piece in _straight_pieces(nodes, edges, min_length=MIN_PIECE_BINS * tolerance):
-        offsets = np.concatenate(
-            [sign * lateral[near & (segment == j)] for j, sign in piece]
+    sided = samples.shape[1] == 2
+    min_length = MIN_PIECE_BINS * tolerance
+    tree = cKDTree(samples)
+    step = tolerance / 2
+    biases: list[float] = []
+    short_biases: list[float] = []
+    unsupported: list[float] = []
+    short_unsupported: list[float] = []
+    end_unsupported: list[float] = []
+    n_judged = 0
+    for piece in _straight_pieces(nodes, edges, min_length=min_length):
+        judged = sum(lengths[j] for j, _ in piece) >= min_length * (1 - 1e-9)
+        n_judged += judged
+        if sided:
+            offsets = np.concatenate(
+                [sign * lateral[near & (segment == j)] for j, sign in piece]
+            )
+            if len(offsets) >= 10:
+                (biases if judged else short_biases).append(float(np.median(offsets)))
+        points = np.vstack(
+            [
+                nodes[edges[j, 0]]
+                + np.linspace(0.0, 1.0, max(int(np.ceil(lengths[j] / step)), 1) + 1)[
+                    :, None
+                ]
+                * (nodes[edges[j, 1]] - nodes[edges[j, 0]])
+                for j, _ in piece
+            ]
         )
-        if len(offsets) >= 10:
-            biases.append(float(np.median(offsets)))
-    tree = cKDTree(tracked(positions))
-    steps = np.linspace(0.0, 1.0, EDGE_POINTS)
-    unsupported = []
-    for u, v in edges:
-        points = nodes[u] + steps[:, None] * (nodes[v] - nodes[u])
-        unsupported.append(float(np.mean(tree.query(points)[0] > tolerance)))
+        far = tree.query(points)[0] > tolerance
+        end = _free_end_zone(points, free_ends, WALL_SUPPORT_BINS * tolerance)
+        if end.any():
+            end_unsupported.append(float(np.mean(far[end])))
+        if (~end).any():
+            (unsupported if judged else short_unsupported).append(
+                float(np.mean(far[~end]))
+            )
     # How far the samples reach past the track's free ends (nodes of degree
     # one), summed over the ends, as a share of the track's length: a track
     # drawn shorter than its samples. Summed over the whole track, not per
     # segment, so a dead end drawn as a short segment (a cell of the
     # labyrinth) is not judged on its own length.
-    degree = np.bincount(edges.ravel(), minlength=len(nodes))
-    lengths = np.linalg.norm(nodes[edges[:, 1]] - nodes[edges[:, 0]], axis=1)
     reaches = []
     for k, (u, v) in enumerate(edges):
         mine = segment == k
@@ -272,17 +321,30 @@ def edge_fit(
             if free and mine.any():
                 share = np.quantile(np.clip(past, 0, None), REACH_QUANTILE)
                 reaches.append(float(share * lengths[k]))
+
+    def largest(values: list[float], *, absolute: bool = False) -> float:
+        if not values:
+            return float("nan")
+        return float(np.max(np.abs(values) if absolute else values))
+
     return {
         "end_overshoot": float(np.sum(reaches) / np.sum(lengths)),
         "max_end_reach": max(reaches, default=0.0),
         "median_abs_lateral": float(np.median(np.abs(lateral[inside])))
-        if inside.any()
+        if inside.any() and sided
         else float("nan"),
-        "max_edge_bias": float(np.max(np.abs(biases))) if biases else float("nan"),
-        "max_unsupported": float(np.max(unsupported)),
+        "judged_stretches": float(n_judged),
+        "biased_stretches": float(len(biases)) if sided else float("nan"),
+        "max_edge_bias": largest(biases, absolute=True),
+        "max_short_stretch_bias": largest(short_biases, absolute=True),
+        "max_unsupported": largest(unsupported) if unsupported else 0.0,
+        "max_short_unsupported": largest(short_unsupported),
+        "max_end_unsupported": largest(end_unsupported),
         "share_unsupported_segments": float(
             np.mean(np.asarray(unsupported) > MAX_UNSUPPORTED)
-        ),
+        )
+        if unsupported
+        else 0.0,
     }
 
 
@@ -735,14 +797,20 @@ def misfit_reasons(
     from _geometry import MAX_SIZE_RESIDUAL
 
     reasons = []
+    if fit.get("judged_stretches", 0) and fit.get("biased_stretches") == 0:
+        reasons.append(
+            "no samples near the declared geometry (no stretch of"
+            f" {MIN_PIECE_BINS:g} bins has 10 samples within"
+            f" {BIAS_WINDOW_BINS:g} bins of it)"
+        )
     if fit["max_edge_bias"] > MAX_EDGE_BIAS_BINS * bin_size:
         reasons.append(
-            f"a segment's samples lie {fit['max_edge_bias']:.3g} to one side of it"
+            f"a stretch's samples lie {fit['max_edge_bias']:.3g} to one side of it"
             f" (limit {MAX_EDGE_BIAS_BINS:g} bin, {MAX_EDGE_BIAS_BINS * bin_size:.3g})"
         )
     if judge_support and fit["max_unsupported"] > MAX_UNSUPPORTED:
         reasons.append(
-            f"{fit['max_unsupported']:.0%} of a segment has no sample within a bin"
+            f"{fit['max_unsupported']:.0%} of a stretch has no sample within a bin"
             f" (limit {MAX_UNSUPPORTED:.0%})"
         )
     for key, value in fit.items():

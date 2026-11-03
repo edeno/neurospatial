@@ -503,7 +503,8 @@ def judge_declared(
       bin) and segments with no sample within a bin over more than
       ``_tracks.MAX_UNSUPPORTED`` of their length (``_tracks.edge_fit``);
       for a climbing ``lattice`` that segment support is reported, not
-      judged (the tracked head stays a few cm off the bars);
+      judged (the tracked head stays a few cm off the bars), and in 3-D a
+      side is not defined, so the lattice's placement is not judged;
     - an outline (a polygonal domain): per side, how far the samples nearest
       it reach past it (their ``OUTER_QUANTILE`` signed distance, positive
       beyond the wall; limit ``MAX_SIDE_BIAS_BINS`` bins: an outline moved off

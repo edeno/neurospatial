@@ -376,7 +376,7 @@ def test_a_track_segment_never_reached_is_misfit_but_a_lattice_bar_is_not():
     times = np.arange(len(on)) / 30.0
     as_track = judge_declared(track, times, on)
     assert as_track["fit"]["max_unsupported"] > 0.9
-    assert any("of a segment has no sample" in r for r in as_track["misfit"])
+    assert any("of a stretch has no sample" in r for r in as_track["misfit"])
     as_lattice = judge_declared(track, times, on, lattice=True)
     assert as_lattice["fit"]["max_unsupported"] == as_track["fit"]["max_unsupported"]
     assert as_lattice["misfit"] == []
