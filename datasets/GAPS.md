@@ -1896,9 +1896,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   linear track the first 110 s, before the rat reached the track, add a path
   up to y = 161 cm (3.5 % of samples). 001880's start box between the
   cheeseboard sub-sessions is outside `analysis_epochs` (`onMaze`) but in
-  the bins: about 62,000 off-maze samples before the loader set held
-  tracking to NaN, 3,010 after (5 bins of 1,080; most box samples were the
-  tracker's held last fix).
+  the bins: about 62,000 off-maze samples, most of them the box's held
+  runs of identical samples (G-158). The loader keeps them as the file
+  stores them (an earlier version set held runs to NaN, leaving 3,010).
 - Harness workaround: none
 - Proposed change: in the harness, build one environment per apparatus from
   the samples of its epochs (a loader parameter such as
@@ -2418,3 +2418,29 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: none in neurospatial; in the harness, measure the
   remaining checks' sensitivity on planted misfits (phase 6, rungs 2-3)
 - Status: resolved (harness rule)
+
+## G-158: Runs of identical positions may be lost tracking or stillness, and nothing in the file tells them apart
+
+- Datasets: ca1ca3_001880, valero_000568, rsc_000987
+- Operation / step: loader (`_record.find_suspect_tracking`, a load warning)
+- Kind: data-quirk
+- Evidence: runs of 10 or more frames identical in every coordinate, on
+  positions with sub-pixel values (about 64,000 to 154,000 distinct values
+  per axis, none on integer coordinates): 001880 29 % of the frames, in 90
+  runs up to 82 s (most in the start box between sub-sessions, G-113);
+  000568 46 runs up to 6 s; 000987 0.4 % of the frames in 22 runs up to
+  1 s. A tracker that loses the animal can repeat its last fix; a still
+  animal at a well or in the box can repeat a value too where the estimate
+  is coarse. The 100 cm/s limit for a fast sample has no citation: it was
+  chosen as faster than a mouse runs (000568's 99.9th percentile step is
+  218 cm/s, from jumps after held frames). No independent signal of lost
+  tracking (an LED flag, a second LED, a quality field) was found in these
+  files, and the runs' place, the speed before them and the step after them
+  were not measured.
+- Harness workaround: none: the loaders keep positions as stored and warn
+  with the counts (the maintainer's direction, 2026-11-03: warn users of
+  issues, do not change the data). An earlier version set held runs and
+  fast samples to NaN.
+- Proposed change: none in neurospatial; a reader of these recordings
+  checks the runs before analysing stops (wells, ripples, replay)
+- Status: open

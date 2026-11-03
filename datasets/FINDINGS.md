@@ -556,6 +556,7 @@ is the environment's memory warning (G-061).
 | G-040 | Speed-filtered time series; sessions table shorter than the data | Leave to the loader; the masked-data warning already flags it |
 | G-041 | No ripple table (000044) | Leave to the loader (population-burst candidates) |
 | G-053 | Lost-LED code (0, 255); position sampled only at spike times | Leave to the loader; a corner code other than the origin is not detectable by check 1 |
+| G-158 | Runs of identical positions (001880 29 % of frames, 000568, 000987): lost tracking or stillness | Leave to the loader, which keeps the positions and warns with the counts; nothing in these files tells lost tracking from stillness |
 | G-054 | Video clock 23 s off the position clock | Leave to the loader; undetectable from the arrays |
 | G-055 | Repeated timestamps; spikes cover 270 of 1,504 s tracked; spike-clock alignment assumed | Refused / warned already; leave the alignment to the loader |
 | G-051 | Motion-capture heading 0.3–0.5 rad off the direction of movement, varying between windows | Leave to the loader; the frame check needs a decision (below) |
@@ -641,6 +642,7 @@ also covers messiness, usability and visualization, and public
 | G-114, G-116, G-117, G-130, G-153, G-154 | Data quirks (declared environments) |
 | G-133 | Friction: egocentric boundary maps in pixels need `distance_range` |
 | G-156, G-157 | Harness: fidelity study limits (`jump_links` at a hub; support reported, not judged) |
+| G-158 | Data quirk: runs of identical positions (lost tracking or stillness) are warned about, not masked |
 
 ## Decisions for the maintainer
 
