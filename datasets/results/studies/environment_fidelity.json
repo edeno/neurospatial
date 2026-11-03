@@ -97,6 +97,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "fitted to the samples",
       "fit": {
+        "end_overshoot": 0.0,
+        "max_end_reach": 0.0,
         "median_abs_lateral": 0.9884308747722617,
         "max_edge_bias": 0.6043230771879411,
         "max_unsupported": 0.0,
@@ -123,8 +125,9 @@
         "geodesic_ratio_p95": 1.8809544784512982,
         "n_pairs": 2575
       },
+      "facts": [],
       "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/figure8_000552.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/figure8_000552_declared.png"
@@ -238,12 +241,16 @@
       },
       "declared_from": "authors' graph",
       "fit": {
+        "end_overshoot": 0.15608985908641268,
+        "max_end_reach": 0.6020515421401404,
         "median_abs_lateral": 0.15572153043365233,
         "max_edge_bias": 0.3431022906076002,
         "max_unsupported": 0.0,
         "max_edge_bias_limit": 0.5
       },
-      "misfit": [],
+      "misfit": [
+        "samples reach 16% of the track's length past its free ends (limit 15%)"
+      ],
       "reference_independent": false,
       "env": {
         "n_bins": 350,
@@ -280,8 +287,11 @@
         "samples_on_track": 0.9543979441392318,
         "bins_on_track": 1.0
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout (authors' track graph is what it was declared from)"
+      "facts": [
+        "the authors' graph as stated"
+      ],
+      "verdict": "mismatch",
+      "verdict_reason": "samples reach 16% of the track's length past its free ends (limit 15%)"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/rosenberg_labyrinth.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/rosenberg_labyrinth_declared.png"
@@ -467,8 +477,8 @@
       "geodesic_ratio_p95": 1.7061733548037021,
       "n_pairs": 2548
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "not verified",
+    "verdict_reason": "no stated fact independent of the samples checks it",
     "declared": {
       "layout": "Graph",
       "tracked_point": "not stated",
@@ -481,6 +491,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "fitted to the samples",
       "fit": {
+        "end_overshoot": 0.004721825007360713,
+        "max_end_reach": 0.5964396934116089,
         "median_abs_lateral": 0.918110362383443,
         "max_edge_bias": 0.3839443926291089,
         "max_unsupported": 0.0,
@@ -507,8 +519,9 @@
         "geodesic_ratio_p95": 1.7031784360554458,
         "n_pairs": 2526
       },
+      "facts": [],
       "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/giocomo_001701.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/giocomo_001701_declared.png"
@@ -625,6 +638,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "samples' principal axis",
       "fit": {
+        "end_overshoot": 0.05457841038183968,
+        "max_end_reach": 5.457841038183969,
         "median_abs_lateral": 3.18696725295315,
         "max_edge_bias": 0.21232154004526393,
         "max_unsupported": 0.0,
@@ -668,8 +683,11 @@
         "samples_on_track": 0.5731,
         "bins_on_track": 1.0
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout (principal axis of the samples (straight track) is what it was declared from)"
+      "facts": [
+        "length +5% of the stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on length +5% of the stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/vollan_lt.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/vollan_lt_declared.png"
@@ -787,6 +805,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "fitted to the samples",
       "fit": {
+        "end_overshoot": 0.0,
+        "max_end_reach": 0.0,
         "median_abs_lateral": 3.050538998909278,
         "max_edge_bias": 2.377341557832911,
         "max_unsupported": 0.0,
@@ -794,7 +814,7 @@
         "size_residual_diameter": -0.002166991205351798
       },
       "misfit": [],
-      "reference_independent": true,
+      "reference_independent": false,
       "env": {
         "n_bins": 144,
         "n_dims": 2,
@@ -830,8 +850,11 @@
         "samples_on_track": 0.6875234962406015,
         "bins_on_track": 1.0
       },
+      "facts": [
+        "diameter -0% of the stated"
+      ],
       "verdict": "matches",
-      "verdict_reason": ""
+      "verdict_reason": "on diameter -0% of the stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_circular.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_circular_declared.png"
@@ -939,6 +962,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "file's linearized coordinate",
       "fit": {
+        "end_overshoot": 0.04670546345946393,
+        "max_end_reach": 8.874038057298147,
         "median_abs_lateral": 9.039725359498679,
         "max_edge_bias": 1.5331894932520873,
         "max_unsupported": 0.44,
@@ -983,6 +1008,9 @@
         "samples_on_track": 0.12984312984312985,
         "bins_on_track": 0.8461538461538461
       },
+      "facts": [
+        "the file's linearized coordinate as stated"
+      ],
       "verdict": "mismatch",
       "verdict_reason": "44% of a segment has no sample within a bin (limit 25%)"
     },
@@ -1025,8 +1053,8 @@
       "end_to_end_geodesic": 160.0,
       "camera_distance_between_ends": 151.87851836444452
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "not verified",
+    "verdict_reason": "no stated fact independent of the samples checks it",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_linear_linearized.png"
   },
   {
@@ -1110,6 +1138,8 @@
       },
       "declared_from": "fitted to the samples",
       "fit": {
+        "end_overshoot": 0.010468300287355254,
+        "max_end_reach": 2.465577205198441,
         "median_abs_lateral": 0.7879651781286036,
         "max_edge_bias": 0.7794498877700192,
         "max_unsupported": 0.0,
@@ -1138,8 +1168,12 @@
         "geodesic_ratio_p95": 5.29820095248976,
         "n_pairs": 2244
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "facts": [
+        "base -1% of the stated",
+        "arms +6% of the stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on base -1% of the stated; arms +6% of the stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447_familiar.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447_familiar_declared.png"
@@ -1380,6 +1414,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "authors' centrelines",
       "fit": {
+        "end_overshoot": 0.12704250667444303,
+        "max_end_reach": 14.264351939421733,
         "median_abs_lateral": 4.566077876087974,
         "max_edge_bias": 4.11652699796973,
         "max_unsupported": 0.0,
@@ -1425,6 +1461,9 @@
         "samples_on_track": 0.587137537135445,
         "bins_on_track": 1.0
       },
+      "facts": [
+        "the authors' centrelines as stated"
+      ],
       "verdict": "mismatch",
       "verdict_reason": "a segment's samples lie 4.12 to one side of it (limit 1 bin, 4)"
     },
@@ -1496,6 +1535,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "authors' graph",
       "fit": {
+        "end_overshoot": 0.0,
+        "max_end_reach": 0.0,
         "median_abs_lateral": 3.207942035999065,
         "max_edge_bias": 1.2394690964515178,
         "max_unsupported": 0.0,
@@ -1539,8 +1580,12 @@
         "samples_on_track": 0.6438,
         "bins_on_track": 1.0
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout (authors' track graph is what it was declared from)"
+      "facts": [
+        "length +0% of the stated",
+        "the authors' graph as stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on length +0% of the stated; the authors' graph as stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hafting_2008_nird.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hafting_2008_nird_declared.png"
@@ -1597,7 +1642,7 @@
       "components": 1
     },
     "verdict": "mismatch",
-    "verdict_reason": "2 loop-sized holes (1% of the bins or more), apparatus has 0 loops; 50% of bins within the stated track width",
+    "verdict_reason": "2 loop-sized holes (1% of the bins or more), apparatus has 0 loops",
     "declared": {
       "layout": "Graph",
       "tracked_point": "the head (the file's head_position; how it was tracked is not stated)",
@@ -1615,6 +1660,8 @@
       },
       "declared_from": "authors' graph",
       "fit": {
+        "end_overshoot": 0.08048251940231997,
+        "max_end_reach": 8.88539630483306,
         "median_abs_lateral": 2.7284093421020676,
         "max_edge_bias": 1.8108485578073563,
         "max_unsupported": 0.08,
@@ -1657,8 +1704,11 @@
         "samples_on_track": 0.3620871227554239,
         "bins_on_track": 1.0
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout (authors' track graph is what it was declared from)"
+      "facts": [
+        "the authors' graph as stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on the authors' graph as stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/j16_23020757.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/j16_23020757_declared.png"
@@ -1736,8 +1786,8 @@
       "geodesic_ratio_p95": 8.46311196517783,
       "n_pairs": 2264
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "not verified",
+    "verdict_reason": "no stated fact independent of the samples checks it",
     "declared": {
       "layout": "Graph",
       "tracked_point": "not stated (the file's Track xMM, yMM)",
@@ -1750,6 +1800,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "fitted to the samples",
       "fit": {
+        "end_overshoot": 0.0,
+        "max_end_reach": 0.0,
         "median_abs_lateral": 0.7002701035049423,
         "max_edge_bias": 0.7965695883444639,
         "max_unsupported": 0.0,
@@ -1776,8 +1828,9 @@
         "geodesic_ratio_p95": 9.25348407819285,
         "n_pairs": 2247
       },
+      "facts": [],
       "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/agarwal_24757638.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/agarwal_24757638_declared.png"
@@ -1811,8 +1864,8 @@
       "geodesic_ratio_p95": 1.5796610136092033,
       "n_pairs": 1771
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "not verified",
+    "verdict_reason": "no stated fact independent of the samples checks it",
     "declared": {
       "layout": "Graph",
       "tracked_point": "one tracking LED (per the loader; trialData.pos)",
@@ -1830,6 +1883,8 @@
       },
       "declared_from": "fitted to the samples",
       "fit": {
+        "end_overshoot": 0.001006059006630685,
+        "max_end_reach": 0.18842392445986006,
         "median_abs_lateral": 1.0570589638589825,
         "max_edge_bias": 0.965298972384111,
         "max_unsupported": 0.0,
@@ -1864,8 +1919,18 @@
         "geodesic_ratio_p95": 2.0495662003650916,
         "n_pairs": 1768
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "facts": [
+        "arm 0 -5% of the stated",
+        "arm 1 -1% of the stated",
+        "arm 2 +3% of the stated",
+        "arm 3 +3% of the stated",
+        "arm 4 +3% of the stated",
+        "arm 5 -2% of the stated",
+        "arm 6 -5% of the stated",
+        "arm 7 -6% of the stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on arm 0 -5% of the stated; arm 1 -1% of the stated; arm 2 +3% of the stated; arm 3 +3% of the stated; arm 4 +3% of the stated; arm 5 -2% of the stated; arm 6 -5% of the stated; arm 7 -6% of the stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/shipley_30902972.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/shipley_30902972_declared.png"
@@ -1963,8 +2028,8 @@
       "geodesic_ratio_p95": 1.0668344558396703,
       "n_pairs": 2229
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "not verified",
+    "verdict_reason": "no stated fact independent of the samples checks it",
     "declared": {
       "layout": "Graph",
       "tracked_point": "not stated",
@@ -1977,6 +2042,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "samples' principal axis",
       "fit": {
+        "end_overshoot": 4.165822064745388e-08,
+        "max_end_reach": 4.398920265166927e-06,
         "median_abs_lateral": 0.41723905875634143,
         "max_edge_bias": 0.024548627416931652,
         "max_unsupported": 0.0,
@@ -2003,8 +2070,9 @@
         "geodesic_ratio_p95": 1.0369616958405878,
         "n_pairs": 2205
       },
+      "facts": [],
       "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/gonzalez_001695.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/gonzalez_001695_declared.png"
@@ -2126,8 +2194,8 @@
       "samples_on_track": 0.8818280675097943,
       "bins_on_track": 0.7789473684210526
     },
-    "verdict": "mismatch",
-    "verdict_reason": "78% of bins within the stated track width",
+    "verdict": "matches",
+    "verdict_reason": "",
     "declared": {
       "layout": "Graph",
       "tracked_point": "not stated",
@@ -2145,6 +2213,8 @@
       },
       "declared_from": "samples' principal axis",
       "fit": {
+        "end_overshoot": 0.050870078385011584,
+        "max_end_reach": 2.7978543111756378,
         "median_abs_lateral": 1.2226403770044936,
         "max_edge_bias": 0.07079996842780954,
         "max_unsupported": 0.0,
@@ -2188,8 +2258,11 @@
         "samples_on_track": 0.8818280675097943,
         "bins_on_track": 1.0
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout (principal axis of the samples (straight track) is what it was declared from)"
+      "facts": [
+        "length +5% of the stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on length +5% of the stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/valero_000568.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/valero_000568_declared.png"
@@ -2253,6 +2326,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "samples' principal axis",
       "fit": {
+        "end_overshoot": 0.0,
+        "max_end_reach": 0.0,
         "median_abs_lateral": 0.39445733912551745,
         "max_edge_bias": 0.1542988090957809,
         "max_unsupported": 0.0,
@@ -2296,8 +2371,11 @@
         "samples_on_track": 1.0,
         "bins_on_track": 1.0
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout (principal axis of the samples (straight track) is what it was declared from)"
+      "facts": [
+        "length -2% of the stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on length -2% of the stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/aeryjones_000165.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/aeryjones_000165_declared.png"
@@ -2452,8 +2530,8 @@
       "geodesic_ratio_p95": 1.111701425539581,
       "n_pairs": 2432
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "not verified",
+    "verdict_reason": "no stated fact independent of the samples checks it",
     "declared": {
       "layout": "Graph",
       "tracked_point": "the midpoint of two head-mounted LEDs (hc-3 .whl: two LEDs per frame)",
@@ -2471,6 +2549,8 @@
       },
       "declared_from": "samples' principal axis",
       "fit": {
+        "end_overshoot": 0.0,
+        "max_end_reach": 0.0,
         "median_abs_lateral": 2.132408628049549,
         "max_edge_bias": 0.02502947675592379,
         "max_unsupported": 0.0,
@@ -2497,8 +2577,9 @@
         "geodesic_ratio_p95": 1.020536896740297,
         "n_pairs": 2418
       },
+      "facts": [],
       "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc3_ec013_669.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc3_ec013_669_declared.png"
@@ -2539,8 +2620,8 @@
       "end_to_end_geodesic": 4817.500000000001,
       "camera_distance_between_ends": 253.45395959655644
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "not verified",
+    "verdict_reason": "no stated fact independent of the samples checks it",
     "declared": {
       "layout": "Graph",
       "tracked_point": "not stated (video, the authors' track coordinate)",
@@ -2553,6 +2634,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "file's coordinates",
       "fit": {
+        "end_overshoot": 0.0,
+        "max_end_reach": 0.0,
         "median_abs_lateral": 0.0,
         "max_edge_bias": 0.0,
         "max_unsupported": 0.0,
@@ -2580,8 +2663,12 @@
         "geodesic_ratio_p95": 1.0032131319031417,
         "n_pairs": 2959
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "facts": [
+        "length +0% of the stated",
+        "the file's coordinates as stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on length +0% of the stated; the file's coordinates as stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc31_anm190422.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc31_anm190422_declared.png"
@@ -2633,6 +2720,8 @@
       "outside_physical_width_by_speed": {},
       "declared_from": "fitted to the samples",
       "fit": {
+        "end_overshoot": 0.0,
+        "max_end_reach": 0.0,
         "median_abs_lateral": 2.8367985657234565,
         "max_edge_bias": 1.1992293069755764,
         "max_unsupported": 0.0,
@@ -2659,6 +2748,7 @@
         "geodesic_ratio_p95": 1.5396391846355542,
         "n_pairs": 18
       },
+      "facts": [],
       "verdict": "not verified",
       "verdict_reason": "no source read here states the geometry"
     },
@@ -2694,8 +2784,8 @@
       "geodesic_ratio_p95": 3.8995833977759076,
       "n_pairs": 2604
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "not verified",
+    "verdict_reason": "no stated fact independent of the samples checks it",
     "declared": {
       "layout": "Graph",
       "tracked_point": "the midpoint of two head-mounted LEDs (hc-28 rawpos x1, y1, x2, y2)",
@@ -2713,6 +2803,8 @@
       },
       "declared_from": "fitted to the samples",
       "fit": {
+        "end_overshoot": 0.0012184464737961015,
+        "max_end_reach": 0.34723004217373105,
         "median_abs_lateral": 2.6812495925743276,
         "max_edge_bias": 1.0037411053374528,
         "max_unsupported": 0.0,
@@ -2741,8 +2833,12 @@
         "geodesic_ratio_p95": 4.63019036092852,
         "n_pairs": 2557
       },
-      "verdict": "not verified",
-      "verdict_reason": "no misfit, but no independent reference checks the layout"
+      "facts": [
+        "base -11% of the stated",
+        "arms -11% of the stated"
+      ],
+      "verdict": "matches",
+      "verdict_reason": "on base -11% of the stated; arms -11% of the stated"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc28_hpa.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc28_hpa_declared.png"
