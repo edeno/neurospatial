@@ -15,12 +15,13 @@ What the loader converts:
   samples. The loader keeps one sample per timestamp, the mean of the samples
   that share it.
 - Spikes: every non-empty channel's train starts with a spike at exactly
-  0.0 s, and spikes end at 462 s while tracking runs to 1,504 s (the LFP is
-  275 s long). Read as seconds, the spikes are spatially tuned (mean spatial
+  0.0 s. Spikes run continuously to 269.6 s (the LFP is 275 s long), then
+  every channel is silent until a 0.7 s fragment at 461.3-462.1 s, while
+  tracking runs to 1,504 s. Read as seconds, the spikes are spatially tuned (mean spatial
   information 0.78 bits/spike), and stretched to the tracking span they are
   less so (0.54 at x 3.26), so they are seconds on the tracking clock and
-  cover only its first 462 s (checked once while writing this loader). The
-  spike at 0.0 is dropped from each train.
+  cover only its first 270 s (checked once while writing this loader). The
+  spike at 0.0 is dropped from each train; the late fragment is kept.
 - Length unit: positions are labelled centimeters, but the tracked span is
   35 by 6 (1st-99th percentile) and the 90th percentile speed 6.6 per s:
   short and slow for a mouse linear track in cm, and the paper is not at
@@ -31,9 +32,9 @@ Analysis choices (``params``):
 
 - ``bin_size`` 1 (35 bins along the track); no ``min_speed`` (no speed is
   defensible without a length unit).
-- ``analysis_epochs``: 0 to the last spike (462 s), the span the spikes
-  cover; rates over the whole tracking would divide the spikes of 462 s by
-  1,504 s of occupancy.
+- ``analysis_epochs``: 0 to 269.6 s, the continuous spike recording (ended
+  by the first silence of every channel longer than 10 s); rates over the
+  whole tracking would divide the spikes of 270 s by 1,504 s of occupancy.
 - ``dt`` 0.25 s, alternating 60 s ``train_epochs``/``test_epochs`` inside
   that span.
 """
@@ -79,6 +80,8 @@ EXPECTATIONS: dict[str, Any] = {
 
 _PATH = "sub-Sumac/sub-Sumac_ses-Sumac06-LinearTrack_behavior+ecephys.nwb"
 _ASSET_ID = "fd219159-b8ee-4bb3-933b-581245af0317"
+# All channels silent for longer than this ends the continuous spike recording.
+_SILENCE_S = 10.0
 _SHA256 = "58d883df3f383bacd3db293f59a8ac61f322d148a516ec5e34799ce78657efa3"
 
 
@@ -107,11 +110,15 @@ def load(cache: Path | None = None) -> Recording:
     starts_at_zero = sum(bool(t.size and t[0] == 0.0) for t in trains)
     trains = [t[t > 0.0] for t in trains]
     last_spike = max(float(t[-1]) for t in trains if t.size)
+    pooled = np.sort(np.concatenate(trains))
+    silences = np.flatnonzero(np.diff(pooled) > _SILENCE_S)
+    block_end = float(pooled[silences[0]]) if silences.size else last_spike
     span = np.percentile(positions, 99, axis=0) - np.percentile(positions, 1, axis=0)
     if (
         np.any(np.diff(raw_times) < 0)
         or counts.max() > 2
         or not 300.0 <= last_spike <= 0.5 * times[-1]
+        or not 200.0 <= block_end <= 300.0
         or not 20.0 <= span.max() <= 60.0
     ):
         msg = (
@@ -120,8 +127,8 @@ def load(cache: Path | None = None) -> Recording:
             f" tracked, span {span.round(1)}); recheck"
         )
         raise ValueError(msg)
-    covered = np.array([[times[0], last_spike]])
-    train, test = alternating_blocks(times[0], last_spike, 60.0)
+    covered = np.array([[times[0], block_end]])
+    train, test = alternating_blocks(times[0], block_end, 60.0)
     return Recording(
         dataset=DATASET["key"],
         session="Sumac06_LinearTrack",
@@ -150,8 +157,12 @@ def load(cache: Path | None = None) -> Recording:
             " mouse linear track in cm to confirm the label, kept as arbitrary units",
             f"spike_times: read_units (32 channel multi-unit trains); the spike at"
             f" exactly 0.0 s dropped from {starts_at_zero} trains; spikes end at"
-            f" {last_spike:.1f} s of {times[-1]:.0f} s tracked",
-            "params['analysis_epochs']: 0 to the last spike",
+            f" {last_spike:.1f} s of {times[-1]:.0f} s tracked; every channel is silent"
+            f" from {block_end:.1f} s to {pooled[silences[0] + 1]:.1f} s, then"
+            f" {int(np.sum(pooled > block_end))} spikes fall in"
+            f" {pooled[-1] - pooled[silences[0] + 1]:.1f} s",
+            f"params['analysis_epochs']: 0 to {block_end:.1f} s, the end of the"
+            " continuous spike recording",
         ),
     )
 
@@ -167,7 +178,7 @@ def _duplicate_timestamps_kept(rec: Recording) -> Recording:
 
 def _tracking_beyond_spikes(rec: Recording) -> Recording:
     # A user analysing the whole tracked session: 1,504 s of occupancy for
-    # spikes recorded during 462 s.
+    # spikes recorded during 270 s.
     params = {k: v for k, v in rec.params.items() if k != "analysis_epochs"}
     return replace(rec, params=params)
 
