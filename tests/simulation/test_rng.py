@@ -77,7 +77,9 @@ def test_int_rng_reproduces_the_output_of_the_same_int_seed_before():
     tmaze = tmaze_alternation_session(
         duration=20.0, n_trials=3, n_place_cells=3, rng=42
     )
-    assert tmaze.metadata["trial_choices"] == ("left", "right", "left")
+    # The first choice is the fourth stream spawned from the seed:
+    # default_rng(SeedSequence(42).spawn(4)[3].generate_state(1)[0]).
+    assert tmaze.metadata["trial_choices"] == ("right", "left", "right")
 
 
 def _arena():
@@ -255,3 +257,16 @@ def test_replace_pickle_and_deepcopy_keep_a_models_draw(name, rng):
         np.testing.assert_array_equal(_drawn(other), drawn)
     # Rebuilding again from the same model gives the same draw again.
     np.testing.assert_array_equal(_drawn(dataclasses.replace(model)), drawn)
+
+
+def test_tmaze_first_choice_varies_across_calls_with_one_generator():
+    """Each call advances the generator, so the first arm is not fixed."""
+    generator = np.random.default_rng(1)
+    sessions = [
+        tmaze_alternation_session(
+            duration=4.0, n_trials=2, n_place_cells=1, rng=generator
+        )
+        for _ in range(8)
+    ]
+    first_choices = {session.metadata["trial_choices"][0] for session in sessions}
+    assert first_choices == {"left", "right"}
