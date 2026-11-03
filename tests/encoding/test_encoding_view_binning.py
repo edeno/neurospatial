@@ -866,7 +866,7 @@ class TestGazeModelGeometry:
     """Geometric correctness of the gaze models used by the view-binning layer.
 
     The view binning maps a viewed location (computed by
-    ``compute_viewed_location`` with the chosen ``gaze_model``) into a spatial
+    ``viewed_location`` with the chosen ``gaze_model``) into a spatial
     bin. These tests pin the geometry the audit found only smoke-tested:
     ``ray_cast`` clips the gaze ray at the environment wall (valid
     bins), while ``fixed_distance`` projects a fixed distance ahead and can land
@@ -879,13 +879,13 @@ class TestGazeModelGeometry:
         return Environment.from_samples(rng.uniform(0, 100, (8000, 2)), bin_size=5.0)
 
     def test_boundary_clips_at_wall_fixed_distance_overshoots(self, rectangular_env):
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
 
         # Poses hugging the left wall, all facing -x toward the x=0 boundary.
         positions = np.column_stack([np.linspace(3.0, 8.0, 12), np.full(12, 50.0)])
         headings = np.full(12, np.pi)  # facing -x (West)
 
-        viewed_boundary = compute_viewed_location(
+        viewed_boundary = viewed_location(
             positions,
             headings,
             method="ray_cast",
@@ -893,7 +893,7 @@ class TestGazeModelGeometry:
             max_distance=150.0,
             boundary_source="analysis",
         )
-        viewed_fixed = compute_viewed_location(
+        viewed_fixed = viewed_location(
             positions,
             headings,
             method="fixed_distance",

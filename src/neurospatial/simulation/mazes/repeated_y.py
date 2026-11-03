@@ -162,6 +162,7 @@ class RepeatedYDims(MazeDims):
 
 def make_repeated_y_maze(
     dims: RepeatedYDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

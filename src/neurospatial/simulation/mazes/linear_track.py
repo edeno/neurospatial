@@ -93,6 +93,7 @@ class LinearTrackDims(MazeDims):
 
 def make_linear_track(
     dims: LinearTrackDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

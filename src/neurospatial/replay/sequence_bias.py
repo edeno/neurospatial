@@ -702,7 +702,7 @@ def detect_bias_sequence_replay(
     (True, -1.0)
     """
     from neurospatial.replay.methods import ReplayDetectionResult
-    from neurospatial.stats.shuffle import compute_shuffle_zscore
+    from neurospatial.stats.shuffle import shuffle_zscore
 
     method = bias_sequence_method
     tested = bias_similarity_significance(
@@ -725,7 +725,7 @@ def detect_bias_sequence_replay(
     passes = {criterion.label: not error and criterion.evaluate(n_active, np.nan)}
     null = tested.null_similarities
     defined = null[np.isfinite(null)]
-    z_score = compute_shuffle_zscore(tested.similarity, defined)
+    z_score = shuffle_zscore(tested.similarity, defined)
     return ReplayDetectionResult(
         method=method.name,
         is_replay=bool(method._passes_alpha(tested.p_value, method.alpha))
@@ -876,7 +876,7 @@ def _significance(
     use_absolute: bool,
     rng: np.random.Generator | int | None,
 ) -> BiasSimilarityResult:
-    from neurospatial.stats.shuffle import compute_shuffle_pvalue
+    from neurospatial.stats.shuffle import shuffle_pvalue
 
     n_units = len(template)
     bias, counts = _skew_bias(times, labels, n_units)
@@ -904,7 +904,7 @@ def _significance(
     defined = null[np.isfinite(null)]
     if np.isfinite(observed) and defined.size:
         statistic = np.abs if use_absolute else np.asarray
-        p_value = compute_shuffle_pvalue(
+        p_value = shuffle_pvalue(
             float(statistic(observed)), statistic(defined), alternative=alternative
         )
     else:

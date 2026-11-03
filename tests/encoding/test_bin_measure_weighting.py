@@ -205,17 +205,15 @@ def test_field_shape_on_equal_bins_is_the_rate_weighted_one(grid) -> None:
     )
 
 
-# --- compute_field_emd ----------------------------------------------------------
+# --- field_emd ----------------------------------------------------------
 
 
 def test_emd_is_unchanged_by_splitting_a_bin(square, square_split) -> None:
-    from neurospatial.encoding import compute_field_emd
+    from neurospatial.encoding import field_emd
 
     # A uniform field over the square moves into the narrow left strip.
-    emd = compute_field_emd(square, np.ones(3), np.array([1.0, 0.0, 0.0]))
-    split_emd = compute_field_emd(
-        square_split, np.ones(4), np.array([1.0, 0.0, 0.0, 0.0])
-    )
+    emd = field_emd(square, np.ones(3), np.array([1.0, 0.0, 0.0]))
+    split_emd = field_emd(square_split, np.ones(4), np.array([1.0, 0.0, 0.0, 0.0]))
     # 0.1 of the mass moves 1 cm and 0.8 moves 5.5 cm.
     assert emd == pytest.approx(4.5, rel=1e-9)
     assert split_emd == pytest.approx(4.5, rel=1e-9)
@@ -229,7 +227,7 @@ def test_emd_on_a_track_is_the_wasserstein_distance_of_the_rate_fields(
 ) -> None:
     from scipy.stats import wasserstein_distance
 
-    from neurospatial.encoding import compute_field_emd
+    from neurospatial.encoding import field_emd
 
     env = track(edges)
     rng = np.random.default_rng(6)
@@ -238,17 +236,17 @@ def test_emd_on_a_track_is_the_wasserstein_distance_of_the_rate_fields(
     expected = wasserstein_distance(
         centers, centers, rates_1 * measures, rates_2 * measures
     )
-    assert compute_field_emd(env, rates_1, rates_2) == pytest.approx(expected, rel=1e-9)
+    assert field_emd(env, rates_1, rates_2) == pytest.approx(expected, rel=1e-9)
 
 
 def test_unnormalized_emd_moves_rate_times_measure(square) -> None:
-    from neurospatial.encoding import compute_field_emd
+    from neurospatial.encoding import field_emd
 
     # 1 Hz over the 100 cm^2 square and 10 Hz over the 10 cm^2 left strip
     # hold the same firing, 100 Hz cm^2.
     uniform, strip = np.ones(3), np.array([10.0, 0.0, 0.0])
-    unnormalized = compute_field_emd(square, uniform, strip, normalize=False)
-    normalized = compute_field_emd(square, uniform, strip)
+    unnormalized = field_emd(square, uniform, strip, normalize=False)
+    normalized = field_emd(square, uniform, strip)
     assert unnormalized == pytest.approx(100.0 * normalized, rel=1e-9)
 
 
@@ -396,12 +394,12 @@ def test_field_overlap_is_a_ratio_of_areas(square, square_split) -> None:
 def test_region_coverage_is_a_fraction_of_the_region_area(edges, field) -> None:
     from shapely.geometry import box
 
-    from neurospatial.encoding import compute_region_coverage
+    from neurospatial.encoding import region_coverage
     from neurospatial.regions import Regions
 
     regions = Regions()
     regions.add("floor", polygon=box(0, 0, 10, 10))
     env = strips(edges).with_regions(regions)
     # The field fills the right 80 cm^2 of the 100 cm^2 floor.
-    coverage = compute_region_coverage(env, np.array(field))
+    coverage = region_coverage(env, np.array(field))
     assert coverage["floor"] == pytest.approx(0.8, abs=1e-12)

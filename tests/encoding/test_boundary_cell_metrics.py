@@ -415,7 +415,7 @@ class TestBorderWalls:
 
 
 class TestComputeRegionCoverage:
-    """Test compute_region_coverage function.
+    """Test region_coverage function.
 
     Note: These tests require inline Environment.from_samples() calls because they
     add regions to the environment. Session-scoped fixtures cannot be used since
@@ -448,9 +448,9 @@ class TestComputeRegionCoverage:
         firing_rate[north_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
-        coverage = compute_region_coverage(env, field_bins)
+        coverage = region_coverage(env, field_bins)
 
         # North wall should have high coverage, others should be low
         # Note: walls overlap at corners, so east/west have ~0.22 coverage from corner overlap
@@ -487,12 +487,10 @@ class TestComputeRegionCoverage:
         firing_rate[region1_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
         # Only compute for region1 and region2
-        coverage = compute_region_coverage(
-            env, field_bins, regions=["region1", "region2"]
-        )
+        coverage = region_coverage(env, field_bins, regions=["region1", "region2"])
 
         # Should only return specified regions
         assert set(coverage.keys()) == {"region1", "region2"}
@@ -517,9 +515,9 @@ class TestComputeRegionCoverage:
         firing_rate[region1_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
-        coverage = compute_region_coverage(env, field_bins, regions=None)
+        coverage = region_coverage(env, field_bins, regions=None)
 
         # Should return all regions
         assert set(coverage.keys()) == {"region1", "region2"}
@@ -541,9 +539,9 @@ class TestComputeRegionCoverage:
         firing_rate[0] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
-        coverage = compute_region_coverage(env, field_bins)
+        coverage = region_coverage(env, field_bins)
 
         # A region with no bins has no coverage to measure: 0/0 is NaN.
         assert np.isnan(coverage["far_away"])
@@ -558,10 +556,10 @@ class TestComputeRegionCoverage:
         firing_rate[0] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
         with pytest.raises(ValueError, match="Region 'nonexistent' not found"):
-            compute_region_coverage(env, field_bins, regions=["nonexistent"])
+            region_coverage(env, field_bins, regions=["nonexistent"])
 
     def test_region_coverage_full_coverage(self) -> None:
         """Test region coverage when field covers entire region."""
@@ -584,9 +582,9 @@ class TestComputeRegionCoverage:
         center_bins = np.where(env.region_mask("center"))[0]
         field_bins = center_bins
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
-        coverage = compute_region_coverage(env, field_bins)
+        coverage = region_coverage(env, field_bins)
 
         # Should have perfect coverage
         assert coverage["center"] == 1.0
@@ -613,9 +611,9 @@ class TestComputeRegionCoverage:
         north_bins = np.where(env.region_mask("north"))[0]
         field_bins = north_bins
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
-        coverage = compute_region_coverage(env, field_bins)
+        coverage = region_coverage(env, field_bins)
 
         # North should have full coverage, south should have zero
         assert coverage["north"] == 1.0

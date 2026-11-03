@@ -46,3 +46,8 @@ __all__ = [
     "EgocentricPolarSystem",
     "Environment",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

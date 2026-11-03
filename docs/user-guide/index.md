@@ -8,9 +8,9 @@ Each route explains the analysis choices and how to interpret the figures.
 | I want to… | Start here | Check before interpreting |
 | --- | --- | --- |
 | Analyze my recorded spikes and tracking | [Load NWB data](interoperability.md#nwb-interop) | Position units, clocks, unit labels and recording windows |
-| Find where a neuron fires | [First place field](../getting-started/quickstart.md#your-first-place-field) | Occupancy, smoothing scale and missing spatial coverage |
+| Find where a neuron fires | [First rate map](../getting-started/quickstart.md#your-first-rate-map) | Occupancy, smoothing scale and missing spatial coverage |
 | Compare conditions or trials | [Place fields on outbound and inbound runs](workflows.md#place-fields-on-outbound-and-inbound-runs) | One environment, identical analysis settings, matched unit IDs and observed time in each condition |
-| Classify candidate spatial cells | [Cell classification](neuroscience-metrics.md) | Threshold screens versus shuffle evidence |
+| Classify candidate spatial cells | [Which place-cell function?](neuroscience-metrics.md#which-place-cell-function) | Threshold screens versus shuffle evidence |
 | Summarize a population: coverage, remapping, assemblies and reactivation | [Population analysis](population-analysis.md) | Which units passed a spatial screen, bins visited in every condition and one unit selection across periods |
 | Test candidate events for replay and compare published methods | [Comparing replay methods](replay-methods.md) | Each method's false-positive rate on several kinds of null data, by event cells and duration |
 | Test whether task co-firing returns in rest, as published methods do | [Comparing reactivation methods](reactivation-methods.md) | Rest before the task as the control, pairs on different tetrodes, and rate changes that mimic reactivation |

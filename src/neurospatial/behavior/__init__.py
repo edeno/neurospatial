@@ -6,21 +6,42 @@ trajectory analysis, behavioral segmentation, navigation metrics,
 decision-making analysis, VTE (Vicarious Trial and Error), and reward-related
 computations.
 
-Submodules
+Start Here
 ----------
-trajectory : Speed, movement and body heading, step lengths, turn angles,
-    MSD, home range, curvature
-epochs : Restrict times / arrays / spike trains to time intervals (epochs);
-    convert per-sample labels to epochs
-segmentation : Laps, region crossings, movement and goal-directed runs
-navigation : Path efficiency, goal-directed metrics, path progress,
-    distance to regions, boundaries and rewards
-decisions : Decision analysis, choice points, Voronoi boundaries
-vte : VTE (Vicarious Trial and Error) detection, head sweeping
-reward : Reward field computations
-resampling : Distance resampling
-visits : Observed region visits
-trials : Trials between visits to named regions
+compute_speed, heading_from_velocity : How fast and which way did the animal move?
+    ``compute_speed(times, positions)`` and ``heading_from_velocity(times,
+    positions)`` return one value per sample; both leave gaps in the tracking
+    as NaN. Other trajectory measures: ``step_lengths``,
+    ``compute_cumulative_distance``, ``mean_square_displacement``,
+    ``compute_home_range``.
+
+segment_by_velocity, detect_laps, detect_trials, detect_region_visits : When did
+    the behavior happen?
+    Detectors return :class:`Intervals` you can pass as ``epochs=`` to an
+    encoding or decoding function. ``detect_laps`` and ``detect_trials`` take
+    the environment first; ``segment_by_velocity`` takes ``times, positions``.
+
+in_epochs, restrict, restrict_spike_trains : Keep only the data inside some
+    intervals
+    Select samples or spikes inside intervals such as running bouts or trials.
+
+distance_to_goal, path_progress, goal_bias, compute_path_efficiency : How well did
+    the animal navigate to a goal?
+    Goal functions take ``env, times, positions, intervals`` and ``goal=``.
+    ``compute_path_efficiency`` and ``compute_goal_directed_metrics`` return a
+    result object per trial.
+
+compute_decision_analysis, compute_vte_session : What happened at a choice point?
+    ``compute_decision_analysis`` takes a ``decision_region`` and
+    ``goal_regions``; ``compute_vte_session`` takes the decision ``region=``
+    and the ``trials=`` to score. Both report pre-decision speed, heading and
+    head sweeps (vicarious trial and error).
+
+region_reward_field, goal_reward_field : Reward fields over the environment
+
+The group names are public at ``neurospatial.behavior``; import every name in
+this list from there. Result classes (``Lap``, ``Trial``, ``RegionVisit``,
+``PathEfficiencyResult``, ``VTESessionResult``) are listed in ``__all__``.
 """
 
 from neurospatial.behavior.decisions import (
@@ -95,11 +116,11 @@ from neurospatial.behavior.trajectory import (
     compute_planar_curvature,
     compute_planar_turn_angles,
     compute_speed,
-    compute_step_lengths,
     heading_from_body_orientation,
     heading_from_velocity,
     mean_square_displacement,
     smooth_positions,
+    step_lengths,
 )
 from neurospatial.behavior.trials import detect_trials, trials_between_visits
 from neurospatial.behavior.visits import (
@@ -110,12 +131,12 @@ from neurospatial.behavior.vte import (
     VTESessionResult,
     VTETrialResult,
     classify_vte,
-    compute_vte_index,
     compute_vte_session,
     compute_vte_trial,
     head_sweep_from_positions,
     head_sweep_magnitude,
     normalize_vte_scores,
+    vte_index,
 )
 
 __all__ = [  # noqa: RUF022
@@ -141,7 +162,7 @@ __all__ = [  # noqa: RUF022
     "VTESessionResult",
     "VTETrialResult",
     "classify_vte",
-    "compute_vte_index",
+    "vte_index",
     "compute_vte_session",
     "compute_vte_trial",
     "head_sweep_from_positions",
@@ -201,9 +222,14 @@ __all__ = [  # noqa: RUF022
     "compute_planar_curvature",
     "compute_planar_turn_angles",
     "compute_speed",
-    "compute_step_lengths",
+    "step_lengths",
     "heading_from_body_orientation",
     "heading_from_velocity",
     "mean_square_displacement",
     "smooth_positions",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

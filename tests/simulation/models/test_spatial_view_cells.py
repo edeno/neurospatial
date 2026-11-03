@@ -638,14 +638,14 @@ class TestVectorizationEquivalence:
     def _reference_firing_rate(model, positions, headings):
         """Reference firing rate using the original per-timestep Python loops."""
         from neurospatial.geometry._boundaries import line_of_sight_clear
-        from neurospatial.ops.egocentric import compute_egocentric_bearing
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.egocentric import egocentric_bearing
+        from neurospatial.ops.visibility import viewed_location
 
         positions = np.asarray(positions, dtype=np.float64)
         headings = np.asarray(headings, dtype=np.float64)
         n_time = len(positions)
 
-        viewed_locations = compute_viewed_location(
+        viewed_locations = viewed_location(
             positions,
             headings,
             method=model.gaze_model,
@@ -665,7 +665,7 @@ class TestVectorizationEquivalence:
             if nan_mask[i]:
                 continue
             if model.fov is not None:
-                bearing = compute_egocentric_bearing(
+                bearing = egocentric_bearing(
                     positions[i : i + 1],
                     headings[i : i + 1],
                     model.preferred_view_location[None, :],
@@ -929,7 +929,7 @@ class TestGazeStopsAtWalls:
 
     @pytest.mark.parametrize("gaze_model", ["ray_cast", "fixed_distance"])
     def test_rates_follow_the_analysis_gaze(self, divided, gaze_model):
-        from neurospatial.ops.visibility import compute_viewed_location
+        from neurospatial.ops.visibility import viewed_location
         from neurospatial.simulation.models.spatial_view_cells import (
             SpatialViewCellModel,
         )
@@ -946,7 +946,7 @@ class TestGazeStopsAtWalls:
         rng = np.random.default_rng(5)
         positions = divided.bin_centers[rng.integers(0, divided.n_bins, 500)]
         headings = rng.uniform(-np.pi, np.pi, 500)
-        viewed = compute_viewed_location(
+        viewed = viewed_location(
             positions,
             headings,
             method=gaze_model,

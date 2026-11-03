@@ -42,11 +42,11 @@ from shapely.geometry import Point
 
 from neurospatial import Environment
 from neurospatial.behavior import (
-    compute_step_lengths,
     detect_region_crossings,
     detect_trials,
     path_progress,
     segment_by_velocity,
+    step_lengths,
 )
 from neurospatial.regions import Regions
 
@@ -164,8 +164,8 @@ plt.show()
 # %%
 intervals = np.diff(times)
 observed_interval = intervals <= 0.1
-step_lengths = compute_step_lengths(positions)
-speed = np.where(observed_interval, step_lengths / intervals, np.nan)
+steps = step_lengths(positions)
+speed = np.where(observed_interval, steps / intervals, np.nan)
 occupancy = track.occupancy(times, positions, max_gap=0.1)
 print(f"Time from first to last tracking sample: {times[-1] - times[0]:.2f} s")
 print(f"Time with continuous tracking: {occupancy.sum():.2f} s")

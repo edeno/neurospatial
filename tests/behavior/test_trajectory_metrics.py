@@ -8,8 +8,8 @@ from neurospatial import Environment, InputError
 from neurospatial.behavior.trajectory import (
     compute_home_range,
     compute_planar_turn_angles,
-    compute_step_lengths,
     mean_square_displacement,
+    step_lengths,
 )
 
 # Equal one-unit bins: the home range ranks them by occupancy alone.
@@ -19,21 +19,19 @@ _HOME_ENV = Environment.from_samples(
 
 
 class TestComputeStepLengths:
-    """Test compute_step_lengths function."""
+    """Test step_lengths function."""
 
     def test_empty_positions_raise_a_clear_error(self):
-        with pytest.raises(
-            ValueError, match=r"compute_step_lengths\(\) got no samples"
-        ):
-            compute_step_lengths(np.empty((0, 2)))
+        with pytest.raises(ValueError, match=r"step_lengths\(\) got no samples"):
+            step_lengths(np.empty((0, 2)))
 
     def test_one_position_has_no_step(self):
-        assert compute_step_lengths(np.zeros((1, 2))).shape == (0,)
+        assert step_lengths(np.zeros((1, 2))).shape == (0,)
 
     @pytest.mark.parametrize(
         "function",
         [
-            lambda **kw: compute_step_lengths(np.zeros((3, 2)), **kw),
+            lambda **kw: step_lengths(np.zeros((3, 2)), **kw),
             lambda **kw: mean_square_displacement(
                 np.arange(3.0), np.zeros((3, 2)), **kw
             ),
@@ -52,15 +50,15 @@ class TestComputeStepLengths:
         positions = np.column_stack([np.linspace(0, 100, 21), np.zeros(21)])
 
         # Euclidean distance (default)
-        step_lengths = compute_step_lengths(positions, metric="euclidean")
+        steps = step_lengths(positions, metric="euclidean")
 
         # Should have n-1 step lengths
-        assert step_lengths.shape == (20,)
+        assert steps.shape == (20,)
 
         # All steps should be positive and roughly equal
-        assert np.all(step_lengths >= 0)
+        assert np.all(steps >= 0)
         # For uniform spacing, expect uniform step lengths
-        assert_allclose(step_lengths, step_lengths[0], rtol=0.01)
+        assert_allclose(steps, steps[0], rtol=0.01)
 
     def test_step_lengths_with_duplicates(self):
         """Test that consecutive duplicates have zero step length."""
@@ -77,20 +75,20 @@ class TestComputeStepLengths:
             ]
         )
 
-        step_lengths = compute_step_lengths(positions, metric="euclidean")
+        steps = step_lengths(positions, metric="euclidean")
 
         # Should have n-1 step lengths
-        assert step_lengths.shape == (6,)
+        assert steps.shape == (6,)
 
         # Consecutive duplicates should have zero distance
-        assert step_lengths[0] == 0.0  # [0,0] -> [0,0]
-        assert step_lengths[3] == 0.0  # [20,0] -> [20,0]
-        assert step_lengths[4] == 0.0  # [20,0] -> [20,0]
+        assert steps[0] == 0.0  # [0,0] -> [0,0]
+        assert steps[3] == 0.0  # [20,0] -> [20,0]
+        assert steps[4] == 0.0  # [20,0] -> [20,0]
 
     def test_step_lengths_propagate_nan_to_both_adjacent_steps(self):
         positions = np.array([[0.0, 0.0], [np.nan, np.nan], [3.0, 4.0]])
         assert_allclose(
-            compute_step_lengths(positions),
+            step_lengths(positions),
             [np.nan, np.nan],
             rtol=0,
             atol=1e-15,
@@ -109,10 +107,10 @@ class TestComputeStepLengths:
             [[2.0, 3.0], [14.0, 8.0], [14.5, 8.2], [31.0, 37.0], [3.0, 2.0]]
         )
 
-        step_lengths = compute_step_lengths(positions, metric="geodesic", env=env)
+        steps = step_lengths(positions, metric="geodesic", env=env)
 
         assert_allclose(
-            step_lengths,
+            steps,
             np.linalg.norm(np.diff(positions, axis=0), axis=1),
             rtol=1e-12,
         )
@@ -122,16 +120,14 @@ class TestComputeStepLengths:
         positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
 
         # Euclidean (default)
-        step_lengths = compute_step_lengths(positions)
-        assert isinstance(step_lengths, np.ndarray)
+        steps = step_lengths(positions)
+        assert isinstance(steps, np.ndarray)
 
         # Geodesic requires env
         env = Environment.from_samples(positions, bin_size=5.0)
         bin_positions = env.bin_centers[env.bin_at(positions)]
-        step_lengths_geo = compute_step_lengths(
-            bin_positions, metric="geodesic", env=env
-        )
-        assert isinstance(step_lengths_geo, np.ndarray)
+        steps_geo = step_lengths(bin_positions, metric="geodesic", env=env)
+        assert isinstance(steps_geo, np.ndarray)
 
 
 def _dwell_samples(
@@ -563,7 +559,7 @@ class TestTrajectoryMetricsIntegration:
 
         # Continuous API: all metrics work directly on positions!
         turn_angles = compute_planar_turn_angles(times, positions)
-        step_lengths = compute_step_lengths(positions, metric="euclidean")
+        steps = step_lengths(positions, metric="euclidean")
 
         # Home range ranks the environment's bins by time-weighted occupancy
         env = Environment.from_samples(positions, bin_size=5.0)
@@ -577,7 +573,7 @@ class TestTrajectoryMetricsIntegration:
 
         # All metrics should be computed successfully
         assert turn_angles.shape == (len(positions),)
-        assert len(step_lengths) > 0
+        assert len(steps) > 0
         assert len(home_range) > 0
         assert len(tau_values) > 0
         assert len(msd_values) > 0
@@ -585,7 +581,7 @@ class TestTrajectoryMetricsIntegration:
         # Sanity checks
         assert np.isnan(turn_angles[[0, -1]]).all()
         assert np.all(np.abs(turn_angles[1:-1]) <= np.pi)
-        assert np.all(step_lengths >= 0)
+        assert np.all(steps >= 0)
         assert np.all(tau_values >= 0)
         assert np.all(msd_values >= 0)
 
@@ -609,7 +605,7 @@ class TestGeodesicStepLengths:
         env = Environment.from_samples(u_shape, bin_size=1.0)
         positions = np.array([[0.5, 0.5], [4.5, 0.5]])
 
-        (step,) = compute_step_lengths(positions, metric="geodesic", env=env)
+        (step,) = step_lengths(positions, metric="geodesic", env=env)
 
         exact = 2 * np.hypot(0.5, 8.5) + 3.0
         assert exact <= step <= exact + 2 * 1.0
@@ -637,10 +633,10 @@ class TestGeodesicStepLengths:
         position_bins = env.bin_at(positions)
         bin_positions = env.bin_centers[position_bins]
 
-        step_lengths = compute_step_lengths(bin_positions, metric="geodesic", env=env)
+        steps = step_lengths(bin_positions, metric="geodesic", env=env)
 
         # Step lengths should be finite for connected steps, inf for disconnected
-        assert np.all(step_lengths >= 0), "All step lengths should be non-negative"
+        assert np.all(steps >= 0), "All step lengths should be non-negative"
 
 
 class TestArrayLikeNormalization:
@@ -651,37 +647,37 @@ class TestArrayLikeNormalization:
     AttributeError from accessing .ndim on a list.
     """
 
-    # --- compute_step_lengths ---
+    # --- step_lengths ---
 
     def test_compute_step_lengths_accepts_list_of_lists(self):
-        """compute_step_lengths must accept a valid Python list-of-lists."""
+        """step_lengths must accept a valid Python list-of-lists."""
         positions_list = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]]
-        result = compute_step_lengths(positions_list, metric="euclidean")
+        result = step_lengths(positions_list, metric="euclidean")
         assert isinstance(result, np.ndarray)
         assert len(result) == 3
 
     def test_compute_step_lengths_list_no_attribute_error(self):
-        """compute_step_lengths must not raise AttributeError for a list input."""
+        """step_lengths must not raise AttributeError for a list input."""
         positions_list = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]
         try:
-            compute_step_lengths(positions_list)
+            step_lengths(positions_list)
         except AttributeError:
             pytest.fail(
-                "compute_step_lengths raised AttributeError on list input — "
+                "step_lengths raised AttributeError on list input — "
                 "must coerce with np.asarray before accessing .ndim"
             )
         except (ValueError, TypeError):
             pass  # Domain error is fine
 
     def test_compute_step_lengths_1d_list_raises_domain_error(self):
-        """compute_step_lengths must raise ValueError/TypeError (not AttributeError) for 1-D input."""
+        """step_lengths must raise ValueError/TypeError (not AttributeError) for 1-D input."""
         with pytest.raises((ValueError, TypeError)):
-            compute_step_lengths([0.0, 1.0, 2.0])  # 1D flat list
+            step_lengths([0.0, 1.0, 2.0])  # 1D flat list
 
     def test_compute_step_lengths_non_numeric_raises_domain_error(self):
-        """compute_step_lengths must raise TypeError (not AttributeError) for non-numeric input."""
+        """step_lengths must raise TypeError (not AttributeError) for non-numeric input."""
         with pytest.raises((TypeError, ValueError)):
-            compute_step_lengths([["a", "b"], ["c", "d"]])
+            step_lengths([["a", "b"], ["c", "d"]])
 
     # --- mean_square_displacement ---
 

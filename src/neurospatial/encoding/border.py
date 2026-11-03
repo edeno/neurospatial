@@ -258,7 +258,7 @@ def border_score(
     --------
     untuned_border_score : The score of a map that fires everywhere
     observed_wall_fraction : How much of the walls a rate map observes
-    compute_region_coverage : Field coverage of named regions
+    region_coverage : Field coverage of named regions
     neurospatial.encoding.SpatialRatesResult.label_cell_types : Cell-type labels
     """
     if firing_rate.shape != (env.n_bins,):
@@ -518,7 +518,7 @@ def _border_fields(
     return [bins[group == index] for index in np.flatnonzero(kept)]
 
 
-def compute_region_coverage(
+def region_coverage(
     env: Environment,
     field_bins: NDArray[np.int64],
     *,
@@ -553,7 +553,7 @@ def compute_region_coverage(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding.border import compute_region_coverage
+    >>> from neurospatial.encoding.border import region_coverage
     >>> from shapely.geometry import box
     >>>
     >>> # Create environment with wall regions
@@ -574,7 +574,7 @@ def compute_region_coverage(
     >>> field_bins = np.where(firing_rate > 0)[0]
     >>>
     >>> # Compute coverage per wall
-    >>> coverage = compute_region_coverage(env, field_bins)
+    >>> coverage = region_coverage(env, field_bins)
     >>> for wall, cov in sorted(coverage.items()):
     ...     print(f"{wall}: {cov:.1%}")  # doctest: +SKIP
     east: 0.0%
@@ -642,7 +642,7 @@ def compute_region_coverage(
 
 __all__ = [
     "border_score",
-    "compute_region_coverage",
     "observed_wall_fraction",
+    "region_coverage",
     "untuned_border_score",
 ]

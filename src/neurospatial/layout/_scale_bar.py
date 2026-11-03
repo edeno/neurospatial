@@ -2,7 +2,7 @@
 
 ``Environment.plot`` and ``Environment.plot_field`` draw these through
 ``scale_bar=``, and the animation backends reuse the same configuration.
-``ScaleBarConfig`` is public as ``neurospatial.animation.ScaleBarConfig``.
+``ScaleBarConfig`` is public as ``neurospatial.layout.ScaleBarConfig``.
 """
 
 from __future__ import annotations

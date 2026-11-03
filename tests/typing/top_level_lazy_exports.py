@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         compute_spatial_rate,
         compute_spatial_rates,
         decode_position,
+        decode_session,
         peri_event_histogram,
     )
     from neurospatial._interval_table import Interval as ConcreteInterval
@@ -56,6 +57,10 @@ if TYPE_CHECKING:
         ConcreteSpatialRatesResult,
     )
     assert_type(decode_position(env, counts, maps, dt=0.025), ConcreteDecodingResult)
+    assert_type(
+        decode_session(env, [spikes], times, positions, dt=0.025),
+        ConcreteDecodingResult,
+    )
     assert_type(
         peri_event_histogram(spikes, events, (-0.5, 0.5)), ConcretePeriEventResult
     )

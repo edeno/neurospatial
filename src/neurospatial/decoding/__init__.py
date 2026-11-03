@@ -32,8 +32,8 @@ bin_spikes_in_time : Bin spike times into a count matrix on a regular time grid
     Turns per-neuron spike-time arrays into a ``(time, neuron)`` (or
     ``(neuron, time)``) count matrix, owning the time-grid construction.
 
-decode_position : Decode precomputed spike counts with encoding models
-    Decode position from spike counts using encoding models (place fields).
+decode_position : Decode position from a precomputed spike-count matrix and rate maps
+    Use :func:`decode_session` when you start from spike times.
 
 decode_jointly : Decode several sets of rate maps in one posterior
     For example both running directions, or two tracks; returns a
@@ -206,3 +206,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "median_decoding_error",
     "normalize_to_posterior",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

@@ -182,7 +182,7 @@ env.plot(ax=ax)
 plt.show()
 ```
 
-### Your First Place Field
+### Your First Rate Map
 
 A neuroscientist's first task is usually: "I have an animal moving
 around and spikes from a neuron — show me where the cell fires." Here
@@ -197,8 +197,8 @@ import matplotlib.pyplot as plt
 from neurospatial import Environment
 from neurospatial import compute_spatial_rate
 from neurospatial.simulation import generate_population_spikes
-from neurospatial.simulation.models import PlaceCellModel
-from neurospatial.simulation.trajectory import simulate_trajectory_ou
+from neurospatial.simulation import PlaceCellModel
+from neurospatial.simulation import simulate_trajectory_ou
 
 # 1. Build a square open-field environment (60 × 60 cm, 2 cm bins).
 xx, yy = np.meshgrid(np.linspace(0, 60, 31), np.linspace(0, 60, 31))
@@ -220,7 +220,7 @@ spike_times = generate_population_spikes(
     [cell], times, positions_t, rng=42, show_progress=False,
 )[0]
 
-# 5. Recover the place field from spikes + trajectory.
+# 5. Estimate the firing-rate map from spikes + trajectory.
 result = compute_spatial_rate(
     env, spike_times, times, positions_t,
     bandwidth=5.0,
@@ -232,11 +232,11 @@ print("Place candidate:", result.is_place_cell())
 # 6. Plot.
 fig, ax = plt.subplots()
 result.plot(ax=ax)
-ax.set_title("Place field recovered from simulated spikes")
+ax.set_title("Rate map of a simulated place cell")
 plt.show()
 ```
 
-The recovered field will be a Gaussian-like blob centered near `(30,
+The rate map will have a Gaussian-like peak centered near `(30,
 30)` — the same location we put the simulated cell. From here you can
 swap in real spike times, change the trajectory, add more cells, or
 detect place fields with [`detect_place_fields`](https://edeno.github.io/neurospatial/api/).

@@ -9,7 +9,7 @@ Functions
 normalize_to_posterior : Convert log-likelihood to posterior
     Applies Bayes' rule with optional prior and handles degenerate cases.
 
-decode_position : Main entry point for Bayesian position decoding
+decode_position : Decode position from a precomputed spike-count matrix and rate maps
     Combines likelihood computation and posterior normalization into a
     single function that returns a DecodingResult.
 
@@ -306,7 +306,7 @@ def normalize_to_posterior(
     See Also
     --------
     log_poisson_likelihood : Compute log-likelihood for Poisson model
-    decode_position : Main entry point combining likelihood and posterior
+    decode_position : Likelihood and posterior from a count matrix and rate maps
     """
     from neurospatial._validation import validate_choice
 
@@ -376,10 +376,11 @@ def decode_position(
     dtype: Any = np.float64,
     time_chunk: int | None = None,
 ) -> DecodingResult:
-    """Decode position from population spike counts.
+    """Decode position from a precomputed spike-count matrix and rate maps.
 
-    Main entry point for Bayesian decoding. Computes posterior probability
-    distribution over positions for each time bin.
+    Computes the posterior probability over positions for each time bin. To
+    start from spike times, use :func:`~neurospatial.decode_session`, which
+    time-bins the spikes, fits the rate maps and calls this function.
 
     Parameters
     ----------

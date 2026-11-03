@@ -12,12 +12,12 @@ from numpy.testing import assert_allclose
 
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
-    compute_shuffle_pvalue,
-    compute_shuffle_zscore,
+    shuffle_pvalue,
     shuffle_spikes_isi,
     shuffle_time_bins,
     shuffle_time_bins_coherent,
     shuffle_trials,
+    shuffle_zscore,
 )
 
 
@@ -112,7 +112,7 @@ class TestShufflePairingDestruction:
 
 
 # ---------------------------------------------------------------------------
-# compute_shuffle_pvalue: non-finite null handling.
+# shuffle_pvalue: non-finite null handling.
 # ---------------------------------------------------------------------------
 
 
@@ -120,7 +120,7 @@ def test_compute_shuffle_pvalue_drops_nan_nulls():
     """Undefined (NaN) null scores are dropped (with a warning) and excluded from n."""
     null = np.array([1.0, 2.0, np.nan, 4.0])
     with pytest.warns(UserWarning, match="undefined \\(NaN\\)"):
-        p = compute_shuffle_pvalue(10.0, null, alternative="greater")
+        p = shuffle_pvalue(10.0, null, alternative="greater")
     # n reduced to 3 defined values, none >= 10 -> (0 + 1) / (3 + 1) = 0.25.
     assert_allclose(p, 0.25)
 
@@ -139,29 +139,29 @@ def test_compute_shuffle_pvalue_ranks_infinite_nulls(tail, expected):
     null = np.r_[np.full(500, np.inf), np.ones(500)]
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        p = compute_shuffle_pvalue(10.0, null, alternative=tail)
+        p = shuffle_pvalue(10.0, null, alternative=tail)
     assert p == pytest.approx(expected)
 
 
 def test_compute_shuffle_pvalue_all_nan_raises():
     """An all-NaN null distribution raises a ValueError."""
     with pytest.raises(ValueError, match="no defined"):
-        compute_shuffle_pvalue(5.0, np.full(4, np.nan))
+        shuffle_pvalue(5.0, np.full(4, np.nan))
 
 
 def test_compute_shuffle_pvalue_nan_observed_raises():
     """A non-finite ``observed`` raises rather than silently returning 1/(n+1)."""
     null = np.array([1.0, 2.0, 3.0, 4.0])
     with pytest.raises(ValueError, match="observed must be a finite value"):
-        compute_shuffle_pvalue(np.nan, null, alternative="greater")
+        shuffle_pvalue(np.nan, null, alternative="greater")
     with pytest.raises(ValueError, match="observed must be a finite value"):
-        compute_shuffle_pvalue(np.inf, null, alternative="greater")
+        shuffle_pvalue(np.inf, null, alternative="greater")
 
 
 def test_compute_shuffle_pvalue_finite_unchanged():
     """All-finite null reproduces the documented value (finite path untouched)."""
     null = np.array([1.0, 2.0, 3.0, 4.0])
-    p = compute_shuffle_pvalue(10.0, null, alternative="greater")
+    p = shuffle_pvalue(10.0, null, alternative="greater")
     assert_allclose(p, 0.2)
 
 
@@ -181,8 +181,8 @@ def test_from_null_leaves_out_undefined_scores():
     null = np.array([np.nan, 1.0, 2.0, 3.0])
     result = ShuffleTestResult.from_null(2.5, null, shuffle_type="time_bins")
     defined = null[1:]
-    assert result.p_value == compute_shuffle_pvalue(2.5, defined)
-    assert result.z_score == compute_shuffle_zscore(2.5, defined)
+    assert result.p_value == shuffle_pvalue(2.5, defined)
+    assert result.z_score == shuffle_zscore(2.5, defined)
     assert result.n_shuffles == 4
     assert result.n_shuffles_used == 3
     assert result.alternative == "greater"
@@ -243,9 +243,9 @@ def test_shuffle_test_result_plot_with_infinite_nulls():
 
 def test_zscore_is_nan_with_infinite_null():
     """An infinite null score leaves the mean and SD undefined."""
-    assert np.isnan(compute_shuffle_zscore(1.0, np.array([0.0, 1.0, np.inf])))
+    assert np.isnan(shuffle_zscore(1.0, np.array([0.0, 1.0, np.inf])))
     with pytest.warns(UserWarning, match=r"Dropped 1 undefined \(NaN\) null"):
-        z = compute_shuffle_zscore(2.0, np.array([0.0, np.nan, 2.0]))
+        z = shuffle_zscore(2.0, np.array([0.0, np.nan, 2.0]))
     assert z == pytest.approx(1.0)
 
 
@@ -331,10 +331,10 @@ def test_circular_shift_warns_when_no_spike_is_in_the_windows():
 
 def test_zscore_warns_when_it_drops_undefined_null_scores():
     """Like the p-value, the z-score says how many NaN null scores it left out."""
-    from neurospatial.stats.shuffle import compute_shuffle_zscore
+    from neurospatial.stats.shuffle import shuffle_zscore
 
     with pytest.warns(UserWarning, match=r"Dropped 1 undefined \(NaN\) null score"):
-        z = compute_shuffle_zscore(3.0, np.array([0.0, 1.0, np.nan]))
+        z = shuffle_zscore(3.0, np.array([0.0, 1.0, np.nan]))
     assert z == pytest.approx(5.0)
 
 

@@ -94,7 +94,7 @@ from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._units import default_length
 from neurospatial.geometry import CallIndexes, require_cartesian, valid_observers
-from neurospatial.ops.egocentric import compute_egocentric_bearing
+from neurospatial.ops.egocentric import egocentric_bearing
 from neurospatial.ops.visibility import FieldOfView, _sight_lines, gaze_points
 from neurospatial.simulation.models.base import (
     _check_point,
@@ -148,7 +148,7 @@ class SpatialViewCellModel:
           wall when one is nearer.
 
         Both stop at the environment's walls, so the gaze never passes
-        through one; :func:`neurospatial.ops.visibility.compute_viewed_location`
+        through one; :func:`neurospatial.ops.visibility.viewed_location`
         computes the same points.
     boundary_source : {'physical', 'analysis'}, default='physical'
         Declared physical walls or explicitly selected analysis boundaries for
@@ -168,7 +168,7 @@ class SpatialViewCellModel:
         fires above baseline only when ``preferred_view_location`` lies
         inside it, that is when its egocentric bearing from the animal is
         within the field of view: the meaning ``fov`` has in
-        :func:`neurospatial.ops.visibility.compute_viewshed` and
+        :func:`neurospatial.ops.visibility.viewshed` and
         ``visible_cues``. The gaze runs straight ahead, so a gaze that lands
         near the location usually has it in view; ``fov`` matters when the
         animal is close to the location and looks past it.
@@ -241,7 +241,7 @@ class SpatialViewCellModel:
     view field width.
 
     **Gaze Models**: the viewed location comes from
-    :func:`neurospatial.ops.visibility.compute_viewed_location` with this
+    :func:`neurospatial.ops.visibility.viewed_location` with this
     model's environment, so it is the location the view analysis assigns the
     sample to:
 
@@ -257,7 +257,7 @@ class SpatialViewCellModel:
     --------
     PlaceCellModel : Position-based place fields
     ObjectVectorCellModel : Object-distance tuned cells
-    compute_viewed_location : Gaze computation function
+    viewed_location : Gaze computation function
     """
 
     env: Environment = field(repr=False)
@@ -426,11 +426,11 @@ class SpatialViewCellModel:
         response[observed & np.isnan(distances)] = 0.0
 
         if self.fov is not None:
-            # As in compute_viewshed: the location is in view when its
+            # As in viewshed: the location is in view when its
             # egocentric bearing lies inside the field of view; a location at
             # the observer's own position is inside every field of view.
             offsets = self.preferred_view_location - positions
-            bearings = compute_egocentric_bearing(
+            bearings = egocentric_bearing(
                 positions, headings, self.preferred_view_location[None, :]
             )[:, 0]
             in_fov = np.asarray(self.fov.contains_angle(bearings), dtype=bool)

@@ -582,11 +582,11 @@ def _boundary_frame_bins(
         BEYOND_RANGE,
         _coords_to_flat_bin_idx,
     )
-    from neurospatial.ops.boundary_vectors import compute_boundary_distances
+    from neurospatial.ops.boundary_vectors import boundary_distances
 
     # Search every wall, not only those in range, so the time a wall lay
     # beyond the range is known.
-    distances, directions = compute_boundary_distances(
+    distances, directions = boundary_distances(
         env,
         positions,
         headings,
@@ -808,7 +808,7 @@ def compute_boundary_vector_rates(
     See Also
     --------
     compute_boundary_vector_rate : The single-unit version.
-    neurospatial.ops.compute_boundary_distances : The ray distances themselves.
+    neurospatial.ops.boundary_distances : The ray distances themselves.
     compute_object_vector_rate : Firing by distance and direction to objects.
 
     Notes

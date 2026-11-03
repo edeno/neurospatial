@@ -214,7 +214,7 @@ def _precompute_view_bins(
                 "For rotated rectangular arenas, construct bins in the arena-aligned frame "
                 "and transform bins, arena and observations together. Alternatively, explicitly "
                 "choose boundary_source='analysis' to encode the retained analysis boundary. "
-                "compute_viewed_location(...) remains available for geometry-only wall contacts."
+                "viewed_location(...) remains available for geometry-only wall contacts."
             )
             raise NotImplementedError(msg)
         view_bins[wall] = wall_bins

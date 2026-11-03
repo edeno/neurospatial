@@ -27,7 +27,7 @@ if TYPE_CHECKING:
         valid_observers,
     )
     from neurospatial.ops import (
-        compute_egocentric_distance,
+        egocentric_distance,
         geodesic_rbf_basis,
         graph_convolve,
         heat_kernel_wavelet_basis,
@@ -57,7 +57,7 @@ if TYPE_CHECKING:
     )
     from neurospatial.ops.basis import _diffusion_generator
     from neurospatial.ops.transforms import AffineND
-    from neurospatial.ops.visibility import ViewshedResult, compute_viewshed
+    from neurospatial.ops.visibility import ViewshedResult, viewshed
 
     def _either_coordinate_system(
         env: Environment[CartesianSystem] | Environment[EgocentricPolarSystem],
@@ -79,10 +79,10 @@ if TYPE_CHECKING:
         geodesic_rbf_basis(env, n_centers=3, center_method="farthest_point")
         heat_kernel_wavelet_basis(env, center_method="farthest_point")
         plot_basis_functions(env, np.ones((env.n_bins, 2)))
-        compute_egocentric_distance(values, values, values, metric="geodesic", env=env)
+        egocentric_distance(values, values, values, metric="geodesic", env=env)
         sample_spatial_features(env, values, values, feature_ids=["height"])
         sample_egocentric_features(env, values, values, values, values)
-        assert_type(compute_viewshed(env, values, 0.0), ViewshedResult)
+        assert_type(viewshed(env, values, 0.0), ViewshedResult)
 
     def _cartesian_only(
         cartesian: Environment[CartesianSystem],

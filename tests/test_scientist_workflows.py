@@ -9,7 +9,7 @@ import pytest
 from neurospatial import Environment, compute_spatial_rate, compute_spatial_rates
 from neurospatial.behavior import in_epochs, restrict
 from neurospatial.behavior.decisions import compute_pre_decision_metrics
-from neurospatial.behavior.trajectory import compute_step_lengths
+from neurospatial.behavior.trajectory import step_lengths
 from neurospatial.decoding import (
     BayesianDecoder,
     decode_position,
@@ -129,7 +129,7 @@ def test_geodesic_steps_preserve_missing_positions(missing):
         np.ones(4, dtype=bool), grid_edges=(np.arange(5.0),)
     )
     positions = np.array([[0.5], [1.5], [missing], [missing], [2.5]])
-    steps = compute_step_lengths(positions, metric="geodesic", env=env)
+    steps = step_lengths(positions, metric="geodesic", env=env)
     assert steps[0] == 1.0
     assert np.isnan(steps[1:]).all()
 

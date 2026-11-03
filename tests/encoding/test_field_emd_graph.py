@@ -13,7 +13,7 @@ from shapely.geometry import LineString, box
 
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.encoding import compute_field_emd
+from neurospatial.encoding import field_emd
 
 
 def _dense_geodesic_emd(env: Environment, p: np.ndarray, q: np.ndarray) -> float:
@@ -63,9 +63,9 @@ def test_flow_along_the_graph_matches_the_full_transport_plan(walled_room):
     p = np.where(common, np.nan_to_num(field_1) * measures, 0.0)
     q = np.where(common, np.nan_to_num(field_2) * measures, 0.0)
     expected = _dense_geodesic_emd(walled_room, p / p.sum(), q / q.sum())
-    assert compute_field_emd(
-        walled_room, field_1, field_2, metric="geodesic"
-    ) == pytest.approx(expected, rel=1e-6)
+    assert field_emd(walled_room, field_1, field_2, metric="geodesic") == pytest.approx(
+        expected, rel=1e-6
+    )
 
 
 def test_a_bump_moved_along_a_corridor_moves_that_distance():
@@ -78,9 +78,9 @@ def test_a_bump_moved_along_a_corridor_moves_that_distance():
     x = track.bin_centers[:, 0]
     field_1 = np.exp(-0.5 * ((x - 30) / 4) ** 2)
     field_2 = np.exp(-0.5 * ((x - 55) / 4) ** 2)
-    assert compute_field_emd(
-        track, field_1, field_2, metric="geodesic"
-    ) == pytest.approx(25.0, rel=1e-6)
+    assert field_emd(track, field_1, field_2, metric="geodesic") == pytest.approx(
+        25.0, rel=1e-6
+    )
 
 
 @pytest.mark.wallclock
@@ -91,7 +91,7 @@ def test_geodesic_emd_scales_to_a_finely_binned_arena():
     field_1 = np.exp(-np.sum((centers - [40, 40]) ** 2, axis=1) / 200)
     field_2 = np.exp(-np.sum((centers - [110, 90]) ** 2, axis=1) / 200)
     start = time.perf_counter()
-    emd = compute_field_emd(env, field_1, field_2, metric="geodesic")
+    emd = field_emd(env, field_1, field_2, metric="geodesic")
     assert time.perf_counter() - start < 10.0
     assert 80 < emd < 95  # 86 cm between the centers, plus the grid's excess
 
@@ -105,6 +105,6 @@ def test_euclidean_emd_solves_a_balanced_problem_on_a_full_box():
     field_1 = np.exp(-np.sum((centers - [42, 42]) ** 2, axis=1) / 200)
     field_2 = np.exp(-np.sum((centers - [108, 90]) ** 2, axis=1) / 200)
     # The same field shifted by whole bins: it moves by the shift.
-    assert compute_field_emd(
-        env, field_1, field_2, metric="euclidean"
-    ) == pytest.approx(np.hypot(66, 48), rel=1e-4)
+    assert field_emd(env, field_1, field_2, metric="euclidean") == pytest.approx(
+        np.hypot(66, 48), rel=1e-4
+    )

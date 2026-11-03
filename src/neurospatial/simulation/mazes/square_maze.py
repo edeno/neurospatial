@@ -78,6 +78,7 @@ class SquareMazeDims(MazeDims):
 
 def make_square_maze(
     dims: SquareMazeDims | None = None,
+    *,
     bin_size: float = 2.0,
 ) -> MazeEnvironments:
     """Create a Square Maze (Open Field Box) environment.

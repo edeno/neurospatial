@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     )
     from neurospatial.decoding import decode_position_summary, mean_position
     from neurospatial.encoding import (
-        compute_field_emd,
+        field_emd,
         field_shape_metrics,
         field_shift_distance,
         rate_map_centroid,
@@ -88,7 +88,7 @@ if TYPE_CHECKING:
     ) -> None:
         # Only the Euclidean or coordinate-based modes refuse polar at runtime.
         rate_map_centroid(polar, values, bins, method="geodesic")
-        compute_field_emd(polar, values, values, metric="geodesic")
+        field_emd(polar, values, values, metric="geodesic")
         select_basis_centers(polar, n_centers=5, method="farthest_point")
         trajectory_similarity(polar, values, values, method="jaccard")
         # Posterior means are egocentric-plane centroids on polar environments.

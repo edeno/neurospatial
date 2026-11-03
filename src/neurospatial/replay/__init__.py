@@ -195,6 +195,7 @@ Monte Carlo p-value helpers and temporal shuffles
 :mod:`neurospatial.stats`.
 """
 
+from neurospatial.replay import dataset, methods
 from neurospatial.replay.arms import ArmReplayMethod, detect_arm_replay
 from neurospatial.replay.calibration import (
     NullSpikeData,
@@ -316,6 +317,9 @@ from neurospatial.replay.trajectory import (
 )
 
 __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
+    # Submodules that hold the published recipe constants
+    "dataset",
+    "methods",
     # Published methods
     "ArmReplayMethod",
     "BiasSequenceMethod",
@@ -420,3 +424,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "shuffle_spike_counts_circular",
     "shuffle_spike_counts_uniform",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

@@ -186,12 +186,12 @@ def test_every_wall_piece_of_a_wall_centred_grid_has_an_owner(wall_centred):
 def test_every_gaze_wall_hit_has_a_bin(wall_centred):
     """Ray-cast gaze stopping at a wall in a dropped cell still has a bin."""
     from neurospatial.geometry import wall_hit_bins
-    from neurospatial.ops.visibility import compute_viewed_location
+    from neurospatial.ops.visibility import viewed_location
 
     _polygon, env = wall_centred
     rng = np.random.default_rng(4)
     origins = env.bin_centers[rng.integers(0, env.n_bins, 2000)]
-    hits = compute_viewed_location(
+    hits = viewed_location(
         origins, rng.uniform(-np.pi, np.pi, 2000), method="ray_cast", env=env
     )
     bins = env.bin_at(np.nextafter(hits, origins))

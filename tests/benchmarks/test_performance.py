@@ -28,7 +28,7 @@ from neurospatial.encoding import PlaceFieldsResult
 from neurospatial.encoding._metrics import sparsity, spatial_information
 from neurospatial.encoding.spatial import compute_spatial_rate, detect_place_fields
 from neurospatial.ops.distance import pairwise_distances
-from neurospatial.ops.smoothing import compute_diffusion_kernels
+from neurospatial.ops.smoothing import diffusion_kernels
 
 # =============================================================================
 # Fixtures for Benchmark Data
@@ -316,12 +316,12 @@ class TestSpatialQueryPerformance:
 class TestGraphOperationPerformance:
     """Benchmark graph-based operations."""
 
-    def test_compute_diffusion_kernels(self, benchmark, medium_env):
+    def test_diffusion_kernels(self, benchmark, medium_env):
         """Benchmark diffusion kernel computation."""
         # Resolve the finite-volume geometry once; benchmark just the primitive.
         graph_fv, volumes = face_graph(medium_env._binning)
         result = benchmark(
-            compute_diffusion_kernels,
+            diffusion_kernels,
             graph_fv,
             volumes=volumes,
             bandwidth=5.0,
