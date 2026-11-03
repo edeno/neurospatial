@@ -514,9 +514,11 @@ def judge_declared(
       share of each side (``outline_sides``) with no sample within
       ``WALL_SUPPORT_BINS`` bins is reported, not judged: a headstage LED
       keeps off the walls;
-    - a room or other box without an outline (a 3-D grid): the samples'
-      reach past its bounds is reported, not judged (a bat perching in a
-      corner of the room's frame, G-025); only stated sizes judge it;
+    - a room or other box without an outline (a 3-D grid): per face, as an
+      outline's side, how far the samples assigned to it (the face each lies
+      farthest past, inside the nearest) reach past it (their
+      ``OUTER_QUANTILE`` signed distance; limit ``MAX_SIDE_BIAS_BINS``
+      bins), and the stated sizes;
     - a track, also how far its samples reach past its free ends
       (``end_overshoot``, summed over the ends, limit ``MAX_SIZE_RESIDUAL``
       of the track's length: a track drawn too short);
@@ -536,6 +538,9 @@ def judge_declared(
     ``bin_size`` is the nominal bin the environment was built with (its
     bins along a graph's edges can be shorter); by default the median bin's
     length, or its measure's root for a grid or outline.
+
+    No sample near the declared geometry (no stretch, side or face with
+    samples near it) is a misfit, not a pass.
 
     Returns ``{"kind", "misfit": [reasons], "fit": {...}, "outside": share or
     None, "outside_by_speed": {...}}``.
@@ -592,6 +597,18 @@ def judge_declared(
                 0.995,
                 axis=0,
             )
+            # Each face as an outline's side: each sample's signed distance
+            # past every face (positive outside), the sample assigned to the
+            # face it lies farthest past (inside, the nearest face), and per
+            # face the ``OUTER_QUANTILE`` of its samples' distance.
+            past = np.hstack([low - samples, samples - high])
+            nearest = np.argmax(past, axis=1)
+            signed = past[np.arange(len(past)), nearest]
+            faces = [
+                float(np.quantile(signed[nearest == k], OUTER_QUANTILE))
+                for k in range(past.shape[1])
+                if np.sum(nearest == k) >= 10
+            ]
             out["fit"] = {
                 "room_size": (high - low).tolist(),
                 "samples_extent": (
@@ -599,7 +616,16 @@ def judge_declared(
                     - np.quantile(samples, 0.005, axis=0)
                 ).tolist(),
                 "max_reach_past_bounds": float(reach.max()),
+                "max_side_bias": max(faces) if faces else float("nan"),
+                "max_side_bias_limit": MAX_SIDE_BIAS_BINS * bin_size,
             }
+            if not faces:
+                out["misfit"].append("no samples near the declared geometry")
+            elif out["fit"]["max_side_bias"] > out["fit"]["max_side_bias_limit"]:
+                out["misfit"].append(
+                    f"samples reach {out['fit']['max_side_bias']:.3g} beyond one face"
+                    f" of the room (limit {out['fit']['max_side_bias_limit']:.3g})"
+                )
             for key, value in (stated_residuals or {}).items():
                 out["fit"][f"size_residual_{key}"] = value
                 if abs(value) > MAX_SIZE_RESIDUAL:
@@ -645,6 +671,8 @@ def judge_declared(
                 along = samples @ (side / length)
                 low, high = np.quantile(along, [0.005, 0.995])
                 shortfall.append(float((high - low) / length - 1))
+            if not biases:
+                out["misfit"].append("no samples near the declared geometry")
             fit = {
                 "max_side_bias": max(biases) if biases else float("nan"),
                 "max_side_bias_limit": MAX_SIDE_BIAS_BINS * bin_size,

@@ -412,29 +412,37 @@ def test_an_outline_is_judged_on_its_stated_centre(offset, misfit):
     assert any("from the stated centre" in r for r in judged["misfit"]) is misfit
 
 
-def test_samples_outside_a_room_are_reported_not_judged():
-    # A 3-D room tiled by voxels; 5 % of the samples sit 1 m past one wall
-    # (a perch in the room's frame): reported, with the speed split, but
-    # only a stated size judges a room.
+@pytest.mark.parametrize(("shift", "misfit"), [(0.0, False), (0.6, True), (10.0, True)])
+def test_a_room_is_judged_by_its_faces(shift, misfit):
+    # A 3-D room tiled by 0.25 m voxels. 0.1 % of the samples sit 1 m past
+    # one wall (a perch in the room's frame, as 0.11 % of the bat's flight
+    # samples lie outside its room): reported, with the speed split, not
+    # misfit, since they are few of the samples nearest that wall. The same
+    # samples moved past a wall by more than a bin (0.6 m, or 10 m: every
+    # sample outside) are misfit.
     from _geometry import judge_declared
 
     rng = np.random.default_rng(8)
-    inside = rng.uniform([0, 0, 0], [5, 5, 2], (19000, 3))
+    inside = rng.uniform([0, 0, 0], [5, 5, 2], (19980, 3))
     perch = np.column_stack(
-        [rng.normal(2.5, 0.01, 1000), np.full(1000, 6.0), np.full(1000, 1.0)]
+        [rng.normal(2.5, 0.01, 20), np.full(20, 6.0), np.full(20, 1.0)]
     )
-    samples = np.vstack([inside, perch])
+    samples = np.vstack([inside, perch]) + np.array([shift, 0.0, 0.0])
     times = np.arange(len(samples)) / 100.0
     room = Environment.from_samples(
-        samples[:2],
+        samples[:2] - np.array([shift, 0.0, 0.0]),
         bin_size=0.25,
         dimension_ranges=[(0, 5), (0, 5), (0, 2)],
         infer_active_bins=False,
     )
     judged = judge_declared(room, times, samples, speed_thresholds=(0.5,))
     assert judged["kind"] == "room"
-    assert judged["outside"] == pytest.approx(0.05, abs=0.001)
-    assert judged["misfit"] == []
     assert set(judged["outside_by_speed"]) >= {"all"}
-    wrong = judge_declared(room, times, samples, stated_residuals={"room_y": 0.4})
-    assert any("room_y +40% of the stated" in r for r in wrong["misfit"])
+    if misfit:
+        assert any("beyond one face of the room" in r for r in judged["misfit"])
+    else:
+        assert judged["outside"] == pytest.approx(0.001, abs=0.0002)
+        assert judged["misfit"] == []
+        wrong = judge_declared(room, times, samples, stated_residuals={"room_y": 0.4})
+        assert any("room_y +40% of the stated" in r for r in wrong["misfit"])
+
