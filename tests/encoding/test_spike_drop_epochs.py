@@ -13,7 +13,7 @@ import warnings
 import numpy as np
 import pytest
 
-from neurospatial import compute_spatial_rates
+from neurospatial import compute_spatial_rate, compute_spatial_rates
 from neurospatial.decoding import decode_session
 from neurospatial.encoding import compute_directional_rate, compute_directional_rates
 from neurospatial.simulation import open_field_session
@@ -240,3 +240,45 @@ def test_partial_offset_inside_epochs_is_not_detected(session_600s):
     # Without epochs the same spikes are lost to the analysis, so it warns.
     with pytest.warns(UserWarning, match="fell outside the position"):
         compute_spatial_rates(session.env, [shifted], session.times, session.positions)
+
+
+def _silent_in_epochs(session):
+    """One unit over 0-300 s, tracked 0-100 s, with no spike in 20-80 s.
+
+    A cell active outside the analysed epochs (in sleep, say) is ordinary
+    data, not spike times on another clock.
+    """
+    rng = np.random.default_rng(5)
+    spikes = np.sort(np.r_[rng.uniform(0.0, 20.0, 20), rng.uniform(80.0, 300.0, 200)])
+    assert not np.any((spikes >= 20.0) & (spikes < 80.0))
+    assert np.any(spikes < session.times[-1])  # some spikes are tracked
+    return spikes
+
+
+@pytest.mark.parametrize("family", ["spatial", "directional"])
+def test_unit_silent_inside_epochs_does_not_warn(session_100s, family):
+    session = session_100s
+    spikes = _silent_in_epochs(session)
+    headings = np.zeros(session.times.size)
+
+    def call(train):
+        if family == "spatial":
+            return compute_spatial_rate(
+                session.env, train, session.times, session.positions, epochs=(20, 80)
+            )
+        return compute_directional_rate(train, session.times, headings, epochs=(20, 80))
+
+    maxima = []
+    for train in (spikes, np.sort(np.r_[spikes, 50.0])):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = call(train)
+        assert _drop_warnings(caught) == []
+        maxima.append(np.nanmax(np.asarray(result.firing_rate)))
+    # Silent in the analysed time: a zero rate where visited, not missing;
+    # the one spike at 50 s is counted.
+    assert maxima[0] == 0.0
+    assert maxima[1] > 0.0
+    # The same unit in milliseconds is on another clock and still warns.
+    with pytest.warns(UserWarning, match=r"\(100%\) fell outside the position"):
+        call(spikes * 1000)
