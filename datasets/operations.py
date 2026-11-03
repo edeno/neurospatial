@@ -711,6 +711,61 @@ def imaging_rates_workaround(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
 
 
+def egocentric_boundary(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Egocentric boundary maps: rate by distance and egocentric direction to walls.
+
+    Uses ``compute_boundary_vector_rates`` with ``direction_frame="egocentric"``
+    and its defaults (0-50 cm in 5 cm rings, 30 degree bins, unsmoothed). An
+    environment built from samples declares no walls, so the walls are the
+    edge of the visited bins (``boundary_source="analysis"``). The summary
+    counts units whose peak is in the outermost ring, where the docstring
+    says untuned cells peak by chance, and units whose peak is on the left
+    (egocentric direction in (0, pi)).
+    """
+    from neurospatial.encoding import compute_boundary_vector_rates
+
+    if rec.positions.shape[1] != 2:
+        return Outcome("n/a", note="egocentric boundary maps need 2-D positions")
+    rates = compute_boundary_vector_rates(
+        _env(rec, cache),
+        list(rec.spike_times or ()),
+        rec.times,
+        rec.positions,
+        rec.headings,
+        direction_frame="egocentric",
+        boundary_source="analysis",
+        epochs=rec.params.get("analysis_epochs"),
+    )
+    cache["egocentric_boundary"] = rates
+    table = rates.summary_table()
+    distance = np.asarray(table["preferred_distance"], dtype=float)
+    direction = np.asarray(table["preferred_direction"], dtype=float)
+    low, high = rates.distance_range
+    ring = (high - low) / rates.n_distance_bins
+    peaked = np.isfinite(distance)
+    return Outcome(
+        "ok",
+        {
+            "n_units": len(table),
+            "n_with_peak": int(peaked.sum()),
+            "median_preferred_distance": float(np.median(distance[peaked]))
+            if peaked.any()
+            else float("nan"),
+            "frac_peak_in_last_ring": float(np.mean(distance[peaked] > high - ring))
+            if peaked.any()
+            else float("nan"),
+            "frac_peak_on_left": float(np.mean(np.sin(direction[peaked]) > 0))
+            if peaked.any()
+            else float("nan"),
+            **{
+                "distance_information_" + k: v
+                for k, v in _finite_stats(table["distance_information"]).items()
+            },
+        },
+        note="walls = edge of the visited bins (boundary_source='analysis')",
+    )
+
+
 _SPIKES_AND_POSITIONS = ("positions", "spike_times")
 
 OPERATIONS: tuple[Operation, ...] = (
@@ -725,6 +780,11 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("cells.grid_score", _SPIKES_AND_POSITIONS, grid_scores),
     Operation("cells.border_score", _SPIKES_AND_POSITIONS, border_scores),
     Operation("hd.tuning", ("headings", "spike_times"), hd_tuning),
+    Operation(
+        "rates.egocentric_boundary",
+        ("positions", "headings", "spike_times"),
+        egocentric_boundary,
+    ),
     Operation("decode.position", _SPIKES_AND_POSITIONS, decode_position),
     Operation("io.nwb_roundtrip", _SPIKES_AND_POSITIONS, nwb_roundtrip),
     Operation("env.from_graph", ("positions",), env_from_graph),
