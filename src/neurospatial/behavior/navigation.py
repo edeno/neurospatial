@@ -291,6 +291,13 @@ def _metric_column(
     return array
 
 
+def _mean_defined(values: Any) -> float:
+    """Mean of the finite entries of a metric; NaN when there are none."""
+    array = np.asarray(values, dtype=float)
+    finite = array[np.isfinite(array)]
+    return float(finite.mean()) if finite.size else np.nan
+
+
 def _set_metrics(obj: Any, values: dict[str, NDArray[Any]], per_interval: bool) -> None:
     """Store each metric as a Python scalar for one path, else as its array."""
     for key, value in values.items():
@@ -464,13 +471,41 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         passed = np.asarray(self.efficiency) >= threshold
         return bool(passed) if self.interval_ids is None else passed
 
+    @property
+    def n_intervals(self) -> int:
+        """Number of intervals; 1 for a single path (one ``summary_table`` row)."""
+        return int(np.size(self.efficiency))
+
+    @property
+    def n_fully_observed(self) -> int:
+        """Number of intervals that are ``fully_observed``."""
+        return int(np.count_nonzero(self.fully_observed))
+
+    @property
+    def mean_traveled_length(self) -> float:
+        """Mean finite ``traveled_length`` over the intervals; NaN if none."""
+        return _mean_defined(self.traveled_length)
+
+    @property
+    def mean_shortest_length(self) -> float:
+        """Mean finite ``shortest_length`` over the intervals; NaN if none.
+
+        An unreachable goal (``inf``) does not count.
+        """
+        return _mean_defined(self.shortest_length)
+
+    @property
+    def mean_efficiency(self) -> float:
+        """Mean ``efficiency`` over the intervals where it is defined; NaN if none."""
+        return _mean_defined(self.efficiency)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar path-efficiency metrics.
 
         For a single path, its ``traveled_length``, ``shortest_length`` and
-        ``efficiency``. For an interval result, ``n_intervals``,
-        ``n_fully_observed`` and the mean of each of those three over the
-        intervals where it is defined (NaN when it is defined in none). For a
+        ``efficiency``. For an interval result, :attr:`n_intervals`,
+        :attr:`n_fully_observed`, :attr:`mean_traveled_length`,
+        :attr:`mean_shortest_length` and :attr:`mean_efficiency`. For a
         human-readable string use ``str(result)``.
         """
         if self.interval_ids is None:
@@ -479,15 +514,13 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
                 "shortest_length": self.shortest_length,
                 "efficiency": self.efficiency,
             }
-        summary: dict[str, Any] = {
-            "n_intervals": int(np.size(self.interval_ids)),
-            "n_fully_observed": int(np.count_nonzero(self.fully_observed)),
+        return {
+            "n_intervals": self.n_intervals,
+            "n_fully_observed": self.n_fully_observed,
+            "mean_traveled_length": self.mean_traveled_length,
+            "mean_shortest_length": self.mean_shortest_length,
+            "mean_efficiency": self.mean_efficiency,
         }
-        for key in ("traveled_length", "shortest_length", "efficiency"):
-            values = np.asarray(getattr(self, key))
-            finite = values[np.isfinite(values)]
-            summary[f"mean_{key}"] = float(finite.mean()) if finite.size else np.nan
-        return summary
 
     def summary_table(self) -> pd.DataFrame:
         """One row per interval of the scalar metrics, indexed by ``interval_id``.
@@ -525,7 +558,7 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
 
     def __str__(self) -> str:
         if self.interval_ids is not None:
-            mean = self.summary()["mean_efficiency"]
+            mean = self.mean_efficiency
             text = "N/A" if np.isnan(mean) else f"{mean:.1%}"
             return (
                 f"Path efficiency of {np.size(self.interval_ids)} intervals "
@@ -686,7 +719,8 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     arrival_tested : bool or ndarray of bool, shape (n_intervals,), default=True
         Whether arrival was tested: True for a region goal or a point goal
         with ``goal_radius``; False for a point goal without one, or an
-        interval with an unknown goal.
+        interval with an unknown goal. A single bool given with
+        ``interval_ids`` applies to every interval.
     interval_ids : ndarray of shape (n_intervals,) or None, default=None
         The intervals' ids, or None for a single path.
     units : str or None, default=None
@@ -752,8 +786,13 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         }
         for key in lengths:
             _require_lengths(name, key, values[key])
+        # One flag applies to every interval: the default True, or a goal
+        # whose arrival is tested the same way throughout.
+        arrival_tested = self.arrival_tested
+        if np.ndim(arrival_tested) == 0 and arrival_tested is not None:
+            arrival_tested = np.full(shape, arrival_tested, dtype=bool)
         values["arrival_tested"] = _metric_column(
-            name, "arrival_tested", self.arrival_tested, shape, bool
+            name, "arrival_tested", arrival_tested, shape, bool
         )
         _set_metrics(self, values, per_interval=ids is not None)
         object.__setattr__(self, "interval_ids", ids)
@@ -778,14 +817,33 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         passed = np.asarray(self.goal_bias) >= threshold
         return bool(passed) if self.interval_ids is None else passed
 
+    @property
+    def n_intervals(self) -> int:
+        """Number of intervals; 1 for a single path (one ``summary_table`` row)."""
+        return int(np.size(self.goal_bias))
+
+    @property
+    def n_reached(self) -> int:
+        """Number of intervals that reached the goal (finite ``time_to_reach_goal``)."""
+        return int(np.count_nonzero(np.isfinite(self.time_to_reach_goal)))
+
+    @property
+    def n_arrival_tested(self) -> int:
+        """Number of intervals whose arrival was tested (``arrival_tested``)."""
+        return int(np.count_nonzero(self.arrival_tested))
+
+    @property
+    def mean_goal_bias(self) -> float:
+        """Mean ``goal_bias`` over the intervals where it is defined; NaN if none."""
+        return _mean_defined(self.goal_bias)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar goal-directed metrics.
 
         For a single path, its metrics. For an interval result,
-        ``n_intervals``, ``n_reached`` (intervals with a finite
-        ``time_to_reach_goal``), ``n_arrival_tested`` and ``mean_goal_bias``
-        over the intervals where it is defined (NaN when none). For a
-        human-readable multi-line string use ``str(result)``.
+        :attr:`n_intervals`, :attr:`n_reached`, :attr:`n_arrival_tested` and
+        :attr:`mean_goal_bias`. For a human-readable multi-line string use
+        ``str(result)``.
         """
         if self.interval_ids is None:
             return {
@@ -797,13 +855,11 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
                 "time_to_reach_goal": self.time_to_reach_goal,
                 "arrival_tested": self.arrival_tested,
             }
-        bias = np.asarray(self.goal_bias)
-        finite = bias[np.isfinite(bias)]
         return {
-            "n_intervals": int(np.size(self.interval_ids)),
-            "n_reached": int(np.isfinite(self.time_to_reach_goal).sum()),
-            "n_arrival_tested": int(np.count_nonzero(self.arrival_tested)),
-            "mean_goal_bias": float(finite.mean()) if finite.size else np.nan,
+            "n_intervals": self.n_intervals,
+            "n_reached": self.n_reached,
+            "n_arrival_tested": self.n_arrival_tested,
+            "mean_goal_bias": self.mean_goal_bias,
         }
 
     def summary_table(self) -> pd.DataFrame:
@@ -846,13 +902,11 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
 
     def __str__(self) -> str:
         if self.interval_ids is not None:
-            summary = self.summary()
-            bias = summary["mean_goal_bias"]
+            bias = self.mean_goal_bias
             return (
-                f"Goal-directed metrics of {summary['n_intervals']} intervals "
+                f"Goal-directed metrics of {self.n_intervals} intervals "
                 f"(mean goal bias: {'N/A' if np.isnan(bias) else f'{bias:.2f}'}; "
-                f"reached in {summary['n_reached']} of "
-                f"{summary['n_arrival_tested']} tested)"
+                f"reached in {self.n_reached} of {self.n_arrival_tested} tested)"
             )
         lines = [
             "Goal-directed metrics:",

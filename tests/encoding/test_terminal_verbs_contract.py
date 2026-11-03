@@ -17,7 +17,7 @@ import re
 
 import numpy as np
 import pytest
-from result_instances import RESULT_FACTORIES, public_result_classes
+from result_instances import RESULT_FACTORIES, RESULT_VARIANTS, public_result_classes
 
 from neurospatial import Environment
 from neurospatial.encoding.directional import DirectionalRatesResult
@@ -341,6 +341,8 @@ EXPECTED_VERBS: dict[str, frozenset[str]] = {
 }
 
 _PUBLIC_RESULTS = public_result_classes()
+# Each public class, and each further form whose summary has other keys.
+_REPR_CASES = sorted([*_PUBLIC_RESULTS, *RESULT_VARIANTS])
 # Population results whose units are 2-D maps (or own nulls): plot() needs a unit.
 _PLOT_NEEDS_UNIT = {
     "SpatialRatesResult",
@@ -354,12 +356,13 @@ _SCALARS = (bool, int, float, str, type(None), np.generic)
 
 @pytest.fixture(scope="module")
 def result_instances():
-    """One instance per public result class, built once for the module."""
+    """One instance per public result class or variant, built once for the module."""
     cache: dict[str, object] = {}
+    factories = {**RESULT_FACTORIES, **RESULT_VARIANTS}
 
     def build(name: str) -> object:
         if name not in cache:
-            cache[name] = RESULT_FACTORIES[name]()
+            cache[name] = factories[name]()
         return cache[name]
 
     return build
@@ -436,7 +439,7 @@ def _same(read: object, shown: object) -> bool:
     return bool(read == shown)
 
 
-@pytest.mark.parametrize("name", sorted(_PUBLIC_RESULTS))
+@pytest.mark.parametrize("name", _REPR_CASES)
 def test_repr_names_are_accessible(name, result_instances):
     """Every ``summary()`` key reads back from the result as the repr shows it.
 
@@ -535,7 +538,7 @@ def _check_repr_value(name: str, key: str, text: str, shown: object, unit: str) 
         )
 
 
-@pytest.mark.parametrize("name", sorted(_PUBLIC_RESULTS))
+@pytest.mark.parametrize("name", _REPR_CASES)
 def test_repr_units_agree_with_table_units(name, result_instances):
     """A key's repr unit is the unit its table column declares.
 

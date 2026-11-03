@@ -3,9 +3,10 @@
 ``RESULT_FACTORIES`` maps each public result class name to a zero-argument
 factory. Each factory builds its result through the public function that
 returns it, on tiny seeded data, so the instances follow constructor changes.
-``public_result_classes`` lists the classes the API snapshot publishes, so a
-new public result class without a factory is caught by
-``tests/test_result_instances.py``.
+``RESULT_VARIANTS`` adds the other forms of a class whose summary depends on
+its inputs (interval results). ``public_result_classes`` lists the classes
+the API snapshot publishes, so a new public result class without a factory
+is caught by ``tests/test_result_instances.py``.
 """
 
 from __future__ import annotations
@@ -395,11 +396,27 @@ def _line() -> tuple[Any, np.ndarray, np.ndarray]:
     return env, np.arange(11) / 10, positions
 
 
+def _two_halves() -> Any:
+    """The two halves of the ``_line()`` run, ``[0, 0.5)`` and ``[0.5, 1.0)`` s."""
+    from neurospatial import Intervals
+
+    return Intervals.from_arrays([0.0, 0.5], [0.5, 1.0])
+
+
 def _path_efficiency() -> Any:
     from neurospatial.behavior import compute_path_efficiency
 
     env, times, positions = _line()
     return compute_path_efficiency(env, times, positions, goal=positions[-1])
+
+
+def _path_efficiency_intervals() -> Any:
+    from neurospatial.behavior import compute_path_efficiency
+
+    env, times, positions = _line()
+    return compute_path_efficiency(
+        env, times, positions, _two_halves(), goal=positions[-1]
+    )
 
 
 def _goal_directed() -> Any:
@@ -408,6 +425,15 @@ def _goal_directed() -> Any:
     env, times, positions = _line()
     return compute_goal_directed_metrics(
         env, times, positions, goal=positions[-1], goal_radius=1.5
+    )
+
+
+def _goal_directed_intervals() -> Any:
+    from neurospatial.behavior import compute_goal_directed_metrics
+
+    env, times, positions = _line()
+    return compute_goal_directed_metrics(
+        env, times, positions, _two_halves(), goal=positions[-1], goal_radius=1.5
     )
 
 
@@ -966,4 +992,11 @@ RESULT_FACTORIES: dict[str, Callable[[], Any]] = {
     "SimulationValidationResult": _simulation_validation,
     "CircularBasisResult": _circular_basis,
     "ShuffleTestResult": _shuffle_test,
+}
+
+#: Further forms of a class whose summary changes with its inputs, keyed
+#: ``"ClassName[form]"``: interval results summarize over their intervals.
+RESULT_VARIANTS: dict[str, Callable[[], Any]] = {
+    "GoalDirectedMetrics[intervals]": _goal_directed_intervals,
+    "PathEfficiencyResult[intervals]": _path_efficiency_intervals,
 }
