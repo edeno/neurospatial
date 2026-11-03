@@ -1858,6 +1858,7 @@ class TestSpatialRatesResultSummaryTable:
                     "passes_spatial_information",
                     "passes_grid_score",
                     "passes_border_score",
+                    "is_place",
                     "cell_type",
                 ],
             ),
