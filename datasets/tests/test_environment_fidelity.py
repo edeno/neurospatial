@@ -253,3 +253,50 @@ def test_verdict_tests_loop_closure():
     assert verdict(row(200.0, 3.0), loop)[0] == "mismatch"  # a loop cut open
     assert "does not close" in verdict(row(200.0, 60.0), loop)[1]
     assert verdict(row(10.0, 3.0), loop)[0] == "matches"
+
+
+def test_declared_track_is_measured_against_the_independent_reference():
+    # A 100 cm straight track sampled 2 cm about its axis, declared 6 cm wide;
+    # the reference is the samples' own axis, not the declared graph.
+    from _tracks import declared_geometry, straight_track
+    from studies.environment_fidelity import (
+        measure_declared,
+        reference_for,
+        tracked,
+    )
+
+    rng = np.random.default_rng(5)
+    positions = np.column_stack([rng.uniform(0, 100, 8000), rng.normal(0, 2.0, 8000)])
+    graph, _ = straight_track(positions, 100.0)
+    entries, _ = declared_geometry(
+        graph,
+        positions,
+        kind="track",
+        source="test",
+        bin_size=2.5,
+        track_width=6.0,
+        units="cm",
+        name="track",
+        placement="p",
+    )
+    rec = Recording(
+        dataset="track",
+        session="s",
+        source="s",
+        license="n/a",
+        times=np.arange(len(positions)) / 30.0,
+        positions=positions,
+        position_units="cm",
+        geometry=entries,
+        params={"bin_size": 2.5},
+    )
+    app = Apparatus("track", "test", True, track_length=100.0, track_width=6.0)
+    samples = tracked(rec)
+    out = measure_declared(rec, app, samples, reference_for(rec, app))
+    # Samples beyond 3 cm of the axis: 2 x P(N(0, 2) > 3) = 13.4 %.
+    assert out["frac_samples_outside"] == pytest.approx(0.134, abs=0.02)
+    assert out["track_width"] == 6.0
+    assert out["track_width_stated"] is True
+    assert out["env"]["components"] == 1
+    assert out["reference"]["env_over_track_median"] == pytest.approx(1.0, abs=0.05)
+    assert out["verdict"] == "matches"

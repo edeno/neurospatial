@@ -1,10 +1,15 @@
 """Does each recording's Environment capture the apparatus: its shape and connectivity?
 
-For each loader in ``run.LOADERS`` with positions, the environment is built as
-the driver builds it (``operations._env``: ``Environment.from_samples`` from
-every tracked sample at the loader's ``bin_size``) and measured against the
-tracked samples and, where a source states it, the apparatus. Where the loader
-gives the authors' track graph, it is also built with ``operations._graph_env``.
+For each loader in ``run.LOADERS`` with positions, the environment is built
+from the samples as the driver builds it without a declared apparatus
+(``operations._samples_env``: ``Environment.from_samples`` from every tracked
+sample at the loader's ``bin_size``) and measured against the tracked samples
+and, where a source states it, the apparatus. Where the loader gives the
+authors' track graph, it is also built with ``operations._graph_env``. Where
+the loader declares the apparatus (``geometry["environment"]``, the
+environment the driver analyses), that environment is measured the same way
+against the same samples and reference, plus the share of samples it cannot
+place (``measure_declared``).
 
 Measures of the environment against the samples:
 
@@ -87,7 +92,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from _fetch import cache_root  # noqa: E402
 from _record import Recording  # noqa: E402
-from operations import _env, _graph_env  # noqa: E402
+from operations import _graph_env, _samples_env, env_kind  # noqa: E402
 from run import LOADERS  # noqa: E402
 
 RESULTS = HERE.parent / "results" / "studies"
@@ -117,7 +122,9 @@ class Apparatus:
     ``shape`` is "square" or "circle" for an arena with a stated size
     ``size`` (side or diameter, in the recording's units); ``track_width`` is
     the stated full width; ``n_parts`` the number of separate apparatus the
-    samples cover. ``source`` names what was read. ``verified`` is True when
+    samples cover; ``linearized_reference`` False when the file's linearized
+    coordinate cannot serve as a 2-D centreline (it gives two places one
+    value). ``source`` names what was read. ``verified`` is True when
     every value given here (the number of parts, and any shape, size, length
     or width) comes from a source read for this study; a size not given is
     not compared.
@@ -132,6 +139,7 @@ class Apparatus:
     track_length: float | None = None
     n_parts: int = 1
     notes: str = ""
+    linearized_reference: bool = True
 
 
 APPARATUS: dict[str, Apparatus] = {
@@ -208,16 +216,17 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "figure8_000552": Apparatus(
         "track",
+        "NWB: camera (x, y) cm and the linearized position around the maze as a loop",
+        True,
+        notes="figure-8: two loops sharing the centre arm",
+        linearized_reference=False,
+    ),
+    "figure8_000552_linearized": Apparatus(
+        "track",
         "NWB: linearized position 0-222 cm, both ends at camera (85, 43) cm",
         True,
         track_length=222.0,
         notes="1-D loop",
-    ),
-    "figure8_000552_camera": Apparatus(
-        "track",
-        "NWB: camera (x, y) cm and the linearized position around the maze as a loop",
-        True,
-        notes="figure-8: two loops sharing the centre arm",
     ),
     "neurolab_001754_escher": Apparatus(
         "track",
@@ -266,23 +275,19 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "jadhav_000447": Apparatus(
         "track",
-        "DANDI 000447: novel W-track (run 1 and 3) and familiar W-track (run 2);"
-        " the two mazes lie in one camera frame. Shin et al. 2019 states 80 x 80 cm"
-        " with 7 cm tracks for its W-maze; 000447 does not say it is that maze",
+        "DANDI 000447: the novel W-track (run epochs 1 and 3; the loader keeps"
+        " only these). Tang, Shin & Jadhav 2023 (the paper the dandiset is"
+        " described by): '~80 x 80 cm with ~7-cm wide tracks'",
         True,
-        n_parts=2,
-        notes="two W-tracks rotated 90 degrees in one frame",
-    ),
-    "jadhav_000447_novel": Apparatus(
-        "track",
-        "DANDI 000447: the novel W-track (run epochs 1 and 3)",
-        True,
+        track_width=7.0,
         notes="W-track: three arms joined at their base",
     ),
     "jadhav_000447_familiar": Apparatus(
         "track",
-        "DANDI 000447: the familiar W-track (run epoch 2)",
+        "DANDI 000447: the familiar W-track (run epoch 2). Tang, Shin & Jadhav"
+        " 2023: '~80 x 80 cm with ~7-cm wide tracks'",
         True,
+        track_width=7.0,
         notes="W-track: three arms joined at their base",
     ),
     "vollan_lt": Apparatus(
@@ -306,8 +311,8 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "hafting_2008_nird": Apparatus(
         "track",
-        "loader quotes the archive readme ('mostly 320 cm'); readme not read here",
-        False,
+        "archive readme_hafting2008.txt: 'a linear track (mostly 320 cm)'",
+        True,
         track_length=320.0,
     ),
     "takigawa_7114733": Apparatus(
@@ -748,7 +753,11 @@ def reference_for(rec: Recording, app: Apparatus | None) -> Reference | None:
         ref = Reference(
             nodes, edges.astype(np.intp), "authors' track centrelines (file)"
         )
-    elif "linearized" in params and rec.positions.shape[1] == 2:
+    elif (
+        "linearized" in params
+        and rec.positions.shape[1] == 2
+        and (app is None or app.linearized_reference)
+    ):
         closed = app is not None and "loop" in app.notes
         points = centreline_from_linearized(
             rec.positions, np.asarray(params["linearized"], dtype=float), step=5.0
@@ -1402,7 +1411,7 @@ def _draw(
     ax.scatter(
         *shown[:, dims].T, s=0.3, c="0.35", alpha=0.5, linewidths=0, rasterized=True
     )
-    if env.n_dims != 2:
+    if env.n_dims != 2 or env.layout_type != "RegularGrid":
         ax.scatter(
             *centers[:, dims].T,
             s=2,
@@ -1555,7 +1564,7 @@ def analyse(rec: Recording, *, figures: bool = True) -> dict[str, Any]:
     samples = tracked(rec)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        env = _env(rec, {})
+        env = _samples_env(rec, {})
     row: dict[str, Any] = {
         "dataset": rec.dataset,
         "units": rec.position_units,
@@ -1604,9 +1613,54 @@ def analyse(rec: Recording, *, figures: bool = True) -> dict[str, Any]:
         lattice["movement_along_bars"] = bar_alignment(rec, ref)
         row["lattice"] = lattice
     row["verdict"], row["verdict_reason"] = verdict(row, app)
+    if env_kind(rec, {}) == "declared":
+        row["declared"] = measure_declared(rec, app, samples, ref)
     if figures:
         row["figure"] = save_figure(rec, env, samples, measures, ref, outline, room)
+        if "declared" in row:
+            declared_env = rec.geometry["environment"]()
+            row["declared_figure"] = save_figure(
+                replace(rec, dataset=f"{rec.dataset}_declared"),
+                declared_env,
+                samples,
+                row["declared"]["env"],
+                ref,
+                outline,
+                room,
+            )
     return row
+
+
+def measure_declared(
+    rec: Recording,
+    app: Apparatus | None,
+    samples: NDArray[np.float64],
+    ref: Reference | None,
+) -> dict[str, Any]:
+    """The declared environment, measured as the samples-built one is.
+
+    Adds the share of tracked samples it cannot place (``bin_at`` -1), its
+    track width and whether a source states it, and the verdict against the
+    stated apparatus. The reference is the same independent one the
+    samples-built environment is compared with (the authors' graph, the
+    file's linearized centreline or a straight track's axis), never the
+    declared graph itself.
+    """
+    env = rec.geometry["environment"]()
+    measures = measure_env(env, samples, np.random.default_rng(SEED))
+    out: dict[str, Any] = {
+        "layout": env.layout_type,
+        "frac_samples_outside": float(np.mean(np.asarray(env.bin_at(samples)) < 0)),
+        "track_width": rec.geometry.get("declared_track_width"),
+        "track_width_stated": rec.geometry.get("declared_track_width_stated"),
+        "env": measures,
+    }
+    view: dict[str, Any] = {"env": measures}
+    if ref is not None:
+        view["reference"] = against_reference(measures, env, samples, ref)
+        out["reference"] = view["reference"]
+    out["verdict"], out["verdict_reason"] = verdict(view, app)
+    return out
 
 
 def _units(rec: Recording) -> str | None:
@@ -1665,6 +1719,46 @@ def render(rows: list[dict[str, Any]]) -> str:
             f" {_fmt(env['geodesic_ratio_median'], '.2f')}, {_fmt(env['geodesic_ratio_p95'], '.2f')} |"
             f" {on_track} | {track} | {outline_cell} | {verdict_cell} |"
         )
+    declared = [row for row in rows if "declared" in row]
+    if declared:
+        lines += [
+            "",
+            "## Declared environments",
+            "",
+            "The environment the driver analyses where the loader declares the"
+            " apparatus (`geometry['environment']`), measured as above against the"
+            " same samples and the same independent reference. Outside: share of"
+            " tracked samples it cannot place. Width: the track width it was built"
+            " with (`stated` from a source, else measured from the samples).",
+            "",
+            "| Dataset | Layout | Bins | Components (1 % of bins or more) | Samples outside | Width | Far links | Geodesic / straight (median, p95) | Env / track (median, p5) | Verdict |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+        for row in declared:
+            dec = row["declared"]
+            env, ref = dec["env"], dec.get("reference", {})
+            width = (
+                "–"
+                if dec["track_width"] is None
+                else f"{dec['track_width']:.3g}"
+                + (" stated" if dec["track_width_stated"] else " measured")
+            )
+            track = (
+                f"{_fmt(ref.get('env_over_track_median'), '.2f')}, {_fmt(ref.get('env_over_track_p05'), '.2f')}"
+                if ref
+                else "–"
+            )
+            verdict_cell = dec["verdict"] + (
+                f": {dec['verdict_reason']}" if dec["verdict_reason"] else ""
+            )
+            lines.append(
+                f"| {row['dataset']} | {dec['layout']} | {env['n_bins']} |"
+                f" {env['components']} ({env['major_components']}) |"
+                f" {dec['frac_samples_outside']:.1%} | {width} |"
+                f" {env['far_edges']:.2%} |"
+                f" {_fmt(env['geodesic_ratio_median'], '.2f')}, {_fmt(env['geodesic_ratio_p95'], '.2f')} |"
+                f" {track} | {verdict_cell} |"
+            )
     lines += ["", "## Sources and details", ""]
     for row in rows:
         lines.append(f"### {row['dataset']}")
@@ -1678,6 +1772,7 @@ def render(rows: list[dict[str, Any]]) -> str:
             "one_d",
             "room",
             "lattice",
+            "declared",
         ):
             if key in row:
                 lines.append(f"- {key}: `{json.dumps(_public(row[key]), default=str)}`")
@@ -1688,30 +1783,15 @@ def render(rows: list[dict[str, Any]]) -> str:
 def expand(rec: Recording) -> list[Recording]:
     """The recording, plus derived views that answer a question about its apparatus.
 
-    - figure8_000552: the driver's environment is 1-D (the linearized loop);
-      the camera (x, y) is also built. The file's linearized position gives
-      the two side loops the same values, so it cannot serve as a 2-D
-      reference here.
     - a recording with a 2-D track and the file's linearized position
       (``params["linearized"]``): the 1-D environment the replay operation
-      builds from it, ``Environment.from_samples`` on that coordinate.
-    - jadhav_000447: the novel W-track (runs 1 and 3) and the familiar one
-      (run 2) lie rotated 90 degrees in one camera frame; each is also built
-      alone.
+      builds from it without a declared track, ``Environment.from_samples``
+      on that coordinate (for the figure-8, its linearized loop).
     - neurolab_001754: the driver builds one environment from all five
       sessions (three apparatus in one image); the Escher staircase session
       alone is also built.
     """
     views = [rec]
-    if rec.dataset == "figure8_000552":
-        views.append(
-            replace(
-                rec,
-                dataset="figure8_000552_camera",
-                positions=np.asarray(rec.geometry["positions_2d"], dtype=float),
-                params={k: v for k, v in rec.params.items() if k != "linearized"},
-            )
-        )
     if "linearized" in rec.params and np.asarray(rec.positions).shape[1] == 2:
         views.append(
             replace(
@@ -1722,20 +1802,6 @@ def expand(rec: Recording) -> list[Recording]:
                 params={k: v for k, v in rec.params.items() if k != "linearized"},
             )
         )
-    if rec.dataset == "jadhav_000447":
-        runs = np.asarray(rec.epochs["run"])
-        for name, rows in (("novel", [0, 2]), ("familiar", [1])):
-            keep = np.zeros(len(rec.times), dtype=bool)
-            for start, stop in runs[rows]:
-                keep |= (rec.times >= start) & (rec.times < stop)
-            views.append(
-                replace(
-                    rec,
-                    dataset=f"jadhav_000447_{name}",
-                    times=rec.times[keep],
-                    positions=np.asarray(rec.positions)[keep],
-                )
-            )
     if rec.dataset == "neurolab_001754":
         session = np.zeros(len(rec.times), dtype=bool)
         for start, stop in np.asarray(rec.params["analysis_epochs"]):
