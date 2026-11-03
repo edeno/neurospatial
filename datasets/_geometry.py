@@ -26,6 +26,9 @@ from numpy.typing import NDArray
 # A stated size more than this share away from the samples' own fitted size
 # is refused: the stated apparatus, the unit or the session is then wrong.
 MAX_SIZE_RESIDUAL = 0.15
+# A stated centre farther than this share of the radius from the samples'
+# centre is refused: the positions are then in another frame or unit.
+MAX_CENTRE_OFFSET = 0.15
 
 
 def graph_edge_order(graph: Any, root: Any = None) -> list[tuple[Any, Any]]:
@@ -166,14 +169,25 @@ def placement_line(kind: str, stated: str, fit: dict[str, float], source: str) -
     )
 
 
-def _check_residuals(residuals: dict[str, float], max_residual: float) -> None:
-    off = {k: v for k, v in residuals.items() if abs(v) > max_residual}
-    if off:
-        detail = ", ".join(f"{k} {v:+.1%}" for k, v in off.items())
+def _check_residuals(
+    residuals: dict[str, float], long_limits: dict[str, float], max_short: float
+) -> None:
+    """Refuse a stated size the samples do not fit.
+
+    A negative residual (the samples' fitted size short of the stated one) is
+    refused beyond ``max_short``: animals often keep off the walls. A positive
+    one (samples reaching past the stated wall) is refused beyond its entry
+    in ``long_limits``, one bin over the side: the grid resolves a wall only
+    to half a bin at each end.
+    """
+    short = {k: v for k, v in residuals.items() if v < -max_short}
+    long = {k: v for k, v in residuals.items() if v > long_limits[k]}
+    if short or long:
+        detail = ", ".join(f"{k} {v:+.1%}" for k, v in {**short, **long}.items())
         msg = (
-            f"the samples' fitted size differs from the stated size by more than"
-            f" {max_residual:.0%} ({detail}): check the stated size, the position"
-            " unit, or which apparatus this session used"
+            f"the samples' fitted size differs from the stated size ({detail}; limits"
+            f" -{max_short:.0%} short, one bin long): check the stated size, the"
+            " position unit, or which apparatus this session used"
         )
         raise ValueError(msg)
 
@@ -187,8 +201,9 @@ def declared_rectangle(
     units: str | None,
     name: str,
     source: str,
+    outline: str = "wall",
     max_residual: float = MAX_SIZE_RESIDUAL,
-) -> tuple[Callable[[], Any], str]:
+) -> tuple[Callable[[], Any], str, dict[str, float]]:
     """A stated ``width`` x ``height`` arena placed on the samples.
 
     Centre and rotation are fitted (``fit_rectangle``); the size is the
@@ -199,29 +214,49 @@ def declared_rectangle(
     -------
     environment : callable
         Zero-argument ``Environment.from_polygon`` on the placed rectangle at
-        ``bin_size``; its outline is an opaque wall.
+        ``bin_size``; its outline is ``outline`` (``"wall"``, or ``"drop"``
+        for an elevated platform, ``OpenArena(..., outline="drop")``).
     conversion : str
         The ``conversions`` line: shape, size, source, placement and residuals.
+    fit : dict
+        The placement and residuals, for ``geometry["environment_fit"]``.
 
     Raises
     ------
     ValueError
-        When a side's residual exceeds ``max_residual``.
+        When a side is more than ``max_residual`` short of the stated side, or
+        longer than it by more than one bin (``_check_residuals``).
     """
     from neurospatial import Environment
+    from neurospatial.arena import OpenArena
 
     polygon, fit = fit_rectangle(positions, width, height)
     stated = sorted((width, height), reverse=True)
     fit["size_residual_a"] = fit["samples_side_a"] / stated[0] - 1
     fit["size_residual_b"] = fit["samples_side_b"] / stated[1] - 1
     _check_residuals(
-        {k: fit[k] for k in ("size_residual_a", "size_residual_b")}, max_residual
+        {k: fit[k] for k in ("size_residual_a", "size_residual_b")},
+        {
+            "size_residual_a": bin_size / stated[0],
+            "size_residual_b": bin_size / stated[1],
+        },
+        max_residual,
     )
     shape = "square" if width == height else "rectangle"
+    arena = None if outline == "wall" else OpenArena(polygon, outline=outline)
     factory = partial(
-        Environment.from_polygon, polygon, bin_size=bin_size, units=units, name=name
+        Environment.from_polygon,
+        polygon,
+        bin_size=bin_size,
+        units=units,
+        name=name,
+        arena=arena,
     )
-    return factory, placement_line(shape, f"{width:g} x {height:g}", fit, source)
+    stated = f"{width:g} x {height:g}" + (
+        "" if outline == "wall" else f", {outline} edge"
+    )
+    line = placement_line(shape, stated, fit, source)
+    return factory, line, fit
 
 
 def declared_circle(
@@ -234,14 +269,15 @@ def declared_circle(
     source: str,
     centre: tuple[float, float] | None = None,
     max_residual: float = MAX_SIZE_RESIDUAL,
-) -> tuple[Callable[[], Any], str]:
+    max_centre_offset: float = MAX_CENTRE_OFFSET,
+) -> tuple[Callable[[], Any], str, dict[str, float]]:
     """A stated circular arena of ``diameter``, centred on the samples or at ``centre``.
 
     Without ``centre`` the centre is fitted (``fit_circle``); with it (when the
     source states where the centre is) the fitted centre's distance from it
-    is recorded as ``centre_offset``. The residual is the samples' fitted
-    diameter over the stated one, minus 1. Returns and raises as
-    ``declared_rectangle``.
+    is recorded as ``centre_offset`` and refused beyond ``max_centre_offset``
+    of the radius. The residual is the samples' fitted diameter over the stated
+    one, minus 1. Returns and raises as ``declared_rectangle``.
     """
     from shapely.geometry import Point
 
@@ -252,6 +288,14 @@ def declared_circle(
         offset = float(
             np.hypot(fit["centre_x"] - centre[0], fit["centre_y"] - centre[1])
         )
+        if offset > max_centre_offset * diameter / 2:
+            msg = (
+                f"the samples' centre lies {offset:.3g} from the stated centre"
+                f" {tuple(centre)}, more than {max_centre_offset:.0%} of the radius"
+                f" ({diameter / 2:g}): the positions are in another frame or unit"
+                " than the stated centre; check both"
+            )
+            raise ValueError(msg)
         polygon = Point(*centre).buffer(diameter / 2, quad_segs=16)
         fit = {
             "stated_centre_x": float(centre[0]),
@@ -260,22 +304,29 @@ def declared_circle(
             "samples_diameter": fit["samples_diameter"],
         }
     fit["size_residual"] = fit["samples_diameter"] / diameter - 1
-    _check_residuals({"size_residual": fit["size_residual"]}, max_residual)
+    _check_residuals(
+        {"size_residual": fit["size_residual"]},
+        {"size_residual": bin_size / diameter},
+        max_residual,
+    )
     factory = partial(
         Environment.from_polygon, polygon, bin_size=bin_size, units=units, name=name
     )
-    return factory, placement_line("circle", f"diameter {diameter:g}", fit, source)
+    line = placement_line("circle", f"diameter {diameter:g}", fit, source)
+    return factory, line, fit
 
 
 def with_environment(
-    rec: Recording, environment: Callable[[], Any], conversion: str
+    rec: Recording,
+    environment: Callable[[], Any],
+    conversion: str,
+    fit: dict[str, float] | None = None,
 ) -> Recording:
-    """``rec`` with its declared environment and the conversion line describing it."""
-    return replace(
-        rec,
-        geometry={**rec.geometry, "environment": environment},
-        conversions=(*rec.conversions, conversion),
-    )
+    """``rec`` with its declared environment, its placement fit and the conversion line."""
+    geometry = {**rec.geometry, "environment": environment}
+    if fit is not None:
+        geometry["environment_fit"] = fit
+    return replace(rec, geometry=geometry, conversions=(*rec.conversions, conversion))
 
 
 def lattice_graph(bars: NDArray[np.float64], n_cubes: int) -> Any:

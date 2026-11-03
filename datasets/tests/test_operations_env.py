@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import replace
 
 import networkx as nx
@@ -114,7 +113,7 @@ def box_samples():
 
 
 def test_declared_rectangle_records_residuals(box_samples):
-    factory, line = declared_rectangle(
+    factory, line, fit = declared_rectangle(
         box_samples, 100.0, 100.0, bin_size=2.5, units="cm", name="box", source="test"
     )
     env = factory()
@@ -123,8 +122,9 @@ def test_declared_rectangle_records_residuals(box_samples):
     assert env.n_bins == pytest.approx(1600, abs=2)
     assert np.all(np.asarray(env.bin_at(box_samples)) >= 0)
     # The samples' own sides are 96 cm: 4 % short of the stated 100 cm.
-    residuals = [float(v) for v in re.findall(r"size_residual_\w ([-\d.e]+)", line)]
+    residuals = [fit["size_residual_a"], fit["size_residual_b"]]
     assert residuals == pytest.approx([-0.04, -0.04], abs=0.005)
+    assert f"size_residual_a {fit['size_residual_a']:.3g}" in line
     assert line.startswith("environment: declared square (100 x 100, test)")
 
 
@@ -140,7 +140,7 @@ def test_declared_circle_at_a_stated_centre():
     r = 45.0 * np.sqrt(rng.uniform(0, 1, 20000))
     theta = rng.uniform(0, 2 * np.pi, 20000)
     points = np.column_stack([r * np.cos(theta) + 1.0, r * np.sin(theta)])
-    factory, line = declared_circle(
+    factory, line, fit = declared_circle(
         points,
         100.0,
         bin_size=2.0,
@@ -153,9 +153,9 @@ def test_declared_circle_at_a_stated_centre():
     centres = np.asarray(env.bin_centers)
     assert np.hypot(*centres.T).max() <= 50.0
     assert np.hypot(*centres.mean(axis=0)) < 1.0  # centred on the stated centre
-    fitted = dict(re.findall(r"(\w+) ([-\d.e]+)(?:,|$)", line))
-    assert float(fitted["centre_offset"]) == pytest.approx(1.0, abs=0.3)
-    assert float(fitted["size_residual"]) == pytest.approx(-0.1, abs=0.01)
+    assert fit["centre_offset"] == pytest.approx(1.0, abs=0.3)
+    assert fit["size_residual"] == pytest.approx(-0.1, abs=0.01)
+    assert f"centre_offset {fit['centre_offset']:.3g}" in line
 
 
 def test_lattice_graph_cuts_bars_at_crossings():
@@ -187,3 +187,40 @@ def test_distance_to_segments_matches_brute_force():
     np.testing.assert_allclose(
         distance_to_segments(points, segments, chunk=8), brute, atol=1e-3
     )
+
+
+@pytest.mark.parametrize(
+    ("side", "accepted"),
+    [
+        (98.0, True),  # samples 2 % past the wall: within one 2.5 cm bin
+        (90.0, False),  # samples 6.7 % past it: more than one bin
+        (110.0, True),  # samples 13 % short of the walls: allowed
+        (115.0, False),  # samples 17 % short: refused
+    ],
+)
+def test_declared_rectangle_limits_are_one_bin_long_and_15_percent_short(
+    box_samples, side, accepted
+):
+    # box_samples fill a 96 cm square.
+    def declare():
+        return declared_rectangle(
+            box_samples, side, side, bin_size=2.5, units="cm", name="b", source="t"
+        )
+
+    if accepted:
+        declare()
+    else:
+        with pytest.raises(ValueError, match="limits -15% short, one bin long"):
+            declare()
+
+
+def test_declared_circle_refuses_a_far_stated_centre():
+    rng = np.random.default_rng(6)
+    r = 45.0 * np.sqrt(rng.uniform(0, 1, 5000))
+    theta = rng.uniform(0, 2 * np.pi, 5000)
+    points = np.column_stack([r * np.cos(theta) + 10.0, r * np.sin(theta)])
+    # 10 cm off a 50 cm radius is 20 %, past the 15 % limit.
+    with pytest.raises(ValueError, match=r"another frame or unit"):
+        declared_circle(
+            points, 100.0, bin_size=2.0, units="cm", name="p", source="t", centre=(0, 0)
+        )
