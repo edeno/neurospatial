@@ -436,17 +436,20 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
         "n_time_bins": int(result.n_time_bins),
     }
     if "environment" in rec.geometry:
-        # The same time bins in both runs: those whose true position the
-        # declared environment places, so declared and inferred errors are
-        # medians over the same samples.
-        on_declared = np.zeros(len(actual), dtype=bool)
-        on_declared[finite] = (
+        # The same time bins in both runs: those whose true position both the
+        # declared and the samples-built environment place, so declared and
+        # inferred errors are medians over the same samples (a bin whose
+        # decoded error is NaN in this run is left out of this run's median).
+        on_both = np.zeros(len(actual), dtype=bool)
+        on_both[finite] = (
             np.asarray(rec.geometry["environment"]().bin_at(actual[finite])) >= 0
+        ) & (np.asarray(_samples_env(rec, cache).bin_at(actual[finite])) >= 0)
+        values = np.asarray(error, dtype=float)[on_both]
+        values = values[np.isfinite(values)]
+        summary["median_error_on_declared"] = (
+            float(np.median(values)) if len(values) else float("nan")
         )
-        summary["median_error_on_declared"] = float(
-            np.nanmedian(np.asarray(error, dtype=float)[on_declared])
-        )
-        summary["n_on_declared"] = int(on_declared.sum())
+        summary["n_on_declared"] = int(on_both.sum())
     return Outcome("ok", summary)
 
 
