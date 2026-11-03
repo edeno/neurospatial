@@ -174,7 +174,11 @@ def sample_speeds(
     positions = np.asarray(positions, dtype=float).reshape(len(times), -1)
     step = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
     padded = np.concatenate([[np.nan], step, [np.nan]])
-    return np.nanmean(np.vstack([padded[:-1], padded[1:]]), axis=0)
+    pair = np.vstack([padded[:-1], padded[1:]])
+    finite = np.isfinite(pair)
+    count = finite.sum(axis=0)
+    total = np.where(finite, pair, 0.0).sum(axis=0)
+    return np.where(count > 0, total / np.maximum(count, 1), np.nan)
 
 
 def share_by_speed(
