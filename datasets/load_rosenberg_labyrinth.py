@@ -45,8 +45,8 @@ past them; the entrance, open to the home cage, is not moved), every edge
 kept and 0.5-cell bins along it, with a
 physical width chosen as one cell, the corridor pitch, so a corridor ends at
 the wall it shares with its neighbour; the paper's corridors are 1-1/8
-inches wide on a 1.5 inch grid (0.75 of a cell). 4.6 % of nose samples lie
-beyond half a cell (17.9 % beyond half the paper's corridor); the track is
+inches wide on a 1.5 inch grid (0.75 of a cell). 2.0 % of nose samples lie
+beyond half a cell (12.8 % beyond half the paper's corridor); the track is
 built with a placement tolerance measured from the samples.
 """
 
@@ -288,7 +288,7 @@ def load(cache: Path | None = None) -> Recording:
         width_kind="chosen",
         width_note="the corridor pitch, so a corridor's footprint ends at the wall"
         " it shares with its neighbour; the paper's corridors are 1-1/8 in on a"
-        " 1.5 in grid, 0.75 cell, at which 18% of nose samples fall outside",
+        " 1.5 in grid, 0.75 cell, at which 13% of nose samples fall outside",
         units=None,
         name=DATASET["key"],
         placement="the maze cells of the repository's own alignment",
