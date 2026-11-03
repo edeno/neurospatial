@@ -32,8 +32,7 @@ measured and probed, and the documented path is tried as written.
   `invariant: split-half > shuffle`). An operation added without a check is
   smoke-only and is listed as such in the matrix.
 - **Truth comes from outside the code under test.** In order of preference:
-  - **the file:** the authors' linearization, trials, labels, events, speed,
-    ripples;
+  - **the file:** the authors' linearization, trials, labels, events, speed;
   - **simulation:** a rung of the simulation ladder below, from simulated
     neurons on the real path up to a fully simulated session in the declared
     real environment;
@@ -53,9 +52,10 @@ measured and probed, and the documented path is tried as written.
   finding, not a fix.
 - **Every result records the `main` commit it ran on,** so a result can be
   traced while the API changes under the survey.
-- **Decoding is one metric among several.** Decoding error is a good summary
-  of how much spatial information a population carries across many brain
-  areas. It stays, with its check against the true position. It must not be
+- **Decoding is one metric among several.** Decoding error on held-out
+  epochs shows how well receptive fields fitted on one part of a real
+  recording describe the rest of it, in many spatial brain areas. It stays,
+  with its check against the true position. It must not be
   the only evidence. A write-up that reports what changed reports the
   encoding and behavior checks alongside it, and never leads with decoding
   alone. A decoding comparison states its metric (2-D or along the track) and
@@ -99,8 +99,6 @@ cause.
 
   The real-data fidelity study answers the same question without a known
   answer.
-- **Replay** is planted on rungs 4–5 with `simulate_replay_event` in quiet
-  periods (6c).
 - **Figures** (6f) are checked on rung 1–2 sessions first, where every field
   is known, before they are checked on real data.
 - **Seeds.** Every simulated session is seeded, and its parameters are
@@ -123,7 +121,6 @@ shared names, and declares it in `EXPECTATIONS` first:
 | `file_speed` | the file's speed | J16, 000447, Vollan |
 | `lfp` | one theta-bearing channel and its sampling rate (CA1 pyramidal layer when stated), streamed slice only | hc-3, 000044, Vollan, J16 where present |
 | `published` | numbers read in the paper, each with its citation: place-cell fraction, field size, HD-cell count, grid spacing | per paper |
-| `ripples` | the authors' ripple or candidate-event times | the 4 recordings with `has_ripples` (already partly) |
 | `epochs` | named run, sleep and rest epochs with their times | figure-8, hc-18, hc-11, Peyrache, Shipley (already partly) |
 
 A loader that cannot find one says so in its docstring. No guessed values.
@@ -194,7 +191,6 @@ the end-to-end test a scientist would use to judge the package.
 | `events.psth` | `peri_event_histogram` and `align_spikes_to_events` at `events`: counts against numpy counts; the population response at real events above shuffled event times |
 | `regions.visits` | `regions_containing_points` / region entries at `regions` against `events` (well entries) |
 | `behavior.decision` | VTE and pre-decision metrics at W-track and bandit choice points: smoke-only unless a file truth is found (say so) |
-| `replay.candidates` | candidate events against the authors' `ripples` (match rate, onset error); replay detection on events planted with `simulate_replay_event` in the real recording's quiet periods (detection rate and false positives on unplanted periods). Stationary decoded events are not false positives |
 | `time.support` | results keep the time support of their inputs: an analysis restricted to run `epochs` uses no spike or sample from sleep or rest, and a result's stated support equals the epochs passed |
 
 **Round trips.** Extend `io.nwb_roundtrip` beyond spikes and positions:
@@ -352,7 +348,7 @@ come from measurements taken when this was written.
 | Simulated sessions | 10 min each | |
 | `--inferred-env` run | only operations that take an environment | the I/O and reader operations don't change |
 | Hazard probes | not on shuffle verdicts, replay or animation | these are the slow operations, and the probes ask about warnings, not results |
-| Replay | at most 200 candidate events per recording | about a quarter of today's compute |
+| Replay | smoke only: 20 candidate events, 50 shuffles | the methods port published implementations, so scoring them on these recordings compares the published methods, not the package; the survey checks only that real events go through |
 | LFP | one channel, one 10-min streamed slice | |
 | Animation exports | one 10 s slice per apparatus kind (9) | |
 | Published-result reproductions | 3 papers, one result each | open-ended otherwise |
@@ -465,6 +461,14 @@ time with whatever is easiest to score.
   and say why.
 - **New decoding methods.** The existing `decode.position` check stays and
   is reported alongside the other checks.
+- **Comparing replay methods.** The methods port published implementations,
+  so a comparison on these recordings compares the published methods, not
+  the package. `replay.compare_methods` stays as a smoke run (20 events, 50
+  shuffles). Seen while sizing this phase: on 40 events of
+  `grosmark_000044_linear`, the `davidson_2009` unit-identity null gave a
+  mean z of −0.66 (the real cell labels fit a line worse than shuffled ones),
+  so no event passed all three nulls. That belongs to the replay source
+  work, not the survey.
 
 ## Validation slice
 
