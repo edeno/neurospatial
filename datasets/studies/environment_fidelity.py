@@ -1889,7 +1889,9 @@ def measure_declared(
 
     A "mismatch" is misfit evidence (``_geometry.judge_declared``, on the
     samples in ``params["analysis_epochs"]`` where the loader sets them: a
-    stretch of track beside its samples, a segment with no samples near it,
+    stretch of track beside its samples, the whole track or lattice offset
+    from its samples (``_tracks.frame_offset``), a segment with no samples
+    near it,
     samples reaching past a track's free end or falling short of a wall, a
     stated length off by more than ``MAX_SIZE_RESIDUAL``) or a stated fact
     that fails (the parts, an independent reference). A "matches" needs a
@@ -2147,7 +2149,9 @@ def render(rows: list[dict[str, Any]]) -> str:
             "The environment the driver analyses where the loader declares the"
             " apparatus (`geometry['environment']`), measured as above against the"
             " same samples. Verdict: misfit evidence (`_geometry.judge_declared`: a"
-            " stretch of track whose samples lie to one side by more than a bin, a"
+            " stretch of track whose samples lie to one side by more than a bin, the"
+            " whole track or lattice offset from its samples by more than a bin"
+            " (horizontally on the lattice), a"
             " track segment with no sample near it, a stated length off by more than"
             " 15 %; on an outline or the lattice the share with no sample near it is"
             " reported, not judged: the tracked head keeps off walls and bars),"
@@ -2159,12 +2163,18 @@ def render(rows: list[dict[str, Any]]) -> str:
             " in the details). Tolerance: the"
             " placement tolerance the track is built with (`track_width`), measured"
             " from the samples so about 1 % are dropped. Lateral: the median"
-            " |lateral offset| and the worst stretch's median signed offset. Env /"
+            " |lateral offset| and the worst stretch's median signed offset. Frame"
+            " offset: one translation of the samples off the whole track or lattice"
+            " (`_tracks.frame_offset`, every straight piece's median perpendicular"
+            " offset, each piece weighted once), its components, the judged norm"
+            " (the smallest with any one piece left out; horizontal on the lattice)"
+            " against one bin, and in brackets the pieces used and the directions"
+            " not read (no piece, or only one, crosses them). Env /"
             " track: `own` when the reference is the geometry the track was declared"
             " from, which then measures only its binning.",
             "",
-            "| Dataset | Tracked point | Declared from | Bins | Components (1 % of bins or more) | Physical width | Beyond physical | Tolerance (outside) | Lateral: median, worst stretch | Far links | Env / track (median, p5) | Verdict |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Dataset | Tracked point | Declared from | Bins | Components (1 % of bins or more) | Physical width | Beyond physical | Tolerance (outside) | Lateral: median, worst stretch | Frame offset: components; judged (pieces, unread) | Far links | Env / track (median, p5) | Verdict |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for row in declared:
             dec = row["declared"]
@@ -2199,6 +2209,14 @@ def render(rows: list[dict[str, Any]]) -> str:
                 if "max_edge_bias" in fit
                 else "–"
             )
+            frame = (
+                "("
+                + ", ".join(_fmt(v, "+.2f") for v in fit["frame_offset"])
+                + f"); {_fmt(fit['frame_offset_judged'], '.2f')}"
+                f" ({fit['frame_pieces']}, {fit['frame_judged_unconstrained']})"
+                if "frame_offset" in fit
+                else "–"
+            )
             track = (
                 f"{_fmt(ref.get('env_over_track_median'), '.2f')}, {_fmt(ref.get('env_over_track_p05'), '.2f')}"
                 + ("" if dec.get("reference_independent") else " (own)")
@@ -2212,7 +2230,8 @@ def render(rows: list[dict[str, Any]]) -> str:
                 f"| {row['dataset']} | {dec.get('tracked_point', '–')} |"
                 f" {dec.get('declared_from') or '–'} | {env['n_bins']} |"
                 f" {env['components']} ({env['major_components']}) | {physical} |"
-                f" {beyond} | {tolerance} | {lateral} | {env['far_edges']:.2%} |"
+                f" {beyond} | {tolerance} | {lateral} | {frame} |"
+                f" {env['far_edges']:.2%} |"
                 f" {track} | {verdict_cell} |"
             )
     lines += compare_table(rows)
