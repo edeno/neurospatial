@@ -351,8 +351,18 @@ def test_detect_place_fields_glm_refuses_a_bandwidth(open_field):
     zero = encoding.detect_place_fields(s.env, glm, bandwidth=0.0)
     assert default.bandwidth == zero.bandwidth == 0.0
     assert default.n_fields == zero.n_fields
-    with pytest.raises(ValueError, match=r"estimated with bandwidth=None"):
+    with pytest.raises(ValueError, match=r"estimated with bandwidth=None") as caught:
         encoding.detect_place_fields(s.env, glm, bandwidth=50.0)
+    message = str(caught.value)
+    # glm takes no bandwidth, so the fix cannot be to refit glm with one.
+    assert "has no kernel" in message
+    assert "bandwidth 0" in message
+    assert "method='diffusion_kde'" in message
+    assert "recompute the rates with the bandwidth you want" not in message
+    with pytest.raises(ValueError, match=r"cannot be combined with method='glm'"):
+        encoding.compute_spatial_rate(
+            s.env, s.spike_times[0], s.times, s.positions, method="glm", bandwidth=5.0
+        )
 
 
 def test_binned_rates_give_unsmoothed_fields(open_field):

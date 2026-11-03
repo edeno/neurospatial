@@ -6104,6 +6104,8 @@ def detect_place_fields(
         if bandwidth is None:
             bandwidth = recorded
         elif bandwidth != recorded:
+            # glm takes no bandwidth, so its fix names a kernel method.
+            glm = firing_rate.bandwidth is None
             raise ValueError(
                 _format_error(
                     f"detect_place_fields got bandwidth={bandwidth!r}, but the "
@@ -6111,9 +6113,21 @@ def detect_place_fields(
                     f"bandwidth={firing_rate.bandwidth!r} "
                     f"(method={firing_rate.method!r}).",
                     why="Why: the bandwidth sets the smallest field one noisy "
-                    "bin makes after smoothing, so it must be the map's own",
-                    fix="drop bandwidth= to use the result's, or recompute the "
-                    "rates with the bandwidth you want",
+                    "bin makes after smoothing, so it must be the map's own"
+                    + (
+                        "; a glm map has no kernel, so its fields are detected "
+                        "at bandwidth 0"
+                        if glm
+                        else ""
+                    ),
+                    fix="drop bandwidth= to use the result's"
+                    + (
+                        "; to choose a smoothing scale, compute the rates with a "
+                        "kernel method, compute_spatial_rate(..., "
+                        f"method='diffusion_kde', bandwidth={bandwidth!r})"
+                        if glm
+                        else ", or recompute the rates with the bandwidth you want"
+                    ),
                 )
             )
         rates = np.atleast_2d(
