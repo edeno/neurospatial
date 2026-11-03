@@ -37,7 +37,6 @@ Analysis choices (``params``):
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -144,14 +143,10 @@ def load(cache: Path | None = None) -> Recording:
     )
 
 
-def _metres_label_trusted(rec: Recording) -> Recording:
-    # A user trusting the "meters" label and converting to the survey's cm:
-    # pixels x 100. params["bin_size"] stays in the labelled unit.
-    assert rec.positions is not None
-    return replace(rec, positions=rec.positions * 100.0, position_units="cm")
-
-
-HAZARDS = {"metres_label_trusted": _metres_label_trusted}
+# No loader hazard: trusting the "meters" label (pixels x 100 as cm, bin_size
+# 4) builds a 4,181 x 2,494 grid (97,993 active bins); the default
+# diffusion_kde rate map on it passed 7 GB for one unit, so the probe cannot
+# run in the survey (see GAPS.md).
 
 
 if __name__ == "__main__":
