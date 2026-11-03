@@ -54,7 +54,7 @@ own decoder.
    was read. The ratio is a modelling choice, calibrated by the
    grid-decoding test (Task 5), and the docstring says so.
 
-Choices this plan makes. Each one is stated in its docstring:
+Choices this plan makes, accepted by the maintainer on 2026-11-03. Each one is stated in its docstring:
 - **Session headings** are the movement direction
   (`behavior.heading_from_velocity`), held over samples below the speed gate,
   so head-direction and spatial-view cells keep firing at rest. Real head
