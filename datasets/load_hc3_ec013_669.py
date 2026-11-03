@@ -284,6 +284,7 @@ def neuroscope_recording(
             "bin_size": round(2.5 / cm_per_px, 2),
             "min_speed": round(4.0 / cm_per_px, 2),
             "dt": 0.25,
+            "whl_source": str(files["whl"]),
             "train_epochs": train,
             "test_epochs": test,
             "region": np.array([row.get("region", "") for row in kept.values()]),
@@ -374,9 +375,14 @@ def leds_swapped(rec: Recording) -> Recording:
 
 
 def whl_minus_one_kept(rec: Recording) -> Recording:
-    # A reader that keeps the .whl's -1 marker as a coordinate.
-    assert rec.positions is not None
-    return replace(rec, positions=np.nan_to_num(rec.positions, nan=-1.0))
+    """A reader that keeps the .whl's -1 marker and averages the two LEDs.
+
+    Where both LEDs are lost the midpoint is (-1, -1); where one is lost it
+    is halfway between the other LED and (-1, -1), a plausible-looking
+    position inside the image.
+    """
+    raw = np.loadtxt(rec.params["whl_source"], dtype=float, ndmin=2)
+    return replace(rec, positions=(raw[:, :2] + raw[:, 2:4]) / 2.0)
 
 
 HAZARDS = {
