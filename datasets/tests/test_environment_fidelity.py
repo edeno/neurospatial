@@ -8,7 +8,9 @@ from scipy.spatial import cKDTree
 from studies.environment_fidelity import (
     Apparatus,
     Reference,
+    _public,
     along_track_distance,
+    analyse,
     bar_alignment,
     corner_links,
     edge_midpoint_gaps,
@@ -16,9 +18,11 @@ from studies.environment_fidelity import (
     grid_index,
     hole_sizes,
     lattice_reference,
+    merge_rows,
     on_track_shares,
     outline_measures,
     project,
+    render,
     verdict,
 )
 
@@ -253,3 +257,50 @@ def test_verdict_tests_loop_closure():
     assert verdict(row(200.0, 3.0), loop)[0] == "mismatch"  # a loop cut open
     assert "does not close" in verdict(row(200.0, 60.0), loop)[1]
     assert verdict(row(10.0, 3.0), loop)[0] == "matches"
+
+
+def test_declared_environment_is_measured_beside_the_samples_built_one(
+    simulated_recording,
+):
+    from dataclasses import replace
+    from functools import partial
+
+    from shapely.geometry import box
+
+    # The simulated box spans 0-100 cm; the declared outline is that box.
+    declared = partial(
+        Environment.from_polygon, box(0, 0, 100, 100), bin_size=2.5, units="cm"
+    )
+    rec = replace(simulated_recording, geometry={"environment": declared})
+    row = analyse(rec, figures=False)
+    assert row["env_kind"] == "declared"
+    assert row["env"]["n_bins"] == 1600
+    assert row["outline"]["stated_area_covered"] == pytest.approx(1.0, abs=0.01)
+    assert row["declared"]["frac_samples_outside"] < 0.01
+    # The samples-built environment is measured against the same outline.
+    base = row["samples_env"]
+    assert (
+        base["n_bins"] == Environment.from_samples(rec.positions, bin_size=2.5).n_bins
+    )
+    assert base["outline"]["stated_area_covered"] <= 1.0
+    assert set(base) >= {"components", "holes", "geodesic_ratio_median", "outline"}
+    table = render([_public(row)])
+    assert "## Declared against samples-built environments" in table
+    assert f"| simulated_open_field | 1600 / {base['n_bins']} |" in table
+
+
+def test_inferred_environment_has_no_comparison(simulated_recording):
+    row = analyse(simulated_recording, figures=False)
+    assert row["env_kind"] == "inferred"
+    assert "samples_env" not in row
+    assert "declared" not in row
+
+
+def test_merge_rows_replaces_by_dataset_and_keeps_order():
+    existing = [{"dataset": "a", "v": 1}, {"dataset": "b", "v": 1}]
+    merged = merge_rows(existing, [{"dataset": "b", "v": 2}, {"dataset": "c", "v": 2}])
+    assert merged == [
+        {"dataset": "a", "v": 1},
+        {"dataset": "b", "v": 2},
+        {"dataset": "c", "v": 2},
+    ]
