@@ -35,6 +35,22 @@ def wake_tracking():
     return times, headings, spikes
 
 
+@pytest.fixture(scope="module")
+def session_100s():
+    """A seeded 100 s open-field session with two place cells."""
+    return open_field_session(duration=100.0, n_place_cells=2, rng=0)
+
+
+@pytest.fixture(scope="module")
+def session_60s():
+    return open_field_session(duration=60.0, n_place_cells=4, rng=0)
+
+
+@pytest.fixture(scope="module")
+def session_600s():
+    return open_field_session(duration=600.0, n_place_cells=1, rng=0)
+
+
 def _drop_warnings(caught):
     return [w for w in caught if "fell outside the" in str(w.message)]
 
@@ -121,8 +137,8 @@ def test_warn_on_drop_false_silences_directional_spike_drop(wake_tracking):
     assert _drop_warnings(caught) == []
 
 
-def test_spatial_and_decoding_spike_drop_ignore_spikes_outside_epochs():
-    session = open_field_session(duration=100.0, n_place_cells=2, rng=0)
+def test_spatial_and_decoding_spike_drop_ignore_spikes_outside_epochs(session_100s):
+    session = session_100s
     sleep_rng = np.random.default_rng(1)
     with_sleep = [
         np.sort(np.r_[train, sleep_rng.uniform(100.0, 1000.0, 900)])
@@ -140,7 +156,9 @@ def test_spatial_and_decoding_spike_drop_ignore_spikes_outside_epochs():
 
 @pytest.mark.parametrize("window", ["epochs", "spike_window"])
 @pytest.mark.parametrize("family", ["spatial", "directional"])
-def test_spike_clock_offset_still_warns_with_windows(wake_tracking, window, family):
+def test_spike_clock_offset_still_warns_with_windows(
+    wake_tracking, session_100s, window, family
+):
     """Spikes 1000 s later than the tracking (a misaligned file) are all lost.
 
     No spike falls inside the analysed window, so the window cannot explain
@@ -154,7 +172,7 @@ def test_spike_clock_offset_still_warns_with_windows(wake_tracking, window, fami
             compute_directional_rates([in_wake], times, headings, **{window: [WAKE]})
 
     else:
-        session = open_field_session(duration=100.0, n_place_cells=1, rng=0)
+        session = session_100s
 
         def call():
             compute_spatial_rates(
@@ -169,11 +187,11 @@ def test_spike_clock_offset_still_warns_with_windows(wake_tracking, window, fami
         call()
 
 
-def test_decoder_fit_and_predict_warn_once_each_and_not_for_epochs():
+def test_decoder_fit_and_predict_warn_once_each_and_not_for_epochs(session_60s):
     """Each call warns at most once; spikes outside its epochs are not lost."""
     from neurospatial.decoding import BayesianDecoder
 
-    session = open_field_session(duration=60.0, n_place_cells=4, rng=0)
+    session = session_60s
     sleep_rng = np.random.default_rng(1)
     with_sleep = [
         np.sort(np.r_[train, sleep_rng.uniform(60.0, 600.0, 5 * len(train))])
@@ -200,14 +218,14 @@ def test_decoder_fit_and_predict_warn_once_each_and_not_for_epochs():
         assert len(_drop_warnings(caught)) == 1
 
 
-def test_partial_offset_inside_epochs_is_not_detected():
+def test_partial_offset_inside_epochs_is_not_detected(session_600s):
     """A known limit: spikes outside ``epochs`` are not checked.
 
     Spikes shifted 300 s later still leave half of them inside the tracked
     epoch, and the half outside it looks like untracked (sleep) spikes, so no
     warning can tell the offset apart. The docs say to compare the ranges.
     """
-    session = open_field_session(duration=600.0, n_place_cells=1, rng=0)
+    session = session_600s
     shifted = session.spike_times[0] + 300.0
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
