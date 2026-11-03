@@ -522,7 +522,13 @@ def judge_declared(
       least-squares step and by the refitted shift: a misfit when both
       exceed the limit, and when they straddle it the reason is listed in
       ``unverified`` (the verdict is "not verified" unless another check
-      gives a mismatch);
+      gives a mismatch). It is also unverified when the refit did not
+      settle, and when the reading window (``BIAS_WINDOW_BINS`` bins) is
+      wider than half the smallest spacing between distinct parallel
+      pieces (``frame_spacing``, from the geometry): a shift past half the
+      spacing reads as the neighbouring piece's offset (G-160). At the real
+      recordings' scatter the single step stays under a bin, so on a
+      misplaced layout this check gives at most "not verified";
     - an outline (a polygonal domain): per side, how far the samples nearest
       it reach past it (their ``OUTER_QUANTILE`` signed distance, positive
       beyond the wall; limit ``MAX_SIDE_BIAS_BINS`` bins: an outline moved off
@@ -563,7 +569,14 @@ def judge_declared(
     Returns ``{"kind", "misfit": [reasons], "unverified": [reasons], "fit":
     {...}, "outside": share or None, "outside_by_speed": {...}}``.
     """
-    from _tracks import edge_fit, frame_offset, misfit_reasons, segment_distance
+    from _tracks import (
+        BIAS_WINDOW_BINS,
+        FRAME_MAX_ITERATIONS,
+        edge_fit,
+        frame_offset,
+        misfit_reasons,
+        segment_distance,
+    )
 
     positions = np.asarray(positions, dtype=float)
     tracked = np.isfinite(positions).all(axis=1)
@@ -594,7 +607,7 @@ def judge_declared(
         out["misfit"] = misfit_reasons(fit, bin_size, judge_support=not lattice)
         fit.update(frame_offset(graph, samples, tolerance=bin_size))
         fit["frame_offset_limit"] = MAX_SIDE_BIAS_BINS * bin_size
-        if fit["frame_pieces"] == 0:
+        if fit["frame_pieces_one_step"] == 0:
             if not any("no samples near" in reason for reason in out["misfit"]):
                 out["misfit"].append(
                     "no samples near the declared geometry (no piece has 10"
@@ -618,6 +631,21 @@ def judge_declared(
             elif any(over):
                 out["unverified"].append(
                     f"the frame offset depends on the estimator (G-160): {values}"
+                )
+            if not fit["frame_converged"]:
+                # An unsettled refit under-reads; it confirms nothing.
+                out["unverified"].append(
+                    "the frame offset's refit did not settle in"
+                    f" {FRAME_MAX_ITERATIONS} steps (G-160): {values}"
+                )
+            window = BIAS_WINDOW_BINS * bin_size
+            if window > fit["frame_spacing"] / 2:
+                # A shift past half the spacing reads as the neighbour's.
+                out["unverified"].append(
+                    "the frame offset cannot be read beyond half the corridor"
+                    f" spacing (G-160): its {window:.3g} window is wider than"
+                    f" half the {fit['frame_spacing']:.3g} spacing between"
+                    " parallel pieces"
                 )
         if fit["end_overshoot"] > MAX_SIZE_RESIDUAL:
             out["misfit"].append(

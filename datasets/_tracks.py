@@ -61,6 +61,9 @@ MIN_FRAME_EIGENVALUE = 1.0
 # and one least-squares step recovers only half to two thirds of a shift.
 FRAME_MAX_ITERATIONS = 50
 FRAME_CONVERGED_BINS = 1e-3
+# Two straight pieces are parallel when they turn less than this from each
+# other, the same turn ``_straight_pieces`` grows a stretch through.
+PARALLEL_TURN = np.radians(20.0)
 
 
 def graph_arrays(graph: Any) -> tuple[list[Any], NDArray[np.float64], NDArray[np.intp]]:
@@ -360,6 +363,58 @@ def edge_fit(
     }
 
 
+def piece_spacing(
+    nodes: NDArray[np.float64],
+    edges: NDArray[np.intp],
+    pieces: Sequence[tuple[Sequence[int], NDArray[np.float64]]],
+    *,
+    tolerance: float,
+) -> float:
+    """The smallest distance between two distinct parallel pieces.
+
+    From the declared geometry alone, not the samples. ``pieces`` pairs each
+    straight piece's segments with its unit direction (as ``frame_offset``
+    builds them). Two pieces count when they turn less than
+    ``PARALLEL_TURN`` from each other, share no node (a junction or a
+    stretch's own continuation is not a neighbouring corridor) and lie side
+    by side: each piece runs from its two extreme nodes along its direction,
+    and their spans along the first piece's direction overlap. Their spacing
+    is the perpendicular distance from the second to the first piece's line,
+    averaged over the two ends of the overlap. Infinite when no two pieces
+    count (a single track, a T, a Y, a radial maze). Samples moved by half
+    this spacing or more are nearer the neighbouring piece and are read as
+    its offset, the other way (G-160).
+    """
+    if len(pieces) < 2:
+        return float("inf")
+    used = [np.unique(edges[list(members)].ravel()) for members, _ in pieces]
+    direction = np.array([d for _, d in pieces])
+    t = [nodes[u] @ d for u, (_, d) in zip(used, pieces, strict=True)]
+    first = np.array([nodes[u[np.argmin(v)]] for u, v in zip(used, t, strict=True)])
+    last = np.array([nodes[u[np.argmax(v)]] for u, v in zip(used, t, strict=True)])
+    incidence = np.zeros((len(pieces), len(nodes)), dtype=bool)
+    for k, u in enumerate(used):
+        incidence[k, u] = True
+    shared = (incidence.astype(int) @ incidence.T.astype(int)) > 0
+    cos = np.abs(direction @ direction.T)
+    candidate = (cos >= np.cos(PARALLEL_TURN)) & ~shared
+    best = float("inf")
+    for i, j in zip(*np.nonzero(np.triu(candidate, 1)), strict=True):
+        d = direction[i]
+        length = (last[i] - first[i]) @ d
+        b0, b1 = (first[j] - first[i]) @ d, (last[j] - first[i]) @ d
+        lo, hi = max(0.0, min(b0, b1)), min(length, max(b0, b1))
+        if hi - lo <= 1e-6 * tolerance or b1 == b0:
+            continue
+        gaps = []
+        for along in (lo, hi):
+            point = first[j] + (along - b0) / (b1 - b0) * (last[j] - first[j])
+            rel = point - first[i]
+            gaps.append(float(np.linalg.norm(rel - (rel @ d) * d)))
+        best = min(best, float(np.mean(gaps)))
+    return best
+
+
 def frame_offset(
     graph: Any, positions: NDArray[np.float64], *, tolerance: float
 ) -> dict[str, Any]:
@@ -398,8 +453,8 @@ def frame_offset(
     whose lean is a local feature, as ``edge_fit`` treats a short stretch).
     The judged offset, ``frame_offset_judged``, is the smallest norm of the
     judged components over the fits with one piece left out (linearised at
-    the converged ``s``): a misfit only when it survives dropping any
-    piece. The judged components are every axis in 2-D and the horizontal
+    the shift the last medians were measured at): a misfit only when it
+    survives dropping any piece. The judged components are every axis in 2-D and the horizontal
     ones (x, y) in 3-D, where a head on a headstage sits above the bars and
     biases the vertical one, which is reported (``frame_offset_vertical``).
 
@@ -408,8 +463,17 @@ def frame_offset(
     ``frame_pieces``, ``frame_min_eigenvalue`` and ``frame_max_eigenvalue``
     (of ``sum P_k``: the fit's condition), ``frame_unconstrained`` and
     ``frame_judged_unconstrained`` (how many directions not read have a
-    judged component), ``frame_iterations`` and ``frame_converged``, and the
-    single step's offset, judged norm and pieces.
+    judged component), ``frame_iterations`` and ``frame_converged``,
+    ``frame_spacing`` (``piece_spacing``: the smallest distance between two
+    distinct parallel pieces, from the geometry), and the single step's
+    offset, judged norm and pieces (kept when a later refit step loses every
+    piece).
+
+    The offset is resolved only below half of ``frame_spacing``: samples
+    moved farther are nearer the neighbouring corridor or bar and read as
+    its offset, the other way, so a shift of one spacing reads as none.
+    ``judge_declared`` therefore passes no verdict on it when the reading
+    window (``BIAS_WINDOW_BINS`` bins) is wider than half the spacing.
     """
     _, nodes, edges = graph_arrays(graph)
     samples = tracked(positions)
@@ -486,6 +550,7 @@ def frame_offset(
         return judged
 
     judged_axes = 2 if n_dims == 3 else n_dims
+    spacing = piece_spacing(nodes, edges, pieces, tolerance=tolerance)
     shift = np.zeros(n_dims)
     converged = False
     one_step: dict[str, Any] = {}
@@ -493,6 +558,7 @@ def frame_offset(
         directions, offsets = medians(samples - shift)
         if not len(directions):
             nan = float("nan")
+            # The refit lost every piece; the single step, if taken, stands.
             return {
                 "frame_offset": [nan] * n_dims,
                 "frame_offset_judged": nan,
@@ -507,10 +573,14 @@ def frame_offset(
                 "frame_offset_one_step": [nan] * n_dims,
                 "frame_offset_judged_one_step": nan,
                 "frame_pieces_one_step": 0,
+                "frame_spacing": spacing,
+                **one_step,
             }
         values, vectors, read = read_directions(directions)
         basis = vectors[:, read]
         update = basis @ ((basis.T @ offsets.sum(axis=0)) / values[read])
+        # The medians were measured at this shift, before the update.
+        measured = shift
         if iteration == 1:
             one_step = {
                 "frame_offset_one_step": update.tolist(),
@@ -526,8 +596,9 @@ def frame_offset(
     unread = vectors[:, ~read].T
     return {
         "frame_offset": shift.tolist(),
-        # Linearised at the converged shift, where the medians' sum is ~0.
-        "frame_offset_judged": left_out(directions, offsets, basis, shift),
+        # Linearised at the shift the last medians were measured at, where
+        # their sum is ~0 once converged.
+        "frame_offset_judged": left_out(directions, offsets, basis, measured),
         "frame_offset_vertical": float(shift[2]) if n_dims == 3 else None,
         "frame_pieces": len(directions),
         "frame_min_eigenvalue": float(values[0]),
@@ -538,6 +609,7 @@ def frame_offset(
         ),
         "frame_iterations": iteration,
         "frame_converged": converged,
+        "frame_spacing": spacing,
         **one_step,
     }
 

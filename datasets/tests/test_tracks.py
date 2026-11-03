@@ -542,6 +542,9 @@ def test_a_maze_of_short_corridors_in_place_has_no_frame_offset(grid_maze):
     assert fit["frame_max_eigenvalue"] == pytest.approx(12.0)
     assert np.linalg.norm(fit["frame_offset"]) < 0.2 * FRAME_BIN
     assert fit["frame_unconstrained"] == []
+    # Parallel corridors 15 cm apart: the 7.5 cm window is not wider than
+    # half of it, so shifts below 7.5 cm are resolved.
+    assert fit["frame_spacing"] == pytest.approx(15.0)
     assert judged["misfit"] == []
     assert judged["unverified"] == []
 
@@ -580,6 +583,69 @@ def test_a_frame_offset_the_estimators_disagree_on_is_not_verified(grid_maze):
     assert judged["misfit"] == []
     assert len(judged["unverified"]) == 1
     assert "depends on the estimator" in judged["unverified"][0]
+
+
+def test_a_shift_on_corridors_closer_than_the_window_is_not_verified():
+    # A grid of 5 cm corridors at 2.5 cm bins (8 x 8 nodes, 0.5 cm scatter):
+    # the 7.5 cm window is wider than half the 5 cm spacing, so a 1.5-bin
+    # (3.75 cm) shift lands nearer the neighbouring corridor and reads as a
+    # small shift the other way. Without the spacing rule both estimators
+    # read under a bin and it matched; now it is not verified.
+    from _geometry import graph_environment, judge_declared
+
+    names = {(i, j): f"{i}_{j}" for i in range(8) for j in range(8)}
+    graph = graph_from_points(
+        {name: (5.0 * i, 5.0 * j) for (i, j), name in names.items()},
+        [(names[i, j], names[i + 1, j]) for i in range(7) for j in range(8)]
+        + [(names[i, j], names[i, j + 1]) for i in range(8) for j in range(7)],
+    )
+    _, nodes, edges = graph_arrays(graph)
+    rng = np.random.default_rng(22)
+    parts = []
+    for k, (u, v) in enumerate(edges):
+        n = 100 + 20 * k
+        a, b = nodes[u], nodes[v]
+        normal = np.array([-(b - a)[1], (b - a)[0]]) / 5.0
+        parts.append(
+            a
+            + rng.uniform(0, 1, n)[:, None] * (b - a)
+            + rng.normal(0, 0.5, n)[:, None] * normal
+        )
+    samples = np.vstack(parts) + np.array([1.5 * FRAME_BIN, 0.0])
+    env = graph_environment(
+        graph, bin_size=FRAME_BIN, track_width=6.0, units="cm", name="t"
+    )
+    judged = judge_declared(
+        env, np.arange(len(samples)) / 30.0, samples, bin_size=FRAME_BIN
+    )
+    fit = judged["fit"]
+    assert fit["frame_spacing"] == pytest.approx(5.0)
+    # The aliased reading: under a bin by both estimators.
+    assert fit["frame_offset_judged_one_step"] < FRAME_BIN
+    assert fit["frame_offset_judged"] < FRAME_BIN
+    assert judged["misfit"] == []
+    assert any("half the corridor spacing" in r for r in judged["unverified"])
+
+
+def test_an_unsettled_refit_is_not_verified(grid_maze):
+    # 10 cm scatter on 15 cm corridors, moved 2 bins: the refit is still
+    # moving after its 50 steps, so its reading confirms nothing.
+    graph, _ = grid_maze
+    _, nodes, edges = graph_arrays(graph)
+    rng = np.random.default_rng(21)
+    parts = []
+    for k, (u, v) in enumerate(edges):
+        n = 100 + 20 * k
+        a, b = nodes[u], nodes[v]
+        normal = np.array([-(b - a)[1], (b - a)[0]]) / 15.0
+        parts.append(
+            a
+            + rng.uniform(0, 1, n)[:, None] * (b - a)
+            + rng.normal(0, 10.0, n)[:, None] * normal
+        )
+    judged = _judged(graph, np.vstack(parts) + np.array([2.0 * FRAME_BIN, 0.0]))
+    assert not judged["fit"]["frame_converged"]
+    assert any("did not settle" in r for r in judged["unverified"])
 
 
 def tilted_lattice(n_cubes: int = 3, side: float = 16.0) -> np.ndarray:
@@ -648,17 +714,29 @@ def test_a_tilted_lattice_reports_the_head_height_and_judges_the_horizontal(
     assert fit["frame_min_eigenvalue"] == pytest.approx(
         2 / 3 * fit["frame_pieces"], rel=1e-6
     )
-    assert judged["misfit"] == judged["unverified"] == []
-    # Moved 1.5 bins (6 cm) horizontally: the refitted shift recovers it
-    # within 0.2 bin, but a single step reads under a bin (samples moved off a
-    # bar leave its window or go to a crossing bar), so the check is
-    # unverified, not a misfit.
+    assert judged["misfit"] == []
+    # Parallel bars 16 cm apart: the 3-bin (12 cm) window is wider than half
+    # of it, so a shift past 8 cm would read as the next bar's; the check
+    # passes no verdict even in place.
+    assert fit["frame_spacing"] == pytest.approx(16.0)
+    assert len(judged["unverified"]) == 1
+    assert "half the corridor spacing" in judged["unverified"][0]
+
+
+def test_known_limit_a_moved_lattice_is_not_verified_rather_than_a_mismatch(
+    lattice_samples,
+):
+    # A known limit, not a requirement: moved 1.5 bins (6 cm) horizontally,
+    # the refitted shift recovers it within 0.2 bin, but a single step reads
+    # under a bin (samples moved off a bar leave its window or go to a
+    # crossing bar), so the check gives "not verified", not a mismatch.
+    env, samples = lattice_samples
     moved = _judged_lattice(env, samples + np.array([6.0, 0.0, 0.0]))
     fit = moved["fit"]
     np.testing.assert_allclose(fit["frame_offset"], [6.0, 0.0, 6.0], atol=0.8)
     assert fit["frame_offset_judged"] > 4.0 > fit["frame_offset_judged_one_step"]
     assert moved["misfit"] == []
-    assert "depends on the estimator" in moved["unverified"][0]
+    assert any("depends on the estimator" in r for r in moved["unverified"])
 
 
 def test_a_single_straight_track_cannot_read_its_along_track_offset():
