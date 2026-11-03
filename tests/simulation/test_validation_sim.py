@@ -43,13 +43,8 @@ def test_plot_session_summary_labels(simple_2d_env):
     )
     fig, axes = plot_session_summary(relabeled, unit_ids=[31, 11])
     assert [ax.get_title() for ax in axes[2:4]] == ["Cell 31", "Cell 11"]
-    assert [tick.get_text() for tick in axes[-1].get_yticklabels()] == [
-        "7",
-        "11",
-        "19",
-        "23",
-        "31",
-    ]
+    # The raster shows the requested units, in the requested order.
+    assert [tick.get_text() for tick in axes[-1].get_yticklabels()] == ["31", "11"]
     plt.close(fig)
 
 
@@ -454,7 +449,7 @@ class TestPlotSessionSummary:
             for ax, unit in zip(axes[2:5], session.unit_ids, strict=True):
                 assert ax.get_title() == f"Cell {unit}"
                 assert ax.get_xlabel() == "Position (cm)"
-                assert ax.get_ylabel() == "Rate (Hz)"
+                assert ax.get_ylabel() == "Firing rate (Hz)"
                 (curve,) = ax.get_lines()
                 np.testing.assert_array_equal(
                     curve.get_xdata(), session.env.bin_centers[:, 0]

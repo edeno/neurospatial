@@ -119,6 +119,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._angles import to_radians, wrap_angle
+from neurospatial._plotting import _require_polar
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin
 from neurospatial._stacklevel import _external_stacklevel
@@ -1615,6 +1616,10 @@ def plot_circular_basis_tuning(
             _, ax = plt.subplots(subplot_kw={"projection": "polar"})
         else:
             _, ax = plt.subplots()
+    elif projection == "polar":
+        _require_polar(
+            ax, "plot_circular_basis_tuning", alternative='pass `projection="linear"`'
+        )
 
     line_kw = {"color": color, "linewidth": 2, "zorder": 2, **(line_kwargs or {})}
     scatter_kw = {

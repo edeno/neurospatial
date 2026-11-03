@@ -448,7 +448,7 @@ class ViewRateResult(SingleUnitRateMixin):
             Common options include:
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
-            - add_colorbar : bool, default=True
+            - colorbar : bool, default=True
 
         Returns
         -------
@@ -474,6 +474,7 @@ class ViewRateResult(SingleUnitRateMixin):
         --------
         peak_location : Get location of peak view response
         """
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
     def spatial_information(self) -> float:
@@ -885,7 +886,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
             Common options include:
             - cmap : str or Colormap, default="viridis"
             - vmin, vmax : float, colorbar limits
-            - add_colorbar : bool, default=True
+            - colorbar : bool, default=True
 
         Returns
         -------
@@ -914,6 +915,7 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         peak_locations : Get locations of peak view responses
         ViewRateResult.plot : Plot for single-neuron result
         """
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(
             _to_numpy(self.firing_rates[idx]),  # type: ignore[index]
             ax=ax,

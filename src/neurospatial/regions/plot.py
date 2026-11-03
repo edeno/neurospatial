@@ -71,8 +71,8 @@ def plot_regions(
         Maps ``(n, 2)`` region coordinates to plot coordinates before drawing,
         for example cm to pixels to overlay regions on a video frame.
     add_legend : bool, default True
-        Add a legend labeling each drawn region, placed outside the Axes, to
-        the right (``loc="center left", bbox_to_anchor=(1, 0.5)``).
+        Add a legend labeling each drawn region, placed inside the Axes where
+        it covers the least (``loc="best"``).
     **per_region_kwargs
         Per-region Matplotlib keyword arguments, keyed by region name::
 
@@ -103,7 +103,9 @@ def plot_regions(
     example, stores each label's color there. Unless overridden, ``alpha`` is
     0.5, the legend label is the region name, and point regions use
     ``marker="x"`` and ``s=100``. ``color`` sets a polygon's face color when
-    ``facecolor`` is not given.
+    ``facecolor`` is not given. Regions without a color take successive
+    colors of Matplotlib's default color cycle, so each is told apart. The
+    axes get equal aspect, so a circle is not drawn as an ellipse.
 
     Axis limits that are still autoscaling grow to include the regions; limits
     you set beforehand (for example the frame of a video image) are kept.
@@ -145,7 +147,8 @@ def plot_regions(
     if ax is None:
         ax = plt.gca()
 
-    for name in region_names:
+    cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", ["C0"])
+    for position, name in enumerate(region_names):
         region = regions[name]
         opts: dict[str, Any] = dict(default_kwargs or {})
         opts.update(region.metadata.get("plot_kwargs", {}))
@@ -153,6 +156,8 @@ def plot_regions(
 
         label = opts.pop("label", name)
         alpha = opts.pop("alpha", 0.5)
+        if not {"color", "c", "facecolor", "facecolors"} & opts.keys():
+            opts["color"] = cycle[position % len(cycle)]
 
         where = f"region {name!r}"
         if region.kind == "point":
@@ -184,8 +189,9 @@ def plot_regions(
 
     handles, labels = ax.get_legend_handles_labels()
     if handles and add_legend:
-        ax.legend(handles, labels, loc="center left", bbox_to_anchor=(1, 0.5))
+        ax.legend(handles, labels, loc="best")
     # add_patch does not rescale; autoscale_view grows only the axes still
     # autoscaling, so limits the caller set (a video frame, env.plot) stay.
     ax.autoscale_view()
+    ax.set_aspect("equal")
     return ax
