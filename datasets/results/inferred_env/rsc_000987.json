@@ -5,7 +5,6 @@
   "license": "CC-BY-4.0",
   "conversions": [
     "positions: Position/x and -Position/z (blank unit) x 100, cm; y is vertical (span 9.0 cm); range checked: -24.2-28.5 by -42.1-11.0 cm",
-    "headings NaN where the position is",
     "headings: CompassDirection/ry (radian, 0-2 pi) wrapped to [-pi, pi]; frame not verified: heading_vs_movement mean +0.51 rad, spread 49 deg (10 Hz, > 10 cm/s)",
     "epochs: epochs table by tag (sleep, wake); SWS, UP, DOWN intervals; position_time_support as tracking"
   ],
@@ -48,7 +47,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [
     {
@@ -61,11 +60,29 @@
     {
       "category": "UserWarning",
       "origin": "loader",
-      "template": "suspect tracking, positions kept as stored: # runs of #+ identical samples (# samples, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
-      "example": "suspect tracking, positions kept as stored: 22 runs of 10+ identical samples (523 samples, 0.4%; 5.2 s in all, longest 1.0 s) and 18 samples farther than 100 cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
+      "template": "suspect tracking, positions kept as stored: # runs of #+ identical samples (# repeats, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
+      "example": "suspect tracking, positions kept as stored: 22 runs of 11+ identical samples (523 repeats, 0.4%; 5.2 s in all, longest 1.0 s) and 18 samples farther than 100 cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
       "count": 1
     }
   ],
+  "load_fingerprint": {
+    "params": "615054adc7bae15c3e8a3f23ed4447cdf316e5d5f3fa82d35fa41349ec837df6",
+    "positions": [
+      [
+        120287,
+        2
+      ],
+      0
+    ],
+    "times": [
+      3880.15755,
+      5082.9515,
+      120287
+    ],
+    "spike_counts": "5c00c4aa78954e80c76e19e8965da616ec1c07b1b20b17c86bf179b5bc635eb4",
+    "unit_ids": "fa5d3ef531a22bab08ec760fc0cc91c5db1c27a30e57e02d7fa4e43539f8c3f3",
+    "geometry": "d785a67b1d13331bf3b9e6ce3b20ea9c8164015850136c662d009c94cd08352b"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -77,8 +94,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.064,
-      "peak_mb": 7.0
+      "seconds": 0.493,
+      "peak_mb": 20.7
     },
     "env.occupancy": {
       "status": "ok",
@@ -91,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.025,
+      "seconds": 0.02,
       "peak_mb": 15.0
     },
     "env.declared": {
@@ -114,8 +131,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.199,
-      "peak_mb": 34.8
+      "seconds": 0.26,
+      "peak_mb": 39.0
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -142,7 +159,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.523,
+      "seconds": 0.404,
       "peak_mb": 42.6
     },
     "cells.place_screen": {
@@ -154,7 +171,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.004,
       "peak_mb": 8.5
     },
     "cells.grid_score": {
@@ -167,7 +184,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.212,
+      "seconds": 0.15,
       "peak_mb": 2.7
     },
     "cells.border_score": {
@@ -176,8 +193,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 0.3
+      "seconds": 0.003,
+      "peak_mb": 0.5
     },
     "hd.tuning": {
       "status": "ok",
@@ -190,7 +207,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.104,
+      "seconds": 0.086,
       "peak_mb": 34.8
     },
     "rates.egocentric_boundary": {
@@ -208,7 +225,7 @@
       "note": "walls = edge of the visited bins (boundary_source='analysis')",
       "gap": null,
       "warnings": [],
-      "seconds": 17.542,
+      "seconds": 16.231,
       "peak_mb": 512.7
     },
     "decode.position": {
@@ -224,8 +241,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.133,
-      "peak_mb": 34.8
+      "seconds": 0.148,
+      "peak_mb": 35.5
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -235,8 +252,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.34,
-      "peak_mb": 5.4
+      "seconds": 2.191,
+      "peak_mb": 5.0
     },
     "env.from_graph": {
       "status": "n/a",
@@ -253,8 +270,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.513,
+      "peak_mb": 21.4
     },
     "behavior.laps": {
       "status": "error",
@@ -280,8 +297,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.098,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "error",
@@ -301,8 +318,8 @@
           "count": 10
         }
       ],
-      "seconds": 0.553,
-      "peak_mb": 23.5
+      "seconds": 0.544,
+      "peak_mb": 23.7
     },
     "io.read_pose": {
       "status": "n/a",
@@ -318,8 +335,8 @@
           "count": 10
         }
       ],
-      "seconds": 0.545,
-      "peak_mb": 0.6
+      "seconds": 1.197,
+      "peak_mb": 12.4
     },
     "imaging.rates": {
       "status": "n/a",

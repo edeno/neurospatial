@@ -39,9 +39,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "24682bb5dc705a1219d5a014bdb8c58c67d0e6c78423d1fe83452b64c77d03c2",
+    "positions": [
+      [
+        858800,
+        2
+      ],
+      0
+    ],
+    "times": [
+      7457.01,
+      16045.0,
+      858800
+    ],
+    "spike_counts": "26fbcaa9933f3277cdec59e7c4414a3da8aebd1a3934b4be68b9974cf4840a80",
+    "unit_ids": "0a0977d8e07eb34645dcf4fec29e208250e4b06b7f19944ef9889ee96e215232",
+    "geometry": "98649ec8a210768151e0cb9b61956a94094c211f24b45f137aba2ff5ea46a9d1"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -53,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.527,
+      "seconds": 0.437,
       "peak_mb": 49.9
     },
     "env.occupancy": {
@@ -67,7 +85,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.232,
+      "seconds": 0.188,
       "peak_mb": 107.4
     },
     "env.declared": {
@@ -90,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 8.498,
+      "seconds": 6.834,
       "peak_mb": 628.4
     },
     "rates.spatial_information": {
@@ -103,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.038,
+      "seconds": 0.031,
       "peak_mb": 112.1
     },
     "rates.information_vs_shifts": {
@@ -118,7 +136,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 11.097,
+      "seconds": 8.045,
       "peak_mb": 772.7
     },
     "cells.place_screen": {
@@ -130,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.675,
+      "seconds": 0.43,
       "peak_mb": 205.9
     },
     "cells.grid_score": {
@@ -143,7 +161,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.182,
+      "seconds": 3.62,
       "peak_mb": 31.9
     },
     "cells.border_score": {
@@ -152,7 +170,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.007,
       "peak_mb": 14.5
     },
     "hd.tuning": {
@@ -166,7 +184,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.722,
+      "seconds": 1.968,
       "peak_mb": 599.2
     },
     "rates.egocentric_boundary": {
@@ -184,7 +202,7 @@
       "note": "walls = edge of the visited bins (boundary_source='analysis')",
       "gap": null,
       "warnings": [],
-      "seconds": 220.709,
+      "seconds": 162.483,
       "peak_mb": 3660.4
     },
     "decode.position": {
@@ -202,8 +220,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.187,
-      "peak_mb": 1092.4
+      "seconds": 13.126,
+      "peak_mb": 1718.8
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -213,8 +231,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.699,
-      "peak_mb": 76.7
+      "seconds": 3.701,
+      "peak_mb": 77.6
     },
     "env.from_graph": {
       "status": "n/a",
@@ -231,8 +249,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.592,
-      "peak_mb": 21.5
+      "seconds": 0.566,
+      "peak_mb": 21.4
     },
     "behavior.laps": {
       "status": "error",
@@ -240,7 +258,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.155,
+      "seconds": 0.16,
       "peak_mb": 107.4
     },
     "behavior.turn_sequence": {
@@ -258,7 +276,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.114,
+      "seconds": 0.106,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {

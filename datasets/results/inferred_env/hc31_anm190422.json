@@ -45,9 +45,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "bab17db45762e73df73f34b7fc6afccf9a3b77910a08489f0b8bdae7b2310042",
+    "positions": [
+      [
+        38473,
+        1
+      ],
+      0
+    ],
+    "times": [
+      24857.450098417292,
+      26141.1397295773,
+      38473
+    ],
+    "spike_counts": "fae5b33e8aea6f47d82c50bedd916ea8fe652c88cd55a7e064337abe734c7f8d",
+    "unit_ids": "2bf0adbe2bd09330b4db488cfdd06bbac3102008e5c6e696db37926153f57c54",
+    "geometry": "ebeb9a2bdca8be1ceed66f0297908804d03943cef4c6d75bb59f6ba064c3048b"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -59,8 +77,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.061,
-      "peak_mb": 3.2
+      "seconds": 0.284,
+      "peak_mb": 12.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -96,8 +114,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.614,
-      "peak_mb": 93.6
+      "seconds": 1.116,
+      "peak_mb": 98.0
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -124,7 +142,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.164,
+      "seconds": 0.14,
       "peak_mb": 9.2
     },
     "cells.place_screen": {
@@ -136,7 +154,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.108,
+      "seconds": 0.077,
       "peak_mb": 152.6
     },
     "cells.grid_score": {
@@ -182,8 +200,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.291,
-      "peak_mb": 81.4
+      "seconds": 0.938,
+      "peak_mb": 155.2
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -193,8 +211,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.528,
-      "peak_mb": 9.3
+      "seconds": 2.549,
+      "peak_mb": 20.0
     },
     "env.from_graph": {
       "status": "n/a",
@@ -214,8 +232,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
-      "peak_mb": 7.3
+      "seconds": 0.557,
+      "peak_mb": 28.6
     },
     "behavior.laps": {
       "status": "error",
@@ -241,8 +259,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.102,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -250,8 +268,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.006,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",

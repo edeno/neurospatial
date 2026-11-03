@@ -52,9 +52,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "a47669fe362b35de6e47e1343b190a9cb7b30fd8"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "75aca41b32678cc704d0f99c3b4d1741d1ca5b4c9490473f291c6ea5ab22c717",
+    "positions": [
+      [
+        642724,
+        3
+      ],
+      4701
+    ],
+    "times": [
+      -107.37920111615983,
+      5248.587519675248,
+      642724
+    ],
+    "spike_counts": "54ec3f0a95b1814fd3b7a805b8e7cd898ca1cbef593d1928d54d6b0666d95e3b",
+    "unit_ids": "04e4754619adf3a16a65c82f591497b4b56ff4c0db10b86061a2be697ae3cf8a",
+    "geometry": "460b2d5a418e89ae5f453d5f70ea7d0baf34514549fa777e64207ad47feb420d"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -66,7 +84,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.28,
+      "seconds": 0.224,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -80,7 +98,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.129,
+      "seconds": 2.492,
       "peak_mb": 289.8
     },
     "env.declared": {
@@ -94,7 +112,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.122,
+      "seconds": 0.097,
       "peak_mb": 112.6
     },
     "rates.spatial": {
@@ -108,8 +126,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 68.329,
-      "peak_mb": 1734.2
+      "seconds": 41.063,
+      "peak_mb": 1738.4
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -121,7 +139,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.039,
+      "seconds": 0.034,
       "peak_mb": 160.6
     },
     "rates.information_vs_shifts": {
@@ -136,7 +154,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 9.126,
+      "seconds": 5.086,
       "peak_mb": 280.7
     },
     "cells.place_screen": {
@@ -148,7 +166,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.516,
+      "seconds": 0.696,
       "peak_mb": 177.0
     },
     "cells.grid_score": {
@@ -157,7 +175,7 @@
       "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's RegularGrid layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.002,
       "peak_mb": 19.2
     },
     "cells.border_score": {
@@ -166,8 +184,8 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
-      "peak_mb": 26.6
+      "seconds": 0.008,
+      "peak_mb": 26.7
     },
     "hd.tuning": {
       "status": "n/a",
@@ -188,14 +206,14 @@
         "frac_actual_outside": 0.004761904761904762,
         "units": "m",
         "n_time_bins": 210,
-        "median_error_on_declared": 2.3517371294936926,
-        "n_on_declared": 209
+        "median_error_on_declared": 2.358711277221465,
+        "n_on_declared": 210
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.218,
-      "peak_mb": 240.7
+      "seconds": 3.886,
+      "peak_mb": 242.5
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -205,8 +223,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 10.242,
-      "peak_mb": 211.6
+      "seconds": 7.69,
+      "peak_mb": 220.7
     },
     "env.from_graph": {
       "status": "n/a",
@@ -226,8 +244,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.228,
-      "peak_mb": 234.8
+      "seconds": 1.084,
+      "peak_mb": 256.1
     },
     "behavior.laps": {
       "status": "error",
@@ -235,7 +253,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.22,
+      "seconds": 0.114,
       "peak_mb": 97.2
     },
     "behavior.turn_sequence": {
@@ -253,8 +271,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.105,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -262,8 +280,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.006,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",

@@ -45,9 +45,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "b0fc38a7a5ba25fcf4c7e6f8cf065fa0e2d2cad998a4bbef89bbd39584e566e7",
+    "positions": [
+      [
+        31184,
+        2
+      ],
+      3816
+    ],
+    "times": [
+      0.0,
+      798.2848,
+      31184
+    ],
+    "spike_counts": "4f331220e0c81b16441271caa7289878cbc0f6dc23e0d5d51237b4545159daca",
+    "unit_ids": "bef8d2c8f86a79faeda0477709007a5dc16cfd1343af67b61824dfe914f29b90",
+    "geometry": "d4d7a478b623411363990b94a3451401fd0e0c60b1d72318303df6dfa8752d17"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -67,8 +85,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.059,
-      "peak_mb": 2.7
+      "seconds": 0.27,
+      "peak_mb": 14.1
     },
     "env.occupancy": {
       "status": "ok",
@@ -89,7 +107,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.037,
+      "seconds": 0.029,
       "peak_mb": 4.4
     },
     "env.declared": {
@@ -125,8 +143,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.064,
-      "peak_mb": 4.9
+      "seconds": 0.575,
+      "peak_mb": 27.5
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -161,8 +179,8 @@
           "count": 4
         }
       ],
-      "seconds": 0.245,
-      "peak_mb": 6.2
+      "seconds": 0.215,
+      "peak_mb": 6.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -205,7 +223,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.054,
+      "seconds": 0.049,
       "peak_mb": 6.2
     },
     "rates.egocentric_boundary": {
@@ -226,8 +244,8 @@
         "frac_actual_outside": 0.013277428371767994,
         "units": "pixel",
         "n_time_bins": 1507,
-        "median_error_on_declared": 8.532759426968564,
-        "n_on_declared": 1412
+        "median_error_on_declared": 8.532759426968552,
+        "n_on_declared": 1430
       },
       "note": "",
       "gap": null,
@@ -247,8 +265,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.074,
-      "peak_mb": 8.0
+      "seconds": 0.257,
+      "peak_mb": 20.3
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -266,8 +284,8 @@
           "count": 2
         }
       ],
-      "seconds": 2.166,
-      "peak_mb": 2.6
+      "seconds": 2.176,
+      "peak_mb": 12.8
     },
     "env.from_graph": {
       "status": "ok",
@@ -290,8 +308,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.03,
-      "peak_mb": 3.3
+      "seconds": 0.558,
+      "peak_mb": 24.6
     },
     "behavior.laps": {
       "status": "error",
@@ -299,7 +317,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.007,
       "peak_mb": 4.0
     },
     "behavior.turn_sequence": {
@@ -311,7 +329,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.006,
       "peak_mb": 4.0
     },
     "replay.compare_methods": {
@@ -320,8 +338,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.104,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -329,8 +347,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.006,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",

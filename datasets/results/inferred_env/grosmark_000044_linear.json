@@ -44,9 +44,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "a9073eb4c3f3b511ec106a5033a9433f0ae9bd493adc4725b64d13923f995dec",
+    "positions": [
+      [
+        80762,
+        2
+      ],
+      34540
+    ],
+    "times": [
+      18079.5,
+      20146.974400039035,
+      80762
+    ],
+    "spike_counts": "fea41033ff74991c6683a1f77f603b4341726b23a6e5037a1939144b13ad4937",
+    "unit_ids": "b09582c2b4abaca7aa07afdb5ff0f317fe9e22357124c90a04fc86e8301de0b6",
+    "geometry": "6d34a17db986f28cc15e2adc491bf61636736cafc3523d84f0a832e9c0367f40"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -58,8 +76,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.132,
-      "peak_mb": 6.0
+      "seconds": 0.306,
+      "peak_mb": 14.1
     },
     "env.occupancy": {
       "status": "ok",
@@ -72,7 +90,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.169,
+      "seconds": 0.084,
       "peak_mb": 8.7
     },
     "env.declared": {
@@ -95,8 +113,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.992,
-      "peak_mb": 298.6
+      "seconds": 0.652,
+      "peak_mb": 306.4
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -108,7 +126,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.002,
       "peak_mb": 10.1
     },
     "rates.information_vs_shifts": {
@@ -123,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.49,
+      "seconds": 2.425,
       "peak_mb": 367.3
     },
     "cells.place_screen": {
@@ -135,7 +153,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.03,
+      "seconds": 0.025,
       "peak_mb": 49.2
     },
     "cells.grid_score": {
@@ -148,7 +166,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.132,
+      "seconds": 0.924,
       "peak_mb": 37.4
     },
     "cells.border_score": {
@@ -157,8 +175,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 1.6
+      "seconds": 0.003,
+      "peak_mb": 1.7
     },
     "hd.tuning": {
       "status": "n/a",
@@ -180,13 +198,13 @@
         "units": "cm",
         "n_time_bins": 4063,
         "median_error_on_declared": 8.535533905932738,
-        "n_on_declared": 3001
+        "n_on_declared": 3119
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.698,
-      "peak_mb": 298.4
+      "seconds": 1.132,
+      "peak_mb": 332.9
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -196,8 +214,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.806,
-      "peak_mb": 11.7
+      "seconds": 2.356,
+      "peak_mb": 12.7
     },
     "env.from_graph": {
       "status": "n/a",
@@ -217,8 +235,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.099,
-      "peak_mb": 5.1
+      "seconds": 0.597,
+      "peak_mb": 22.4
     },
     "behavior.laps": {
       "status": "error",
@@ -226,7 +244,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.026,
+      "seconds": 0.024,
       "peak_mb": 15.3
     },
     "behavior.turn_sequence": {
@@ -253,8 +271,8 @@
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 3.483,
-      "peak_mb": 296.2
+      "seconds": 3.169,
+      "peak_mb": 299.1
     },
     "io.nwb_readers": {
       "status": "error",
@@ -266,8 +284,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries', 'processing/behavior/1.6mLinearMazePosition/1.6mLinearMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 56.314,
-      "peak_mb": 334.4
+      "seconds": 26.118,
+      "peak_mb": 334.5
     },
     "io.read_pose": {
       "status": "n/a",
@@ -275,7 +293,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 34.077,
+      "seconds": 16.445,
       "peak_mb": 89.2
     },
     "imaging.rates": {

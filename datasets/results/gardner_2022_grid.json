@@ -39,9 +39,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "a47669fe362b35de6e47e1343b190a9cb7b30fd8"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "24682bb5dc705a1219d5a014bdb8c58c67d0e6c78423d1fe83452b64c77d03c2",
+    "positions": [
+      [
+        858800,
+        2
+      ],
+      0
+    ],
+    "times": [
+      7457.01,
+      16045.0,
+      858800
+    ],
+    "spike_counts": "26fbcaa9933f3277cdec59e7c4414a3da8aebd1a3934b4be68b9974cf4840a80",
+    "unit_ids": "0a0977d8e07eb34645dcf4fec29e208250e4b06b7f19944ef9889ee96e215232",
+    "geometry": "98649ec8a210768151e0cb9b61956a94094c211f24b45f137aba2ff5ea46a9d1"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -53,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.383,
+      "seconds": 0.425,
       "peak_mb": 49.9
     },
     "env.occupancy": {
@@ -67,7 +85,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.885,
+      "seconds": 0.964,
       "peak_mb": 117.5
     },
     "env.declared": {
@@ -81,7 +99,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.501,
+      "seconds": 0.552,
       "peak_mb": 121.1
     },
     "rates.spatial": {
@@ -95,7 +113,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 8.76,
+      "seconds": 9.373,
       "peak_mb": 629.4
     },
     "rates.spatial_information": {
@@ -108,7 +126,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.029,
+      "seconds": 0.032,
       "peak_mb": 116.6
     },
     "rates.information_vs_shifts": {
@@ -123,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 11.505,
+      "seconds": 11.024,
       "peak_mb": 774.3
     },
     "cells.place_screen": {
@@ -135,7 +153,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.49,
+      "seconds": 0.434,
       "peak_mb": 204.6
     },
     "cells.grid_score": {
@@ -148,7 +166,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.423,
+      "seconds": 3.549,
       "peak_mb": 32.8
     },
     "cells.border_score": {
@@ -161,7 +179,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.619,
+      "seconds": 0.495,
       "peak_mb": 19.8
     },
     "hd.tuning": {
@@ -175,7 +193,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.237,
+      "seconds": 2.02,
       "peak_mb": 599.2
     },
     "rates.egocentric_boundary": {
@@ -193,7 +211,7 @@
       "note": "walls = edge of the declared environment's bins (boundary_source='analysis')",
       "gap": null,
       "warnings": [],
-      "seconds": 140.915,
+      "seconds": 116.412,
       "peak_mb": 3660.4
     },
     "decode.position": {
@@ -211,8 +229,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.62,
-      "peak_mb": 1130.7
+      "seconds": 11.033,
+      "peak_mb": 1680.9
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -222,8 +240,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.846,
-      "peak_mb": 80.3
+      "seconds": 3.659,
+      "peak_mb": 79.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -240,7 +258,7 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.804,
+      "seconds": 0.616,
       "peak_mb": 21.4
     },
     "behavior.laps": {
@@ -249,7 +267,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.678,
+      "seconds": 0.527,
       "peak_mb": 107.4
     },
     "behavior.turn_sequence": {
@@ -267,7 +285,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.158,
+      "seconds": 0.11,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -276,7 +294,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.006,
       "peak_mb": 0.3
     },
     "io.read_pose": {

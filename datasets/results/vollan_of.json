@@ -40,9 +40,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "a47669fe362b35de6e47e1343b190a9cb7b30fd8"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "b8a6590231124d687920d01a040d6e4ddabf470ed3a8640638b10a35ce8effec",
+    "positions": [
+      [
+        60000,
+        2
+      ],
+      0
+    ],
+    "times": [
+      3449.02,
+      5047.69,
+      60000
+    ],
+    "spike_counts": "eb15fc7f2ceb5cd0a865b2c7d186234f0e58d42589126bdc563dbebe9b4373bf",
+    "unit_ids": "614570df8d926c05b057fcbf6755be208b6859de4ed39f26200eea03292249f1",
+    "geometry": "db391cf44419d0954a54694a9d6a335af1db4ba07f495d618c0b3c7ec807e772"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -54,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.175,
+      "seconds": 0.162,
       "peak_mb": 8.1
     },
     "env.occupancy": {
@@ -76,7 +94,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.32,
+      "seconds": 0.302,
       "peak_mb": 15.6
     },
     "env.declared": {
@@ -90,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.038,
+      "seconds": 0.033,
       "peak_mb": 8.5
     },
     "rates.spatial": {
@@ -112,7 +130,7 @@
           "count": 1
         }
       ],
-      "seconds": 3.68,
+      "seconds": 3.207,
       "peak_mb": 231.3
     },
     "rates.spatial_information": {
@@ -125,7 +143,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.029,
+      "seconds": 0.03,
       "peak_mb": 122.0
     },
     "rates.information_vs_shifts": {
@@ -148,7 +166,7 @@
           "count": 4
         }
       ],
-      "seconds": 1.547,
+      "seconds": 1.345,
       "peak_mb": 143.5
     },
     "cells.place_screen": {
@@ -173,7 +191,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.14,
+      "seconds": 4.767,
       "peak_mb": 32.8
     },
     "cells.border_score": {
@@ -186,7 +204,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.796,
+      "seconds": 0.707,
       "peak_mb": 19.3
     },
     "hd.tuning": {
@@ -208,7 +226,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.247,
+      "seconds": 0.224,
       "peak_mb": 24.7
     },
     "rates.egocentric_boundary": {
@@ -234,7 +252,7 @@
           "count": 1
         }
       ],
-      "seconds": 18.51,
+      "seconds": 15.834,
       "peak_mb": 256.5
     },
     "decode.position": {
@@ -267,8 +285,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.118,
-      "peak_mb": 97.3
+      "seconds": 2.015,
+      "peak_mb": 153.2
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -278,8 +296,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.942,
-      "peak_mb": 75.3
+      "seconds": 3.212,
+      "peak_mb": 74.7
     },
     "env.from_graph": {
       "status": "n/a",
@@ -296,7 +314,7 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.782,
+      "seconds": 0.541,
       "peak_mb": 21.4
     },
     "behavior.laps": {
@@ -313,7 +331,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.045,
+      "seconds": 0.042,
       "peak_mb": 7.5
     },
     "behavior.turn_sequence": {
@@ -331,8 +349,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.129,
-      "peak_mb": 3.1
+      "seconds": 0.136,
+      "peak_mb": 3.2
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -340,7 +358,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.006,
       "peak_mb": 0.3
     },
     "io.read_pose": {
@@ -349,7 +367,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 0.0
     },
     "imaging.rates": {

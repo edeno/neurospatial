@@ -45,9 +45,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "169ee21e99a121dc9d0ad8b812364fc0b83ea4d0cb1126d4db5187af7fd03079",
+    "positions": [
+      [
+        30000,
+        2
+      ],
+      0
+    ],
+    "times": [
+      7227.56,
+      8412.35,
+      30000
+    ],
+    "spike_counts": "b464d5f52cd98a3978578cf11bd05ce18f6f0a677a1e2a12cc84cb18a8212785",
+    "unit_ids": "f33e2482a8258274f966793097bcbcfb50bffb1186f7781ad9989cf395ccb545",
+    "geometry": "6b7ac6ad0af1d30f5606225f6872ca4fae3934e043aeb77b7a80f7eb5a85ca08"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -59,8 +77,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.062,
-      "peak_mb": 2.1
+      "seconds": 0.291,
+      "peak_mb": 11.4
     },
     "env.occupancy": {
       "status": "ok",
@@ -81,7 +99,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.018,
+      "seconds": 0.014,
       "peak_mb": 4.2
     },
     "env.declared": {
@@ -95,7 +113,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.006,
       "peak_mb": 4.6
     },
     "rates.spatial": {
@@ -117,8 +135,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.097,
-      "peak_mb": 5.2
+      "seconds": 0.147,
+      "peak_mb": 9.4
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -153,7 +171,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.504,
+      "seconds": 0.346,
       "peak_mb": 7.3
     },
     "cells.place_screen": {
@@ -165,7 +183,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 2.1
     },
     "cells.grid_score": {
@@ -205,7 +223,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.136,
+      "seconds": 0.101,
       "peak_mb": 15.8
     },
     "rates.egocentric_boundary": {
@@ -227,7 +245,7 @@
         "units": "cm",
         "n_time_bins": 569,
         "median_error_on_declared": 5.000000000000008,
-        "n_on_declared": 558
+        "n_on_declared": 569
       },
       "note": "",
       "gap": null,
@@ -247,8 +265,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.122,
-      "peak_mb": 9.7
+      "seconds": 0.318,
+      "peak_mb": 19.3
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -258,8 +276,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.476,
-      "peak_mb": 2.1
+      "seconds": 2.058,
+      "peak_mb": 11.9
     },
     "env.from_graph": {
       "status": "ok",
@@ -279,8 +297,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.542,
+      "peak_mb": 21.5
     },
     "behavior.laps": {
       "status": "error",
@@ -296,7 +314,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.009,
+      "seconds": 0.008,
       "peak_mb": 4.1
     },
     "behavior.turn_sequence": {
@@ -308,7 +326,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.007,
       "peak_mb": 4.1
     },
     "replay.compare_methods": {
@@ -317,8 +335,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.103,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -326,8 +344,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.006,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",

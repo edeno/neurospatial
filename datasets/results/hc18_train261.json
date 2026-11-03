@@ -44,9 +44,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fc85af6a9fe36e31048a0c6f11e6643e117b3a7e"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "dc626675e6c6aa73505e38c9ba7cbbab27182afb42ef2451bfa2f8f677c6d2e1",
+    "positions": [
+      [
+        779858,
+        2
+      ],
+      6858
+    ],
+    "times": [
+      0.0,
+      19964.3392,
+      779858
+    ],
+    "spike_counts": "549264e1cd704112f430a19cd789039120583f6c28f71bc439e48fb806a65217",
+    "unit_ids": "e0fc8d514a91772d03390510a00b379b46fa026a732430655da71853f68467b2",
+    "geometry": "2e89c0bd54569a08f6e4f9ff802e0367db0ac2a1768ebb9e94980fcea10b32e2"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -66,8 +84,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.364,
-      "peak_mb": 58.1
+      "seconds": 0.39,
+      "peak_mb": 62.1
     },
     "env.occupancy": {
       "status": "ok",
@@ -88,8 +106,8 @@
           "count": 1
         }
       ],
-      "seconds": 3.499,
-      "peak_mb": 118.0
+      "seconds": 3.652,
+      "peak_mb": 117.9
     },
     "env.declared": {
       "status": "ok",
@@ -102,7 +120,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.166,
+      "seconds": 2.941,
       "peak_mb": 129.7
     },
     "rates.spatial": {
@@ -124,8 +142,8 @@
           "count": 1
         }
       ],
-      "seconds": 10.49,
-      "peak_mb": 118.9
+      "seconds": 6.819,
+      "peak_mb": 123.0
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -137,7 +155,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 1.4
     },
     "rates.information_vs_shifts": {
@@ -160,7 +178,7 @@
           "count": 4
         }
       ],
-      "seconds": 47.747,
+      "seconds": 25.531,
       "peak_mb": 132.5
     },
     "cells.place_screen": {
@@ -172,7 +190,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.008,
       "peak_mb": 8.0
     },
     "cells.grid_score": {
@@ -212,8 +230,8 @@
         "frac_actual_outside": 0.012794612794612794,
         "units": "pixel",
         "n_time_bins": 3138,
-        "median_error_on_declared": 275.92368370100525,
-        "n_on_declared": 2929
+        "median_error_on_declared": 275.3716339994661,
+        "n_on_declared": 2964
       },
       "note": "",
       "gap": null,
@@ -233,8 +251,8 @@
           "count": 1
         }
       ],
-      "seconds": 8.916,
-      "peak_mb": 118.9
+      "seconds": 10.285,
+      "peak_mb": 216.4
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -252,8 +270,8 @@
           "count": 2
         }
       ],
-      "seconds": 2.975,
-      "peak_mb": 3.4
+      "seconds": 2.241,
+      "peak_mb": 13.7
     },
     "env.from_graph": {
       "status": "ok",
@@ -273,8 +291,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.55,
+      "peak_mb": 21.4
     },
     "behavior.laps": {
       "status": "ok",
@@ -295,7 +313,7 @@
           "count": 1
         }
       ],
-      "seconds": 9.848,
+      "seconds": 6.096,
       "peak_mb": 117.4
     },
     "behavior.turn_sequence": {
@@ -307,7 +325,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.917,
+      "seconds": 3.322,
       "peak_mb": 117.3
     },
     "replay.compare_methods": {
@@ -316,8 +334,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.106,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -325,8 +343,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.006,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",

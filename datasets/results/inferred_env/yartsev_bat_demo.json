@@ -52,9 +52,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "75aca41b32678cc704d0f99c3b4d1741d1ca5b4c9490473f291c6ea5ab22c717",
+    "positions": [
+      [
+        642724,
+        3
+      ],
+      4701
+    ],
+    "times": [
+      -107.37920111615983,
+      5248.587519675248,
+      642724
+    ],
+    "spike_counts": "54ec3f0a95b1814fd3b7a805b8e7cd898ca1cbef593d1928d54d6b0666d95e3b",
+    "unit_ids": "04e4754619adf3a16a65c82f591497b4b56ff4c0db10b86061a2be697ae3cf8a",
+    "geometry": "460b2d5a418e89ae5f453d5f70ea7d0baf34514549fa777e64207ad47feb420d"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -66,7 +84,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.238,
+      "seconds": 0.235,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -80,7 +98,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.628,
+      "seconds": 0.604,
       "peak_mb": 227.7
     },
     "env.declared": {
@@ -103,8 +121,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.275,
-      "peak_mb": 227.7
+      "seconds": 2.405,
+      "peak_mb": 231.9
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -116,7 +134,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.006,
       "peak_mb": 26.2
     },
     "rates.information_vs_shifts": {
@@ -131,7 +149,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 8.117,
+      "seconds": 4.837,
       "peak_mb": 264.6
     },
     "cells.place_screen": {
@@ -143,8 +161,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.069,
-      "peak_mb": 66.7
+      "seconds": 0.037,
+      "peak_mb": 66.8
     },
     "cells.grid_score": {
       "status": "error",
@@ -161,8 +179,8 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 3.9
+      "seconds": 0.003,
+      "peak_mb": 4.0
     },
     "hd.tuning": {
       "status": "n/a",
@@ -183,14 +201,14 @@
         "frac_actual_outside": 0.0,
         "units": "m",
         "n_time_bins": 210,
-        "median_error_on_declared": 2.1464101615137756,
-        "n_on_declared": 209
+        "median_error_on_declared": 2.1756630355021698,
+        "n_on_declared": 210
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.267,
-      "peak_mb": 227.7
+      "seconds": 44.169,
+      "peak_mb": 1799.2
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -200,8 +218,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.589,
-      "peak_mb": 25.1
+      "seconds": 3.226,
+      "peak_mb": 34.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -221,8 +239,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.887,
-      "peak_mb": 234.8
+      "seconds": 1.005,
+      "peak_mb": 256.0
     },
     "behavior.laps": {
       "status": "error",
@@ -230,7 +248,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.164,
+      "seconds": 0.108,
       "peak_mb": 100.7
     },
     "behavior.turn_sequence": {
@@ -248,8 +266,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.101,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -257,8 +275,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.005,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",

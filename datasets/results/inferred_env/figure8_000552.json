@@ -51,9 +51,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "c217299405e4084fae0f45f8b1533aeb53c24d871cdf2ae85836d75da710ea99",
+    "positions": [
+      [
+        46660,
+        2
+      ],
+      0
+    ],
+    "times": [
+      7891.2619,
+      9482.778966666667,
+      46660
+    ],
+    "spike_counts": "2b520e18664ef485aa270a3986ef03b7c0f0d69e89f3fd305138171a6b58a800",
+    "unit_ids": "5c24646038b590eecda31f88ea2168f3853ef6ded736b71679d463dc56a07791",
+    "geometry": "81da9b8beb29968e6d74fedc02c7318927d0056be122bc8faf78ff1d56762c7e"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -65,8 +83,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.089,
-      "peak_mb": 2.8
+      "seconds": 0.178,
+      "peak_mb": 6.8
     },
     "env.occupancy": {
       "status": "ok",
@@ -79,7 +97,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.039,
+      "seconds": 0.026,
       "peak_mb": 12.5
     },
     "env.declared": {
@@ -102,8 +120,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.509,
-      "peak_mb": 199.5
+      "seconds": 0.455,
+      "peak_mb": 203.2
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -130,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.027,
+      "seconds": 1.664,
       "peak_mb": 245.4
     },
     "cells.place_screen": {
@@ -142,7 +160,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.01,
       "peak_mb": 18.2
     },
     "cells.grid_score": {
@@ -153,8 +171,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.663,
-      "peak_mb": 9.9
+      "seconds": 0.57,
+      "peak_mb": 10.0
     },
     "cells.border_score": {
       "status": "error",
@@ -162,8 +180,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 0.8
+      "seconds": 0.003,
+      "peak_mb": 1.0
     },
     "hd.tuning": {
       "status": "n/a",
@@ -185,13 +203,13 @@
         "units": "cm",
         "n_time_bins": 2697,
         "median_error_on_declared": 6.82842712474619,
-        "n_on_declared": 2695
+        "n_on_declared": 2696
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.491,
-      "peak_mb": 199.4
+      "seconds": 0.77,
+      "peak_mb": 214.0
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -201,8 +219,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.929,
-      "peak_mb": 6.7
+      "seconds": 2.799,
+      "peak_mb": 7.9
     },
     "env.from_graph": {
       "status": "n/a",
@@ -222,8 +240,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.038,
-      "peak_mb": 13.0
+      "seconds": 0.595,
+      "peak_mb": 30.8
     },
     "behavior.laps": {
       "status": "ok",
@@ -236,8 +254,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.069,
-      "peak_mb": 5.8
+      "seconds": 0.053,
+      "peak_mb": 5.9
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -263,8 +281,8 @@
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 0.565,
-      "peak_mb": 225.5
+      "seconds": 0.54,
+      "peak_mb": 228.4
     },
     "io.nwb_readers": {
       "status": "error",
@@ -276,8 +294,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.551,
-      "peak_mb": 137.3
+      "seconds": 1.143,
+      "peak_mb": 137.4
     },
     "io.read_pose": {
       "status": "n/a",
@@ -285,8 +303,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 1.318,
-      "peak_mb": 1.8
+      "seconds": 1.836,
+      "peak_mb": 13.6
     },
     "imaging.rates": {
       "status": "n/a",

@@ -43,9 +43,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "aaddcadc8d5a12dbf2b6d61cd47b064f1aec0240098f46a0e2ac25574d8bdc7a",
+    "positions": [
+      [
+        47270,
+        2
+      ],
+      0
+    ],
+    "times": [
+      4583.485466666667,
+      6474.363466666668,
+      47270
+    ],
+    "spike_counts": "c5f058586bf5f8d7d1a2c9c3586015c762fd4d558dbb4d08461bafed12db291e",
+    "unit_ids": "04dd6c6f130e5c81661b609a1a2fdb2acb73cc788496240250857cb745cf2553",
+    "geometry": "8ebff062b2b8d082b6ad2a3c96ed530a2d35cd12964ddf43e35571a25fbce6d2"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -57,8 +75,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
-      "peak_mb": 2.8
+      "seconds": 0.25,
+      "peak_mb": 11.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -71,7 +89,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.035,
+      "seconds": 0.02,
       "peak_mb": 12.7
     },
     "env.declared": {
@@ -102,8 +120,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.236,
-      "peak_mb": 94.0
+      "seconds": 0.233,
+      "peak_mb": 98.2
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -138,7 +156,7 @@
           "count": 4
         }
       ],
-      "seconds": 1.581,
+      "seconds": 1.075,
       "peak_mb": 125.3
     },
     "cells.place_screen": {
@@ -150,7 +168,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.7
     },
     "cells.grid_score": {
@@ -161,8 +179,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.493,
-      "peak_mb": 0.2
+      "seconds": 0.337,
+      "peak_mb": 0.4
     },
     "cells.border_score": {
       "status": "error",
@@ -170,8 +188,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 0.1
+      "seconds": 0.003,
+      "peak_mb": 0.5
     },
     "hd.tuning": {
       "status": "n/a",
@@ -193,13 +211,13 @@
         "units": "cm",
         "n_time_bins": 3708,
         "median_error_on_declared": 18.535533905932738,
-        "n_on_declared": 3671
+        "n_on_declared": 3708
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.34,
-      "peak_mb": 137.3
+      "seconds": 0.504,
+      "peak_mb": 141.0
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -209,8 +227,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.222,
-      "peak_mb": 3.0
+      "seconds": 2.318,
+      "peak_mb": 3.1
     },
     "env.from_graph": {
       "status": "n/a",
@@ -230,8 +248,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.023,
-      "peak_mb": 13.2
+      "seconds": 0.588,
+      "peak_mb": 34.4
     },
     "behavior.laps": {
       "status": "error",
@@ -239,7 +257,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.01,
       "peak_mb": 5.9
     },
     "behavior.turn_sequence": {
@@ -257,8 +275,8 @@
       "note": "ValueError: replay_significance() needs a position along a track, but this is a 2-D RegularGrid environment that is not a linearized track.\nWhy: it orders bins by their distance along one axis; bin numbers have no spatial order, and a 2-D or 3-D arena has no single axis to order them by\nFix: use a 1-D environment or build the track, for example Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, track_width=8.0), or Environment.maze(...) or Environment.from_graph(...) for other tracks; a 2-D arena has no single axis to fit a replay line along, so decode on a linearized track (Environment.linear_track, Environment.maze or Environment.from_graph)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.262,
-      "peak_mb": 137.3
+      "seconds": 0.284,
+      "peak_mb": 140.2
     },
     "io.nwb_readers": {
       "status": "workaround",
@@ -270,8 +288,8 @@
       "note": "position: mismatch: values differ",
       "gap": null,
       "warnings": [],
-      "seconds": 0.8,
-      "peak_mb": 93.8
+      "seconds": 0.505,
+      "peak_mb": 94.1
     },
     "io.read_pose": {
       "status": "n/a",
@@ -279,8 +297,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.568,
-      "peak_mb": 0.4
+      "seconds": 1.124,
+      "peak_mb": 12.2
     },
     "imaging.rates": {
       "status": "n/a",

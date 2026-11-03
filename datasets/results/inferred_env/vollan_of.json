@@ -40,9 +40,27 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "fc85af6a9fe36e31048a0c6f11e6643e117b3a7e"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "b8a6590231124d687920d01a040d6e4ddabf470ed3a8640638b10a35ce8effec",
+    "positions": [
+      [
+        60000,
+        2
+      ],
+      0
+    ],
+    "times": [
+      3449.02,
+      5047.69,
+      60000
+    ],
+    "spike_counts": "eb15fc7f2ceb5cd0a865b2c7d186234f0e58d42589126bdc563dbebe9b4373bf",
+    "unit_ids": "614570df8d926c05b057fcbf6755be208b6859de4ed39f26200eea03292249f1",
+    "geometry": "db391cf44419d0954a54694a9d6a335af1db4ba07f495d618c0b3c7ec807e772"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -54,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.179,
+      "seconds": 0.16,
       "peak_mb": 8.1
     },
     "env.occupancy": {
@@ -76,7 +94,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.011,
+      "seconds": 0.013,
       "peak_mb": 7.5
     },
     "env.declared": {
@@ -107,7 +125,7 @@
           "count": 1
         }
       ],
-      "seconds": 1.393,
+      "seconds": 1.197,
       "peak_mb": 129.2
     },
     "rates.spatial_information": {
@@ -143,7 +161,7 @@
           "count": 4
         }
       ],
-      "seconds": 1.227,
+      "seconds": 0.986,
       "peak_mb": 105.4
     },
     "cells.place_screen": {
@@ -155,7 +173,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.152,
+      "seconds": 0.113,
       "peak_mb": 171.0
     },
     "cells.grid_score": {
@@ -168,7 +186,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 7.756,
+      "seconds": 4.226,
       "peak_mb": 27.5
     },
     "cells.border_score": {
@@ -177,7 +195,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.004,
       "peak_mb": 11.2
     },
     "hd.tuning": {
@@ -199,7 +217,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.483,
+      "seconds": 0.22,
       "peak_mb": 24.7
     },
     "rates.egocentric_boundary": {
@@ -225,7 +243,7 @@
           "count": 1
         }
       ],
-      "seconds": 263.215,
+      "seconds": 164.87,
       "peak_mb": 256.2
     },
     "decode.position": {
@@ -258,8 +276,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.135,
-      "peak_mb": 78.7
+      "seconds": 3.98,
+      "peak_mb": 255.6
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -269,8 +287,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.105,
-      "peak_mb": 55.6
+      "seconds": 2.964,
+      "peak_mb": 55.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -287,7 +305,7 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.863,
+      "seconds": 0.56,
       "peak_mb": 21.4
     },
     "behavior.laps": {
@@ -306,7 +324,7 @@
           "count": 1
         }
       ],
-      "seconds": 1.084,
+      "seconds": 0.808,
       "peak_mb": 8.1
     },
     "behavior.turn_sequence": {
@@ -324,7 +342,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.144,
+      "seconds": 0.105,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -333,7 +351,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.006,
       "peak_mb": 0.3
     },
     "io.read_pose": {
@@ -342,7 +360,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 0.0
     },
     "imaging.rates": {

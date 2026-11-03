@@ -43,17 +43,35 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [
     {
       "category": "UserWarning",
       "origin": "loader",
-      "template": "suspect tracking, positions kept as stored: # runs of #+ identical samples (# samples, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
-      "example": "suspect tracking, positions kept as stored: 90 runs of 10+ identical samples (68718 samples, 29.1%; 2291.2 s in all, longest 81.7 s) and 7 samples farther than 100 cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
+      "template": "suspect tracking, positions kept as stored: # runs of #+ identical samples (# repeats, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
+      "example": "suspect tracking, positions kept as stored: 90 runs of 11+ identical samples (68718 repeats, 29.1%; 2291.2 s in all, longest 81.7 s) and 7 samples farther than 100 cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
       "count": 1
     }
   ],
+  "load_fingerprint": {
+    "params": "a904952fc7017c3528eeb22609d25fc63a93072534be809de775f266957a6355",
+    "positions": [
+      [
+        236084,
+        2
+      ],
+      25034
+    ],
+    "times": [
+      64.26905,
+      17300.78645,
+      236084
+    ],
+    "spike_counts": "0602a6472517d989a767e37a79afe4685e49003c3003934a92ac5e37e3e6ac85",
+    "unit_ids": "58eb0e944aa07ddb08441ce7cac5a635f5528f30684cfeb9e7842e3f11c680c9",
+    "geometry": "51251e5cd0aef1332c565b9d1ce3128519d4646436c9e58f0acfd1953ce5e3af"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -65,8 +83,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.117,
-      "peak_mb": 16.8
+      "seconds": 0.549,
+      "peak_mb": 30.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -79,7 +97,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.108,
+      "seconds": 0.102,
       "peak_mb": 35.2
     },
     "env.declared": {
@@ -102,8 +120,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.699,
-      "peak_mb": 133.7
+      "seconds": 0.686,
+      "peak_mb": 138.0
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -130,7 +148,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.971,
+      "seconds": 1.873,
       "peak_mb": 163.9
     },
     "cells.place_screen": {
@@ -142,7 +160,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.017,
+      "seconds": 0.02,
       "peak_mb": 47.4
     },
     "cells.grid_score": {
@@ -155,7 +173,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.301,
+      "seconds": 0.289,
       "peak_mb": 7.4
     },
     "cells.border_score": {
@@ -164,7 +182,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.003,
       "peak_mb": 0.8
     },
     "hd.tuning": {
@@ -190,8 +208,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.698,
-      "peak_mb": 236.6
+      "seconds": 0.694,
+      "peak_mb": 237.3
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -201,8 +219,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.634,
-      "peak_mb": 10.3
+      "seconds": 2.366,
+      "peak_mb": 10.8
     },
     "env.from_graph": {
       "status": "n/a",
@@ -222,8 +240,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.082,
-      "peak_mb": 37.8
+      "seconds": 0.595,
+      "peak_mb": 59.0
     },
     "behavior.laps": {
       "status": "error",
@@ -231,7 +249,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.042,
+      "seconds": 0.045,
       "peak_mb": 28.1
     },
     "behavior.turn_sequence": {
@@ -249,8 +267,8 @@
       "note": "ValueError: replay_significance() needs a position along a track, but this is a 2-D RegularGrid environment that is not a linearized track.\nWhy: it orders bins by their distance along one axis; bin numbers have no spatial order, and a 2-D or 3-D arena has no single axis to order them by\nFix: use a 1-D environment or build the track, for example Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, track_width=8.0), or Environment.maze(...) or Environment.from_graph(...) for other tracks; a 2-D arena has no single axis to fit a replay line along, so decode on a linearized track (Environment.linear_track, Environment.maze or Environment.from_graph)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.38,
-      "peak_mb": 179.2
+      "seconds": 0.451,
+      "peak_mb": 182.1
     },
     "io.nwb_readers": {
       "status": "error",
@@ -262,8 +280,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/SubjectPosition/PositionSeries', 'processing/behavior/SubjectPosition/VelocitySeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/SubjectPosition/PositionSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.808,
-      "peak_mb": 88.8
+      "seconds": 0.751,
+      "peak_mb": 89.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -271,8 +289,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.736,
-      "peak_mb": 0.7
+      "seconds": 1.319,
+      "peak_mb": 12.4
     },
     "imaging.rates": {
       "status": "n/a",

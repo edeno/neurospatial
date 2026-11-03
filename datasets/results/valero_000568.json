@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [
     {
@@ -57,11 +57,29 @@
     {
       "category": "UserWarning",
       "origin": "loader",
-      "template": "suspect tracking, positions kept as stored: # runs of #+ identical samples (# samples, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
-      "example": "suspect tracking, positions kept as stored: 46 runs of 10+ identical samples (2630 samples, 3.9%; 87.7 s in all, longest 6.0 s) and 1428 samples farther than 100 cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
+      "template": "suspect tracking, positions kept as stored: # runs of #+ identical samples (# repeats, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
+      "example": "suspect tracking, positions kept as stored: 46 runs of 11+ identical samples (2630 repeats, 3.9%; 87.7 s in all, longest 6.0 s) and 1428 samples farther than 100 cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)",
       "count": 1
     }
   ],
+  "load_fingerprint": {
+    "params": "3b505c4af2e239e7b724995be371eefeac2169e5c2ecab5406759b0f8acd0a95",
+    "positions": [
+      [
+        67131,
+        2
+      ],
+      0
+    ],
+    "times": [
+      7696.8857,
+      9935.1275,
+      67131
+    ],
+    "spike_counts": "b590ba8150225e60a798b234941fcb3775cc8500dd83ebb2dac6ef3db16fb530",
+    "unit_ids": "37465a0353bf64fad9d2468f4acd952e33f93f21ce040f3365965bb12b15425a",
+    "geometry": "82d122665f124a329dc7fbda85eb4e1405c02b26f3a3db6c0d0662c709d5b098"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -73,7 +91,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.643,
+      "seconds": 0.284,
       "peak_mb": 12.6
     },
     "env.occupancy": {
@@ -87,7 +105,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.066,
+      "seconds": 0.034,
       "peak_mb": 18.1
     },
     "env.declared": {
@@ -101,7 +119,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.018,
+      "seconds": 0.009,
       "peak_mb": 10.3
     },
     "rates.spatial": {
@@ -123,7 +141,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.285,
+      "seconds": 0.142,
       "peak_mb": 22.2
     },
     "rates.spatial_information": {
@@ -159,7 +177,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.502,
+      "seconds": 0.273,
       "peak_mb": 21.6
     },
     "cells.place_screen": {
@@ -171,7 +189,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.1
     },
     "cells.grid_score": {
@@ -212,13 +230,13 @@
         "units": "cm",
         "n_time_bins": 4374,
         "median_error_on_declared": 34.22222222222223,
-        "n_on_declared": 4342
+        "n_on_declared": 4374
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.219,
-      "peak_mb": 18.7
+      "seconds": 0.231,
+      "peak_mb": 20.6
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -228,7 +246,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.163,
+      "seconds": 1.707,
       "peak_mb": 2.5
     },
     "env.from_graph": {
@@ -252,7 +270,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.041,
+      "seconds": 0.556,
       "peak_mb": 40.1
     },
     "behavior.laps": {
@@ -261,7 +279,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.012,
       "peak_mb": 9.2
     },
     "behavior.turn_sequence": {
@@ -273,7 +291,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
+      "seconds": 0.01,
       "peak_mb": 9.2
     },
     "replay.compare_methods": {
@@ -291,7 +309,7 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 1.864,
+      "seconds": 1.16,
       "peak_mb": 39.0
     },
     "io.nwb_readers": {
@@ -312,7 +330,7 @@
           "count": 1
         }
       ],
-      "seconds": 1.299,
+      "seconds": 1.016,
       "peak_mb": 13.5
     },
     "io.read_pose": {
@@ -329,7 +347,7 @@
           "count": 1
         }
       ],
-      "seconds": 2.466,
+      "seconds": 1.687,
       "peak_mb": 14.8
     },
     "imaging.rates": {

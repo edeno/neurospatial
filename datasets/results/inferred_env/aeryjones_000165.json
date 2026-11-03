@@ -40,7 +40,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4e501beb5129ad57cbf27fb68a79af007f0dc183"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [
     {
@@ -51,6 +51,24 @@
       "count": 1
     }
   ],
+  "load_fingerprint": {
+    "params": "6636c4c6ea5714e9d19b0ec3c17af47ffa9f77332dfa8aff07bd8be2efa27310",
+    "positions": [
+      [
+        32340,
+        2
+      ],
+      0
+    ],
+    "times": [
+      0.0,
+      1503.7714333333333,
+      32340
+    ],
+    "spike_counts": "baed2abf32bd4f6c701d317d29ef51fb669de729ae486ea2a88c2a0c1b46e028",
+    "unit_ids": "76c2ef467f6d620ccd77ca0787abb54a9657edd3c7e33a4134f4e32b8a860fe4",
+    "geometry": "79184ee6e6563afd3686a74439c3fbae237e8cb178820b51d618c7dde7d1bfc8"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -62,8 +80,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.024,
-      "peak_mb": 1.9
+      "seconds": 0.242,
+      "peak_mb": 10.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -76,7 +94,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.006,
       "peak_mb": 4.0
     },
     "env.declared": {
@@ -99,8 +117,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.075,
-      "peak_mb": 19.9
+      "seconds": 0.141,
+      "peak_mb": 24.1
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -127,7 +145,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.28,
+      "seconds": 0.237,
       "peak_mb": 24.4
     },
     "cells.place_screen": {
@@ -150,8 +168,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.14,
-      "peak_mb": 0.2
+      "seconds": 0.136,
+      "peak_mb": 0.3
     },
     "cells.border_score": {
       "status": "error",
@@ -159,8 +177,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 0.1
+      "seconds": 0.003,
+      "peak_mb": 0.4
     },
     "hd.tuning": {
       "status": "n/a",
@@ -187,8 +205,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.078,
-      "peak_mb": 19.9
+      "seconds": 0.138,
+      "peak_mb": 21.2
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -198,8 +216,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.629,
-      "peak_mb": 2.9
+      "seconds": 2.211,
+      "peak_mb": 3.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -216,8 +234,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.519,
+      "peak_mb": 21.4
     },
     "behavior.laps": {
       "status": "error",
@@ -243,8 +261,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.096,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "workaround",
@@ -264,8 +282,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.334,
-      "peak_mb": 13.8
+      "seconds": 0.288,
+      "peak_mb": 13.9
     },
     "io.read_pose": {
       "status": "n/a",
@@ -281,8 +299,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.318,
-      "peak_mb": 0.3
+      "seconds": 0.945,
+      "peak_mb": 12.1
     },
     "imaging.rates": {
       "status": "n/a",
