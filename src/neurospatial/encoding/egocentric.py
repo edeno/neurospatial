@@ -229,9 +229,9 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
     method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
         Estimator used. ``"binned"`` is the raw rate in each polar bin.
-    bandwidth : float or None, default=None
+    bandwidth : float, default=0.0
         Kernel bandwidth in the environment's length units for the kernel
-        methods; ``None`` for ``"binned"``, which does not smooth.
+        methods; ``0.0`` for ``"binned"``, which does not smooth.
 
     Attributes
     ----------
@@ -328,7 +328,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     method: str = field(default="binned", kw_only=True)
-    bandwidth: float | None = field(default=None, kw_only=True)
+    bandwidth: float = field(default=0.0, kw_only=True)
     unit_id: int | str | None = None
 
     min_occupancy: float = field(default=0.0, kw_only=True)
@@ -799,9 +799,9 @@ class ObjectVectorRatesResult(
         Allocentric: 0 = East, +pi/2 = North. Egocentric: 0 = ahead, +pi/2 = left.
     method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
         Estimator used. ``"binned"`` is the raw rate in each polar bin.
-    bandwidth : float or None, default=None
+    bandwidth : float, default=0.0
         Kernel bandwidth in the environment's length units for the kernel
-        methods; ``None`` for ``"binned"``, which does not smooth.
+        methods; ``0.0`` for ``"binned"``, which does not smooth.
 
     Attributes
     ----------
@@ -915,7 +915,7 @@ class ObjectVectorRatesResult(
     env: PolarEnvironment
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     method: str = field(default="binned", kw_only=True)
-    bandwidth: float | None = field(default=None, kw_only=True)
+    bandwidth: float = field(default=0.0, kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
 
@@ -2317,7 +2317,7 @@ class _ObjectVectorCounts(NamedTuple):
     spike_counts: NDArray[np.float64]  # (n_units, n_bins), unsmoothed
     occupancy: NDArray[np.float64]  # (n_bins,) seconds
     polar_env: PolarEnvironment  # polar geometry (distance in env units, angle in rad)
-    bandwidth: float | None  # resolved kernel bandwidth; None for "binned"
+    bandwidth: float  # resolved kernel bandwidth; 0.0 for "binned"
     analysis_settings: dict[str, Any]
     n_spikes_outside_intervals: NDArray[np.int64]  # (n_units,) not analyzed
     time_beyond: float  # seconds the nearest object was beyond the range
@@ -2395,8 +2395,8 @@ def _count_object_vectors(
         Seconds spent in each polar bin.
     polar_env : PolarEnvironment
         Polar geometry carrying the environment's length units.
-    bandwidth : float or None
-        Resolved kernel bandwidth; ``None`` for ``"binned"``.
+    bandwidth : float
+        Resolved kernel bandwidth; ``0.0`` for ``"binned"``.
     analysis_settings : dict
         Provenance settings for the result.
     """
@@ -2432,7 +2432,7 @@ def _count_object_vectors(
     # Polar graph distances are physical lengths; angles remain radians.
     polar_env = polar_env.with_metadata(units=env.units if env is not None else None)
     bandwidth = (
-        None if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth)
+        0.0 if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth)
     )
     settings = rate_analysis_settings(
         prepared.support,
@@ -3209,7 +3209,7 @@ def _object_vector_firing_rates(
     occupancy : ndarray of shape (n_bins,)
         Seconds spent in each polar bin.
     method, bandwidth, min_occupancy, backend
-        Estimator settings; ``bandwidth`` is resolved, ``None`` for
+        Estimator settings; ``bandwidth`` is resolved, ``0.0`` for
         ``"binned"``.
 
     Returns
@@ -4418,7 +4418,7 @@ class _ObjectVectorNullMaps(NamedTuple):
     binning: FrameBinning  # frame bins and interval support of the map
     occupancy: NDArray[np.float64]  # (n_bins,) seconds
     method: Literal["diffusion_kde", "gaussian_kde", "binned"]
-    bandwidth: float | None  # resolved kernel bandwidth; None for "binned"
+    bandwidth: float  # resolved kernel bandwidth; 0.0 for "binned"
     min_occupancy: float
     backend: ResolvedBackend
     n_jobs: int
@@ -4514,7 +4514,7 @@ def _object_vector_null_maps(
         binning,
         occupancy,
         method,
-        None if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth),
+        0.0 if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth),
         min_occupancy,
         resolved_backend,
         n_jobs,

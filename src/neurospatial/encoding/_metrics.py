@@ -493,8 +493,8 @@ def _count_to_rate(
 ) -> Callable[[NDArray[np.float64]], ArrayLike]:
     """The result's own rate estimator at its occupancy, linear in counts."""
     occupancy = np.asarray(result.occupancy, dtype=np.float64)
-    if result.method == "binned" and result.bandwidth is None:
-        # Polar ``binned``: the raw bin rate, with no smoothing.
+    if result.method == "binned" and result.bandwidth == 0:
+        # An unsmoothed ``binned`` map: the raw bin rate.
         valid = (occupancy > 0) & (occupancy >= result.min_occupancy)
         safe = np.where(valid, occupancy, 1.0)
         return lambda counts: np.where(valid, counts / safe, np.nan)

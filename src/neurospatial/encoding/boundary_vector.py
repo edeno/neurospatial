@@ -237,9 +237,9 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         Which walls the rays stopped at.
     method : {"binned", "diffusion_kde", "gaussian_kde"}, default="binned"
         Estimator used. ``"binned"`` is the raw rate in each polar bin.
-    bandwidth : float or None, default=None
+    bandwidth : float, default=0.0
         Kernel bandwidth in the environment's length units for the kernel
-        methods; ``None`` for ``"binned"``, which does not smooth.
+        methods; ``0.0`` for ``"binned"``, which does not smooth.
     unit_id : int or str or None
         Identifier for this unit; set by indexing a population result.
 
@@ -282,7 +282,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
     method: str = field(default="binned", kw_only=True)
-    bandwidth: float | None = field(default=None, kw_only=True)
+    bandwidth: float = field(default=0.0, kw_only=True)
     unit_id: int | str | None = None
     min_occupancy: float = field(default=0.0, kw_only=True)
     n_spikes_outside_intervals: int | None = field(default=None, kw_only=True)
@@ -446,7 +446,7 @@ class BoundaryVectorRatesResult(
     direction_frame: Literal["allocentric", "egocentric"] = field(kw_only=True)
     boundary_source: BoundarySource = field(kw_only=True)
     method: str = field(default="binned", kw_only=True)
-    bandwidth: float | None = field(default=None, kw_only=True)
+    bandwidth: float = field(default=0.0, kw_only=True)
     unit_ids: NDArray[Any] | Sequence[Any] | None = field(default=None, compare=False)
     unit_table: pd.DataFrame | None = field(default=None, compare=False)
     min_occupancy: float = field(default=0.0, kw_only=True)
@@ -1092,7 +1092,7 @@ def _boundary_vector_rates(
             if len(spike_trains)
             else np.empty((0, polar_env.n_bins))
         )
-        resolved_bandwidth = None
+        resolved_bandwidth = 0.0
     else:
         resolved_bandwidth = resolve_spatial_bandwidth(polar_env, bandwidth)
         firing_rates = np.asarray(

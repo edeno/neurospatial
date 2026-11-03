@@ -388,6 +388,29 @@ class TestComputeEgocentricRatesParameters:
             )
             assert result is not None
 
+    @pytest.mark.parametrize("bandwidth", [None, 0.0])
+    def test_binned_records_zero_bandwidth(
+        self, trajectory_data, spike_times_list, bandwidth
+    ):
+        """An unsmoothed polar map records bandwidth 0, as spatial binned does."""
+        from neurospatial.encoding.egocentric import compute_egocentric_rates
+
+        result = compute_egocentric_rates(
+            None,
+            spike_times_list,
+            trajectory_data["times"],
+            trajectory_data["positions"],
+            trajectory_data["headings"],
+            trajectory_data["object_positions"][:1],
+            method="binned",
+            distance_range=(0.0, 50.0),
+            distance_bin_size=5.0,
+            bandwidth=bandwidth,
+        )
+        assert result.bandwidth == 0.0
+        assert result[0].bandwidth == 0.0
+        assert result.analysis_settings["bandwidth"] == 0.0
+
     def test_n_jobs_parameter(self, trajectory_data, spike_times_list):
         """Test that n_jobs parameter works."""
         from neurospatial.encoding.egocentric import compute_egocentric_rates

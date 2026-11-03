@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial.encoding import (
     BoundaryVectorRateResult,
     compute_boundary_vector_rate,
@@ -207,6 +207,29 @@ def test_single_unit_equals_unit_zero_of_the_population(env, session):
     assert population.summary_table().attrs["boundary_source"] == "physical"
 
 
+@pytest.mark.parametrize("bandwidth", [None, 0.0])
+def test_binned_maps_record_zero_bandwidth(env, session, bandwidth):
+    """An unsmoothed map records bandwidth 0, as spatial binned maps do."""
+    times, positions, headings = session
+    spikes = np.sort(np.random.default_rng(3).uniform(times[0], times[-1], 300))
+    result = compute_boundary_vector_rate(
+        env,
+        spikes,
+        times,
+        positions,
+        headings,
+        direction_frame="egocentric",
+        method="binned",
+        bandwidth=bandwidth,
+    )
+    assert result.bandwidth == 0.0
+    assert result.analysis_settings["bandwidth"] == 0.0
+    # Unsmoothed: each bin's rate is its own spike count over its own dwell.
+    counts = np.asarray(result.firing_rate) * np.asarray(result.occupancy)
+    visited = np.asarray(result.occupancy) > 0
+    np.testing.assert_allclose(counts[visited], np.round(counts[visited]), atol=1e-9)
+
+
 def test_an_unvisited_corner_is_not_a_wall_unless_asked():
     """Physical walls ignore what the animal never visited; analysis edges do not."""
     rng = np.random.default_rng(4)
@@ -309,7 +332,7 @@ def test_unknown_units_need_explicit_lengths(session):
             direction_frame="allocentric",
             distance_range=(0.0, 50.0),
         )
-    with pytest.raises(ValueError, match="needs a bandwidth"):
+    with pytest.raises(InputError, match="needs a bandwidth"):
         compute_boundary_vector_rate(
             env,
             [],
