@@ -4051,15 +4051,17 @@ def _spatial_rate_maps(
         )
         return maps(glm_firing_rates, occupancy, fit)
 
+    # The inputs are valid, so a bandwidth below a bin or a units-free
+    # default is announced here rather than ahead of an input error, and
+    # also for a population with no units: the bandwidth is wrong either way.
+    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
+
     if n_neurons == 0:
         empty = _to_backend(
             np.empty((0, env.n_bins), dtype=dtype), resolved_backend, dtype=dtype
         )
         return maps(empty, occupancy, None)
 
-    # The inputs are valid, so a bandwidth below a bin or a units-free
-    # default is announced here rather than ahead of an input error.
-    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
     # Apply batch smoothing to compute firing rates
     # When backend="jax", uses JAX for the core rate computation
     firing_rates = smooth_rate_maps_batch(

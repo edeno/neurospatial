@@ -77,6 +77,16 @@ def test_tiny_spatial_bandwidth_warns(open_field_120s):
     assert change(default.firing_rate) > 0.5
 
 
+def test_tiny_bandwidth_warns_for_a_population_with_no_units(open_field_120s):
+    """The bandwidth is wrong whether or not there are units to smooth."""
+    session = open_field_120s
+    with pytest.warns(UserWarning, match=r"bandwidth=0.05 is far below the 2 cm bin"):
+        rates = compute_spatial_rates(
+            session.env, [], session.times, session.positions, bandwidth=0.05
+        )
+    assert rates.firing_rates.shape == (0, session.env.n_bins)
+
+
 def test_tiny_bandwidth_cutoff_is_a_quarter_bin(open_field_120s):
     """The cutoff is 0.25 of the 2 cm bin length (0.5 cm), inclusive."""
     session = open_field_120s
