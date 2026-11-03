@@ -21,10 +21,10 @@ def test_plot_marks_recording_gaps(continuous_recording, kind):
     result = DecodingResult(
         np.full((len(times), env.n_bins), 1 / env.n_bins), env, times
     )
-    ax = result.plot(colorbar=False, show_map=True)
+    ax, ax_y = result.plot(colorbar=False, show_map=True)  # x(t), y(t) panels
     dashed = [line for line in ax.lines if line.get_linestyle() == "--"]
     if kind == "gapped":
-        assert ax.get_xlabel().startswith("Time bin")
+        assert ax_y.get_xlabel().startswith("Time bin")
         assert len(dashed) == 1
         np.testing.assert_array_equal(dashed[0].get_xdata(), [3998.5, 3998.5])
         np.testing.assert_array_equal(
@@ -32,7 +32,7 @@ def test_plot_marks_recording_gaps(continuous_recording, kind):
             np.insert(np.arange(len(times), dtype=float), 3999, np.nan),
         )
     else:
-        assert ax.get_xlabel() == "Time (s)"
+        assert ax_y.get_xlabel() == "Time (s)"
         assert not dashed
         np.testing.assert_array_equal(ax.lines[0].get_xdata(), times)
     plt.close(ax.figure)

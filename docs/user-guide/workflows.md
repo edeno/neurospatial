@@ -618,11 +618,13 @@ under the chosen model; it is not a calibrated confidence level.
 
 ### Overlaying actual position on a posterior
 
-`DecodingResult.plot(show_map=True)` uses **spatial-bin indices** on its y-axis.
-Actual positions and `result.map_position` carry physical coordinates, such as
-centimeters. Pass `true_times` and `true_positions` to overlay the actual track;
-the plot aligns timestamps and converts coordinates internally. Keep physical
-coordinates for error metrics and position-versus-time plots.
+`DecodingResult.plot(show_map=True)` draws position on its y-axis in the
+environment's units, such as centimeters, on a track or 1-D environment. In a
+2-D environment it draws two stacked panels, the posterior mass of x(t) and of
+y(t), and returns the pair of axes; pass `ax=(ax_x, ax_y)` to draw into your own.
+Pass `true_times` and `true_positions` to overlay the actual track; the plot
+aligns timestamps internally. Keep physical coordinates for error metrics and
+position-versus-time plots. The plot includes a colorbar unless `colorbar=False`.
 
 On a uniform continuous decoder clock, image columns center on the returned
 timestamps: image edges extend half a bin past the first and last center.
@@ -666,7 +668,7 @@ fig, axes = plt.subplots(1, 2, figsize=(10, 3), constrained_layout=True)
 for ax, (name, decoder_times) in zip(axes, clocks.items(), strict=True):
     result = DecodingResult(posterior, env, decoder_times)
     result.plot(
-        ax=ax, show_map=True, colorbar=True,
+        ax=ax, show_map=True,
         true_times=decoder_times, true_positions=actual, max_gap=0.5,
     )
     np.testing.assert_allclose(
@@ -674,7 +676,6 @@ for ax, (name, decoder_times) in zip(axes, clocks.items(), strict=True):
     )
     assert median_decoding_error(env, result.map_position, actual) == 0.0
     ax.set_title(name)
-    ax.legend()
 plt.show()
 ```
 

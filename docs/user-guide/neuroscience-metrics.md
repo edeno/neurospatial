@@ -644,9 +644,12 @@ directional = compute_directional_place_fields(
     epochs=(float(times[0]), float(times[-1])),
     spike_window=(float(times[0]), float(times[-1])),
 )
-ax = directional.plot()  # Horizontal axis is spatial-bin index
-ax.set_ylabel("Rate (Hz)")
+axes = directional.plot()  # one rate map per direction on a 2-D arena
 ```
+
+On a 2-D arena `plot()` returns one axes per direction, drawn on shared color
+limits so the maps can be compared; on a track it overlays one line per
+direction against position in the environment's units.
 
 These are spatial maps conditioned on travel direction, rather than angular
 head-direction tuning curves. Compare rates only where both conditions have

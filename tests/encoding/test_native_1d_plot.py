@@ -23,7 +23,7 @@ def test_native_track_rate_plot_uses_physical_bin_centers(track_rates, single):
     np.testing.assert_array_equal(ax.lines[0].get_xdata(), rates.env.bin_centers[:, 0])
     np.testing.assert_array_equal(ax.lines[0].get_ydata(), rates.firing_rates[0])
     assert ax.get_xlabel() == "Position (cm)"
-    assert ax.get_ylabel() == "Firing Rate (Hz)"
+    assert ax.get_ylabel() == "Firing rate (Hz)"
     plt.close(ax.figure)
 
 

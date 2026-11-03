@@ -525,7 +525,8 @@ def _plot_binning(
     title : str
         Layout label for the title.
     ax : matplotlib.axes.Axes or None, optional
-        Axes to draw on; a new figure when None.
+        Axes to draw on; a new figure when None. The layout name titles only
+        a new figure; a title already on ``ax`` is kept.
     **kwargs
         Passed to the renderer of the binning's cell shape.
 
@@ -534,7 +535,13 @@ def _plot_binning(
     matplotlib.axes.Axes
     """
     renderer = _RENDERERS[_cell_shape(binning)]
+    caller_title = None if ax is None else ax.get_title()
     ax = renderer.cells(binning, connectivity, title, ax, **kwargs)
+    if caller_title is not None:
+        # The renderers name the layout; on the caller's axes the title is theirs.
+        ax.set_title(caller_title)
+    # Drawing the connectivity graph hides the ticks; the coordinates matter.
+    ax.tick_params(bottom=True, left=True, labelbottom=True, labelleft=True)
     if binning.outline is not None and not renderer.draws_outline:
         _draw_outline(ax, binning.outline)
     return ax

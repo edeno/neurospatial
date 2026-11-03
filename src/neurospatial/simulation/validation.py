@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -26,6 +26,9 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
 
     from neurospatial.simulation.session import SimulationSession
+
+
+_SESSION_SUMMARY_PANELS = 9
 
 
 def _select_unit_indices(
@@ -651,6 +654,7 @@ def validate_simulation(
 def plot_session_summary(
     session: SimulationSession,
     *,
+    ax: Sequence[Axes] | NDArray[np.object_] | None = None,
     unit_ids: list[int] | None = None,
     figsize: tuple[float, float] = (15, 10),
 ) -> tuple[Figure, NDArray[np.object_]]:
@@ -664,13 +668,19 @@ def plot_session_summary(
     ----------
     session : SimulationSession
         Complete simulation session from simulate_session().
+    ax : sequence of matplotlib.axes.Axes, optional
+        Nine axes to draw on, in the order of the returned ``axes``:
+        trajectory, session info, six rate maps, raster. If None, a new figure
+        is created.
     unit_ids : list[int] | None, optional
-        Unit labels from session.unit_ids to plot. At most 6 units are
-        drawn: the first 6 of the requested units, in the requested order
-        (the first 6 of the session if None, or fewer if the session has
-        fewer cells); any further units are not plotted. Default: None.
+        Unit labels from session.unit_ids to plot. The raster shows every
+        requested unit; at most 6 rate maps are drawn: the first 6 of the
+        requested units, in the requested order (the first 6 of the session
+        if None, or fewer if the session has fewer cells); any further units
+        get no rate map. Default: None.
     figsize : tuple[float, float], optional
-        Figure size in inches (width, height). Default: (15, 10).
+        Figure size in inches (width, height). Default: (15, 10); unused when
+        ``ax`` is given.
 
     Returns
     -------
@@ -684,7 +694,7 @@ def plot_session_summary(
     TypeError
         If session is not a SimulationSession instance.
     ValueError
-        If unit_ids contains unknown labels.
+        If unit_ids contains unknown labels, or ``ax`` does not hold nine axes.
     CartesianOnlyError
         If the session's environment is egocentric polar: rate maps need the
         animal's allocentric positions.
@@ -734,7 +744,7 @@ def plot_session_summary(
     - Rows 1-2: Rate maps for up to 6 cells (2×3 grid), drawn by
       ``Environment.plot_field``: a heat map over the bins in 2-D, a rate
       curve along the track in 1-D
-    - Row 3: Raster plot showing spike times for all cells
+    - Row 3: Raster plot showing spike times for the requested cells
 
     **Rate Map Computation**:
 
@@ -753,8 +763,8 @@ def plot_session_summary(
     # Import here to avoid circular dependency
     from neurospatial.encoding import compute_spatial_rates
 
-    cell_indices = _select_unit_indices(session, unit_ids, "plot_session_summary()")
-    cell_indices = cell_indices[:6]
+    requested = _select_unit_indices(session, unit_ids, "plot_session_summary()")
+    cell_indices = requested[:6]
 
     env = session.env
     if env.n_dims > 2:
@@ -776,21 +786,29 @@ def plot_session_summary(
     spike_trains = session.spike_times
     n_cells = len(spike_trains)
 
-    # Create figure with GridSpec for flexible layout
-    fig = plt.figure(figsize=figsize)
-    gs = GridSpec(4, 3, figure=fig, hspace=0.5, wspace=0.3)
-
-    # Row 0, Cols 0-1: Trajectory
-    ax_traj = fig.add_subplot(gs[0, :2])
-
-    # Row 0, Col 2: Metadata text
-    ax_info = fig.add_subplot(gs[0, 2])
-
-    # Rows 1-2: Rate maps (2x3 grid for up to 6 cells)
-    axes_rates = [fig.add_subplot(gs[i + 1, j]) for i in range(2) for j in range(3)]
-
-    # Row 3: Raster plot (spans all columns)
-    ax_raster = fig.add_subplot(gs[3, :])
+    created_figure = ax is None
+    if ax is None:
+        # Create figure with GridSpec for flexible layout
+        fig = plt.figure(figsize=figsize)
+        gs = GridSpec(4, 3, figure=fig, hspace=0.5, wspace=0.3)
+        panels = [
+            fig.add_subplot(gs[0, :2]),  # trajectory
+            fig.add_subplot(gs[0, 2]),  # session info
+            *(fig.add_subplot(gs[i + 1, j]) for i in range(2) for j in range(3)),
+            fig.add_subplot(gs[3, :]),  # raster, across all columns
+        ]
+    else:
+        panels = list(np.asarray(ax, dtype=object).ravel())
+        if len(panels) != _SESSION_SUMMARY_PANELS:
+            msg = _format_error(
+                f"plot_session_summary() draws {_SESSION_SUMMARY_PANELS} panels "
+                f"but ax has {len(panels)} axes.",
+                fix="pass nine axes in the order trajectory, info, six rate "
+                "maps, raster, such as the `axes` returned by a first call",
+            )
+            raise ValueError(msg)
+        fig = cast("Figure", panels[0].figure)
+    ax_traj, ax_info, *axes_rates, ax_raster = panels
 
     # Plot 1: Trajectory, colored by time; on a 1-D track, position over time.
     length_units = env.units or "units"
@@ -843,45 +861,47 @@ Traj: {metadata.get("trajectory_method", "ou")}
             method="diffusion_kde",
         ).firing_rates
         rate_maps = dict(zip(spiking, np.asarray(rates, dtype=np.float64), strict=True))
-    for ax, cell_idx in zip(axes_rates, cell_indices, strict=False):
+    for rate_ax, cell_idx in zip(axes_rates, cell_indices, strict=False):
         cell_id = int(session.unit_ids[cell_idx])
         if cell_idx not in rate_maps:
             # Empty spike train
-            ax.text(
+            rate_ax.text(
                 0.5,
                 0.5,
                 "No spikes",
                 ha="center",
                 va="center",
-                transform=ax.transAxes,
+                transform=rate_ax.transAxes,
             )
-            ax.set_title(f"Cell {cell_id}", fontsize=10)
-            ax.axis("off")
+            rate_ax.set_title(f"Cell {cell_id}", fontsize=10)
+            rate_ax.axis("off")
         else:
-            env.plot_field(rate_maps[cell_idx], ax=ax, colorbar_label="Rate (Hz)")
-            ax.set_title(f"Cell {cell_id}", fontsize=10)
+            env.plot_field(
+                rate_maps[cell_idx], ax=rate_ax, colorbar_label="Firing rate (Hz)"
+            )
+            rate_ax.set_title(f"Cell {cell_id}", fontsize=10)
 
     # Hide unused rate map subplots
     for i in range(len(cell_indices), len(axes_rates)):
         axes_rates[i].axis("off")
 
-    # Plot 9: Raster plot
-    for i in range(n_cells):
-        spike_times = spike_trains[i]
+    # Plot 9: Raster plot of the requested units
+    for row, cell_idx in enumerate(requested):
+        spike_times = spike_trains[cell_idx]
         if len(spike_times) > 0:
             ax_raster.scatter(
-                spike_times, np.full_like(spike_times, i), s=1, c="k", alpha=0.5
+                spike_times, np.full_like(spike_times, row), s=1, c="k", alpha=0.5
             )
 
     ax_raster.set_xlabel("Time (s)")
     ax_raster.set_ylabel("Unit ID")
-    ax_raster.set_yticks(np.arange(n_cells), labels=session.unit_ids)
+    ax_raster.set_yticks(np.arange(len(requested)), labels=session.unit_ids[requested])
     ax_raster.set_title("Raster Plot", fontweight="bold")
     ax_raster.set_xlim(times[0], times[-1])
-    ax_raster.set_ylim(-0.5, n_cells - 0.5)
+    ax_raster.set_ylim(-0.5, len(requested) - 0.5)
 
-    # Overall title
-    fig.suptitle("Simulation Session Summary", fontsize=14, fontweight="bold")
+    if created_figure:
+        fig.suptitle("Simulation Session Summary", fontsize=14, fontweight="bold")
 
     # Store axes in array for return
     all_axes = np.array(

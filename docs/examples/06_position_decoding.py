@@ -224,9 +224,9 @@ plt.show()
 #
 # The heatmap shows the posterior at each test time. A narrow bright band means
 # the model favors a small set of locations. Compare the white MAP estimate
-# with the cyan tracked position. The plot uses spatial-bin numbers on its
-# vertical axis; we pass tracking in centimeters and let `result.plot` align it
-# to that axis. Tracking lines stop at missing observations or long gaps.
+# with the cyan tracked position. The vertical axis is position along the track
+# in centimeters; we pass tracking in centimeters and let `result.plot` align it
+# to the test times. Tracking lines stop at missing observations or long gaps.
 
 # %%
 # Supply tracking with its original timestamps for the comparison.
@@ -234,14 +234,12 @@ fig, ax = plt.subplots(figsize=(12, 4))
 result.plot(
     ax=ax,
     show_map=True,
-    colorbar=True,
     true_times=times,
     true_positions=positions,
     max_gap=decoder.max_gap,
 )
 n_show = min(300, result.n_time_bins)
 ax.set_title("Test position probabilities: MAP (white), tracked position (cyan)")
-ax.legend(loc="upper right")
 fig.tight_layout()
 plt.show()
 

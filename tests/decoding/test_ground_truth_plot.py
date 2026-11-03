@@ -89,7 +89,8 @@ def test_missing_truth_and_source_gaps_have_nan_errors_and_no_overlay(env):
         # Recording breaks insert additional NaNs, but every observed truth
         # sample still has the same bin membership as the error alignment.
         np.testing.assert_array_equal(
-            truth.get_ydata()[np.isfinite(truth.get_ydata())], [0, 1, 7, 10]
+            truth.get_ydata()[np.isfinite(truth.get_ydata())],
+            env.bin_centers[[0, 1, 7, 10], 0],
         )
     finally:
         plt.close(ax.figure)

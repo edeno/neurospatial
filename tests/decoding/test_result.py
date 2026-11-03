@@ -305,7 +305,7 @@ class TestPlotMethod:
     """
 
     def test_plot_uses_provided_axes(self, small_2d_env):
-        """plot() should use the provided axes when given."""
+        """plot() draws into the axes pair it is given."""
         import matplotlib.pyplot as plt
 
         from neurospatial.decoding import DecodingResult
@@ -313,10 +313,10 @@ class TestPlotMethod:
         posterior = np.ones((5, small_2d_env.n_bins)) / small_2d_env.n_bins
         result = DecodingResult(posterior=posterior, env=small_2d_env)
 
-        _, provided_ax = plt.subplots()
-        returned_ax = result.plot(ax=provided_ax)
+        _, provided = plt.subplots(2, 1)
+        returned = result.plot(ax=tuple(provided))
 
-        assert returned_ax is provided_ax
+        assert returned == tuple(provided)
         plt.close("all")
 
 

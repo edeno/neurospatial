@@ -534,6 +534,31 @@ def population_coverage(
     )
 
 
+def _observed_field_count(result: PopulationCoverageResult) -> NDArray[np.float64]:
+    """Field count per bin, with NaN in bins no map observed.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_bins,)
+    """
+    return np.where(result.is_observed, result.field_count, np.nan)
+
+
+def _plot_field_count(
+    env: Environment, result: PopulationCoverageResult, ax: matplotlib.axes.Axes
+) -> None:
+    """Draw fields per bin with one colour per integer count and a labelled bar."""
+    import matplotlib.pyplot as plt
+
+    counts = _observed_field_count(result)
+    top = int(np.nanmax(counts)) if np.isfinite(counts).any() else 0
+    cmap = plt.get_cmap("viridis", top + 1)
+    env.plot_field(counts, ax=ax, cmap=cmap, vmin=-0.5, vmax=top + 0.5, colorbar=False)
+    mappable = ax.collections[-1]
+    cbar = plt.colorbar(mappable, ax=ax, ticks=np.arange(top + 1))
+    cbar.set_label("Fields per bin")
+
+
 def plot_population_coverage(
     env: Environment,
     result: PopulationCoverageResult,
@@ -608,16 +633,15 @@ def plot_population_coverage(
     import matplotlib.pyplot as plt
     from matplotlib.colors import ListedColormap
 
-    # Create axes if needed
+    created_axes = ax is None
     if ax is None:
         _, ax = plt.subplots()
 
     # 1-D environments: a native 1-D grid or a track drawn in its linear coordinate
     if env.n_dims == 1 or env.is_linearized_track:
         if show_field_count:
-            field_to_plot = result.field_count.astype(float)
-            env.plot_field(field_to_plot, ax=ax)
-            ax.set_ylabel("Field count")
+            env.plot_field(_observed_field_count(result), ax=ax)
+            ax.set_ylabel("Fields per bin")
         else:
             field_to_plot = np.where(result.is_observed, result.is_covered, np.nan)
             env.plot_field(field_to_plot, ax=ax)
@@ -649,12 +673,14 @@ def plot_population_coverage(
     else:
         # 2D environment
         if show_field_count:
-            env.plot_field(result.field_count.astype(float), ax=ax, cmap="viridis")
+            _plot_field_count(env, result, ax)
         else:
             # Unobserved bins stay NaN: they are neither covered nor gaps.
             binary_field = np.where(result.is_observed, result.is_covered, np.nan)
             cmap = ListedColormap(["white", covered_color])
-            env.plot_field(binary_field, ax=ax, cmap=cmap, vmin=0, vmax=1)
+            env.plot_field(
+                binary_field, ax=ax, cmap=cmap, vmin=0, vmax=1, colorbar=False
+            )
 
         # Overlay gap markers
         if highlight_gaps and len(result.uncovered_bins) > 0:
@@ -669,12 +695,12 @@ def plot_population_coverage(
             )
             ax.legend(loc="upper right")
 
-    # Add informative title
-    ax.set_title(
-        f"Bin Coverage: {result.coverage_fraction:.1%} "
-        f"({result.n_place_cells}/{result.n_neurons} maps with fields, "
-        f"{result.n_fields} fields)"
-    )
+    if created_axes:
+        ax.set_title(
+            f"Bin Coverage: {result.coverage_fraction:.1%} "
+            f"({result.n_place_cells}/{result.n_neurons} maps with fields, "
+            f"{result.n_fields} fields)"
+        )
 
     return ax
 

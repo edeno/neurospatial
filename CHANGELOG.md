@@ -287,6 +287,65 @@ values.
 - The `read_position`, `to_file`, `from_file` and package-level doctests write
   to a temporary directory instead of the current directory.
 
+### Static plots show physical axes, keep missing bins distinct and respect your axes
+
+**Breaking**
+
+| Change | Old | New |
+| --- | --- | --- |
+| One name for the colorbar flag | `plot_object_vector_tuning(add_colorbar=False)` | `colorbar=True` (the colorbar is on by default and labelled "Firing rate (Hz)") |
+| Colorbar by default | `DecodingResult.plot(colorbar=False)` | `colorbar=True` |
+| 2-D posterior plot | `DecodingResult.plot()` returned one `Axes` showing bin numbers on the y-axis | on a 2-D environment it returns the pair `(ax_x, ax_y)` of stacked x(t) and y(t) marginals; pass `ax=(ax_x, ax_y)` to draw into your own. A 1-D environment still returns one `Axes`; three or more dimensions raise |
+| Directional place fields on a 2-D environment | `DirectionalPlaceFields.plot()` drew one line per direction against bin index | returns one `env.plot_field` panel per direction (a tuple of axes); `ax=` takes one axes per direction |
+| Summary raster | `plot_session_summary(session, unit_ids=[...])` drew every unit in the raster | the raster shows the requested units, in the requested order |
+| Polar plot on Cartesian axes | `plot_object_vector_tuning(result, ax=cartesian_ax)` drew a heatmap | raises `ValueError`; use `result.plot(ax=ax)` for a Cartesian map |
+| 3-D environments | `DirectionalPlaceFields.plot()` drew lines against bin index | raises `ValueError` (use `to_dataframe()`) |
+| Default `env.plot()` title | "RegularGrid (2D Grid)" | the name and layout, `"<name> (<layout>)"`, or just the layout when the environment has no name; supplied axes keep your title |
+
+**Fixed**
+
+- `plot_population_coverage(show_field_count=True)` drew bins no map observed as
+  zero fields. They are NaN, so they stay blank, and the count uses one colour
+  per integer with a "Fields per bin" colorbar. The binary map no longer draws
+  a 0 to 1 colorbar.
+- `DecodingResult.plot` on a track or 1-D environment draws position in
+  `env.units` instead of bin numbers, with a legend for the MAP and actual
+  position. Bins sit at their own positions, so the gaps between track
+  segments are blank and unequal bins keep their widths; MAP and actual
+  position are drawn at their bin centres. The values of the posterior and of
+  every overlay are unchanged. On a 2-D environment both marginal panels share
+  one color scale, and the marginals use one bin-side-wide column on rotated
+  grids.
+- `DirectionalPlaceFields.plot` on a 1-D environment draws position in
+  `env.units`, not "Bin index".
+- Polar plots on an axes that is not polar (`plot_head_direction_tuning`,
+  `DirectionalRateResult.plot`, `plot_object_vector_tuning`,
+  `plot_circular_basis_tuning`) raise a `ValueError` that shows how to make a
+  polar axes. `plot_head_direction_tuning` raised an `AttributeError`, and
+  `DirectionalRateResult.plot` silently drew an unlabelled Cartesian curve.
+  Head-direction polar plots label the radial axis "Firing rate (Hz)" and move
+  its tick labels off the preferred direction.
+- Plots keep the title you set on your own axes: `env.plot`, `env.plot_field`
+  on a track, `plot_peri_event_histogram`, `plot_population_coverage`,
+  `DirectionalPlaceFields.plot` and `DecodingResult.plot` title only the axes
+  they create (or the `title=` you pass). `plot_peri_event_response` titles
+  its PSTH panel itself when it creates the figure. `plot_session_summary` and
+  `plot_basis_functions` set their figure title only on a figure they create,
+  but always label each panel ("Cell N", "Basis N"), since the label says which
+  unit or basis it shows.
+- Rate colorbars read "Firing rate (Hz)" on the object-vector, boundary-vector,
+  view, egocentric and spatial `plot` methods.
+- `plot_phase_precession` labels its y-axis in the unit of `angle_unit`.
+- `plot_regions` draws to scale (equal aspect, so a circle stays a circle),
+  colours regions from the default colour cycle, and puts the legend inside
+  the axes instead of clipping it. Inside `env.plot`, a polar environment
+  keeps its own aspect.
+- `env.plot` and `layout.plot()` keep the axis ticks (drawing the bin graph
+  hid them), and the bin-centre markers of a 2-D grid shrink with the grid so a
+  2 cm grid is no longer a solid block.
+- `plot_session_summary` and `plot_basis_functions` accept `ax=` (an array of
+  axes) and create a figure only when it is None.
+
 ### Warnings and refusals for silently wrong results
 
 Inputs that ran to completion and returned a plausible but wrong number now

@@ -155,6 +155,18 @@ def _grid_mesh(
     return x, y
 
 
+def _node_size_for_cells(ax: Axes, n_across: int, *, largest: float = 20.0) -> float:
+    """Marker area (points squared) that keeps bin centers apart on ``ax``.
+
+    A marker is a bit under half the distance between neighboring centers, so
+    a fine grid is not drawn as a solid block; coarse grids keep ``largest``.
+    """
+    box = ax.get_window_extent()
+    side_points = min(box.width, box.height) * 72.0 / ax.figure.dpi
+    spacing = side_points / max(n_across, 1)
+    return min(largest, (0.4 * spacing) ** 2)
+
+
 def _plot_grid_1d(
     ax: Axes,
     *,
@@ -220,16 +232,17 @@ def plot_grid(
     cmap: str = "bone_r",
     alpha: float = 0.7,
     show_connectivity: bool = True,
-    node_size: float = 20,
+    node_size: float | None = None,
     node_color: str = "blue",
 ) -> Axes:
     """Draw active rectangular cells and their connectivity.
 
-    Two-dimensional grids are filled with ``cmap`` and ``alpha``. A
-    one-dimensional grid is drawn along a line as bin edges and centers, and
-    ignores ``cmap`` and ``alpha``. ``figsize`` defaults to ``(7, 7)`` in two
-    dimensions and ``(10, 2)`` in one. Grids of more dimensions raise
-    ``NotImplementedError``.
+    ``node_size`` is the marker area in points squared; None uses 20, or less
+    on a two-dimensional grid so that markers stay apart. Two-dimensional
+    grids are filled with ``cmap`` and ``alpha``. A one-dimensional grid is
+    drawn along a line as bin edges and centers, and ignores ``cmap`` and
+    ``alpha``. ``figsize`` defaults to ``(7, 7)`` in two dimensions and
+    ``(10, 2)`` in one. Grids of more dimensions raise ``NotImplementedError``.
     """
     import matplotlib.pyplot as plt
 
@@ -240,7 +253,9 @@ def plot_grid(
     if ax is None:
         if figsize is None:
             figsize = (7, 7) if len(grid_edges) == 2 else (10, 2)
-        _, ax = plt.subplots(figsize=figsize)
+        _, ax = plt.subplots(
+            figsize=figsize, layout="constrained" if len(grid_edges) == 1 else None
+        )
     if len(grid_edges) == 1:
         return _plot_grid_1d(
             ax,
@@ -250,9 +265,11 @@ def plot_grid(
             active=rectilinear.active_mask,
             dimension_ranges=dimension_ranges,
             show_connectivity=show_connectivity,
-            node_size=node_size,
+            node_size=20 if node_size is None else node_size,
             node_color=node_color,
         )
+    if node_size is None:
+        node_size = _node_size_for_cells(ax, max(rectilinear.active_mask.shape))
     x, y = _grid_mesh(rectilinear, frame)
     # Fill only the active cells, light whatever the mix of active and
     # inactive cells, so the same bin looks the same in every grid.
@@ -311,7 +328,9 @@ def plot_grid(
             node_size=node_size,
             node_color=node_color,
         )
-        _draw_connections(ax, bin_centers, pairs, colors="black", zorder=-1)
+        _draw_connections(
+            ax, bin_centers, pairs, colors="black", linewidths=0.5, zorder=-1
+        )
     return ax
 
 

@@ -98,7 +98,7 @@ def test_documented_components_to_decode_after_file_close(component_file, monkey
         assert np.any(result.times < 10)
         assert np.any(result.times >= 20)
         np.testing.assert_allclose(result.posterior.sum(axis=1), 1.0)
-        ax = namespace["ax"]
+        ax = namespace["axes"][0]  # the x(t) panel of the 2-D posterior
         actual_line = next(
             line for line in ax.lines if line.get_label() == "Actual position"
         )
@@ -111,9 +111,8 @@ def test_documented_components_to_decode_after_file_close(component_file, monkey
             ]
         )
         finite = np.isfinite(actual_line.get_ydata())
-        np.testing.assert_array_equal(
-            actual_line.get_ydata()[finite], namespace["env"].bin_at(actual)
-        )
+        # The panel's y-axis is the x coordinate, in the environment's units.
+        np.testing.assert_allclose(actual_line.get_ydata()[finite], actual[:, 0])
         assert (
             sum(
                 code == MplPath.MOVETO

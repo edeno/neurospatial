@@ -144,7 +144,8 @@ plt.show()
 
 `plot_population_coverage` draws the same count from the coverage result:
 how many place fields include each position, here six at a typical position
-and up to seven. Dashed lines mark the uncovered bins, and the
+and up to seven. Bins that no map observed stay blank rather than counting
+zero fields. Dashed lines mark the uncovered bins, and the
 title gives the coverage fraction. A location covered by several fields is
 represented redundantly; a location covered by none is decoded poorly, if at
 all. For an open-field arena, the same call draws a map and marks
