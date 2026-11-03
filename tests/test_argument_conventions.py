@@ -610,6 +610,632 @@ def test_rng_is_keyword_only_on_functions():
     assert not offenders, sorted(offenders)
 
 
+# ``rng`` is read as ``np.random.default_rng(rng)``: ``rng=0`` and a fresh
+# ``np.random.default_rng(0)`` give the same result, and a generator advances,
+# so two calls with one generator differ. Each public function taking ``rng``
+# runs here on a small input. The record of the seed (a ``rng`` or
+# ``rng_entropy`` entry) is left out of the comparison: a generator has no
+# int to record.
+_RECORD_KEYS = frozenset({"rng", "rng_entropy"})
+
+
+def _canonical(value, depth=0):
+    """A comparable form of ``value``: arrays by bytes (NaN equals NaN)."""
+    import dataclasses
+    from collections.abc import Iterator, Mapping
+
+    import numpy as np
+    import pandas as pd
+
+    from neurospatial import Environment
+
+    assert depth < 40, f"nesting too deep at {type(value).__name__}"
+    deeper = depth + 1
+    if value is None or isinstance(value, (bool, int, str, bytes)):
+        return value
+    if isinstance(value, np.generic):
+        return _canonical(value.item(), deeper)
+    if isinstance(value, float):
+        return ("float", np.float64(value).tobytes())
+    if isinstance(value, np.ndarray):
+        if value.dtype == object:
+            items = tuple(_canonical(item, deeper) for item in value.ravel())
+            return ("objects", value.shape, items)
+        return ("array", value.shape, value.dtype.str, value.tobytes())
+    if isinstance(value, Environment):
+        return ("env", value.bin_centers.tobytes())
+    if isinstance(value, pd.DataFrame):
+        columns = tuple(
+            (str(name), _canonical(value[name].to_numpy(dtype=object), deeper))
+            for name in value.columns
+        )
+        return ("frame", _canonical(value.index.to_numpy(dtype=object)), columns)
+    if isinstance(value, Mapping):
+        items = (
+            (repr(key), _canonical(item, deeper))
+            for key, item in value.items()
+            if key not in _RECORD_KEYS
+        )
+        return ("mapping", tuple(sorted(items)))
+    if isinstance(value, (list, tuple)):
+        return tuple(_canonical(item, deeper) for item in value)
+    if dataclasses.is_dataclass(value):
+        fields = (
+            (field.name, _canonical(getattr(value, field.name), deeper))
+            for field in dataclasses.fields(value)
+            if field.name not in _RECORD_KEYS
+        )
+        return (type(value).__name__, tuple(fields))
+    assert not isinstance(value, Iterator), "materialize lazy draws with list()"
+    if callable(value):
+        return ("callable", getattr(value, "__qualname__", repr(value)))
+    if hasattr(value, "__dict__"):
+        return (type(value).__name__, _canonical(vars(value), deeper))
+    return (type(value).__name__, repr(value))
+
+
+def _rng_inputs():
+    """Small shared inputs for the ``rng`` calls, built once."""
+    from types import SimpleNamespace
+
+    import numpy as np
+    from shapely.geometry import box
+
+    from neurospatial import Environment
+    from neurospatial.decoding import DecodingResult
+
+    if hasattr(_rng_inputs, "cached"):
+        return _rng_inputs.cached
+    draw = np.random.default_rng(7)
+    times = np.arange(0, 60, 0.1)
+    track = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [120.0, 0.0]], bin_size=10.0, units="cm"
+    )
+    x = track.bin_centers[:, 0]
+    rates = 20.0 * np.exp(-0.5 * ((x - np.linspace(10, 110, 8)[:, None]) / 8.0) ** 2)
+    sweep = np.eye(track.n_bins)[np.arange(10)]
+    counts = draw.poisson(1.0, (200, 6)).astype(float)
+    counts[:, [1, 3, 4]] += 3 * draw.poisson(0.3, (200, 1))
+    inputs = SimpleNamespace(
+        arena=Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm"),
+        times=times,
+        positions=np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)],
+        headings=np.sin(times / 5),
+        objects=np.array([[50.0, 50.0]]),
+        trains=[np.sort(draw.uniform(0, 59.9, n)) for n in (55, 65, 75)],
+        track=track,
+        rates=rates,
+        sweep=sweep,
+        sweep_times=np.arange(10) * 0.02,
+        events=[
+            DecodingResult(
+                posterior=np.eye(track.n_bins)[start + np.arange(6)],
+                env=track,
+                times=np.arange(6) * 0.02,
+            )
+            for start in (0, 2, 4, 6)
+        ],
+        ordered=[np.array([1.0 + 0.01 * i]) for i in range(8)],
+        counts=counts,
+        session_trains=[np.sort(draw.uniform(0, 300, 300)) for _ in range(6)],
+        bias=np.sign(np.subtract.outer(np.arange(8), np.arange(8))).T * 1.0,
+        rest_trains=[np.sort(draw.uniform(0, 3600, 2000)) for _ in range(6)],
+    )
+    _rng_inputs.cached = inputs
+    return inputs
+
+
+def _rng_calls():
+    """``{name: call}``: each call runs one public function with ``rng``."""
+    import dataclasses
+
+    import numpy as np
+
+    from neurospatial import animation, encoding, ops, reactivation, replay, stats
+    from neurospatial import simulation as sim
+    from neurospatial.replay import methods
+
+    i = _rng_inputs()
+    shuffle = {"n_shuffles": 9}
+    place = (i.arena, i.trains[0], i.times, i.positions)
+    view = (*place, i.headings)
+    ovc = (*place, i.objects)
+    ego = (*view, i.objects)
+    hd = (i.trains[0], i.times, i.headings)
+    counts = i.counts.astype(np.int64)
+    windows = np.array([[0.0, 60.0]])
+    rest_epochs = {
+        "template_epochs": [[1200.0, 2400.0]],
+        "match_epochs": [[2400.0, 3600.0]],
+        "control_epochs": [[0.0, 1200.0]],
+    }
+    lansink = dataclasses.replace(reactivation.LANSINK_2009, n_shuffles=20)
+    nadasdy = dataclasses.replace(
+        methods.NADASDY_1999, surrogates=("across_trains",), n_surrogates=5
+    )
+    # Phases that precess half a cycle across the field, inside the slope bounds.
+    phases = (np.pi - np.pi * np.linspace(0, 1, 40)) % (2 * np.pi)
+    davidson = dataclasses.replace(
+        methods.DAVIDSON_2009, nulls=("column_cycle",), n_shuffles=9
+    )
+    place_models = [
+        sim.PlaceCellModel(i.arena, center=center, width=10.0)
+        for center in ([30.0, 30.0], [70.0, 70.0])
+    ]
+    return {
+        "neurospatial.animation.estimate_colormap_range_from_subset": lambda rng: (
+            animation.estimate_colormap_range_from_subset(
+                i.counts, n_samples=20, rng=rng
+            )
+        ),
+        "neurospatial.encoding.compute_phase_precession": lambda rng: (
+            encoding.compute_phase_precession(
+                np.linspace(0, 1, 40), phases, **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.encoding.has_phase_precession": lambda rng: (
+            encoding.has_phase_precession(
+                np.linspace(0, 1, 40), phases, **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.encoding.place_cell_significance": lambda rng: (
+            encoding.place_cell_significance(
+                i.arena,
+                i.trains,
+                i.times,
+                i.positions,
+                method="binned",
+                **shuffle,
+                rng=rng,
+            )
+        ),
+        "neurospatial.encoding.is_place_cell": lambda rng: encoding.is_place_cell(
+            *place, method="binned", **shuffle, rng=rng
+        ),
+        "neurospatial.encoding.spatial_cell_type_significance": lambda rng: (
+            encoding.spatial_cell_type_significance(
+                *place, method="binned", **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.encoding.head_direction_cell_significance": lambda rng: (
+            encoding.head_direction_cell_significance(*hd, **shuffle, rng=rng)
+        ),
+        "neurospatial.encoding.is_head_direction_cell": lambda rng: (
+            encoding.is_head_direction_cell(*hd, **shuffle, rng=rng)
+        ),
+        "neurospatial.encoding.spatial_view_cell_significance": lambda rng: (
+            encoding.spatial_view_cell_significance(
+                *view, method="binned", **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.encoding.is_spatial_view_cell": lambda rng: (
+            encoding.is_spatial_view_cell(*view, method="binned", **shuffle, rng=rng)
+        ),
+        "neurospatial.encoding.object_vector_cell_significance": lambda rng: (
+            encoding.object_vector_cell_significance(*ovc, **shuffle, rng=rng)
+        ),
+        "neurospatial.encoding.is_object_vector_cell": lambda rng: (
+            encoding.is_object_vector_cell(*ovc, **shuffle, rng=rng)
+        ),
+        "neurospatial.encoding.egocentric_object_vector_cell_significance": (
+            lambda rng: encoding.egocentric_object_vector_cell_significance(
+                *ego, **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.encoding.is_egocentric_object_vector_cell": lambda rng: (
+            encoding.is_egocentric_object_vector_cell(*ego, **shuffle, rng=rng)
+        ),
+        "neurospatial.ops.select_basis_centers": lambda rng: ops.select_basis_centers(
+            i.arena, n_centers=5, rng=rng
+        ),
+        "neurospatial.ops.geodesic_rbf_basis": lambda rng: ops.geodesic_rbf_basis(
+            i.arena, n_centers=5, rng=rng
+        ),
+        "neurospatial.ops.chebyshev_filter_basis": lambda rng: (
+            ops.chebyshev_filter_basis(i.arena, n_centers=5, max_degree=2, rng=rng)
+        ),
+        "neurospatial.ops.heat_kernel_wavelet_basis": lambda rng: (
+            ops.heat_kernel_wavelet_basis(i.arena, n_centers=5, scales=(1.0,), rng=rng)
+        ),
+        "neurospatial.ops.spatial_basis": lambda rng: ops.spatial_basis(
+            i.arena, n_features=10, rng=rng
+        ),
+        "neurospatial.reactivation.compare_reactivation_methods": lambda rng: (
+            reactivation.compare_reactivation_methods(
+                i.rest_trains,
+                **rest_epochs,
+                reactivation_methods=[lansink],
+                unit_groups={"region": np.repeat([0, 1], 3)},
+                rng=rng,
+            )
+        ),
+        "neurospatial.reactivation.detect_assemblies": lambda rng: (
+            reactivation.detect_assemblies(
+                i.counts,
+                component_threshold="circular_shift",
+                percentile=95.0,
+                n_shuffles=9,
+                rng=rng,
+            )
+        ),
+        "neurospatial.reactivation.equalize_firing_rates": lambda rng: (
+            reactivation.equalize_firing_rates(i.counts[:100], i.counts[100:], rng=rng)
+        ),
+        "neurospatial.reactivation.null_reactivation_data": lambda rng: (
+            reactivation.null_reactivation_data(
+                i.session_trains, [[200.0, 300.0]], kind="cell_identity", rng=rng
+            )
+        ),
+        "neurospatial.reactivation.simulated_reactivation_session": lambda rng: (
+            reactivation.simulated_reactivation_session(
+                n_units=6, n_assemblies=1, assembly_size=3, duration=60.0, rng=rng
+            )
+        ),
+        "neurospatial.replay.best_sequence_match": lambda rng: (
+            replay.best_sequence_match(
+                i.track,
+                i.ordered,
+                (1.0, 1.1),
+                i.rates,
+                exact_max_letters=2,
+                n_samples=50,
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.bias_similarity_significance": lambda rng: (
+            replay.bias_similarity_significance(
+                i.ordered, (1.0, 1.1), i.bias, **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.replay.compare_replay_methods": lambda rng: (
+            replay.compare_replay_methods(
+                i.track,
+                i.events,
+                replay_methods=[davidson],
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.dataset_values": lambda rng: replay.dataset_values(
+            i.track,
+            i.events,
+            replay_method=methods.SILVA_2015,
+            null="column_cycle",
+            n_datasets=3,
+            rng=rng,
+        ),
+        "neurospatial.replay.detect_bias_sequence_replay": lambda rng: (
+            replay.detect_bias_sequence_replay(
+                i.ordered,
+                (1.0, 1.1),
+                i.bias,
+                bias_sequence_method=dataclasses.replace(
+                    methods.LIU_2023_BIAS, n_shuffles=9
+                ),
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.detect_pairwise_order_replay": lambda rng: (
+            replay.detect_pairwise_order_replay(
+                i.track,
+                i.ordered,
+                (1.0, 1.1),
+                i.rates,
+                pairwise_order_method=dataclasses.replace(
+                    methods.GUPTA_2010, n_shuffles=9
+                ),
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.detect_rank_order_replay": lambda rng: (
+            replay.detect_rank_order_replay(
+                i.track,
+                i.ordered,
+                (1.0, 1.1),
+                i.rates,
+                rank_order_method=dataclasses.replace(
+                    methods.DIBA_BUZSAKI_2007, n_shuffles=9
+                ),
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.detect_replay": lambda rng: replay.detect_replay(
+            i.track,
+            i.sweep,
+            i.sweep_times,
+            replay_method=davidson,
+            rng=rng,
+        ),
+        "neurospatial.replay.detect_template_match_replay": lambda rng: (
+            replay.detect_template_match_replay(
+                i.track,
+                i.ordered,
+                (1.0, 1.1),
+                i.rates,
+                template_match_method=dataclasses.replace(
+                    methods.JI_WILSON_2007, n_shuffles=9
+                ),
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.detect_trajectory_radon": lambda rng: (
+            replay.detect_trajectory_radon(
+                i.track, i.sweep, i.sweep_times, n_lines=50, rng=rng
+            )
+        ),
+        "neurospatial.replay.fit_linear_trajectory": lambda rng: (
+            replay.fit_linear_trajectory(
+                i.track, i.sweep, i.sweep_times, n_samples=200, rng=rng
+            )
+        ),
+        "neurospatial.replay.null_events": lambda rng: replay.null_events(
+            i.ordered, np.array([[1.0, 1.1]]), kind="spike_time_uniform", rng=rng
+        ),
+        "neurospatial.replay.pairwise_order_significance": lambda rng: (
+            replay.pairwise_order_significance(
+                i.track, i.ordered, (1.0, 1.1), i.rates, **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.replay.rank_order_significance": lambda rng: (
+            replay.rank_order_significance(
+                i.track, i.ordered, (1.0, 1.1), i.rates, **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.replay.recurring_sequences_significance": lambda rng: (
+            replay.recurring_sequences_significance(
+                i.session_trains[:3],
+                recurring_sequence_method=nadasdy,
+                reference_unit=0,
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.replay_significance": lambda rng: (
+            replay.replay_significance(
+                i.track,
+                i.sweep,
+                i.sweep_times,
+                nulls=("column_cycle",),
+                **shuffle,
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.shuffle_cell_identity": lambda rng: list(
+            replay.shuffle_cell_identity(counts, i.counts.T, n_shuffles=3, rng=rng)
+        ),
+        "neurospatial.replay.shuffle_events": lambda rng: replay.shuffle_events(
+            i.track, i.events, null="time_bin_permutation", rng=rng
+        ),
+        "neurospatial.replay.shuffle_place_fields_circular": lambda rng: list(
+            replay.shuffle_place_fields_circular(
+                i.track, i.rates, n_shuffles=3, rng=rng
+            )
+        ),
+        "neurospatial.replay.shuffle_place_fields_circular_2d": lambda rng: list(
+            replay.shuffle_place_fields_circular_2d(
+                i.arena,
+                np.ones((2, i.arena.n_bins)).cumsum(1),
+                n_shuffles=3,
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.shuffle_posterior_circular": lambda rng: list(
+            replay.shuffle_posterior_circular(i.track, i.sweep, n_shuffles=3, rng=rng)
+        ),
+        "neurospatial.replay.shuffle_posterior_weighted_circular": lambda rng: list(
+            replay.shuffle_posterior_weighted_circular(
+                i.track,
+                i.sweep,
+                np.ones(i.track.n_bins),
+                n_shuffles=3,
+                rng=rng,
+            )
+        ),
+        "neurospatial.replay.shuffle_spike_counts_circular": lambda rng: list(
+            replay.shuffle_spike_counts_circular(counts, n_shuffles=3, rng=rng)
+        ),
+        "neurospatial.replay.shuffle_spike_counts_uniform": lambda rng: list(
+            replay.shuffle_spike_counts_uniform(counts, n_shuffles=3, rng=rng)
+        ),
+        "neurospatial.replay.simulated_null_events": lambda rng: (
+            replay.simulated_null_events(i.track, i.rates, n_events=2, rng=rng)
+        ),
+        "neurospatial.replay.surrogate_spike_trains": lambda rng: (
+            replay.surrogate_spike_trains(
+                i.session_trains[:2], kind="isi_shuffle", rng=rng
+            )
+        ),
+        "neurospatial.replay.template_correlation_test": lambda rng: (
+            replay.template_correlation_test(
+                [np.arange(8.0)], [np.arange(8.0)[::-1]], **shuffle, rng=rng
+            )
+        ),
+        "neurospatial.replay.template_match_dataset_test": lambda rng: (
+            replay.template_match_dataset_test(
+                i.track,
+                [np.arange(3) * 2.0 + 0.05 * k for k in range(8)],
+                np.column_stack([np.arange(3) * 2.0, np.arange(3) * 2.0 + 0.5]),
+                i.rates,
+                template_match_method=dataclasses.replace(
+                    methods.JI_WILSON_2007, n_shuffles=9
+                ),
+                rng=rng,
+            )
+        ),
+        "neurospatial.simulation.add_modulation": lambda rng: sim.add_modulation(
+            i.trains[0], modulation_freq=8.0, rng=rng
+        ),
+        "neurospatial.simulation.generate_poisson_spikes": lambda rng: (
+            sim.generate_poisson_spikes(np.full(i.times.size, 5.0), i.times, rng=rng)
+        ),
+        "neurospatial.simulation.generate_population_spikes": lambda rng: (
+            sim.generate_population_spikes(
+                place_models, i.times, i.positions, show_progress=False, rng=rng
+            )
+        ),
+        "neurospatial.simulation.simulate_trajectory_ou": lambda rng: (
+            sim.simulate_trajectory_ou(i.arena, duration=2.0, speed_units="cm", rng=rng)
+        ),
+        "neurospatial.simulation.simulate_trajectory_laps": lambda rng: (
+            sim.simulate_trajectory_laps(
+                i.track, n_laps=1, sampling_frequency=20.0, rng=rng
+            )
+        ),
+        "neurospatial.simulation.simulate_session": lambda rng: sim.simulate_session(
+            i.arena, duration=5.0, n_cells=2, show_progress=False, rng=rng
+        ),
+        "neurospatial.simulation.simulate_replay_event": lambda rng: (
+            sim.simulate_replay_event(i.track, i.rates, speed=200.0, rng=rng)
+        ),
+        "neurospatial.simulation.open_field_session": lambda rng: (
+            sim.open_field_session(duration=5.0, n_place_cells=2, rng=rng)
+        ),
+        "neurospatial.simulation.linear_track_session": lambda rng: (
+            sim.linear_track_session(
+                duration=10.0, track_length=50.0, n_place_cells=2, n_laps=1, rng=rng
+            )
+        ),
+        "neurospatial.simulation.grid_cell_session": lambda rng: (
+            sim.grid_cell_session(
+                duration=5.0, arena_size=60.0, n_grid_cells=2, rng=rng
+            )
+        ),
+        "neurospatial.simulation.border_cell_session": lambda rng: (
+            sim.border_cell_session(
+                duration=5.0, n_border_cells=2, n_place_cells=1, rng=rng
+            )
+        ),
+        "neurospatial.simulation.tmaze_alternation_session": lambda rng: (
+            sim.tmaze_alternation_session(
+                duration=20.0, n_trials=2, n_place_cells=2, rng=rng
+            )
+        ),
+        "neurospatial.stats.generate_inhomogeneous_poisson_surrogates": lambda rng: (
+            list(
+                stats.generate_inhomogeneous_poisson_surrogates(
+                    counts, n_surrogates=3, rng=rng
+                )
+            )
+        ),
+        "neurospatial.stats.generate_jittered_spikes": lambda rng: list(
+            stats.generate_jittered_spikes(
+                i.trains[0], jitter_std=0.01, n_surrogates=3, rng=rng
+            )
+        ),
+        "neurospatial.stats.generate_poisson_surrogates": lambda rng: list(
+            stats.generate_poisson_surrogates(counts, n_surrogates=3, rng=rng)
+        ),
+        "neurospatial.stats.shuffle_spike_times_circular": lambda rng: list(
+            stats.shuffle_spike_times_circular(
+                i.trains[0], windows, n_shuffles=3, rng=rng
+            )
+        ),
+        "neurospatial.stats.shuffle_spikes_isi": lambda rng: list(
+            stats.shuffle_spikes_isi(i.trains[0], n_shuffles=3, rng=rng)
+        ),
+        "neurospatial.stats.shuffle_time_bins": lambda rng: list(
+            stats.shuffle_time_bins(counts, n_shuffles=3, rng=rng)
+        ),
+        "neurospatial.stats.shuffle_time_bins_coherent": lambda rng: list(
+            stats.shuffle_time_bins_coherent(counts, n_shuffles=3, rng=rng)
+        ),
+        "neurospatial.stats.shuffle_trials": lambda rng: list(
+            stats.shuffle_trials(np.repeat(np.arange(4), 5), n_shuffles=3, rng=rng)
+        ),
+    }
+
+
+def _public_rng_functions():
+    """Public function paths whose snapshot signature takes ``rng=``."""
+    from pathlib import Path
+
+    snapshot = Path(__file__).parent / "data" / "public_api.txt"
+    return sorted(
+        line.split("(", 1)[0]
+        for line in snapshot.read_text().splitlines()
+        if re.search(r"[(,*] ?rng=", line)
+    )
+
+
+def test_rng_calls_cover_every_public_rng_function():
+    assert sorted(_rng_calls()) == _public_rng_functions()
+
+
+# Compared to a tolerance, not bit for bit, each with its reason.
+_RNG_PARITY_TOLERANCE = {
+    # Its spectral-radius estimate starts ARPACK from an unseeded random
+    # vector, so two calls with rng=0 already differ in the last bits. Its
+    # centers, the only use of rng, come from select_basis_centers, which is
+    # compared exactly.
+    "neurospatial.ops.chebyshev_filter_basis": 1e-12,
+}
+
+
+@pytest.mark.parametrize("name", _public_rng_functions())
+def test_seed_and_its_fresh_generator_agree(name):
+    """``rng=0`` and ``rng=np.random.default_rng(0)`` give the same result."""
+    import numpy as np
+
+    call = _rng_calls()[name]
+    seeded, generated = call(0), call(np.random.default_rng(0))
+    if name in _RNG_PARITY_TOLERANCE:
+        tolerance = _RNG_PARITY_TOLERANCE[name]
+        np.testing.assert_allclose(seeded, generated, rtol=0, atol=tolerance)
+    else:
+        assert _canonical(seeded) == _canonical(generated), name
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "neurospatial.encoding.place_cell_significance",
+        "neurospatial.replay.shuffle_events",
+        "neurospatial.replay.replay_significance",
+        "neurospatial.reactivation.compare_reactivation_methods",
+        "neurospatial.reactivation.detect_assemblies",
+        "neurospatial.simulation.simulate_session",
+        "neurospatial.simulation.generate_population_spikes",
+        "neurospatial.stats.shuffle_spike_times_circular",
+    ],
+)
+def test_one_generator_advances_between_calls(name):
+    """Two calls with one generator draw different values."""
+    import numpy as np
+
+    call = _rng_calls()[name]
+    generator = np.random.default_rng(0)
+    assert _canonical(call(generator)) != _canonical(call(generator)), name
+
+
+def test_one_generator_advances_a_shuffle_verdict():
+    """Repeated shuffle verdicts with one generator draw new shuffles.
+
+    A verdict is one bool, so two calls can agree by chance. This cell has
+    no field, and its p-value from 9 shuffles is 0.1 or 0.2, either side
+    of ``alpha=0.15``, depending on the draw (``min_info=0`` leaves the verdict
+    to the shuffle test), so verdicts from one generator vary.
+    """
+    import numpy as np
+
+    from neurospatial import encoding
+
+    i = _rng_inputs()
+    generator = np.random.default_rng(0)
+    verdicts = {
+        encoding.is_place_cell(
+            i.arena,
+            i.trains[0],
+            i.times,
+            i.positions,
+            method="binned",
+            min_info=0.0,
+            alpha=0.15,
+            n_shuffles=9,
+            rng=generator,
+        )
+        for _ in range(8)
+    }
+    assert verdicts == {True, False}
+
+
 def test_single_region_is_region():
     """One region is ``region=``; two roles in one call carry role prefixes."""
     offenders = [
