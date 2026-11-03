@@ -1839,7 +1839,9 @@ def render(rows: list[dict[str, Any]]) -> str:
             " the stated parts and an independent reference. Beyond physical: the"
             " share of tracked samples farther than half the physical width from the"
             " track, a tracking measure (the tracked head swings past an unwalled"
-            " track), not judged; split by speed in the details. Tolerance: the"
+            " track), not judged; in brackets the same share by speed, slowest band"
+            " first (below the loader's running speed, up to 30 cm/s, above; bands"
+            " in the details). Tolerance: the"
             " placement tolerance the track is built with (`track_width`), measured"
             " from the samples so about 1 % are dropped. Lateral: the median"
             " |lateral offset| and the worst stretch's median signed offset. Env /"
@@ -1857,10 +1859,20 @@ def render(rows: list[dict[str, Any]]) -> str:
                 if dec.get("physical_width") is None
                 else f"{dec['physical_width']:.3g} {dec['physical_width_kind']}"
             )
+            by_speed = {
+                k: v
+                for k, v in (dec.get("outside_physical_width_by_speed") or {}).items()
+                if k != "all"
+            }
             beyond = (
                 "–"
                 if dec.get("outside_physical_width") is None
                 else f"{dec['outside_physical_width']:.1%}"
+                + (
+                    " (" + " / ".join(f"{v:.0%}" for v in by_speed.values()) + ")"
+                    if by_speed
+                    else ""
+                )
             )
             tolerance = (
                 f"{dec['track_width']:.3g} ({dec['frac_samples_outside']:.1%})"

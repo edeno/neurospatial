@@ -211,29 +211,59 @@ paper's room too.
 
 ## Declared tracks and mazes
 
-Twenty-two track and maze loaders now declare their apparatus as a track
-graph (`geometry["environment"]`, [BATCH_FAITHFUL_TRACKS.md](BATCH_FAITHFUL_TRACKS.md)),
-and the study measures that environment beside the samples-built one,
-against the same samples and the same independent reference (table
-"Declared environments" in the results). The table above is from the
-first run; in the rerun's results file figure8_000552 is the camera
-positions (the old 1-D row is `figure8_000552_linearized`) and
-jadhav_000447 is the novel W-track (the familiar one is
-jadhav_000447_familiar). In short:
+Twenty-two track and maze loaders now try to declare their apparatus as a
+track graph (`geometry["environment"]`, [BATCH_FAITHFUL_TRACKS.md](BATCH_FAITHFUL_TRACKS.md));
+19 do, and three fitted layouts are refused on misfit evidence and stay
+inferred (000447's novel W-track and the Z-track, whose fitted lengths are
+more than 15 % off the stated ones, and 001845, whose W-maze base is
+barely sampled; G-153). The study measures each declared environment
+beside the samples-built one ("Declared environments" in the results). The
+table above is from the first run; in the rerun's results file
+figure8_000552 is the camera positions (the old 1-D row is
+`figure8_000552_linearized`) and jadhav_000447 is the novel W-track (the
+familiar one is jadhav_000447_familiar).
 
-- Every declared track is one connected part (Takigawa's two tracks two
-  parts, as stated) with no link through a wall or a gap: the labyrinth's
-  path along the graph is 0.95 x the corridor distance where the grid's is
-  0.66 (G-110), Takigawa's 0.97 where the grid's is 0.87, and the 000044
-  circle closes (0.96 x the distance along the centreline).
-- What a declared track loses is samples: those beyond its width are not
-  placed. At a stated width that is 4.6 % (labyrinth) to 63.8 % (J16, whose
-  graph ends where the reward-port patches begin); W-tracks 13-37 %, hc-3
-  26 % (G-152). At a measured width it is 1 % by construction (5 % on
-  000044's linear track, whose pre-track excursion is left off).
-- Far links remain only where the fit runs through sparse samples: 9.5 % on
-  Agarwal's maze (the base fitted beside the wheel), 14.1 % on 001845's 123
-  s of pose, 3.9 % on 000044's reward areas.
+A declared track is judged by one function for any declared environment
+(`_geometry.judge_declared`), on misfit evidence: a straight stretch of
+track (at least 20 bins, an arm's length, not crossing a corner) whose
+samples lie a median of more than one bin to one side, a segment with no
+sample within a bin over more than a quarter of its length, or a stated
+length more than 15 % off. The share of samples beyond the physical width
+is not misfit: the tracked point is usually an LED on a headstage above an
+unwalled track, which swings past the edge (and a 2-D camera projects a
+raised head outward); it is reported as a tracking measure, split by speed
+(G-152). Each track is built with a placement tolerance measured from the
+samples, so about 1 % of samples are outside it by construction. Its bins
+lie on its own graph, so the share of bins on the track and the path along
+it are evidence only against a reference that is not the geometry the track
+was declared from. In short:
+
+- 1 matches: the 000044 circle, placed by a circle fit and checked against
+  the file's linearized centreline (path along the bins 0.96 x the distance
+  along it; its worst stretch 2.38 cm to one side, within the 2.5 cm bin).
+- 2 are mismatches on misfit: Takigawa's authors' centreline lies 4.12 cm
+  to one side of its samples on one stretch (the limit is one 4 cm bin), and
+  000044's linear 15 cm reward-area segments have no sample within a bin of
+  their centreline over 44 % of their length (the samples spread across the
+  reward areas).
+- 16 are not verified: no misfit, but no independent reference checks the
+  layout (the figure-8, the X maze, Agarwal's and Shipley's mazes, 000447's
+  familiar W-track, hc-28's W-track, 001695, hc-31, and the straight tracks
+  of Vollan, 000165, 000568, hc-3 and Hafting, the labyrinth and J16, whose
+  only reference is the axis or graph they were declared from), and hc-18's
+  circuit, whose shape no source states.
+- Beyond the physical width, as a tracking measure: J16 63.8 %, hc-28
+  37.3 %, hc-3 26.3 %, 000447's familiar W-track 13.0 %, 000568 12.4 %, the
+  labyrinth 4.6 % (one cell, chosen; 17.9 % at the paper's 0.75 cell),
+  Shipley 0.3 % of all samples. On J16 the graph is placed right (median
+  signed offset -1.3 to +1.8 cm per corridor) and the share falls from 87 %
+  stopped to 35 % above 30 cm/s (G-152).
+- Against their own geometry the declared environments measure only their
+  binning: the labyrinth's path along its bins is 0.95 x the distance along
+  the graph it was built from, Takigawa's 0.97. These are not comparisons
+  with the samples' grids (0.66 and 0.87 against the same references), which
+  show what the grid loses; they show that the graph's bins follow the
+  graph.
 
 ## What should change in neurospatial
 
@@ -252,7 +282,8 @@ jadhav_000447_familiar). In short:
   environment per apparatus from the samples of its epochs, and use the
   graph environment where the loader gives one (G-113, G-115). The track
   loaders now do (above); what they need from neurospatial is a placement
-  tolerance separate from the track's width (G-152), laps that bridge a
+  tolerance separate from the track's physical width (G-152; J16 is the
+  case), laps that bridge a
   sample outside the track (G-151), a warning when occupancy drops samples
   outside the environment (G-155), and docstrings that match the refusal of
   a widthless track (G-150).
