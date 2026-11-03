@@ -1331,7 +1331,7 @@ def path_progress(
       0.08 between 2 and 1 cm bins on a 7 cm wide W-maze; the track is
       exact). In 2-D and 3-D a start or goal of a single bin gives values
       that change with bin size and do not settle, so point targets need
-      ``point_radius``; with a physical size they converge (5 cm discs on a
+      ``point_radius``; with a physical size they converge (discs of 5 cm radius on a
       T-maze: within 0.001 between 0.5 and 0.25 cm bins). Compare conditions
       with the same regions and environment.
     - *Environment coverage.* Values depend on the whole environment. An

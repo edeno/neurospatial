@@ -601,7 +601,7 @@ values.
   and so those of `tmaze_alternation_session`, are discs as wide as the
   corridor, not points, so `detect_trials(env, times, positions,
   regions=[...])` accepts them. `path_progress` values on the T-maze change,
-  because its start and goal are now 5 cm discs. At a `bin_size` near the
+  because its start and goal are now discs of 5 cm radius. At a `bin_size` near the
   corridor width (10 cm, for example) a disc covers no 2-D bin, and
   `make_t_maze` warns and names the regions.
 - `env.plot()` on a one-dimensional grid, such as `linear_track_session().env`,

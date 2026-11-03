@@ -537,7 +537,7 @@ def _ring_arc(theta0, theta1, n_samples, radius=30.0):
 class TestRegionLapsGoRoundTheLoop:
     """A region lap leaves the start region on one side and returns on the other.
 
-    The ring has radius 30 cm and the start region is a 5 cm disc at angle 0.
+    The ring has radius 30 cm and the start region is a disc of 5 cm radius at angle 0.
     Samples are at 30 Hz; a full circuit takes 10 s (301 samples including both
     ends). The region is entered at the first sample whose bin lies in it.
     """
