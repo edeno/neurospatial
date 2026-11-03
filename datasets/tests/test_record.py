@@ -328,3 +328,16 @@ def test_validation_checks_train_and_test_are_held_out(
     }
     with pytest.raises(ValueError, match=re.escape(problem)):
         validate_recording(replace(simulated_recording, params=params))
+
+
+def test_alternate_within_balances_each_label_in_trial_order():
+    from _record import alternate_within
+
+    labels = np.array(list("ABABABAABBC"))
+    train = alternate_within(labels)
+    # Within each label, its 1st, 3rd, ... trials train and the rest test.
+    # A at 0, 2, 4, 6, 7; B at 1, 3, 5, 8, 9; C, a single trial, trains.
+    np.testing.assert_array_equal(train, [1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1])
+    for label, (n_train, n_test) in {"A": (3, 2), "B": (3, 2), "C": (1, 0)}.items():
+        assert train[labels == label].sum() == n_train
+        assert (~train[labels == label]).sum() == n_test

@@ -788,8 +788,9 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
             )
         if not _same_times(value.times, rec.times):
             return "mismatch: times differ"
-        # Compared where the loader kept a sample: samples it set to NaN
-        # (lost tracking, by a rule in ``conversions``) are its own choice.
+        # Compared where the loader kept a sample: samples it set to NaN (a
+        # value the file stores for an untracked frame, such as -1 or 0,
+        # listed in ``conversions``) are its own choice.
         kept = np.isfinite(rec.positions).all(axis=1)
         same = np.allclose(scaled[kept], rec.positions[kept], equal_nan=True)
         # Reported, so a loader that masks real data stays visible.
