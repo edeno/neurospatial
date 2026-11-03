@@ -159,6 +159,12 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
     for start, stop in maze_runs:
         in_maze |= (times >= start) & (times < stop)
     positions = np.where(in_maze[:, None], positions, np.nan)
+    # The span check above covers both mazes (one camera frame, the unit
+    # check); this maze's own extent is reported beside it.
+    lo, hi = np.nanmin(positions, axis=0), np.nanmax(positions, axis=0)
+    maze_extent = " by ".join(
+        f"{a:.1f} to {b:.1f}" for a, b in zip(lo, hi, strict=True)
+    )
     all_windows = trials[["start_time", "stop_time"]].to_numpy(dtype=float)
     mine = np.zeros(len(all_windows), dtype=bool)
     for start, stop in maze_runs:
@@ -251,7 +257,8 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
             "readers_used": ("units",),
         },
         conversions=(
-            f"positions: Position/SpatialSeries columns 0, 1 (cm); {span}; column 2"
+            f"positions: Position/SpatialSeries columns 0, 1 (cm); session {span};"
+            f" this maze {maze_extent} cm; column 2"
             f" is speed in cm/s (median ratio {scale:.2f} to the speed from x, y while"
             f" moving, r = {agreement:.2f}), dropped",
             "epochs: trials table rows as trials, split by trajectory_type"
