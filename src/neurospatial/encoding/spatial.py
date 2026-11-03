@@ -3111,7 +3111,11 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             "min_grid_score": min_grid_score,
             "min_border_score": min_border_score,
         }
-        refuse_none_thresholds(**thresholds)
+        refuse_none_thresholds(
+            min_spatial_info=min_spatial_info,
+            min_grid_score=min_grid_score,
+            min_border_score=min_border_score,
+        )
         given: dict[str, NDArray[np.float64] | None] = {}
         for name, value in (
             ("grid_scores", grid_scores),
