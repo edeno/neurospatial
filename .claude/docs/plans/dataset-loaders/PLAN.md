@@ -115,7 +115,7 @@ Methods:
 ## Tasks
 
 1. **Move the fetch code.** Move `datasets/_fetch.py` to `src/neurospatial/datasets/_fetch.py`.
-   - **Cache root.** `cache_root(cache=None)` resolves `cache`, then `$NEUROSPATIAL_DATA_DIR`, then `platformdirs.user_cache_dir("neurospatial")/datasets`. Use `platformdirs` if it is already a dependency; otherwise use `~/.cache/neurospatial/datasets`, and on Windows `%LOCALAPPDATA%`. Don't add a dependency for this.
+   - **Cache root.** `cache_root(cache=None)` resolves `cache`, then `$NEUROSPATIAL_DATA_DIR`, then a per-user default: `%LOCALAPPDATA%\neurospatial\datasets` on Windows, `~/.cache/neurospatial/datasets` elsewhere. `platformdirs` is not a dependency, and this needs none.
    - **Imports.** Third-party imports stay lazy, through `require_optional(..., extra="datasets")`.
    - **CRCNS handler.** Catch every exception around `opener.open(...)` in `_crcns_open` and re-raise `OSError` from outside the handler, unless phase 5 already did. Keep `datasets/tests/test_fetch.py`'s credential tests, moved to `tests/datasets/test_fetch.py`. Add one with an `http.client.RemoteDisconnected` raised inside `opener.open` that checks `capture_locals=True` tracebacks contain neither secret.
    - **Survey imports.** Delete `datasets/_fetch.py` and change the survey's imports to `from neurospatial.datasets._fetch import ...`. The survey harness is repo tooling, so a private import there is acceptable.
