@@ -423,10 +423,12 @@ def decode_position(
         is raised, even with ``validate=False``.
     dt : float
         Time bin width in seconds, the width used to bin ``spike_counts``.
-        With ``times``, a ``dt`` above 1 s and at least 100 times their
-        median spacing raises: it is usually milliseconds. Overlapping
-        windows (a step shorter than ``dt``, such as 600 ms windows stepped
-        by 5 ms) are fine. Any ``dt`` above 1 s warns.
+        With ``times``, a ``dt`` that read as milliseconds is a window of
+        half a step to 20 steps of their median spacing raises: ``dt=25``
+        on 25 ms bins, or ``dt=1`` on 1 ms bins. Read as seconds, such a
+        ``dt`` is 500 to 20000 steps long. Overlapping windows (a step
+        shorter than ``dt``, such as 600 ms windows stepped by 5 ms, or 2 s
+        windows stepped by 10 ms) are fine. Any ``dt`` above 1 s warns.
     prior : NDArray[np.float64] | None, default=None
         Non-negative weight per bin, normalized internally to a probability
         mass. Shape (n_bins,) for stationary prior, (n_time_bins, n_bins) for
@@ -493,8 +495,8 @@ def decode_position(
         (see ``encoding_models``); checked even with ``validate=False``.
         If ``times`` is provided and its length does not match the number
         of posterior time bins, or it is not finite and strictly increasing.
-        If ``dt`` is above 1 s and at least 100 times the median spacing of
-        ``times`` (``dt`` in milliseconds).
+        If ``dt / 1000`` is between 0.5 and 20 times the median spacing of
+        ``times``, inclusive (``dt`` in milliseconds).
 
     Notes
     -----
@@ -580,30 +582,42 @@ def decode_position(
     )
 
 
+#: Read as milliseconds, a ``dt`` whose window is this many steps of
+#: ``times`` (inclusive) is a plausible bin: from half a step (bins with gaps)
+#: to 20 steps (overlapping windows).
+_MS_WINDOW_STEPS = (0.5, 20.0)
+
+
 def _refuse_dt_in_milliseconds(times: Any, dt: float, *, context: str) -> None:
-    """Refuse a ``dt`` above 1 s and 100 or more times the bin-center spacing.
+    """Refuse a ``dt`` that reads as a plausible window only in milliseconds.
 
     ``dt`` is part of the likelihood, so ``dt=25`` meant as 25 ms on 25 ms
-    bins makes the posterior about 1000 times overconfident. Overlapping
-    windows (a step shorter than the window) can reach the ratio too, as
-    600 ms windows stepped by 5 ms do (120), so only a ``dt`` that is also
-    longer than 1 s, where :func:`warn_if_dt_in_milliseconds` already
-    warns, is refused. ``times`` that cannot label bins are left to the
+    bins makes the posterior about 1000 times overconfident. Read as
+    milliseconds, such a ``dt`` gives a window of ``dt / 1000`` s, between
+    half a step and 20 steps of ``times`` (:data:`_MS_WINDOW_STEPS`); read
+    as seconds, it gives a window 500 to 20000 steps long, far longer than
+    overlapping windows run (window lengths of 100 steps or more are rare).
+    Overlapping windows in seconds do not fit the millisecond band: 600 ms
+    windows stepped by 5 ms read as 0.12 of a step and 2 s windows stepped
+    by 10 ms as 0.2. ``times`` that cannot label bins are left to the
     result's own check.
 
     Raises
     ------
     ValueError
-        If ``dt`` is above 1 s, the median spacing of ``times`` is positive
-        and ``dt`` is at least 100 times it.
+        If the median spacing of ``times`` is positive and ``dt / 1000``
+        is between 0.5 and 20 times it, inclusive.
     """
-    if times is None or dt <= 1.0:
+    if times is None:
         return
     centers = np.asarray(times, dtype=np.float64)
     if centers.ndim != 1 or centers.size < 2:
         return
     spacing = float(np.median(np.diff(centers)))
-    if not (np.isfinite(spacing) and spacing > 0 and dt >= 100.0 * spacing):
+    if not (np.isfinite(spacing) and spacing > 0):
+        return
+    low, high = _MS_WINDOW_STEPS
+    if not low <= dt / 1000.0 / spacing <= high:
         return
     raise InputError(
         _format_error(
@@ -1127,8 +1141,9 @@ def decode_position_summary(
     ValueError
         If ``time_chunk`` is ``None`` or not a positive integer. Plus the same
         conditions as :func:`decode_position` (invalid method, no finite bins,
-        bin-count mismatch, bad ``times``, ``dt`` above 1 s and at least 100
-        times the spacing of ``times``, validation failures).
+        bin-count mismatch, bad ``times``, a ``dt`` in milliseconds (``dt /
+        1000`` between 0.5 and 20 times the spacing of ``times``), validation
+        failures).
 
     Notes
     -----
