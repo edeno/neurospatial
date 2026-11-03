@@ -1092,10 +1092,13 @@ def compare_reactivation_methods(
           windows keep their rows.
 
         Columns that do not apply to a method are NaN. ``table.attrs``
-        holds ``rng_entropy``, the int seed the streams derive from (the
-        one given, or the one drawn for None): passing it as ``rng``
-        reproduces the table. It is None for a generator, whose draws no
-        int seed repeats.
+        holds ``rng_entropy``, the int every random stream derives from,
+        the first draw of ``np.random.default_rng(rng)``: the streams of
+        method ``m`` are ``np.random.default_rng(np.random.SeedSequence(
+        rng_entropy, spawn_key=(zlib.crc32(m.name.encode()), ...)))``. The
+        same int seed, or a generator in the same state, gives the same
+        entropy and table. Passing ``rng_entropy`` itself as ``rng`` draws
+        a new entropy from it, so seed a run you want to repeat.
 
     Raises
     ------
@@ -1257,7 +1260,7 @@ def compare_reactivation_methods(
         table[name] = table[name].astype("Int64")
     table["is_reactivated"] = table["is_reactivated"].astype("boolean")
     table["error"] = table["error"].fillna("").astype(str)
-    table.attrs["rng_entropy"] = _recorded_seed(rng, root)
+    table.attrs["rng_entropy"] = _recorded_seed(root)
     return table
 
 

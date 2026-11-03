@@ -361,9 +361,10 @@ def test_el_gaby_rows_are_member_correlations_over_swrs(
 
 
 def _detection_seed(name: str, rng: int = 0) -> int:
-    # The call's streams derive from the first child of SeedSequence(rng).
+    # The call's streams derive from the first draw of default_rng(rng).
+    entropy = int(np.random.default_rng(rng).integers(2**63))
     generator = np.random.default_rng(
-        np.random.SeedSequence(rng, spawn_key=(0, zlib.crc32(name.encode())))
+        np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
     )
     return int(generator.integers(2**32 - 1))
 

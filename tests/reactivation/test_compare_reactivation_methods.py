@@ -342,8 +342,7 @@ def test_lansink_verdict_is_the_lower_percentile_of_ev_minus_rev(reactivated) ->
     generator = np.random.default_rng(
         np.random.SeedSequence(
             table.attrs["rng_entropy"],
-            # 0: the call's streams derive from the seed's first child.
-            spawn_key=(0, zlib.crc32(b"lansink_2009"), 0, 0),
+            spawn_key=(zlib.crc32(b"lansink_2009"), 0, 0),
         )
     )
     differences = _bootstrap_ev_minus_rev(*vectors, 500, generator)
@@ -491,11 +490,14 @@ def test_streams_do_not_depend_on_the_other_methods(reactivated) -> None:
     )
 
 
-def test_rng_entropy_reproduces_the_table(reactivated) -> None:
+def test_rng_entropy_determines_the_table(reactivated, monkeypatch) -> None:
+    """Fed back as the entropy every stream derives from, it repeats the table."""
+    from neurospatial import _random
+
     first = _compare(reactivated, [LANSINK_FAST, PEYRACHE_FAST], rng=None)
-    again = _compare(
-        reactivated, [LANSINK_FAST, PEYRACHE_FAST], rng=first.attrs["rng_entropy"]
-    )
+    entropy = first.attrs["rng_entropy"]
+    monkeypatch.setattr(_random, "_entropy", lambda rng: entropy)
+    again = _compare(reactivated, [LANSINK_FAST, PEYRACHE_FAST], rng=None)
     columns = ["ev_minus_rev_lower", "match_fraction_above_shuffle"]
     np.testing.assert_array_equal(first[columns], again[columns])
 

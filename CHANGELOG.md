@@ -19,8 +19,14 @@
   generator differ. The shuffle tests (`*_significance`, `run_shuffle_test`),
   the replay and reactivation recipes, `shuffle_events` and
   `detect_assemblies` derived a generator's streams differently from an
-  int's. Their seeded outputs change, and `rng_entropy` is None for a
-  generator, which no int seed repeats.
+  int's. Every stream of a call now derives from one entropy, the first
+  draw of `np.random.default_rng(rng)`, so a generator's state counts: a
+  generator restored to `default_rng(0)`'s state gives `rng=0`'s result,
+  and an advanced one does not. Seeded outputs change. `rng_entropy` is
+  that int for every `rng`, including a generator: each stream is
+  `np.random.default_rng(np.random.SeedSequence(rng_entropy,
+  spawn_key=key))`. Passing `rng_entropy` back as `rng` starts a new run;
+  repeat a run with the same seed or a generator in the same state.
 - `DirectionalRateResult.preferred_direction_deg` and `.tuning_width_deg`
   are removed; use `np.degrees(result.preferred_direction)`. The
   head-direction simulator's ground truth drops its `preferred_direction_deg`

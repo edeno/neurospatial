@@ -817,8 +817,7 @@ class TestCompare:
             stream = np.random.default_rng(
                 np.random.SeedSequence(
                     table.attrs["rng_entropy"],
-                    # 0: the call's streams derive from the seed's first child.
-                    spawn_key=(0, index, zlib.crc32(b"gupta_2010")),
+                    spawn_key=(index, zlib.crc32(b"gupta_2010")),
                 )
             )
             expected = detect_pairwise_order_replay(

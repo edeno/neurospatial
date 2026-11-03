@@ -3779,10 +3779,14 @@ def compare_replay_methods(
         arm method's checks are named by the event's arms and pairs, so an
         arm event too short to score has none (its ``criteria[...]`` are
         NaN).
-        ``table.attrs["rng_entropy"]`` holds the int seed the streams derive
-        from (the one given, or the one drawn for None); passing it as
-        ``rng`` reproduces the table. It is None for a generator, whose
-        draws no int seed repeats.
+        ``table.attrs["rng_entropy"]`` holds the int every random stream
+        derives from, the first draw of ``np.random.default_rng(rng)``: the
+        stream of event ``i`` and method ``m`` is
+        ``np.random.default_rng(np.random.SeedSequence(rng_entropy,
+        spawn_key=(i, zlib.crc32(m.name.encode()))))``. The same int seed,
+        or a generator in the same state, gives the same entropy and table.
+        Passing ``rng_entropy`` itself as ``rng`` draws a new entropy from
+        it, so seed a run you want to repeat.
 
         ``is_replay`` follows each method's rule (see
         :class:`ReplayDetectionResult`). For the pooled-SSI test it compares
@@ -3907,7 +3911,7 @@ def compare_replay_methods(
                     result = method._compare(compared, stream)
                 rows.append({"event": index, **result.summary()})
     table = pd.DataFrame(rows)
-    table.attrs["rng_entropy"] = _recorded_seed(rng, root)
+    table.attrs["rng_entropy"] = _recorded_seed(root)
     return table
 
 

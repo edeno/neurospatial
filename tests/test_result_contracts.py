@@ -420,8 +420,9 @@ def test_place_cell_significance_matches_the_dict_it_replaced(open_field):
 
     The values were recorded from ``place_cell_significance`` before it
     returned a result object, on the same seeded session, and re-recorded
-    when the shuffle streams moved to the first child of the seed's
-    sequence (so that ``rng=0`` and ``np.random.default_rng(0)`` agree).
+    when the shuffle streams moved to the first draw of
+    ``np.random.default_rng(rng)`` (so that ``rng=0`` and
+    ``np.random.default_rng(0)`` agree and a generator's state counts).
     """
     s = open_field
     result = encoding.place_cell_significance(
@@ -430,7 +431,7 @@ def test_place_cell_significance_matches_the_dict_it_replaced(open_field):
     with pytest.warns(UserWarning, match="information bias is unknown"):
         screen = result.classify()
     np.testing.assert_array_equal(
-        result.p_value, [0.02, 0.02, 0.02, 0.08, 0.02, 0.02, 0.02, 0.02]
+        result.p_value, [0.02, 0.02, 0.02, 0.1, 0.02, 0.02, 0.02, 0.02]
     )
     # Unit 0 is significant but has too few spikes to estimate its bias.
     with pytest.warns(UserWarning, match="information bias is unknown"):

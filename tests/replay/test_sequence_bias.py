@@ -308,9 +308,12 @@ def test_recipe_finds_forward_and_reverse_sequences_in_compare(session, seed):
     sequence_scores = rows["score"][kinds != "random"].abs()
     assert rows["score"][kinds == "random"].abs().max() < sequence_scores.min()
     assert np.allclose(rows["p_value"][kinds != "random"], 1 / 101)
-    # The table's verdicts can be recalibrated like any p-value test.
+    # The table's verdicts can be recalibrated like any p-value test. Every
+    # sequence event has the floor p-value, so their matched alpha is that
+    # floor whatever the seed (the random events' p-values are not).
+    sequences = table[kinds[table["event"].to_numpy()] != "random"]
     with pytest.warns(UserWarning, match=r"smallest p-value its"):
-        calibrated = matched_alpha(table, replay_methods=[method], target=0.5)
+        calibrated = matched_alpha(sequences, replay_methods=[method], target=0.5)
     assert calibrated.loc[0, "method"] == method.name
 
 

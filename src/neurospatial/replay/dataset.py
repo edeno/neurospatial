@@ -718,9 +718,13 @@ def dataset_values(
         own stream, derived from ``rng`` and the event's position, so the
         values of one event do not depend on the others, and a shared draw
         from a stream of its own. ``table.attrs["rng_entropy"]`` holds the
-        int seed (the one given, or the one drawn for None); passing it as
-        ``rng`` reproduces the table. It is None for a generator, whose
-        draws no int seed repeats.
+        int every stream derives from, the first draw of
+        ``np.random.default_rng(rng)``: each stream is
+        ``np.random.default_rng(np.random.SeedSequence(rng_entropy,
+        spawn_key=key))`` for its own key. The same int seed, or a
+        generator in the same state, gives the same entropy and table.
+        Passing ``rng_entropy`` itself as ``rng`` draws a new entropy from
+        it, so seed a run you want to repeat.
 
     Returns
     -------
@@ -936,7 +940,7 @@ def _dataset_values(
                 "method such as DIBA_BUZSAKI_2007",
             )
         )
-    table.attrs["rng_entropy"] = _recorded_seed(rng, root)
+    table.attrs["rng_entropy"] = _recorded_seed(root)
     table.attrs["null"] = null
     table.attrs["method"] = method.name
     return table

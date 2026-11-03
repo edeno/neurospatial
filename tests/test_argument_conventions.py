@@ -1191,6 +1191,69 @@ def test_one_generator_advances_between_calls(name):
     assert _canonical(call(generator)) != _canonical(call(generator)), name
 
 
+# Functions whose streams derive from one entropy drawn from ``rng``
+# (``neurospatial._random._root``): a generator's state, not its seed, counts.
+_ENTROPY_FUNCTIONS = [
+    "neurospatial.encoding.place_cell_significance",
+    "neurospatial.replay.shuffle_events",
+    "neurospatial.replay.detect_pairwise_order_replay",
+    "neurospatial.replay.compare_replay_methods",
+    "neurospatial.replay.dataset_values",
+    "neurospatial.replay.recurring_sequences_significance",
+    "neurospatial.reactivation.compare_reactivation_methods",
+]
+
+
+@pytest.mark.parametrize("name", _ENTROPY_FUNCTIONS)
+def test_a_generator_restored_to_a_state_repeats_that_state(name):
+    """A generator set to ``default_rng(0)``'s state gives ``rng=0``'s result."""
+    import numpy as np
+
+    call = _rng_calls()[name]
+    restored = np.random.default_rng(123)
+    restored.bit_generator.state = np.random.default_rng(0).bit_generator.state
+    expected = _canonical(call(np.random.default_rng(0)))
+    assert _canonical(call(restored)) == expected, name
+
+
+@pytest.mark.parametrize("name", _ENTROPY_FUNCTIONS)
+def test_an_advanced_generator_differs_from_its_seed(name):
+    """``default_rng(0)`` after 1000 draws is not ``rng=0``."""
+    import numpy as np
+
+    call = _rng_calls()[name]
+    advanced = np.random.default_rng(0)
+    advanced.random(1000)
+    assert _canonical(call(advanced)) != _canonical(call(0)), name
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "neurospatial.replay.compare_replay_methods",
+        "neurospatial.replay.dataset_values",
+        "neurospatial.reactivation.compare_reactivation_methods",
+    ],
+)
+def test_rng_entropy_of_a_generator_determines_the_table(name, monkeypatch):
+    """``rng_entropy`` is the generator's first draw and fixes every stream.
+
+    Fed back through the entropy step every stream derives from, the
+    recorded int gives the same table, whatever ``rng`` is then passed.
+    """
+    import numpy as np
+
+    from neurospatial import _random
+
+    call = _rng_calls()[name]
+    table = call(np.random.default_rng(5))
+    entropy = table.attrs["rng_entropy"]
+    assert type(entropy) is int
+    assert entropy == int(np.random.default_rng(5).integers(2**63))
+    monkeypatch.setattr(_random, "_entropy", lambda rng: entropy)
+    assert _canonical(call(None)) == _canonical(table), name
+
+
 def test_one_generator_advances_a_shuffle_verdict():
     """Repeated shuffle verdicts with one generator draw new shuffles.
 

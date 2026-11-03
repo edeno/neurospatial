@@ -217,8 +217,7 @@ def test_values_are_medians_over_subsamples_of_ev_averaged_over_controls() -> No
     generator = np.random.default_rng(
         np.random.SeedSequence(
             table.attrs["rng_entropy"],
-            # 0: the call's streams derive from the seed's first child.
-            spawn_key=(0, zlib.crc32(b"two_controls"), 0, 1),
+            spawn_key=(zlib.crc32(b"two_controls"), 0, 1),
         )
     )
     explained, reversed_ = [], []
@@ -286,8 +285,7 @@ def test_rate_subsampled_row_is_one_consistent_subsample() -> None:
         generator = np.random.default_rng(
             np.random.SeedSequence(
                 table.attrs["rng_entropy"],
-                # 0: the call's streams derive from the seed's first child.
-                spawn_key=(0, zlib.crc32(b"subsampled"), 0, 1),
+                spawn_key=(zlib.crc32(b"subsampled"), 0, 1),
             )
         )
 
