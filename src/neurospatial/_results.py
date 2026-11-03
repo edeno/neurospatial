@@ -1044,11 +1044,15 @@ class ResultMixin:
         return unit.replace("{units}", coordinate) if coordinate else ""
 
     def _repr_value(self, key: str, value: Any) -> str:
-        """``value`` formatted for the repr, then its unit when it is a number."""
+        """``value`` formatted for the repr, then its unit when it is finite.
+
+        A missing (NaN) or infinite value shows no unit
+        (``decoded_duration=nan``).
+        """
         text = _format_summary_value(value)
         unit = self._repr_unit(key)
         number = isinstance(value, int | float | np.integer | np.floating)
-        if unit and number and not isinstance(value, bool):
+        if unit and number and not isinstance(value, bool) and np.isfinite(value):
             return f"{text} {unit}"
         return text
 

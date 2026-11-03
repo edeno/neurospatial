@@ -286,6 +286,7 @@ class PhasePrecessionResult(ResultMixin):
 
     _repr_units = MappingProxyType(
         {
+            "normalized_slope": "rad",
             "offset": "rad",
         }
     )

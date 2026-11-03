@@ -14,7 +14,8 @@
   and speeds carry the environment's units (`preferred_distance=42.5 cm`,
   `mean_speed=12 cm/s`) only when the result records them, and show no unit
   otherwise; a tuning curve's `peak_location()[0]` takes the variable's
-  `units`. Scores, correlations, probabilities and counts have no unit.
+  `units`. Scores, correlations, probabilities, counts and missing (NaN)
+  values have no unit.
   Units cover the rate results (spatial, view, directional, object-vector,
   boundary-vector, tuning; single and population), peri-event histograms,
   continuous event alignment, decoding, phase precession, grid properties,

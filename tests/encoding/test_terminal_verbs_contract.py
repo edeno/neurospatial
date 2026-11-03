@@ -458,7 +458,7 @@ def test_repr_names_are_accessible(name, result_instances):
         else:
             read = _resolve(result, key)
             assert not callable(read), f"{name}: {key} is a method"
-        _check_repr_value(name, key, shown_in_repr[key], shown)
+        _check_repr_value(name, key, shown_in_repr[key], shown, result._repr_unit(key))
         if isinstance(read, list):
             read = tuple(read)
         if isinstance(shown, list):
@@ -499,15 +499,20 @@ _NUMBER_WITH_UNIT = re.compile(
 )
 
 
-def _check_repr_value(name: str, key: str, text: str, shown: object) -> None:
-    """The repr shows ``shown``: a number to 4 significant figures and its
-    unit, any other value as ``str``."""
+def _check_repr_value(name: str, key: str, text: str, shown: object, unit: str) -> None:
+    """The repr shows ``shown``: a number to 4 significant figures followed by
+    ``unit`` (the key's declared unit; none for a non-finite number), any
+    other value as ``str``."""
     number = isinstance(shown, int | float | np.integer | np.floating)
     if not number or isinstance(shown, bool | np.bool_):
         assert text == str(shown), f"{name}: repr shows {key}={text}, not {shown!r}"
         return
     match = _NUMBER_WITH_UNIT.fullmatch(text)
     assert match, f"{name}: repr shows {key}={text!r}, not a number and unit"
+    expected_unit = unit if np.isfinite(shown) else ""
+    assert (match["unit"] or "") == expected_unit, (
+        f"{name}: repr shows {key}={text}, expected unit {expected_unit!r}"
+    )
     value = float(match["number"])
     if np.isnan(shown):
         assert np.isnan(value), f"{name}: repr shows {key}={text}, not nan"
@@ -515,3 +520,30 @@ def _check_repr_value(name: str, key: str, text: str, shown: object) -> None:
         assert value == pytest.approx(float(shown), rel=5e-4, abs=0), (
             f"{name}: repr shows {key}={text}, summary {shown!r}"
         )
+
+
+@pytest.mark.parametrize("name", sorted(_PUBLIC_RESULTS))
+def test_repr_units_agree_with_table_units(name, result_instances):
+    """A key's repr unit is the unit its table column declares.
+
+    The repr reads units from ``_repr_units`` and the tables from their own
+    ``attrs["units"]``; every key both describe must agree.
+    """
+    from neurospatial._results import ResultMixin
+
+    result = result_instances(name)
+    if not isinstance(result, ResultMixin):
+        pytest.skip(f"{name} has no summary-based repr")
+    summary = result._summary_for_repr()
+    assert isinstance(summary, dict)
+    for verb in ("summary_table", "to_dataframe"):
+        if not hasattr(result, verb):
+            continue
+        units = getattr(result, verb)().attrs.get("units")
+        if not isinstance(units, dict):
+            continue
+        for key in summary.keys() & units.keys():
+            assert result._repr_unit(key) == units[key], (
+                f"{name}: repr unit of {key} is {result._repr_unit(key)!r}, "
+                f"{verb}() says {units[key]!r}"
+            )

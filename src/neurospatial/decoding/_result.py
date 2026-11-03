@@ -6,11 +6,11 @@ distributions from neural decoding and computes derived properties lazily.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import numpy as np
 import pandas as pd
@@ -307,6 +307,11 @@ def _align_true_positions(
 class _DecodeRecordMixin:
     """Recording windows, decoded time support and xarray metadata of a decode."""
 
+    # Units of the summary keys shared by the decode results.
+    _repr_units: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {"mean_entropy": "bits", "max_entropy": "bits", "decoded_duration": "s"}
+    )
+
     env: Environment
     times: NDArray[np.float64] | None
     spike_window: NDArray[np.float64] | None
@@ -527,14 +532,6 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     --------
     neurospatial.decoding.decode_position : Create DecodingResult from spikes
     """
-
-    _repr_units = MappingProxyType(
-        {
-            "mean_entropy": "bits",
-            "max_entropy": "bits",
-            "decoded_duration": "s",
-        }
-    )
 
     posterior: NDArray[np.float64]
     env: Environment
@@ -1581,14 +1578,6 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     DecodingResult : Full-posterior decode result.
     neurospatial.decoding.decode_position_summary : Produces this container.
     """
-
-    _repr_units = MappingProxyType(
-        {
-            "mean_entropy": "bits",
-            "max_entropy": "bits",
-            "decoded_duration": "s",
-        }
-    )
 
     times: NDArray[np.float64] | None
     mean_position: NDArray[np.float64]

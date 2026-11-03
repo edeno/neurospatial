@@ -345,6 +345,16 @@ class TestResultRepr:
 
         assert repr(Flags()) == "Flags(done=True, label=ok, gap=None)"
 
+    def test_missing_values_take_no_unit(self) -> None:
+        class Timing(ResultMixin):
+            _repr_units = MappingProxyType({"duration": "s", "rate": "Hz"})
+
+            def summary(self) -> dict:
+                return {"duration": np.nan, "rate": np.inf}
+
+        assert repr(Timing()) == "Timing(duration=nan, rate=inf)"
+        assert "<td style='text-align:left'>nan</td>" in Timing()._repr_html_()
+
     def test_repr_never_raises_on_summary_failure(self) -> None:
         """__repr__/_repr_html_ degrade safely if summary() is unavailable."""
 
