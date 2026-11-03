@@ -535,6 +535,32 @@ mapping, without padding or a custom extension.
 - Write descriptive variable names
 - Keep functions focused and small
 
+### Naming public functions
+
+The prefix says what goes in and what comes out, so a reader can guess which
+form exists:
+
+- `compute_*` takes raw recordings (spike times, times, positions, headings)
+  and returns the quantity or result computed from them: `compute_spatial_rate`,
+  `compute_speed`.
+- A bare noun computes one metric from an existing map, result or array
+  (`spatial_information`, `border_score`, `field_emd`, `step_lengths`), or names
+  a domain analysis in the field's own words (`peri_event_histogram`,
+  `rank_order_correlation`, `goal_bias`).
+- `detect_*` returns events or intervals, `is_*` and `has_*` return bool
+  verdicts, and `plot_*` draws.
+
+`test_compute_prefix_rule` in `tests/test_argument_conventions.py` requires
+every public module-level `compute_*` function to take `times` or
+`spike_times` as a positional parameter; methods such as
+`Environment.compute_kernel` are not covered. A function that derives a quantity from other arrays does not get
+the prefix.
+
+A name is public at one path: import it from its package
+(`neurospatial.replay`), not from the submodule that defines it. A submodule
+stays public only when it holds names its package does not re-export, and its
+docstring says so.
+
 ### Docstring Format
 
 **CRITICAL**: All docstrings MUST follow NumPy docstring format:

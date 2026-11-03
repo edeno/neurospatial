@@ -117,6 +117,7 @@ class WatermazeDims(MazeDims):
 
 def make_watermaze(
     dims: WatermazeDims | None = None,
+    *,
     bin_size: float = 2.0,
     platform_position: tuple[float, float] | None = None,
 ) -> MazeEnvironments:

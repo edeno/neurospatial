@@ -13,7 +13,7 @@ All functions are importable from `behavior.vte`:
         head_sweep_magnitude,
         head_sweep_from_positions,
         normalize_vte_scores,
-        compute_vte_index,
+        vte_index,
         classify_vte,
         compute_vte_trial,
         compute_vte_session,
@@ -98,12 +98,12 @@ __all__ = [
     "VTETrialResult",
     # VTE functions
     "classify_vte",
-    "compute_vte_index",
     "compute_vte_session",
     "compute_vte_trial",
     "head_sweep_from_positions",
     "head_sweep_magnitude",
     "normalize_vte_scores",
+    "vte_index",
 ]
 
 
@@ -959,7 +959,7 @@ def _observed_z_scores(
 # =============================================================================
 
 
-def compute_vte_index(
+def vte_index(
     z_head_sweep: float,
     z_speed_inv: float,
     *,
@@ -989,14 +989,14 @@ def compute_vte_index(
 
     Examples
     --------
-    >>> from neurospatial.behavior.vte import compute_vte_index
-    >>> compute_vte_index(1.0, 1.0, head_sweep_weight=0.5)
+    >>> from neurospatial.behavior.vte import vte_index
+    >>> vte_index(1.0, 1.0, head_sweep_weight=0.5)
     1.0
-    >>> compute_vte_index(2.0, 0.0, head_sweep_weight=1.0)  # Head sweep only
+    >>> vte_index(2.0, 0.0, head_sweep_weight=1.0)  # Head sweep only
     2.0
     """
     head_sweep_weight = _validated_head_sweep_weight(
-        head_sweep_weight, call="compute_vte_index"
+        head_sweep_weight, call="vte_index"
     )
     return head_sweep_weight * z_head_sweep + (1 - head_sweep_weight) * z_speed_inv
 
@@ -1607,7 +1607,7 @@ def compute_vte_session(
     for m, z_head_sweep, z_speed in zip(
         measured, z_head_sweeps, z_speed_inv, strict=True
     ):
-        vte_idx = compute_vte_index(
+        vte_idx = vte_index(
             float(z_head_sweep), float(z_speed), head_sweep_weight=head_sweep_weight
         )
         trial_results.append(

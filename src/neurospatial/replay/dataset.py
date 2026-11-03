@@ -31,6 +31,10 @@ made with :func:`~neurospatial.replay.null_events` and decoded with
 null data set of each surrogate event. The ``*_2015`` to ``*_2019``
 :class:`DatasetTestRecipe` objects record each paper's data-set test, with
 every value and the choices the paper does not state.
+
+This module is public for those recipe constants and ``DatasetTestRecipe``.
+The tests and result classes defined here are public at
+``neurospatial.replay``.
 """
 
 from __future__ import annotations
@@ -97,17 +101,7 @@ __all__ = [
     "SILVA_2015_RANK_ORDER",
     "STELLA_2019_JITTER",
     "XU_2019_ROTATION",
-    "CriterionGrid",
     "DatasetTestRecipe",
-    "DatasetTestResult",
-    "DistributionTestResult",
-    "ShuffledDataset",
-    "dataset_test",
-    "dataset_values",
-    "distribution_test",
-    "relative_rank_template",
-    "shuffle_events",
-    "template_correlation_test",
 ]
 
 # Nulls whose one draw can be shared by every event of a data set: the

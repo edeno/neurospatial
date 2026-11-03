@@ -44,8 +44,8 @@ from 9 GB files) and DANDI 000447 (rat CA1/PFC on a W-track, also streamed).
   radians labelled "degrees" into a 6° arc (G-030/G-031); `detect_laps` finds
   laps where there is no loop (G-015) and misses them where there is one: 1
   lap where a rat ran about 100 laps of a circular track (G-037); and grid
-  scores collapse for large-spacing grid modules (G-006, now settled by data,
-  below).
+  scores collapse for large-spacing grid modules (G-006; the data point to a
+  fix, below).
 - **The spatial-information bias estimate is right for what it states.** On
   every recording, sparse 3-D occupancy included, it matches simulated untuned
   Poisson cells; bursty cells and real units sit 2–7× above it. A
@@ -122,30 +122,35 @@ dataset is the evidence, the section says why that is enough.
   cutoff.
 - **Evidence.** 000582 (6 units): up to 0.38 below opexebo on the same map.
   Populations (`reference_checks.md` 2b–2c; 5 cm smoothed maps on a full
-  2.5 cm grid, every convention scored with neurospatial's `grid_score`
-  except opexebo's own):
+  2.5 cm grid; every convention scored with neurospatial's `grid_score`
+  except opexebo's own; verdicts at a conventional 0.3 cutoff, with an
+  undefined score counted as a different verdict):
 
-  | Convention | Gardner (483 units): r vs opexebo | verdicts at 0.3 that differ from opexebo | Vollan module 1 / 2 / 3 median (authors 1.11 / 0.99 / 0.68) |
+  | Convention | Gardner, 483 units: r vs opexebo / verdicts differing | Vollan, 233 units: r vs opexebo / verdicts differing | Vollan module 1 / 2 / 3 median (spacing 46 / 65 / 93 cm; authors 1.11 / 0.99 / 0.68) |
   | --- | --- | --- | --- |
-  | today (quarter overlap) | 0.886 | 42 of 469 | 1.19 / 0.98 / **0.16** |
-  | (a) every lag with ≥ 20 overlapping bins | **0.966** | **22 of 483** | 1.19 / 1.01 / **0.77** |
-  | (c) zero-fill unvisited bins | 0.933 | 34 of 476 | 1.03 / 0.63 / 0.44 |
-  | opexebo (zero-fills) | 1 | 0 | 1.03 / 0.63 / 0.48 |
+  | today (quarter overlap) | 0.886 / 56 | 0.775 / 42 | 1.19 / 0.98 / **0.16** |
+  | (a) every lag with ≥ 20 overlapping bins | **0.966 / 22** | 0.828 / 41 | 1.19 / 1.01 / **0.77** |
+  | (c) zero-fill unvisited bins | 0.933 / 34 | **0.994 / 2** | 1.03 / 0.63 / 0.44 |
+  | opexebo (zero-fills) | 1 / 0 | 1 / 0 | 1.03 / 0.63 / 0.48 |
 
-  On Vollan, zero-filling tracks opexebo almost exactly (r 0.994), as it
-  should, since opexebo zero-fills. The authors' own scores are an
-  independent reference: today's rule matches
-  them on modules 1 and 2 and fails on module 3, the largest spacing; (a) is
-  closest on all three. The quarter-overlap rule over the full lag range
-  reproduces today's scores exactly, which checks the harness implementation.
-  (b), a relaxed overlap rule, is (a) with a different threshold, so one code
-  path covers both.
+  Against the authors' own scores (their maps and scorer, module medians
+  only): module 1 all conventions are 0.08 off; module 2 today's rule is
+  closest (0.01 off; (a) 0.02; zero-filling 0.36); module 3, the largest
+  spacing, today's rule collapses to 0.16 and (a) is closest (0.77 vs 0.68).
+  Against opexebo, (a) agrees best on Gardner, but on Vollan zero-filling
+  agrees almost exactly because opexebo zero-fills, and (a) is barely closer
+  than today's rule. The quarter-overlap rule over the full lag range
+  reproduces today's scores exactly, which checks the harness version. (b), a
+  relaxed overlap rule, is (a) with another threshold.
 - **Recommendation.** (a): a NaN-aware Pearson correlation at every lag with
   at least about 20 overlapping visited bins (`nan_aware_autocorrelation` in
-  `reference_checks.py` is a tested reference). It keeps "missing is not
-  zero", agrees best with both opexebo and the authors, and fixes the
-  large-spacing collapse. Zero-filling (c) matches opexebo by construction but
-  moves module 2 from the authors' 0.99 to 0.63.
+  `reference_checks.py`, tested against a direct per-lag computation,
+  including constant overlaps). It keeps "missing is not zero", removes
+  today's collapse on the large-spacing module, and stays within 0.02 of the
+  authors on the other two. Matching opexebo exactly would need zero-filling,
+  which moves module 2 from the authors' 0.99 to 0.63. Limits: three module
+  medians, not per-unit author scores, and one cutoff not taken from either
+  paper.
 - **Module.** `encoding/grid`. **Changes results.** Yes: large-spacing scores
   rise; 22 of 483 Gardner verdicts still differ from opexebo.
 
@@ -167,7 +172,9 @@ dataset is the evidence, the section says why that is enough.
   - Real units: the shift null's mean is 2.2× the bias on the bat and 5.6–6.6×
     on the dense recordings (000582, Gardner, 000044). Only on the bat does it
     change a verdict: everywhere else every unit that passes the bias screen
-    also beats its shifts.
+    also beats its shifts. One recording does not fit and is open: on
+    Vollan's speed-filtered data real units sit below their own shifts
+    (G-043), so shuffle verdicts there are not trusted yet.
 - **Conclusion.** The estimate is right for what it states, the information
   of an untuned Poisson cell. The gap is temporal structure (bursts, firing
   locked to flights or runs), which circular shifts keep and a Poisson null
@@ -423,6 +430,7 @@ and hc-13, whose untracked frames are stored as 0).
 | G-004 | Proposal 7 |
 | G-005, G-016 | Friction |
 | G-006 | Proposal 3 |
+| G-043 | Open: Vollan real units below their shifts |
 | G-007, G-023 | Docs |
 | G-008, G-009, G-019, G-025, G-028, G-033–G-036, G-039–G-041 | Data quirks |
 | G-011, G-012, G-032, G-042 | Proposal 6 |
@@ -476,8 +484,10 @@ Answered 2026-11-02.
   (proposal 1). The check can land with the reader warning.
 - **Decision 2, grid score.** Recommend option (a), a NaN-aware Pearson at
   every lag with at least about 20 overlapping visited bins (proposal 3): it
-  fixes the large-spacing collapse (Vollan module 3: 0.16 today, 0.77 with
-  (a), 0.68 by the authors) and agrees best with opexebo on 483 Gardner units.
+  fixes the large-spacing collapse (Vollan module 3, 93 cm spacing: 0.16
+  today, 0.77 with (a), 0.68 by the authors), stays within 0.02 of the
+  authors on modules 1–2, and agrees best with opexebo on 483 Gardner units.
+  On Vollan, only zero-filling matches opexebo closely.
 - **Decision 3, information bias.** The estimate holds on sparse occupancy;
   the gap is burstiness, not sparseness (proposal 4). Recommend docs that call
   it a Poisson null and point to shuffle verdicts; no sparse-occupancy

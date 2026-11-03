@@ -182,6 +182,7 @@ class HamptonCourtDims(MazeDims):
 
 def make_hampton_court_maze(
     dims: HamptonCourtDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

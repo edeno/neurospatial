@@ -4,7 +4,7 @@
       "visited_bins": 1201,
       "share_under_0p1_s": 0.7027477102414654,
       "median_s_per_visited_bin": 0.06666667312606478,
-      "median_spikes_per_visited_bin": 2.2070336873669902e-07
+      "median_rate_x_occupancy_per_visited_bin": 2.2070336873669902e-07
     },
     "simulated": [
       {
@@ -66,14 +66,14 @@
       "share_pass_bias": 0.5897435897435898,
       "share_above_p95": 0.15384615384615385
     },
-    "seconds": 166.8
+    "seconds": 195.3
   },
   "sargolini_000582": {
     "occupancy": {
       "visited_bins": 1399,
       "share_under_0p1_s": 0.17869907076483202,
       "median_s_per_visited_bin": 0.27999999999974534,
-      "median_spikes_per_visited_bin": 0.15764505086111114
+      "median_rate_x_occupancy_per_visited_bin": 0.15764505086111114
     },
     "simulated": [
       {
@@ -135,14 +135,14 @@
       "share_pass_bias": 1.0,
       "share_above_p95": 1.0
     },
-    "seconds": 3.1
+    "seconds": 4.2
   },
   "gardner_2022_grid": {
     "occupancy": {
       "visited_bins": 3463,
       "share_under_0p1_s": 0.006064106266243142,
       "median_s_per_visited_bin": 2.1299999999973807,
-      "median_spikes_per_visited_bin": 3.4959031098955697
+      "median_rate_x_occupancy_per_visited_bin": 3.4959031098955697
     },
     "simulated": [
       {
@@ -204,14 +204,14 @@
       "share_pass_bias": 0.9089026915113871,
       "share_above_p95": 0.9958592132505176
     },
-    "seconds": 243.7
+    "seconds": 275.8
   },
   "grosmark_000044_circular": {
     "occupancy": {
       "visited_bins": 1543,
       "share_under_0p1_s": 0.0829552819183409,
       "median_s_per_visited_bin": 0.5632001684934949,
-      "median_spikes_per_visited_bin": 0.28428480769489367
+      "median_rate_x_occupancy_per_visited_bin": 0.28428480769489367
     },
     "simulated": [
       {
@@ -273,6 +273,6 @@
       "share_pass_bias": 0.8942307692307693,
       "share_above_p95": 0.9903846153846154
     },
-    "seconds": 145.5
+    "seconds": 139.7
   }
 }

@@ -3,7 +3,7 @@
 This module provides the low-level diffusion-kernel primitive and kernel
 application for smoothing spatial fields on graphs. The main functions are:
 
-- ``compute_diffusion_kernels``: assemble a finite-volume diffusion kernel from
+- ``diffusion_kernels``: assemble a finite-volume diffusion kernel from
   a working graph carrying ``"A"`` (shared-face measure) and ``"distance"``
   (center-to-center) on each edge, plus a node-ordered ``volumes`` array.
 - ``apply_kernel``: apply a kernel in forward or adjoint mode.
@@ -19,7 +19,7 @@ Examples
 --------
 >>> import networkx as nx
 >>> import numpy as np
->>> from neurospatial.ops.smoothing import compute_diffusion_kernels, apply_kernel
+>>> from neurospatial.ops.smoothing import diffusion_kernels, apply_kernel
 
 Create a simple graph (unit face measure, unit spacing) and compute a kernel:
 
@@ -28,9 +28,7 @@ Create a simple graph (unit face measure, unit spacing) and compute a kernel:
 ...     graph.edges[u, v]["distance"] = 1.0
 ...     graph.edges[u, v]["A"] = 1.0
 >>> volumes = np.ones(5)
->>> kernel = compute_diffusion_kernels(
-...     graph, volumes=volumes, bandwidth=1.0, mode="transition"
-... )
+>>> kernel = diffusion_kernels(graph, volumes=volumes, bandwidth=1.0, mode="transition")
 >>> kernel.shape
 (5, 5)
 
@@ -57,7 +55,7 @@ from neurospatial.ops.diffusion import heat_kernel_from_W
 
 __all__ = [
     "apply_kernel",
-    "compute_diffusion_kernels",
+    "diffusion_kernels",
 ]
 
 if TYPE_CHECKING:
@@ -76,7 +74,7 @@ def _gaussian_kernel(
     return np.exp(-dist_sq / two_sigma_sq).astype(np.float64, copy=False)
 
 
-def compute_diffusion_kernels(
+def diffusion_kernels(
     graph: nx.Graph,
     *,
     volumes: NDArray[np.float64],
@@ -204,7 +202,7 @@ def apply_kernel(
         field with missing (NaN) bins with ``env.smooth`` or ``env.diffuse``,
         which leave missing bins out.
     kernel : NDArray[np.float64], shape (n_bins, n_bins)
-        Diffusion kernel matrix (from compute_kernel or compute_diffusion_kernels).
+        Diffusion kernel matrix (from compute_kernel or diffusion_kernels).
     mode : "forward" | "adjoint", default="forward"
         Direction of operation:
         - "forward": Standard kernel application (K @ field)
@@ -328,7 +326,7 @@ def apply_kernel(
 
     See Also
     --------
-    compute_diffusion_kernels : Compute diffusion kernel from graph
+    diffusion_kernels : Compute diffusion kernel from graph
     Environment.compute_kernel : Compute kernel for environment
     Environment.smooth : Smooth field using kernel (forward mode)
     resample_field : Resample fields across environments (spatial resampling)

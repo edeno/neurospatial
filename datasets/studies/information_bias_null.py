@@ -27,7 +27,7 @@ Steps (all seeds fixed; written to ``results/studies/information_bias_null.{md,j
   whose information minus bias exceeds ``CLASSIFY_CUTOFF`` while their
   information is below the 95th percentile of their shifts.
 - Occupancy: share of visited bins with under 0.1 s, median seconds and
-  median spikes per visited bin.
+  median smoothed rate × occupancy per visited bin.
 
 Run: ``uv run --group datasets --extra nwb python datasets/studies/information_bias_null.py``.
 """
@@ -46,7 +46,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _record import Recording  # noqa: E402
-from operations import MIN_SHIFT_S, _env, _rates  # noqa: E402
+from operations import _env, _rates, shifted_trains  # noqa: E402
 
 RESULTS = HERE.parent / "results" / "studies"
 DATASETS = (
@@ -143,21 +143,6 @@ def simulate(rec: Recording, cache: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def shifted(rec: Recording, seed: int) -> list[np.ndarray]:
-    """The ``information_vs_shifts`` rule: shift spikes inside the tracking span."""
-    start, stop = float(rec.times[0]), float(rec.times[-1])
-    span = stop - start
-    rng = np.random.default_rng(seed)
-    trains = []
-    for train in rec.spike_times or ():
-        inside = (train >= start) & (train <= stop)
-        moved = train.copy()
-        shift = rng.uniform(MIN_SHIFT_S, span - MIN_SHIFT_S)
-        moved[inside] = (train[inside] - start + shift) % span + start
-        trains.append(np.sort(moved))
-    return trains
-
-
 def shift_null(rec: Recording, cache: dict[str, Any]) -> dict[str, Any]:
     real = _rates(rec, cache)
     info = np.asarray(real.spatial_information(), dtype=float)
@@ -165,7 +150,7 @@ def shift_null(rec: Recording, cache: dict[str, Any]) -> dict[str, Any]:
     null = np.vstack(
         [
             np.asarray(
-                _rates_for(rec, cache, shifted(rec, seed)).spatial_information(),
+                _rates_for(rec, cache, shifted_trains(rec, seed)).spatial_information(),
                 dtype=float,
             )
             for seed in range(N_SHIFTS)
@@ -197,13 +182,16 @@ def occupancy_summary(rec: Recording, cache: dict[str, Any]) -> dict[str, Any]:
     result = _rates(rec, cache)
     occupancy = np.asarray(result.occupancy, dtype=float)
     visited = occupancy > 0
-    # The default binned rates are unsmoothed: rate times occupancy is the count.
+    # Rates are smoothed (the default diffusion_kde), so rate times occupancy
+    # is the smoothed expected count per bin, not the raw count.
     counts = np.asarray(result.firing_rates, dtype=float) * occupancy
     return {
         "visited_bins": int(visited.sum()),
         "share_under_0p1_s": float(np.mean(occupancy[visited] < SPARSE_S)),
         "median_s_per_visited_bin": float(np.median(occupancy[visited])),
-        "median_spikes_per_visited_bin": float(np.nanmedian(counts[:, visited])),
+        "median_rate_x_occupancy_per_visited_bin": float(
+            np.nanmedian(counts[:, visited])
+        ),
     }
 
 
@@ -236,14 +224,14 @@ def render(out: dict[str, Any]) -> str:
         "",
         "## Occupancy",
         "",
-        "| Dataset | Visited bins | Share under 0.1 s | Median s per visited bin | Median spikes per visited bin |",
+        "| Dataset | Visited bins | Share under 0.1 s | Median s per visited bin | Median rate × occupancy per visited bin (smoothed) |",
         "| --- | --- | --- | --- | --- |",
     ]
     for key, res in out.items():
         o = res["occupancy"]
         lines.append(
             f"| {key} | {o['visited_bins']} | {o['share_under_0p1_s']:.2f} |"
-            f" {o['median_s_per_visited_bin']:.2f} | {o['median_spikes_per_visited_bin']:.2f} |"
+            f" {o['median_s_per_visited_bin']:.2f} | {o['median_rate_x_occupancy_per_visited_bin']:.2f} |"
         )
     lines += [
         "",

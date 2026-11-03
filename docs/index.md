@@ -21,52 +21,99 @@ compare. See the [project vision](vision.md) for the goals and the
 [design principles](contributing.md#design-principles) for how we evaluate
 changes toward them.
 
-## Key Features
+## Where does this neuron fire?
 
-- **Multiple Layout Engines**: Choose from regular grids, hexagonal tessellations, masked regions, polygon-bounded areas, triangular meshes, and 1D linearized tracks
-- **Automatic Bin Detection**: Infer active bins from data samples with morphological operations (dilation, closing, hole filling)
-- **Connectivity Graphs**: Built-in NetworkX graphs with mandatory node/edge metadata for spatial queries
-- **1D Linearization**: Transform complex 2D environments into 1D linearized coordinates for track-based analysis
-- **Spatial Queries**: Point-to-bin mapping, neighbor finding, shortest paths, geodesic distances
-- **Region Support**: Define and manage named regions of interest (ROIs) with immutable semantics
-- **Environment Composition**: Merge multiple environments with automatic bridge inference
-- **Alignment Tools**: Transform and map probability distributions between environments
-- **Type-Safe Protocol Design**: Layout engines implement protocols, not inheritance, for maximum flexibility
+You have an animal's position over time and the spike times of a neuron. The
+first question is where in the arena the neuron fires. That needs the arena
+split into spatial bins, the time the animal spent in each bin (occupancy),
+and the spikes in each bin divided by that occupancy: a firing-rate map. The
+example below simulates a place cell in a 100 x 100 cm open field and
+estimates its rate map. To use your own recording, replace the simulation with
+your `spike_times` (seconds), `times` (seconds) and `positions` (same units as
+`bin_size`).
 
-## Quick Example
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+from shapely.geometry import box
+
+from neurospatial import Environment, compute_spatial_rate
+from neurospatial.simulation import (
+    PlaceCellModel,
+    generate_poisson_spikes,
+    simulate_trajectory_ou,
+)
+
+# The arena, binned at 2 cm.
+env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=2.0, units="cm")
+
+# 30 minutes of foraging and one place cell tuned to the arena center.
+positions, times = simulate_trajectory_ou(env, duration=1800.0, speed_units="cm", rng=1)
+cell = PlaceCellModel(env, center=np.array([50.0, 50.0]), width=15.0, max_rate=30.0)
+spike_times = generate_poisson_spikes(cell.firing_rate(times, positions), times, rng=2)
+
+# Spikes divided by occupancy, smoothed over the bins the animal visited.
+rate_map = compute_spatial_rate(env, spike_times, times, positions, bandwidth=8.0)
+rate_map.plot()
+plt.show()
+```
+
+The map has a single smooth peak near the center of the arena, where the cell
+was tuned. The darkest color is the lowest rate: bins the animal visited where
+the cell was silent. Bins the animal never visited are NaN (missing), not zero,
+and are drawn light grey, so grey means "not sampled" rather than "silent".
+From here, ask whether the
+neuron is a place cell with `is_place_cell`, find its fields with
+`detect_place_fields`, or decode position from a population with
+`decode_session`. The user guide's
+[Which place-cell function?](user-guide/neuroscience-metrics.md#which-place-cell-function)
+table lists the neighboring functions.
+
+neurospatial covers the rest of the path from recording to result:
+
+- **Environments**: bins, connectivity, regions and landmarks for open fields,
+  tracks and mazes.
+- **Behavior**: speed, laps, trials, goal-directed navigation and decisions.
+- **Neural analysis**: spatial, head-direction, object-vector and view
+  tuning; decoding; replay; reactivation; peri-event histograms.
+- **Simulation and visualization**: simulated sessions, animations and NWB
+  input and output.
+
+The [quickstart](getting-started/quickstart.md) walks through this example,
+and the [user guide](user-guide/index.md) is organized by scientific task.
+
+## Under the hood: environments and layout engines
+
+Every analysis above sits on an `Environment`: a discretization of space into
+bins with a connectivity graph. You can build one from tracking samples, an
+arena outline, a mask or a track, with these layout engines:
+
+- **Regular grids and hexagonal tessellations** for open fields
+- **Masked regions and polygon-bounded areas** for arenas of any shape
+- **Triangular meshes** for irregular boundaries
+- **1D linearized tracks** for mazes, with a map between 2D position and
+  position along the track
+
+An environment also holds named regions of interest, can be merged with
+others, and provides spatial queries (point-to-bin mapping, neighbors, shortest
+paths and geodesic distances). Layout engines implement protocols rather than
+inheriting from a base class. This smaller example builds an environment
+from samples and queries it:
 
 ```python
 import numpy as np
 from neurospatial import Environment
 
-# Generate some 2D position data (e.g., from animal tracking)
-position_data = np.array([
-    [0.0, 0.0],
-    [5.0, 5.0],
-    [10.0, 10.0],
-    [15.0, 5.0],
-    [20.0, 0.0],
-])
+rng = np.random.default_rng(0)
+position_data = rng.uniform(0, 100, size=(500, 2))  # (n_samples, 2), in cm
 
-# Create an environment with 2 cm bins
-env = Environment.from_samples(
-    positions=position_data,
-    bin_size=2.0,
-    name="OpenField"
-)
+env = Environment.from_samples(position_data, bin_size=10.0, units="cm")
+print(f"Environment has {env.n_bins} bins in {env.n_dims}D")
 
-# Query the environment
-print(f"Environment has {env.n_bins} bins")
-print(f"Dimensions: {env.n_dims}D")
-
-# Map a point to its bin
-point = np.array([[10.5, 10.2]])
+point = np.array([[52.0, 48.0]])
 bin_idx = env.bin_at(point)
 print(f"Point {point[0]} is in bin {bin_idx[0]}")
-
-# Find neighbors
-neighbors = env.neighbors(bins=bin_idx[0])
-print(f"Bin {bin_idx[0]} has {len(neighbors)} neighbors")
+print(f"That bin has {len(env.neighbors(bins=bin_idx[0]))} neighbors")
 ```
 
 ## Installation
@@ -94,16 +141,7 @@ See the [Installation Guide](getting-started/installation.md) for more details.
 - **[API Reference](api/index.md)**: Complete API documentation
 - **[Examples](examples/index.md)**: Jupyter notebooks with real-world use cases
 - **[Contributing](contributing.md)**: Guidelines for contributors
-
-## Use Cases
-
-neurospatial is designed for researchers working with spatial data in neuroscience:
-
-- **Place Cell Analysis**: Discretize environments for computing firing rate maps
-- **Position Tracking**: Convert continuous trajectories into spatial bins
-- **Maze Experiments**: Linearize complex track structures for 1D analysis
-- **Spatial Navigation**: Compute geodesic distances and shortest paths
-- **Multi-Environment Studies**: Align and compare spatial representations across sessions
+- **[llms.txt](llms.txt)**: A plain-text map of the public API and conventions for AI assistants
 
 ## Project Status
 

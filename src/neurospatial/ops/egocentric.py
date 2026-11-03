@@ -84,8 +84,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "allocentric_to_egocentric",
-    "compute_egocentric_bearing",
-    "compute_egocentric_distance",
+    "egocentric_bearing",
+    "egocentric_distance",
     "egocentric_to_allocentric",
 ]
 
@@ -333,7 +333,7 @@ def _rotations(angles: NDArray[np.float64]) -> NDArray[np.float64]:
 
 
 @reads_pynapple_samples
-def compute_egocentric_bearing(
+def egocentric_bearing(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     targets: NDArray[np.float64],
@@ -367,21 +367,21 @@ def compute_egocentric_bearing(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.ops.egocentric import compute_egocentric_bearing
+    >>> from neurospatial.ops.egocentric import egocentric_bearing
 
     Target directly ahead has bearing 0:
 
     >>> target = np.array([[10.0, 0.0]])
     >>> position = np.array([[0.0, 0.0]])
     >>> heading = np.array([0.0])  # Facing East
-    >>> bearing = compute_egocentric_bearing(position, heading, target)
+    >>> bearing = egocentric_bearing(position, heading, target)
     >>> np.allclose(bearing, [[0.0]])
     True
 
     Target to the left has bearing pi/2:
 
     >>> target = np.array([[0.0, 10.0]])
-    >>> bearing = compute_egocentric_bearing(position, heading, target)
+    >>> bearing = egocentric_bearing(position, heading, target)
     >>> np.allclose(bearing, [[np.pi / 2]])
     True
     """
@@ -396,7 +396,7 @@ def compute_egocentric_bearing(
 
 
 @reads_pynapple_samples
-def compute_egocentric_distance(
+def egocentric_distance(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64]  # noqa: ARG001  # headings kept for the canonical egocentric signature
     | None,  # headings kept for the canonical egocentric signature
@@ -409,7 +409,7 @@ def compute_egocentric_distance(
 
     Distance does not depend on heading, but headings parameter is included
     as a positional parameter to maintain API consistency with other
-    egocentric functions like compute_egocentric_bearing().
+    egocentric functions like egocentric_bearing().
 
     Parameters
     ----------
@@ -454,16 +454,14 @@ def compute_egocentric_distance(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.ops.egocentric import compute_egocentric_distance
+    >>> from neurospatial.ops.egocentric import egocentric_distance
 
     Euclidean distance:
 
     >>> targets = np.array([[10.0, 0.0], [0.0, 10.0]])
     >>> position = np.array([[0.0, 0.0]])
     >>> heading = np.array([0.0])
-    >>> distances = compute_egocentric_distance(
-    ...     position, heading, targets, metric="euclidean"
-    ... )
+    >>> distances = egocentric_distance(position, heading, targets, metric="euclidean")
     >>> np.allclose(distances, [[10.0, 10.0]])
     True
     """
@@ -487,9 +485,9 @@ def compute_egocentric_distance(
             "metric='geodesic' requires env parameter\n"
             "Why: Geodesic distances follow paths that respect environment boundaries\n\n"
             "Fix:\n"
-            "1. Pass the environment: compute_egocentric_distance(..., env=env)\n"
+            "1. Pass the environment: egocentric_distance(..., env=env)\n"
             "2. Or use 'euclidean' for straight-line distances:\n"
-            "   compute_egocentric_distance(..., metric='euclidean')"
+            "   egocentric_distance(..., metric='euclidean')"
         )
         raise ValueError(msg)
 
@@ -538,7 +536,7 @@ def compute_egocentric_distance(
 
         require_cartesian(
             env.coordinate_system,
-            "compute_egocentric_distance(metric='geodesic')",
+            "egocentric_distance(metric='geodesic')",
             why="positions and targets are allocentric Cartesian positions, located "
             "in the environment's bins.",
             fix="use an allocentric environment, or metric='euclidean' for "
@@ -551,7 +549,7 @@ def compute_egocentric_distance(
 
         # Vectorized: get bin indices for all positions at once
         indexes = CallIndexes()
-        call = "compute_egocentric_distance(metric='geodesic')"
+        call = "egocentric_distance(metric='geodesic')"
         pos_bins = locate(binning, arena, positions, indexes, call=call)
 
         # Map every target to its bin in one batched ``locate`` call rather
@@ -613,7 +611,7 @@ def _require_targets_in_bins(
     raise ValueError(
         _format_error(
             f"Target {target} {where}at ({coords}) lies outside every bin, so "
-            "compute_egocentric_distance(metric='geodesic') has no path to it.",
+            "egocentric_distance(metric='geodesic') has no path to it.",
             why=f"geodesic distance runs along the environment's bin graph, "
             f"from the animal's bin to the target's bin; the nearest bin center "
             f"is {gap:.3g} away. A target on the arena's edge, such as an "

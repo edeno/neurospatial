@@ -32,8 +32,6 @@ SpikeRasterOverlay, EpochOverlay : class
     animation's clock.
 FastplotlibAnimation : class
     The native fastplotlib viewer, ``view.native`` of a fastplotlib view.
-ScaleBarConfig : class
-    Scale-bar settings shared by renderers.
 Skeleton : class
     Immutable pose skeleton, with mouse, rat and simple presets.
 calibrate_video : function
@@ -45,7 +43,6 @@ subsample_frames, estimate_colormap_range_from_subset : function
 from neurospatial.animation._view import AnimationView
 from neurospatial.animation.backends.fastplotlib_backend import FastplotlibAnimation
 from neurospatial.animation.calibration import calibrate_video
-from neurospatial.animation.config import ScaleBarConfig
 from neurospatial.animation.core import (
     estimate_colormap_range_from_subset,
     subsample_frames,
@@ -85,7 +82,6 @@ __all__: list[str] = [
     "HeadDirectionOverlay",
     "ObjectVectorOverlay",
     "PositionOverlay",
-    "ScaleBarConfig",
     "Skeleton",
     "SpikeRasterOverlay",
     "TimeSeriesOverlay",
@@ -94,3 +90,8 @@ __all__: list[str] = [
     "estimate_colormap_range_from_subset",
     "subsample_frames",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

@@ -151,6 +151,26 @@ REPLAY_ON_LINEARIZED_GAP = "G-038"
 MIN_SHIFT_S = 20.0
 
 
+def shifted_trains(rec: Recording, seed: int) -> list[np.ndarray]:
+    """Each unit's spikes inside the tracking span, circularly shifted (seeded).
+
+    The shift is uniform between ``MIN_SHIFT_S`` and the span minus
+    ``MIN_SHIFT_S``, one per unit, wrapping around; spikes outside the span
+    stay put.
+    """
+    start, stop = float(rec.times[0]), float(rec.times[-1])
+    span = stop - start
+    rng = np.random.default_rng(seed)
+    trains = []
+    for train in rec.spike_times or ():
+        inside = (train >= start) & (train <= stop)
+        moved = train.copy()
+        shift = rng.uniform(MIN_SHIFT_S, span - MIN_SHIFT_S)
+        moved[inside] = (train[inside] - start + shift) % span + start
+        trains.append(np.sort(moved))
+    return trains
+
+
 def information_vs_shifts(rec: Recording, cache: dict[str, Any]) -> Outcome:
     """Spatial information against circularly shifted spikes (seeded).
 
@@ -162,18 +182,9 @@ def information_vs_shifts(rec: Recording, cache: dict[str, Any]) -> Outcome:
     from neurospatial.encoding import compute_spatial_rates
 
     real = np.asarray(_rates(rec, cache).spatial_information(), dtype=float)
-    start, stop = float(rec.times[0]), float(rec.times[-1])
-    span = stop - start
     shifted_info = []
     for seed in range(N_SHIFTS):
-        rng = np.random.default_rng(seed)
-        trains = []
-        for train in rec.spike_times or ():
-            inside = (train >= start) & (train <= stop)
-            moved = train.copy()
-            shift = rng.uniform(MIN_SHIFT_S, span - MIN_SHIFT_S)
-            moved[inside] = (train[inside] - start + shift) % span + start
-            trains.append(np.sort(moved))
+        trains = shifted_trains(rec, seed)
         rates = compute_spatial_rates(
             _env(rec, cache),
             trains,

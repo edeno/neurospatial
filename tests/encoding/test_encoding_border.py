@@ -24,11 +24,11 @@ class TestEncodingBorderImports:
 
         assert callable(border_score)
 
-    def test_import_compute_region_coverage(self) -> None:
-        """Test importing compute_region_coverage from encoding.border."""
-        from neurospatial.encoding.border import compute_region_coverage
+    def test_import_region_coverage(self) -> None:
+        """Test importing region_coverage from encoding.border."""
+        from neurospatial.encoding.border import region_coverage
 
-        assert callable(compute_region_coverage)
+        assert callable(region_coverage)
 
 
 # =============================================================================
@@ -45,11 +45,11 @@ class TestEncodingInitBorderImports:
 
         assert callable(border_score)
 
-    def test_import_compute_region_coverage_from_encoding(self) -> None:
-        """Test importing compute_region_coverage from encoding."""
-        from neurospatial.encoding import compute_region_coverage
+    def test_import_region_coverage_from_encoding(self) -> None:
+        """Test importing region_coverage from encoding."""
+        from neurospatial.encoding import region_coverage
 
-        assert callable(compute_region_coverage)
+        assert callable(region_coverage)
 
 
 # =============================================================================
@@ -73,11 +73,11 @@ class TestEncodingBorderModuleStructure:
 
         assert "border_score" in border.__all__
 
-    def test_encoding_border_all_contains_compute_region_coverage(self) -> None:
-        """Test that __all__ contains compute_region_coverage."""
+    def test_encoding_border_all_contains_region_coverage(self) -> None:
+        """Test that __all__ contains region_coverage."""
         from neurospatial.encoding import border
 
-        assert "compute_region_coverage" in border.__all__
+        assert "region_coverage" in border.__all__
 
 
 # =============================================================================
@@ -98,17 +98,17 @@ class TestBorderReExports:
         # Should be the same function object
         assert encoding_border_score is metrics_border_score
 
-    def test_compute_region_coverage_same_as_metrics(self) -> None:
-        """Test that encoding.border.compute_region_coverage is same as metrics."""
+    def test_region_coverage_same_as_metrics(self) -> None:
+        """Test that encoding.border.region_coverage is same as metrics."""
         from neurospatial.encoding.border import (
-            compute_region_coverage as encoding_compute_region_coverage,
+            region_coverage as encoding_region_coverage,
         )
         from neurospatial.encoding.border import (
-            compute_region_coverage as metrics_compute_region_coverage,
+            region_coverage as metrics_region_coverage,
         )
 
         # Should be the same function object
-        assert encoding_compute_region_coverage is metrics_compute_region_coverage
+        assert encoding_region_coverage is metrics_region_coverage
 
 
 # =============================================================================
@@ -119,11 +119,11 @@ class TestBorderReExports:
 class TestBorderFunctionality:
     """Test that re-exported functions work correctly."""
 
-    def test_compute_region_coverage_basic(self) -> None:
-        """Test compute_region_coverage with wall regions."""
+    def test_region_coverage_basic(self) -> None:
+        """Test region_coverage with wall regions."""
         from shapely.geometry import box
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
         # Create environment
         x = np.linspace(0, 40, 400)
@@ -144,17 +144,17 @@ class TestBorderFunctionality:
         firing_rate[north_bins] = 5.0
         field_bins = np.where(firing_rate > 0)[0]
 
-        coverage = compute_region_coverage(env, field_bins)
+        coverage = region_coverage(env, field_bins)
 
         # North should have high coverage, south should be low
         assert coverage["north"] > 0.8
         assert coverage["south"] < 0.1
 
-    def test_compute_region_coverage_returns_dict(self) -> None:
-        """Test that compute_region_coverage returns a dict."""
+    def test_region_coverage_returns_dict(self) -> None:
+        """Test that region_coverage returns a dict."""
         from shapely.geometry import box
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
         x = np.linspace(0, 40, 400)
         y = np.linspace(0, 40, 400)
@@ -168,15 +168,15 @@ class TestBorderFunctionality:
 
         field_bins = np.array([0, 1, 2])
 
-        coverage = compute_region_coverage(env, field_bins)
+        coverage = region_coverage(env, field_bins)
 
         assert isinstance(coverage, dict)
 
-    def test_compute_region_coverage_specific_regions(self) -> None:
-        """Test compute_region_coverage with specific regions parameter."""
+    def test_region_coverage_specific_regions(self) -> None:
+        """Test region_coverage with specific regions parameter."""
         from shapely.geometry import box
 
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
         x = np.linspace(0, 40, 400)
         y = np.linspace(0, 40, 400)
@@ -193,9 +193,7 @@ class TestBorderFunctionality:
         field_bins = np.array([0, 1, 2])
 
         # Only compute for region1 and region2
-        coverage = compute_region_coverage(
-            env, field_bins, regions=["region1", "region2"]
-        )
+        coverage = region_coverage(env, field_bins, regions=["region1", "region2"])
 
         # Should only return specified regions
         assert set(coverage.keys()) == {"region1", "region2"}

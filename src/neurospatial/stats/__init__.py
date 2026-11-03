@@ -14,11 +14,11 @@ surrogates : Surrogate data generation
 Imports
 -------
 >>> from neurospatial.stats import rayleigh_test, circular_mean
->>> from neurospatial.stats import shuffle_time_bins, compute_shuffle_pvalue
+>>> from neurospatial.stats import shuffle_time_bins, shuffle_pvalue
 >>> from neurospatial.stats import generate_poisson_surrogates, generate_jittered_spikes
->>> from neurospatial.stats.circular import circular_basis
->>> from neurospatial.stats.shuffle import ShuffleTestResult
->>> from neurospatial.stats.surrogates import generate_inhomogeneous_poisson_surrogates
+>>> from neurospatial.stats import circular_basis
+>>> from neurospatial.stats import ShuffleTestResult
+>>> from neurospatial.stats import generate_inhomogeneous_poisson_surrogates
 """
 
 from neurospatial.stats._utils import _binomial_rate as _binomial_rate
@@ -41,13 +41,13 @@ from neurospatial.stats.circular import _validate_paired_input as _validate_pair
 from neurospatial.stats.shuffle import _ALTERNATIVES as _ALTERNATIVES
 from neurospatial.stats.shuffle import (
     ShuffleTestResult,
-    compute_shuffle_pvalue,
-    compute_shuffle_zscore,
+    shuffle_pvalue,
     shuffle_spike_times_circular,
     shuffle_spikes_isi,
     shuffle_time_bins,
     shuffle_time_bins_coherent,
     shuffle_trials,
+    shuffle_zscore,
 )
 from neurospatial.stats.shuffle import (
     _validate_circular_shift_settings as _validate_circular_shift_settings,
@@ -80,8 +80,8 @@ __all__ = [  # noqa: RUF022
     "plot_circular_basis_tuning",
     # Shuffle functions
     "ShuffleTestResult",
-    "compute_shuffle_pvalue",
-    "compute_shuffle_zscore",
+    "shuffle_pvalue",
+    "shuffle_zscore",
     "shuffle_spikes_isi",
     "shuffle_spike_times_circular",
     "shuffle_time_bins",
@@ -92,3 +92,8 @@ __all__ = [  # noqa: RUF022
     "generate_inhomogeneous_poisson_surrogates",
     "generate_jittered_spikes",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

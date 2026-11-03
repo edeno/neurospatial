@@ -204,6 +204,7 @@ class RepeatedTDims(MazeDims):
 
 def make_repeated_t_maze(
     dims: RepeatedTDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:
@@ -270,7 +271,7 @@ def make_repeated_t_maze(
 
     positions, edges = _layout(dims)
     alleys = [
-        make_corridor_polygon(positions[u], positions[v], dims.corridor_width)
+        make_corridor_polygon(positions[u], positions[v], width=dims.corridor_width)
         for u, v in edges
     ]
     stem_end = (

@@ -141,6 +141,7 @@ class BarnesDims(MazeDims):
 
 def make_barnes_maze(
     dims: BarnesDims | None = None,
+    *,
     escape_hole_index: int = 0,
     bin_size: float = 2.0,
 ) -> MazeEnvironments:

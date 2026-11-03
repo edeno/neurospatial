@@ -9,7 +9,7 @@ import pytest
 
 from neurospatial import InputError
 from neurospatial._intervals import DEFAULT_MAX_GAP
-from neurospatial.behavior import compute_cumulative_distance, compute_step_lengths
+from neurospatial.behavior import compute_cumulative_distance, step_lengths
 
 T4 = np.array([0.0, 0.1, 0.2, 0.3])
 TWO_RECORDINGS = np.array([[0.0, 0.0], [1.0, 0.0], [50.0, 0.0], [51.0, 0.0]])
@@ -135,7 +135,7 @@ def test_gap_free_equals_step_length_sum(continuous_recording):
     times, positions = continuous_recording.times, continuous_recording.positions
     result = compute_cumulative_distance(times, positions)
     np.testing.assert_allclose(
-        result.total_distance, np.sum(compute_step_lengths(positions)), rtol=1e-12
+        result.total_distance, np.sum(step_lengths(positions)), rtol=1e-12
     )
     assert result.run_ids.max() == 0
 

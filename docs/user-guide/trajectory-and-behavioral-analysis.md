@@ -1,8 +1,8 @@
 # Trajectory Metrics & Behavioral Segmentation
 
-This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the `neurospatial.behavior.trajectory`, `neurospatial.behavior.segmentation`, and `neurospatial.behavior.visits` modules.
+This guide covers trajectory characterization metrics and automatic behavioral epoch detection using the functions in `neurospatial.behavior`.
 
-Import trajectory operations from `neurospatial.behavior.trajectory`.
+Import every function in this guide from `neurospatial.behavior`.
 Missing or outside positions produce `NaN` geodesic steps. Check observation
 coverage before reducing movement metrics; a missing interval is not zero movement.
 
@@ -480,17 +480,17 @@ along the bin graph instead (bin center to bin center through neighboring
 bins), which reads an oblique straight run as a staircase.
 
 ```python
-from neurospatial.behavior.trajectory import compute_step_lengths
+from neurospatial.behavior import step_lengths
 
 # Euclidean distance (default, ecology standard)
-step_lengths = compute_step_lengths(positions, metric="euclidean")
+steps = step_lengths(positions, metric="euclidean")
 
 # OR: Geodesic distance for constrained environments (requires env)
-# step_lengths_geo = compute_step_lengths(positions, metric="geodesic", env=env)
+# steps_geo = step_lengths(positions, metric="geodesic", env=env)
 
 # Analyze movement statistics
-mean_step = np.mean(step_lengths)
-step_cv = np.std(step_lengths) / mean_step  # Coefficient of variation
+mean_step = np.mean(steps)
+step_cv = np.std(steps) / mean_step  # Coefficient of variation
 
 print(f"Mean step length: {mean_step:.2f} cm")
 print(f"Step length CV: {step_cv:.3f}")
@@ -515,7 +515,7 @@ Home range is the set of bins containing a specified percentile of time spent. T
 
 <!-- docs-test: run -->
 ```python
-from neurospatial.behavior.trajectory import compute_home_range
+from neurospatial.behavior import compute_home_range
 from neurospatial import Environment
 
 env = Environment.from_samples(positions, bin_size=5.0)
@@ -552,7 +552,7 @@ print(f"Core area (50%): {env.bin_sizes[core_bins].sum():.1f} cm²")
 Mean square displacement (MSD) classifies diffusion processes based on scaling exponent α. **Critical**: Uses continuous positions for accurate diffusion exponent estimation.
 
 ```python
-from neurospatial.behavior.trajectory import mean_square_displacement
+from neurospatial.behavior import mean_square_displacement
 
 # Compute MSD from continuous positions (Euclidean distance, ecology standard)
 _msd = mean_square_displacement(
@@ -614,7 +614,7 @@ finds each position's bin itself.
 
 <!-- docs-test: run setup=docs_trajectory_region_crossings -->
 ```python
-from neurospatial.behavior.segmentation import detect_region_crossings
+from neurospatial.behavior import detect_region_crossings
 
 # Detect all crossings (entries and exits)
 crossings = detect_region_crossings(
@@ -729,7 +729,7 @@ Find movement epochs, stretches where the smoothed speed stays above a
 threshold, as an [`Intervals`](#intervals) of `[start, stop)` windows.
 
 ```python
-from neurospatial.behavior.segmentation import segment_by_velocity
+from neurospatial.behavior import segment_by_velocity
 
 # Segment into movement epochs
 movement_epochs = segment_by_velocity(
@@ -884,7 +884,7 @@ Lap detection identifies repeating circular paths (e.g., circular track running)
 Uses the first complete circuit of the recording as the template lap.
 
 ```python
-from neurospatial.behavior.segmentation import detect_laps
+from neurospatial.behavior import detect_laps
 
 # Auto-detect laps; the first circuit is the template and the first lap
 laps = detect_laps(
@@ -1412,7 +1412,7 @@ Compare spatial and temporal patterns between trajectories.
 Spatial overlap (set-based, order-independent).
 
 ```python
-from neurospatial.behavior.segmentation import trajectory_similarity
+from neurospatial.behavior import trajectory_similarity
 
 # Compare two runs: positions of shape (n_samples, n_dims) each
 similarity = trajectory_similarity(env, positions_a, positions_b, method="jaccard")
@@ -1625,7 +1625,7 @@ the animal runs back and forth, every run toward the goal is its own approach,
 and runs away from it are not goal-directed.
 
 ```python
-from neurospatial.behavior.segmentation import detect_goal_directed_runs
+from neurospatial.behavior import detect_goal_directed_runs
 
 # Detect efficient paths toward goal
 goal_runs = detect_goal_directed_runs(
@@ -1686,13 +1686,13 @@ for lap in laps:
     turn_angles = compute_planar_turn_angles(
         times[mask], lap_positions, smooth_window=0.2
     )
-    step_lengths = compute_step_lengths(lap_positions, metric="euclidean")
+    steps = step_lengths(lap_positions, metric="euclidean")
 
     lap_metrics.append({
         "duration": lap.stop_time - lap.start_time,
         "mean_turn": np.abs(np.nanmean(turn_angles)),
-        "mean_step": np.mean(step_lengths),
-        "path_length": np.sum(step_lengths),
+        "mean_step": np.mean(steps),
+        "path_length": np.sum(steps),
         "overlap": lap.overlap_score,
     })
 

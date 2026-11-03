@@ -1392,7 +1392,7 @@ def compute_movement_angular_velocity(
 
 
 @reads_pynapple_samples
-def compute_step_lengths(
+def step_lengths(
     positions: NDArray[np.float64],
     *,
     metric: DistanceMetric = "euclidean",
@@ -1478,22 +1478,22 @@ def compute_step_lengths(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.behavior.trajectory import compute_step_lengths
+    >>> from neurospatial.behavior.trajectory import step_lengths
     >>>
     >>> # Straight line trajectory with Euclidean distance
     >>> positions = np.column_stack([np.linspace(0, 100, 20), np.zeros(20)])
-    >>> step_lengths = compute_step_lengths(positions, metric="euclidean")
-    >>> len(step_lengths)
+    >>> steps = step_lengths(positions, metric="euclidean")
+    >>> len(steps)
     19
-    >>> np.allclose(step_lengths, step_lengths[0], rtol=0.01)  # Uniform steps
+    >>> np.allclose(steps, steps[0], rtol=0.01)  # Uniform steps
     True
     >>>
     >>> # In an open arena the geodesic steps are the straight steps
     >>> from neurospatial import Environment
     >>> x, y = np.meshgrid(np.arange(0.0, 101.0), np.arange(-10.0, 11.0))
     >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=5.0)
-    >>> geodesic = compute_step_lengths(positions, metric="geodesic", env=env)
-    >>> bool(np.allclose(geodesic, step_lengths))
+    >>> geodesic = step_lengths(positions, metric="geodesic", env=env)
+    >>> bool(np.allclose(geodesic, steps))
     True
 
     References
@@ -1519,10 +1519,10 @@ def compute_step_lengths(
         raise ValueError(msg)
 
     if len(positions) == 0:
-        msg = "compute_step_lengths"
+        msg = "step_lengths"
         raise empty_samples_error(msg, ("positions",))
 
-    paths = metric_paths(metric, env, call="compute_step_lengths")
+    paths = metric_paths(metric, env, call="step_lengths")
     if paths is None:
         step_lengths: NDArray[np.float64] = np.linalg.norm(
             np.diff(positions, axis=0), axis=1
@@ -1627,12 +1627,12 @@ def compute_cumulative_distance(
     -----
     Distance is Euclidean arclength over all coordinate columns, in the
     positions' units. It is not geodesic distance; use
-    ``compute_step_lengths(metric="geodesic")`` for steps along the shortest
+    ``step_lengths(metric="geodesic")`` for steps along the shortest
     paths inside an environment.
 
     See Also
     --------
-    compute_step_lengths : Per-step lengths without observation gating.
+    step_lengths : Per-step lengths without observation gating.
 
     Examples
     --------
@@ -2172,7 +2172,7 @@ def mean_square_displacement(
     See Also
     --------
     compute_planar_turn_angles : Signed turn at each tracking sample
-    compute_step_lengths : Compute step distances
+    step_lengths : Compute step distances
 
     Examples
     --------

@@ -1986,12 +1986,12 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         - **Task-relevant regions**: Check if fields overlap with reward zones
         - **Multi-zone analysis**: Quantify field distribution across zones
 
-        Delegates to ``neurospatial.encoding.border.compute_region_coverage()``.
+        Delegates to ``neurospatial.encoding.border.region_coverage()``.
 
         See Also
         --------
         border_score : Overall border preference score
-        neurospatial.encoding.border.compute_region_coverage : Direct call
+        neurospatial.encoding.border.region_coverage : Direct call
 
         Examples
         --------
@@ -2010,7 +2010,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> isinstance(coverage, dict)
         True
         """
-        from neurospatial.encoding.border import compute_region_coverage
+        from neurospatial.encoding.border import region_coverage
 
         firing_rate = _to_numpy(self._supported_rates())
 
@@ -2026,7 +2026,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         field_bins = np.where(field_mask)[0]
 
         env = self.env
-        return compute_region_coverage(env, field_bins, regions=regions)
+        return region_coverage(env, field_bins, regions=regions)
 
     def has_place_field(
         self,
@@ -6307,6 +6307,10 @@ def has_place_field(
     turns a few spikes into a field-sized bump. For publication, report a
     circular-shift test and its assumptions instead.
 
+    The "Which place-cell function?" table in the user guide compares this
+    function with its neighbors:
+    <https://edeno.github.io/neurospatial/user-guide/neuroscience-metrics/#which-place-cell-function>
+
     Examples
     --------
     >>> import numpy as np
@@ -6640,6 +6644,10 @@ def is_place_cell(
     destinations. Results keep no raw arrays or recompute closures.
     Shuffle keywords belong only to the shuffle; passing one with a value
     other than its default with ``criterion="threshold"`` raises.
+
+    The "Which place-cell function?" table in the user guide compares this
+    function with its neighbors:
+    <https://edeno.github.io/neurospatial/user-guide/neuroscience-metrics/#which-place-cell-function>
 
     See Also
     --------

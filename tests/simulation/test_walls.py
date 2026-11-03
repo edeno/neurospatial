@@ -126,7 +126,7 @@ def test_ray_distances_match_the_analysis_ray_casts(make_env, boundary_source):
     from neurospatial.geometry._boundaries import valid_observers
     from neurospatial.ops.boundary_vectors import (
         boundary_directions,
-        compute_boundary_distances,
+        boundary_distances,
     )
     from neurospatial.simulation.models import BoundaryVectorCellModel
 
@@ -162,7 +162,7 @@ def test_ray_distances_match_the_analysis_ray_casts(make_env, boundary_source):
     ]
     assert len(positions) >= 30  # observers on walls are part of the comparison
     directions = boundary_directions(n_directions=36)
-    expected, _ = compute_boundary_distances(
+    expected, _ = boundary_distances(
         env,
         positions,
         direction_frame="allocentric",

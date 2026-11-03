@@ -149,6 +149,11 @@ defaults, renamed arguments) are listed as **Breaking**.
   whether holes come only from declared walls/obstacles.
 - **`TuningCurveResult.peak_location()`** returns a shape-(1,) array on 1-D
   tuning curves.
+- **`simulation.mazes` was public but unpinned** until #267; check other
+  public subpackages with an `__all__` are in `NAMESPACES`.
+- **Rerun the "LLM guesses the API" probe** from a fresh session started
+  outside this repo (the review's run had seen CLAUDE.md, so it is a lower
+  bound).
 - **`keyword_hint` has no hook for unexpected keywords**, so a result screen
   called with `criterion=` gives a plain `TypeError`.
 

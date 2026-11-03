@@ -92,13 +92,15 @@ frame. See the [video annotation guide](../user-guide/video-annotation.md).
 
 Layout engines for discretizing continuous space.
 
-**Key Modules:**
+**Key Classes and Functions:**
 
-- `layout.base`: `LayoutEngine` protocol definition
-- `layout.engines.*`: Concrete layout implementations
-- `layout.factories`: Factory functions for creating layouts
+- `LayoutEngine`: The protocol every layout implements
+- `RegularGridLayout`, `HexagonalLayout`, `MaskedGridLayout`,
+  `ShapelyPolygonLayout`, `GraphLayout`, `ImageMaskLayout`,
+  `TriangularMeshLayout`: Concrete layout implementations
+- `create_layout()`, `list_available_layouts()`: Build a layout by name
 
-### [neurospatial.ops.alignment](neurospatial/ops/alignment.md)
+### [Aligning environments](neurospatial/ops/alignment.md)
 
 Move probability between the bins of aligned environments.
 
@@ -106,7 +108,7 @@ Move probability between the bins of aligned environments.
 
 - `map_probabilities()`: Move probability mass (posteriors, occupancy) onto another environment's bins
 
-### [neurospatial.ops.transforms](neurospatial/ops/transforms.md)
+### [Affine transforms and calibration](neurospatial/ops/transforms.md)
 
 Affine transformations and video calibration.
 
@@ -119,17 +121,21 @@ Affine transformations and video calibration.
 Neural encoding analyses: how neurons represent space, direction,
 egocentric targets, and gaze.
 
-**Key Modules:**
+**Key Functions** (all public at `neurospatial.encoding`):
 
-- `encoding.spatial`: Place fields and spatial firing-rate maps
-- `encoding.grid`: Grid cells (autocorrelation, gridness score)
-- `encoding.directional`: Head-direction cells and tuning curves
-- `encoding.border`: Border / boundary cell metrics
-- `encoding.egocentric`: Object-vector cells and egocentric tuning
-- `encoding.view`: Spatial-view cells and gaze-based fields
-- `encoding.phase_precession`: Theta-phase precession
-- `encoding.tuning`: Tuning curves over one behavioral variable
-- `encoding.population`: Population-level metrics
+- `compute_spatial_rate()`, `detect_place_fields()`, `is_place_cell()`: Place
+  fields and spatial firing-rate maps
+- `spatial_autocorrelation()`, `grid_score()`: Grid cells
+- `compute_directional_rate()`, `is_head_direction_cell()`: Head-direction
+  cells and tuning curves
+- `border_score()`: Border / boundary cell metrics
+- `compute_object_vector_rate()`, `compute_egocentric_rate()`: Object-vector
+  cells and egocentric tuning
+- `compute_view_rate()`: Spatial-view cells and gaze-based fields
+- `compute_phase_precession()`: Theta-phase precession
+- `compute_tuning_curve()`: Tuning curves over one behavioral variable
+- `population_coverage()`, `population_vector_correlation()`: Population-level
+  metrics
 
 **Key Functions:**
 
@@ -344,31 +350,34 @@ the [complete public workflow](../user-guide/workflows.md#workflow-6-shared-unit
 
 Behavioral analysis built on trajectory + environment.
 
-**Key Modules:**
+**Key Functions** (all public at `neurospatial.behavior`):
 
-- `behavior.trajectory`: Speed, step lengths, cumulative distance, MSD,
-  curvature, planar turning angles, planar curvature, movement angular
-  velocity, home range
+- `step_lengths()`, `compute_cumulative_distance()`,
+  `mean_square_displacement()`, `compute_planar_curvature()`,
+  `compute_planar_turn_angles()`, `compute_movement_angular_velocity()`,
+  `compute_home_range()`: Trajectory metrics
 - `compute_speed(times, positions)`, `heading_from_velocity(times, positions)`,
   `heading_from_body_orientation(times, nose, tail)`: Per-sample speed and
   heading (radians, 0 = East) from tracking data
-- `behavior.resampling`: Distance resampling of observed runs
-- `behavior.navigation`: Path efficiency, goal-directed metrics,
-  graph turn sequences
+- `resample_by_distance()`: Distance resampling of observed runs
+- `compute_path_efficiency()`, `compute_goal_directed_metrics()`,
+  `graph_turn_sequence()`: Path efficiency, goal-directed metrics, graph turn
+  sequences
 - `path_progress()`: Per-sample progress from a start to a goal, 0 to 1, in
   1-D, 2-D and 3-D, per trial with `intervals=`
 - `distance_to_goal()`, `distance_to_boundary()`, `distance_to_reward()`:
   Per-sample distance to a goal, the environment's edge or the reward
   location (GLM covariates)
-- `behavior.segmentation`: Laps, region crossings, movement epochs
-  (`segment_by_velocity`) and goal-directed runs, each as `Intervals`
+- `detect_laps()`, `detect_region_crossings()`, `segment_by_velocity()`,
+  `detect_goal_directed_runs()`: Laps, region crossings, movement epochs and
+  goal-directed runs, each as `Intervals`
 - `detect_region_visits()`: Observed visits to named regions with original
   sample indices and gap censoring
 - `detect_trials()`, `trials_between_visits()`: Trials, the runs between
   consecutive visits, from tracked positions or from port visits you bring
-- `behavior.decisions` / `behavior.vte`: Decision-point analysis,
-  vicarious trial-and-error
-- `behavior.reward`: Reward-field construction
+- `compute_decision_analysis()`, `compute_vte_session()`: Decision-point
+  analysis, vicarious trial-and-error
+- `region_reward_field()`, `goal_reward_field()`: Reward-field construction
 
 ### [neurospatial.events](neurospatial/events/index.md)
 
@@ -385,7 +394,7 @@ Peri-event spike alignment and GLM regressors.
 - `time_to_nearest_event()`, `event_count_in_window()`, `event_indicator()`:
   Time-based GLM regressors
 
-### [neurospatial.ops.egocentric](neurospatial/ops/egocentric.md)
+### [Egocentric transforms](neurospatial/ops/egocentric.md)
 
 Allocentric ↔ egocentric coordinate transforms.
 
@@ -393,10 +402,10 @@ Allocentric ↔ egocentric coordinate transforms.
 
 - `allocentric_to_egocentric()`, `egocentric_to_allocentric()`:
   Frame conversions
-- `compute_egocentric_bearing()`, `compute_egocentric_distance()`:
+- `egocentric_bearing()`, `egocentric_distance()`:
   Relate animal to external targets
 
-### [neurospatial.ops.feature_sampling](neurospatial/ops/feature_sampling.md)
+### [Feature sampling](neurospatial/ops/feature_sampling.md)
 
 Read bin-valued feature maps (floor texture, zones, heights) along the path.
 
@@ -408,7 +417,7 @@ Read bin-valued feature maps (floor texture, zones, heights) along the path.
   The same at points fixed in the animal's frame (ahead, left)
 - `SpatialFeatureResult`: Sampled values with per-sample support and bins
 
-### [neurospatial.ops.visibility](neurospatial/ops/visibility.md)
+### [Visibility and viewsheds](neurospatial/ops/visibility.md)
 
 Visibility / gaze / viewshed computations.
 
@@ -419,12 +428,12 @@ Visibility / gaze / viewshed computations.
 
 **Key Functions:**
 
-- `compute_viewshed()`, `compute_view_field()`,
-  `compute_viewshed_trajectory()`: Viewshed from positions / headings
-- `compute_viewed_location()`: Gaze-direction projection
+- `viewshed()`, `view_field()`,
+  `viewshed_trajectory()`: Viewshed from positions / headings
+- `viewed_location()`: Gaze-direction projection
 - `visibility_occupancy()`, `visible_cues()`: View-time aggregates
 
-### [neurospatial.ops.basis](neurospatial/ops/basis.md)
+### [Spatial basis functions](neurospatial/ops/basis.md)
 
 Spatial basis functions for regression / kernel methods.
 
@@ -439,14 +448,16 @@ Spatial basis functions for regression / kernel methods.
 
 Circular statistics, surrogates, and shuffle controls.
 
-**Key Modules:**
+**Key Functions** (all public at `neurospatial.stats`):
 
-- `stats.circular`: Rayleigh test, circular mean / variance / R,
-  circular-circular and circular-linear correlations, circular basis
-- `stats.shuffle`: Temporal, trial and spike-train shuffles and Monte Carlo
-  p-values; replay shuffles are in `neurospatial.replay`
-- `stats.surrogates`: Poisson and inhomogeneous-Poisson surrogates,
-  jittered-spike controls
+- `rayleigh_test()`, `circular_mean()`, `circular_circular_correlation()`,
+  `circular_linear_correlation()`, `circular_basis()`: Circular statistics
+- `shuffle_time_bins()`, `shuffle_pvalue()`, `shuffle_zscore()`: Temporal,
+  trial and spike-train shuffles and Monte Carlo p-values; replay shuffles are
+  in `neurospatial.replay`
+- `generate_poisson_surrogates()`,
+  `generate_inhomogeneous_poisson_surrogates()`, `generate_jittered_spikes()`:
+  Poisson and inhomogeneous-Poisson surrogates, jittered-spike controls
 
 ### [neurospatial.animation](neurospatial/animation/index.md)
 
@@ -487,15 +498,12 @@ NWB (Neurodata Without Borders) read / write integration.
 
 Generate synthetic spatial data, neural activity, and spike trains for testing and validation.
 
-**Key Modules:**
+Everything below is public at `neurospatial.simulation`; the maze builders are
+in `neurospatial.simulation.mazes`.
 
-- `simulation.trajectory`: Trajectory generation (OU process, structured laps)
-- `simulation.models`: Neural models (place, border, boundary-vector and grid cells)
-- `simulation.spikes`: Spike generation (Poisson process, refractory periods)
-- `simulation.session`: High-level session simulation API
-- `simulation.validation`: Automated validation against ground truth
-- `simulation.examples`: Pre-configured example sessions
-- `simulation.replay`: `simulate_replay_event()`, a candidate replay event
+**Replay events:**
+
+- `simulate_replay_event()`: A candidate replay event
   with a known path (sweep, stationary, jump or random), for comparing replay
   methods; `drop_fraction=` and `n_noise_spikes=` degrade it to measure
   each method's sensitivity (Tingley & Peyrache 2020)
@@ -533,7 +541,7 @@ Named data holders and optional adapters for the array-first API
 path never depends on these; `import neurospatial` never imports pynapple or
 pynwb.
 
-**Simulator holder** ([neurospatial.simulation.session](neurospatial/simulation/session.md)):
+**Simulator holder** (`neurospatial.simulation`):
 
 - `SimulationSession`: Immutable attributes `env`, `spike_times` (a tuple of
   read-only arrays), `unit_ids`, `times`, `positions`, `models`, integer-label
@@ -542,7 +550,7 @@ pynwb.
 - `validate_simulation(sim, *, unit_ids=...)` and
   `plot_session_summary(sim, *, unit_ids=...)` select simulation units by label.
 
-**Spike-train container** ([neurospatial.encoding.spike_trains](neurospatial/encoding/spike_trains.md)):
+**Spike-train container** (`neurospatial.encoding`):
 
 - `SpikeTrains`: Frozen ragged per-unit spike trains with `unit_ids` / optional
   `unit_table`. Positional access (`st[i]`), label selection
@@ -550,7 +558,7 @@ pynwb.
   the batch `compute_*` / `decode_*` functions. Population results select units
   the same way: `rates[i]` by position, `rates.sel(unit_id=...)` by label.
 
-**Epoch selection** ([neurospatial.behavior.epochs](neurospatial/behavior/epochs.md)):
+**Epoch selection** (`neurospatial.behavior`):
 
 - `restrict(times, *arrays, epochs=...)`: Slice `times` and time-aligned arrays
   to a set of epochs.
@@ -558,7 +566,7 @@ pynwb.
 - `restrict_spike_trains(spike_times, epochs)`: Mask ragged per-unit trains, each by
   its own timestamps; returns a `SpikeTrains` that keeps unit labels and metadata.
 
-**Bayesian decoder object** ([neurospatial.decoding.estimator](neurospatial/decoding/estimator.md)):
+**Bayesian decoder object** (`neurospatial.decoding`):
 
 - `BayesianDecoder`: Frozen `fit(...)` → `predict(...)` / `predict_summary(...)`
   / `score(...)` wrapper over `decode_session` (byte-exact). Decodes through the
@@ -575,7 +583,7 @@ pynwb.
   explicit labels must match a labelled spike group's values and order.
   `decode_session` also requires positions and computes its own encoding maps.
 
-**pynapple adapters** ([neurospatial.io.pynapple](neurospatial/io/pynapple.md)) — requires `neurospatial[pynapple]`:
+**pynapple adapters** (`neurospatial.io`) — requires `neurospatial[pynapple]`:
 
 - `from_pynapple(obj)`: `TsGroup` → `(trains, unit_ids, epochs)`, `Ts` →
   `(spike_times, epochs)`, `Tsd` / `TsdFrame` → `(times, values, epochs)`,

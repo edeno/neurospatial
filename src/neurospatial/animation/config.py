@@ -10,10 +10,9 @@ matplotlib scale bar and its "nice" 1-2-5 length rule live in
 
 Imports
 -------
-``ScaleBarConfig`` can be imported from either location:
+``ScaleBarConfig`` is public at ``neurospatial.layout``:
 
->>> from neurospatial.animation.config import ScaleBarConfig  # Direct
->>> from neurospatial.animation import ScaleBarConfig  # Via animation package
+>>> from neurospatial.layout import ScaleBarConfig
 
 Note: This module provides **visualization scale bars** (showing physical scale on plots).
 This is distinct from the existing **calibration scale bar** feature

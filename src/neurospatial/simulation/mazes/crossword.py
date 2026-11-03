@@ -160,6 +160,7 @@ class CrosswordDims(MazeDims):
 
 def make_crossword_maze(
     dims: CrosswordDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:
@@ -258,7 +259,9 @@ def make_crossword_maze(
 
     w = dims.corridor_width
     half_box = dims.box_size / 2
-    tracks = [make_corridor_polygon(start, end, w) for start, end in _tracks(dims)]
+    tracks = [
+        make_corridor_polygon(start, end, width=w) for start, end in _tracks(dims)
+    ]
     boxes = {}
     for name, grid_xy in _BOXES.items():
         x, y = _to_cm(grid_xy, dims)

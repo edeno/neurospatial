@@ -502,9 +502,9 @@ def _spatial_feature() -> Any:
 
 
 def _viewshed() -> Any:
-    from neurospatial.ops import compute_viewshed
+    from neurospatial.ops import viewshed
 
-    return compute_viewshed(_box(), np.array([50.0, 50.0]), heading=0.0)
+    return viewshed(_box(), np.array([50.0, 50.0]), heading=0.0)
 
 
 def _assembly_event_response() -> Any:

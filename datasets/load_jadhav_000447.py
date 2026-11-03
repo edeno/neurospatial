@@ -28,7 +28,13 @@ from typing import Any
 
 import numpy as np
 from _fetch import dandi_stream_url, open_nwb
-from _record import Range, Recording, check_expectations, validate_recording
+from _record import (
+    Range,
+    Recording,
+    check_expectations,
+    checked_span,
+    validate_recording,
+)
 
 DATASET = {
     "key": "jadhav_000447",
@@ -70,9 +76,18 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"expected x, y, speed under 'centimeters; centimeters/second', got {unit_label!r}"
         raise ValueError(msg)
     positions = data[:, :2]
+    span = checked_span(positions, 80.0, 200.0)
     step_speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
     finite = np.isfinite(step_speed) & np.isfinite(data[1:, 2])
     agreement = float(np.corrcoef(step_speed[finite], data[1:, 2][finite])[0, 1])
+    # A scale-free correlation cannot confirm cm/s; the magnitudes must agree too.
+    moving = finite & (step_speed > 5.0)
+    scale = float(np.median(data[1:, 2][moving]) / np.median(step_speed[moving]))
+    if not 0.5 <= scale <= 2.0 or agreement < 0.5:
+        msg = (
+            f"column 2 is not the speed of x, y (scale {scale:.2f}, r {agreement:.2f})"
+        )
+        raise ValueError(msg)
     windows = trials[["start_time", "stop_time"]].to_numpy(dtype=float)
     inbound = trials["trajectory_type"].to_numpy() == 1
     return Recording(
@@ -106,8 +121,9 @@ def load(cache: Path | None = None) -> Recording:
             "readers_used": ("units",),
         },
         conversions=(
-            "positions: Position/SpatialSeries columns 0, 1 (cm); column 2 is speed"
-            f" in cm/s (r = {agreement:.2f} with the speed from x, y), dropped",
+            f"positions: Position/SpatialSeries columns 0, 1 (cm); {span}; column 2"
+            f" is speed in cm/s (median ratio {scale:.2f} to the speed from x, y while"
+            f" moving, r = {agreement:.2f}), dropped",
             "epochs: trials table rows as trials, split by trajectory_type"
             " (1 inbound, 0 outbound); 'epoch intervals' as run",
         ),

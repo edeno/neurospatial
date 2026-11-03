@@ -127,6 +127,7 @@ class WMazeDims(MazeDims):
 
 def make_w_maze(
     dims: WMazeDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

@@ -115,6 +115,7 @@ def _arm_endpoints(dims: YMazeDims) -> list[tuple[float, float]]:
 
 def make_y_maze(
     dims: YMazeDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

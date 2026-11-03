@@ -16,7 +16,7 @@ from neurospatial import Environment
 from neurospatial.encoding import border_score
 from neurospatial.encoding._physical_border import border_geometry
 from neurospatial.geometry import boundary_geometry, cell_polygons, wall_hit_bins
-from neurospatial.ops.visibility import compute_viewed_location
+from neurospatial.ops.visibility import viewed_location
 from neurospatial.simulation import mazes
 
 ELEVATED = [
@@ -79,7 +79,7 @@ def test_elevated_maze_bounds_movement_but_not_gaze(elevated):
     assert np.isfinite(border_score(elevated, np.ones(elevated.n_bins)))
     rng = np.random.default_rng(0)
     origins = elevated.bin_centers[rng.integers(0, elevated.n_bins, 200)]
-    viewed = compute_viewed_location(
+    viewed = viewed_location(
         origins, rng.uniform(-np.pi, np.pi, 200), method="ray_cast", env=elevated
     )
     assert np.isnan(viewed).all()
@@ -93,7 +93,7 @@ def test_walled_maze_walls_and_gaze_hits_all_have_bins(walled):
     border_geometry(walled, "physical")
     rng = np.random.default_rng(0)
     origins = walled.bin_centers[rng.integers(0, walled.n_bins, 500)]
-    hits = compute_viewed_location(
+    hits = viewed_location(
         origins, rng.uniform(-np.pi, np.pi, 500), method="ray_cast", env=walled
     )
     seen = np.isfinite(hits).all(axis=1)

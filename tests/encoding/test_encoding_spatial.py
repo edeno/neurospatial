@@ -956,8 +956,8 @@ class TestSpatialRateResultRegionCoverage:
         self,
         env_with_regions: Environment,
     ) -> None:
-        """region_coverage() should delegate to border.compute_region_coverage()."""
-        from neurospatial.encoding.border import compute_region_coverage as crc_func
+        """region_coverage() should delegate to border.region_coverage()."""
+        from neurospatial.encoding.border import region_coverage as crc_func
         from neurospatial.encoding.spatial import SpatialRateResult
 
         n_bins = env_with_regions.n_bins

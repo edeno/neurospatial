@@ -28,8 +28,10 @@ compute_spatial_rate, compute_spatial_rates : Spatial encoding
     Estimate rate maps from environment, spikes, times and positions.
 SpatialRateResult, SpatialRatesResult : Spatial rate results
     Measure, plot and export one neuron or a population.
-decode_position, DecodingResult : Position decoding
-    Decode a count matrix against rate maps; inspect posterior and estimates.
+decode_session, decode_position, DecodingResult : Position decoding
+    ``decode_session`` takes spike times, times and positions and returns the
+    posterior; ``decode_position`` takes a precomputed spike-count matrix and
+    rate maps. Inspect posterior and estimates on the result.
 peri_event_histogram, PeriEventResult : Peri-event analysis
     Compute and inspect a histogram aligned to event times.
 NeurospatialError : Base library exception
@@ -95,7 +97,6 @@ behavior : Behavioral analysis
     Speed and heading, trajectory metrics, segmentation (laps, trials),
     navigation metrics, decision analysis (VTE), reward fields.
 
-    >>> from neurospatial.behavior import segmentation, navigation, trajectory
     >>> from neurospatial.behavior import detect_laps, detect_trials
     >>> from neurospatial.behavior import compute_speed, heading_from_velocity
 
@@ -173,22 +174,22 @@ Use domain imports for specialized analyses::
 
     # Neural encoding
     from neurospatial.encoding import compute_spatial_rate, spatial_information
-    from neurospatial.encoding.grid import grid_score
+    from neurospatial.encoding import grid_score
 
     # Neural decoding
     from neurospatial.decoding import decode_position
 
     # Behavioral analysis
     from neurospatial.behavior import heading_from_velocity
-    from neurospatial.behavior.segmentation import detect_laps
-    from neurospatial.behavior.navigation import compute_path_efficiency
+    from neurospatial.behavior import detect_laps
+    from neurospatial.behavior import compute_path_efficiency
 
     # Events
     from neurospatial.events import peri_event_histogram
 
     # Operations
-    from neurospatial.ops.distance import distance_field
-    from neurospatial.ops.egocentric import allocentric_to_egocentric
+    from neurospatial.ops import distance_field
+    from neurospatial.ops import allocentric_to_egocentric
 
     # I/O
     from neurospatial.io import to_file, from_file
@@ -313,6 +314,7 @@ if TYPE_CHECKING:
     from neurospatial._interval_table import Intervals as Intervals
     from neurospatial.decoding import DecodingResult as DecodingResult
     from neurospatial.decoding.posterior import decode_position as decode_position
+    from neurospatial.decoding.session import decode_session as decode_session
     from neurospatial.encoding.spatial import SpatialRateResult as SpatialRateResult
     from neurospatial.encoding.spatial import SpatialRatesResult as SpatialRatesResult
     from neurospatial.encoding.spatial import (
@@ -381,6 +383,7 @@ _LAZY_ATTRS: dict[str, tuple[str, str]] = {
     "SpatialRateResult": ("encoding.spatial", "SpatialRateResult"),
     "SpatialRatesResult": ("encoding.spatial", "SpatialRatesResult"),
     "decode_position": ("decoding.posterior", "decode_position"),
+    "decode_session": ("decoding.session", "decode_session"),
     "DecodingResult": ("decoding", "DecodingResult"),
     "peri_event_histogram": ("events.alignment", "peri_event_histogram"),
     "PeriEventResult": ("events", "PeriEventResult"),
@@ -435,6 +438,7 @@ __all__ = [
     "compute_spatial_rate",
     "compute_spatial_rates",
     "decode_position",
+    "decode_session",
     "decoding",
     "encoding",
     "environment",

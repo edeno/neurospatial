@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 def make_corridor_polygon(
     start: tuple[float, float],
     end: tuple[float, float],
+    *,
     width: float,
 ) -> Polygon:
     """Create a rectangular corridor polygon between two points.
@@ -123,6 +124,7 @@ def corridor_end_point(
 def make_buffered_line(
     start: tuple[float, float],
     end: tuple[float, float],
+    *,
     width: float,
 ) -> Polygon:
     """Create a polygon by buffering a line segment.
@@ -160,6 +162,7 @@ def make_buffered_line(
 def make_circular_arena(
     center: tuple[float, float],
     radius: float,
+    *,
     quad_segs: int = 16,
 ) -> Polygon:
     """Create a circular polygon (arena, pool, platform).
@@ -194,6 +197,7 @@ def make_circular_arena(
 
 def union_polygons(
     polygons: Sequence[Polygon | MultiPolygon],
+    *,
     simplify_tolerance: float | None = None,
 ) -> Polygon | MultiPolygon:
     """Combine multiple polygons into a single geometry.

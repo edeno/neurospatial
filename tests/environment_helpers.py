@@ -170,7 +170,7 @@ def face_graph(binning):
 
     Each edge carries the face measure ``A`` and the normal ``distance``, in
     neighbor-pair order; this is the input ``DiffusionGeometry.from_graph``
-    and ``compute_diffusion_kernels`` take.
+    and ``diffusion_kernels`` take.
     """
     faces = binning.build_faces()
     graph = nx.Graph()

@@ -580,45 +580,45 @@ class TestNormalizeVTEScores:
 
 
 # =============================================================================
-# Test compute_vte_index()
+# Test vte_index()
 # =============================================================================
 
 
 class TestComputeVTEIndex:
-    """Test compute_vte_index() function."""
+    """Test vte_index() function."""
 
     def test_equal_weighting(self):
         """Test VTE index with equal weighting (head_sweep_weight=0.5)."""
-        from neurospatial.behavior.vte import compute_vte_index
+        from neurospatial.behavior.vte import vte_index
 
         z_head_sweep = 1.0
         z_speed_inv = 1.0
 
-        result = compute_vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=0.5)
+        result = vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=0.5)
 
         # 0.5 * 1.0 + 0.5 * 1.0 = 1.0
         assert result == 1.0
 
     def test_head_sweep_only(self):
         """Test VTE index with head_sweep_weight=1.0 (head sweep only)."""
-        from neurospatial.behavior.vte import compute_vte_index
+        from neurospatial.behavior.vte import vte_index
 
         z_head_sweep = 2.0
         z_speed_inv = 0.5
 
-        result = compute_vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=1.0)
+        result = vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=1.0)
 
         # 1.0 * 2.0 + 0.0 * 0.5 = 2.0
         assert result == 2.0
 
     def test_speed_only(self):
         """Test VTE index with head_sweep_weight=0.0 (speed only)."""
-        from neurospatial.behavior.vte import compute_vte_index
+        from neurospatial.behavior.vte import vte_index
 
         z_head_sweep = 2.0
         z_speed_inv = 0.5
 
-        result = compute_vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=0.0)
+        result = vte_index(z_head_sweep, z_speed_inv, head_sweep_weight=0.0)
 
         # 0.0 * 2.0 + 1.0 * 0.5 = 0.5
         assert result == 0.5
@@ -631,10 +631,10 @@ class TestComputeVTEIndex:
 
 @pytest.mark.parametrize("alpha", [-0.1, 1.5, np.nan])
 def test_vte_index_weight_must_be_a_weight(alpha):
-    from neurospatial.behavior.vte import compute_vte_index
+    from neurospatial.behavior.vte import vte_index
 
     with pytest.raises(ValueError, match=r"head_sweep_weight in \[0, 1\]"):
-        compute_vte_index(1.0, 1.0, head_sweep_weight=alpha)
+        vte_index(1.0, 1.0, head_sweep_weight=alpha)
 
 
 def test_session_head_sweep_weight_and_threshold_are_validated(t_maze_environment):

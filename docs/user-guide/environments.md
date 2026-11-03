@@ -385,7 +385,7 @@ import numpy as np
 from shapely.geometry import LineString, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.ops.visibility import compute_viewed_location
+from neurospatial.ops import viewed_location
 
 platform = box(0, 0, 100, 100)
 arena = OpenArena(
@@ -398,7 +398,7 @@ arena = OpenArena(
     wall_kinds={"glass": "transparent_wall"},
 )
 env = Environment.from_polygon(platform, bin_size=5.0, units="cm", arena=arena)
-viewed = compute_viewed_location(
+viewed = viewed_location(
     np.array([[10.0, 50.0], [10.0, 50.0]]),
     np.array([0.0, np.pi]),  # east, then west
     method="ray_cast",
@@ -718,7 +718,7 @@ import numpy as np
 from shapely.geometry import box
 from neurospatial import Environment
 from neurospatial.encoding import border_score
-from neurospatial.ops.transforms import AffineND
+from neurospatial.ops import AffineND
 
 env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0, units="cm")
 field = (env.bin_centers[:, 0] < 10).astype(float)
@@ -773,19 +773,19 @@ import numpy as np
 from shapely.geometry import box, LineString
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
-from neurospatial.ops.visibility import compute_viewed_location, visible_cues
+from neurospatial.ops import viewed_location, visible_cues
 
 env = Environment.from_grid_mask(
     np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2,
     arena=OpenArena(box(0, 0, 10, 10), walls=(LineString([(5, 0), (5, 10)]),)),
 )
 crop = env.subset(mask=env.bin_centers[:, 0] < 4)
-hit = compute_viewed_location(
+hit = viewed_location(
     np.array([[2.5, 4.5]]), np.array([0.0]), env=crop,
     method="ray_cast", max_distance=30,
 )
 np.testing.assert_allclose(hit, [[5.0, 4.5]])  # real wall, beyond the analysis crop
-approximate = compute_viewed_location(
+approximate = viewed_location(
     np.array([[2.5, 4.5]]), np.array([0.0]), env=crop,
     method="ray_cast", max_distance=30, boundary_source="analysis",
 )
@@ -796,20 +796,20 @@ visible, _, _ = visible_cues(
 np.testing.assert_array_equal(visible, [True, False])  # on the wall; behind it
 ```
 
-`compute_viewed_location()` returns the first wall contact. No hit within
+`viewed_location()` returns the first wall contact. No hit within
 `max_distance`, a nonfinite observation, or an observer outside a declared
 outline yields NaN. An observer tracked exactly on a wall sees the next wall
 when it faces into the room; facing out through the wall, or exactly along it,
 gives a zero-distance contact at the observer. On an internal wall, the
 observer sees the side it faces. A cue at the first contact is visible; a cue
 behind it is occluded. A lost tracking frame is not an occluded view:
-`visible_cues()` and `compute_view_field()` refuse a NaN or infinite position
-or heading, and `compute_viewshed_trajectory()` keeps such frames missing,
+`visible_cues()` and `view_field()` refuse a NaN or infinite position
+or heading, and `viewshed_trajectory()` keeps such frames missing,
 with a `visibility_map` of NaN. Stored affine frames
 use locally bounded projection errors for boundary contact. Physical mode only
 uses supplied wall evidence; inferred domains do not add unasserted outer walls.
 
-`compute_viewshed()` uses the same test for bins as for cues. A bin is
+`viewshed()` uses the same test for bins as for cues. A bin is
 visible when the direction to its center lies inside the field of view and the
 straight line to its center crosses no wall. The test is exact for each bin, so
 the result does not depend on bin size or distance. A bin whose center is
@@ -835,7 +835,7 @@ that reach the wall, or explicitly request the analysis-boundary
 approximation. To give exact cell areas at a curved or slanted wall, clip a
 grid that covers the arena to the measured polygon and attach its walls:
 `Environment.from_bins(grid.clip(polygon).binning, arena=OpenArena(polygon))`.
-The geometry-only `compute_viewed_location()` still returns the known physical
+The geometry-only `viewed_location()` still returns the known physical
 hit even when its location has no analysis bin.
 
 View encoding requires a retained bin for each observed finite hit; it does not

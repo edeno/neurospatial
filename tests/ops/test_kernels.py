@@ -1,4 +1,4 @@
-"""Tests for the low-level diffusion-kernel primitive ``compute_diffusion_kernels``.
+"""Tests for the low-level diffusion-kernel primitive ``diffusion_kernels``.
 
 These exercise the graph-level seam: given ``"A"`` (shared-face measure) and
 ``"distance"`` on each edge plus a node-ordered ``volumes`` array, it assembles
@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from neurospatial import Environment
-from neurospatial.ops.smoothing import compute_diffusion_kernels
+from neurospatial.ops.smoothing import diffusion_kernels
 
 
 def _line_graph(n, *, distance=1.0, A=1.0):
@@ -47,7 +47,7 @@ class TestComputeDiffusionKernels:
     def test_kernel_shape(self):
         """Kernel has shape (n_bins, n_bins) and dtype float64."""
         graph = _line_graph(3)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(3), bandwidth=1.0, mode="transition"
         )
         assert kernel.shape == (3, 3)
@@ -56,7 +56,7 @@ class TestComputeDiffusionKernels:
     def test_kernel_symmetry_uniform_grid(self):
         """On a uniform grid (uniform M) the transition kernel is symmetric."""
         graph = _grid_graph_with_A(3)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(9), bandwidth=1.0, mode="transition"
         )
         assert np.allclose(kernel, kernel.T, atol=1e-10)
@@ -64,7 +64,7 @@ class TestComputeDiffusionKernels:
     def test_transition_column_stochastic(self):
         """transition mode: each column sums to 1."""
         graph = _line_graph(4)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(4), bandwidth=0.5, mode="transition"
         )
         np.testing.assert_allclose(kernel.sum(axis=0), 1.0, atol=1e-10)
@@ -79,7 +79,7 @@ class TestComputeDiffusionKernels:
         graph.add_edge(1, 2, distance=2.0, A=1.0)
         volumes = np.array([1.0, 1.5, 2.0])
 
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=volumes, bandwidth=1.0, mode="density"
         )
         weighted = volumes @ kernel
@@ -88,7 +88,7 @@ class TestComputeDiffusionKernels:
     def test_average_row_stochastic(self):
         """average mode: each row sums to 1."""
         graph = _line_graph(4)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.array([1.0, 2.0, 1.5, 1.0]), bandwidth=0.7, mode="average"
         )
         np.testing.assert_allclose(kernel.sum(axis=1), 1.0, atol=1e-10)
@@ -96,7 +96,7 @@ class TestComputeDiffusionKernels:
     def test_mass_conservation(self):
         """transition mode conserves total mass under kernel @ field."""
         graph = _line_graph(5)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(5), bandwidth=1.0, mode="transition"
         )
         field = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
@@ -106,7 +106,7 @@ class TestComputeDiffusionKernels:
     def test_impulse_spreading(self):
         """An impulse spreads to neighbors, decaying with distance."""
         graph = _line_graph(5)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(5), bandwidth=1.0, mode="transition"
         )
         field = np.zeros(5)
@@ -124,7 +124,7 @@ class TestComputeDiffusionKernels:
         graph.add_node(3, pos=(11.0,))
         graph.add_edge(2, 3, distance=1.0, A=1.0)
 
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(4), bandwidth=1.0, mode="transition"
         )
         field = np.array([1.0, 0.0, 0.0, 0.0])
@@ -138,13 +138,13 @@ class TestComputeDiffusionKernels:
         field = np.zeros(5)
         field[2] = 1.0
         small = (
-            compute_diffusion_kernels(
+            diffusion_kernels(
                 graph, volumes=np.ones(5), bandwidth=0.3, mode="transition"
             )
             @ field
         )
         large = (
-            compute_diffusion_kernels(
+            diffusion_kernels(
                 graph, volumes=np.ones(5), bandwidth=2.0, mode="transition"
             )
             @ field
@@ -156,9 +156,7 @@ class TestComputeDiffusionKernels:
         """The primitive reads edges but must not add attributes to the caller's graph."""
         graph = _grid_graph_with_A(3)
         before = {(u, v): dict(d) for u, v, d in graph.edges(data=True)}
-        compute_diffusion_kernels(
-            graph, volumes=np.ones(9), bandwidth=1.0, mode="transition"
-        )
+        diffusion_kernels(graph, volumes=np.ones(9), bandwidth=1.0, mode="transition")
         after = {(u, v): dict(d) for u, v, d in graph.edges(data=True)}
         assert before == after, "input graph edges must be unchanged"
 
@@ -170,7 +168,7 @@ class TestComputeDiffusionKernelsValidation:
         graph = _line_graph(2)
         del graph.edges[0, 1]["A"]
         with pytest.raises(ValueError, match=r"missing 'A'"):
-            compute_diffusion_kernels(
+            diffusion_kernels(
                 graph, volumes=np.ones(2), bandwidth=1.0, mode="transition"
             )
 
@@ -178,21 +176,21 @@ class TestComputeDiffusionKernelsValidation:
         graph = _line_graph(2)
         del graph.edges[0, 1]["distance"]
         with pytest.raises(ValueError, match=r"missing 'A' and/or 'distance'"):
-            compute_diffusion_kernels(
+            diffusion_kernels(
                 graph, volumes=np.ones(2), bandwidth=1.0, mode="transition"
             )
 
     def test_bad_volumes_shape_raises(self):
         graph = _line_graph(2)
         with pytest.raises(ValueError, match=r"volumes must have shape"):
-            compute_diffusion_kernels(
+            diffusion_kernels(
                 graph, volumes=np.ones(3), bandwidth=1.0, mode="transition"
             )
 
     def test_nonpositive_volumes_raise(self):
         graph = _line_graph(2)
         with pytest.raises(ValueError, match=r"volumes must be finite"):
-            compute_diffusion_kernels(
+            diffusion_kernels(
                 graph, volumes=np.array([1.0, 0.0]), bandwidth=1.0, mode="transition"
             )
 
@@ -200,16 +198,14 @@ class TestComputeDiffusionKernelsValidation:
         graph = _line_graph(2)
         for bad in (0.0, -1.0):
             with pytest.raises(ValueError, match=r"bandwidth must be finite and > 0"):
-                compute_diffusion_kernels(
+                diffusion_kernels(
                     graph, volumes=np.ones(2), bandwidth=bad, mode="transition"
                 )
 
     def test_invalid_mode_raises(self):
         graph = _line_graph(2)
         with pytest.raises(ValueError, match=r"Invalid mode"):
-            compute_diffusion_kernels(
-                graph, volumes=np.ones(2), bandwidth=1.0, mode="invalid"
-            )
+            diffusion_kernels(graph, volumes=np.ones(2), bandwidth=1.0, mode="invalid")
 
 
 class TestKernelEdgeCases:
@@ -218,7 +214,7 @@ class TestKernelEdgeCases:
     def test_single_node_graph(self):
         graph = nx.Graph()
         graph.add_node(0, pos=(0.0,))
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(1), bandwidth=1.0, mode="transition"
         )
         assert kernel.shape == (1, 1)
@@ -226,7 +222,7 @@ class TestKernelEdgeCases:
 
     def test_two_node_graph(self):
         graph = _line_graph(2)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(2), bandwidth=1.0, mode="transition"
         )
         assert kernel.shape == (2, 2)
@@ -235,14 +231,14 @@ class TestKernelEdgeCases:
 
     def test_very_small_bandwidth_localizes(self):
         graph = _line_graph(5)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(5), bandwidth=0.01, mode="transition"
         )
         assert np.diag(kernel).sum() > 0.95
 
     def test_very_large_bandwidth_spreads(self):
         graph = _line_graph(5)
-        kernel = compute_diffusion_kernels(
+        kernel = diffusion_kernels(
             graph, volumes=np.ones(5), bandwidth=100.0, mode="transition"
         )
         for col in range(5):
@@ -301,9 +297,9 @@ class TestKernelMemoryDocumentation:
     """The O(n^2) memory cost is documented; large kernels build without a warning."""
 
     def test_docstring_mentions_memory_and_performance(self):
-        from neurospatial.ops.smoothing import compute_diffusion_kernels
+        from neurospatial.ops.smoothing import diffusion_kernels
 
-        doc = compute_diffusion_kernels.__doc__.lower()
+        doc = diffusion_kernels.__doc__.lower()
         assert "memory" in doc
         assert "gb" in doc
         assert "performance" in doc

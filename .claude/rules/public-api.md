@@ -41,6 +41,18 @@ follow these rules. `tests/test_public_api_snapshot.py`,
   | Sample times | `times` | `t` |
 
 - Spell out acronyms in public names (no `detect_ovcs`).
+- Function prefixes say what goes in and what comes out. `compute_*` takes raw
+  recordings (`spike_times`, `times`, `positions`, `headings`) and returns the
+  quantity or result computed from them. A bare noun (`spatial_information`,
+  `border_score`, `field_emd`, `step_lengths`) computes one metric from an
+  existing map, result or array, and names the quantity in the domain's own
+  words (`peri_event_histogram`, `rank_order_correlation`, `goal_bias`).
+  `detect_*` returns events or intervals; `is_*` and `has_*` return bool
+  verdicts; `plot_*` draws. `test_compute_prefix_rule` requires every
+  module-level `compute_*` function to have `times` or `spike_times` among its
+  positional parameters, with the reasoned exceptions listed in that test.
+  Methods are not covered (`Environment.compute_kernel` and
+  `compute_gaussian_kernel` take no times).
 - Data arguments are positional. Algorithm parameters, thresholds and ranges are
   keyword-only after `*`. Metric functions whose two array arguments share a
   shape take the second one keyword-only (`spatial_information(rate,
@@ -98,6 +110,21 @@ deepcopy preserve read-only state.
 Results own `analysis_settings` and return independent dictionaries, including
 nested recording windows, so inspecting or editing exported settings cannot
 change training support or recorded analysis choices.
+
+## Public homes
+
+- A name is public at one path. A class or function defined in a submodule and
+  re-exported by its package is documented and imported at the package
+  (`neurospatial.replay.detect_replay`, never `neurospatial.replay.methods`).
+  The submodule leaves `NAMESPACES` in `tests/test_public_api_snapshot.py`
+  unless it holds public names its package does not re-export (the recipe
+  constants of `replay.methods` and `replay.dataset`); its docstring says so
+  and its `__all__` lists only those names. Root re-exports of the flagship
+  workflows are the one deliberate duplicate.
+- Every public package defines `__dir__` returning `sorted(__all__)`, so
+  `dir()` shows what the documentation teaches.
+- Documentation imports only public paths; `tests/docs/test_public_paths.py`
+  enforces it.
 
 ## Cell types
 
