@@ -165,8 +165,8 @@
       "share_pairs_shortcut": 0.9190042075736325,
       "track_width": 1.0,
       "track_width_stated": true,
-      "samples_on_track": 1.0,
-      "bins_on_track": 1.0
+      "samples_on_track": 0.9543979441392318,
+      "bins_on_track": 0.9856115107913669
     },
     "graph_env": {
       "graph_edges": 127,
@@ -182,7 +182,7 @@
     "dataset": "yartsev_bat_demo",
     "units": "m",
     "kind": "3d",
-    "source": "file r_lim ('boundaries of the room', NP_Bat_Demo.m) and the feeder coordinates in NP_Bat_Demo.m",
+    "source": "Forli et al. 2025 Methods (Zotero full-text cache): indoor flight room 5.6 x 5.2 x 2.5 m, two feeders on the wall at one end; file r_lim ('boundaries of the room', NP_Bat_Demo.m) 5.8 x 5.2 x 2.3 m and the feeder coordinates r_fd in NP_Bat_Demo.m",
     "env": {
       "n_bins": 1352,
       "n_dims": 3,
@@ -454,8 +454,8 @@
       "share_pairs_shortcut": 0.0004187604690117253,
       "track_width": 10.0,
       "track_width_stated": false,
-      "samples_on_track": 0.8159333333333333,
-      "bins_on_track": 0.7931654676258992
+      "samples_on_track": 0.5731,
+      "bins_on_track": 0.5809352517985612
     },
     "verdict": "matches",
     "verdict_reason": "",
@@ -554,8 +554,8 @@
       "share_pairs_shortcut": 0.3475658419792498,
       "track_width": 10.0,
       "track_width_stated": false,
-      "samples_on_track": 0.9155662593984962,
-      "bins_on_track": 0.6800258564964448
+      "samples_on_track": 0.6875234962406015,
+      "bins_on_track": 0.42857142857142855
     },
     "verdict": "matches",
     "verdict_reason": "",
@@ -644,8 +644,8 @@
       "share_pairs_shortcut": 0.0,
       "track_width": 10.0,
       "track_width_stated": false,
-      "samples_on_track": 0.26814401814401817,
-      "bins_on_track": 0.4142335766423358
+      "samples_on_track": 0.12984312984312985,
+      "bins_on_track": 0.2718978102189781
     },
     "verdict": "mismatch",
     "verdict_reason": "3 parts with 1% of the bins or more, apparatus has 1",
@@ -820,11 +820,7 @@
       "bin_to_reference_p95": 10.992253594707917,
       "env_over_track_median": 0.7655920367108009,
       "env_over_track_p05": 0.6175425818855101,
-      "share_pairs_shortcut": 0.8316115702479339,
-      "track_width": 10.0,
-      "track_width_stated": false,
-      "samples_on_track": 0.9389178413939671,
-      "bins_on_track": 0.9293299157817649
+      "share_pairs_shortcut": 0.8316115702479339
     },
     "lattice": {
       "n_bars": 147,
@@ -851,16 +847,17 @@
       "from_graph_all_edges_components": 1,
       "from_graph_track_width": 30.82789166182694,
       "from_graph_occupancy_share_of_bins": 0.5684807256235828,
+      "from_graph_samples_placed": 0.9899999450848165,
       "adjacent_bars": {
-        "n_pairs": 10339,
-        "straight_median": 16.679786653620972,
-        "env_geodesic_median": 19.31370849898476,
+        "n_pairs": 5478,
+        "straight_median": 16.554714598780212,
+        "env_geodesic_median": 18.24191172926027,
         "env_geodesic_p05_p95": [
           11.3,
           26.6
         ],
-        "along_bars_median": 30.666739310823573,
-        "share_env_below_075_bars": 0.5497630331753555
+        "along_bars_median": 31.146246917590126,
+        "share_env_below_075_bars": 0.8282219788243884
       },
       "movement_along_bars": {
         "n_axes": 3,
@@ -966,7 +963,7 @@
     "dataset": "takigawa_7114733",
     "units": "cm",
     "kind": "track",
-    "source": "Tirole et al. 2022: two novel 2 m linear tracks, view-obstructing dividers; file: each track's centreline (199.8, 199.6 cm)",
+    "source": "Tirole et al. 2022: two novel 2 m linear tracks, view-obstructing dividers; file: each track's centreline (199.8, 199.6 cm; not an independent check, cm_per_pixel comes from the 2 m length)",
     "env": {
       "n_bins": 952,
       "n_dims": 2,
@@ -1005,8 +1002,8 @@
       "share_pairs_shortcut": 0.6192170818505338,
       "track_width": 10.0,
       "track_width_stated": false,
-      "samples_on_track": 0.793631532700113,
-      "bins_on_track": 0.5262605042016807
+      "samples_on_track": 0.587137537135445,
+      "bins_on_track": 0.37289915966386555
     },
     "verdict": "mismatch",
     "verdict_reason": "geodesic 0.87 x the distance along the track",
@@ -1051,8 +1048,8 @@
       "share_pairs_shortcut": 0.000887705281846427,
       "track_width": 10.0,
       "track_width_stated": false,
-      "samples_on_track": 0.9019166666666667,
-      "bins_on_track": 0.73767258382643
+      "samples_on_track": 0.6438,
+      "bins_on_track": 0.47337278106508873
     },
     "graph_env": {
       "graph_edges": 1,
@@ -1103,8 +1100,8 @@
       "share_pairs_shortcut": 0.007056870070568701,
       "track_width": 10.0,
       "track_width_stated": false,
-      "samples_on_track": 0.8683050410181004,
-      "bins_on_track": 0.7339449541284404
+      "samples_on_track": 0.6944119799075454,
+      "bins_on_track": 0.6311926605504588
     },
     "graph_env": {
       "graph_edges": 9,
@@ -1431,11 +1428,11 @@
       "share_pairs_shortcut": 0.00202020202020202,
       "track_width": 6.35,
       "track_width_stated": true,
-      "samples_on_track": 0.9934009622975972,
-      "bins_on_track": 0.9263157894736842
+      "samples_on_track": 0.8818280675097943,
+      "bins_on_track": 0.7789473684210526
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "verdict": "mismatch",
+    "verdict_reason": "78% of bins within the stated track width",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/valero_000568.png"
   },
   {
