@@ -749,7 +749,8 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
 
     Each reader is ``ok`` when it returns the loader's range-checked arrays
     and times (after unit scaling; positions where the loader kept a
-    sample), ``absent`` when neither finds the data,
+    sample, with the count of reader-finite samples the loader set to NaN),
+    ``absent`` when neither finds the data,
     and otherwise a mismatch or a miss, which makes the cell a workaround; a
     reader that raises anything but "not found" makes it an error. When the
     loader itself built a field with that reader (``params["readers_used"]``),
@@ -791,7 +792,12 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
         # (lost tracking, by a rule in ``conversions``) are its own choice.
         kept = np.isfinite(rec.positions).all(axis=1)
         same = np.allclose(scaled[kept], rec.positions[kept], equal_nan=True)
-        return labelled("position", "ok" if same else "mismatch: values differ")
+        # Reported, so a loader that masks real data stays visible.
+        masked = int(np.sum(np.isfinite(scaled).all(axis=1) & ~kept))
+        note = (
+            f"; {masked} reader-finite samples the loader set to NaN" if masked else ""
+        )
+        return labelled("position", "ok" if same else "mismatch: values differ") + note
 
     def heading(value: Any) -> str:
         got = np.asarray(wrap_angle(np.asarray(value.headings, dtype=float)))

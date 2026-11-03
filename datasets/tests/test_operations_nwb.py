@@ -148,15 +148,20 @@ def test_same_times_tolerance_is_absolute():
 
 def test_readers_agree_where_the_loader_kept_samples(tmp_path):
     # A loader that sets lost tracking to NaN (held frames) still read the
-    # same series; values the loader changed are a mismatch.
+    # same series, and the samples it set to NaN are counted; values the
+    # loader changed are a mismatch.
     from dataclasses import replace
 
     rec = _write(tmp_path / "masked.nwb", heading_unit="radians")
+    assert nwb_readers(rec, {}).summary["position"] == "ok"
     masked = rec.positions.copy()
     masked[100:130] = np.nan
     outcome = nwb_readers(replace(rec, positions=masked), {})
-    assert outcome.summary["position"] == "ok"
+    assert outcome.status == "ok"
+    assert outcome.summary["position"] == (
+        "ok; 30 reader-finite samples the loader set to NaN"
+    )
     moved = masked.copy()
     moved[200] += 5.0
     outcome = nwb_readers(replace(rec, positions=moved), {})
-    assert outcome.summary["position"] == "mismatch: values differ"
+    assert outcome.summary["position"].startswith("mismatch: values differ")
