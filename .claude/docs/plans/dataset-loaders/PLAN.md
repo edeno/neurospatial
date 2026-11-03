@@ -2,7 +2,7 @@
 
 **Status:** Not started.
 
-**Goal:** Ship `neurospatial.datasets`: correct, ready-to-analyze loaders for open spatial neuroscience datasets. This plan covers the module and its first five datasets.
+**Goal:** Ship `neurospatial.datasets`: correct, ready-to-analyze loaders for open spatial neuroscience datasets. This plan covers the module, its first five datasets, and Valero 2022 (DANDI 000568) as the first dataset with video.
 
 **Architecture:**
 
@@ -109,7 +109,8 @@ Methods:
 
 - `rec.load_lfp(channel=None) -> tuple[ndarray, float]`: on request only. It raises `NotImplementedError` for datasets whose loader has no LFP yet, and says which.
 - `rec.plot_overview(*, fig=None) -> matplotlib.figure.Figure`. This is not `plot`, because the rules fix `plot(*, ax=None)` to return one Axes, and the overview has six panels.
-- `rec.animation(*, time_range=None, trail_length=None) -> Animation`: an interactive or movie scene of the session, built on `neurospatial.animation` (task 6b).
+- `rec.animation(*, time_range=None, trail_length=None, video=False) -> Animation`: an interactive or movie scene of the session, built on `neurospatial.animation` (task 6b); `video=True` fetches the session's video and draws the data over it (task 6c).
+- `rec.video -> VideoSource | None`: where the session's video is, its frame times, its calibration and their bases. `None` when the dataset publishes no video. Nothing is downloaded until `rec.animation(video=True)` or `rec.video.fetch()`.
 - `rec.summary() -> dict`: flat scalars, every key a property of `rec`.
 - `repr(rec)`: the full summary text.
 
@@ -180,6 +181,26 @@ Methods:
       - `Animation` refuses scenes without a field stream (`scene.py:345`, "fields must contain at least one stream"). If a single-sample static field is refused or animates wrongly, fix that in `neurospatial.animation` with its own test and a CHANGELOG line. Don't work around it here.
       - The same applies to any overlay that can't take a `Recording`'s arrays as they are.
     - **Docs:** the user guide shows `rec.animation().show(backend="fastplotlib")` and a 10 s export. The 3-D bat page shows the room in fastplotlib or napari.
+
+6c. **Data over the session's video** (`_video.py`, `_overview.py`).
+    - **`VideoSource`** is a frozen dataclass with these fields:
+      - `url` or `asset_id`, `sha256`, `size_bytes`, from the registry;
+      - `frame_times`, shape `(n_frames,)`, and `frame_times_basis`, a `Conversion`;
+      - `calibration`, a `VideoCalibration` (`neurospatial.ops.transforms`) or `None`;
+      - `calibration_basis`, a `Conversion` whose evidence holds the fit residual in px and cm;
+      - `fetch(*, cache=None) -> Path`, which reuses task 1's fetch and checksum code.
+    - **The scene:** `rec.animation(video=True)` builds task 6b's scene and adds a `VideoOverlay(path, calibration=..., times=frame_times, z_order="below")` (`src/neurospatial/animation/overlays.py:2601`). The occupancy field is drawn transparent, so the frames show through. Pose keypoints, where `rec` has them, are drawn with the existing pose or position overlays.
+    - **Refusals:**
+      - With no video for the dataset: `InputError` saying so.
+      - With no calibration: `InputError` saying which calibration sources were tried. `VideoOverlay`'s fallback that stretches the frame over `env.dimension_ranges` is never used.
+    - **Frame times:** read the video `ImageSeries` `timestamps`. If the frame count equals the position sample count and the two clocks differ by a constant (000568: 22.55–23.12 s, survey gap G-054), use the position times. Record that as an inferred `Conversion` with the offset as evidence, and add the offset to `watch_outs`. Otherwise use the video's own times and say so.
+    - **Calibration, in order:**
+      1. A pixel-to-cm factor or transform stated in the file.
+      2. A least-squares affine between pixel tracking and the converted positions, where the file stores both. Report the residual. Refuse a fit whose residual exceeds one bin.
+      3. Landmarks (track ends, arena corners) placed by hand on one frame, stored in `registry/<dataset>.json` with who placed them. Build it with `calibrate_video(env, path, landmarks_px=..., landmarks_env=...)` (`src/neurospatial/animation/calibration.py:32`).
+    - **Dataset:** add `valero_2022` (DANDI 000568) as the sixth dataset. Its default session is the survey's (`sub-fCamk2_ses-fCamk2-201014-sess3`); move the logic from `datasets/load_valero_000568.py`. It is the real-data case for this task because its video is small. Before writing the calibration, read which tracking the file stores in pixels. If none is stored, use landmarks. 001845's videos are too large for the first group and stay with the showcase datasets.
+    - **Gaps in the animation module:** fix them there, with their own tests, as in 6b. For example, `VideoOverlay` may not accept an NWB external-file path relative to the NWB file.
+    - **Docs:** the Valero dataset page shows the position over 20 s of video, and how to pass the user's own decoded posterior into the same scene.
 
 7. **Registry and catalog.**
    - **Registry contents.** `registry/<dataset>.json` holds:
@@ -261,6 +282,10 @@ Methods:
 | `tests/datasets/test_overview.py::test_animation_scene_holds_the_data` | `rec.animation()` on a synthetic recording has the occupancy field and position, raster, event and epoch overlays built from `rec`'s arrays; a heading-only recording raises `InputError` naming what is missing |
 | `test_overview.py::test_animation_export_frames` | a 2 s widget-backend export of a synthetic recording at 10 fps has 20 frames, headless |
 | `test_overview.py::test_animation_show_fastplotlib` (`gui`) | `.show(backend="fastplotlib")` opens on 2-D and 3-D synthetic recordings |
+| `tests/datasets/test_video.py::test_overlay_lands_on_tracked_point` | on a synthetic video that draws a bright dot at known cm positions through a known calibration, the exported frame's brightest pixel is within 1 px of the `PositionOverlay` marker, at 3 times |
+| `test_video.py::test_frame_times_follow_position_clock` | a synthetic recording whose video timestamps are offset by a constant, with equal frame counts, uses the position times and records an inferred `Conversion` and a watch-out with the offset |
+| `test_video.py::test_refuses_without_calibration` | `rec.animation(video=True)` with no calibration source raises `InputError` naming the sources tried; with no video it raises `InputError` saying so |
+| `tests/datasets/test_valero_2022.py::test_video_scene` (`realdata`) | the default session's video fetches with its checksum, and a 2 s export over it has the expected frame count; a frame sheet is written for the person who verifies it |
 | `tests/datasets/test_catalog.py::test_registry_complete` | every registry session has a SHA-256, a size and a license field; exactly one `default` per dataset |
 | `tests/datasets/test_fetch.py` (moved) plus `::test_crcns_http_client_error_hides_credentials` | the cache, checksums and refusals behave as before; a `RemoteDisconnected` traceback with `capture_locals=True` contains neither secret |
 | `tests/nwb/...::test_<reader>_<fix>` | one per `io.nwb` reader fix, on a synthetic pynwb file |
