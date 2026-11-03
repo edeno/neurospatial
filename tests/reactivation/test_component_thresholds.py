@@ -85,9 +85,8 @@ def test_bin_shuffle_maximum_matches_a_hand_shuffled_matrix() -> None:
         n_shuffles=1,
         rng=np.random.default_rng(7),
     )
-    # Replay the generator: one draw for the ICA seed, then the shuffle.
+    # Replay the generator: the shuffle comes first (the ICA seed follows).
     generator = np.random.default_rng(7)
-    generator.integers(0, 2**32 - 1)
     z = (counts - counts.mean(0)) / counts.std(0)
     shuffled = generator.permuted(z, axis=0)
     expected = np.linalg.eigvalsh(np.corrcoef(shuffled, rowvar=False)).max()

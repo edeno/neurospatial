@@ -103,7 +103,7 @@ class TestTemplateShares:
         assert np.isfinite(result.p_value)
 
 
-def test_a_sampled_score_without_shuffles_follows_the_seed(track):
+def test_a_sampled_score_without_shuffles_follows_the_seed(track, monkeypatch):
     env, rates = track
     counts = _sweep_counts()
     times = DT * (np.arange(len(counts)) + 0.5)
@@ -121,10 +121,12 @@ def test_a_sampled_score_without_shuffles_follows_the_seed(track):
     ]
     assert scores[0] == scores[1]
     assert scores[0] != scores[2]
+    from neurospatial import _random
+
     first = compare_replay_methods(env, [event], replay_methods=[method], rng=None)
-    again = compare_replay_methods(
-        env, [event], replay_methods=[method], rng=first.attrs["rng_entropy"]
-    )
+    # The recorded entropy, fed to the step every stream derives from.
+    monkeypatch.setattr(_random, "_entropy", lambda rng: first.attrs["rng_entropy"])
+    again = compare_replay_methods(env, [event], replay_methods=[method], rng=None)
     assert first["score"].iloc[0] == again["score"].iloc[0]
 
 

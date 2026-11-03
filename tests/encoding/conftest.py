@@ -903,7 +903,15 @@ def grid_and_hexless():
 
     100 cm box, 2.5 cm bins, 10 minutes. The second cell fires on a
     smoothed-noise map: its rate map scores 0.52 but its autocorrelogram has
-    no hexagonal first ring of peaks, so it has no grid spacing.
+    no hexagonal first ring of peaks, so it has no grid spacing. That score
+    is near the 95th percentile of its circular shifts, so it passes the
+    0.4 screen but not reliably the shuffle test.
+
+    ``wide_grid`` is a 70 cm grid, beyond the spacings a 1 m box resolves
+    (about 0.6 of its side, see ``grid_score``): its rate map scores
+    0.98, above all but about 0.3% of its circular shifts, but its first ring
+    lies outside the defined lags of the autocorrelogram, so it too has no
+    grid spacing.
     """
     from types import SimpleNamespace
 
@@ -938,6 +946,9 @@ def grid_and_hexless():
     noise = (noise - noise.min()) / np.ptp(noise)
     cell = np.clip((positions / 2.5).astype(int), 0, 39)
     hexless = 0.2 + 8 * noise[cell[:, 0], cell[:, 1]] ** 3
+    wide = GridCellModel(
+        env, grid_spacing=70.0, max_rate=10.0, baseline_rate=1.0
+    ).firing_rate(times, positions)
     return SimpleNamespace(
         env=env,
         times=times,
@@ -946,4 +957,5 @@ def grid_and_hexless():
             generate_poisson_spikes(grid, times, rng=21),
             generate_poisson_spikes(hexless, times, rng=7),
         ],
+        wide_grid=generate_poisson_spikes(wide, times, rng=9),
     )

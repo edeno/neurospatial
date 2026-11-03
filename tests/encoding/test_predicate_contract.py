@@ -93,6 +93,12 @@ def test_cell_type_labels_refuse_none_thresholds(significance_recording):
     for name in ("alpha", "min_spatial_info"):
         with pytest.raises(InputError, match=rf"{name}=None is not a threshold"):
             types.label_cell_types(**{name: None})
+        for correction in (None, "holm"):
+            with pytest.raises(InputError, match=rf"{name}=None is not a threshold"):
+                types.summary_table(**{name: None}, correction=correction)
+    for name in ("alpha", "min_info"):
+        with pytest.raises(InputError, match=rf"{name}=None is not a threshold"):
+            place.summary_table(**{name: None})
 
 
 def test_default_predicate_matches_explicit_shuffle(

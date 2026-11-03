@@ -1144,11 +1144,11 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
     """
     Estimate largest eigenvalue of a symmetric positive semi-definite Laplacian.
 
-    Uses scipy.sparse.linalg.eigsh for efficiency. When ``eigsh`` does not
-    converge, returns the Gershgorin upper bound ``2 * max(diagonal)``, an
-    exact upper bound that may be loose for highly irregular graphs (it only
-    makes the Chebyshev scaling less efficient, not wrong); no warning is
-    issued.
+    Uses scipy.sparse.linalg.eigsh from a fixed start vector, so the estimate
+    is the same on every call. When ``eigsh`` does not converge, returns the
+    Gershgorin upper bound ``2 * max(diagonal)``, an exact upper bound that
+    may be loose for highly irregular graphs (it only makes the Chebyshev
+    scaling less efficient, not wrong); no warning is issued.
 
     Parameters
     ----------
@@ -1169,9 +1169,15 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
 
     from scipy.sparse.linalg import ArpackError, ArpackNoConvergence
 
-    # Use eigsh with which='LM' (largest magnitude)
+    # Use eigsh with which='LM' (largest magnitude). ARPACK's default start
+    # vector is random and unseeded, so repeated calls would differ in the
+    # last bits; a fixed one makes the estimate reproducible. Not a vector of
+    # ones: with equal bin measures that is the eigenvector of eigenvalue 0.
+    start = np.random.default_rng(0).standard_normal(n)
     try:
-        eigenvalues = eigsh(laplacian, k=1, which="LM", return_eigenvectors=False)
+        eigenvalues = eigsh(
+            laplacian, k=1, which="LM", v0=start, return_eigenvectors=False
+        )
         return float(eigenvalues[0])
     except (ArpackNoConvergence, ArpackError):
         # ARPACK failed to converge on the largest eigenvalue. Fall back to the

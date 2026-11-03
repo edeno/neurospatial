@@ -2,7 +2,7 @@
 
 **Status:** Not started.
 
-**Goal:** Ship `neurospatial.datasets`: correct, ready-to-analyze loaders for open spatial neuroscience datasets. This plan covers the module and its first five datasets.
+**Goal:** Ship `neurospatial.datasets`: correct, ready-to-analyze loaders for open spatial neuroscience datasets. This plan covers the module, its first five datasets, and Valero 2022 (DANDI 000568) as the first dataset with video.
 
 **Architecture:**
 
@@ -68,7 +68,7 @@ Public names, at `neurospatial.datasets`:
 | Name | Signature | Returns |
 | --- | --- | --- |
 | `catalog` | `catalog() -> pandas.DataFrame` | one row per session. Columns: `dataset`, `session`, `species`, `brain_regions`, `apparatus`, `n_units`, `verified`, `default`, `license`, `archive`, `size_bytes`, `citation` |
-| `load` | `load(dataset, session=None, *, cache=None, stream=False) -> Recording` | the session. `session=None` is the dataset's default (tutorial-familiar) session |
+| `load` | `load(dataset, session=None, *, cache=None, stream=False, accept_failed_checks=()) -> Recording` | the session. `session=None` is the dataset's default (tutorial-familiar) session. `accept_failed_checks` names refusing checks (`"clock"`, `"units"`) to load through; each accepted failure is kept in `rec.failed_checks` and heads "Watch out" |
 | `fetch_all` | `fetch_all(dataset, *, cache=None) -> list[Path]` | downloads every session. Logs the total size first and refuses to start if the cache's disk has less free space than that |
 | `Recording` | frozen dataclass | see the attributes below |
 | `DatasetCheckError` | `NeurospatialError` subclass | raised when a session fails its checks |
@@ -100,6 +100,7 @@ Public names, at `neurospatial.datasets`:
 | `params` | `Mapping`: the analysis choices used by the worked result, including `train_epochs` and `test_epochs` |
 | `conversions` | `tuple[Conversion, ...]`. `Conversion(text, basis, evidence)`, with `basis` in `{"stated", "inferred"}` |
 | `watch_outs` | `tuple[str, ...]` |
+| `failed_checks` | `tuple[str, ...]`: refusing checks this session failed and the user accepted with `accept_failed_checks`; empty otherwise |
 | `verified` | `bool` |
 | `provenance` | `Provenance(archive, url, sha256, size_bytes, neurospatial_version, fetched_at)` |
 | `citation` | `str` |
@@ -109,7 +110,8 @@ Methods:
 
 - `rec.load_lfp(channel=None) -> tuple[ndarray, float]`: on request only. It raises `NotImplementedError` for datasets whose loader has no LFP yet, and says which.
 - `rec.plot_overview(*, fig=None) -> matplotlib.figure.Figure`. This is not `plot`, because the rules fix `plot(*, ax=None)` to return one Axes, and the overview has six panels.
-- `rec.animation(*, time_range=None, trail_length=None) -> Animation`: an interactive or movie scene of the session, built on `neurospatial.animation` (task 6b).
+- `rec.animation(*, time_range=None, trail_length=None, video=False) -> Animation`: an interactive or movie scene of the session, built on `neurospatial.animation` (task 6b); `video=True` fetches the session's video and draws the data over it (task 6c).
+- `rec.video -> VideoSource | None`: where the session's video is, its frame times, its calibration and their bases. `None` when the dataset publishes no video. Nothing is downloaded until `rec.animation(video=True)` or `rec.video.fetch()`.
 - `rec.summary() -> dict`: flat scalars, every key a property of `rec`.
 - `repr(rec)`: the full summary text.
 
@@ -138,12 +140,14 @@ Methods:
 
      Failures raise `InputError` with `_format_error`.
    - **Summary and repr.** `summary()` keys (each a property): `n_units`, `duration`, `n_dims`, `sampling_rate`, `tracked_fraction`, `longest_gap`, `median_speed`, `speed_p95`, `verified`. Declare their units in `_repr_units`: s, Hz, s, {units}/s.
-4. **The automatic checks (`_checks.py`).** They run on every session before `load` returns, and any failure raises `DatasetCheckError` with what failed, the numbers, and what would fix it. There is no override.
+4. **The automatic checks (`_checks.py`).** They run on every session before `load` returns.
+   - **Refusing checks:** clock and units. A failure raises `DatasetCheckError` with what failed, the numbers, what would fix it, and the keyword that loads anyway: `accept_failed_checks=("clock",)`, for example. An accepted failure goes into `rec.failed_checks` (a `tuple[str, ...]`) and is the first item under "Watch out".
+   - **Warning checks:** the rest. They go into `watch_outs` with their numbers and never change the arrays.
    - **Clock:** spikes lie within the tracked span on tracked epochs (an untracked sleep epoch is not tracked); events lie within the recording; epochs lie within the recording and don't overlap within one name.
    - **Units:** the position span is within the dataset's stated range, using `checked_span`'s logic; the sampling rate matches the stated rate within 1%.
-   - **Missing is not zero:** the share of samples at exactly (0, 0) is not above 0.1%. Lost tracking stored as zeros fails.
+   - **Missing is not zero** (warning): more than 0.1% of samples at exactly (0, 0) is reported as likely lost tracking stored as zeros. The samples are not changed. A loader whose source documents zeros as missing converts them to NaN as a stated `Conversion` instead.
    - **Frozen and bridged tracking:** runs of ≥ 10 identical position samples, and steps faster than the dataset's stated physical speed limit, are counted. They go into `watch_outs` as numbers, not refusals, because some apparatus has the animal still. The survey review found this pattern in Valero 000568 and 001880.
-   - **Unit inventory:** units with no spikes in the analysed epochs are counted in `units.fires_in_epochs` and reported.
+   - **Unit inventory** (warning): units with no spikes in the analysed epochs are counted in `units.fires_in_epochs` and reported.
 
    Tests use synthetic recordings, each failing exactly one check, and assert the message names it.
 5. **Summary text (`_summary.py`).**
@@ -180,6 +184,26 @@ Methods:
       - `Animation` refuses scenes without a field stream (`scene.py:345`, "fields must contain at least one stream"). If a single-sample static field is refused or animates wrongly, fix that in `neurospatial.animation` with its own test and a CHANGELOG line. Don't work around it here.
       - The same applies to any overlay that can't take a `Recording`'s arrays as they are.
     - **Docs:** the user guide shows `rec.animation().show(backend="fastplotlib")` and a 10 s export. The 3-D bat page shows the room in fastplotlib or napari.
+
+6c. **Data over the session's video** (`_video.py`, `_overview.py`).
+    - **`VideoSource`** is a frozen dataclass with these fields:
+      - `url` or `asset_id`, `sha256`, `size_bytes`, from the registry;
+      - `frame_times`, shape `(n_frames,)`, and `frame_times_basis`, a `Conversion`;
+      - `calibration`, a `VideoCalibration` (`neurospatial.ops.transforms`) or `None`;
+      - `calibration_basis`, a `Conversion` whose evidence holds the fit residual in px and cm;
+      - `fetch(*, cache=None) -> Path`, which reuses task 1's fetch and checksum code.
+    - **The scene:** `rec.animation(video=True)` builds task 6b's scene and adds a `VideoOverlay(path, calibration=..., times=frame_times, z_order="below")` (`src/neurospatial/animation/overlays.py:2601`). The occupancy field is drawn transparent, so the frames show through. Pose keypoints, where `rec` has them, are drawn with the existing pose or position overlays.
+    - **Refusals:**
+      - With no video for the dataset: `InputError` saying so.
+      - With no calibration: `InputError` saying which calibration sources were tried. `VideoOverlay`'s fallback that stretches the frame over `env.dimension_ranges` is never used.
+    - **Frame times:** read the video `ImageSeries` `timestamps`. If the frame count equals the position sample count and the two clocks differ by a constant (000568: 22.55–23.12 s, survey gap G-054), use the position times. Record that as an inferred `Conversion` with the offset as evidence, and add the offset to `watch_outs`. Otherwise use the video's own times and say so.
+    - **Calibration, in order:**
+      1. A pixel-to-cm factor or transform stated in the file.
+      2. A least-squares affine between pixel tracking and the converted positions, where the file stores both. Report the residual. Refuse a fit whose residual exceeds one bin.
+      3. Landmarks (track ends, arena corners) placed by hand on one frame, stored in `registry/<dataset>.json` with who placed them. Build it with `calibrate_video(env, path, landmarks_px=..., landmarks_env=...)` (`src/neurospatial/animation/calibration.py:32`).
+    - **Dataset:** add `valero_2022` (DANDI 000568) as the sixth dataset. Its default session is the survey's (`sub-fCamk2_ses-fCamk2-201014-sess3`); move the logic from `datasets/load_valero_000568.py`. It is the real-data case for this task because its video is small. Before writing the calibration, read which tracking the file stores in pixels. If none is stored, use landmarks. 001845's videos are too large for the first group and stay with the showcase datasets.
+    - **Gaps in the animation module:** fix them there, with their own tests, as in 6b. For example, `VideoOverlay` may not accept an NWB external-file path relative to the NWB file.
+    - **Docs:** the Valero dataset page shows the position over 20 s of video, and how to pass the user's own decoded posterior into the same scene.
 
 7. **Registry and catalog.**
    - **Registry contents.** `registry/<dataset>.json` holds:
@@ -253,14 +277,19 @@ Methods:
 | `tests/datasets/test_recording.py::test_validation_refuses_bad_shapes` | non-increasing `times`, mismatched `positions`, duplicate unit ids and an inferred `Conversion` without evidence each raise `InputError`, naming the field |
 | `test_recording.py::test_summary_keys_read_back` | every `summary()` key is a property of `rec` with that value |
 | `test_recording.py::test_arrays_read_only` | `rec.positions.flags.writeable` is False |
-| `tests/datasets/test_checks.py::test_each_check_fails_alone` | parametrized: for each check, a synthetic recording that fails only that check raises `DatasetCheckError`, naming it, with the numbers |
+| `tests/datasets/test_checks.py::test_each_check_fails_alone` | parametrized: for each refusing check, a synthetic recording that fails only that check raises `DatasetCheckError` naming it, its numbers and the `accept_failed_checks` value; for each warning check, it loads, with a watch-out naming it, and its arrays equal the input |
+| `test_checks.py::test_accepted_failure_travels` | `load(..., accept_failed_checks=("clock",))` on a clock-failing synthetic session returns it with `rec.failed_checks == ("clock",)`, and that failure is the first "Watch out" line; accepting a check that did not fail changes nothing |
 | `test_checks.py::test_untracked_sleep_passes` | spikes in an untracked sleep epoch don't fail the clock check |
-| `test_checks.py::test_origin_zeros_fail` | 1% of samples at exactly (0, 0) fails, and 0.05% passes |
+| `test_checks.py::test_origin_zeros_warn` | 1% of samples at exactly (0, 0) gives a watch-out with the share and leaves the positions unchanged; 0.05% gives none |
 | `tests/datasets/test_summary.py::test_summary_text` | a synthetic recording prints the six sections in order, "Watch out" last; an unverified one prints "Not yet checked by hand" |
 | `tests/datasets/test_overview.py::test_occupancy_panel_is_the_data` | the occupancy panel's array equals `env.occupancy(...)` and its NaNs are masked; a dataset without headings shows "not in this dataset" |
 | `tests/datasets/test_overview.py::test_animation_scene_holds_the_data` | `rec.animation()` on a synthetic recording has the occupancy field and position, raster, event and epoch overlays built from `rec`'s arrays; a heading-only recording raises `InputError` naming what is missing |
 | `test_overview.py::test_animation_export_frames` | a 2 s widget-backend export of a synthetic recording at 10 fps has 20 frames, headless |
 | `test_overview.py::test_animation_show_fastplotlib` (`gui`) | `.show(backend="fastplotlib")` opens on 2-D and 3-D synthetic recordings |
+| `tests/datasets/test_video.py::test_overlay_lands_on_tracked_point` | on a synthetic video that draws a bright dot at known cm positions through a known calibration, the exported frame's brightest pixel is within 1 px of the `PositionOverlay` marker, at 3 times |
+| `test_video.py::test_frame_times_follow_position_clock` | a synthetic recording whose video timestamps are offset by a constant, with equal frame counts, uses the position times and records an inferred `Conversion` and a watch-out with the offset |
+| `test_video.py::test_refuses_without_calibration` | `rec.animation(video=True)` with no calibration source raises `InputError` naming the sources tried; with no video it raises `InputError` saying so |
+| `tests/datasets/test_valero_2022.py::test_video_scene` (`realdata`) | the default session's video fetches with its checksum, and a 2 s export over it has the expected frame count; a frame sheet is written for the person who verifies it |
 | `tests/datasets/test_catalog.py::test_registry_complete` | every registry session has a SHA-256, a size and a license field; exactly one `default` per dataset |
 | `tests/datasets/test_fetch.py` (moved) plus `::test_crcns_http_client_error_hides_credentials` | the cache, checksums and refusals behave as before; a `RemoteDisconnected` traceback with `capture_locals=True` contains neither secret |
 | `tests/nwb/...::test_<reader>_<fix>` | one per `io.nwb` reader fix, on a synthetic pynwb file |

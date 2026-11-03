@@ -22,7 +22,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._random import _entropy, _name_key, _stream
+from neurospatial._random import _name_key, _root, _stream
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     ResultMixin,
@@ -813,11 +813,11 @@ def recurring_sequences_significance(
     }
     onsets = [_onsets(train, method.burst_isi) for train in trains]
     observed = _search(onsets, int(reference_unit), **options)
-    entropy = _entropy(rng)
+    root = _root(rng)
     counts: dict[str, NDArray[np.int64]] = {}
     p_values: dict[str, float] = {}
     for kind in method.surrogates:
-        stream = _stream(entropy, _name_key(kind))
+        stream = _stream(root, _name_key(kind))
         kind_counts = np.array(
             [
                 _search(

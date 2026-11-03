@@ -120,30 +120,101 @@ def test_long_overlapping_windows_are_not_called_milliseconds(trained, decode):
         decode(env, counts[:200], rates, dt=0.6, times=times)
 
 
-@pytest.mark.parametrize(
-    ("dt", "refused"), [(1.0, False), (float(np.nextafter(1.0, 2.0)), True)]
-)
-def test_milliseconds_refusal_needs_dt_above_one_second(trained, dt, refused):
-    """At the 1 s cutoff, with dt 200 times the 5 ms spacing either side."""
+def _decode_or_refuse(trained, dt, step, refused, *, start=0.0):
+    """Decode 200 bins centered ``step`` s apart; check refusal or acceptance."""
     env, rates, counts, _ = trained
-    times = np.arange(200) * 0.005
+    times = start + np.arange(200) * step
     if refused:
-        with pytest.raises(ValueError, match="milliseconds"):
+        with pytest.raises(ValueError, match="milliseconds") as error:
             decode_position(env, counts[:200], rates, dt=dt, times=times)
-    else:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            decode_position(env, counts[:200], rates, dt=dt, times=times)
+        message = str(error.value)
+        assert f"{float(np.median(np.diff(times))):g} s spacing" in message
+        assert f"dt={dt / 1000:g} for {dt:g} ms" in message
+        return
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        # A dt above 1 s still gets the general warning, which has no times.
+        warnings.filterwarnings("ignore", "(?s).*longer than 1 second")
+        decoded = decode_position(env, counts[:200], rates, dt=dt, times=times)
+    assert decoded.posterior.shape == (200, env.n_bins)
 
 
-def test_milliseconds_refusal_needs_dt_100_times_the_spacing(trained):
-    """dt=25 (meant as ms) on 0.25 s centers is 100 times the spacing."""
-    env, rates, counts, _ = trained
-    times = np.arange(200) * 0.25
-    with pytest.raises(ValueError, match=r"100 times the 0\.25 s spacing"):
-        decode_position(env, counts[:200], rates, dt=25.0, times=times)
-    with pytest.warns(UserWarning, match="longer than 1 second"):
-        decode_position(env, counts[:200], rates, dt=24.9, times=times)
+@pytest.mark.parametrize(
+    ("dt", "step", "refused"),
+    [
+        # dt typed in milliseconds over fine steps: 25000 and 50000 steps.
+        (25.0, 0.001, True),
+        (100.0, 0.002, True),
+        # dt typed in milliseconds shorter than a frame: 15 ms over 60 Hz
+        # frames is 900 steps, 5 ms over 25 ms frames 200 steps, and both
+        # are 5 s or more when read as seconds.
+        (15.0, 1 / 60, True),
+        (5.0, 0.025, True),
+        # 2 s windows stepped by 10 ms: 200 steps; 3 s by 5 ms: 600 steps.
+        (2.0, 0.01, False),
+        (3.0, 0.005, False),
+        # 10 s windows over 1 s steps: 10 steps.
+        (10.0, 1.0, False),
+        # A dt of 1 s or less is seconds, however fine the step.
+        (0.6, 0.001, False),
+        (0.8, 0.001, False),
+        (0.3, 0.0005, False),
+        (0.6, 0.005, False),
+        (1.0, 0.001, False),
+    ],
+    ids=[
+        "25-by-1ms",
+        "100-by-2ms",
+        "15ms-by-60Hz",
+        "5ms-by-25ms",
+        "2s-by-10ms",
+        "3s-by-5ms",
+        "10s-by-1s",
+        "600ms-by-1ms",
+        "800ms-by-1ms",
+        "300ms-by-0.5ms",
+        "600ms-by-5ms",
+        "1s-by-1ms",
+    ],
+)
+def test_dt_refused_when_it_reads_as_milliseconds(trained, dt, step, refused):
+    _decode_or_refuse(trained, dt, step, refused)
+
+
+# A step of 2**-7 s makes each ratio exact in floating point.
+_STEP = 2.0**-7
+
+
+@pytest.mark.parametrize(
+    ("dt", "step", "start", "refused"),
+    [
+        # Below 5 s, dt is refused from exactly 1000 steps (1.95 s).
+        (1000 * _STEP / 4, _STEP / 4, 0.0, True),
+        (998 * _STEP / 4, _STEP / 4, 0.0, False),
+        # 25 ms bins on a clock near 5e4 s: the median spacing rounds to
+        # 0.02500000000145519, 999.99999994 steps, still refused.
+        (25.0, 0.025, 5e4, True),
+        # From 5 s, dt is refused from 100 steps.
+        (5.0, 0.05, 0.0, True),
+        (5.0, 5.0 / 99, 0.0, False),
+        (float(np.nextafter(5.0, 0.0)), 0.025, 0.0, False),
+        # dt = 1 s is seconds even at 1024 steps; just above 1 s it is not.
+        (1.0, 2.0**-10, 0.0, False),
+        (float(np.nextafter(1.0, 2.0)), 2.0**-10, 0.0, True),
+    ],
+    ids=[
+        "1000-steps",
+        "998-steps",
+        "1000-steps-on-clock",
+        "5s-100-steps",
+        "5s-99-steps",
+        "below-5s-200-steps",
+        "dt-1",
+        "above-dt-1",
+    ],
+)
+def test_milliseconds_dt_boundaries(trained, dt, step, start, refused):
+    _decode_or_refuse(trained, dt, step, refused, start=start)
 
 
 @pytest.mark.parametrize(

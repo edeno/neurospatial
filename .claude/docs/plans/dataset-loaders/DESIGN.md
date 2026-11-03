@@ -152,6 +152,34 @@ module (`neurospatial.animation`); it is not a new viewer:
 - Users can add their own fields to the same scene, for example a decoded
   posterior.
 
+**Over the recording's video, when it has one.** The maintainer asked for
+this too: where a dataset publishes the session's video, the same scene can
+draw the data over the camera frames (`rec.animation(video=True)`). This
+covers the tracked position and head direction, pose keypoints, regions and
+the environment's outline. It is the most direct check a user has that the
+tracking and the environment line up with what the camera saw. Of the
+survey's recordings, DANDI 000568 (one `.avi` per session, about 59 MB) and
+001845 (one `.mp4` per pair, 160 GB in all) have video, linked from their
+NWB files.
+
+- **Fetched only on request.** The video is not part of `load()`. It comes
+  with `video=True`, per session, and goes into the same cache.
+- **Frame times.** These come from the file's video `ImageSeries`. When they
+  disagree with the position times for the same frames (000568's run 22.6 s
+  early, survey gap G-054), the overlay follows the position times. That
+  choice is a `Conversion` with basis "inferred", and the evidence is the
+  equal frame counts and the offset. The offset is also listed under
+  "Watch out".
+- **Pixels to environment.** The mapping is a `VideoCalibration`. It comes
+  from the file's own pixel-to-cm conversion where one is stated, or from a
+  fit between the file's pixel tracking and its converted positions where
+  both are stored. Failing those, it comes from hand-placed landmarks
+  recorded in the registry. Each calibration is labelled with its basis and
+  residual. Without one, the video overlay refuses and says why, instead of
+  stretching the frame over the environment.
+- **Which video.** A session's video counts as verified only after a person
+  has looked at a sheet of frames with the tracked point drawn on them.
+
 ### Attributes: plain arrays in the order functions take them
 
 ```python
@@ -291,7 +319,7 @@ maintainer expects some to be hard.
    - where a session exists in two archives, both agree (hc-11 against DANDI
      000044 already does).
 
-   A failed check refuses the load; it does not warn.
+   A failed clock check refuses the load (see "Failed checks" below).
 3. **Wrong environment.** The environment is declared from the stated
    apparatus and judged on misfit evidence, not on tracking spread (survey
    phase 5). An inferred environment says so in the summary.
@@ -348,10 +376,25 @@ maintainer expects some to be hard.
 - **The clock check,** "spikes lie within the tracked span", is scoped to
   tracked epochs. Sleep without tracking is normal (Mouse32, hc-11,
   000044).
-- **No override for a failed check.** A failed check refuses with an
-  actionable message: what failed, the numbers, and what would fix it.
-  Sessions nobody has examined by hand still load (see Sessions); a session
-  whose own checks fail does not.
+- **Failed checks: refuse only wrong arrays, with an override.** The
+  maintainer decided this on 2026-11-03, replacing my earlier "no override",
+  in line with the rule to warn about problems in the data rather than
+  create new ones:
+  - **Refusals.** Two checks refuse: the clock (spikes, events or epochs
+    disagree with the tracked span) and units (the position span is outside
+    the dataset's stated range). In both cases the loader's arrays would be
+    wrong. The refusal says what failed, the numbers, what would fix it, and
+    the keyword that loads anyway
+    (`load(..., accept_failed_checks=("clock",))`).
+  - **What an accepted failure does.** The session loads, the failure heads
+    "Watch out" with its numbers, and `rec.failed_checks` names it, so it
+    travels with the recording.
+  - **Warnings only.** Data-quality findings never refuse: samples at
+    exactly (0, 0), frozen or bridged tracking, and units silent in the
+    analysed epochs. They go into "Watch out" with their numbers, and the
+    positions stay as the file stores them.
+  - **Unchecked sessions.** Sessions nobody has examined by hand still
+    load (see Sessions).
 - **Worked results:**
   - The maintainer approves each one at PR review.
   - A dataset may ship before its worked result exists. The page then says

@@ -324,7 +324,10 @@ def _keep_draw(model: Any, name: str, value: Any) -> None:
     A generator cannot repeat a draw it has moved past, so the model stores
     the drawn value as the argument ``name`` and sets ``rng`` to None:
     ``dataclasses.replace``, pickling and copying then rebuild the same
-    model. A value drawn from an int seed is left to the seed.
+    model. The stored value is an explicit parameter, so, like a value the
+    caller passed, it is kept by ``dataclasses.replace(model, rng=...)`` and
+    by ``dataclasses.replace(model, env=other)``. A value drawn from an int
+    seed is left to the seed, so replacing ``rng`` or ``env`` draws again.
     """
     if isinstance(model.rng, np.random.Generator):
         object.__setattr__(model, name, value)

@@ -510,7 +510,10 @@ class TestCompareInputs:
                 valid_time_bins=[np.ones(3, dtype=bool)],
             )
 
-    def test_rng_entropy_reproduces_an_unseeded_run(self, track):
+    def test_rng_entropy_determines_an_unseeded_run(self, track, monkeypatch):
+        """Fed back as the entropy every stream derives from, it repeats the run."""
+        from neurospatial import _random
+
         env, rates = track
         counts = [_sweep_counts(), _sweep_counts()[::-1].copy()]
         events = [_event(env, rates, c, t0=float(i)) for i, c in enumerate(counts)]
@@ -518,12 +521,10 @@ class TestCompareInputs:
         first = compare_replay_methods(
             env, events, replay_methods=[method], spike_counts=counts
         )
+        entropy = first.attrs["rng_entropy"]
+        monkeypatch.setattr(_random, "_entropy", lambda rng: entropy)
         again = compare_replay_methods(
-            env,
-            events,
-            replay_methods=[method],
-            spike_counts=counts,
-            rng=first.attrs["rng_entropy"],
+            env, events, replay_methods=[method], spike_counts=counts, rng=None
         )
         assert first["p_value"].tolist() == again["p_value"].tolist()
         assert first["score"].tolist() == again["score"].tolist()

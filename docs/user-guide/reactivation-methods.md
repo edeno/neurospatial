@@ -783,7 +783,8 @@ in the two rest periods.
   Event-binned rest (`rest_bins="events"`) is refused: spikes per event and
   spikes per second disagree when events differ in length.
 - **Shuffles.** Keep the published `n_shuffles`, give `rng` a fixed seed and
-  report `table.attrs["rng_entropy"]`.
+  report `table.attrs["rng_seed"]`, the int that repeats the table when passed
+  back as `rng` (also for an unseeded run).
 - **Sessions.** Most papers tested across sessions (Wilcoxon signed-rank of
   EV against REV) or across patterns (t test of the differences against 0).
   Run each session in its own call, add a `session` column and concatenate

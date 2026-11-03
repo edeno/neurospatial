@@ -1170,7 +1170,9 @@ def test_apply_alpha_matches_running_the_method_at_that_alpha(track, sweeps_and_
         dataclasses.replace(IGATA_2021, n_shuffles=50),
     ]
     table = _compare(track, rates, trains, intervals, methods)
-    alphas = dict(zip([m.name for m in methods], [0.011, 0.3, 0.5, 0.5], strict=True))
+    # Igata's p-values over 50 shuffles sit near 0.5 to 0.8 for these
+    # events, so an alpha of 0.8 changes some verdict for any seed.
+    alphas = dict(zip([m.name for m in methods], [0.011, 0.3, 0.5, 0.8], strict=True))
     rerun = _compare(
         track,
         rates,

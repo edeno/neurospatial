@@ -972,11 +972,16 @@ def _refuse_wrong_kind(
           trains, or a 2-D array of two or more equal-length trains, is
           refused and ``population`` named.
         - ``"spike_counts"``: a ``(n_time_bins, n_neurons)`` count matrix. A
-          list or tuple of spike trains (lengths that differ, or every row in
-          time order with some value not a non-negative whole number) is
-          refused with the binning call, and so is the ``(counts,
+          list or tuple of spike trains is refused with the binning call:
+          rows of different lengths, or rows of one length that each
+          strictly increase and hold a value that is not a non-negative
+          whole number (times in seconds). So is the ``(counts,
           bin_edges)`` tuple ``bin_spikes_in_time`` returns. Rows of one
-          length holding non-negative whole numbers are a count matrix.
+          length holding non-negative whole numbers are a count matrix, also
+          when every row rises: units ordered by rate often rise in every
+          time bin. An ndarray is always read as counts. Limitation: spike
+          trains given as whole-number sample indices, all of one length,
+          are read as counts too.
         - ``"spike_times"``: spike times of several units. A 2-D array of
           non-negative whole numbers, some above 1, with a value repeated in
           a row is a count matrix, not spike times (one unit cannot fire
@@ -1057,10 +1062,13 @@ def _refuse_wrong_kind(
             ]
             ragged = len({row.size for row in rows}) > 1
             # Spike trains are ragged; a count matrix is rectangular and holds
-            # non-negative whole numbers, even when every row increases (as
-            # one-unit rows do vacuously). Equal-length trains in time order
-            # with fractional times are still trains, and fractional counts
-            # out of order get the fractional-count refusal.
+            # non-negative whole numbers, even when every row increases: units
+            # ordered by rate (1, 20 and 80 Hz in 100 ms bins) rise in a bin
+            # with P ~ 0.8, and in all of 4 bins with P ~ 0.42. Equal-length
+            # trains in time order with fractional times (seconds) are still
+            # trains. Equal-length trains of whole-number sample indices
+            # cannot be told from counts and are read as counts. Fractional
+            # counts out of order get the fractional-count refusal.
             whole = all(
                 np.all(np.isfinite(row) & (row >= 0) & (row == np.round(row)))
                 for row in rows

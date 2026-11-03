@@ -490,11 +490,14 @@ def test_streams_do_not_depend_on_the_other_methods(reactivated) -> None:
     )
 
 
-def test_rng_entropy_reproduces_the_table(reactivated) -> None:
+def test_rng_entropy_determines_the_table(reactivated, monkeypatch) -> None:
+    """Fed back as the entropy every stream derives from, it repeats the table."""
+    from neurospatial import _random
+
     first = _compare(reactivated, [LANSINK_FAST, PEYRACHE_FAST], rng=None)
-    again = _compare(
-        reactivated, [LANSINK_FAST, PEYRACHE_FAST], rng=first.attrs["rng_entropy"]
-    )
+    entropy = first.attrs["rng_entropy"]
+    monkeypatch.setattr(_random, "_entropy", lambda rng: entropy)
+    again = _compare(reactivated, [LANSINK_FAST, PEYRACHE_FAST], rng=None)
     columns = ["ev_minus_rev_lower", "match_fraction_above_shuffle"]
     np.testing.assert_array_equal(first[columns], again[columns])
 

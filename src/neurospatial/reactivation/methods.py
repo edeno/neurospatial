@@ -56,7 +56,14 @@ from neurospatial._intervals import (
     times_in_intervals,
 )
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._random import _entropy, _name_key, _stream
+from neurospatial._random import (
+    _concrete_seed,
+    _name_key,
+    _recorded_seed,
+    _rng_seed,
+    _root,
+    _stream,
+)
 from neurospatial._spikes import as_labelled_spike_trains
 from neurospatial._stacklevel import _warnings_with_context
 from neurospatial._time_bins import _count_spikes_in_time_bins
@@ -1031,7 +1038,9 @@ def compare_reactivation_methods(
         Combined with each method's ``pairs`` rule.
     rng : numpy.random.Generator, int, or None
         Seed or generator for ICA, bootstraps, shuffles and rate
-        subsamples. Each method draws from its own streams, derived from
+        subsamples, read as ``np.random.default_rng(rng)``: ``rng=0`` and
+        ``rng=np.random.default_rng(0)`` give the same table, and a
+        generator gives new draws on each call. Each method draws from its own streams, derived from
         ``rng`` and the method's name: one for pattern detection and one
         per match window for its bootstrap, shuffles or subsamples, so
         adding, removing or reordering methods does not change the other
@@ -1090,8 +1099,15 @@ def compare_reactivation_methods(
           windows keep their rows.
 
         Columns that do not apply to a method are NaN. ``table.attrs``
-        holds ``rng_entropy``, the seed the streams derive from: passing it
-        as ``rng`` reproduces the table.
+        holds ``rng_entropy``, the int every random stream derives from,
+        the first draw of ``np.random.default_rng(rng)``: the streams of
+        method ``m`` are ``np.random.default_rng(np.random.SeedSequence(
+        rng_entropy, spawn_key=(zlib.crc32(m.name.encode()), ...)))``. The
+        same int seed, or a generator in the same state, gives the same
+        entropy and table. ``rng_seed`` is the int that repeats the table
+        when passed as ``rng`` (drawn from the operating system for
+        ``rng=None``), and None for a generator; passing ``rng_entropy``
+        itself as ``rng`` draws a new entropy from it.
 
     Raises
     ------
@@ -1222,7 +1238,8 @@ def compare_reactivation_methods(
         n_units * (n_units - 1) // 2, None, pair_mask, call=_CALL
     )
 
-    entropy = _entropy(rng)
+    rng = _concrete_seed(rng)
+    root = _root(rng)
 
     rows: list[dict[str, Any]] = []
     if methods:
@@ -1234,7 +1251,7 @@ def compare_reactivation_methods(
         key = _name_key(method.name)
 
         def stream(*indices: int, key: int = key) -> np.random.Generator:
-            return _stream(entropy, key, *indices)
+            return _stream(root, key, *indices)
 
         with _warnings_with_context(f"{_CALL}: method {method.name!r}"):
             try:
@@ -1253,7 +1270,8 @@ def compare_reactivation_methods(
         table[name] = table[name].astype("Int64")
     table["is_reactivated"] = table["is_reactivated"].astype("boolean")
     table["error"] = table["error"].fillna("").astype(str)
-    table.attrs["rng_entropy"] = entropy
+    table.attrs["rng_entropy"] = _recorded_seed(root)
+    table.attrs["rng_seed"] = _rng_seed(rng)
     return table
 
 
