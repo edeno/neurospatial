@@ -3,10 +3,13 @@
 import warnings
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rates
+from neurospatial.encoding.spatial import _cell_type_columns
+from neurospatial.simulation import open_field_session
 
 
 @pytest.fixture(scope="module")
@@ -147,3 +150,71 @@ def test_grid_label_needs_a_hexagonal_ring(grid_and_hexless):
         rates.label_cell_types(grid_scores=scores, boundary_source="analysis"),
         labels,
     )
+
+
+@pytest.mark.parametrize(
+    ("info", "grid", "border", "is_place", "cell_type"),
+    [
+        (1.0, 0.0, 0.0, True, "place"),
+        # A grid or border test that could not be scored does not block it.
+        (1.0, 0.0, np.nan, True, "undetermined"),
+        (1.0, np.nan, 0.0, True, "undetermined"),
+        (1.0, np.nan, np.nan, True, "undetermined"),
+        # A known grid or border cell is not a place cell.
+        (1.0, 0.0, 1.0, False, "border"),
+        (1.0, 1.0, 0.0, False, "grid"),
+        (1.0, 1.0, 1.0, False, "grid+border"),
+        (1.0, np.nan, 1.0, False, "undetermined"),
+        (0.0, 0.0, 0.0, False, "unclassified"),
+        (0.0, 0.0, np.nan, False, "undetermined"),
+        # Unknown information stays unknown unless the unit is grid or border.
+        (np.nan, 0.0, 0.0, None, "undetermined"),
+        (np.nan, 0.0, np.nan, None, "undetermined"),
+        (np.nan, 0.0, 1.0, False, "undetermined"),
+    ],
+)
+def test_is_place_column(info, grid, border, is_place, cell_type):
+    """``is_place``: passes information and is not a known grid or border cell."""
+    columns = _cell_type_columns(
+        {
+            "spatial_information": np.array([info]),
+            "grid_score": np.array([grid]),
+            "border_score": np.array([border]),
+        }
+    )
+    assert list(columns) == [
+        "passes_spatial_information",
+        "passes_grid_score",
+        "passes_border_score",
+        "is_place",
+        "cell_type",
+    ]
+    assert columns["is_place"].dtype == pd.BooleanDtype()
+    value = columns["is_place"][0]
+    if is_place is None:
+        assert value is pd.NA
+    else:
+        assert value is not pd.NA
+        assert bool(value) is is_place
+    assert columns["cell_type"].tolist() == [cell_type]
+
+
+def test_is_place_without_walls():
+    """Without measured walls the labels are undetermined; is_place still answers."""
+    session = open_field_session(duration=300.0, n_place_cells=3, rng=0)
+    sampled_env = Environment.from_samples(session.positions, bin_size=2.0, units="cm")
+    rates = compute_spatial_rates(
+        sampled_env, session.spike_times, session.times, session.positions
+    )
+    table = rates.summary_table()
+    assert "border_score" in table.attrs["unavailable_metrics"]
+    assert table["passes_border_score"].isna().all()
+    assert table["passes_spatial_information"].all()
+    assert (table["cell_type"] == "undetermined").all()
+    assert table["is_place"].dtype == pd.BooleanDtype()
+    assert table["is_place"].tolist() == [True] * 3
+
+    single = rates[1].summary_table()
+    assert list(single.columns) == list(table.columns)
+    assert single["is_place"].tolist() == [True]
+    assert single["cell_type"].tolist() == ["undetermined"]

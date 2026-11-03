@@ -23,6 +23,23 @@
   results, simulation validation and the replay timing and distance results.
   `summary()` values and table columns stay plain numbers.
 
+### A place screen in arenas without measured walls
+
+**Added**
+
+- `summary_table()` of spatial rate results (single and population) and of
+  `spatial_cell_type_significance` has an `is_place` column, next to
+  `cell_type`: True for a unit that passes the spatial-information test and
+  was not shown to be a grid or border cell; `<NA>` when the information test
+  is unknown, except False for a known grid or border cell. On an
+  environment without measured walls, such as one from
+  `Environment.from_samples`, the border score cannot be computed and every
+  `cell_type` is `"undetermined"`, because any cell could be a border cell.
+  `is_place` still screens information there, but border cells are not
+  excluded, so a True is a place-or-border candidate. It tests more than
+  `classify()` and `is_place_cell`, which test information alone: a grid
+  cell that passes information is True for them and False for `is_place`.
+
 ### Spike times in milliseconds warn with `epochs`
 
 **Fixed**

@@ -746,7 +746,12 @@ The same choice is available on `result.border_score()`, population
 other metrics when wall geometry is unavailable: border scores are NaN, with a
 reason in `table.attrs["unavailable_metrics"]` and the chosen source in
 `table.attrs["border_boundary_source"]`. Cell-type labels are then
-`"undetermined"`, because any cell may be a border cell. On a 1-D track grid
+`"undetermined"`, because any cell may be a border cell. The table's
+`is_place` column is True for a unit that passes the spatial-information
+screen and was not shown to be a grid or border cell, so a missing border score
+does not block it. Without walls border cells are not excluded, and border
+cells usually pass the information screen too, so a True is a place-or-border
+candidate, not a place-cell verdict. On a 1-D track grid
 and border cells do not apply, so a tuned cell is `"place"`. No analysis
 approximation is selected
 implicitly. Physical border coverage currently requires exact planar cells and
