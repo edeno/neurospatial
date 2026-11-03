@@ -234,11 +234,11 @@ def test_dropped_frames_are_silent():
 def test_irregular_sampling_is_not_called_masked():
     """Steps spread over 0.001-0.45 s have no sampling interval to be a multiple of.
 
-    Read against their shortest steps (0.02 s), these 15 steps lean toward
-    whole multiples by chance (mean phase cosine 0.15, above
-    ``MASKED_REGULAR_COHERENCE``), and six of them would count as removed
-    runs, 69% of the analysed time. Irregular steps reach that cosine with
-    probability 0.21, so the chance check keeps it silent.
+    Read against their shortest steps (0.02 s), six of these 15 steps would
+    count as removed runs, 69% of the analysed time. They make a single span
+    of ten steps, whose phase is concentrated trivially (resultant length 1,
+    above ``MASKED_REGULAR_COHERENCE``); one irregular span does that with
+    probability 0.47, so the chance check keeps it silent.
     """
     rng = np.random.default_rng(491)
     positions = rng.uniform((-3.0, 11.0), (-1.0, 13.0), size=(16, 2))
@@ -317,6 +317,20 @@ def _spike_timed(rng):
     return np.unique(np.round(np.cumsum(steps) * 30000) / 30000)
 
 
+def _refractory_spike_timed(rng, dead_time, free_mean, pause_share, n=20000):
+    """Positions read at the spikes of a neuron with a refractory period.
+
+    Each step is a dead time drawn uniformly from ``dead_time`` (low, high)
+    seconds plus an exponential draw with mean ``free_mean``; a
+    ``pause_share`` of the steps are pauses of 0.3-0.9 s instead. On a
+    30 kHz clock.
+    """
+    steps = rng.uniform(*dead_time, n) + rng.exponential(free_mean, n)
+    paused = rng.random(n) < pause_share
+    steps[paused] = rng.uniform(0.3, 0.9, np.count_nonzero(paused))
+    return np.unique(np.round(np.cumsum(steps) * 30000) / 30000)
+
+
 def _pooled_spike_times(rng, rate, tick):
     """Positions read at pooled spike times, rounded to ``tick`` seconds.
 
@@ -373,6 +387,47 @@ def test_rounded_irregular_times_are_not_called_masked(tick):
     if tick == 1e-3:
         assert 0.1 < np.mean(np.isclose(np.diff(times), tick)) < 0.2
     assert _occupancy_warnings(times) == []
+
+
+def test_refractory_spike_timed_sampling_is_not_called_masked():
+    """Positions read at a neuron's spikes: 2-3 ms dead time plus 4 ms mean.
+
+    The dead time gives the steps a sharp lower edge, so single steps
+    concentrate in phase against the interval (resultant length 0.14), and
+    1% of the steps are pauses of 0.3-0.9 s that would count as removed
+    runs. Spans of ten steps spread (0.02), so nothing warns.
+    """
+    times = _refractory_spike_timed(
+        np.random.default_rng(0), (0.002, 0.003), 0.004, 0.01
+    )
+    assert _occupancy_warnings(times) == []
+
+
+@pytest.mark.parametrize(
+    ("fs", "tick"),
+    [(60.0, 0.01), (120.0, 0.005), (100.0, 0.006)],
+    ids=["60Hz-10ms", "120Hz-5ms", "100Hz-6ms"],
+)
+def test_masked_samples_warn_with_times_rounded_to_a_coarse_tick(fs, tick):
+    """A camera with timestamps rounded to a tick that does not divide its interval.
+
+    At 60 Hz rounded to 10 ms the steps of one frame are 10, 20 and 20 ms,
+    so only a third of the steps are one tick. The interval is the mean of
+    the steps of one and two ticks, and the removed runs (0.4 s every 2 s)
+    warn with their share of the analysed time. The removal repeats with the
+    clock, so the rounding at its edges is the same every time; the share is
+    within one tick per removed run.
+    """
+    from neurospatial._intervals import MASKED_REGULAR_SHARE
+
+    times, sampled = _speed_masked(np.random.default_rng(0), fs, 0.0, tick=tick)
+    assert np.mean(np.isclose(np.diff(times), tick)) < MASKED_REGULAR_SHARE
+    messages = _occupancy_warnings(times)
+    assert len(messages) == 1
+    assert "boolean-masked" in messages[0]
+    np.testing.assert_allclose(
+        _bridged_fraction(times), _removed_share(sampled, fs), rtol=0.05
+    )
 
 
 # name: simulate(rng) -> (kept times, which samples of the 30 Hz clock were kept)
@@ -432,6 +487,22 @@ def test_masking_check_is_silent_on_irregular_sampling(case):
         assert _bridged_fraction(times) == 0.0
 
 
+@pytest.mark.parametrize("dead_ms", [1, 2, 3, 4], ids=lambda ms: f"{ms}-{ms + 1}ms")
+def test_masking_check_is_silent_on_refractory_spike_trains(dead_ms):
+    """Spike-timed sampling over the dead times and spike rates of neurons.
+
+    Dead times of ``dead_ms`` to ``dead_ms + 1`` ms, free means of 2-50 ms
+    and 1-20% of steps being pauses of 0.3-0.9 s. Three seeds each.
+    """
+    dead_time = (dead_ms / 1000, (dead_ms + 1) / 1000)
+    for free_mean in (0.002, 0.004, 0.01, 0.02, 0.05):
+        for pause_share in (0.01, 0.05, 0.2):
+            for seed in range(3):
+                rng = np.random.default_rng(seed)
+                times = _refractory_spike_timed(rng, dead_time, free_mean, pause_share)
+                assert _bridged_fraction(times) == 0.0, (free_mean, pause_share, seed)
+
+
 @pytest.mark.parametrize(
     "draw",
     [
@@ -446,8 +517,8 @@ def test_masking_check_rarely_calls_short_irregular_runs_masked(draw):
 
     A few random steps can look locked to an interval by chance; the
     chance check (``MASKED_REGULAR_CHANCE``) keeps that below 0.5% of runs
-    (at most 1 of 2000 measured). Without it, 889-997 of the 2000 runs of
-    each kind warn.
+    (none of 2000 measured). Without it, 1872-1908 of the 2000 runs of each
+    kind warn.
     """
     from neurospatial._constants import DISCARD_WARN_FRACTION
 
