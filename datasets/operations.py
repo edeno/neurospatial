@@ -864,7 +864,8 @@ def egocentric_boundary(rec: Recording, cache: dict[str, Any]) -> Outcome:
     edge of the visited bins (``boundary_source="analysis"``). The summary
     counts units whose peak is in the outermost ring, where the docstring
     says untuned cells peak by chance, and units whose peak is on the left
-    (egocentric direction in (0, pi)).
+    (egocentric direction in (0, pi)). With a declared environment the edge
+    of its bins is the stated outline, within half a bin.
     """
     from neurospatial.encoding import compute_boundary_vector_rates
 
@@ -906,7 +907,12 @@ def egocentric_boundary(rec: Recording, cache: dict[str, Any]) -> Outcome:
                 for k, v in _finite_stats(table["distance_information"]).items()
             },
         },
-        note="walls = edge of the visited bins (boundary_source='analysis')",
+        note=(
+            "walls = edge of the declared environment's bins"
+            if env_kind(rec, cache) == "declared"
+            else "walls = edge of the visited bins"
+        )
+        + " (boundary_source='analysis')",
     )
 
 
