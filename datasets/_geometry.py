@@ -23,6 +23,10 @@ from numpy.typing import NDArray
 
 # A stated size more than this share away from the samples' own fitted size
 # is refused: the stated apparatus, the unit or the session is then wrong.
+# One tolerance for every size (lengths, diameters, sides, the samples'
+# reach past a track's end or short of a wall), shared with the arena
+# loaders: it allows "about" in stated sizes ("~80 x 80 cm") and a head that
+# leans past a track's end, and is not tuned to any recording.
 MAX_SIZE_RESIDUAL = 0.15
 
 
@@ -238,8 +242,13 @@ def judge_declared(
     - an outline (a polygonal domain): per side, how far the samples nearest
       it reach past it (their ``OUTER_QUANTILE`` signed distance, positive
       beyond the wall; limit ``MAX_SIDE_BIAS_BINS`` bins: an outline moved off
-      its samples has them run past one wall), and the share of each side
-      with no sample within three bins (reported);
+      its samples has them run past one wall), the samples' extent across the
+      outline (they may fall short of a wall, but not by more than
+      ``MAX_SIZE_RESIDUAL`` of the side: an outline drawn too large), and the
+      share of each side with no sample within three bins (reported);
+    - a track, also how far its samples reach past its free ends
+      (``max_end_overshoot``, limit ``MAX_SIZE_RESIDUAL`` of the segment: a
+      track drawn too short);
     - either: a stated length or size off by more than ``MAX_SIZE_RESIDUAL``
       (``stated_residuals``: label -> fitted / stated - 1).
 
@@ -285,6 +294,11 @@ def judge_declared(
             fit[f"size_residual_{key}"] = value
         out["fit"] = fit
         out["misfit"] = misfit_reasons(fit, bin_size)
+        if fit["max_end_overshoot"] > MAX_SIZE_RESIDUAL:
+            out["misfit"].append(
+                f"samples reach {fit['max_end_overshoot']:.0%} of a segment's length"
+                f" past its free ends (limit {MAX_SIZE_RESIDUAL:.0%})"
+            )
         if physical_width is not None:
             nodes = segments.reshape(-1, segments.shape[2])
             edges = np.arange(len(nodes)).reshape(-1, 2)
@@ -317,14 +331,34 @@ def judge_declared(
                 unsupported.append(
                     float(np.mean(cKDTree(samples).query(along)[0] > 3 * bin_size))
                 )
+            # Samples may fall short of a wall but not reach past it: the
+            # samples' extent (0.5th to 99.5th percentile) along each axis of
+            # the outline's minimum rotated rectangle, over its side.
+            with np.errstate(
+                divide="ignore", invalid="ignore"
+            ):  # GEOS on axis-aligned hulls
+                rectangle = polygon.minimum_rotated_rectangle
+            corners = np.asarray(rectangle.exterior.coords)[:3]
+            shortfall = []
+            for side in (corners[1] - corners[0], corners[2] - corners[1]):
+                length = float(np.linalg.norm(side))
+                along = samples @ (side / length)
+                low, high = np.quantile(along, [0.005, 0.995])
+                shortfall.append(float((high - low) / length - 1))
             fit = {
                 "max_side_bias": max(biases) if biases else float("nan"),
                 "max_side_bias_limit": MAX_SIDE_BIAS_BINS * bin_size,
                 "max_side_unsupported": max(unsupported) if unsupported else 0.0,
+                "size_residual_extent": min(shortfall),
             }
             for key, value in (stated_residuals or {}).items():
                 fit[f"size_residual_{key}"] = value
             out["fit"] = fit
+            if fit["size_residual_extent"] < -MAX_SIZE_RESIDUAL:
+                out["misfit"].append(
+                    f"samples span {fit['size_residual_extent']:+.0%} of the"
+                    f" outline's side (limit -{MAX_SIZE_RESIDUAL:.0%})"
+                )
             if fit["max_side_bias"] > fit["max_side_bias_limit"]:
                 out["misfit"].append(
                     f"samples reach {fit['max_side_bias']:.3g} beyond one side of the"

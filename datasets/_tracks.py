@@ -38,8 +38,15 @@ EDGE_POINTS = 25
 MAX_EDGE_BIAS_BINS = 1.0
 MAX_UNSUPPORTED = 0.25
 BIAS_WINDOW_BINS = 3.0
+REACH_QUANTILE = 0.995
 # A stretch as long as a maze arm (about 50 cm at 2.5 cm bins): local
-# features (a reward area, a junction, a rounded corner) are shorter.
+# features (a reward area, a junction, a rounded corner) are shorter. Set
+# after seeing the data: it was 10 bins until the 000044 circle was refused
+# on one short side under its reward area (commit 4b865baca), then widened.
+# These limits are in bins, so they vary with each recording's bin: from 0.5
+# cell (the labyrinth) and 2-4 cm to 5 px (hc-18). How sensitive they are to
+# misfits of known size is measured in the survey's simulation ladder (phase
+# 6), not here.
 MIN_PIECE_BINS = 20.0
 BASE_OFFSETS = (0.05, 0.1, 0.15, 0.2)
 
@@ -222,6 +229,10 @@ def edge_fit(
     - ``max_unsupported``: the largest per-segment share of points along it
       with no sample within ``tolerance``: a segment where the animal never
       was.
+    - ``max_end_overshoot``: the largest share of a segment's length by which
+      its samples reach past its free ends (their ``REACH_QUANTILE`` reach,
+      summed over the segment's free ends): a track drawn shorter than the
+      samples, which the lateral and support measures do not see.
     """
     from scipy.spatial import cKDTree
 
@@ -242,7 +253,24 @@ def edge_fit(
     for u, v in edges:
         points = nodes[u] + steps[:, None] * (nodes[v] - nodes[u])
         unsupported.append(float(np.mean(tree.query(points)[0] > tolerance)))
+    # How far the samples reach past a segment's free ends (nodes of degree
+    # one), as a share of its length: a track drawn shorter than the samples.
+    degree = np.bincount(edges.ravel(), minlength=len(nodes))
+    overshoot = 0.0
+    for k, (u, v) in enumerate(edges):
+        mine = segment == k
+        if not mine.any():
+            continue
+        reach = 0.0
+        for free, past in (
+            (degree[u] == 1, -along[mine]),
+            (degree[v] == 1, along[mine] - 1),
+        ):
+            if free:
+                reach += float(np.quantile(np.clip(past, 0, None), REACH_QUANTILE))
+        overshoot = max(overshoot, reach)
     return {
+        "max_end_overshoot": overshoot,
         "median_abs_lateral": float(np.median(np.abs(lateral[inside])))
         if inside.any()
         else float("nan"),

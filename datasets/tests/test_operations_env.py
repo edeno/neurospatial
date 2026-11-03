@@ -118,6 +118,30 @@ def test_one_verdict_judges_an_outline_by_its_walls():
     assert any("beyond one side" in reason for reason in moved["misfit"])
 
 
+@pytest.mark.parametrize(
+    ("side", "misfit"), [(110.0, False), (130.0, True), (150.0, True)]
+)
+def test_an_outline_larger_than_its_samples_is_misfit(side, misfit):
+    # Samples span 98 cm of a box declared `side` cm across, centred on them.
+    # No sample reaches past a wall, so only the extent shows the scale error:
+    # The middle 99 % spans 97 cm: 97/110 is -12 %, within the size tolerance;
+    # 97/130 is -25 %.
+    import shapely
+    from _geometry import judge_declared
+
+    half = side / 2
+    box = Environment.from_polygon(
+        shapely.box(50 - half, 50 - half, 50 + half, 50 + half),
+        bin_size=2.5,
+        units="cm",
+    )
+    samples = np.random.default_rng(2).uniform(1, 99, (20000, 2))
+    judged = judge_declared(box, np.arange(len(samples)) / 30.0, samples)
+    assert judged["fit"]["max_side_bias"] < 0
+    flagged = any("of the outline's side" in reason for reason in judged["misfit"])
+    assert flagged is misfit
+
+
 def test_one_verdict_judges_a_track_by_its_stretches():
     from _geometry import graph_environment, judge_declared
     from _tracks import polyline_graph
