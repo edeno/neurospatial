@@ -104,12 +104,16 @@ class PlaceCellModel:
         Random generator or seed for the random center, read as
         ``np.random.default_rng(rng)``: ``rng=0`` and
         ``rng=np.random.default_rng(0)`` draw the same center. An int
-        reproduces the center. A generator is advanced by the draw, so
-        successive models built from one generator get different centers;
-        the model then keeps the drawn center in ``center`` and sets ``rng``
-        to None. When None and the center is drawn, the model draws a seed
-        from the operating system and keeps it in ``rng``. Either way,
-        ``dataclasses.replace`` and pickling keep the drawn center.
+        reproduces the center: the model keeps the seed, so
+        ``dataclasses.replace`` with a new ``rng`` or ``env`` draws again.
+        When None and the center is drawn, the model draws a seed from the
+        operating system and keeps it in ``rng``, as for an int. A generator
+        is advanced by the draw, so successive models built from one
+        generator get different centers; the model then keeps the drawn
+        center as an explicit ``center`` and sets ``rng`` to None, so, as
+        for a center you pass, ``dataclasses.replace(model, rng=...)`` and
+        ``dataclasses.replace(model, env=other)`` keep it. Pickling keeps
+        the drawn center in every case.
 
     Attributes
     ----------

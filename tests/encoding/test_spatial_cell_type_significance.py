@@ -428,7 +428,7 @@ def test_significant_grid_score_without_a_ring_is_not_grid(grid_and_hexless):
         r.times,
         r.positions,
         n_shuffles=79,
-        rng=0,
+        rng=1,
         boundary_source="analysis",
     )
     assert np.isfinite(result.grid_spacing[0])

@@ -46,10 +46,13 @@ def sweeps_and_jumps(track, dt=0.02):
 
 
 def template_stream(seed, name):
-    """The random stream one template draws from: the seed and its name."""
+    """The random stream one template draws from: the seed and its name.
+
+    A call's streams derive from the first child of
+    ``np.random.SeedSequence(seed)``, whose spawn key is ``(0,)``.
+    """
     import zlib
 
-    entropy = np.random.SeedSequence(seed).entropy
     return np.random.default_rng(
-        np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
+        np.random.SeedSequence(seed, spawn_key=(0, zlib.crc32(name.encode())))
     )

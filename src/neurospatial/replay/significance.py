@@ -24,7 +24,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._random import _entropy, _name_key, _stream
+from neurospatial._random import _name_key, _root, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
 from neurospatial._validation import (
     is_integer_at_least,
@@ -1315,8 +1315,8 @@ def _template_streams(
     A template's stream does not depend on the other templates or their
     order.
     """
-    entropy = _entropy(rng)
-    return {name: _stream(entropy, _name_key(name)) for name in names}
+    root = _root(rng)
+    return {name: _stream(root, _name_key(name)) for name in names}
 
 
 def _zero_empty_rows(
