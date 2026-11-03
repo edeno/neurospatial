@@ -198,19 +198,22 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   G-001 removes the clean-run warning that hides this case.
 - Status: fixed (#265): with the clean-run warning gone, the spike-drop warning flags the ms case on Mouse32 and the figure-8
 - More evidence (NWB breadth batch, after #265): spike times x 1000 are
-  silent again on 4 of 9 new recordings. With `epochs` passed (000165:
-  0-269.6 s; 001754: the staircase session; 000003: awake periods) every ms
-  spike lies outside the epochs, so the epochs-aware drop count counts none
-  and the silent-units check does not fire either: 000165 median peak 4.58
-  -> 0.03 Hz, 001754 0.051 -> 0.0 Hz, 000003 5.82 -> 0.005 Hz, with no
-  related warning (on 001754 and 000003 the only new message is the "pixel"
-  units warning, G-058). Without `epochs` (001695, sleep spikes outside the
-  maze tracking) the clean run already emits the spike-drop warning (75 %
-  of spikes) and the hazard only raises it to 100 %, same message: median
-  peak 0.73 -> 0.0 Hz. The other five are caught (spike-drop warning with
-  the span ratio, or the silent-units warning).
-- Proposed change (addition): when `epochs` are passed and no spike falls
-  inside them, warn (and compare the spike span with the epochs' span).
+  silent on 2 of 9 new recordings. On 001695 (no `epochs`; sleep spikes
+  outside the maze tracking) the clean run already emits the spike-drop
+  warning for 75 % of spikes, and the hazard only raises it to 100 % with the
+  same message and no span ratio: median peak 0.73 -> 0.0 Hz. On 000165
+  (`epochs` 0-269.6 s) nothing warns: 883 of the 557,063 ms-scaled spikes
+  still fall inside 0-269.6 s, and the rest lie outside the epochs, which
+  the epochs-aware drop count does not count: median peak 4.58 -> 0.03 Hz.
+  The other seven are caught: on 001754 and 000003 (`epochs` passed, but the
+  tracking spans the whole recording) the drop count against the tracking
+  window gives "about 1000 times ... divide them by 1000"; on 000568 and
+  Kanter the only new message is "All N units are silent ... pass
+  spike_window", whose advice is wrong for a unit error.
+- Proposed change (addition): apply the span-ratio test (spike span about
+  1000 times the analysed span) to the analysed span, the requested `epochs`
+  or else the tracking, not only to `times`. A rule "warn when no spike falls
+  inside the epochs" would miss 000165, where 883 ms-scaled spikes still do.
 
 ## G-011: `read_intervals` does not search processing modules
 
@@ -870,13 +873,16 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   `head_direction` ("(x=1, y=0) unit vector") against movement faster than
   20 cm/s: mean -0.33 rad, spread 17 degrees (-0.42 rad, 34 degrees above
   10 cm/s). Neither passes the survey's frame rule (|mean| <= 0.2 rad and
-  spread < 45 degrees); both are consistent with a fixed offset between the
-  rigid body's zero and the head's axis, which only the authors can state.
-  In 60 s windows Kanter's offset ranges -0.53 to +0.35 rad, so no single
-  correction is defensible from movement. For contrast, 001701's tracked
-  heading gives -0.07 rad and 10 degrees. A mirror image of 000987's frame fits
-  movement equally well (with the angle negated), as G-020 found for
-  positions.
+  spread < 45 degrees). The offset is not fixed: over Kanter's 17 windows of
+  60 s with at least 10 running samples (median 36), the window means range
+  from -0.62 to +2.33 rad (circular SD 31 degrees), so no single correction
+  is defensible from movement; its cause (a rigid-body zero, head turns while
+  running) is not known. For contrast, 001701's tracked heading gives
+  -0.07 rad and 10 degrees. The sign of each heading is tested by negating
+  it alone: the spread rises to 87 degrees on 000987 (from 49) and to 81 on
+  Kanter (from 17), so both turn the same way as their position frames.
+  Mirroring positions and heading together leaves heading minus movement
+  unchanged and cannot be tested this way (G-020).
 - Harness workaround: none; both loaders keep the headings and record the
   frame as not verified in `conversions`. Mean vector lengths do not depend
   on the frame; preferred directions are not interpreted.
@@ -947,7 +953,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   The position timestamps are the ones aligned with the spikes: mean spatial
   information over the 35 units is 1.09 bits/spike with them, 0.81 with the
   video timestamps, and at most 0.85 at any shift of 5-40 s either way. With
-  the video timestamps (hazard), median peak rate falls 1.57 -> 0.99 Hz and
+  the video timestamps (hazard), median peak rate falls 1.57 -> 0.92 Hz and
   nothing warns: a shifted clock is indistinguishable from a real one in the
   arrays.
 - Harness workaround: the loader uses the position timestamps and checks the
@@ -960,9 +966,10 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Datasets: aeryjones_000165
 - Operation / step: loader, rates.spatial (hazards `duplicate_timestamps_kept`, `tracking_beyond_spikes`)
 - Kind: data-quirk
-- Evidence: the 45,114 position samples (30 frames/s) have only 32,340
-  distinct timestamps on a 0.0518 s grid; 12,774 timestamps hold two samples
-  (36 % of those pairs at the same position). neurospatial refuses them
+- Evidence: the 45,114 position samples come exactly 30 per second overall
+  (1,504 s), but only 32,340 timestamps are distinct: 12,774 intervals are
+  zero (36 % of those pairs at the same position), 213 are under 1 ms,
+  3,620 are 1-30 ms and the rest 30-104 ms, most near 52 ms. neurospatial refuses them
   clearly ("times must be strictly increasing; 12774 timestamp(s) repeat the
   one before ... at indices 1 and 2"), so the hazard is caught. The `units`
   table is a "MUA table" (one multi-unit train per channel, 32), every
@@ -975,7 +982,13 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   stop)" (correct, and how the loader's analysis span was set). Analysed over
   the whole tracking (hazard `tracking_beyond_spikes`), rates are divided by
   1,504 s instead of 270 s of occupancy (median peak 4.58 -> 1.03 Hz) and the
-  same warning fires for 462.1-1503.8 s (caught). The length unit is labelled
+  same warning fires for 462.1-1503.8 s (caught). The spike clock is ASSUMED
+  to be the tracking clock with offset 0 (every channel has a spike at
+  exactly 0.0 s, and the LFP starts at 0 too); the data do not show it: a
+  scan of constant offsets (5 s steps, mean 1-D Skaggs information of the 29
+  channels with at least 50 spikes) ranks offset 0 11th of 247, below
+  offsets of 325-465 s, and multi-unit channels are too weakly tuned to name
+  another. The length unit is labelled
   centimeters, but the tracked span is 35 by 5 and the 90th percentile speed
   6.6 per s, too short and slow to confirm cm for a mouse linear track.
 - Harness workaround: the loader averages samples that share a timestamp,
@@ -1062,7 +1075,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   is 0.0518 s (19.3 Hz). Its "spikes cover tracking" was registered as a
   consistency requirement and fails because the spike recording stops at
   269.6 s of 1,504 s tracked (G-055). 001845's processed positions are at
-  28.6 Hz (median interval 0.035 s), not 29-31 Hz.
+  28.6 Hz (median interval 0.035 s), not 29-31 Hz. Not wrong, but worth
+  knowing: 001695's track-length expectation (90-130 cm) was written after
+  the stored values (6.6-114) had been read during the file choice, so it
+  restates the metadata walk rather than predicting it; the other new
+  expectations cite their metadata sources in the same way.
 - Harness workaround: none (the expectations stay as registered)
 - Proposed change: none
 - Status: won't fix (the expectations, not the loaders, were wrong)

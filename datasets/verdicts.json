@@ -793,9 +793,9 @@
       "reason": "Median peak 0.051 -> 0.049 Hz; only the clean run's masking warning repeats."
     },
     "neurolab_001754/spike_times_in_ms/rates.spatial": {
-      "verdict": "silent",
-      "gap": "G-010",
-      "reason": "The only new message is the unrelated 'pixel' units warning (G-058); median peak 0.051 -> 0.0 Hz. analysis_epochs is the staircase session, so the epochs-aware drop count sees no ms spike."
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 31769/31769 spike_times (100%) outside the tracking window, 'about 1000 times the 5942.2 s of times: ... divide them by 1000' (the drop count runs against the tracking window, which spans the recording; the unrelated 'pixel' warning also appears); median peak 0.051 -> 0.0 Hz."
     },
     "neurolab_001754/lost_led_code_kept/env.from_samples": {
       "verdict": "no effect",
@@ -815,7 +815,7 @@
     "valero_000568/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "New warning: all 35 units silent for 135 s while position is tracked; median peak 1.57 -> 0.0 Hz."
+      "reason": "New warning: all 35 units silent for 135 s while position is tracked; median peak 1.57 -> 0.0 Hz. Its advice (pass spike_window) is misleading for a unit error: the spikes are in ms, not missing."
     },
     "valero_000568/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
@@ -845,22 +845,22 @@
     "valero_000568/video_timestamps/env.occupancy": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "A constant 22.6 s shift leaves occupancy unchanged (950.4 s)."
+      "reason": "The video clock differs from the position clock by an almost constant 22.55-23.12 s: occupancy 950.4 -> 950.2 s."
     },
     "valero_000568/video_timestamps/rates.spatial": {
       "verdict": "undetectable",
       "gap": "G-054",
-      "reason": "Spikes paired with positions 22.6 s off: median peak 1.57 -> 0.99 Hz; a shifted clock looks like a real one in the arrays."
+      "reason": "Spikes paired with positions 22.6 s off: median peak 1.57 -> 0.92 Hz; a shifted clock looks like a real one in the arrays."
     },
     "valero_000568/video_timestamps/behavior.segment_by_velocity": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "Speeds do not depend on a constant time shift (458 segments both ways)."
+      "reason": "Speeds barely depend on the shift: 458 segments both ways, running 1001.6 -> 1002.6 s."
     },
     "aeryjones_000165/spike_times_in_ms/rates.spatial": {
       "verdict": "silent",
       "gap": "G-010",
-      "reason": "analysis_epochs 0-269.6 s holds no ms spike, so the epochs-aware drop count sees none and nothing warns: median peak 4.58 -> 0.03 Hz."
+      "reason": "Nothing warns: analysis_epochs is 0-269.6 s, the epochs-aware drop count ignores the ms spikes outside it, and 883 of the 557,063 still fall inside; median peak 4.58 -> 0.03 Hz."
     },
     "aeryjones_000165/duplicate_timestamps_kept/env.from_samples": {
       "verdict": "no effect",
@@ -953,9 +953,9 @@
       "reason": "Median peak 5.82 -> 5.73 Hz; no warning."
     },
     "senzai_000003/spike_times_in_ms/rates.spatial": {
-      "verdict": "silent",
-      "gap": "G-010",
-      "reason": "The only new message is the unrelated 'pixel' units warning (G-058); median peak 5.82 -> 0.005 Hz. analysis_epochs are the awake periods, so the epochs-aware drop count sees no ms spike."
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 952503/953531 spike_times (100%) outside the tracking window [0, 17050.3], about 1000 times its span: divide them by 1000 (the unrelated 'pixel' warning also appears); median peak 5.82 -> 0.005 Hz."
     },
     "kanter_2025/headings_in_degrees/hd.tuning": {
       "verdict": "caught",
@@ -965,12 +965,12 @@
     "kanter_2025/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "New warning: all 380 units silent from 43 s to 648 s while position is tracked; median peak 4.61 -> 0.0 Hz."
+      "reason": "New warning: all 380 units silent from 43 s to 648 s while position is tracked; median peak 4.61 -> 0.0 Hz. Its advice (pass spike_window) is misleading for a unit error."
     },
     "kanter_2025/spike_times_in_ms/hd.tuning": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Same silent-units warning; no unit keeps a finite mean vector length."
+      "reason": "Same silent-units warning, with the same misleading spike_window advice; no unit keeps a finite mean vector length."
     },
     "kanter_2025/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
