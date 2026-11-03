@@ -132,7 +132,8 @@ class Apparatus:
     ``shape`` is "square" or "circle" for an arena with a stated size
     ``size`` (side or diameter, in the recording's units); ``track_width`` is
     the stated full width; ``n_parts`` the number of separate apparatus the
-    samples cover; ``linearized_reference`` False when the file's linearized
+    samples cover; ``n_loops`` the loops of a track (each is a hole in a 2-D
+    environment built from the samples); ``linearized_reference`` False when the file's linearized
     coordinate cannot serve as a 2-D centreline (it gives two places one
     value). ``source`` names what was read. ``verified`` is True when
     every value given here (the number of parts, and any shape, size, length
@@ -150,6 +151,7 @@ class Apparatus:
     n_parts: int = 1
     notes: str = ""
     linearized_reference: bool = True
+    n_loops: int = 0
 
 
 APPARATUS: dict[str, Apparatus] = {
@@ -230,6 +232,7 @@ APPARATUS: dict[str, Apparatus] = {
         True,
         notes="figure-8: two loops sharing the centre arm",
         linearized_reference=False,
+        n_loops=2,
     ),
     "figure8_000552_linearized": Apparatus(
         "track",
@@ -274,6 +277,7 @@ APPARATUS: dict[str, Apparatus] = {
         True,
         size=100.0,
         notes="loop",
+        n_loops=1,
     ),
     "grosmark_000044_linear": Apparatus(
         "track",
@@ -400,6 +404,7 @@ APPARATUS: dict[str, Apparatus] = {
         " stated)",
         False,
         notes="loop",
+        n_loops=1,
     ),
     "neurolab_001754": Apparatus(
         "track",
@@ -993,6 +998,11 @@ def measure_env(
         if env.n_dims == 2:
             holes = hole_sizes(active)
             out["holes"] = len(holes)
+            # Holes of 1 % of the bins or more: the inside of a loop, not a
+            # patch the animal happened to miss.
+            out["major_holes"] = int(
+                np.sum(holes >= MAJOR_COMPONENT_SHARE * env.n_bins)
+            )
             out["hole_bins"] = int(holes.sum())
             out["largest_hole_bins"] = int(holes[0]) if len(holes) else 0
         out["_corners"] = corners
@@ -1042,13 +1052,51 @@ def on_track_shares(
     return on_samples, on_bins
 
 
+JUMP_FACTOR = 3.0
+
+
+def jump_links(
+    env: Any,
+    ref: Reference,
+    segment: NDArray[np.intp],
+    along: NDArray[np.float64],
+    offset: NDArray[np.float64],
+) -> NDArray[np.bool_]:
+    """Links between bins that the stated layout puts far apart along the track.
+
+    Each bin centre is projected onto the reference (``segment``, ``along``
+    and its distance ``offset`` from ``project``); a link is a jump when the
+    distance along the reference between its two bins is more than
+    ``JUMP_FACTOR`` times the link's own length plus both bins' offsets (a
+    bin beside an inner corner projects onto the other segment, round the
+    corner): it joins corridors through a wall or a gap the layout keeps
+    apart, whatever the samples near its midpoint. Unlike a gap in the
+    samples, this does not need the wall to be wider than a bin.
+    """
+    pairs = np.asarray(env.edge_pairs)
+    if not len(pairs):
+        return np.zeros(0, dtype=bool)
+    centers = np.asarray(env.bin_centers, dtype=float)
+    length = np.linalg.norm(centers[pairs[:, 0]] - centers[pairs[:, 1]], axis=1)
+    distance = along_track_distance(
+        ref,
+        segment[pairs[:, 0]],
+        along[pairs[:, 0]],
+        segment[pairs[:, 1]],
+        along[pairs[:, 1]],
+    )
+    slack = offset[pairs[:, 0]] + offset[pairs[:, 1]]
+    return distance > JUMP_FACTOR * length + slack
+
+
 def against_reference(
     env_out: dict[str, Any], env: Any, samples: NDArray[np.float64], ref: Reference
 ) -> dict[str, Any]:
     """On-track shares and the environment's geodesic over the distance along the track."""
     dist_s, seg_s, along_s = project(samples, ref)
     centers = np.asarray(env.bin_centers, dtype=float)
-    dist_b = project(centers, ref)[0]
+    dist_b, seg_b, along_b = project(centers, ref)
+    jumps = jump_links(env, ref, seg_b, along_b, dist_b)
     first, second, geo, _ = env_out["_pairs"]
     along = along_track_distance(
         ref, seg_s[first], along_s[first], seg_s[second], along_s[second]
@@ -1074,6 +1122,8 @@ def against_reference(
         "share_pairs_shortcut": float(np.mean(ratio < 0.9))
         if len(ratio)
         else float("nan"),
+        "jump_links": int(jumps.sum()),
+        "jump_link_share": float(np.mean(jumps)) if len(jumps) else 0.0,
     }
     if ref.width is not None:
         out["track_width"] = ref.width
@@ -1350,11 +1400,14 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     """Verdict against the stated apparatus, and the reasons for a mismatch.
 
     Checked when stated: the number of separate apparatus (components of at
-    least ``MAJOR_COMPONENT_SHARE`` of the bins), a square or circle's
-    coverage, a track's length (within 10 %), the share of bins on a track of
-    the stated width (90 %, ``on_track_shares``), the environment's geodesic
-    against the distance along the track (median 0.9 or more), the room
-    bounds, and for a 1-D loop that its ends meet in the camera (within
+    least ``MAJOR_COMPONENT_SHARE`` of the bins), a track's loops (holes of
+    that share or more; a tree or a straight track has none), a square or
+    circle's coverage, a track's length, a circular track's circumference
+    (pi x its diameter) and a lattice's side (each within 10 %), links that
+    join places far apart along the track (``jump_links``), the share of
+    bins on a track of the stated width (90 %, ``on_track_shares``), the
+    environment's geodesic against the distance along the track (median 0.9
+    or more), the room bounds, and for a 1-D loop that its ends meet in the camera (within
     ``LOOP_CLOSURE_SHARE`` of its length) and that the bins join them (their
     path no longer than the camera distance plus that share). An assumed
     track width is reported but not judged. A declared environment is judged
@@ -1382,8 +1435,30 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
             reasons.append(
                 f"{outline['bin_centres_outside_stated']:.0%} of bins outside it"
             )
+    if (
+        app.kind == "track"
+        and "major_holes" in env
+        and env["major_holes"] != app.n_loops
+    ):
+        reasons.append(
+            f"{env['major_holes']} loop-sized hole{'s' if env['major_holes'] != 1 else ''}"
+            f" (1% of the bins or more), apparatus has {app.n_loops}"
+            f" loop{'s' if app.n_loops != 1 else ''}"
+        )
     track = row.get("reference")
     if track:
+        if track.get("jump_links"):
+            reasons.append(
+                f"{track['jump_links']} links join places far apart along the track"
+                " (through a wall or gap)"
+            )
+        if app.size is not None and "loop" in app.notes and app.kind == "track":
+            stated = np.pi * app.size
+            if abs(track["reference_length"] / stated - 1) > 0.1:
+                reasons.append(
+                    f"loop {track['reference_length']:.0f} round, stated diameter"
+                    f" {app.size:g} ({stated:.0f} round)"
+                )
         if app.track_length is not None:
             stated = app.track_length * app.n_parts
             if abs(track["reference_length"] / stated - 1) > 0.1:
@@ -1405,6 +1480,20 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
             f"{room['bins_outside_room']:.1%} of bins outside the room bounds"
         )
     one_d = row.get("one_d")
+    if one_d and app.track_length is not None:
+        span = one_d["range"][1] - one_d["range"][0]
+        if abs(span / app.track_length - 1) > 0.1:
+            reasons.append(f"track {span:.0f} long, stated {app.track_length:g}")
+    lattice = row.get("lattice")
+    if (
+        lattice
+        and app.size is not None
+        and "lattice_side" in lattice
+        and abs(lattice["lattice_side"] / app.size - 1) > 0.1
+    ):
+        reasons.append(
+            f"lattice {lattice['lattice_side']:.0f} a side, stated {app.size:g}"
+        )
     if one_d and "loop" in app.notes and "camera_distance_between_ends" in one_d:
         camera = one_d["camera_distance_between_ends"]
         length = one_d["range"][1] - one_d["range"][0]

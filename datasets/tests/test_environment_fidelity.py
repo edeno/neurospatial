@@ -419,3 +419,93 @@ def test_geodesic_pairs_skip_samples_outside_a_declared_track():
     # arm and up to sqrt(2) across the corner; never below 1.
     assert out["geodesic_ratio_median"] >= 1.0
     assert out["geodesic_ratio_p95"] <= 1.5
+
+
+@pytest.mark.parametrize("wall", [0.5, 1.0, 2.0, 3.0])
+def test_jump_links_find_corridors_joined_through_a_thin_wall(wall):
+    # Two 10 cm corridors 60 cm long, a wall of `wall` cm between them, joined
+    # at the bottom (a U), sampled densely at 2.5 cm bins: the samples-built
+    # grid links the corridors through the wall, and no sample gap shows it.
+    from studies.environment_fidelity import (
+        against_reference,
+        measure_env,
+        polyline_reference,
+    )
+
+    samples = np.vstack(
+        [
+            _grid_points((0, 10), (0, 60)),
+            _grid_points((10 + wall, 20 + wall), (0, 60)),
+            _grid_points((0, 20 + wall), (0, 10)),
+        ]
+    )
+    env = Environment.from_samples(samples, bin_size=BIN)
+    out = measure_env(env, samples, np.random.default_rng(0))
+    assert out["far_edges"] == 0.0  # the sample-gap test sees nothing
+    left, right = 5.0, 15.0 + wall
+    ref = polyline_reference(
+        np.array([[left, 60.0], [left, 5.0], [right, 5.0], [right, 60.0]]),
+        closed=False,
+        label="U centreline",
+    )
+    track = against_reference(out, env, samples, ref)
+    # Every bin row above the base links across the wall.
+    assert track["jump_links"] >= (60 - 10) / BIN
+    status, reason = verdict(
+        {"env": out, "reference": track}, Apparatus("track", "test", True)
+    )
+    assert status == "mismatch"
+    assert "through a wall or gap" in reason
+
+
+def test_no_jump_links_when_the_corridors_are_apart():
+    from studies.environment_fidelity import (
+        against_reference,
+        measure_env,
+        polyline_reference,
+    )
+
+    samples = np.vstack(
+        [
+            _grid_points((0, 10), (0, 60)),
+            _grid_points((30, 40), (0, 60)),
+            _grid_points((0, 40), (0, 10)),
+        ]
+    )
+    env = Environment.from_samples(samples, bin_size=BIN)
+    out = measure_env(env, samples, np.random.default_rng(0))
+    ref = polyline_reference(
+        np.array([[5.0, 60.0], [5.0, 5.0], [35.0, 5.0], [35.0, 60.0]]),
+        closed=False,
+        label="U centreline",
+    )
+    assert against_reference(out, env, samples, ref)["jump_links"] == 0
+
+
+def test_verdict_judges_loops_and_stated_sizes():
+    loop = Apparatus("track", "test", True, size=100.0, notes="loop", n_loops=1)
+    row = {
+        "env": {"major_components": 1, "major_holes": 1},
+        "reference": {
+            "reference_length": np.pi * 100.0,
+            "env_over_track_median": 1.0,
+            "jump_links": 0,
+        },
+    }
+    assert verdict(row, loop) == ("matches", "")
+    no_hole = {**row, "env": {"major_components": 1, "major_holes": 0}}
+    assert "0 loop-sized holes" in verdict(no_hole, loop)[1]
+    small = {**row, "reference": {**row["reference"], "reference_length": 250.0}}
+    assert "stated diameter 100" in verdict(small, loop)[1]
+    tree = Apparatus("track", "test", True)
+    assert "apparatus has 0 loops" in verdict(row, tree)[1]
+    line = Apparatus("track", "test", True, track_length=222.0, notes="1-D loop")
+    one_d = {
+        "env": {"major_components": 1},
+        "one_d": {
+            "range": [0.0, 160.0],
+            "end_to_end_geodesic": 5.0,
+            "camera_distance_between_ends": 3.0,
+        },
+    }
+    assert "track 160 long, stated 222" in verdict(one_d, line)[1]
