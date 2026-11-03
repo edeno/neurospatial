@@ -817,9 +817,14 @@ def declared_geometry(
         physical = "physical width not stated"
     reasons = misfit_reasons(fit, bin_size) if placed_by in FITTED else []
     if reasons:
+        if physical_width is not None:
+            entries["outside_physical_width_by_speed"] = fit[
+                "outside_physical_width_by_speed"
+            ]
         return entries, (
             f"environment: inferred; the {kind} fit ({source}; {placement}) was"
-            f" refused: {'; '.join(reasons)}; tracked point: {tracked_point}"
+            f" refused: {'; '.join(reasons)}; tracked point: {tracked_point};"
+            f" on the refused layout, {physical}"
         )
     entries |= {
         "environment": declare(
