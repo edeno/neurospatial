@@ -1963,6 +1963,8 @@ def measure_declared(
         out["outline"] = outline_measures(env, samples, app, outline)
     if room is not None:
         out["room"] = bat_room(env, samples, room, rec)
+    if "lattice_bars_cm" in rec.geometry and ref is not None:
+        out["adjacent_bars"] = adjacent_bar_pairs(bin_graph(env), env, samples, ref)
     view: dict[str, Any] = {"env": measures}
     if independent:
         view["reference"] = out["reference"]
