@@ -33,13 +33,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
+    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
   },
   "load_warnings": [],
   "operations": {
@@ -53,8 +53,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.042,
-      "peak_mb": 1.6
+      "seconds": 0.028,
+      "peak_mb": 1.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -67,7 +67,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.203,
+      "seconds": 0.122,
       "peak_mb": 5.8
     },
     "env.declared": {
@@ -81,7 +81,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.015,
       "peak_mb": 3.0
     },
     "rates.spatial": {
@@ -149,8 +149,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.923,
-      "peak_mb": 22.2
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "behavior.laps": {
       "status": "error",
@@ -158,7 +158,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.03,
+      "seconds": 0.016,
       "peak_mb": 2.6
     },
     "behavior.turn_sequence": {
@@ -185,8 +185,8 @@
       "note": "head_direction: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.346,
-      "peak_mb": 2.3
+      "seconds": 0.227,
+      "peak_mb": 2.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -194,8 +194,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 1.568,
-      "peak_mb": 15.4
+      "seconds": 0.221,
+      "peak_mb": 0.4
     },
     "imaging.rates": {
       "status": "missing",
@@ -216,8 +216,8 @@
       "note": "one event per dF/F transient: onset above median + 3 robust SD (1.4826 x MAD), end below median + 1 SD; then compute_spatial_rates (harness heuristic, no published source)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 1.183,
-      "peak_mb": 34.9
+      "seconds": 0.742,
+      "peak_mb": 34.8
     }
   },
   "env_kind": "declared",
@@ -235,7 +235,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.9489018366241979, 0.9412925082050404] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.018978 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9489, 0.9413] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 455,

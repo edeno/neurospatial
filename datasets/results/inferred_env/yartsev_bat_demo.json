@@ -46,13 +46,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [],
   "operations": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.418,
+      "seconds": 0.293,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -80,7 +80,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.06,
+      "seconds": 1.008,
       "peak_mb": 227.7
     },
     "env.declared": {
@@ -103,7 +103,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.611,
+      "seconds": 2.791,
       "peak_mb": 227.7
     },
     "rates.spatial_information": {
@@ -116,7 +116,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.009,
       "peak_mb": 26.2
     },
     "rates.information_vs_shifts": {
@@ -131,7 +131,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.633,
+      "seconds": 6.002,
       "peak_mb": 264.6
     },
     "cells.place_screen": {
@@ -143,8 +143,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.1,
-      "peak_mb": 66.7
+      "seconds": 0.065,
+      "peak_mb": 66.8
     },
     "cells.grid_score": {
       "status": "error",
@@ -161,7 +161,7 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 3.9
     },
     "hd.tuning": {
@@ -180,13 +180,16 @@
         "median_error": 2.1756630355021698,
         "chance_median_error": 2.6416884392866082,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "m",
-        "n_time_bins": 210
+        "n_time_bins": 210,
+        "median_error_on_declared": 2.1464101615137756,
+        "n_on_declared": 209
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.77,
+      "seconds": 4.047,
       "peak_mb": 227.7
     },
     "io.nwb_roundtrip": {
@@ -197,8 +200,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.415,
-      "peak_mb": 24.2
+      "seconds": 3.951,
+      "peak_mb": 24.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -218,7 +221,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.785,
+      "seconds": 0.68,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -227,7 +230,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.164,
+      "seconds": 0.141,
       "peak_mb": 100.7
     },
     "behavior.turn_sequence": {

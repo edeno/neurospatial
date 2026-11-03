@@ -42,13 +42,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
+    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
   },
   "load_warnings": [
     {
@@ -70,7 +70,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.058,
+      "seconds": 0.051,
       "peak_mb": 14.1
     },
     "env.occupancy": {
@@ -84,7 +84,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.162,
+      "seconds": 0.133,
       "peak_mb": 50.8
     },
     "env.declared": {
@@ -98,7 +98,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.045,
+      "seconds": 0.042,
       "peak_mb": 28.9
     },
     "rates.spatial": {
@@ -112,7 +112,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.481,
+      "seconds": 0.406,
       "peak_mb": 104.0
     },
     "rates.spatial_information": {
@@ -125,7 +125,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.002,
       "peak_mb": 4.4
     },
     "rates.information_vs_shifts": {
@@ -140,7 +140,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.255,
+      "seconds": 1.87,
       "peak_mb": 130.4
     },
     "cells.place_screen": {
@@ -152,7 +152,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.002,
       "peak_mb": 4.4
     },
     "cells.grid_score": {
@@ -206,7 +206,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.747,
+      "seconds": 0.592,
       "peak_mb": 158.7
     },
     "io.nwb_roundtrip": {
@@ -217,7 +217,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.178,
+      "seconds": 1.805,
       "peak_mb": 4.0
     },
     "env.from_graph": {
@@ -241,7 +241,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.106,
+      "seconds": 0.092,
       "peak_mb": 52.7
     },
     "behavior.laps": {
@@ -250,7 +250,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.053,
+      "seconds": 0.045,
       "peak_mb": 25.9
     },
     "behavior.turn_sequence": {
@@ -262,7 +262,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.099,
+      "seconds": 0.094,
       "peak_mb": 25.9
     },
     "replay.compare_methods": {
@@ -422,7 +422,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=4.0 is at least the per-axis data extent [2.0320300000000002, 1.0292100000000002] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0406406 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=4.0 is at least the per-axis data extent [2.032, 1.029] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.04",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 449,

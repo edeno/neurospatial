@@ -33,13 +33,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
+    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
   },
   "load_warnings": [],
   "operations": {
@@ -53,8 +53,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.043,
-      "peak_mb": 1.6
+      "seconds": 0.033,
+      "peak_mb": 1.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -67,7 +67,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.004,
       "peak_mb": 2.7
     },
     "env.declared": {
@@ -144,19 +144,19 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.968,
-      "peak_mb": 22.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "behavior.laps": {
       "status": "ok",
       "summary": {
         "n_laps": 1,
-        "n_counter-clockwise": 1
+        "n_laps_counter-clockwise": 1
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.033,
+      "seconds": 0.021,
       "peak_mb": 4.1
     },
     "behavior.turn_sequence": {
@@ -183,8 +183,8 @@
       "note": "head_direction: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.365,
-      "peak_mb": 2.2
+      "seconds": 0.263,
+      "peak_mb": 2.0
     },
     "io.read_pose": {
       "status": "n/a",
@@ -192,8 +192,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 1.601,
-      "peak_mb": 15.5
+      "seconds": 0.245,
+      "peak_mb": 0.4
     },
     "imaging.rates": {
       "status": "missing",
@@ -214,7 +214,7 @@
       "note": "one event per dF/F transient: onset above median + 3 robust SD (1.4826 x MAD), end below median + 1 SD; then compute_spatial_rates (harness heuristic, no published source)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.564,
+      "seconds": 0.392,
       "peak_mb": 5.9
     }
   },
@@ -233,7 +233,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.9489018366241979, 0.9412925082050404] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.018978 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9489, 0.9413] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 455,
@@ -282,7 +282,7 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 1,
-        "n_counter-clockwise": 1
+        "n_laps_counter-clockwise": 1
       },
       "hazard_summary": null
     },

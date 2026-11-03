@@ -36,13 +36,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "1af734223c1738b283566320a975cd1c2d42d7c2"
+    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
   },
   "load_warnings": [],
   "operations": {
@@ -56,8 +56,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.215,
-      "peak_mb": 5.9
+      "seconds": 0.113,
+      "peak_mb": 5.8
     },
     "env.occupancy": {
       "status": "ok",
@@ -70,8 +70,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.289,
-      "peak_mb": 8.3
+      "seconds": 0.164,
+      "peak_mb": 8.2
     },
     "env.declared": {
       "status": "ok",
@@ -84,7 +84,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.027,
+      "seconds": 0.017,
       "peak_mb": 4.2
     },
     "rates.spatial": {
@@ -98,8 +98,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.024,
-      "peak_mb": 69.4
+      "seconds": 0.846,
+      "peak_mb": 65.1
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -111,7 +111,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.6
     },
     "rates.information_vs_shifts": {
@@ -126,7 +126,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.277,
+      "seconds": 0.212,
       "peak_mb": 3.9
     },
     "cells.place_screen": {
@@ -138,7 +138,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.099,
+      "seconds": 0.048,
       "peak_mb": 91.2
     },
     "cells.grid_score": {
@@ -151,7 +151,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.059,
+      "seconds": 0.035,
       "peak_mb": 8.5
     },
     "cells.border_score": {
@@ -164,7 +164,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.192,
+      "seconds": 0.097,
       "peak_mb": 2.8
     },
     "hd.tuning": {
@@ -183,14 +183,17 @@
         "median_error": 64.31980515339464,
         "chance_median_error": 56.21320343559643,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 1199
+        "n_time_bins": 1199,
+        "median_error_on_declared": 64.31980515339464,
+        "n_on_declared": 1199
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.355,
-      "peak_mb": 35.5
+      "seconds": 0.302,
+      "peak_mb": 34.8
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -200,8 +203,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.372,
-      "peak_mb": 14.4
+      "seconds": 2.547,
+      "peak_mb": 14.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -218,8 +221,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 1.032,
-      "peak_mb": 21.4
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "behavior.laps": {
       "status": "error",
@@ -227,7 +230,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.039,
+      "seconds": 0.019,
       "peak_mb": 3.7
     },
     "behavior.turn_sequence": {
@@ -245,8 +248,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.551,
-      "peak_mb": 9.9
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "ok",
@@ -258,8 +261,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.392,
-      "peak_mb": 2.7
+      "seconds": 0.221,
+      "peak_mb": 2.5
     },
     "io.read_pose": {
       "status": "n/a",
@@ -267,8 +270,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 1.929,
-      "peak_mb": 13.3
+      "seconds": 0.221,
+      "peak_mb": 0.4
     },
     "imaging.rates": {
       "status": "n/a",
@@ -388,7 +391,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.980399291953292, 1.0] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.02 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9804, 1] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 1399,

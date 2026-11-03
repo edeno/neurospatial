@@ -44,13 +44,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
+    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
   },
   "load_warnings": [],
   "operations": {
@@ -64,7 +64,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.058,
+      "seconds": 0.053,
       "peak_mb": 2.8
     },
     "env.occupancy": {
@@ -78,7 +78,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.045,
+      "seconds": 0.043,
       "peak_mb": 12.7
     },
     "env.declared": {
@@ -106,7 +106,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.221,
+      "seconds": 0.259,
       "peak_mb": 198.6
     },
     "rates.spatial_information": {
@@ -134,8 +134,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.522,
-      "peak_mb": 244.0
+      "seconds": 1.274,
+      "peak_mb": 244.1
     },
     "cells.place_screen": {
       "status": "ok",
@@ -146,7 +146,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 1.4
     },
     "cells.grid_score": {
@@ -192,7 +192,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.34,
+      "seconds": 0.295,
       "peak_mb": 198.5
     },
     "io.nwb_roundtrip": {
@@ -203,8 +203,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.746,
-      "peak_mb": 3.0
+      "seconds": 1.829,
+      "peak_mb": 2.9
     },
     "env.from_graph": {
       "status": "ok",
@@ -242,7 +242,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.059,
+      "seconds": 0.057,
       "peak_mb": 6.4
     },
     "behavior.turn_sequence": {
@@ -254,23 +254,25 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.023,
+      "seconds": 0.022,
       "peak_mb": 6.4
     },
     "replay.compare_methods": {
       "status": "ok",
       "summary": {
-        "n_events": 71,
+        "n_events": 20,
+        "n_candidates": 71,
+        "n_shuffles": 50,
         "events": "ripples",
         "davidson_2009_rate": 0.0,
-        "davidson_2009_ci": "0.000-0.051",
-        "grosmark_2016_rate": 0.014084507042253521,
-        "grosmark_2016_ci": "0.000-0.076"
+        "davidson_2009_ci": "0.000-0.168",
+        "grosmark_2016_rate": 0.0,
+        "grosmark_2016_ci": "0.000-0.168"
       },
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 14.001,
+      "seconds": 0.361,
       "peak_mb": 225.2
     },
     "io.nwb_readers": {
@@ -283,8 +285,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.941,
-      "peak_mb": 137.3
+      "seconds": 0.956,
+      "peak_mb": 137.2
     },
     "io.read_pose": {
       "status": "n/a",
@@ -292,7 +294,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.801,
+      "seconds": 0.817,
       "peak_mb": 1.9
     },
     "imaging.rates": {
@@ -331,7 +333,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.0 is at least the per-axis data extent [0.8288513601369079, 0.829821921991743] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0165964 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.0 is at least the per-axis data extent [0.8289, 0.8298] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 667,

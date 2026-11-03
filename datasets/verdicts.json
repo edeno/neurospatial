@@ -59,6 +59,11 @@
       "verdict": "third-party",
       "gap": null,
       "reason": "Emitted by shapely/GEOS minimum_rotated_rectangle in the harness's _tracks layout candidates when the samples' hull is axis-aligned; the rectangle is still returned and only seeds the node fit."
+    },
+    "neurospatial UserWarning: bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.": {
+      "verdict": "correct",
+      "gap": null,
+      "reason": "These five recordings are in video pixels (hc-2, hc-3, hc-18, 001754, 000003), so the 5 cm default cannot apply and the smoothing follows 2.5 bins; the fix is right: hc-2 and hc-3 have a scale from a stated size, the others only bandwidth= in pixels."
     }
   },
   "hazards": {
@@ -2111,6 +2116,11 @@
       "verdict": "no effect",
       "gap": null,
       "reason": "Identical summary on the samples' grid"
+    },
+    "grieves_2020_lattice/length_unit_off_by_100/behavior.turn_sequence": {
+      "verdict": "silent",
+      "gap": "G-132",
+      "reason": "2975 turns (frac_left 0.50) -> 0 with metres labelled cm: the head positions collapse into a 1.5-1.7 cm box, and turn_sequence reports no turns without a warning."
     }
   },
   "cells": {
@@ -2371,6 +2381,257 @@
     },
     "jadhav_000447_familiar/io.nwb_readers": {
       "gap": "G-042"
+    }
+  },
+  "inferred_cells": {
+    "aeryjones_000165/behavior.laps": {
+      "gap": "G-015"
+    },
+    "aeryjones_000165/cells.border_score": {
+      "gap": "G-005"
+    },
+    "aeryjones_000165/io.nwb_readers": {
+      "gap": "G-055"
+    },
+    "agarwal_24757638/behavior.laps": {
+      "gap": "G-015"
+    },
+    "agarwal_24757638/cells.border_score": {
+      "gap": "G-005"
+    },
+    "ca1ca3_001880/behavior.laps": {
+      "gap": "G-015"
+    },
+    "ca1ca3_001880/cells.border_score": {
+      "gap": "G-005"
+    },
+    "ca1ca3_001880/io.nwb_readers": {
+      "gap": "G-012"
+    },
+    "ca1ca3_001880/replay.compare_methods": {
+      "gap": "G-060"
+    },
+    "dyads_001845/behavior.laps": {
+      "gap": "G-015"
+    },
+    "dyads_001845/io.nwb_readers": {
+      "gap": "G-012"
+    },
+    "dyads_001845/io.read_pose": {
+      "gap": "G-056"
+    },
+    "figure8_000552/cells.border_score": {
+      "gap": "G-005"
+    },
+    "figure8_000552/io.nwb_readers": {
+      "gap": "G-012"
+    },
+    "gardner_2022_grid/behavior.laps": {
+      "gap": "G-015"
+    },
+    "gardner_2022_grid/cells.border_score": {
+      "gap": "G-005"
+    },
+    "giocomo_000405/io.nwb_readers": {
+      "gap": "G-032"
+    },
+    "giocomo_001701/behavior.laps": {
+      "gap": "G-015"
+    },
+    "giocomo_001701/cells.border_score": {
+      "gap": "G-005"
+    },
+    "giocomo_001701/io.nwb_readers": {
+      "gap": "G-030"
+    },
+    "gonzalez_001695/behavior.laps": {
+      "gap": "G-015"
+    },
+    "gonzalez_001695/cells.border_score": {
+      "gap": "G-005"
+    },
+    "gonzalez_001695/io.nwb_readers": {
+      "gap": "G-052"
+    },
+    "gonzalez_001695/replay.compare_methods": {
+      "gap": "G-038"
+    },
+    "grieves_2020_lattice/behavior.laps": {
+      "gap": "G-134"
+    },
+    "grieves_2020_lattice/cells.border_score": {
+      "gap": "G-024"
+    },
+    "grieves_2020_lattice/cells.grid_score": {
+      "gap": "G-024"
+    },
+    "grosmark_000044_circular/cells.border_score": {
+      "gap": "G-005"
+    },
+    "grosmark_000044_circular/io.nwb_readers": {
+      "gap": "G-012"
+    },
+    "grosmark_000044_linear/behavior.laps": {
+      "gap": "G-015"
+    },
+    "grosmark_000044_linear/cells.border_score": {
+      "gap": "G-005"
+    },
+    "grosmark_000044_linear/io.nwb_readers": {
+      "gap": "G-012"
+    },
+    "hafting_2008_nird/behavior.laps": {
+      "gap": "G-150"
+    },
+    "hafting_2008_nird/behavior.turn_sequence": {
+      "gap": "G-150"
+    },
+    "hafting_2008_nird/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc11_achilles/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hc11_achilles/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc18_train261/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc28_hpa/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hc28_hpa/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc2_ec013_527/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc2_ec013_527/rates.egocentric_boundary": {
+      "gap": "G-133"
+    },
+    "hc31_anm190422/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hc3_ec013_669/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hc3_ec013_669/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc3_ec013_669/rates.egocentric_boundary": {
+      "gap": "G-133"
+    },
+    "j16_23020757/behavior.laps": {
+      "gap": "G-150"
+    },
+    "j16_23020757/behavior.turn_sequence": {
+      "gap": "G-150"
+    },
+    "j16_23020757/cells.border_score": {
+      "gap": "G-005"
+    },
+    "jadhav_000447/cells.border_score": {
+      "gap": "G-005"
+    },
+    "jadhav_000447/io.nwb_readers": {
+      "gap": "G-042"
+    },
+    "jadhav_000447_familiar/cells.border_score": {
+      "gap": "G-005"
+    },
+    "jadhav_000447_familiar/io.nwb_readers": {
+      "gap": "G-042"
+    },
+    "kanter_2025/cells.border_score": {
+      "gap": "G-005"
+    },
+    "kanter_2025/io.nwb_readers": {
+      "gap": "G-057"
+    },
+    "miniscope_002030/io.nwb_readers": {
+      "gap": "G-032"
+    },
+    "neurolab_001754/behavior.laps": {
+      "gap": "G-015"
+    },
+    "neurolab_001754/cells.border_score": {
+      "gap": "G-005"
+    },
+    "neurolab_001754/io.nwb_readers": {
+      "gap": "G-053"
+    },
+    "olafsdottir_5566548/behavior.laps": {
+      "gap": "G-015"
+    },
+    "olafsdottir_5566548/cells.border_score": {
+      "gap": "G-005"
+    },
+    "rosenberg_labyrinth/behavior.laps": {
+      "gap": "G-015"
+    },
+    "rsc_000987/behavior.laps": {
+      "gap": "G-015"
+    },
+    "rsc_000987/cells.border_score": {
+      "gap": "G-005"
+    },
+    "rsc_000987/io.nwb_readers": {
+      "gap": "G-050"
+    },
+    "sargolini_000582/cells.border_score": {
+      "gap": "G-005"
+    },
+    "senzai_000003/behavior.laps": {
+      "gap": "G-015"
+    },
+    "senzai_000003/cells.border_score": {
+      "gap": "G-005"
+    },
+    "senzai_000003/io.nwb_readers": {
+      "gap": "G-032"
+    },
+    "shipley_30902972/behavior.laps": {
+      "gap": "G-015"
+    },
+    "shipley_30902972/cells.border_score": {
+      "gap": "G-005"
+    },
+    "takigawa_7114733/behavior.laps": {
+      "gap": "G-015"
+    },
+    "takigawa_7114733/cells.border_score": {
+      "gap": "G-005"
+    },
+    "valero_000568/behavior.laps": {
+      "gap": "G-015"
+    },
+    "valero_000568/cells.border_score": {
+      "gap": "G-005"
+    },
+    "valero_000568/replay.compare_methods": {
+      "gap": "G-038"
+    },
+    "vollan_lt/behavior.laps": {
+      "gap": "G-015"
+    },
+    "vollan_lt/cells.border_score": {
+      "gap": "G-005"
+    },
+    "vollan_of/cells.border_score": {
+      "gap": "G-005"
+    },
+    "watermaze_10248158/behavior.laps": {
+      "gap": "G-015"
+    },
+    "yartsev_bat_demo/behavior.laps": {
+      "gap": "G-015"
+    },
+    "yartsev_bat_demo/cells.border_score": {
+      "gap": "G-024"
+    },
+    "yartsev_bat_demo/cells.grid_score": {
+      "gap": "G-024"
     }
   }
 }

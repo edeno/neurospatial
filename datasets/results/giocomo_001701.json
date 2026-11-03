@@ -31,13 +31,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "d32c3017555a1fb8e726f71ecf1f2320fc17ed10"
+    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
   },
   "load_warnings": [
     {
@@ -59,7 +59,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.035,
+      "seconds": 0.028,
       "peak_mb": 4.3
     },
     "env.occupancy": {
@@ -73,7 +73,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.033,
+      "seconds": 0.025,
       "peak_mb": 7.9
     },
     "env.declared": {
@@ -87,7 +87,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.013,
       "peak_mb": 8.6
     },
     "rates.spatial": {
@@ -101,7 +101,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.139,
+      "seconds": 0.106,
       "peak_mb": 25.4
     },
     "rates.spatial_information": {
@@ -129,7 +129,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.646,
+      "seconds": 0.479,
       "peak_mb": 32.0
     },
     "cells.place_screen": {
@@ -141,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 1.9
     },
     "cells.grid_score": {
@@ -173,7 +173,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.235,
+      "seconds": 0.147,
       "peak_mb": 25.3
     },
     "rates.egocentric_boundary": {
@@ -200,7 +200,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.232,
+      "seconds": 0.155,
       "peak_mb": 38.1
     },
     "io.nwb_roundtrip": {
@@ -211,8 +211,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.285,
-      "peak_mb": 2.9
+      "seconds": 1.755,
+      "peak_mb": 2.7
     },
     "env.from_graph": {
       "status": "ok",
@@ -241,7 +241,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.015,
       "peak_mb": 7.7
     },
     "behavior.turn_sequence": {
@@ -253,7 +253,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.072,
+      "seconds": 0.056,
       "peak_mb": 7.7
     },
     "replay.compare_methods": {
@@ -283,8 +283,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.493,
-      "peak_mb": 19.7
+      "seconds": 0.411,
+      "peak_mb": 19.6
     },
     "io.read_pose": {
       "status": "n/a",
@@ -300,8 +300,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.305,
-      "peak_mb": 0.4
+      "seconds": 0.261,
+      "peak_mb": 0.3
     },
     "imaging.rates": {
       "status": "n/a",
@@ -465,7 +465,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.7544608120678173, 0.8986126835252368] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0179723 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.7545, 0.8986] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 266,

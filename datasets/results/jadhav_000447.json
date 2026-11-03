@@ -27,13 +27,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "bed5be9ceb43cd86a8ff283e43f1ee06e3c61a74"
+    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
   },
   "load_warnings": [
     {
@@ -62,8 +62,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.096,
-      "peak_mb": 6.2
+      "seconds": 0.097,
+      "peak_mb": 6.1
     },
     "env.occupancy": {
       "status": "ok",
@@ -76,7 +76,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.027,
+      "seconds": 0.037,
       "peak_mb": 9.6
     },
     "env.declared": {
@@ -99,7 +99,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.364,
+      "seconds": 0.43,
       "peak_mb": 37.2
     },
     "rates.spatial_information": {
@@ -112,7 +112,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.003,
       "peak_mb": 4.5
     },
     "rates.information_vs_shifts": {
@@ -127,7 +127,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.285,
+      "seconds": 0.317,
       "peak_mb": 17.2
     },
     "cells.place_screen": {
@@ -139,7 +139,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.022,
+      "seconds": 0.029,
       "peak_mb": 56.2
     },
     "cells.grid_score": {
@@ -152,7 +152,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.327,
+      "seconds": 0.325,
       "peak_mb": 10.2
     },
     "cells.border_score": {
@@ -161,8 +161,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
-      "peak_mb": 1.0
+      "seconds": 0.001,
+      "peak_mb": 0.9
     },
     "hd.tuning": {
       "status": "n/a",
@@ -187,7 +187,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.339,
+      "seconds": 0.347,
       "peak_mb": 65.7
     },
     "io.nwb_roundtrip": {
@@ -198,8 +198,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.651,
-      "peak_mb": 10.7
+      "seconds": 2.494,
+      "peak_mb": 11.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -231,7 +231,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.036,
+      "seconds": 0.034,
       "peak_mb": 7.0
     },
     "behavior.turn_sequence": {
@@ -270,7 +270,7 @@
           "count": 1
         }
       ],
-      "seconds": 11.223,
+      "seconds": 11.58,
       "peak_mb": 31.3
     },
     "io.read_pose": {
@@ -287,7 +287,7 @@
           "count": 1
         }
       ],
-      "seconds": 11.772,
+      "seconds": 10.682,
       "peak_mb": 27.2
     },
     "imaging.rates": {
@@ -420,7 +420,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [1.0885758008927777, 1.031340053361222] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0217715 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [1.089, 1.031] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 1172,

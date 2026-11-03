@@ -37,13 +37,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "bed5be9ceb43cd86a8ff283e43f1ee06e3c61a74"
+    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
   },
   "load_warnings": [
     {
@@ -72,8 +72,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.261,
-      "peak_mb": 7.3
+      "seconds": 0.016,
+      "peak_mb": 0.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -166,8 +166,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.533,
-      "peak_mb": 19.0
+      "seconds": 0.004,
+      "peak_mb": 0.6
     },
     "behavior.laps": {
       "status": "error",
@@ -217,13 +217,13 @@
           "count": 1
         }
       ],
-      "seconds": 2.086,
-      "peak_mb": 6.1
+      "seconds": 1.719,
+      "peak_mb": 4.9
     },
     "io.read_pose": {
-      "status": "n/a",
+      "status": "error",
       "summary": {},
-      "note": "the file has no PoseEstimation",
+      "note": "ValueError: Pose bodypart 'PoseEstimationSeriesBody' timestamps must be finite and strictly increasing.\nFix: correct the source time axis before reading.",
       "gap": null,
       "warnings": [
         {
@@ -241,8 +241,8 @@
           "count": 1
         }
       ],
-      "seconds": 2.881,
-      "peak_mb": 21.1
+      "seconds": 3.099,
+      "peak_mb": 5.1
     },
     "imaging.rates": {
       "status": "n/a",
@@ -330,7 +330,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.9163053414026172, 1.2467127629453743] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0249343 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9163, 1.247] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 245,

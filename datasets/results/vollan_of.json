@@ -39,13 +39,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [],
   "operations": {
@@ -59,7 +59,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.244,
+      "seconds": 0.198,
       "peak_mb": 7.9
     },
     "env.occupancy": {
@@ -81,7 +81,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.494,
+      "seconds": 0.361,
       "peak_mb": 15.5
     },
     "env.declared": {
@@ -95,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.058,
+      "seconds": 0.04,
       "peak_mb": 8.5
     },
     "rates.spatial": {
@@ -117,7 +117,7 @@
           "count": 1
         }
       ],
-      "seconds": 5.432,
+      "seconds": 3.483,
       "peak_mb": 227.1
     },
     "rates.spatial_information": {
@@ -130,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.04,
+      "seconds": 0.034,
       "peak_mb": 122.0
     },
     "rates.information_vs_shifts": {
@@ -153,7 +153,7 @@
           "count": 4
         }
       ],
-      "seconds": 2.515,
+      "seconds": 1.238,
       "peak_mb": 143.4
     },
     "cells.place_screen": {
@@ -165,7 +165,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.683,
+      "seconds": 0.217,
       "peak_mb": 172.2
     },
     "cells.grid_score": {
@@ -178,7 +178,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 8.547,
+      "seconds": 4.725,
       "peak_mb": 32.8
     },
     "cells.border_score": {
@@ -191,8 +191,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.371,
-      "peak_mb": 19.3
+      "seconds": 0.716,
+      "peak_mb": 19.2
     },
     "hd.tuning": {
       "status": "ok",
@@ -213,7 +213,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.331,
+      "seconds": 0.229,
       "peak_mb": 24.7
     },
     "rates.egocentric_boundary": {
@@ -239,7 +239,7 @@
           "count": 1
         }
       ],
-      "seconds": 25.512,
+      "seconds": 18.133,
       "peak_mb": 256.5
     },
     "decode.position": {
@@ -248,8 +248,11 @@
         "median_error": 8.535533905932738,
         "chance_median_error": 64.92640687119285,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 1211
+        "n_time_bins": 1211,
+        "median_error_on_declared": 8.535533905932738,
+        "n_on_declared": 1211
       },
       "note": "",
       "gap": null,
@@ -269,8 +272,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.19,
-      "peak_mb": 97.3
+      "seconds": 1.065,
+      "peak_mb": 96.6
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -280,7 +283,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.669,
+      "seconds": 3.311,
       "peak_mb": 66.3
     },
     "env.from_graph": {
@@ -315,7 +318,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.06,
+      "seconds": 0.073,
       "peak_mb": 7.5
     },
     "behavior.turn_sequence": {
@@ -333,8 +336,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.17,
-      "peak_mb": 2.9
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -426,7 +429,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [1.4192953705787659, 1.4019140005111694] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0283859 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [1.419, 1.402] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.03",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 2041,

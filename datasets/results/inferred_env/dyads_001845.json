@@ -37,13 +37,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3337409671746cf93c7ce7d8c7d4b460cee0e9dc"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [
     {
@@ -72,8 +72,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.193,
-      "peak_mb": 7.3
+      "seconds": 0.022,
+      "peak_mb": 0.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.005,
       "peak_mb": 0.5
     },
     "env.declared": {
@@ -166,8 +166,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.46,
-      "peak_mb": 19.0
+      "seconds": 0.005,
+      "peak_mb": 0.6
     },
     "behavior.laps": {
       "status": "error",
@@ -175,7 +175,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.007,
       "peak_mb": 3.4
     },
     "behavior.turn_sequence": {
@@ -217,13 +217,13 @@
           "count": 1
         }
       ],
-      "seconds": 1.818,
-      "peak_mb": 6.1
+      "seconds": 1.961,
+      "peak_mb": 4.1
     },
     "io.read_pose": {
-      "status": "n/a",
+      "status": "error",
       "summary": {},
-      "note": "the file has no PoseEstimation",
+      "note": "ValueError: Pose bodypart 'PoseEstimationSeriesBody' timestamps must be finite and strictly increasing.\nFix: correct the source time axis before reading.",
       "gap": null,
       "warnings": [
         {
@@ -241,8 +241,8 @@
           "count": 1
         }
       ],
-      "seconds": 2.54,
-      "peak_mb": 21.1
+      "seconds": 1.897,
+      "peak_mb": 4.3
     },
     "imaging.rates": {
       "status": "n/a",
@@ -330,7 +330,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.9163053414026172, 1.2467127629453743] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0249343 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9163, 1.247] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 245,

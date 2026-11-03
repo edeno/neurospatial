@@ -47,13 +47,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3971+g9ce92cfa4",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
+    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
   },
   "load_warnings": [],
   "operations": {
@@ -75,7 +75,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.199,
+      "seconds": 0.183,
       "peak_mb": 8.1
     },
     "env.occupancy": {
@@ -88,17 +88,18 @@
       },
       "note": "",
       "gap": null,
-      "warnings": [
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "example": "About 17% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "count": 1
-        }
-      ],
-      "seconds": 0.006,
+      "warnings": [],
+      "seconds": 0.005,
       "peak_mb": 2.9
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "rates.spatial": {
       "status": "ok",
@@ -114,12 +115,12 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "example": "About 17% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
+          "example": "bandwidth=None resolved to 10 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
           "count": 1
         }
       ],
-      "seconds": 1.21,
+      "seconds": 1.043,
       "peak_mb": 119.5
     },
     "rates.spatial_information": {
@@ -150,12 +151,12 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "example": "About 17% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
+          "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
+          "example": "bandwidth=None resolved to 10 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
           "count": 4
         }
       ],
-      "seconds": 0.132,
+      "seconds": 0.105,
       "peak_mb": 12.1
     },
     "cells.place_screen": {
@@ -167,7 +168,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.084,
+      "seconds": 0.067,
       "peak_mb": 106.3
     },
     "cells.grid_score": {
@@ -180,7 +181,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.223,
+      "seconds": 0.179,
       "peak_mb": 16.2
     },
     "cells.border_score": {
@@ -197,11 +198,18 @@
       "note": "needs headings",
       "warnings": []
     },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
     "decode.position": {
       "status": "ok",
       "summary": {
         "median_error": 103.31370849898477,
-        "chance_median_error": 71.50793489136069,
+        "chance_median_error": 72.76955262170048,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0220125786163522,
         "units": "pixel",
         "n_time_bins": 1527
       },
@@ -211,15 +219,8 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "example": "About 18% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "count": 1
-        },
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "example": "About 18% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
+          "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
+          "example": "bandwidth=None resolved to 10 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
           "count": 1
         },
         {
@@ -230,7 +231,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.242,
+      "seconds": 0.402,
       "peak_mb": 61.2
     },
     "io.nwb_roundtrip": {
@@ -249,8 +250,8 @@
           "count": 2
         }
       ],
-      "seconds": 3.169,
-      "peak_mb": 18.9
+      "seconds": 2.688,
+      "peak_mb": 18.1
     },
     "env.from_graph": {
       "status": "n/a",
@@ -275,16 +276,8 @@
       "summary": {},
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
-      "warnings": [
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "example": "About 18% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.",
-          "count": 1
-        }
-      ],
-      "seconds": 0.014,
+      "warnings": [],
+      "seconds": 0.011,
       "peak_mb": 7.0
     },
     "behavior.turn_sequence": {
@@ -315,8 +308,8 @@
       "note": "position: mismatch: values differ",
       "gap": null,
       "warnings": [],
-      "seconds": 0.39,
-      "peak_mb": 2.3
+      "seconds": 0.318,
+      "peak_mb": 2.2
     },
     "io.read_pose": {
       "status": "n/a",
@@ -324,7 +317,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.365,
+      "seconds": 0.311,
       "peak_mb": 0.4
     },
     "imaging.rates": {
@@ -338,6 +331,7 @@
       "warnings": []
     }
   },
+  "env_kind": "inferred",
   "hazards": [
     {
       "hazard": "missing_positions_as_zero",
@@ -361,7 +355,7 @@
       "op": "env.occupancy",
       "response": "silent",
       "message": "",
-      "repeated_clean_warnings": 1,
+      "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 652.0200000000013,
         "frac_bins_visited": 0.547378104875805,
@@ -425,8 +419,8 @@
       "hazard": "spike_times_in_ms",
       "op": "rates.spatial",
       "response": "warned",
-      "message": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).\nAll 72 units are silent from 3922.8 s to 3993.3 s (70 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\nAbout 17% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.\n\n31769/31769 spike_times (100%) across all neurons fell outside the position time window [2529.81, 8472.01]; spike_times.min()=2.52981e+06 spike_times.max()=8.47201e+06. The spike times span 5.9422e+06 and reach 8.47201e+06, about 1000 times the 5942.2 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-      "repeated_clean_warnings": 0,
+      "message": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).\nAll 72 units are silent from 3922.8 s to 3993.3 s (70 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n31769/31769 spike_times (100%) across all neurons fell outside the position time window [2529.81, 8472.01]; spike_times.min()=2.52981e+06 spike_times.max()=8.47201e+06. The spike times span 5.9422e+06 and reach 8.47201e+06, about 1000 times the 5942.2 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 72,
         "frac_nan_bins": 0.45262189512419504,
@@ -462,7 +456,7 @@
       "op": "env.occupancy",
       "response": "silent",
       "message": "",
-      "repeated_clean_warnings": 1,
+      "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 652.0200000000013,
         "frac_bins_visited": 0.547378104875805,

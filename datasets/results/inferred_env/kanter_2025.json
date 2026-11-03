@@ -48,13 +48,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [],
   "operations": {
@@ -68,7 +68,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.152,
+      "seconds": 0.107,
       "peak_mb": 14.2
     },
     "env.occupancy": {
@@ -82,7 +82,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.093,
+      "seconds": 0.054,
       "peak_mb": 30.4
     },
     "env.declared": {
@@ -105,7 +105,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.857,
+      "seconds": 0.532,
       "peak_mb": 50.1
     },
     "rates.spatial_information": {
@@ -118,7 +118,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.015,
+      "seconds": 0.008,
       "peak_mb": 26.7
     },
     "rates.information_vs_shifts": {
@@ -133,7 +133,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.105,
+      "seconds": 1.197,
       "peak_mb": 65.7
     },
     "cells.place_screen": {
@@ -145,7 +145,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.075,
+      "seconds": 0.036,
       "peak_mb": 45.3
     },
     "cells.grid_score": {
@@ -158,8 +158,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.673,
-      "peak_mb": 4.1
+      "seconds": 2.181,
+      "peak_mb": 11.6
     },
     "cells.border_score": {
       "status": "error",
@@ -167,7 +167,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.001,
       "peak_mb": 3.5
     },
     "hd.tuning": {
@@ -181,7 +181,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.502,
+      "seconds": 0.331,
       "peak_mb": 51.2
     },
     "rates.egocentric_boundary": {
@@ -199,7 +199,7 @@
       "note": "walls = edge of the visited bins (boundary_source='analysis')",
       "gap": null,
       "warnings": [],
-      "seconds": 485.362,
+      "seconds": 439.229,
       "peak_mb": 1037.0
     },
     "decode.position": {
@@ -208,13 +208,16 @@
         "median_error": 21.213203435596427,
         "chance_median_error": 60.60660171779821,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 3967
+        "n_time_bins": 3967,
+        "median_error_on_declared": 21.213203435596427,
+        "n_on_declared": 3967
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.579,
+      "seconds": 0.573,
       "peak_mb": 112.7
     },
     "io.nwb_roundtrip": {
@@ -225,8 +228,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.859,
-      "peak_mb": 17.0
+      "seconds": 2.466,
+      "peak_mb": 17.6
     },
     "env.from_graph": {
       "status": "n/a",
@@ -250,12 +253,12 @@
       "status": "ok",
       "summary": {
         "n_laps": 1,
-        "n_clockwise": 1
+        "n_laps_clockwise": 1
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.095,
+      "seconds": 0.079,
       "peak_mb": 30.4
     },
     "behavior.turn_sequence": {
@@ -286,7 +289,7 @@
       "note": "units: ValueError: The units table repeats id(s) [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 31, 32, 34, 35, 36, 37, 40, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 61, 62, 63, 64, 65, 66, 68, 69, 70, 71, 72, 73, 74, 75, 76, 78, 79, 81, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 103, 104, 105, 108, 109, 110, 111, 112, 113, 115, 118, 119, 121, 123, 124, 125, 126, 127, 128, 129, 130, 131, 133, 135, 136, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 152, 153, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173].\nWhy: unit_ids names table identities, so each id must name one row.\nFix: rewrite the units table with one unique id per unit.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.875,
+      "seconds": 0.674,
       "peak_mb": 17.3
     },
     "io.read_pose": {
@@ -295,7 +298,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.899,
+      "seconds": 0.683,
       "peak_mb": 1.8
     },
     "imaging.rates": {
@@ -370,7 +373,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.9839398574829102, 0.977348575592041] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0196788 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9839, 0.9773] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 1049,
@@ -438,7 +441,7 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 1,
-        "n_clockwise": 1
+        "n_laps_clockwise": 1
       },
       "hazard_summary": null
     },

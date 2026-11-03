@@ -26,13 +26,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
   },
   "load_warnings": [
     {
@@ -50,6 +50,11 @@
       "warnings": []
     },
     "env.occupancy": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
+    },
+    "env.declared": {
       "status": "n/a",
       "note": "needs positions",
       "warnings": []
@@ -95,8 +100,13 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.163,
-      "peak_mb": 154.8
+      "seconds": 0.187,
+      "peak_mb": 154.7
+    },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs positions",
+      "warnings": []
     },
     "decode.position": {
       "status": "n/a",
@@ -151,8 +161,25 @@
           "count": 9
         }
       ],
-      "seconds": 0.514,
+      "seconds": 0.622,
       "peak_mb": 106.0
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "DeprecationWarning",
+          "origin": "third-party",
+          "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "count": 9
+        }
+      ],
+      "seconds": 0.495,
+      "peak_mb": 0.5
     },
     "imaging.rates": {
       "status": "n/a",
@@ -165,6 +192,7 @@
       "warnings": []
     }
   },
+  "env_kind": "inferred",
   "hazards": [
     {
       "hazard": "headings_in_degrees",

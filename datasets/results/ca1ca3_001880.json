@@ -41,13 +41,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [],
   "operations": {
@@ -61,7 +61,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.263,
+      "seconds": 0.143,
       "peak_mb": 16.8
     },
     "env.occupancy": {
@@ -75,7 +75,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.225,
+      "seconds": 0.14,
       "peak_mb": 35.2
     },
     "env.declared": {
@@ -98,7 +98,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.609,
+      "seconds": 0.787,
       "peak_mb": 133.7
     },
     "rates.spatial_information": {
@@ -111,7 +111,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.002,
       "peak_mb": 3.6
     },
     "rates.information_vs_shifts": {
@@ -126,7 +126,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.583,
+      "seconds": 1.945,
       "peak_mb": 163.8
     },
     "cells.place_screen": {
@@ -138,7 +138,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.097,
+      "seconds": 0.028,
       "peak_mb": 47.4
     },
     "cells.grid_score": {
@@ -151,7 +151,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.863,
+      "seconds": 0.322,
       "peak_mb": 7.4
     },
     "cells.border_score": {
@@ -179,13 +179,14 @@
         "median_error": 33.71320343559643,
         "chance_median_error": 36.81980515339465,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
         "n_time_bins": 9798
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.802,
+      "seconds": 0.781,
       "peak_mb": 236.6
     },
     "io.nwb_roundtrip": {
@@ -196,7 +197,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.871,
+      "seconds": 2.74,
       "peak_mb": 10.3
     },
     "env.from_graph": {
@@ -217,7 +218,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.18,
+      "seconds": 0.097,
       "peak_mb": 37.8
     },
     "behavior.laps": {
@@ -226,7 +227,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.074,
+      "seconds": 0.047,
       "peak_mb": 28.1
     },
     "behavior.turn_sequence": {
@@ -244,7 +245,7 @@
       "note": "ValueError: replay_significance() needs a position along a track, but this is a 2-D RegularGrid environment that is not a linearized track.\nWhy: it orders bins by their distance along one axis; bin numbers have no spatial order, and a 2-D or 3-D arena has no single axis to order them by\nFix: use a 1-D environment or build the track, for example Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, track_width=8.0), or Environment.maze(...) or Environment.from_graph(...) for other tracks; a 2-D arena has no single axis to fit a replay line along, so decode on a linearized track (Environment.linear_track, Environment.maze or Environment.from_graph)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.721,
+      "seconds": 0.402,
       "peak_mb": 179.2
     },
     "io.nwb_readers": {
@@ -257,8 +258,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/SubjectPosition/PositionSeries', 'processing/behavior/SubjectPosition/VelocitySeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/SubjectPosition/PositionSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.69,
-      "peak_mb": 88.9
+      "seconds": 0.838,
+      "peak_mb": 88.8
     },
     "io.read_pose": {
       "status": "n/a",
@@ -266,8 +267,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 1.525,
-      "peak_mb": 0.6
+      "seconds": 0.731,
+      "peak_mb": 0.7
     },
     "imaging.rates": {
       "status": "n/a",
@@ -393,7 +394,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.9078466104534079, 0.895931828944801] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0181569 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9078, 0.8959] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 1080,

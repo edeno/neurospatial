@@ -40,13 +40,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [],
   "operations": {
@@ -60,8 +60,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.849,
-      "peak_mb": 58.3
+      "seconds": 1.399,
+      "peak_mb": 67.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -74,8 +74,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 268.25,
-      "peak_mb": 73.5
+      "seconds": 59.636,
+      "peak_mb": 73.7
     },
     "env.declared": {
       "status": "ok",
@@ -88,7 +88,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 25.642,
+      "seconds": 5.03,
       "peak_mb": 33.6
     },
     "rates.spatial": {
@@ -102,8 +102,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 87.236,
-      "peak_mb": 479.5
+      "seconds": 19.403,
+      "peak_mb": 483.7
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -115,7 +115,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.002,
       "peak_mb": 7.1
     },
     "rates.information_vs_shifts": {
@@ -130,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 166.09,
+      "seconds": 38.715,
       "peak_mb": 67.2
     },
     "cells.place_screen": {
@@ -142,26 +142,26 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.913,
+      "seconds": 0.811,
       "peak_mb": 191.4
     },
     "cells.grid_score": {
-      "status": "error",
+      "status": "n/a",
       "summary": {},
-      "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's Graph layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
+      "note": "grid score needs a 2-D area, not a track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
-      "peak_mb": 0.9
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "cells.border_score": {
-      "status": "error",
+      "status": "n/a",
       "summary": {},
-      "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
+      "note": "border score needs a 2-D area, not a track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.219,
-      "peak_mb": 2.9
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "hd.tuning": {
       "status": "n/a",
@@ -177,10 +177,13 @@
       "status": "ok",
       "summary": {
         "median_error": 96.99999999999986,
-        "chance_median_error": 97.00000000000004,
-        "chance_frac_disconnected": 0.01638888888888889,
+        "chance_median_error": 97.0000000000003,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.008333333333333333,
         "units": "cm",
-        "n_time_bins": 7200
+        "n_time_bins": 7200,
+        "median_error_on_declared": 96.99999999999969,
+        "n_on_declared": 7140
       },
       "note": "",
       "gap": null,
@@ -190,11 +193,11 @@
           "origin": "neurospatial",
           "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
           "example": "decoding_error(): 50 of 7200 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
-          "count": 2
+          "count": 1
         }
       ],
-      "seconds": 79.039,
-      "peak_mb": 512.8
+      "seconds": 67.991,
+      "peak_mb": 513.5
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -204,13 +207,16 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 25.007,
-      "peak_mb": 26.8
+      "seconds": 4.04,
+      "peak_mb": 35.8
     },
     "env.from_graph": {
-      "status": "n/a",
-      "summary": {},
-      "note": "geometry has no graph",
+      "status": "ok",
+      "summary": {
+        "n_bins": 4410,
+        "n_bin_edges": 7287
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
       "seconds": 0.0,
@@ -225,29 +231,32 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.704,
-      "peak_mb": 66.7
+      "seconds": 0.85,
+      "peak_mb": 87.8
     },
     "behavior.laps": {
       "status": "ok",
       "summary": {
         "n_laps": 1,
-        "n_unknown": 1
+        "n_laps_unknown": 1
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 31.854,
+      "seconds": 5.35,
       "peak_mb": 29.2
     },
     "behavior.turn_sequence": {
-      "status": "n/a",
-      "summary": {},
-      "note": "geometry has no graph",
+      "status": "ok",
+      "summary": {
+        "n_turns": 2975,
+        "frac_left": 0.5008403361344538
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 5.389,
+      "peak_mb": 29.2
     },
     "replay.compare_methods": {
       "status": "n/a",
@@ -255,8 +264,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.123,
+      "peak_mb": 3.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -264,8 +273,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.008,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",
@@ -273,7 +282,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 0.0
     },
     "imaging.rates": {
@@ -312,7 +321,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=4.0 is at least the per-axis data extent [1.5453277740478515, 1.7081422729492188, 1.4779346160888671] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0341628 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=4.0 is at least the per-axis data extent [1.545, 1.708, 1.478] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.03",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 8193,
@@ -376,18 +385,24 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 1,
-        "n_unknown": 1
+        "n_laps_unknown": 1
       },
       "hazard_summary": null
     },
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.turn_sequence",
-      "response": "not probed",
-      "message": "the clean run was n/a",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
+      "clean_summary": {
+        "n_turns": 2975,
+        "frac_left": 0.5008403361344538
+      },
+      "hazard_summary": {
+        "n_turns": 0,
+        "frac_left": NaN
+      }
     }
   ]
 }

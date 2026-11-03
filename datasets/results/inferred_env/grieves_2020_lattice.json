@@ -40,13 +40,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [],
   "operations": {
@@ -60,8 +60,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.571,
-      "peak_mb": 58.1
+      "seconds": 1.4,
+      "peak_mb": 67.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -74,7 +74,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.175,
+      "seconds": 0.126,
       "peak_mb": 64.7
     },
     "env.declared": {
@@ -97,8 +97,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 64.217,
-      "peak_mb": 1639.9
+      "seconds": 47.683,
+      "peak_mb": 1644.1
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -110,7 +110,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.005,
       "peak_mb": 13.2
     },
     "rates.information_vs_shifts": {
@@ -125,7 +125,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.857,
+      "seconds": 1.104,
       "peak_mb": 68.0
     },
     "cells.place_screen": {
@@ -137,7 +137,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 18.821,
+      "seconds": 5.94,
       "peak_mb": 205.9
     },
     "cells.grid_score": {
@@ -146,7 +146,7 @@
       "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's RegularGrid layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 1.6
     },
     "cells.border_score": {
@@ -155,8 +155,8 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
-      "peak_mb": 6.7
+      "seconds": 0.007,
+      "peak_mb": 6.8
     },
     "hd.tuning": {
       "status": "n/a",
@@ -173,15 +173,18 @@
       "summary": {
         "median_error": 82.72573518778081,
         "chance_median_error": 76.76809470598245,
-        "chance_frac_disconnected": 0.0008333333333333334,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0004166666666666667,
         "units": "cm",
-        "n_time_bins": 7200
+        "n_time_bins": 7200,
+        "median_error_on_declared": 82.34022991907156,
+        "n_on_declared": 7140
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 15.084,
-      "peak_mb": 950.9
+      "seconds": 57.225,
+      "peak_mb": 951.6
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -191,8 +194,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 10.212,
-      "peak_mb": 118.3
+      "seconds": 6.706,
+      "peak_mb": 127.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -212,8 +215,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.216,
-      "peak_mb": 66.7
+      "seconds": 0.8,
+      "peak_mb": 88.1
     },
     "behavior.laps": {
       "status": "error",
@@ -221,7 +224,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.064,
+      "seconds": 0.035,
       "peak_mb": 28.6
     },
     "behavior.turn_sequence": {
@@ -239,8 +242,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.123,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -248,8 +251,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.007,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",
@@ -296,7 +299,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=4.0 is at least the per-axis data extent [1.5453277740478515, 1.7081422729492188, 1.4779346160888671] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0341628 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=4.0 is at least the per-axis data extent [1.545, 1.708, 1.478] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.03",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 8193,

@@ -27,13 +27,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3337409671746cf93c7ce7d8c7d4b460cee0e9dc"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [
     {
@@ -62,8 +62,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.11,
-      "peak_mb": 6.2
+      "seconds": 0.13,
+      "peak_mb": 6.1
     },
     "env.occupancy": {
       "status": "ok",
@@ -76,7 +76,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.032,
+      "seconds": 0.037,
       "peak_mb": 9.6
     },
     "env.declared": {
@@ -99,7 +99,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.409,
+      "seconds": 0.485,
       "peak_mb": 37.2
     },
     "rates.spatial_information": {
@@ -127,7 +127,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.328,
+      "seconds": 0.403,
       "peak_mb": 17.2
     },
     "cells.place_screen": {
@@ -139,7 +139,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.023,
+      "seconds": 0.057,
       "peak_mb": 56.2
     },
     "cells.grid_score": {
@@ -152,7 +152,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.356,
+      "seconds": 0.429,
       "peak_mb": 10.2
     },
     "cells.border_score": {
@@ -187,7 +187,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.37,
+      "seconds": 0.444,
       "peak_mb": 65.7
     },
     "io.nwb_roundtrip": {
@@ -198,8 +198,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.682,
-      "peak_mb": 11.1
+      "seconds": 3.078,
+      "peak_mb": 10.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -219,7 +219,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.026,
+      "seconds": 0.03,
       "peak_mb": 10.5
     },
     "behavior.laps": {
@@ -231,7 +231,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.039,
+      "seconds": 0.044,
       "peak_mb": 7.0
     },
     "behavior.turn_sequence": {
@@ -270,7 +270,7 @@
           "count": 1
         }
       ],
-      "seconds": 13.228,
+      "seconds": 10.282,
       "peak_mb": 31.3
     },
     "io.read_pose": {
@@ -287,7 +287,7 @@
           "count": 1
         }
       ],
-      "seconds": 12.273,
+      "seconds": 12.661,
       "peak_mb": 27.2
     },
     "imaging.rates": {
@@ -420,7 +420,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [1.0885758008927777, 1.031340053361222] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0217715 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [1.089, 1.031] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 1172,

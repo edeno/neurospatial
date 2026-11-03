@@ -44,13 +44,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
+    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
   },
   "load_warnings": [],
   "operations": {
@@ -72,8 +72,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.442,
-      "peak_mb": 11.5
+      "seconds": 0.276,
+      "peak_mb": 11.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -94,7 +94,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.821,
+      "seconds": 0.634,
       "peak_mb": 25.6
     },
     "env.declared": {
@@ -108,7 +108,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.039,
+      "seconds": 0.028,
       "peak_mb": 5.7
     },
     "rates.spatial": {
@@ -121,8 +121,16 @@
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 133.831,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
+          "example": "bandwidth=None resolved to 6.275 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
+          "count": 1
+        }
+      ],
+      "seconds": 116.124,
       "peak_mb": 696.0
     },
     "rates.spatial_information": {
@@ -135,7 +143,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.006,
       "peak_mb": 13.2
     },
     "rates.information_vs_shifts": {
@@ -149,8 +157,16 @@
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 0.746,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
+          "example": "bandwidth=None resolved to 6.275 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
+          "count": 4
+        }
+      ],
+      "seconds": 0.685,
       "peak_mb": 15.7
     },
     "cells.place_screen": {
@@ -162,7 +178,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.661,
+      "seconds": 1.803,
       "peak_mb": 192.5
     },
     "cells.grid_score": {
@@ -175,7 +191,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.67,
+      "seconds": 0.479,
       "peak_mb": 28.7
     },
     "cells.border_score": {
@@ -188,8 +204,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.535,
-      "peak_mb": 9.6
+      "seconds": 0.396,
+      "peak_mb": 9.7
     },
     "hd.tuning": {
       "status": "ok",
@@ -202,8 +218,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.062,
-      "peak_mb": 8.4
+      "seconds": 0.067,
+      "peak_mb": 8.5
     },
     "rates.egocentric_boundary": {
       "status": "error",
@@ -220,13 +236,31 @@
         "median_error": 74.09724635322993,
         "chance_median_error": 105.04159843634287,
         "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "pixel",
-        "n_time_bins": 2072
+        "n_time_bins": 2072,
+        "median_error_on_declared": 74.09724635322993,
+        "n_on_declared": 2022
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 1.735,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
+          "example": "bandwidth=None resolved to 6.275 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
+          "count": 1
+        },
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        }
+      ],
+      "seconds": 2.382,
       "peak_mb": 182.4
     },
     "io.nwb_roundtrip": {
@@ -245,8 +279,8 @@
           "count": 2
         }
       ],
-      "seconds": 4.897,
-      "peak_mb": 46.3
+      "seconds": 5.177,
+      "peak_mb": 46.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -266,7 +300,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.027,
+      "seconds": 0.028,
       "peak_mb": 11.1
     },
     "behavior.laps": {
@@ -275,7 +309,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.037,
+      "seconds": 0.038,
       "peak_mb": 5.1
     },
     "behavior.turn_sequence": {
@@ -387,7 +421,7 @@
       "op": "rates.spatial",
       "response": "silent",
       "message": "",
-      "repeated_clean_warnings": 0,
+      "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 37,
         "frac_nan_bins": 0.40101332332520173,
@@ -439,7 +473,7 @@
       "op": "rates.spatial",
       "response": "warned",
       "message": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).\nAll 37 units are silent from 309.2 s to 410.3 s (101 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n95353/95403 spike_times (100%) across all neurons fell outside the position time window [0, 1060.1]; spike_times.min()=2.05 spike_times.max()=1.06009e+06. The spike times span 1.06009e+06 and reach 1.06009e+06, about 1000 times the 1060.1 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-      "repeated_clean_warnings": 0,
+      "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 37,
         "frac_nan_bins": 0.40101332332520173,
@@ -551,7 +585,7 @@
       "op": "rates.spatial",
       "response": "silent",
       "message": "",
-      "repeated_clean_warnings": 0,
+      "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 37,
         "frac_nan_bins": 0.40101332332520173,

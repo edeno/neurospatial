@@ -46,13 +46,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "3337409671746cf93c7ce7d8c7d4b460cee0e9dc"
+    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
   },
   "load_warnings": [
     {
@@ -74,7 +74,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.115,
+      "seconds": 0.048,
       "peak_mb": 6.6
     },
     "env.occupancy": {
@@ -88,7 +88,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.425,
+      "seconds": 0.159,
       "peak_mb": 11.3
     },
     "env.declared": {
@@ -111,7 +111,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.56,
+      "seconds": 0.312,
       "peak_mb": 11.8
     },
     "rates.spatial_information": {
@@ -124,7 +124,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 2.1
     },
     "rates.information_vs_shifts": {
@@ -139,7 +139,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.927,
+      "seconds": 0.889,
       "peak_mb": 13.9
     },
     "cells.place_screen": {
@@ -151,7 +151,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.007,
       "peak_mb": 12.6
     },
     "cells.grid_score": {
@@ -162,8 +162,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.594,
-      "peak_mb": 7.5
+      "seconds": 0.195,
+      "peak_mb": 7.6
     },
     "cells.border_score": {
       "status": "error",
@@ -197,7 +197,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.832,
+      "seconds": 0.289,
       "peak_mb": 46.2
     },
     "io.nwb_roundtrip": {
@@ -208,8 +208,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.758,
-      "peak_mb": 6.0
+      "seconds": 2.24,
+      "peak_mb": 5.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -229,7 +229,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.196,
+      "seconds": 0.166,
       "peak_mb": 7.2
     },
     "behavior.laps": {
@@ -238,7 +238,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.016,
       "peak_mb": 10.4
     },
     "behavior.turn_sequence": {
@@ -401,7 +401,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=4.0 is at least the per-axis data extent [1.7, 1.3461538461538463] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.034 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=4.0 is at least the per-axis data extent [1.7, 1.346] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.03",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 556,
