@@ -1,6 +1,5 @@
 """Base protocol and shared input checks for neural models."""
 
-import copy
 import hashlib
 from collections.abc import Callable, Hashable, Iterator
 from contextlib import contextmanager
@@ -93,11 +92,9 @@ class NeuralModel(Protocol):
     **head_direction**
 
         - ``'preferred_direction'``: float - preferred direction in radians
-        - ``'preferred_direction_deg'``: float - the same in degrees
         - ``'concentration'``: float - von Mises concentration (κ)
         - ``'tuning_width'``: float - half-width at half of ``max_rate``,
           in radians; NaN when the rate never falls to half
-        - ``'tuning_width_deg'``: float - the same in degrees
         - ``'max_rate'``, ``'baseline_rate'``: float - rates in Hz
 
     **object_vector**
@@ -309,24 +306,29 @@ def _draw_rng(model: Any) -> np.random.Generator:
 
     A model built with ``rng=None`` first draws a seed from the operating
     system and keeps it in its ``rng`` field, so ``dataclasses.replace``
-    and pickling rebuild the same draw. An int is used as passed. A
-    generator is copied when the model is built and every draw is made from
-    a fresh copy of that copy, so the caller's generator is not advanced and
-    a replaced model draws the same values.
+    and pickling rebuild the same draw. An int is read as
+    ``np.random.default_rng(rng)``. A generator is returned itself, so the
+    draw advances it, as ``np.random.default_rng`` would; the model then
+    keeps the drawn value with :func:`_keep_draw`.
     """
     rng = model.rng
     if rng is None:
         rng = int(np.random.SeedSequence().generate_state(1)[0])
         object.__setattr__(model, "rng", rng)
-    if isinstance(rng, np.random.Generator):
-        return copy.deepcopy(rng)
     return np.random.default_rng(rng)
 
 
-def _snapshot_rng(model: Any) -> None:
-    """Replace a generator ``rng`` of ``model`` by a private copy of its state."""
+def _keep_draw(model: Any, name: str, value: Any) -> None:
+    """Keep a value drawn from a generator ``rng`` in the parameter ``name``.
+
+    A generator cannot repeat a draw it has moved past, so the model stores
+    the drawn value as the argument ``name`` and sets ``rng`` to None:
+    ``dataclasses.replace``, pickling and copying then rebuild the same
+    model. A value drawn from an int seed is left to the seed.
+    """
     if isinstance(model.rng, np.random.Generator):
-        object.__setattr__(model, "rng", copy.deepcopy(model.rng))
+        object.__setattr__(model, name, value)
+        object.__setattr__(model, "rng", None)
 
 
 def _set_rates(model: Any) -> None:

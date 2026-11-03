@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import copy
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from neurospatial.simulation._seeds import _concrete_rng
+from neurospatial.simulation._seeds import _concrete_rng, _stream_seeds
 from neurospatial.simulation.models.place_cells import (
     TRACK_PLACE_FIELD_PEAK_HZ,
     TRACK_PLACE_FIELD_WIDTH_CM,
@@ -381,7 +380,13 @@ def tmaze_alternation_session(
     n_place_cells : int, optional
         Number of place cells (default: 60).
     rng : numpy.random.Generator or int or None, optional
-        Random generator or seed, as for ``np.random.default_rng`` (default: None).
+        Random generator or seed, as for ``np.random.default_rng`` (default:
+        None). The trajectory, the field centers, the spikes and the first
+        arm draw from four independent streams spawned from its seed
+        sequence. An int repeats the session, and ``rng=0`` gives the same
+        session as a new ``np.random.default_rng(0)``. A generator is
+        advanced by every call, so repeated calls with one generator give
+        different sessions, first arm included.
 
     Returns
     -------
@@ -493,7 +498,7 @@ def tmaze_alternation_session(
     import networkx as nx
 
     from neurospatial.simulation.mazes import TMazeDims, make_t_maze
-    from neurospatial.simulation.session import simulate_session
+    from neurospatial.simulation.session import _simulate_session
 
     _require_positive("duration", duration)
     _require_positive("n_trials", n_trials, count=True)
@@ -515,12 +520,12 @@ def tmaze_alternation_session(
         )
     )
 
-    # Perfect alternation from a seeded first choice.
-    # Copy the generator so the choice and the session start from the same
-    # state, as they do when ``rng`` is an int.
+    # Perfect alternation from a seeded first choice. The choice is a fourth
+    # stream spawned with the session's trajectory, field and spike streams,
+    # so a generator gives a new choice on each call and an int repeats it.
     rng = _concrete_rng(rng)
-    choice_rng = np.random.default_rng(copy.deepcopy(rng))
-    first_choice = str(choice_rng.choice(["left", "right"]))
+    trajectory_seed, field_seed, spike_seed, choice_seed = _stream_seeds(rng, 4)
+    first_choice = str(np.random.default_rng(choice_seed).choice(["left", "right"]))
     second_choice = "right" if first_choice == "left" else "left"
     trial_choices = [
         first_choice if i % 2 == 0 else second_choice for i in range(n_trials)
@@ -536,7 +541,7 @@ def tmaze_alternation_session(
         )
         return run + run[-2::-1]
 
-    session = simulate_session(
+    session = _simulate_session(
         env,
         duration=duration,
         n_cells=n_place_cells,
@@ -549,7 +554,10 @@ def tmaze_alternation_session(
         width=TRACK_PLACE_FIELD_WIDTH_CM,  # linear-track CA1 fields
         max_rate=TRACK_PLACE_FIELD_PEAK_HZ,
         rng=rng,
+        stream_seeds=(trajectory_seed, field_seed, spike_seed),
         show_progress=False,  # Disable progress bar for convenience function
+        call="tmaze_alternation_session",
+        explicit=("duration", "n_trials", "n_place_cells", "rng"),
     )
 
     return replace(

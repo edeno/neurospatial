@@ -885,6 +885,7 @@ def _simulate_session(
     rng: np.random.Generator | int | None,
     call: str,
     explicit: Sequence[str],
+    stream_seeds: tuple[int, int, int] | None = None,
     **kwargs: Any,
 ) -> SimulationSession:
     """Run :func:`simulate_session`, reporting keyword errors as ``call``.
@@ -892,7 +893,10 @@ def _simulate_session(
     ``call`` is the public function the user called, and ``explicit`` its
     named parameters, so a misspelled keyword forwarded by a wrapper such as
     ``open_field_session`` is reported under the wrapper's name with the
-    closest name it accepts.
+    closest name it accepts. ``stream_seeds`` are the trajectory, field and
+    spike seeds, for a wrapper that spawns further streams from ``rng``
+    alongside them; by default they are the first three spawned from
+    ``rng``, and ``rng`` is still what the metadata records.
     """
     import inspect
 
@@ -980,7 +984,10 @@ def _simulate_session(
     # Independent streams for the trajectory, the field parameters and the
     # spikes, so that spike draws are not correlated with the movement.
     rng = _concrete_rng(rng)
-    trajectory_seed, field_center_seed, spike_seed = _stream_seeds(rng, 3)
+    if stream_seeds is None:
+        trajectory_seed, field_center_seed, spike_seed = _stream_seeds(rng, 3)
+    else:
+        trajectory_seed, field_center_seed, spike_seed = stream_seeds
 
     # Generate trajectory using its own independent seed.
     if trajectory_method == "ou":
