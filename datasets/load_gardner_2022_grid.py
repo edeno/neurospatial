@@ -1,12 +1,59 @@
-"""Gardner et al. 2022 rat MEC grid modules in an open field (Figshare 16764508)."""
+"""Gardner et al. 2022 rat MEC grid modules in an open field (Figshare 16764508).
+
+What was recorded: rat R, day 1, Neuropixels in medial entorhinal cortex, with
+the units the paper assigned to grid modules 1, 2 and 3, during a 2.4 h
+recording that holds an open-field session and two wagon-wheel sessions.
+Head position and azimuth (head direction) are tracked at 100 Hz.
+
+Where it lives: Figshare 16764508 ("Toroidal topology of population activity
+in grid cells"), CC0, one 320 MB zip; two members are read by HTTP byte range:
+``rat_r_day1_grid_modules_1_2_3.npz`` (169 MB) and ``rat_r_day1_sessions.txt``.
+
+Reading the arrays safely: ``x``, ``y``, ``z``, ``t`` and ``azimuth`` are plain
+arrays. ``spikes_mod1..3`` are 0-d object arrays, which ``np.load`` only reads
+with ``allow_pickle=True``, letting the file run code. Without executing them,
+their pickles were inspected: they import only
+``numpy.core.multiarray._reconstruct``, ``numpy.ndarray`` and ``numpy.dtype``
+(dtypes ``O8`` and ``f8``), and hold a dict of unit index to spike times (s).
+They are read with an unpickler that resolves only those names and returns
+NumPy's built-in ``O8`` and ``f8`` dtypes, refusing anything else.
+
+What the loader converts:
+
+- ``x``, ``y`` are metres (the open-field samples span about 1.5 m, the box
+  size in the paper); converted to cm.
+- Only the open-field session is kept: ``rat_r_day1_sessions.txt`` gives
+  ``open_field_1`` from 7457 to 16045 s, valid 7457–14778 and 14890–16045 s;
+  the valid ranges are the analysis epochs. Spikes are kept over the whole
+  recording.
+- ``azimuth`` is radians in [0, 2π); the loader checks it against the
+  direction of movement during running (``heading_vs_movement``) and wraps it to
+  [−π, π].
+
+Analysis choices (``params``): ``bin_size`` 2.5 cm; ``dt`` 0.25 s and
+alternating 60 s train/test blocks for decoding; each unit's grid module in
+``params["module"]``.
+"""
 
 from __future__ import annotations
 
+import pickle
+import re
+import zipfile
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
-from _record import Range, Recording
+from _fetch import fetch_zip_member
+from _record import (
+    Range,
+    Recording,
+    alternating_blocks,
+    check_expectations,
+    heading_vs_movement,
+    validate_recording,
+)
 
 DATASET = {
     "key": "gardner_2022_grid",
@@ -16,7 +63,8 @@ DATASET = {
     "download_size": "168.9 MB",
 }
 
-# Pre-registered from the paper (1.5 m box, three modules of roughly 100-150 cells) and the file's array headers (100 Hz) before the first run of this loader.
+# Pre-registered from the paper (1.5 m box, three modules of roughly 100-150
+# cells) and the file's array headers (100 Hz) before the first run of this loader.
 EXPECTATIONS: dict[str, Any] = {
     "n_units": Range(250, 450),
     "n_dims": 2,
@@ -31,6 +79,193 @@ EXPECTATIONS: dict[str, Any] = {
     ),
 }
 
+_ZIP_URL = "https://ndownloader.figshare.com/files/35078602"
+_PREFIX = "Toroidal_topology_grid_cell_data/"
+_ARRAYS = "rat_r_day1_grid_modules_1_2_3.npz"
+_ARRAYS_SHA256 = "c7e5acbdcf1f7ec9c43dd1032b2a57cda2d69fdc7d0c904a237b2dceac65e5be"
+_SESSIONS = "rat_r_day1_sessions.txt"
+_SESSIONS_SHA256 = "a08d162130a9df628ea271f8764f651cee081cb9d68c484c7710da9fcd6979dd"
+_SESSION = "open_field_1"
+_RUNNING_CM_S = 10.0
+
+
+def _reconstruct() -> Any:
+    try:
+        from numpy._core.multiarray import _reconstruct as reconstruct
+    except ImportError:  # NumPy 1.x
+        from numpy.core.multiarray import _reconstruct as reconstruct
+    return reconstruct
+
+
+# Built-in dtype objects, whose pickled state cannot be changed: a crafted
+# stream cannot build a dtype whose flags read raw bytes as object pointers.
+_DTYPES = {"O8": np.dtype("O8"), "f8": np.dtype("f8")}
+
+
+def _dtype(spec: Any, align: bool = False, _copy: bool = False) -> np.dtype:
+    if align or not isinstance(spec, str) or spec not in _DTYPES:
+        msg = f"refusing dtype {spec!r} in a spike file (only O8 and f8 are expected)"
+        raise pickle.UnpicklingError(msg)
+    return _DTYPES[spec]
+
+
+class _SpikeUnpickler(pickle.Unpickler):
+    """Unpickler that resolves only the globals the ``spikes_mod*`` arrays hold."""
+
+    _ALLOWED: ClassVar[dict[tuple[str, str], Any]] = {
+        ("numpy.core.multiarray", "_reconstruct"): _reconstruct(),
+        ("numpy._core.multiarray", "_reconstruct"): _reconstruct(),
+        ("numpy", "ndarray"): np.ndarray,
+        ("numpy", "dtype"): _dtype,
+    }
+
+    def find_class(self, module: str, name: str) -> Any:
+        try:
+            return self._ALLOWED[module, name]
+        except KeyError:
+            msg = f"refusing to load {module}.{name} from a spike file"
+            raise pickle.UnpicklingError(msg) from None
+
+
+def read_npz(path: Path) -> dict[str, Any]:
+    """Read every array in an ``.npz``; object arrays through the restricted unpickler."""
+    from numpy.lib import format as npy
+
+    arrays: dict[str, Any] = {}
+    with zipfile.ZipFile(path) as archive:
+        for member in archive.namelist():
+            with archive.open(member) as stream:
+                version = npy.read_magic(stream)
+                read_header = (
+                    npy.read_array_header_1_0
+                    if version == (1, 0)
+                    else npy.read_array_header_2_0
+                )
+                shape, fortran, dtype = read_header(stream)
+                name = member.removesuffix(".npy")
+                if dtype.hasobject:
+                    arrays[name] = _SpikeUnpickler(stream).load()
+                else:
+                    count = int(np.prod(shape))
+                    data = np.frombuffer(stream.read(count * dtype.itemsize), dtype)
+                    arrays[name] = data.reshape(shape, order="F" if fortran else "C")
+    return arrays
+
+
+def _session_ranges(text: str, session: str) -> np.ndarray:
+    """``valid_times`` (or start/end) of one session in a ``_sessions.txt`` file, s."""
+    for line in text.splitlines():
+        if not re.search(rf"\b{session}\b", line):
+            continue
+        valid = re.search(r"valid_times=\[([^\]]+)\]", line)
+        if valid:
+            pairs = [pair.split(",") for pair in valid.group(1).split(";")]
+            return np.array([[float(a), float(b)] for a, b in pairs])
+        start = re.search(r"start=(\d+)", line)
+        end = re.search(r"end=(\d+)", line)
+        if start and end:
+            return np.array([[float(start.group(1)), float(end.group(1))]])
+    msg = f"session {session!r} not listed with its times"
+    raise ValueError(msg)
+
 
 def load(cache: Path | None = None) -> Recording:
-    raise NotImplementedError
+    """Fetch rat R day 1; open-field positions in cm, headings in radians, spikes."""
+    from neurospatial.stats import wrap_angle
+
+    arrays_path = fetch_zip_member(
+        _ZIP_URL,
+        _PREFIX + _ARRAYS,
+        sha256=_ARRAYS_SHA256,
+        subdir=DATASET["key"],
+        cache=cache,
+    )
+    sessions_path = fetch_zip_member(
+        _ZIP_URL,
+        _PREFIX + _SESSIONS,
+        sha256=_SESSIONS_SHA256,
+        subdir=DATASET["key"],
+        cache=cache,
+    )
+    arrays = read_npz(arrays_path)
+    valid = _session_ranges(sessions_path.read_text(), _SESSION)
+    t = np.asarray(arrays["t"], dtype=float)
+    keep = (t >= valid[0, 0]) & (t <= valid[-1, 1])
+    times = t[keep]
+    positions = np.column_stack([arrays["x"], arrays["y"]]).astype(float)[keep] * 100.0
+    azimuth = np.asarray(arrays["azimuth"], dtype=float)[keep]
+    if azimuth.min() < 0.0 or azimuth.max() > 2 * np.pi + 1e-6:
+        msg = "azimuth is no longer in [0, 2pi); recheck its unit"
+        raise ValueError(msg)
+    offset, spread = heading_vs_movement(
+        times, positions, azimuth, min_speed=_RUNNING_CM_S
+    )
+    if abs(offset) > 0.2:
+        msg = (
+            f"azimuth differs from the direction of movement by {offset:.2f} rad;"
+            " recheck its frame"
+        )
+        raise ValueError(msg)
+
+    trains, unit_ids, modules = [], [], []
+    for module in (1, 2, 3):
+        spikes = arrays[f"spikes_mod{module}"][()]
+        for index in sorted(spikes):
+            trains.append(np.sort(np.asarray(spikes[index], dtype=float)))
+            unit_ids.append(f"mod{module}_{index}")
+            modules.append(module)
+    train, test = alternating_blocks(times[0], times[-1], 60.0)
+    return Recording(
+        dataset=DATASET["key"],
+        session="rat_r_day1 open_field_1",
+        source=f"{DATASET['source']} {_ARRAYS}",
+        license=DATASET["license"],
+        times=times,
+        positions=positions,
+        position_units="cm",
+        headings=np.asarray(wrap_angle(azimuth)),
+        spike_times=tuple(trains),
+        unit_ids=np.asarray(unit_ids),
+        epochs={"open_field": valid},
+        geometry={"shape": "square", "size_cm": 150.0},
+        params={
+            "bin_size": 2.5,
+            "dt": 0.25,
+            "train_epochs": train,
+            "test_epochs": test,
+            "analysis_epochs": valid,
+            "module": np.asarray(modules),
+        },
+        conversions=(
+            "spikes: spikes_mod1..3 read with a restricted unpickler (numpy"
+            " _reconstruct, ndarray and the O8/f8 dtypes only); dict of unit index"
+            " to spike times in s",
+            "positions: x, y in m (open field spans about 1.5 m) times 100 -> cm;"
+            f" kept {valid[0, 0]:.0f}-{valid[-1, 1]:.0f} s ({_SESSION})",
+            "headings: azimuth in [0, 2pi) rad, wrapped to [-pi, pi]; minus the"
+            f" direction of movement above {_RUNNING_CM_S:g} cm/s: circular mean"
+            f" {np.degrees(offset):.1f} deg, median spread {np.degrees(spread):.1f} deg",
+            f"analysis epochs: the session's valid times {valid.tolist()}",
+        ),
+    )
+
+
+def _headings_as_stored(rec: Recording) -> Recording:
+    # The stored azimuth: radians in [0, 2pi) instead of [-pi, pi].
+    assert rec.headings is not None
+    return replace(rec, headings=np.mod(rec.headings, 2 * np.pi))
+
+
+HAZARDS = {"headings_as_stored": _headings_as_stored}
+
+
+if __name__ == "__main__":
+    rec = load()
+    validate_recording(rec)
+    print(
+        f"{rec.dataset}: {len(rec.spike_times or ())} units, {rec.times[-1] - rec.times[0]:.0f} s"
+    )
+    for row in check_expectations(rec, EXPECTATIONS):
+        print(f"  {'pass' if row['passed'] else 'FAIL'} {row['key']}: {row['detail']}")
+    for line in rec.conversions:
+        print(f"  conversion: {line}")

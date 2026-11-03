@@ -227,3 +227,45 @@ def alternating_blocks(
     edges = np.append(np.arange(start, stop, length), stop)
     blocks = np.column_stack([edges[:-1], edges[1:]])
     return blocks[::2], blocks[1::2]
+
+
+def heading_vs_movement(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    min_speed: float,
+) -> tuple[float, float]:
+    """Compare a heading series with the direction of movement while running.
+
+    A heading in the same allocentric frame as the positions points along the
+    path while the animal runs, so the circular mean of heading minus movement
+    direction is near 0 and the spread is tens of degrees. A mean near ±π/2 or
+    π says the frame is rotated or mirrored; a spread near 90° says the
+    series is not a heading of this path.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+    positions : ndarray, shape (n_time, 2)
+        Same length unit as ``min_speed``.
+    headings : ndarray, shape (n_time,)
+        Radians.
+    min_speed : float
+        Steps faster than this (length per second) count as running.
+
+    Returns
+    -------
+    mean, spread : float
+        Circular mean of heading minus movement direction, and the median
+        absolute deviation from that mean, in radians.
+    """
+    step = np.diff(positions, axis=0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        speed = np.linalg.norm(step, axis=1) / np.diff(times)
+    moving = np.arctan2(step[:, 1], step[:, 0])
+    running = (speed > min_speed) & np.isfinite(headings[:-1])
+    diff = np.angle(np.exp(1j * (headings[:-1][running] - moving[running])))
+    mean = float(np.angle(np.mean(np.exp(1j * diff))))
+    spread = float(np.median(np.abs(np.angle(np.exp(1j * (diff - mean))))))
+    return mean, spread

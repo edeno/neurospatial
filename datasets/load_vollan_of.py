@@ -14,8 +14,8 @@ as radians after a frame check against the direction of movement, the
 authors' 5 cm/s speed filter kept as gaps in ``times``.
 
 The authors' grid module is recorded in ``params``: per-unit membership
-(``module``, ``is_grid``), the module's median unit grid score
-(``module_median_grid_score``) and the grid score of its median
+(``module``, ``is_grid``) and, per module (``module_ids``), its median unit
+grid score (``module_median_grid_score``) and the grid score of its median
 autocorrelogram (``module_grid_score``). These are the reference for the grid
 score comparison.
 
