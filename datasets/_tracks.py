@@ -375,10 +375,13 @@ def piece_spacing(
     From the declared geometry alone, not the samples. ``pieces`` pairs each
     straight piece's segments with its unit direction (as ``frame_offset``
     builds them). Two pieces count when they turn less than
-    ``PARALLEL_TURN`` from each other, share no node (a junction or a
-    stretch's own continuation is not a neighbouring corridor) and lie side
+    ``PARALLEL_TURN`` from each other, no path along the graph shorter than
+    ``tolerance`` (one bin) joins them (a junction, a hub of short spokes
+    or a stretch's own continuation is not a neighbouring corridor) and lie side
     by side: each piece runs from its two extreme nodes along its direction,
-    and their spans along the first piece's direction overlap. Their spacing
+    and their spans along the first piece's direction overlap by at least
+    ``tolerance`` (one bin; stubs shorter than a bin around a hub do not run
+    beside anything). Their spacing
     is the perpendicular distance from the second to the first piece's line,
     averaged over the two ends of the overlap. Infinite when no two pieces
     count (a single track, a T, a Y, a radial maze). Samples moved by half
@@ -392,10 +395,19 @@ def piece_spacing(
     t = [nodes[u] @ d for u, (_, d) in zip(used, pieces, strict=True)]
     first = np.array([nodes[u[np.argmin(v)]] for u, v in zip(used, t, strict=True)])
     last = np.array([nodes[u[np.argmax(v)]] for u, v in zip(used, t, strict=True)])
-    incidence = np.zeros((len(pieces), len(nodes)), dtype=bool)
+    from scipy.sparse import coo_array
+    from scipy.sparse.csgraph import dijkstra
+
+    lengths = np.linalg.norm(nodes[edges[:, 1]] - nodes[edges[:, 0]], axis=1)
+    links = coo_array(
+        (lengths, (edges[:, 0], edges[:, 1])), shape=(len(nodes), len(nodes))
+    )
+    # Nodes joined along the graph within a bin are one place (a hub).
+    near = (dijkstra(links, directed=False, limit=tolerance) <= tolerance).astype(int)
+    incidence = np.zeros((len(pieces), len(nodes)), dtype=int)
     for k, u in enumerate(used):
-        incidence[k, u] = True
-    shared = (incidence.astype(int) @ incidence.T.astype(int)) > 0
+        incidence[k, u] = 1
+    shared = (incidence @ near @ incidence.T) > 0
     cos = np.abs(direction @ direction.T)
     candidate = (cos >= np.cos(PARALLEL_TURN)) & ~shared
     best = float("inf")
@@ -404,7 +416,7 @@ def piece_spacing(
         length = (last[i] - first[i]) @ d
         b0, b1 = (first[j] - first[i]) @ d, (last[j] - first[i]) @ d
         lo, hi = max(0.0, min(b0, b1)), min(length, max(b0, b1))
-        if hi - lo <= 1e-6 * tolerance or b1 == b0:
+        if hi - lo < tolerance or b1 == b0:
             continue
         gaps = []
         for along in (lo, hi):
