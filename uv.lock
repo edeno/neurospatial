@@ -4133,6 +4133,16 @@ animation = [
     { name = "napari", version = "0.9.2", source = { registry = "https://pypi.org/simple" }, extra = ["all"], marker = "python_full_version >= '3.11'" },
     { name = "pillow" },
 ]
+datasets = [
+    { name = "fsspec", extra = ["http"] },
+    { name = "h5py" },
+    { name = "hdmf" },
+    { name = "inflate64" },
+    { name = "mat-io", marker = "python_full_version >= '3.11'" },
+    { name = "ndx-events" },
+    { name = "ndx-pose" },
+    { name = "pynwb" },
+]
 fastplotlib = [
     { name = "fastplotlib", extra = ["imgui"], marker = "python_full_version >= '3.11'" },
     { name = "glfw", marker = "python_full_version >= '3.11'" },
@@ -4166,9 +4176,7 @@ xarray = [
 
 [package.dev-dependencies]
 datasets = [
-    { name = "fsspec", extra = ["http"] },
-    { name = "inflate64" },
-    { name = "mat-io", marker = "python_full_version >= '3.11'" },
+    { name = "neurospatial", extra = ["datasets"] },
     { name = "opexebo" },
 ]
 dev = [
@@ -4213,18 +4221,25 @@ notebooks = [
 [package.metadata]
 requires-dist = [
     { name = "fastplotlib", extras = ["imgui"], marker = "python_full_version >= '3.11' and extra == 'fastplotlib'", specifier = ">=0.7,<0.8" },
+    { name = "fsspec", extras = ["http"], marker = "extra == 'datasets'", specifier = ">=2024.6" },
     { name = "glfw", marker = "python_full_version >= '3.11' and extra == 'fastplotlib'", specifier = ">=2.7" },
+    { name = "h5py", marker = "extra == 'datasets'" },
+    { name = "hdmf", marker = "extra == 'datasets'", specifier = ">=3.0.0" },
     { name = "hdmf", marker = "extra == 'nwb'", specifier = ">=3.0.0" },
     { name = "imageio", marker = "extra == 'video'", specifier = ">=2.35.0" },
     { name = "imageio-ffmpeg", marker = "extra == 'video'", specifier = ">=0.5.1" },
+    { name = "inflate64", marker = "extra == 'datasets'", specifier = ">=1.0.4" },
     { name = "ipywidgets", marker = "extra == 'animation'", specifier = ">=8.0,<9.0" },
     { name = "jax", marker = "extra == 'jax'", specifier = ">=0.4.30" },
     { name = "jaxlib", marker = "extra == 'jax'", specifier = ">=0.4.30" },
     { name = "joblib", specifier = ">=1.2.0" },
     { name = "jupyter-rfb", marker = "python_full_version >= '3.11' and extra == 'fastplotlib'", specifier = ">=0.5.1" },
+    { name = "mat-io", marker = "python_full_version >= '3.11' and extra == 'datasets'", specifier = ">=0.5" },
     { name = "matplotlib", specifier = ">=3.10.0" },
     { name = "napari", extras = ["all"], marker = "extra == 'animation'", specifier = ">=0.5,<0.10" },
+    { name = "ndx-events", marker = "extra == 'datasets'", specifier = ">=0.4.0" },
     { name = "ndx-events", marker = "extra == 'nwb'", specifier = ">=0.4.0" },
+    { name = "ndx-pose", marker = "extra == 'datasets'", specifier = ">=0.2.0" },
     { name = "ndx-pose", marker = "extra == 'nwb'", specifier = ">=0.2.0" },
     { name = "networkx", specifier = ">=3.4" },
     { name = "numpy", specifier = ">=2.2.0" },
@@ -4233,6 +4248,7 @@ requires-dist = [
     { name = "pillow", marker = "extra == 'animation'", specifier = ">=10.0.0" },
     { name = "pot", specifier = ">=0.9.7" },
     { name = "pynapple", marker = "extra == 'pynapple'", specifier = ">=0.11.3" },
+    { name = "pynwb", marker = "extra == 'datasets'", specifier = ">=2.5.0" },
     { name = "pynwb", marker = "extra == 'nwb'", specifier = ">=2.5.0" },
     { name = "scikit-image", specifier = ">=0.25.0" },
     { name = "scikit-image", marker = "python_full_version >= '3.14'", specifier = ">=0.26.0" },
@@ -4245,13 +4261,11 @@ requires-dist = [
     { name = "typing-extensions", specifier = ">=4.4.0" },
     { name = "xarray", marker = "extra == 'xarray'" },
 ]
-provides-extras = ["animation", "fastplotlib", "jax", "nwb", "pynapple", "video", "xarray"]
+provides-extras = ["animation", "datasets", "fastplotlib", "jax", "nwb", "pynapple", "video", "xarray"]
 
 [package.metadata.requires-dev]
 datasets = [
-    { name = "fsspec", extras = ["http"], specifier = ">=2024.6" },
-    { name = "inflate64", specifier = ">=1.0.4" },
-    { name = "mat-io", marker = "python_full_version >= '3.11'", specifier = ">=0.5" },
+    { name = "neurospatial", extras = ["datasets"] },
     { name = "opexebo", specifier = ">=0.7" },
 ]
 dev = [

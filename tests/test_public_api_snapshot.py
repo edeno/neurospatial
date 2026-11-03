@@ -27,6 +27,7 @@ NAMESPACES = (
     "neurospatial.simulation.mazes",
     "neurospatial.io",
     "neurospatial.io.nwb",
+    "neurospatial.datasets",
     "neurospatial.animation",
     "neurospatial.annotation",
     "neurospatial.landmarks",

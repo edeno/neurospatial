@@ -100,6 +100,15 @@ xarray = ["xarray"]
 # lazily inside those functions, never at import time; the scientific core stays
 # array-first and never imports pynapple.
 pynapple = ["pynapple>=0.11.3"]
+# Public dataset loaders (`neurospatial.datasets`): NWB sessions, byte-range
+# reads of remote zip and NWB files, Deflate64 zip members and MATLAB tables.
+datasets = [
+    "neurospatial[nwb]",
+    "fsspec[http]>=2024.6",
+    "h5py",
+    "inflate64>=1.0.4",
+    "mat-io>=0.5; python_version >= '3.11'",
+]
 [build-system]
 requires = ["hatchling>=1.27", "hatch-vcs"]  # 1.27: PEP 639 license expressions
 build-backend = "hatchling.build"
@@ -494,10 +503,9 @@ notebooks = [
 ]
 # Real-data survey harness (datasets/); run with
 # `uv run --group datasets --extra nwb --extra pynapple python datasets/run.py`.
+# The loaders' own dependencies are the `datasets` extra.
 datasets = [
-    "fsspec[http]>=2024.6",  # byte-range reads of zip members
-    "inflate64>=1.0.4",  # Deflate64 zip members (Grieves 2020 lattice)
-    "mat-io>=0.5; python_version >= '3.11'",  # MATLAB `table` objects -> pandas
+    "neurospatial[datasets]",
     "opexebo>=0.7",  # reference grid score
 ]
 

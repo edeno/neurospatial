@@ -72,6 +72,7 @@ required.
 - `binning`: Build an environment from your own bins with :meth:`Environment.from_bins`.
 - `compute_spatial_rate`: Compute spatial firing rate map for one neuron.
 - `compute_spatial_rates`: Compute spatial firing rate maps for multiple neurons.
+- `datasets`: Public spatial neuroscience datasets, downloaded once and checked.
 - `decode_position`: Decode position from a precomputed spike-count matrix and rate maps.
 - `decode_session`: Encode, bin, and decode in one call.
 - `decoding`: Bayesian decoding subpackage for population neural analysis.

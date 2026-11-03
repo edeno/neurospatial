@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Dataset loaders
+
+- New `neurospatial.datasets` module and `datasets` install extra
+  (`pip install 'neurospatial[datasets]'`). Downloads are cached in
+  `$NEUROSPATIAL_DATA_DIR`, else `~/.cache/neurospatial/datasets`
+  (`%LOCALAPPDATA%\neurospatial\datasets` on Windows). The survey harness's
+  download code moved into the package; the survey's default cache is no longer
+  the repository's `data/datasets/`.
+
 ### Fixes from the review of the result contract, warnings and simulators
 
 **Breaking**

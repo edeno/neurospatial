@@ -359,6 +359,7 @@ _LAZY_SUBMODULES: tuple[str, ...] = (
     "annotation",
     "animation",
     "io",
+    "datasets",
     "extensions",
     "testing",
 )
@@ -437,6 +438,7 @@ __all__ = [
     "binning",
     "compute_spatial_rate",
     "compute_spatial_rates",
+    "datasets",
     "decode_position",
     "decode_session",
     "decoding",
