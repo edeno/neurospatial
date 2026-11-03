@@ -496,6 +496,7 @@ notebooks = [
 # `uv run --group datasets --extra nwb --extra pynapple python datasets/run.py`.
 datasets = [
     "fsspec[http]>=2024.6",  # byte-range reads of zip members
+    "inflate64>=1.0.4",  # Deflate64 zip members (Grieves 2020 lattice)
     "mat-io>=0.5; python_version >= '3.11'",  # MATLAB `table` objects -> pandas
     "opexebo>=0.7",  # reference grid score
 ]
