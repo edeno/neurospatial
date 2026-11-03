@@ -196,6 +196,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -0.05451839215659572,
+          -0.20216973744948327
+        ],
+        "frame_offset_judged_one_step": 0.05263435022707886,
+        "frame_pieces_one_step": 7,
         "frame_offset_limit": 2.0
       },
       "misfit": [],
@@ -220,6 +226,7 @@
         "n_pairs": 2575
       },
       "facts": [],
+      "unverified": [],
       "verdict": "not verified",
       "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
@@ -360,6 +367,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 16,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -0.03467087200645814,
+          0.014359038116239627
+        ],
+        "frame_offset_judged_one_step": 0.03195335464219446,
+        "frame_pieces_one_step": 127,
         "frame_offset_limit": 0.5
       },
       "misfit": [],
@@ -402,6 +415,7 @@
       "facts": [
         "the authors' graph as stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on the authors' graph as stated"
     },
@@ -899,6 +913,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 3,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -0.18842165719767004,
+          -0.0060254851053736505
+        ],
+        "frame_offset_judged_one_step": 0.12490427259411857,
+        "frame_pieces_one_step": 5,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -923,6 +943,7 @@
         "n_pairs": 2526
       },
       "facts": [],
+      "unverified": [],
       "verdict": "not verified",
       "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
@@ -1150,6 +1171,12 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged_one_step": 0.0,
+        "frame_pieces_one_step": 1,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -1192,6 +1219,7 @@
       "facts": [
         "length +5% of the stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on length +5% of the stated"
     },
@@ -1410,6 +1438,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 6,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.621799992399616,
+          -0.5200076245638343
+        ],
+        "frame_offset_judged_one_step": 0.7709569606818955,
+        "frame_pieces_one_step": 72,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -1452,6 +1486,7 @@
       "facts": [
         "diameter -0% of the stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on diameter -0% of the stated"
     },
@@ -1591,11 +1626,15 @@
         "frame_judged_unconstrained": 1,
         "frame_iterations": 13,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.020099510739626236,
+          1.3501483084103332
+        ],
+        "frame_offset_judged_one_step": 1.25885211797676,
+        "frame_pieces_one_step": 3,
         "frame_offset_limit": 2.5
       },
-      "misfit": [
-        "the samples lie 2.95 off the track as a whole (one translation fitted to 3 pieces; limit 1 bin, 2.5)"
-      ],
+      "misfit": [],
       "reference_independent": false,
       "env": {
         "n_bins": 78,
@@ -1635,8 +1674,11 @@
       "facts": [
         "the file's linearized coordinate as stated"
       ],
-      "verdict": "mismatch",
-      "verdict_reason": "the samples lie 2.95 off the track as a whole (one translation fitted to 3 pieces; limit 1 bin, 2.5)"
+      "unverified": [
+        "the frame offset depends on the estimator (G-160): 1.26 in one step, 2.95 refitted, over 3 and 3 pieces; limit 1 bin, 2.5"
+      ],
+      "verdict": "not verified",
+      "verdict_reason": "the frame offset depends on the estimator (G-160): 1.26 in one step, 2.95 refitted, over 3 and 3 pieces; limit 1 bin, 2.5 (otherwise matches on the file's linearized coordinate as stated)"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grosmark_000044_linear.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grosmark_000044_linear_declared.png"
@@ -1789,6 +1831,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 5,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.05470347650238904,
+          0.31396119692836977
+        ],
+        "frame_offset_judged_one_step": 0.16793058589798956,
+        "frame_pieces_one_step": 5,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -1816,6 +1864,7 @@
         "base -1% of the stated",
         "arms +6% of the stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on base -1% of the stated; arms +6% of the stated"
     },
@@ -1997,6 +2046,12 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged_one_step": 0.0,
+        "frame_pieces_one_step": 1,
         "frame_offset_limit": 2.87
       },
       "misfit": [],
@@ -2021,6 +2076,7 @@
         "n_pairs": 2418
       },
       "facts": [],
+      "unverified": [],
       "verdict": "not verified",
       "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
@@ -2229,6 +2285,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -0.7733237846681003,
+          -0.1418119016581525
+        ],
+        "frame_offset_judged_one_step": 0.7128289079869887,
+        "frame_pieces_one_step": 5,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -2256,6 +2318,7 @@
         "base -11% of the stated",
         "arms -11% of the stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on base -11% of the stated; arms -11% of the stated"
     },
@@ -2341,6 +2404,11 @@
         "frame_judged_unconstrained": 1,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.0
+        ],
+        "frame_offset_judged_one_step": 0.0,
+        "frame_pieces_one_step": 1,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -2368,6 +2436,7 @@
         "length +0% of the stated",
         "the file's linearized coordinate as stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on length +0% of the stated; the file's linearized coordinate as stated"
     },
@@ -2446,6 +2515,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 3,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -0.0008271783724739722,
+          0.15287917743904664
+        ],
+        "frame_offset_judged_one_step": 0.13182869835791303,
+        "frame_pieces_one_step": 72,
         "frame_offset_limit": 5.0
       },
       "misfit": [],
@@ -2470,6 +2545,7 @@
         "n_pairs": 18
       },
       "facts": [],
+      "unverified": [],
       "verdict": "not verified",
       "verdict_reason": "no source read here states the geometry"
     },
@@ -2603,11 +2679,16 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 22,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -1.4104933399554818,
+          0.6000610349755885,
+          1.8382480921306952
+        ],
+        "frame_offset_judged_one_step": 1.5193096580354049,
+        "frame_pieces_one_step": 792,
         "frame_offset_limit": 4.0
       },
-      "misfit": [
-        "the samples lie 9.38 horizontally off the track as a whole (one translation fitted to 738 pieces; limit 1 bin, 4)"
-      ],
+      "misfit": [],
       "reference_independent": false,
       "env": {
         "n_bins": 4410,
@@ -2655,8 +2736,11 @@
         "lattice_side +0% of the stated",
         "the authors' bars (file) as stated"
       ],
-      "verdict": "mismatch",
-      "verdict_reason": "the samples lie 9.38 horizontally off the track as a whole (one translation fitted to 738 pieces; limit 1 bin, 4)"
+      "unverified": [
+        "the frame offset depends on the estimator (G-160): 1.52 in one step, 9.38 refitted, over 792 and 738 pieces; limit 1 bin, 4"
+      ],
+      "verdict": "not verified",
+      "verdict_reason": "the frame offset depends on the estimator (G-160): 1.52 in one step, 9.38 refitted, over 792 and 738 pieces; limit 1 bin, 4 (otherwise matches on lattice_side +0% of the stated; the authors' bars (file) as stated)"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grieves_2020_lattice.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grieves_2020_lattice_declared.png"
@@ -2911,6 +2995,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 7,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          1.2081790130265713,
+          -1.1198667197076229
+        ],
+        "frame_offset_judged_one_step": 0.8845625545252882,
+        "frame_pieces_one_step": 8,
         "frame_offset_limit": 4.0
       },
       "misfit": [],
@@ -2954,6 +3044,7 @@
       "facts": [
         "the authors' centrelines as stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on the authors' centrelines as stated"
     },
@@ -3059,6 +3150,12 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged_one_step": 0.0,
+        "frame_pieces_one_step": 1,
         "frame_offset_limit": 4.0
       },
       "misfit": [],
@@ -3099,6 +3196,7 @@
         "bins_on_track": 1.0
       },
       "facts": [],
+      "unverified": [],
       "verdict": "not verified",
       "verdict_reason": "no stated fact independent of the samples checks the layout (track drawn in the file's frame (scaled to the samples) is built from the samples or is what it was declared from)"
     },
@@ -3200,6 +3298,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -0.47309326459459516,
+          -0.5074314352714187
+        ],
+        "frame_offset_judged_one_step": 0.48177584540533913,
+        "frame_pieces_one_step": 9,
         "frame_offset_limit": 2.0
       },
       "misfit": [],
@@ -3242,6 +3346,7 @@
       "facts": [
         "the authors' graph as stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on the authors' graph as stated"
     },
@@ -3365,6 +3470,12 @@
         "frame_judged_unconstrained": 1,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -0.0005054841984946504,
+          -0.10603453657756969
+        ],
+        "frame_offset_judged_one_step": 0.03014366471363352,
+        "frame_pieces_one_step": 5,
         "frame_offset_limit": 4.0
       },
       "misfit": [],
@@ -3389,6 +3500,7 @@
         "n_pairs": 2247
       },
       "facts": [],
+      "unverified": [],
       "verdict": "not verified",
       "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
@@ -3476,6 +3588,12 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.14496657177630431,
+          -0.08007056068023972
+        ],
+        "frame_offset_judged_one_step": 0.019405693103106934,
+        "frame_pieces_one_step": 10,
         "frame_offset_limit": 3.0
       },
       "misfit": [],
@@ -3509,6 +3627,7 @@
         "arm 6 -5% of the stated",
         "arm 7 -6% of the stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on arm 0 -5% of the stated; arm 1 -1% of the stated; arm 2 +3% of the stated; arm 3 +3% of the stated; arm 4 +3% of the stated; arm 5 -2% of the stated; arm 6 -5% of the stated; arm 7 -6% of the stated"
     },
@@ -3679,6 +3798,12 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged_one_step": 0.0,
+        "frame_pieces_one_step": 1,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -3703,6 +3828,7 @@
         "n_pairs": 2205
       },
       "facts": [],
+      "unverified": [],
       "verdict": "not verified",
       "verdict_reason": "no stated fact independent of the samples checks the layout"
     },
@@ -3882,6 +4008,12 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged_one_step": 0.0,
+        "frame_pieces_one_step": 1,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -3924,6 +4056,7 @@
       "facts": [
         "length +5% of the stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on length +5% of the stated"
     },
@@ -4024,6 +4157,12 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged_one_step": 0.0,
+        "frame_pieces_one_step": 1,
         "frame_offset_limit": 1.0
       },
       "misfit": [],
@@ -4066,6 +4205,7 @@
       "facts": [
         "length -2% of the stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on length -2% of the stated"
     },
@@ -4155,6 +4295,12 @@
         "frame_judged_unconstrained": 1,
         "frame_iterations": 2,
         "frame_converged": true,
+        "frame_offset_one_step": [
+          -0.0002431118562906585,
+          0.0031739267169479113
+        ],
+        "frame_offset_judged_one_step": 8.635087149784448e-05,
+        "frame_pieces_one_step": 5,
         "frame_offset_limit": 2.5
       },
       "misfit": [],
@@ -4182,6 +4328,7 @@
         "base +14% of the stated",
         "arms +7% of the stated"
       ],
+      "unverified": [],
       "verdict": "matches",
       "verdict_reason": "on base +14% of the stated; arms +7% of the stated"
     },
