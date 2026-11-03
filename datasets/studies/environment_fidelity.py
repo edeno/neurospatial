@@ -305,10 +305,16 @@ APPARATUS: dict[str, Apparatus] = {
         track_width=6.35,
     ),
     "aeryjones_000165": Apparatus(
-        "track", "DANDI 000165: linear track (no length; unit not confirmed)", True
+        "track",
+        "Aery Jones et al. 2021 (Cell Reports) Methods: 'a 36 cm linear track'",
+        True,
+        track_length=36.0,
     ),
     "gonzalez_001695": Apparatus(
-        "track", "NWB: 'Novel Maze Session' (no length stated)", False
+        "track",
+        "Gonzalez et al. 2026 Methods: a linear track with a water well at either"
+        " end (its size, Supplementary Table 1, not read)",
+        True,
     ),
     "hafting_2008_nird": Apparatus(
         "track",
@@ -326,10 +332,18 @@ APPARATUS: dict[str, Apparatus] = {
         n_parts=2,
     ),
     "olafsdottir_5566548": Apparatus(
-        "track", "Zenodo README: Z-track (no dimensions)", True
+        "track",
+        "Olafsdottir et al. 2016 Online Methods: Z-track of '10 cm wide runways',"
+        " parallel sections 190 cm, diagonal 220 cm",
+        True,
+        track_width=10.0,
     ),
     "j16_23020757": Apparatus(
-        "track", "file: the authors' track graph (10 nodes, 9 corridors)", True
+        "track",
+        "file: the authors' track graph (10 nodes, 9 corridors); Comrie et al."
+        " 2026 STAR Methods: 'Hallways were 6.5 cm wide'",
+        True,
+        track_width=6.5,
     ),
     "agarwal_24757638": Apparatus(
         "track",
@@ -337,12 +351,46 @@ APPARATUS: dict[str, Apparatus] = {
         True,
     ),
     "shipley_30902972": Apparatus(
-        "track", "8-arm radial maze (paper not read; no dimensions)", False
+        "track",
+        "Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an octagonal"
+        " centre platform (24.7cm diameter, 10cm sides)'",
+        True,
+        track_width=10.0,
     ),
     "dyads_001845": Apparatus(
         "track",
-        "DANDI 001845: paired W-mazes, this file the left rat's (no dimensions)",
+        "DANDI 001845: paired W-mazes, this file the left rat's; Shukla et al."
+        " 2026 Methods: 'W-shaped mazes (80 x 80 cm) with ~7-cm-wide track"
+        " sections'",
         True,
+        track_width=7.0,
+    ),
+    "hc3_ec013_669": Apparatus(
+        "track",
+        "Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7"
+        " cm2)'; the file is in pixels and its scale is inferred from the same"
+        " 250 cm, so neither size is compared",
+        True,
+    ),
+    "hc28_hpa": Apparatus(
+        "track",
+        "Jadhav et al. 2016 Supplemental Experimental Procedures: 'The W-track had"
+        " dimensions of ~80 x 80 cm', '7 cm wide metal sections'",
+        True,
+        track_width=7.0,
+        notes="W-track: three arms joined at their base",
+    ),
+    "hc31_anm190422": Apparatus(
+        "track",
+        "hc-31 data description: 'a novel 48-m long linear track' (1-D coordinate)",
+        True,
+    ),
+    "hc18_train261": Apparatus(
+        "track",
+        "hc-18 and Drieu et al. 2018: a model train's circuit (no shape or size"
+        " stated)",
+        False,
+        notes="loop",
     ),
     "neurolab_001754": Apparatus(
         "track",
@@ -1826,10 +1874,16 @@ def run(keys: tuple[str, ...]) -> list[dict[str, Any]]:
             continue
         for view in expand(rec):
             rows.append(analyse(view))
+            declared = rows[-1].get("declared")
             print(
                 view.dataset,
                 rows[-1]["verdict"],
                 rows[-1]["verdict_reason"],
+                *(
+                    ("| declared:", declared["verdict"], declared["verdict_reason"])
+                    if declared
+                    else ()
+                ),
                 flush=True,
             )
     return rows
