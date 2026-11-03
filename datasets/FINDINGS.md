@@ -392,24 +392,27 @@ one recording, or never.
 
 ## Decisions for the maintainer
 
-1. **Head-direction label check (proposal 1):** ship the reader refusal now as
-   its own PR, and the coverage warning after a linear-track calibration?
-2. **Grid score (proposal 3):** opexebo's full lag extent without zero-filling,
-   a relaxed overlap rule, or zero-filling as an opt-in with the difference
-   documented — and wait for the Gardner comparison first?
-3. **Spatial information bias (proposal 4):** run the shuffle-null test of
-   `spatial_information_bias` before deciding between correcting it and
-   warning on sparse occupancy?
-4. **Warnings:** add checks 1 and 2 as calibrated here (origin share ≥ 0.1 %
-   after the start-of-track case is checked; fewer than 5 bins per dimension)
-   and the separate rule for replay events shorter than the score needs?
-   Check 3 comes with proposal 1.
-5. **Laps in open arenas (proposal 2):** does running around an unvisited part
-   of an open arena count as a lap, or should holes come only from the
-   declared arena?
-6. **New capabilities:** which of continuous-signal rate maps (5), NWB reader
-   coverage (6), heading decoding (7) and periodic tracks (8) to plan, and in
-   what order?
-7. **Next batch:** run the six datasets above, and accept the restricted
-   unpickler for Gardner 2022?
-8. **Tutorial:** promote `load_sargolini_000582.py` to `examples/` now?
+Answered 2026-11-02.
+
+1. **Head-direction label check (proposal 1).** Yes, as a warning:
+   `read_head_direction` warns when a series labelled degrees has values that
+   look like radians, naming both readings. The coverage warning (check 3)
+   waits for the linear-track calibration.
+2. **Grid score (proposal 3).** Wait for more grid cells (Gardner 2022) before
+   choosing; no change until then.
+3. **Spatial information bias (proposal 4).** Run the shuffle-null test of
+   `spatial_information_bias` on sparse occupancy first. The warning plan
+   (warn when most visited bins hold very little time) is agreed in principle
+   and lands only if the test shows the bias estimate misses the effect.
+4. **Warnings.** Check 2 (fewer than 5 bins along a dimension): yes. Check 1
+   (samples exactly at the origin): yes, after more recordings confirm it,
+   including the start-of-track case. The rule for replay events too short to
+   score: no.
+5. **Laps in open arenas (proposal 2).** Not yet decided.
+6. **New capabilities.** Plan NWB reader coverage (6) and periodic 1-D tracks
+   (8). Defer continuous-signal rate maps (5) and heading decoding (7); heading
+   decoding is wanted later.
+7. **Next batch.** Run more datasets, chosen by coverage, with the long-term
+   aim of loading most of the catalog. The restricted unpickler approach
+   applies to pickled formats such as Gardner 2022.
+8. **Tutorial.** Deferred.
