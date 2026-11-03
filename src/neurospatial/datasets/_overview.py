@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -79,7 +80,8 @@ def occupancy_field(rec: Recording) -> NDArray[np.float64]:
         (zero seconds) set to NaN, so they draw as missing rather than as zero.
     """
     assert rec.env is not None
-    occupancy = np.asarray(rec.env.occupancy(rec.times, rec.positions), dtype=float)
+    assert rec.positions is not None
+    occupancy: NDArray[np.float64] = rec.env.occupancy(rec.times, rec.positions)
     return np.where(occupancy > 0, occupancy, np.nan)
 
 
@@ -188,7 +190,7 @@ def _panel_time(rec: Recording, ax: Axes) -> None:
     mask = (rec.times >= start) & (rec.times < stop)
     for dim, name in enumerate("xyz"[: rec.positions.shape[1]]):
         top.plot(rec.times[mask], rec.positions[mask, dim], lw=0.8, label=name)
-    top.set_ylabel(rec.position_units, fontsize=8)
+    top.set_ylabel(rec.position_units or "", fontsize=8)
     top.legend(frameon=False, fontsize=7, ncols=3, loc="upper right")
     top.tick_params(labelbottom=False)
     for row, train in enumerate(rec.spike_times):
@@ -220,7 +222,7 @@ def plot_overview(rec: Recording, fig: Figure | None = None) -> Figure:
     if fig is None:
         fig = plt.figure(figsize=(13, 8), layout="constrained")
     grid = fig.add_gridspec(2, 3)
-    panels = (
+    panels: tuple[tuple[Callable[[Recording, Axes], None], dict[str, str]], ...] = (
         (_panel_environment, {}),
         (_panel_occupancy, {}),
         (_panel_speed, {}),
