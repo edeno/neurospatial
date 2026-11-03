@@ -59,6 +59,52 @@ def test_spike_drop_in_milliseconds_still_warns_with_epochs(wake_tracking):
         compute_directional_rates([spikes * 1000], times, headings, epochs=WAKE)
 
 
+def _tracking(duration):
+    rng = np.random.default_rng(2)
+    times = np.arange(0.0, duration, 0.02)
+    headings = np.angle(np.exp(1j * np.cumsum(rng.normal(0, 0.1, times.size))))
+    return times, headings
+
+
+def test_spike_drop_in_milliseconds_warns_when_tracking_outlasts_spikes():
+    """Spikes recorded for the first 270 s of 1500 s of tracking, epochs on them.
+
+    In milliseconds the spikes of the first 0.27 s land inside the epochs
+    and the median spike stays below 100 times the tracked time, yet nearly
+    every spike lies beyond the tracking. In seconds nothing is lost.
+    """
+    times, headings = _tracking(1500.0)
+    spikes = np.sort(np.random.default_rng(3).uniform(0.0, 270.0, 3000))
+    epochs = (0.0, 270.0)
+    assert np.any(spikes * 1000 < epochs[1])
+    assert np.median(spikes * 1000) < 100 * times[-1]
+    with pytest.warns(UserWarning, match=r"\(99%\) fell outside the position"):
+        compute_directional_rates([spikes * 1000], times, headings, epochs=epochs)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        compute_directional_rates([spikes], times, headings, epochs=epochs)
+    assert _drop_warnings(caught) == []
+
+
+@pytest.mark.parametrize(
+    ("recording", "warns"),
+    [
+        # The widest seconds recording in the real-data survey: 17 times.
+        (17 * 600.0, False),
+        # 6 h of spikes around 10 min of tracking at its start: 36 times,
+        # which magnitudes cannot tell from milliseconds, so it warns.
+        (6 * 3600.0, True),
+    ],
+)
+def test_spike_recording_far_longer_than_tracking(recording, warns):
+    times, headings = _tracking(600.0)
+    spikes = np.sort(np.random.default_rng(4).uniform(0.0, recording, 20000))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        compute_directional_rates([spikes], times, headings, epochs=(0.0, 600.0))
+    assert bool(_drop_warnings(caught)) is warns
+
+
 def test_spike_drop_counts_spikes_inside_epochs_outside_tracking(wake_tracking):
     """Epochs that reach past the tracked time still lose those spikes."""
     times, headings, spikes = wake_tracking
