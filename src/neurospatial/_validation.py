@@ -975,9 +975,10 @@ def _refuse_wrong_kind(
           list or tuple of spike trains is refused with the binning call:
           rows of different lengths, or rows of one length that each
           strictly increase and either hold a value that is not a
-          non-negative whole number (times in seconds) or are at least 3
-          long (whole-number sample indices; counts of 3 or more neurons
-          rising in every time bin are implausible). So is the ``(counts,
+          non-negative whole number (times in seconds) or, over two or more
+          rows, are at least 3 long (whole-number sample indices; counts of 3
+          or more neurons rising in every time bin are implausible). So is
+          the ``(counts,
           bin_edges)`` tuple ``bin_spikes_in_time`` returns. Other rows of
           one length holding non-negative whole numbers are a count matrix,
           including rising rows shorter than 3 (``[[0, 1], [1, 3], [0, 2]]``
@@ -1064,17 +1065,18 @@ def _refuse_wrong_kind(
             # Spike trains are ragged; a count matrix is rectangular and holds
             # non-negative whole numbers. Equal-length rows that each strictly
             # increase are trains when they are fractional (times in seconds)
-            # or at least 3 long: 3 or more neurons' counts rising in every
-            # time bin is implausible, but whole-number sample indices do.
-            # Shorter whole rows that rise are counts (2 neurons rise by
-            # chance, 1 neuron vacuously), and fractional counts out of order
-            # get the fractional-count refusal.
+            # or, over two or more time bins, at least 3 long: 3 or more
+            # neurons' counts rising in every time bin is implausible, but
+            # whole-number sample indices do. One whole row is one time bin of
+            # counts, which may rise by chance. Shorter whole rows that rise
+            # are counts (2 neurons rise by chance, 1 neuron vacuously), and
+            # fractional counts out of order get the fractional-count refusal.
             whole = all(
                 np.all(np.isfinite(row) & (row >= 0) & (row == np.round(row)))
                 for row in rows
             )
             increasing = all(np.all(np.diff(row) > 0) for row in rows)
-            long_rows = rows[0].size >= 3
+            long_rows = rows[0].size >= 3 and len(rows) >= 2
             if ragged or (increasing and (long_rows or not whole)):
                 raise TypeError(
                     _format_error(

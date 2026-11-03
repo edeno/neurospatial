@@ -275,6 +275,14 @@ def test_three_neuron_counts_that_do_not_all_increase_decode(session, rates):
     np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
 
 
+def test_one_time_bin_of_rising_whole_counts_decodes(session, rates):
+    """One row is one time bin of counts; three neurons may rise by chance."""
+    one_bin = [[0, 1, 3]]
+    from_list = decode_position(session.env, one_bin, rates, dt=0.1)
+    from_array = decode_position(session.env, np.array(one_bin), rates, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
+
+
 def test_equal_length_spike_trains_are_still_refused_as_counts(session, rates):
     # Equal-length trains in seconds are fractional: still spike trains.
     trains = [np.asarray(train[:5]) for train in session.spike_times]
