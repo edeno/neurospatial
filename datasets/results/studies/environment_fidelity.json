@@ -56,6 +56,68 @@
     "dataset": "figure8_000552",
     "units": "cm",
     "kind": "track",
+    "source": "NWB: camera (x, y) cm and the linearized position around the maze as a loop",
+    "env": {
+      "n_bins": 667,
+      "n_dims": 2,
+      "n_edges": 2055,
+      "bin_size": 2.0,
+      "components": 3,
+      "major_components": 1,
+      "component_sizes": [
+        663,
+        2,
+        2
+      ],
+      "sparse_bins": 0.05697151424287856,
+      "unsupported_edges": 0.033576642335766425,
+      "far_edges": 0.0,
+      "edge_gap_max_bins": 0.8690008098122874,
+      "corner_links": 6,
+      "holes": 7,
+      "hole_bins": 806,
+      "largest_hole_bins": 445,
+      "thin_bins": 0.12743628185907047,
+      "geodesic_ratio_median": 1.211489511945514,
+      "geodesic_ratio_p95": 1.677381058151361,
+      "n_pairs": 2686
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.009987141020145736,
+      "track_width": 12.520373074167418,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 176,
+        "n_dims": 2,
+        "n_edges": 179,
+        "bin_size": 1.958576277676741,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          176
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.4427155801171278,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.3021344758500604,
+        "geodesic_ratio_p95": 1.8809544784512982,
+        "n_pairs": 2575
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/figure8_000552.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/figure8_000552_declared.png"
+  },
+  {
+    "dataset": "figure8_000552_linearized",
+    "units": "cm",
+    "kind": "track",
     "source": "NWB: linearized position 0-222 cm, both ends at camera (85, 43) cm",
     "env": {
       "n_bins": 112,
@@ -90,41 +152,7 @@
     },
     "verdict": "mismatch",
     "verdict_reason": "loop ends 222 apart along the bins, 3 in the camera",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/figure8_000552.png"
-  },
-  {
-    "dataset": "figure8_000552_camera",
-    "units": "cm",
-    "kind": "track",
-    "source": "NWB: camera (x, y) cm and the linearized position around the maze as a loop",
-    "env": {
-      "n_bins": 667,
-      "n_dims": 2,
-      "n_edges": 2055,
-      "bin_size": 2.0,
-      "components": 3,
-      "major_components": 1,
-      "component_sizes": [
-        663,
-        2,
-        2
-      ],
-      "sparse_bins": 0.05697151424287856,
-      "unsupported_edges": 0.033576642335766425,
-      "far_edges": 0.0,
-      "edge_gap_max_bins": 0.8690008098122874,
-      "corner_links": 6,
-      "holes": 7,
-      "hole_bins": 806,
-      "largest_hole_bins": 445,
-      "thin_bins": 0.12743628185907047,
-      "geodesic_ratio_median": 1.211489511945514,
-      "geodesic_ratio_p95": 1.677381058151361,
-      "n_pairs": 2686
-    },
-    "verdict": "matches",
-    "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/figure8_000552_camera.png"
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/figure8_000552_linearized.png"
   },
   {
     "dataset": "rosenberg_labyrinth",
@@ -176,7 +204,49 @@
     },
     "verdict": "mismatch",
     "verdict_reason": "geodesic 0.66 x the distance along the track",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/rosenberg_labyrinth.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.04560205586076815,
+      "track_width": 1.0,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 350,
+        "n_dims": 2,
+        "n_edges": 412,
+        "bin_size": 0.5,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          350
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.34654136695838034,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.6170990788028035,
+        "geodesic_ratio_p95": 4.126558423932401,
+        "n_pairs": 2380
+      },
+      "reference": {
+        "reference": "authors' track graph",
+        "reference_length": 175.0,
+        "sample_to_reference_median": 0.20867837085198815,
+        "sample_to_reference_p95": 0.49144735286708613,
+        "bin_to_reference_p95": 0.0,
+        "env_over_track_median": 0.947744948309169,
+        "env_over_track_p05": 0.8992509919778087,
+        "share_pairs_shortcut": 0.05126050420168067,
+        "track_width": 1.0,
+        "track_width_stated": true,
+        "samples_on_track": 0.9543979441392318,
+        "bins_on_track": 1.0
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/rosenberg_labyrinth.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/rosenberg_labyrinth_declared.png"
   },
   {
     "dataset": "yartsev_bat_demo",
@@ -360,7 +430,35 @@
     },
     "verdict": "matches",
     "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/giocomo_001701.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.010015926384710671,
+      "track_width": 5.680015637194973,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 90,
+        "n_dims": 2,
+        "n_edges": 91,
+        "bin_size": 2.4175441222344602,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          90
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.11677058698848829,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.105574353540577,
+        "geodesic_ratio_p95": 1.7031784360554458,
+        "n_pairs": 2526
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/giocomo_001701.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/giocomo_001701_declared.png"
   },
   {
     "dataset": "gardner_2022_grid",
@@ -459,7 +557,49 @@
     },
     "verdict": "matches",
     "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/vollan_lt.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.01,
+      "track_width": 31.343182343306864,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 80,
+        "n_dims": 2,
+        "n_edges": 79,
+        "bin_size": 2.5,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          80
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.21897100716487303,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 0.9889570304676472,
+        "geodesic_ratio_p95": 1.0155711064511674,
+        "n_pairs": 2562
+      },
+      "reference": {
+        "reference": "principal axis of the samples (straight track)",
+        "reference_length": 210.91568207636794,
+        "sample_to_reference_median": 3.673887254785332,
+        "sample_to_reference_p95": 13.051199470632952,
+        "bin_to_reference_p95": 2.8896624868881647e-14,
+        "env_over_track_median": 0.9958377864554464,
+        "env_over_track_p05": 0.9011627228437903,
+        "share_pairs_shortcut": 0.04938271604938271,
+        "track_width": 10.0,
+        "track_width_stated": false,
+        "samples_on_track": 0.5731,
+        "bins_on_track": 1.0
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/vollan_lt.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/vollan_lt_declared.png"
   },
   {
     "dataset": "vollan_of",
@@ -559,7 +699,49 @@
     },
     "verdict": "matches",
     "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_circular.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.010009398496240602,
+      "track_width": 33.94783590804248,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 144,
+        "n_dims": 2,
+        "n_edges": 144,
+        "bin_size": 2.180969368266801,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          144
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.27872731084749863,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.1004310602210956,
+        "geodesic_ratio_p95": 1.5337119880997658,
+        "n_pairs": 2579
+      },
+      "reference": {
+        "reference": "centreline from the file's linearized position",
+        "reference_length": 331.94543143043904,
+        "sample_to_reference_median": 3.1124612082802785,
+        "sample_to_reference_p95": 12.127851812785341,
+        "bin_to_reference_p95": 4.258689638835343,
+        "env_over_track_median": 0.9641330857176373,
+        "env_over_track_p05": 0.8902303757608752,
+        "share_pairs_shortcut": 0.07214832728738411,
+        "track_width": 10.0,
+        "track_width_stated": false,
+        "samples_on_track": 0.6875234962406015,
+        "bins_on_track": 1.0
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_circular.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_circular_declared.png"
   },
   {
     "dataset": "grosmark_000044_circular_linearized",
@@ -649,7 +831,49 @@
     },
     "verdict": "mismatch",
     "verdict_reason": "3 parts with 1% of the bins or more, apparatus has 1",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_linear.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.050006300006300006,
+      "track_width": 54.9581114890661,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 78,
+        "n_dims": 2,
+        "n_edges": 77,
+        "bin_size": 2.5,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          78
+        ],
+        "sparse_bins": 0.358974358974359,
+        "unsupported_edges": 0.3116883116883117,
+        "far_edges": 0.03896103896103896,
+        "edge_gap_max_bins": 2.7260337791055385,
+        "thin_bins": 0.038461538461538464,
+        "geodesic_ratio_median": 0.9833957356986341,
+        "geodesic_ratio_p95": 1.0084534643152376,
+        "n_pairs": 2018
+      },
+      "reference": {
+        "reference": "centreline from the file's linearized position",
+        "reference_length": 150.48101251132377,
+        "sample_to_reference_median": 17.485098176001458,
+        "sample_to_reference_p95": 32.47971847193379,
+        "bin_to_reference_p95": 15.072736518200358,
+        "env_over_track_median": 1.1486973670125675,
+        "env_over_track_p05": 1.02626023185081,
+        "share_pairs_shortcut": 0.001514004542013626,
+        "track_width": 10.0,
+        "track_width_stated": false,
+        "samples_on_track": 0.12984312984312985,
+        "bins_on_track": 0.8461538461538461
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_linear.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grosmark_000044_linear_declared.png"
   },
   {
     "dataset": "grosmark_000044_linear_linearized",
@@ -695,39 +919,7 @@
     "dataset": "jadhav_000447",
     "units": "cm",
     "kind": "track",
-    "source": "DANDI 000447: novel W-track (run 1 and 3) and familiar W-track (run 2); the two mazes lie in one camera frame. Shin et al. 2019 states 80 x 80 cm with 7 cm tracks for its W-maze; 000447 does not say it is that maze",
-    "env": {
-      "n_bins": 1465,
-      "n_dims": 2,
-      "n_edges": 5165,
-      "bin_size": 2.4999999999999996,
-      "components": 1,
-      "major_components": 1,
-      "component_sizes": [
-        1465
-      ],
-      "sparse_bins": 0.030034129692832763,
-      "unsupported_edges": 0.023233301064859633,
-      "far_edges": 0.0001936108422071636,
-      "edge_gap_max_bins": 1.0075115676261601,
-      "corner_links": 7,
-      "holes": 29,
-      "hole_bins": 240,
-      "largest_hole_bins": 59,
-      "thin_bins": 0.1802047781569966,
-      "geodesic_ratio_median": 1.0733058253178585,
-      "geodesic_ratio_p95": 1.1521280002788588,
-      "n_pairs": 2684
-    },
-    "verdict": "mismatch",
-    "verdict_reason": "1 part with 1% of the bins or more, apparatus has 2",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447.png"
-  },
-  {
-    "dataset": "jadhav_000447_novel",
-    "units": "cm",
-    "kind": "track",
-    "source": "DANDI 000447: the novel W-track (run epochs 1 and 3)",
+    "source": "DANDI 000447: the novel W-track (run epochs 1 and 3; the loader keeps only these). Tang, Shin & Jadhav 2023 (the paper the dandiset is described by): '~80 x 80 cm with ~7-cm wide tracks'",
     "env": {
       "n_bins": 1172,
       "n_dims": 2,
@@ -753,13 +945,41 @@
     },
     "verdict": "matches",
     "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447_novel.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.35854099085815394,
+      "track_width": 7.0,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 150,
+        "n_dims": 2,
+        "n_edges": 150,
+        "bin_size": 2.481944565484639,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          150
+        ],
+        "sparse_bins": 0.04,
+        "unsupported_edges": 0.04666666666666667,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.7008489433298817,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.4246200276623384,
+        "geodesic_ratio_p95": 5.3393394611956015,
+        "n_pairs": 916
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447_declared.png"
   },
   {
     "dataset": "jadhav_000447_familiar",
     "units": "cm",
     "kind": "track",
-    "source": "DANDI 000447: the familiar W-track (run epoch 2)",
+    "source": "DANDI 000447: the familiar W-track (run epoch 2). Tang, Shin & Jadhav 2023: '~80 x 80 cm with ~7-cm wide tracks'",
     "env": {
       "n_bins": 788,
       "n_dims": 2,
@@ -785,7 +1005,35 @@
     },
     "verdict": "matches",
     "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447_familiar.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.1293557379588044,
+      "track_width": 7.0,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 137,
+        "n_dims": 2,
+        "n_edges": 137,
+        "bin_size": 2.4644105005365304,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          137
+        ],
+        "sparse_bins": 0.0072992700729927005,
+        "unsupported_edges": 0.0072992700729927005,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.54105824541998,
+        "thin_bins": 0.0072992700729927005,
+        "geodesic_ratio_median": 3.0085104748969567,
+        "geodesic_ratio_p95": 5.216904443873128,
+        "n_pairs": 1700
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447_familiar.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/jadhav_000447_familiar_declared.png"
   },
   {
     "dataset": "grieves_2020_lattice",
@@ -927,7 +1175,7 @@
     "dataset": "olafsdottir_5566548",
     "units": "cm",
     "kind": "track",
-    "source": "Zenodo README: Z-track (no dimensions)",
+    "source": "Olafsdottir et al. 2016 Online Methods: Z-track of '10 cm wide runways', parallel sections 190 cm, diagonal 220 cm",
     "env": {
       "n_bins": 556,
       "n_dims": 2,
@@ -957,7 +1205,35 @@
     },
     "verdict": "mismatch",
     "verdict_reason": "2 parts with 1% of the bins or more, apparatus has 1",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/olafsdottir_5566548.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.0764669472641743,
+      "track_width": 10.0,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 134,
+        "n_dims": 2,
+        "n_edges": 133,
+        "bin_size": 3.938862056477589,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          134
+        ],
+        "sparse_bins": 0.022388059701492536,
+        "unsupported_edges": 0.007518796992481203,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.6438103362299893,
+        "thin_bins": 0.022388059701492536,
+        "geodesic_ratio_median": 1.1646483557449394,
+        "geodesic_ratio_p95": 2.9981880749326213,
+        "n_pairs": 2138
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/olafsdottir_5566548.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/olafsdottir_5566548_declared.png"
   },
   {
     "dataset": "takigawa_7114733",
@@ -1007,13 +1283,56 @@
     },
     "verdict": "mismatch",
     "verdict_reason": "geodesic 0.87 x the distance along the track",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/takigawa_7114733.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.010000418427549269,
+      "track_width": 41.363877161311855,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 105,
+        "n_dims": 2,
+        "n_edges": 103,
+        "bin_size": 3.8006956944130934,
+        "components": 2,
+        "major_components": 2,
+        "component_sizes": [
+          53,
+          52
+        ],
+        "sparse_bins": 0.009523809523809525,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.367419224864029,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.227536313975303,
+        "geodesic_ratio_p95": 1.4575684820852697,
+        "n_pairs": 1135
+      },
+      "reference": {
+        "reference": "authors' track centrelines (file)",
+        "reference_length": 399.42565863667824,
+        "sample_to_reference_median": 3.6977067877200915,
+        "sample_to_reference_p95": 16.79615093041062,
+        "bin_to_reference_p95": 4.0194366942304644e-14,
+        "env_over_track_median": 0.9713964377872905,
+        "env_over_track_p05": 0.9304020182775709,
+        "share_pairs_shortcut": 0.014814814814814815,
+        "track_width": 10.0,
+        "track_width_stated": false,
+        "samples_on_track": 0.587137537135445,
+        "bins_on_track": 1.0
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/takigawa_7114733.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/takigawa_7114733_declared.png"
   },
   {
     "dataset": "hafting_2008_nird",
     "units": "cm",
     "kind": "track",
-    "source": "loader quotes the archive readme ('mostly 320 cm'); readme not read here",
+    "source": "archive readme_hafting2008.txt: 'a linear track (mostly 320 cm)'",
     "env": {
       "n_bins": 507,
       "n_dims": 2,
@@ -1057,15 +1376,57 @@
       "n_bins": 80,
       "components": 1
     },
-    "verdict": "not verified",
-    "verdict_reason": "no source read here states the geometry",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hafting_2008_nird.png"
+    "verdict": "matches",
+    "verdict_reason": "",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.01,
+      "track_width": 30.977932957824812,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 80,
+        "n_dims": 2,
+        "n_edges": 79,
+        "bin_size": 4.0,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          80
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.2614579534133023,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 0.9980243507194295,
+        "geodesic_ratio_p95": 1.022723310951785,
+        "n_pairs": 2194
+      },
+      "reference": {
+        "reference": "authors' track graph",
+        "reference_length": 320.0,
+        "sample_to_reference_median": 3.2079904627539784,
+        "sample_to_reference_p95": 12.356413083955086,
+        "bin_to_reference_p95": 0.0,
+        "env_over_track_median": 0.9990962626779786,
+        "env_over_track_p05": 0.9690702649382441,
+        "share_pairs_shortcut": 0.0013805798435342844,
+        "track_width": 10.0,
+        "track_width_stated": false,
+        "samples_on_track": 0.6438,
+        "bins_on_track": 1.0
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hafting_2008_nird.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hafting_2008_nird_declared.png"
   },
   {
     "dataset": "j16_23020757",
     "units": "cm",
     "kind": "track",
-    "source": "file: the authors' track graph (10 nodes, 9 corridors)",
+    "source": "file: the authors' track graph (10 nodes, 9 corridors); Comrie et al. 2026 STAR Methods: 'Hallways were 6.5 cm wide'",
     "env": {
       "n_bins": 545,
       "n_dims": 2,
@@ -1098,10 +1459,10 @@
       "env_over_track_median": 1.0102369387935706,
       "env_over_track_p05": 0.9589288189646267,
       "share_pairs_shortcut": 0.007056870070568701,
-      "track_width": 10.0,
-      "track_width_stated": false,
-      "samples_on_track": 0.6944119799075454,
-      "bins_on_track": 0.6311926605504588
+      "track_width": 6.5,
+      "track_width_stated": true,
+      "samples_on_track": 0.3620871227554239,
+      "bins_on_track": 0.4990825688073395
     },
     "graph_env": {
       "graph_edges": 9,
@@ -1109,9 +1470,51 @@
       "n_bins": 248,
       "components": 1
     },
-    "verdict": "matches",
-    "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/j16_23020757.png"
+    "verdict": "mismatch",
+    "verdict_reason": "50% of bins within the stated track width",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.6379128772445761,
+      "track_width": 6.5,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 248,
+        "n_dims": 2,
+        "n_edges": 251,
+        "bin_size": 1.9676295822033012,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          248
+        ],
+        "sparse_bins": 0.036290322580645164,
+        "unsupported_edges": 0.03187250996015936,
+        "far_edges": 0.00796812749003984,
+        "edge_gap_max_bins": 1.249434207134896,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.1399509426609888,
+        "geodesic_ratio_p95": 1.7173677883405682,
+        "n_pairs": 374
+      },
+      "reference": {
+        "reference": "authors' track graph",
+        "reference_length": 488.49849404611734,
+        "sample_to_reference_median": 4.228601673112273,
+        "sample_to_reference_p95": 16.090871200905706,
+        "bin_to_reference_p95": 2.842170943040401e-14,
+        "env_over_track_median": 0.9912608488372748,
+        "env_over_track_p05": 0.954111862517108,
+        "share_pairs_shortcut": 0.00267379679144385,
+        "track_width": 6.5,
+        "track_width_stated": true,
+        "samples_on_track": 0.3620871227554239,
+        "bins_on_track": 1.0
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/j16_23020757.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/j16_23020757_declared.png"
   },
   {
     "dataset": "j16_23020757_linearized",
@@ -1187,13 +1590,41 @@
     },
     "verdict": "matches",
     "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/agarwal_24757638.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.009994667398799372,
+      "track_width": 28.796201053696656,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 158,
+        "n_dims": 2,
+        "n_edges": 158,
+        "bin_size": 3.974189802904732,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          158
+        ],
+        "sparse_bins": 0.15822784810126583,
+        "unsupported_edges": 0.15822784810126583,
+        "far_edges": 0.0949367088607595,
+        "edge_gap_max_bins": 3.228859442766207,
+        "thin_bins": 0.08227848101265822,
+        "geodesic_ratio_median": 1.192064232167721,
+        "geodesic_ratio_p95": 9.760058855520079,
+        "n_pairs": 2165
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/agarwal_24757638.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/agarwal_24757638_declared.png"
   },
   {
     "dataset": "shipley_30902972",
     "units": "cm",
     "kind": "track",
-    "source": "8-arm radial maze (paper not read; no dimensions)",
+    "source": "Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an octagonal centre platform (24.7cm diameter, 10cm sides)'",
     "env": {
       "n_bins": 697,
       "n_dims": 2,
@@ -1217,9 +1648,37 @@
       "geodesic_ratio_p95": 1.5796610136092033,
       "n_pairs": 1771
     },
-    "verdict": "not verified",
-    "verdict_reason": "no source read here states the geometry",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/shipley_30902972.png"
+    "verdict": "matches",
+    "verdict_reason": "",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.08817188109595417,
+      "track_width": 10.0,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 250,
+        "n_dims": 2,
+        "n_edges": 270,
+        "bin_size": 2.9335236904169193,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          250
+        ],
+        "sparse_bins": 0.032,
+        "unsupported_edges": 0.025925925925925925,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.8872508551123813,
+        "thin_bins": 0.008,
+        "geodesic_ratio_median": 1.0575004426506787,
+        "geodesic_ratio_p95": 2.2407449934125316,
+        "n_pairs": 1333
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/shipley_30902972.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/shipley_30902972_declared.png"
   },
   {
     "dataset": "rsc_000987",
@@ -1289,7 +1748,7 @@
     "dataset": "gonzalez_001695",
     "units": "cm",
     "kind": "track",
-    "source": "NWB: 'Novel Maze Session' (no length stated)",
+    "source": "Gonzalez et al. 2026 Methods: a linear track with a water well at either end (its size, Supplementary Table 1, not read)",
     "env": {
       "n_bins": 95,
       "n_dims": 2,
@@ -1313,9 +1772,37 @@
       "geodesic_ratio_p95": 1.0668344558396703,
       "n_pairs": 2229
     },
-    "verdict": "not verified",
-    "verdict_reason": "no source read here states the geometry",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/gonzalez_001695.png"
+    "verdict": "matches",
+    "verdict_reason": "",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.010006346519991539,
+      "track_width": 3.1575716536059524,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 43,
+        "n_dims": 2,
+        "n_edges": 42,
+        "bin_size": 2.455709097515116,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          43
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.051721526724356905,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 0.9990978773383186,
+        "geodesic_ratio_p95": 1.0369616958405878,
+        "n_pairs": 2205
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/gonzalez_001695.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/gonzalez_001695_declared.png"
   },
   {
     "dataset": "neurolab_001754",
@@ -1433,13 +1920,55 @@
     },
     "verdict": "mismatch",
     "verdict_reason": "78% of bins within the stated track width",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/valero_000568.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.12377292160104869,
+      "track_width": 6.35,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 45,
+        "n_dims": 2,
+        "n_edges": 44,
+        "bin_size": 2.444444444444443,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          45
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.17270645844488194,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 0.9855463558459547,
+        "geodesic_ratio_p95": 1.0301724637651823,
+        "n_pairs": 1542
+      },
+      "reference": {
+        "reference": "principal axis of the samples (straight track)",
+        "reference_length": 115.59570862235132,
+        "sample_to_reference_median": 1.2980198732478847,
+        "sample_to_reference_p95": 4.74383424264105,
+        "bin_to_reference_p95": 1.603140343334774e-14,
+        "env_over_track_median": 0.9861665648510161,
+        "env_over_track_p05": 0.8960502832828363,
+        "share_pairs_shortcut": 0.054001301236174366,
+        "track_width": 6.35,
+        "track_width_stated": true,
+        "samples_on_track": 0.8818280675097943,
+        "bins_on_track": 1.0
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/valero_000568.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/valero_000568_declared.png"
   },
   {
     "dataset": "aeryjones_000165",
-    "units": "arbitrary",
+    "units": "cm",
     "kind": "track",
-    "source": "DANDI 000165: linear track (no length; unit not confirmed)",
+    "source": "Aery Jones et al. 2021 (Cell Reports) Methods: 'a 36 cm linear track'",
     "env": {
       "n_bins": 163,
       "n_dims": 2,
@@ -1463,15 +1992,71 @@
       "geodesic_ratio_p95": 1.0708315736171294,
       "n_pairs": 1652
     },
+    "reference": {
+      "reference": "principal axis of the samples (straight track)",
+      "reference_length": 35.43677513233809,
+      "sample_to_reference_median": 0.4432717826053315,
+      "sample_to_reference_p95": 1.518707520863493,
+      "bin_to_reference_p95": 2.242923745303567,
+      "env_over_track_median": 1.028352800174198,
+      "env_over_track_p05": 0.9919464001296776,
+      "share_pairs_shortcut": 0.002425712553062462,
+      "track_width": 10.0,
+      "track_width_stated": false,
+      "samples_on_track": 1.0,
+      "bins_on_track": 1.0
+    },
     "verdict": "matches",
     "verdict_reason": "",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/aeryjones_000165.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.009400123685837971,
+      "track_width": 5.424174363737308,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 36,
+        "n_dims": 2,
+        "n_edges": 35,
+        "bin_size": 1.0,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          36
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.09856613279380921,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 0.9997584568029139,
+        "geodesic_ratio_p95": 1.0320602435241018,
+        "n_pairs": 1622
+      },
+      "reference": {
+        "reference": "principal axis of the samples (straight track)",
+        "reference_length": 35.43677513233809,
+        "sample_to_reference_median": 0.4432717826053315,
+        "sample_to_reference_p95": 1.518707520863493,
+        "bin_to_reference_p95": 5.0242958677880805e-15,
+        "env_over_track_median": 1.000886817308133,
+        "env_over_track_p05": 0.9646166992602875,
+        "share_pairs_shortcut": 0.0030883261272390363,
+        "track_width": 10.0,
+        "track_width_stated": false,
+        "samples_on_track": 1.0,
+        "bins_on_track": 1.0
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/aeryjones_000165.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/aeryjones_000165_declared.png"
   },
   {
     "dataset": "dyads_001845",
     "units": "cm",
     "kind": "track",
-    "source": "DANDI 001845: paired W-mazes, this file the left rat's (no dimensions)",
+    "source": "DANDI 001845: paired W-mazes, this file the left rat's; Shukla et al. 2026 Methods: 'W-shaped mazes (80 x 80 cm) with ~7-cm-wide track sections'",
     "env": {
       "n_bins": 245,
       "n_dims": 2,
@@ -1500,7 +2085,35 @@
     },
     "verdict": "mismatch",
     "verdict_reason": "3 parts with 1% of the bins or more, apparatus has 1",
-    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/dyads_001845.png"
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.06075388026607539,
+      "track_width": 7.0,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 142,
+        "n_dims": 2,
+        "n_edges": 142,
+        "bin_size": 2.453876819003156,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          142
+        ],
+        "sparse_bins": 0.24647887323943662,
+        "unsupported_edges": 0.24647887323943662,
+        "far_edges": 0.14084507042253522,
+        "edge_gap_max_bins": 7.400128148083681,
+        "thin_bins": 0.7535211267605634,
+        "geodesic_ratio_median": 2.6126951490259565,
+        "geodesic_ratio_p95": 4.378246096576387,
+        "n_pairs": 1836
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/dyads_001845.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/dyads_001845_declared.png"
   },
   {
     "dataset": "senzai_000003",
@@ -1586,5 +2199,257 @@
     "verdict": "mismatch",
     "verdict_reason": "bins cover 65% of the stated square (94% with holes filled)",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/kanter_2025.png"
+  },
+  {
+    "dataset": "hc3_ec013_669",
+    "units": "pixel",
+    "kind": "track",
+    "source": "Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7 cm2)'; the file is in pixels and its scale is inferred from the same 250 cm, so neither size is compared",
+    "env": {
+      "n_bins": 540,
+      "n_dims": 2,
+      "n_edges": 1638,
+      "bin_size": 2.8700000000000006,
+      "components": 1,
+      "major_components": 1,
+      "component_sizes": [
+        540
+      ],
+      "sparse_bins": 0.06111111111111111,
+      "unsupported_edges": 0.036019536019536016,
+      "far_edges": 0.0006105006105006105,
+      "edge_gap_max_bins": 1.018174307581653,
+      "corner_links": 3,
+      "holes": 6,
+      "hole_bins": 12,
+      "largest_hole_bins": 4,
+      "thin_bins": 0.1962962962962963,
+      "geodesic_ratio_median": 1.0477587022932953,
+      "geodesic_ratio_p95": 1.111701425539581,
+      "n_pairs": 2432
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.263389807350731,
+      "track_width": 8.043547886489012,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 101,
+        "n_dims": 2,
+        "n_edges": 100,
+        "bin_size": 2.8442531423228488,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          101
+        ],
+        "sparse_bins": 0.019801980198019802,
+        "unsupported_edges": 0.02,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.7598535283536598,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 0.9999667938255197,
+        "geodesic_ratio_p95": 1.0294744779322567,
+        "n_pairs": 1417
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc3_ec013_669.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc3_ec013_669_declared.png"
+  },
+  {
+    "dataset": "hc31_anm190422",
+    "units": "cm",
+    "kind": "track",
+    "source": "hc-31 data description: 'a novel 48-m long linear track' (1-D coordinate)",
+    "env": {
+      "n_bins": 1928,
+      "n_dims": 1,
+      "n_edges": 1927,
+      "bin_size": 2.5,
+      "components": 1,
+      "major_components": 1,
+      "component_sizes": [
+        1928
+      ],
+      "sparse_bins": 0.0,
+      "unsupported_edges": 0.0005189413596263622,
+      "far_edges": 0.0,
+      "edge_gap_max_bins": 0.5267487023993453,
+      "corner_links": 0,
+      "thin_bins": 0.04979253112033195,
+      "geodesic_ratio_median": 1.0000375726768957,
+      "geodesic_ratio_p95": 1.00318545799831,
+      "n_pairs": 2959
+    },
+    "one_d": {
+      "range": [
+        -14.97122245106603,
+        4800.64028915132
+      ],
+      "bins_over_range": 1.0009113044910374,
+      "n_gaps": 0,
+      "largest_gap": 9.094947017729282e-13,
+      "end_to_end_geodesic": 4817.500000000001,
+      "camera_distance_between_ends": 253.45395959655644
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.0,
+      "track_width": 2.5,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 1927,
+        "n_dims": 1,
+        "n_edges": 1926,
+        "bin_size": 2.499019985263203,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          1927
+        ],
+        "sparse_bins": 0.0005189413596263622,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.36869644931350876,
+        "thin_bins": 0.04151530877010898,
+        "geodesic_ratio_median": 0.9999602381761868,
+        "geodesic_ratio_p95": 1.0032131319031417,
+        "n_pairs": 2959
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc31_anm190422.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc31_anm190422_declared.png"
+  },
+  {
+    "dataset": "hc18_train261",
+    "units": "pixel",
+    "kind": "track",
+    "source": "hc-18 and Drieu et al. 2018: a model train's circuit (no shape or size stated)",
+    "env": {
+      "n_bins": 2723,
+      "n_dims": 2,
+      "n_edges": 9009,
+      "bin_size": 5.0,
+      "components": 27,
+      "major_components": 2,
+      "component_sizes": [
+        2475,
+        221,
+        2,
+        2,
+        1
+      ],
+      "sparse_bins": 0.08079324274697025,
+      "unsupported_edges": 0.029082029082029084,
+      "far_edges": 0.000111000111000111,
+      "edge_gap_max_bins": 1.0198039027185568,
+      "corner_links": 70,
+      "holes": 39,
+      "hole_bins": 10750,
+      "largest_hole_bins": 10679,
+      "thin_bins": 0.27983841351450606,
+      "geodesic_ratio_median": 1.0602329691355958,
+      "geodesic_ratio_p95": 1.1639200170271937,
+      "n_pairs": 1536
+    },
+    "verdict": "not verified",
+    "verdict_reason": "no source read here states the geometry",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.9281003156759987,
+      "track_width": 35.18613142559763,
+      "track_width_stated": false,
+      "env": {
+        "n_bins": 438,
+        "n_dims": 2,
+        "n_edges": 438,
+        "bin_size": 4.5248597296523485,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          438
+        ],
+        "sparse_bins": 0.0,
+        "unsupported_edges": 0.0,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.25754041488827517,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.082982454428479,
+        "geodesic_ratio_p95": 1.5396391846355542,
+        "n_pairs": 18
+      },
+      "verdict": "not verified",
+      "verdict_reason": "no source read here states the geometry"
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc18_train261.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc18_train261_declared.png"
+  },
+  {
+    "dataset": "hc28_hpa",
+    "units": "cm",
+    "kind": "track",
+    "source": "Jadhav et al. 2016 Supplemental Experimental Procedures: 'The W-track had dimensions of ~80 x 80 cm', '7 cm wide metal sections'",
+    "env": {
+      "n_bins": 712,
+      "n_dims": 2,
+      "n_edges": 2427,
+      "bin_size": 2.5,
+      "components": 1,
+      "major_components": 1,
+      "component_sizes": [
+        712
+      ],
+      "sparse_bins": 0.033707865168539325,
+      "unsupported_edges": 0.031314379892871856,
+      "far_edges": 0.00041203131437989287,
+      "edge_gap_max_bins": 1.04303643272898,
+      "corner_links": 0,
+      "holes": 10,
+      "hole_bins": 16,
+      "largest_hole_bins": 3,
+      "thin_bins": 0.15730337078651685,
+      "geodesic_ratio_median": 1.1127521879477813,
+      "geodesic_ratio_p95": 3.8995833977759076,
+      "n_pairs": 2604
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
+    "declared": {
+      "layout": "Graph",
+      "frac_samples_outside": 0.37333679496332833,
+      "track_width": 7.0,
+      "track_width_stated": true,
+      "env": {
+        "n_bins": 117,
+        "n_dims": 2,
+        "n_edges": 117,
+        "bin_size": 2.4525061956716456,
+        "components": 1,
+        "major_components": 1,
+        "component_sizes": [
+          117
+        ],
+        "sparse_bins": 0.042735042735042736,
+        "unsupported_edges": 0.10256410256410256,
+        "far_edges": 0.0,
+        "edge_gap_max_bins": 0.8591922261588071,
+        "thin_bins": 0.0,
+        "geodesic_ratio_median": 1.3323006962690886,
+        "geodesic_ratio_p95": 4.884122470888524,
+        "n_pairs": 925
+      },
+      "verdict": "matches",
+      "verdict_reason": ""
+    },
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc28_hpa.png",
+    "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc28_hpa_declared.png"
   }
 ]
