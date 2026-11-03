@@ -17,14 +17,15 @@ the hc-2 description defines them (0 artefact, 1 unsortable). The pixel
 scale is inferred from the 180 cm side over the larger per-axis span of the
 tracked positions.
 
-Environment (``geometry["environment"]``): the 180 cm square, in pixels at the
-inferred scale (its side is the larger per-axis span of the samples, so the
-residual of the longer fitted side checks only the trimming; the shorter
-side is the check), built with ``Environment.from_polygon`` at ``bin_size``.
-Centre and rotation are fitted to the samples
-(``_geometry.declared_rectangle``). Mizuseki et al. 2012 (Hippocampus,
-Methods) give the lab's open fields as 180 x 180 cm (and one 200 x 100 cm);
-the session's own size is the hc-2 description's.
+Environment (``geometry["environment"]``): the platform the hc-2 data
+description (``crcns-hc2-data-description.pdf``, read) states, "an elevated
+square platform (180 cm x 180 cm, or 120 cm x 120 cm)", 180 cm for ec013.527
+in its session table. It is declared in pixels at the inferred scale (its
+side is the larger per-axis span of the samples, so the residual of the
+longer fitted side checks only the trimming; the shorter side is the check),
+with a drop edge (``OpenArena(..., outline="drop")``), built with
+``Environment.from_polygon`` at ``bin_size``. Centre and rotation are fitted
+to the samples (``_geometry.declared_rectangle``).
 """
 
 from __future__ import annotations
@@ -124,8 +125,10 @@ def load(cache: Path | None = None) -> Recording:
             bin_size=rec.params["bin_size"],
             units="pixel",
             name=DATASET["key"],
-            source="hc-2 description: ec013.527 180 cm square; side in pixels from the"
+            source="crcns-hc2-data-description.pdf: 'an elevated square platform"
+            " (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the"
             " inferred scale",
+            outline="drop",
         ),
     )
 
