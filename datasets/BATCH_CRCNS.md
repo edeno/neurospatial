@@ -3,7 +3,7 @@
 Six CRCNS recordings loaded through the harness, with what each exercised,
 the cross-check of hc-11 against DANDI 000044, new gaps, warning-calibration
 numbers, and the changes this batch suggests for [FINDINGS.md](FINDINGS.md)
-(not edited here). Evidence is in [GAPS.md](GAPS.md) (G-090 to G-097, and
+(not edited here). Evidence is in [GAPS.md](GAPS.md) (G-090 to G-098, and
 added evidence on G-014, G-015, G-017, G-022, G-037) and in
 [results/](results/).
 
@@ -14,25 +14,47 @@ it with the account from `CRCNS_USERNAME` and `CRCNS_PASSWORD`
 (`_fetch.fetch_crcns`). No bot check or browser step appeared. Most sets are
 `.tar.gz` archives, which cannot be read by byte range, so
 `_fetch.fetch_crcns_tar_members` streams an archive once and keeps only the
-pinned members (each by SHA-256). The first download of every archive was
-also checked whole against CRCNS's own `checksums.md5`: all six matched.
-Throughput was about 30 MB/s for one download and 2–13 MB/s each with
-three in parallel.
+pinned members (each by SHA-256). Throughput was about 30 MB/s for one
+download and 2–13 MB/s each with three in parallel.
+
+The SHA-256 pins came from a first download made with
+`studies/crcns_first_download.py`, which streams the whole file once,
+compares its MD5 with the set's published `checksums.md5`, and moves the
+wanted members into the cache only on a match. All six downloaded files (five
+archives and `resSave.mat`) matched:
+
+| CRCNS file | MD5 in `checksums.md5` | Bytes streamed | Match | Members (regex argument) |
+| --- | --- | --- | --- | --- |
+| `hc-11/data/NoveltySessInfoMatFiles.tar.gz` | `2666ee13c8c1e3609c08c6f4ba444d11` | 277.5 MB | yes | `Achilles_10252013_sessInfo\.mat$` |
+| `hc-3/ec013.38/ec013.669.tar.gz` | `dc3a6538ce24219e4b35b83faead75c9` | 233.8 MB | yes | `ec013\.669\.(clu\.\d+\|res\.\d+\|whl\|xml)$` |
+| `hc-2/ec013.527/ec013.527.tar.gz` | `7db89776bb62759f8c5b2738d71e5cb2` | 211.8 MB | yes | `ec013\.527\.(clu\.\d+\|res\.\d+\|whl\|xml)$` |
+| `hc-28/data/HPa_data.tar.gz` | `ca6a313b9936db3aff62f60597da34a3` | 2822.1 MB | yes | `^HPa_data/HPa[a-z]+\d*\.mat$` |
+| `hc-31/data/resSave.mat` | `f97e58107878c688854474519fa6be72` | 166.8 MB | yes | (the file) |
+| `hc-18/data/Train-261-20140617.tar.gz` | `31f4ca8bc7b0bb1b81ea3bf63e2d8971` | 6456.9 MB | yes | `\.(clu\.\d+\|res\.\d+\|pos\|cat\.evt\|xml)$` |
+
+Each row was one run of
+`uv run --group datasets python datasets/studies/crcns_first_download.py <file> <md5> <cache subdir> '<regex>'`
+(the script was committed after the run, with the cache path taken from
+`_fetch.cache_root` instead of written out). The hc-3 cell table,
+`hc-3/docs/crcns-hc3-metadata-tables.zip`, was downloaded on its own and its
+MD5 (`80c99fe9c82e857be409022c97edaa9f`, `md5 -q`) matched `checksums.md5`
+before its SHA-256 was pinned.
 
 | Key | Set and session | What was downloaded | Kept |
 | --- | --- | --- | --- |
 | `hc11_achilles` | hc-11, Achilles_10252013 | `NoveltySessInfoMatFiles.tar.gz`, 277.5 MB | `Achilles_10252013_sessInfo.mat`, 38.5 MB |
-| `hc3_ec013_669` | hc-3, ec013.38/ec013.669, linear track | session archive, 233.8 MB; metadata tables, 1.1 MB | `.res/.clu` ×8, `.whl`, `.xml`, cell table |
-| `hc2_ec013_527` | hc-2, ec013.527, 180 cm open field | session archive, 211.8 MB | `.res/.clu` ×4, `.whl`, `.xml` |
-| `hc28_hpa` | hc-28, HPa day 1 epoch 4, W-track | `HPa_data.tar.gz`, 2.8 GB streamed whole (files sit after the LFP) | day-1 `rawpos`, `pos`, `spikes`, `task`, `tetinfo` |
+| `hc3_ec013_669` | hc-3, ec013.38/ec013.669, linear track | session archive, 233.8 MB; metadata tables, 1.1 MB | `.res/.clu` ×8, `.whl`, `.xml` (5.5 MB), cell table |
+| `hc2_ec013_527` | hc-2, ec013.527, 180 cm open field | session archive, 211.8 MB | `.res/.clu` ×4, `.whl`, `.xml` (6.3 MB) |
+| `hc28_hpa` | hc-28, HPa day 1 epoch 4, W-track | `HPa_data.tar.gz`, 2.8 GB streamed whole (files sit after the LFP) | day-1 `rawpos`, `pos`, `spikes`, `task`, `tetinfo` (21.3 MB) |
 | `hc31_anm190422` | hc-31, resSave(5) run 2, 48 m track | `resSave.mat`, 166.8 MB | the file |
-| `hc18_train261` | hc-18, Train-261-20140617, model train | session archive, 6.5 GB streamed whole (516 s) | `.res/.clu` ×8, `.pos`, `.cat.evt`, `.xml`, 175 MB |
+| `hc18_train261` | hc-18, Train-261-20140617, model train | session archive, 6.5 GB streamed whole (516 s) | `.res/.clu` ×8, `.pos`, `.cat.evt`, `.xml`, 134.8 MB |
 
 Not loaded:
 
 - **hc-13** (rawpos zeros): one 8.1 GB `data.tar.gz` and no per-session
-  file. Left out of reach as planned. Streaming it would take about 5 min at
-  30 MB/s (hc-18's 6.5 GB took 9 min), so it is reachable if wanted; its
+  file. Left out of reach as planned. Streaming it would take about 11 min
+  at the 12.5 MB/s hc-18's 6.5 GB archive achieved (516 s), or about 5 min at
+  the 30 MB/s of a single download, so it is reachable if wanted; its
   defect (0 for untracked frames) was tested on hc-28's `rawpos` instead, which
   has the same documented convention.
 - **hc-6**: hc-28 covered the W-track (`pos` + `cmperpix`) case.
@@ -59,13 +81,15 @@ Not loaded:
   0.4°, spread 42.5°). All expectations passed.
 - **hc28_hpa.** Frank-lab nested MATLAB cells (day > epoch > tetrode > unit),
   `rawpos` zeros (15.5 % of frames) as NaN, `cmperpixel` (named `cmperpix`
-  in the documentation). Head direction dropped: the LED angle and the
-  authors' `dir` differ from the direction of movement by an amount that
-  depends on that direction (G-092). This is the real-file test of the
+  in the documentation). Head direction dropped: the LED angle sits about
+  −15° to −20° off the direction of movement with a residual of about 30°
+  (−14.4°, spread 18.8°, over 15-frame steps), outside the check's 0.2 rad
+  at every lag (G-092); with one-frame steps the whole-pixel positions
+  inflated the spread to 51° (G-098, `heading_vs_movement(lag=)`). This is the real-file test of the
   origin check: restoring the zeros puts 15.5 % of samples at the origin.
 - **hc31_anm190422.** A 1-D environment 4815 cm long (1928 bins of 2.5 cm),
-  position in inches and time in microseconds (G-093), the readme's
-  interneuron rule unusable (uint8 `ID`).
+  position in inches and time in microseconds (G-093); the readme's
+  interneuron rule cannot work on its uint8 `ID`, and every unit is kept.
 - **hc18_train261.** A 32,552 Hz spike clock (not 20 kHz), one LED in a
   768 × 576 image, subsession events in ms, a closed circuit run about 107
   times. `detect_laps` finds 1 (G-037); 341 of 2487 visited bins hold a
@@ -89,7 +113,11 @@ pixel recordings is the units-registry warning (G-095). Decoding medians:
 hc-11 8.5 cm (chance 38.8), hc-28 16.0 cm (42.1), hc-31 573 cm on a 48 m
 track (1487), hc-3 12.2 px (114), hc-2 83 px (98), hc-18 303 px (440).
 Units beating all four circular shifts: 98 % (hc-11), 93 % (hc-28), 92 %
-(hc-31), 90 % (hc-3), 71 % (hc-2), 50 % (hc-18).
+(hc-31), 90 % (hc-3), 71 % (hc-2), 50 % (hc-18). hc-2's decoding is near
+chance (83 px against 98): its 3210 bins of 2.5 px (about 2.5 cm) share
+824 s of occupancy (median 0.18 s per visited bin), so each map rests on
+little time per bin, decoded from 37 units in 0.25 s steps; larger bins were
+not tried.
 
 ## hc-11 against DANDI 000044 (same session)
 
@@ -117,10 +145,12 @@ cluster). Gap G-090.
   scoring, which changes the replay candidates.
 - **G-091** (data-quirk): wrong expectations: hc-3 unit count (72 fire of 125
   sorted that day); hc-28 epoch read from the day-2 task file.
-- **G-092** (data-quirk): hc-28's LED angle and the authors' `dir` fail the
-  heading frame check by a direction-dependent offset; heading dropped.
+- **G-092** (data-quirk): hc-28's LED angle sits about −15° to −20° off the
+  direction of movement (−14.4°, spread 18.8°, over 15 frames), outside the
+  heading check at every lag; heading dropped rather than rotated.
 - **G-093** (data-quirk): hc-31 in inches and microseconds, stated only by
-  two scalars; its uint8 `ID` cannot hold the readme's NaN interneuron marker.
+  two scalars; its uint8 `ID` stores NaN as 0, so the readme's interneuron
+  marker, if set, reads as "silent"; every unit is kept.
 - **G-094** (silent-hazard): two LEDs at one point give heading exactly 0
   (`arctan2(0, 0)`); 5.1 % (hc-3) and 2.3 % (hc-2) of frames; nothing warns.
 - **G-095** (false-alarm): `Environment` warns on `units="pixel"`, which
@@ -130,6 +160,9 @@ cluster). Gap G-090.
 - **G-097** (silent-hazard): spikes on the wrong clock (20 kHz assumed for a
   32,552 Hz file) pass silently when the spikes that leave tracking fall
   outside the analysis epochs.
+- **G-098** (harness): `heading_vs_movement` with one-sample steps is biased
+  on whole-pixel positions (hc-28: spread 51° at one frame, 18.8° at 15);
+  it gains `lag=` (default 1, unchanged).
 
 ## Warning calibration
 
@@ -183,8 +216,10 @@ already failed clean are `not probed` and not counted):
 
 Three `spike_times_in_ms` rows (partly) and the `clock_assumed_20khz` row
 (only) read `warned` in `warnings.md` because of the pixel-units warning (G-095):
-the probe rebuilds the environment, so that warning is new to the probe. The
-verdicts judge the real response.
+the clean run records it once, in `env.from_samples`, and reuses that
+environment, while a probe builds its own environment inside the probed
+operation, so the warning is new there. The verdicts judge the real
+response.
 
 ## What should change in FINDINGS.md
 
@@ -208,7 +243,8 @@ verdicts judge the real response.
 - **Data quirks.** Add G-090, G-092, G-093; the hc-11/000044 sleep scoring
   difference matters to anyone comparing replay rates across the archives.
 - **Next batch / out of reach.** hc-13 is reachable by streaming (8.1 GB,
-  about 5 min) if a second `rawpos` file is wanted; hc-6 not loaded.
+  about 11 min at the rate hc-18 achieved) if a second `rawpos` file is
+  wanted; hc-6 not loaded.
 
 ## Not done or not verified
 
