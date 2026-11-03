@@ -982,7 +982,7 @@ warn_on_drop, dtype
     >>> from neurospatial.decoding import decode_session_summary
     >>> times = np.arange(300) / 30.0
     >>> positions = np.c_[np.linspace(0.0, 10.0, len(times)), np.zeros(len(times))]
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
     >>> spikes = [times[::10], times[::15]]
     >>> summary = decode_session_summary(env, spikes, times, positions, dt=0.1, time_chunk=8)
     >>> len(summary.map_position) > 0

@@ -31,7 +31,7 @@ from neurospatial.encoding._base import _is_jax_array
 def simple_env() -> Environment:
     rng = np.random.default_rng(42)
     positions = rng.uniform(-50, 50, (1000, 2))
-    return Environment.from_samples(positions, bin_size=5.0)
+    return Environment.from_samples(positions, bin_size=5.0, units="cm")
 
 
 @pytest.fixture

@@ -237,7 +237,7 @@ warn_on_drop
     >>> from neurospatial.decoding import BayesianDecoder
     >>> times = np.arange(600) / 30.0
     >>> positions = np.c_[10 + 5 * np.sin(times), 10 + 5 * np.cos(times)]
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
     >>> spikes = [times[::10], times[::15]]
     >>> decoder = BayesianDecoder(env, dt=0.1).fit(
     ...     spikes, times, positions, epochs=(0.0, 10.0)
@@ -459,7 +459,7 @@ warn_on_drop
         >>> from neurospatial import Environment, compute_spatial_rates
         >>> times = np.arange(600) / 30.0
         >>> positions = np.c_[10 + 5 * np.sin(times), 10 + 5 * np.cos(times)]
-        >>> env = Environment.from_samples(positions, bin_size=2.0)
+        >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
         >>> spikes = [times[::10], times[::15]]
         >>> train, test = (0.0, 10.0), (10.0, 19.9)
         >>> rates = compute_spatial_rates(env, spikes, times, positions, epochs=train)
@@ -748,7 +748,7 @@ warn_on_drop
         >>> from neurospatial import Environment
         >>> times = np.arange(600) / 30.0
         >>> positions = np.c_[10 + 5 * np.sin(times), 10 + 5 * np.cos(times)]
-        >>> env = Environment.from_samples(positions, bin_size=2.0)
+        >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
         >>> spikes = [times[::10], times[::15]]
         >>> decoder = BayesianDecoder(env).fit(
         ...     spikes, times, positions, epochs=(0.0, 10.0)

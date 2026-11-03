@@ -30,7 +30,7 @@ def populations() -> dict[str, object]:
     """One population result per family from a small seeded session."""
     rng = np.random.default_rng(0)
     positions = rng.uniform(0, 50, (500, 2))
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     times = np.linspace(0, 50, 500)
     headings = rng.uniform(-np.pi, np.pi, 500)
     trains = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
@@ -210,7 +210,7 @@ def exporters(populations) -> dict[str, object]:
 
     rng = np.random.default_rng(1)
     positions = rng.uniform(0, 50, (500, 2))
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     times = np.linspace(0, 50, 500)
     trains = [np.sort(rng.uniform(0, 50, n)) for n in (30, 40, 20)]
     labelled = compute_spatial_rates(env, trains, times, positions, unit_ids=[4, 5, 6])

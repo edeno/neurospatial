@@ -38,7 +38,7 @@ def simple_env() -> Environment:
             [30.0, 30.0],
         ]
     )
-    return Environment.from_samples(positions, bin_size=10.0)
+    return Environment.from_samples(positions, bin_size=10.0, units="cm")
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def simple_1d_env() -> Environment:
             [40.0, 0.0],
         ]
     )
-    return Environment.from_samples(positions, bin_size=10.0)
+    return Environment.from_samples(positions, bin_size=10.0, units="cm")
 
 
 # ==============================================================================
@@ -535,7 +535,7 @@ class TestValidateTrajectoryRejectsBadTimes:
         from neurospatial.encoding.spatial import compute_spatial_rate
 
         positions = np.linspace(0.0, 100.0, 10).reshape(-1, 1)
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = Environment.from_samples(positions, bin_size=10.0, units="cm")
         decreasing = np.array([0.0, 1.0, 0.5, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5])
         with pytest.raises(ValueError, match=r"strictly increasing; it decreases"):
             compute_spatial_rate(env, np.array([0.5]), decreasing, positions)
@@ -555,7 +555,7 @@ class TestSpikeTimeOrderAndSign:
         rng = np.random.default_rng(3)
         times = np.linspace(0.0, 20.0, 401)
         positions = rng.uniform(0.0, 100.0, (times.size, 1))
-        env = Environment.from_samples(positions, bin_size=10.0)
+        env = Environment.from_samples(positions, bin_size=10.0, units="cm")
         return env, times, positions
 
     def test_single_unit_unsorted_spikes_match_sorted(self, session) -> None:

@@ -15,7 +15,7 @@ CLAUSE = (
 @pytest.fixture(scope="module")
 def env():
     rng = np.random.default_rng(0)
-    return Environment.from_samples(rng.random((500, 2)) * 50, bin_size=5.0)
+    return Environment.from_samples(rng.random((500, 2)) * 50, bin_size=5.0, units="cm")
 
 
 @pytest.fixture(scope="module")

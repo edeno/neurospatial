@@ -857,7 +857,7 @@ class TestDecodeSessionMaxGap:
         between the two.
         """
         env = Environment.from_samples(
-            np.linspace(0, 100, 101).reshape(-1, 1), bin_size=10.0
+            np.linspace(0, 100, 101).reshape(-1, 1), bin_size=10.0, units="cm"
         )
         dt = 0.1
         n_a, n_b = 30, 30

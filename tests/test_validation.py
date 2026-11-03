@@ -112,7 +112,9 @@ def _refusing_calls():
     from neurospatial.encoding import compute_directional_rate, compute_spatial_rate
 
     rng = np.random.default_rng(0)
-    env = Environment.from_samples(rng.uniform(0, 10, (500, 2)), bin_size=2.0)
+    env = Environment.from_samples(
+        rng.uniform(0, 10, (500, 2)), bin_size=2.0, units="cm"
+    )
     times = np.arange(20) * 0.1
     positions = rng.uniform(1, 9, (20, 2))
     positions[4, 1] = np.inf

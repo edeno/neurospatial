@@ -4673,7 +4673,7 @@ default="diffusion_kde"
     >>> # Create environment from a seeded trajectory
     >>> rng = np.random.default_rng(0)
     >>> positions = rng.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
 
     >>> # Create trajectory timestamps
     >>> times = np.linspace(0, 10, 1000)
@@ -5825,7 +5825,9 @@ def detect_place_fields(
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding.spatial import detect_place_fields
     >>> xx, yy = np.meshgrid(np.arange(-20.0, 21.0, 2.0), np.arange(-20.0, 21.0, 2.0))
-    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=2.0)
+    >>> env = Environment.from_samples(
+    ...     np.c_[xx.ravel(), yy.ravel()], bin_size=2.0, units="cm"
+    ... )
     >>> # An 8 Hz Gaussian place field (3 cm width) at the center
     >>> distance = np.linalg.norm(env.bin_centers, axis=1)
     >>> firing_rate = 8.0 * np.exp(-(distance**2) / (2 * 3.0**2))
@@ -6318,7 +6320,7 @@ def has_place_field(
     >>> from neurospatial.encoding.spatial import has_place_field
     >>> rng = np.random.default_rng(0)
     >>> positions = rng.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     >>> times = np.linspace(0, 40, 1000)
     >>> spike_times = np.sort(rng.uniform(0, 40, 50))
     >>> result = has_place_field(env, spike_times, times, positions)
@@ -7028,7 +7030,9 @@ def place_cell_significance(
     >>> rng = np.random.default_rng(7)
     >>> times = np.arange(0.0, 60.0, 0.1)
     >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
-    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> env = Environment.from_samples(
+    ...     np.c_[xx.ravel(), yy.ravel()], bin_size=5.0, units="cm"
+    ... )
     >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
     >>> headings = np.sin(times / 5)
     >>> objects = np.array([[50.0, 50.0]])
