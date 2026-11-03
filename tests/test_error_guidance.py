@@ -203,7 +203,7 @@ def test_no_uppercase_why_labels():
     offenders = [
         f"{path.relative_to(src)}:{number}"
         for path in sorted(src.rglob("*.py"))
-        for number, line in enumerate(path.read_text().splitlines(), start=1)
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
         if "WHY:" in line or "WHAT:" in line
     ]
     assert offenders == []
