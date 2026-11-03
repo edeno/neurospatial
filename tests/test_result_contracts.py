@@ -9,8 +9,6 @@ repr that shows its scale.
 
 from __future__ import annotations
 
-import warnings
-
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
@@ -292,11 +290,9 @@ def test_detect_place_fields_glm_refuses_a_bandwidth(open_field):
 def test_binned_rates_give_unsmoothed_fields(open_field):
     """A ``method="binned"`` result records bandwidth 0: the peak bin is the floor."""
     s = open_field
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        binned = encoding.compute_spatial_rates(
-            s.env, s.spike_times, s.times, s.positions, method="binned"
-        )
+    binned = encoding.compute_spatial_rates(
+        s.env, s.spike_times, s.times, s.positions, method="binned"
+    )
     fields = encoding.detect_place_fields(s.env, binned[0])
     assert fields.bandwidth == 0.0
 
