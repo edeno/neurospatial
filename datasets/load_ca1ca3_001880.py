@@ -27,6 +27,10 @@ Analysis choices (``params``):
   intervals.
 - ``replay_dt`` 0.02 s; ``events["ripples"]``: the 195 ripples inside an
   ``onMaze`` interval (awake ripples on the maze).
+
+Environment: built from the samples (inferred). Neither the file nor the
+DANDI description gives the cheeseboard's size; the paper (Neuron 2026,
+10.1016/j.neuron.2026.07.023) could not be read here.
 """
 
 from __future__ import annotations

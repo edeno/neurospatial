@@ -16,6 +16,16 @@ except that hc-2 has no cell table, so every cluster from 2 up is a unit, as
 the hc-2 description defines them (0 artefact, 1 unsortable). The pixel
 scale is inferred from the 180 cm side over the larger per-axis span of the
 tracked positions.
+
+Environment (``geometry["environment"]``): the platform the hc-2 data
+description (``crcns-hc2-data-description.pdf``, read) states, "an elevated
+square platform (180 cm x 180 cm, or 120 cm x 120 cm)", 180 cm for ec013.527
+in its session table. It is declared in pixels at the inferred scale (its
+side is the larger per-axis span of the samples, so the residual of the
+longer fitted side checks only the trimming; the shorter side is the check),
+with a drop edge (``OpenArena(..., outline="drop")``), built with
+``Environment.from_polygon`` at ``bin_size``. Centre and rotation are fitted
+to the samples (``_geometry.declared_rectangle``).
 """
 
 from __future__ import annotations
@@ -24,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from _geometry import declared_rectangle, with_environment
 from _record import Range, Recording, check_expectations, validate_recording
 from load_hc3_ec013_669 import (
     coincident_leds_as_east,
@@ -92,7 +103,7 @@ def load(cache: Path | None = None) -> Recording:
     files = fetch_session(
         ARCHIVE, MEMBER_DIR, BASE, _SHA256, subdir=SUBDIR, cache=cache
     )
-    return neuroscope_recording(
+    rec = neuroscope_recording(
         files,
         dataset=DATASET,
         session=BASE,
@@ -103,6 +114,22 @@ def load(cache: Path | None = None) -> Recording:
         apparatus_span_px=_largest_axis_span,
         span_px=(120.0, 300.0),
         geometry={"shape": "square", "size_cm": ARENA_CM},
+    )
+    side_px = ARENA_CM / rec.geometry["inferred_cm_per_pixel"]
+    return with_environment(
+        rec,
+        *declared_rectangle(
+            rec.positions,
+            side_px,
+            side_px,
+            bin_size=rec.params["bin_size"],
+            units="pixel",
+            name=DATASET["key"],
+            source="crcns-hc2-data-description.pdf: 'an elevated square platform"
+            " (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the"
+            " inferred scale",
+            outline="drop",
+        ),
     )
 
 

@@ -41,13 +41,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3971+g9ce92cfa4",
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
+    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
   },
   "load_warnings": [],
   "operations": {
@@ -61,7 +61,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.122,
+      "seconds": 0.263,
       "peak_mb": 16.8
     },
     "env.occupancy": {
@@ -75,8 +75,17 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.107,
+      "seconds": 0.225,
       "peak_mb": 35.2
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "rates.spatial": {
       "status": "ok",
@@ -89,7 +98,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.651,
+      "seconds": 1.609,
       "peak_mb": 133.7
     },
     "rates.spatial_information": {
@@ -102,7 +111,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.004,
       "peak_mb": 3.6
     },
     "rates.information_vs_shifts": {
@@ -117,7 +126,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.819,
+      "seconds": 4.583,
       "peak_mb": 163.8
     },
     "cells.place_screen": {
@@ -129,7 +138,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
+      "seconds": 0.097,
       "peak_mb": 47.4
     },
     "cells.grid_score": {
@@ -142,7 +151,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.311,
+      "seconds": 0.863,
       "peak_mb": 7.4
     },
     "cells.border_score": {
@@ -159,18 +168,24 @@
       "note": "needs headings",
       "warnings": []
     },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
     "decode.position": {
       "status": "ok",
       "summary": {
         "median_error": 33.71320343559643,
-        "chance_median_error": 35.143822117860935,
+        "chance_median_error": 36.81980515339465,
+        "chance_frac_disconnected": 0.0,
         "units": "cm",
         "n_time_bins": 9798
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.637,
+      "seconds": 1.802,
       "peak_mb": 236.6
     },
     "io.nwb_roundtrip": {
@@ -181,8 +196,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.687,
-      "peak_mb": 10.6
+      "seconds": 5.871,
+      "peak_mb": 10.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -202,7 +217,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.085,
+      "seconds": 0.18,
       "peak_mb": 37.8
     },
     "behavior.laps": {
@@ -211,7 +226,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.041,
+      "seconds": 0.074,
       "peak_mb": 28.1
     },
     "behavior.turn_sequence": {
@@ -229,7 +244,7 @@
       "note": "ValueError: replay_significance() needs a position along a track, but this is a 2-D RegularGrid environment that is not a linearized track.\nWhy: it orders bins by their distance along one axis; bin numbers have no spatial order, and a 2-D or 3-D arena has no single axis to order them by\nFix: use a 1-D environment or build the track, for example Environment.linear_track(endpoints=[(0.0, 0.0), (100.0, 0.0)], bin_size=2.0, track_width=8.0), or Environment.maze(...) or Environment.from_graph(...) for other tracks; a 2-D arena has no single axis to fit a replay line along, so decode on a linearized track (Environment.linear_track, Environment.maze or Environment.from_graph)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.394,
+      "seconds": 0.721,
       "peak_mb": 179.2
     },
     "io.nwb_readers": {
@@ -242,7 +257,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/SubjectPosition/PositionSeries', 'processing/behavior/SubjectPosition/VelocitySeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/SubjectPosition/PositionSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.828,
+      "seconds": 1.69,
       "peak_mb": 88.9
     },
     "io.read_pose": {
@@ -251,8 +266,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.756,
-      "peak_mb": 0.7
+      "seconds": 1.525,
+      "peak_mb": 0.6
     },
     "imaging.rates": {
       "status": "n/a",
@@ -265,6 +280,7 @@
       "warnings": []
     }
   },
+  "env_kind": "inferred",
   "hazards": [
     {
       "hazard": "missing_positions_as_zero",

@@ -34,6 +34,13 @@ What the loader converts:
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``dt`` 0.25 s and
 alternating 60 s train/test blocks, inside the valid times, for decoding; each unit's grid module in
 ``params["module"]``.
+
+Environment (``geometry["environment"]``): the open-field arena Gardner et
+al. 2022 (Methods, "Open-field foraging task"; open-access PDF read) state,
+"a square open-field (OF) arena of size 1.5 × 1.5 m" with 50 cm walls, built
+with ``Environment.from_polygon`` at ``bin_size``. Centre and rotation are
+fitted to the open-field samples (``_geometry.declared_rectangle``); the
+residual of their own fitted sides against 150 cm is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -49,6 +56,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from _fetch import fetch_zip_member
+from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
     Recording,
@@ -275,7 +283,7 @@ def load(cache: Path | None = None) -> Recording:
             modules.append(module)
     blocks = alternating_blocks(times[0], times[-1], 60.0)
     train, test = (intersect_intervals(b, valid) for b in blocks)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="rat_r_day1 open_field_1",
         source=f"{DATASET['source']} {_ARRAYS}",
@@ -306,6 +314,18 @@ def load(cache: Path | None = None) -> Recording:
             f" direction of movement above {_RUNNING_CM_S:g} cm/s: circular mean"
             f" {np.degrees(offset):.1f} deg, median spread {np.degrees(spread):.1f} deg",
             f"analysis epochs: the session's valid times {valid.tolist()}",
+        ),
+    )
+    return with_environment(
+        rec,
+        *declared_rectangle(
+            rec.positions,
+            150.0,
+            150.0,
+            bin_size=rec.params["bin_size"],
+            units="cm",
+            name=DATASET["key"],
+            source="Gardner et al. 2022 Methods: 'square open-field (OF) arena of size 1.5 x 1.5 m', 50 cm walls",
         ),
     )
 

@@ -21,6 +21,12 @@ Analysis choices (``params``):
 - ``min_speed`` None: no speed filter, as in the pynapple reference.
 - ``train_epochs``/``test_epochs``: alternating 60 s blocks of the session, so
   decoding is always tested on held-out time.
+
+Environment (``geometry["environment"]``): the 1 m x 1 m enclosure the file's
+``session_description`` states, built with ``Environment.from_polygon`` at
+``bin_size``. Its centre and rotation are fitted to the samples
+(``_geometry.declared_rectangle``); the residual of the samples' own fitted
+sides against 100 cm is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from typing import Any
 
 import numpy as np
 from _fetch import dandi_asset_url, fetch
+from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
     Recording,
@@ -58,6 +65,7 @@ EXPECTATIONS: dict[str, Any] = {
 
 _PATH = "sub-10884/sub-10884_ses-03080402_behavior+ecephys.nwb"
 _ASSET_ID = "49d80982-99f4-4e17-a553-498fc9a4688f"
+_BIN_SIZE = 2.5
 _SHA256 = "89e1a1030565030d69bc061058403da8161ccaf103f20bdfeca56c37f4881501"
 
 
@@ -84,14 +92,24 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"expected read_position to return metres, got {position.units!r}"
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=float)
+    positions = np.asarray(position.positions, dtype=float) * 100.0
     train, test = alternating_blocks(times[0], times[-1], 60.0)
-    return Recording(
+    environment = declared_rectangle(
+        positions,
+        100.0,
+        100.0,
+        bin_size=_BIN_SIZE,
+        units="cm",
+        name=DATASET["key"],
+        source="NWB session_description: 'a 1 x 1 meter enclosure'",
+    )
+    rec = Recording(
         dataset=DATASET["key"],
         session="sub-10884_ses-03080402",
         source=f"{DATASET['source']} {_PATH}",
         license=DATASET["license"],
         times=times,
-        positions=np.asarray(position.positions, dtype=float) * 100.0,
+        positions=positions,
         position_units="cm",
         spike_times=tuple(
             np.asarray(spikes, dtype=float) for spikes in units.spike_times
@@ -99,7 +117,7 @@ def load(cache: Path | None = None) -> Recording:
         unit_ids=np.asarray(units.unit_ids),
         geometry={"shape": "square", "size_cm": 100.0, "description": description},
         params={
-            "bin_size": 2.5,
+            "bin_size": _BIN_SIZE,
             "dt": 0.25,
             "min_speed": None,
             "train_epochs": train,
@@ -112,6 +130,7 @@ def load(cache: Path | None = None) -> Recording:
             "headings: none; the file has one LED (SpatialSeriesLED1)",
         ),
     )
+    return with_environment(rec, *environment)
 
 
 if __name__ == "__main__":

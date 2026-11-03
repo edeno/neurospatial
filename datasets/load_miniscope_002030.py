@@ -19,6 +19,12 @@ frame.
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm (about 38 bins across the
 96 cm arena).
+
+Environment (``geometry["environment"]``): the 96 cm circular arena the
+DANDI description states, built with ``Environment.from_polygon`` at
+``bin_size``; its centre is fitted to the samples
+(``_geometry.declared_circle``), and the residual of the samples' own fitted
+diameter against 96 cm is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ from typing import Any
 
 import numpy as np
 from _fetch import dandi_asset_url, fetch, open_nwb
+from _geometry import declared_circle, with_environment
 from _record import Range, Recording, check_expectations, validate_recording
 
 DATASET = {
@@ -81,7 +88,7 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"expected cm positions, got {position.units!r}"
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=float)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="FOF_F53_1D",
         source=f"{DATASET['source']} {_PATH}",
@@ -105,6 +112,17 @@ def load(cache: Path | None = None) -> Recording:
             "headings: processing/behavior/headdirection (radians), wrapped to [-pi, pi];"
             " 0.7 % of stored samples lie outside it",
             "activity: processing/ophys/Fluorescence/Calcium (dF/F), frame times from rate",
+        ),
+    )
+    return with_environment(
+        rec,
+        *declared_circle(
+            rec.positions,
+            96.0,
+            bin_size=rec.params["bin_size"],
+            units="cm",
+            name=DATASET["key"],
+            source="DANDI 002030 description: 'circular open-field arena (96 cm in diameter)'",
         ),
     )
 

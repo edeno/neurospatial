@@ -4,27 +4,28 @@
     "units": "cm",
     "kind": "open",
     "source": "NWB session_description: 'a 1 x 1 meter enclosure'",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 1399,
+      "n_bins": 1601,
       "n_dims": 2,
-      "n_edges": 4920,
+      "n_edges": 6164,
       "bin_size": 2.5,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        1399
+        1601
       ],
-      "sparse_bins": 0.057898498927805575,
-      "unsupported_edges": 0.07601626016260163,
-      "far_edges": 0.0010162601626016261,
-      "edge_gap_max_bins": 1.0755150629397887,
-      "corner_links": 12,
-      "holes": 72,
-      "hole_bins": 136,
-      "largest_hole_bins": 15,
-      "thin_bins": 0.1401000714796283,
-      "geodesic_ratio_median": 1.060687525807322,
-      "geodesic_ratio_p95": 1.1234930669378682,
+      "sparse_bins": 0.19175515302935664,
+      "unsupported_edges": 0.17991563919532771,
+      "far_edges": 0.026119402985074626,
+      "edge_gap_max_bins": 2.0757510872868905,
+      "corner_links": 0,
+      "holes": 0,
+      "hole_bins": 0,
+      "largest_hole_bins": 0,
+      "thin_bins": 0.26108682073703937,
+      "geodesic_ratio_median": 1.056204806562855,
+      "geodesic_ratio_p95": 1.1151012731499077,
       "n_pairs": 2847
     },
     "outline": {
@@ -37,19 +38,59 @@
         97.9
       ],
       "sample_rectangle_angle_deg": 0.2,
-      "stated_area_covered": 0.86328125,
+      "stated_area_covered": 1.0,
       "bin_centres_outside_stated": 0.0,
-      "wall_gap_median": 1.552547285368962,
-      "wall_gap_p90": 1.8598214513203752,
-      "wall_gap_bins_median": 0.6210189141475848
+      "wall_gap_median": 0.46745834688786864,
+      "wall_gap_p90": 0.6312768427535871,
+      "wall_gap_bins_median": 0.18698333875514744
     },
     "open_field_preset": {
       "n_bins": 1524,
       "holes": 2,
-      "stated_area_covered": 0.94140625
+      "stated_area_covered": 0.948046875
     },
-    "verdict": "mismatch",
-    "verdict_reason": "bins cover 86% of the stated square (94% with holes filled)",
+    "declared": {
+      "frac_samples_outside": 0.0001666722224074136,
+      "fit": {
+        "centre_x": 0.04258527437326102,
+        "centre_y": 0.13475576762276203,
+        "rotation_rad": 1.5713060842416031,
+        "samples_side_a": 99.45537940589817,
+        "samples_side_b": 97.09998170918405,
+        "size_residual_a": -0.005446205941018301,
+        "size_residual_b": -0.029000182908159533
+      }
+    },
+    "samples_env": {
+      "n_bins": 1399,
+      "components": 1,
+      "major_components": 1,
+      "holes": 72,
+      "hole_bins": 136,
+      "sparse_bins": 0.057898498927805575,
+      "far_edges": 0.0010162601626016261,
+      "corner_links": 12,
+      "geodesic_ratio_median": 1.060687525807322,
+      "geodesic_ratio_p95": 1.1234930669378682,
+      "outline": {
+        "hull_over_min_rectangle": 0.9889443669475363,
+        "hull_over_min_circle": 0.6416296767136856,
+        "shape": "square",
+        "stated_size": 100.0,
+        "sample_rectangle": [
+          99.9,
+          97.9
+        ],
+        "sample_rectangle_angle_deg": 0.2,
+        "stated_area_covered": 0.885234375,
+        "bin_centres_outside_stated": 0.0,
+        "wall_gap_median": 1.2275324766855134,
+        "wall_gap_p90": 1.9296282247299257,
+        "wall_gap_bins_median": 0.49101299067420534
+      }
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/sargolini_000582.png"
   },
   {
@@ -183,24 +224,25 @@
     "units": "m",
     "kind": "3d",
     "source": "Forli et al. 2025 Methods (Zotero full-text cache): indoor flight room 5.6 x 5.2 x 2.5 m, two feeders on the wall at one end; file r_lim ('boundaries of the room', NP_Bat_Demo.m) 5.8 x 5.2 x 2.3 m and the feeder coordinates r_fd in NP_Bat_Demo.m",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 1352,
+      "n_bins": 8294,
       "n_dims": 3,
-      "n_edges": 7763,
-      "bin_size": 0.2,
+      "n_edges": 95983,
+      "bin_size": 0.19999999999999998,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        1352
+        8294
       ],
-      "sparse_bins": 0.33505917159763315,
-      "unsupported_edges": 0.29550431534200694,
-      "far_edges": 0.007342522220790931,
-      "edge_gap_max_bins": 1.3121316562291576,
-      "corner_links": 211,
-      "thin_bins": 0.2729289940828402,
-      "geodesic_ratio_median": 1.1045698821133143,
-      "geodesic_ratio_p95": 1.1782899934217883,
+      "sparse_bins": 0.9012539184952978,
+      "unsupported_edges": 0.8904180948709667,
+      "far_edges": 0.7073752643697322,
+      "edge_gap_max_bins": 8.920977583802985,
+      "corner_links": 0,
+      "thin_bins": 0.8866650590788522,
+      "geodesic_ratio_median": 1.0631858593628865,
+      "geodesic_ratio_p95": 1.149579248922066,
       "n_pairs": 1239
     },
     "room": {
@@ -218,31 +260,83 @@
           2.3
         ]
       ],
-      "bins_outside_room": 0.04437869822485207,
+      "bins_outside_room": 0.0,
       "samples_outside_room": 0.03658074387396535,
       "gap_to_low_walls_m": [
-        -0.09,
-        -1.77,
-        0.12
+        0.0,
+        0.0,
+        0.0
       ],
       "gap_to_high_walls_m": [
-        -0.11,
-        -0.03,
-        -0.02
+        0.0,
+        0.0,
+        0.0
       ],
       "feeders_in_env": [
-        false,
+        true,
         true
       ],
       "feeder_to_nearest_bin_centre_m": [
-        0.17,
-        0.11
+        0.09,
+        0.12
       ],
       "rest_share_of_samples": 0.9756923811172614,
       "rest_samples_within_0.3m_of_feeder": 0.03188601791640291
     },
+    "declared": {
+      "frac_samples_outside": 0.03658074387396535,
+      "fit": {}
+    },
+    "samples_env": {
+      "n_bins": 1352,
+      "components": 1,
+      "major_components": 1,
+      "sparse_bins": 0.33505917159763315,
+      "far_edges": 0.007342522220790931,
+      "corner_links": 211,
+      "geodesic_ratio_median": 1.1045698821133143,
+      "geodesic_ratio_p95": 1.1782899934217883,
+      "room": {
+        "room_m": [
+          [
+            -2.9,
+            2.9
+          ],
+          [
+            -2.6,
+            2.6
+          ],
+          [
+            0.0,
+            2.3
+          ]
+        ],
+        "bins_outside_room": 0.04437869822485207,
+        "samples_outside_room": 0.03658074387396535,
+        "gap_to_low_walls_m": [
+          -0.09,
+          -1.77,
+          0.12
+        ],
+        "gap_to_high_walls_m": [
+          -0.11,
+          -0.03,
+          -0.02
+        ],
+        "feeders_in_env": [
+          false,
+          true
+        ],
+        "feeder_to_nearest_bin_centre_m": [
+          0.17,
+          0.11
+        ],
+        "rest_share_of_samples": 0.9756923811172614,
+        "rest_samples_within_0.3m_of_feeder": 0.03188601791640291
+      }
+    },
     "verdict": "mismatch",
-    "verdict_reason": "4.4% of bins outside the room bounds",
+    "verdict_reason": "3.7% of samples outside the declared environment (limit 2%)",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/yartsev_bat_demo.png"
   },
   {
@@ -250,27 +344,28 @@
     "units": "cm",
     "kind": "open",
     "source": "DANDI 002030 description: 'circular open-field arena (96 cm in diameter)'",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 455,
+      "n_bins": 1153,
       "n_dims": 2,
-      "n_edges": 1128,
+      "n_edges": 4424,
       "bin_size": 2.5,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        455
+        1153
       ],
-      "sparse_bins": 0.13406593406593406,
-      "unsupported_edges": 0.0797872340425532,
-      "far_edges": 0.0008865248226950354,
-      "edge_gap_max_bins": 1.1084313806868014,
-      "corner_links": 8,
-      "holes": 19,
-      "hole_bins": 722,
-      "largest_hole_bins": 412,
-      "thin_bins": 0.3076923076923077,
-      "geodesic_ratio_median": 1.2138605899369437,
-      "geodesic_ratio_p95": 1.523077130088821,
+      "sparse_bins": 0.6747614917606245,
+      "unsupported_edges": 0.6932640144665461,
+      "far_edges": 0.5302893309222423,
+      "edge_gap_max_bins": 8.195081907701061,
+      "corner_links": 0,
+      "holes": 0,
+      "hole_bins": 0,
+      "largest_hole_bins": 0,
+      "thin_bins": 0.7398091934084996,
+      "geodesic_ratio_median": 1.0515286595003621,
+      "geodesic_ratio_p95": 1.099291064709992,
       "n_pairs": 2518
     },
     "outline": {
@@ -283,51 +378,150 @@
         93.9
       ],
       "sample_rectangle_angle_deg": 26.1,
-      "stated_area_covered": 0.3670680995841659,
+      "stated_area_covered": 1.0,
       "bin_centres_outside_stated": 0.0,
-      "wall_gap_median": 0.30937447335330914,
-      "wall_gap_p90": 1.0336526919298408,
-      "wall_gap_bins_median": 0.12374978934132366
+      "wall_gap_median": 0.36091465002109074,
+      "wall_gap_p90": 0.5517544869952629,
+      "wall_gap_bins_median": 0.1443658600084363
     },
     "open_field_preset": {
       "n_bins": 1177,
       "holes": 0,
-      "stated_area_covered": 0.9909272560349949
+      "stated_area_covered": 0.9913462058521283
     },
-    "verdict": "mismatch",
-    "verdict_reason": "bins cover 37% of the stated circle (99% with holes filled)",
+    "declared": {
+      "frac_samples_outside": 0.0003266906239790918,
+      "fit": {
+        "centre_x": 57.83130832872712,
+        "centre_y": 56.150104621115375,
+        "samples_diameter": 95.9164999704431,
+        "size_residual": -0.0008697919745510596
+      }
+    },
+    "samples_env": {
+      "n_bins": 455,
+      "components": 1,
+      "major_components": 1,
+      "holes": 19,
+      "hole_bins": 722,
+      "sparse_bins": 0.13406593406593406,
+      "far_edges": 0.0008865248226950354,
+      "corner_links": 8,
+      "geodesic_ratio_median": 1.2138605899369437,
+      "geodesic_ratio_p95": 1.523077130088821,
+      "outline": {
+        "hull_over_min_rectangle": 0.7916177099233449,
+        "hull_over_min_circle": 0.9712664494735973,
+        "shape": "circle",
+        "stated_size": 96.0,
+        "sample_rectangle": [
+          94.0,
+          93.9
+        ],
+        "sample_rectangle_angle_deg": 26.1,
+        "stated_area_covered": 0.366542268375791,
+        "bin_centres_outside_stated": 0.0,
+        "wall_gap_median": 0.30500350614299226,
+        "wall_gap_p90": 1.0138320774521852,
+        "wall_gap_bins_median": 0.1220014024571969
+      }
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/miniscope_002030.png"
   },
   {
     "dataset": "giocomo_000405",
     "units": "cm",
     "kind": "open",
-    "source": "no size stated in the file or dandiset description",
+    "source": "Gonzalez & Giocomo 2024 eLife Methods (open-access PDF): 'The dimensions of field are 1.3m x 1.5m'",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 2076,
+      "n_bins": 3121,
       "n_dims": 2,
-      "n_edges": 6959,
-      "bin_size": 2.5000000000000004,
+      "n_edges": 12148,
+      "bin_size": 2.5,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        2076
+        3121
       ],
-      "sparse_bins": 0.05443159922928709,
-      "unsupported_edges": 0.06121569190975715,
-      "far_edges": 0.00028739761459979884,
-      "edge_gap_max_bins": 1.0357317104639936,
-      "corner_links": 22,
-      "holes": 105,
-      "hole_bins": 446,
-      "largest_hole_bins": 29,
-      "thin_bins": 0.19508670520231214,
-      "geodesic_ratio_median": 1.0627875944147536,
-      "geodesic_ratio_p95": 1.134507717251324,
+      "sparse_bins": 0.3675104133290612,
+      "unsupported_edges": 0.3556140928547909,
+      "far_edges": 0.19106025683240038,
+      "edge_gap_max_bins": 5.231393460552648,
+      "corner_links": 0,
+      "holes": 0,
+      "hole_bins": 0,
+      "largest_hole_bins": 0,
+      "thin_bins": 0.462672220442166,
+      "geodesic_ratio_median": 1.0565500689027054,
+      "geodesic_ratio_p95": 1.1123376861778211,
       "n_pairs": 2558
     },
-    "verdict": "not verified",
-    "verdict_reason": "no source read here states the geometry",
+    "outline": {
+      "hull_over_min_rectangle": 0.9580392137160795,
+      "hull_over_min_circle": 0.6731155888814255,
+      "shape": "rectangle",
+      "stated_size": null,
+      "sample_rectangle": [
+        139.7,
+        121.8
+      ],
+      "sample_rectangle_angle_deg": 0.7,
+      "stated_area_covered": 1.0,
+      "bin_centres_outside_stated": 0.0,
+      "wall_gap_median": 0.45767397174547164,
+      "wall_gap_p90": 0.6663560068190882,
+      "wall_gap_bins_median": 0.18306958869818865
+    },
+    "open_field_preset": {
+      "n_bins": 2498,
+      "holes": 3,
+      "stated_area_covered": 0.8006410256410257
+    },
+    "declared": {
+      "frac_samples_outside": 0.0,
+      "fit": {
+        "centre_x": -2.105940328221017,
+        "centre_y": 64.4565934113532,
+        "rotation_rad": 1.570904528194755,
+        "samples_side_a": 137.67913348152314,
+        "samples_side_b": 119.63422407505854,
+        "size_residual_a": -0.0821391101231791,
+        "size_residual_b": -0.07973673788416502
+      }
+    },
+    "samples_env": {
+      "n_bins": 2076,
+      "components": 1,
+      "major_components": 1,
+      "holes": 105,
+      "hole_bins": 446,
+      "sparse_bins": 0.05443159922928709,
+      "far_edges": 0.00028739761459979884,
+      "corner_links": 22,
+      "geodesic_ratio_median": 1.0627875944147536,
+      "geodesic_ratio_p95": 1.134507717251324,
+      "outline": {
+        "hull_over_min_rectangle": 0.9580392137160795,
+        "hull_over_min_circle": 0.6731155888814255,
+        "shape": "rectangle",
+        "stated_size": null,
+        "sample_rectangle": [
+          139.7,
+          121.8
+        ],
+        "sample_rectangle_angle_deg": 0.7,
+        "stated_area_covered": 0.6653846153846154,
+        "bin_centres_outside_stated": 0.0,
+        "wall_gap_median": 6.256275729125315,
+        "wall_gap_p90": 9.411665361333835,
+        "wall_gap_bins_median": 2.5025102916501263
+      }
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/giocomo_000405.png"
   },
   {
@@ -366,28 +560,29 @@
     "dataset": "gardner_2022_grid",
     "units": "cm",
     "kind": "open",
-    "source": "loader: 1.5 m box 'in the paper'; the paper was not read and the Figshare description gives no size",
+    "source": "Gardner et al. 2022 Methods (open-access PDF): 'square open-field (OF) arena of size 1.5 x 1.5 m', 50 cm walls",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 3463,
+      "n_bins": 3601,
       "n_dims": 2,
-      "n_edges": 13487,
+      "n_edges": 14044,
       "bin_size": 2.5,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        3463
+        3601
       ],
-      "sparse_bins": 0.004620271440947156,
-      "unsupported_edges": 0.00066730926076963,
-      "far_edges": 0.0,
-      "edge_gap_max_bins": 0.5798040219938831,
+      "sparse_bins": 0.03804498750347126,
+      "unsupported_edges": 0.022358302477926518,
+      "far_edges": 0.00363144403303902,
+      "edge_gap_max_bins": 1.4473039343971428,
       "corner_links": 0,
       "holes": 0,
       "hole_bins": 0,
       "largest_hole_bins": 0,
-      "thin_bins": 0.002310135720473578,
-      "geodesic_ratio_median": 1.0572107658589711,
-      "geodesic_ratio_p95": 1.1035244832692641,
+      "thin_bins": 0.03554568175506804,
+      "geodesic_ratio_median": 1.058261424189318,
+      "geodesic_ratio_p95": 1.1036111523235537,
       "n_pairs": 2926
     },
     "outline": {
@@ -400,19 +595,59 @@
         146.5
       ],
       "sample_rectangle_angle_deg": 0.5,
-      "stated_area_covered": 0.9614917184624466,
+      "stated_area_covered": 1.0,
       "bin_centres_outside_stated": 0.0,
-      "wall_gap_median": 1.6356134348957871,
-      "wall_gap_p90": 2.8369483889714733,
-      "wall_gap_bins_median": 0.6542453739583148
+      "wall_gap_median": 0.6188993037601127,
+      "wall_gap_p90": 0.6571444833500169,
+      "wall_gap_bins_median": 0.2475597215040451
     },
     "open_field_preset": {
       "n_bins": 3463,
       "holes": 0,
-      "stated_area_covered": 0.9614917184624466
+      "stated_area_covered": 0.9611805555555556
     },
-    "verdict": "not verified",
-    "verdict_reason": "no source read here states the geometry",
+    "declared": {
+      "frac_samples_outside": 0.0,
+      "fit": {
+        "centre_x": 1.0087358911401876,
+        "centre_y": -0.10561721736345717,
+        "rotation_rad": -1.5707548601774028,
+        "samples_side_a": 145.6692577428817,
+        "samples_side_b": 145.06410187885243,
+        "size_residual_a": -0.02887161504745528,
+        "size_residual_b": -0.032905987474317167
+      }
+    },
+    "samples_env": {
+      "n_bins": 3463,
+      "components": 1,
+      "major_components": 1,
+      "holes": 0,
+      "hole_bins": 0,
+      "sparse_bins": 0.004620271440947156,
+      "far_edges": 0.0,
+      "corner_links": 0,
+      "geodesic_ratio_median": 1.0572107658589711,
+      "geodesic_ratio_p95": 1.1035244832692641,
+      "outline": {
+        "hull_over_min_rectangle": 0.99322399632336,
+        "hull_over_min_circle": 0.6549829023282352,
+        "shape": "square",
+        "stated_size": 150.0,
+        "sample_rectangle": [
+          147.1,
+          146.5
+        ],
+        "sample_rectangle_angle_deg": 0.5,
+        "stated_area_covered": 0.9611805555555556,
+        "bin_centres_outside_stated": 0.0,
+        "wall_gap_median": 1.8780165009250502,
+        "wall_gap_p90": 3.120672937012659,
+        "wall_gap_bins_median": 0.7512066003700201
+      }
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/gardner_2022_grid.png"
   },
   {
@@ -465,53 +700,92 @@
     "dataset": "vollan_of",
     "units": "cm",
     "kind": "open",
-    "source": "Vollan et al. 2025 Methods: square open field, floor 150 x 150 cm",
+    "source": "Vollan et al. 2025 Methods: 150 x 150 cm box, except one rat's dark-room session and the lit session after it, in 'a circular arena 150 cm in diameter'; this file's session type is 'open_field_light' and its samples are round (G-114)",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 2041,
+      "n_bins": 2828,
       "n_dims": 2,
-      "n_edges": 6945,
+      "n_edges": 11022,
       "bin_size": 2.5,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        2041
+        2828
       ],
-      "sparse_bins": 0.09407153356197942,
-      "unsupported_edges": 0.08351331893448524,
-      "far_edges": 0.0011519078473722101,
-      "edge_gap_max_bins": 1.274029618894123,
-      "corner_links": 17,
-      "holes": 131,
-      "hole_bins": 297,
-      "largest_hole_bins": 18,
-      "thin_bins": 0.07692307692307693,
-      "geodesic_ratio_median": 1.0682090848585104,
-      "geodesic_ratio_p95": 1.1260600003187533,
+      "sparse_bins": 0.3355728429985856,
+      "unsupported_edges": 0.31545998911268375,
+      "far_edges": 0.14452912357103972,
+      "edge_gap_max_bins": 5.630337355424573,
+      "corner_links": 0,
+      "holes": 0,
+      "hole_bins": 0,
+      "largest_hole_bins": 0,
+      "thin_bins": 0.3299151343705799,
+      "geodesic_ratio_median": 1.057487646278953,
+      "geodesic_ratio_p95": 1.1051248371449243,
       "n_pairs": 2895
     },
     "outline": {
       "hull_over_min_rectangle": 0.806845447531851,
       "hull_over_min_circle": 0.9366373531626363,
-      "shape": "square",
+      "shape": "circle",
       "stated_size": 150.0,
       "sample_rectangle": [
         139.7,
         135.0
       ],
       "sample_rectangle_angle_deg": 16.8,
-      "stated_area_covered": 0.5669542874008229,
+      "stated_area_covered": 1.0,
       "bin_centres_outside_stated": 0.0,
-      "wall_gap_median": 13.484783703157918,
-      "wall_gap_p90": 29.33642715125688,
-      "wall_gap_bins_median": 5.3939134812631675
+      "wall_gap_median": 0.386984843071574,
+      "wall_gap_p90": 0.538937191088709,
+      "wall_gap_bins_median": 0.1547939372286296
     },
     "open_field_preset": {
       "n_bins": 2338,
       "holes": 0,
-      "stated_area_covered": 0.6494557197173562
+      "stated_area_covered": 0.8349022126735919
     },
-    "verdict": "mismatch",
-    "verdict_reason": "bins cover 57% of the stated square (65% with holes filled)",
+    "declared": {
+      "frac_samples_outside": 0.0,
+      "fit": {
+        "stated_centre_x": 0.0,
+        "stated_centre_y": 0.0,
+        "centre_offset": 1.6452363748832632,
+        "samples_diameter": 143.60155752740528,
+        "size_residual": -0.042656283150631524
+      }
+    },
+    "samples_env": {
+      "n_bins": 2041,
+      "components": 1,
+      "major_components": 1,
+      "holes": 131,
+      "hole_bins": 297,
+      "sparse_bins": 0.09407153356197942,
+      "far_edges": 0.0011519078473722101,
+      "corner_links": 17,
+      "geodesic_ratio_median": 1.0682090848585104,
+      "geodesic_ratio_p95": 1.1260600003187533,
+      "outline": {
+        "hull_over_min_rectangle": 0.806845447531851,
+        "hull_over_min_circle": 0.9366373531626363,
+        "shape": "circle",
+        "stated_size": 150.0,
+        "sample_rectangle": [
+          139.7,
+          135.0
+        ],
+        "sample_rectangle_angle_deg": 16.8,
+        "stated_area_covered": 0.7467496511550643,
+        "bin_centres_outside_stated": 0.0,
+        "wall_gap_median": 4.27201676698185,
+        "wall_gap_p90": 9.156244789836075,
+        "wall_gap_bins_median": 1.7088067067927402
+      }
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/vollan_of.png"
   },
   {
@@ -792,35 +1066,35 @@
     "units": "cm",
     "kind": "3d",
     "source": "Grieves et al. 2020 Supplementary Methods: 6 x 6 x 6 cubic lattice 0.97 m a side, 150 mm tubes and 10 mm connectors, tilted; file lattice_3d lx/ly/lz bars and config3.lattice_type 'diagonal'",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 8193,
+      "n_bins": 4410,
       "n_dims": 3,
-      "n_edges": 55426,
-      "bin_size": 4.000000000000001,
+      "n_edges": 7287,
+      "bin_size": 3.233333333333576,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        8193
+        4410
       ],
-      "sparse_bins": 0.3118515806176004,
-      "unsupported_edges": 0.23405982751777143,
-      "far_edges": 0.006639483274997294,
-      "edge_gap_max_bins": 1.3818430129942756,
-      "corner_links": 921,
-      "thin_bins": 0.21396313926522642,
-      "geodesic_ratio_median": 1.143676044806645,
-      "geodesic_ratio_p95": 1.2959925647015271,
-      "n_pairs": 2911
+      "sparse_bins": 0.953514739229025,
+      "unsupported_edges": 0.9677507890764375,
+      "far_edges": 0.8409496363386854,
+      "edge_gap_max_bins": 5.091751499974501,
+      "thin_bins": 0.500907029478458,
+      "geodesic_ratio_median": 1.429519413648423,
+      "geodesic_ratio_p95": 1.741164762052043,
+      "n_pairs": 2940
     },
     "reference": {
       "reference": "lattice bars (file lattice_3d lx/ly/lz)",
       "reference_length": 14258.999999999998,
       "sample_to_reference_median": 6.042314978561984,
       "sample_to_reference_p95": 10.400410855895387,
-      "bin_to_reference_p95": 10.992253594707917,
-      "env_over_track_median": 0.7655920367108009,
-      "env_over_track_p05": 0.6175425818855101,
-      "share_pairs_shortcut": 0.8316115702479339
+      "bin_to_reference_p95": 1.432144669219779e-14,
+      "env_over_track_median": 0.9476129570977654,
+      "env_over_track_p05": 0.9200476423523634,
+      "share_pairs_shortcut": 0.012282497441146366
     },
     "lattice": {
       "n_bars": 147,
@@ -836,8 +1110,8 @@
         15.4
       ],
       "samples_beyond_face_centre": 0.1687269013009407,
-      "voxels_beyond_face_centre": 0.16953496887586963,
-      "voxels_beyond_cube_centre": 0.044428170389356765,
+      "voxels_beyond_face_centre": 0.0,
+      "voxels_beyond_cube_centre": 0.0,
       "graph_nodes": 343,
       "graph_edges": 882,
       "from_graph_dfs_order_bins": 1710,
@@ -851,13 +1125,13 @@
       "adjacent_bars": {
         "n_pairs": 5478,
         "straight_median": 16.554714598780212,
-        "env_geodesic_median": 18.24191172926027,
+        "env_geodesic_median": 30.43929051833852,
         "env_geodesic_p05_p95": [
-          11.3,
-          26.6
+          30.4,
+          30.4
         ],
         "along_bars_median": 31.146246917590126,
-        "share_env_below_075_bars": 0.8282219788243884
+        "share_env_below_075_bars": 0.0
       },
       "movement_along_bars": {
         "n_axes": 3,
@@ -866,8 +1140,43 @@
         "share_isotropic": 0.18044
       }
     },
-    "verdict": "mismatch",
-    "verdict_reason": "geodesic 0.77 x the distance along the bars",
+    "declared": {
+      "frac_samples_outside": 0.0100000549151835,
+      "fit": {}
+    },
+    "samples_env": {
+      "n_bins": 8193,
+      "components": 1,
+      "major_components": 1,
+      "sparse_bins": 0.3118515806176004,
+      "far_edges": 0.006639483274997294,
+      "corner_links": 921,
+      "geodesic_ratio_median": 1.143676044806645,
+      "geodesic_ratio_p95": 1.2959925647015271,
+      "reference": {
+        "reference": "lattice bars (file lattice_3d lx/ly/lz)",
+        "reference_length": 14258.999999999998,
+        "sample_to_reference_median": 6.042314978561984,
+        "sample_to_reference_p95": 10.400410855895387,
+        "bin_to_reference_p95": 10.992253594707917,
+        "env_over_track_median": 0.7655920367108009,
+        "env_over_track_p05": 0.6175425818855101,
+        "share_pairs_shortcut": 0.8316115702479339
+      },
+      "adjacent_bars": {
+        "n_pairs": 5478,
+        "straight_median": 16.554714598780212,
+        "env_geodesic_median": 18.24191172926027,
+        "env_geodesic_p05_p95": [
+          11.3,
+          26.6
+        ],
+        "along_bars_median": 31.146246917590126,
+        "share_env_below_075_bars": 0.8282219788243884
+      }
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/grieves_2020_lattice.png"
   },
   {
@@ -875,27 +1184,28 @@
     "units": "arbitrary",
     "kind": "open",
     "source": "Experiment.json arena.bounds: circle of radius 95 units",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 1144,
+      "n_bins": 1124,
       "n_dims": 2,
-      "n_edges": 4353,
+      "n_edges": 4314,
       "bin_size": 5.0,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        1144
+        1124
       ],
-      "sparse_bins": 0.016608391608391608,
-      "unsupported_edges": 0.015161957270847692,
-      "far_edges": 0.00022972662531587412,
-      "edge_gap_max_bins": 1.1230848106888434,
-      "corner_links": 1,
-      "holes": 8,
-      "hole_bins": 9,
-      "largest_hole_bins": 2,
-      "thin_bins": 0.10839160839160839,
-      "geodesic_ratio_median": 1.0515347176455327,
-      "geodesic_ratio_p95": 1.118997957352416,
+      "sparse_bins": 0.02224199288256228,
+      "unsupported_edges": 0.019471488178025034,
+      "far_edges": 0.0002318034306907742,
+      "edge_gap_max_bins": 1.150087269906075,
+      "corner_links": 0,
+      "holes": 0,
+      "hole_bins": 0,
+      "largest_hole_bins": 0,
+      "thin_bins": 0.10854092526690391,
+      "geodesic_ratio_median": 1.056473096853082,
+      "geodesic_ratio_p95": 1.1222184219555809,
       "n_pairs": 2783
     },
     "outline": {
@@ -908,16 +1218,54 @@
         185.7
       ],
       "sample_rectangle_angle_deg": 3.7,
-      "stated_area_covered": 0.9902323271342641,
-      "bin_centres_outside_stated": 0.0026223776223776225,
-      "wall_gap_median": 0.5805116180837633,
-      "wall_gap_p90": 1.656273691849733,
-      "wall_gap_bins_median": 0.11610232361675266
+      "stated_area_covered": 1.0,
+      "bin_centres_outside_stated": 0.0,
+      "wall_gap_median": 0.7538826461624063,
+      "wall_gap_p90": 1.0514941002266776,
+      "wall_gap_bins_median": 0.15077652923248125
     },
     "open_field_preset": {
       "n_bins": 1153,
       "holes": 0,
-      "stated_area_covered": 0.9948678329010541
+      "stated_area_covered": 0.9897294312534511
+    },
+    "declared": {
+      "frac_samples_outside": 0.0033697263782180888,
+      "fit": {
+        "stated_centre_x": 133.655,
+        "stated_centre_y": 103.5381,
+        "centre_offset": 2.5763749673652603,
+        "samples_diameter": 191.90586126100172,
+        "size_residual": 0.010030848742114351
+      }
+    },
+    "samples_env": {
+      "n_bins": 1144,
+      "components": 1,
+      "major_components": 1,
+      "holes": 8,
+      "hole_bins": 9,
+      "sparse_bins": 0.016608391608391608,
+      "far_edges": 0.00022972662531587412,
+      "corner_links": 1,
+      "geodesic_ratio_median": 1.0515347176455327,
+      "geodesic_ratio_p95": 1.118997957352416,
+      "outline": {
+        "hull_over_min_rectangle": 0.7947228540534391,
+        "hull_over_min_circle": 0.9289104717352694,
+        "shape": "circle",
+        "stated_size": 190.0,
+        "sample_rectangle": [
+          185.9,
+          185.7
+        ],
+        "sample_rectangle_angle_deg": 3.7,
+        "stated_area_covered": 0.9817780231916069,
+        "bin_centres_outside_stated": 0.0017482517482517483,
+        "wall_gap_median": 0.6307524798798068,
+        "wall_gap_p90": 2.0435534023042727,
+        "wall_gap_bins_median": 0.12615049597596134
+      }
     },
     "verdict": "matches",
     "verdict_reason": "",
@@ -1013,7 +1361,8 @@
     "dataset": "hafting_2008_nird",
     "units": "cm",
     "kind": "track",
-    "source": "loader quotes the archive readme ('mostly 320 cm'); readme not read here",
+    "source": "archive readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; no width",
+    "env_kind": "inferred",
     "env": {
       "n_bins": 507,
       "n_dims": 2,
@@ -1057,8 +1406,8 @@
       "n_bins": 80,
       "components": 1
     },
-    "verdict": "not verified",
-    "verdict_reason": "no source read here states the geometry",
+    "verdict": "matches",
+    "verdict_reason": "",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hafting_2008_nird.png"
   },
   {
@@ -1225,7 +1574,8 @@
     "dataset": "rsc_000987",
     "units": "cm",
     "kind": "open",
-    "source": "NWB session_description: 'square arena' (no size)",
+    "source": "NWB session_description: 'square arena'; Mehrotra, Levenstein et al. 2023 bioRxiv Methods: square of 'removable walls (width: 80 cm, height: 50 cm)'",
+    "env_kind": "inferred",
     "env": {
       "n_bins": 453,
       "n_dims": 2,
@@ -1249,8 +1599,29 @@
       "geodesic_ratio_p95": 1.1338623552807239,
       "n_pairs": 2470
     },
-    "verdict": "matches",
-    "verdict_reason": "",
+    "outline": {
+      "hull_over_min_rectangle": 0.9814225420712833,
+      "hull_over_min_circle": 0.6415364294985281,
+      "shape": "square",
+      "stated_size": 80.0,
+      "sample_rectangle": [
+        53.0,
+        52.7
+      ],
+      "sample_rectangle_angle_deg": 0.4,
+      "stated_area_covered": 0.4423828125,
+      "bin_centres_outside_stated": 0.0,
+      "wall_gap_median": 13.935400197928567,
+      "wall_gap_p90": 16.07938628236212,
+      "wall_gap_bins_median": 5.574160079171427
+    },
+    "open_field_preset": {
+      "n_bins": 453,
+      "holes": 0,
+      "stated_area_covered": 0.4423828125
+    },
+    "verdict": "mismatch",
+    "verdict_reason": "bins cover 44% of the stated square (44% with holes filled)",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/rsc_000987.png"
   },
   {
@@ -1258,6 +1629,7 @@
     "units": "cm",
     "kind": "open",
     "source": "NWB: cheeseboard maze and a start box (no size)",
+    "env_kind": "inferred",
     "env": {
       "n_bins": 1080,
       "n_dims": 2,
@@ -1507,6 +1879,7 @@
     "units": "pixel",
     "kind": "open",
     "source": "loader: open field and theta maze in one camera image, pixels (no size)",
+    "env_kind": "inferred",
     "env": {
       "n_bins": 840,
       "n_dims": 2,
@@ -1539,27 +1912,28 @@
     "units": "cm",
     "kind": "open",
     "source": "NWB epochs table: arena_dimensions [100, 100, 50] cm, square",
+    "env_kind": "declared",
     "env": {
-      "n_bins": 1049,
+      "n_bins": 1601,
       "n_dims": 2,
-      "n_edges": 3284,
+      "n_edges": 6164,
       "bin_size": 2.5,
       "components": 1,
       "major_components": 1,
       "component_sizes": [
-        1049
+        1601
       ],
-      "sparse_bins": 0.07340324118207817,
-      "unsupported_edges": 0.06638246041412911,
-      "far_edges": 0.0018270401948842874,
-      "edge_gap_max_bins": 1.2250134158153834,
-      "corner_links": 9,
-      "holes": 49,
-      "hole_bins": 460,
-      "largest_hole_bins": 101,
-      "thin_bins": 0.07626310772163966,
-      "geodesic_ratio_median": 1.0705993249993604,
-      "geodesic_ratio_p95": 1.1866037462539676,
+      "sparse_bins": 0.3966271080574641,
+      "unsupported_edges": 0.3854639844256976,
+      "far_edges": 0.19922128487994809,
+      "edge_gap_max_bins": 4.8044795554129,
+      "corner_links": 0,
+      "holes": 0,
+      "hole_bins": 0,
+      "largest_hole_bins": 0,
+      "thin_bins": 0.400999375390381,
+      "geodesic_ratio_median": 1.0497170078814613,
+      "geodesic_ratio_p95": 1.1341302768933748,
       "n_pairs": 2472
     },
     "outline": {
@@ -1572,19 +1946,153 @@
         97.7
       ],
       "sample_rectangle_angle_deg": 0.5,
-      "stated_area_covered": 0.651875,
+      "stated_area_covered": 1.0,
       "bin_centres_outside_stated": 0.0,
-      "wall_gap_median": 1.5746335526197446,
-      "wall_gap_p90": 2.900979105225812,
-      "wall_gap_bins_median": 0.6298534210478979
+      "wall_gap_median": 0.6245599047066539,
+      "wall_gap_p90": 0.6835349547941869,
+      "wall_gap_bins_median": 0.24982396188266157
     },
     "open_field_preset": {
       "n_bins": 1509,
       "holes": 0,
-      "stated_area_covered": 0.939375
+      "stated_area_covered": 0.93921875
     },
-    "verdict": "mismatch",
-    "verdict_reason": "bins cover 65% of the stated square (94% with holes filled)",
+    "declared": {
+      "frac_samples_outside": 0.0,
+      "fit": {
+        "centre_x": 8.7202782696183,
+        "centre_y": -24.772605022537526,
+        "rotation_rad": 3.1415880201031254,
+        "samples_side_a": 97.42288480131387,
+        "samples_side_b": 96.56446517910946,
+        "size_residual_a": -0.025771151986861307,
+        "size_residual_b": -0.0343553482089054
+      }
+    },
+    "samples_env": {
+      "n_bins": 1049,
+      "components": 1,
+      "major_components": 1,
+      "holes": 49,
+      "hole_bins": 460,
+      "sparse_bins": 0.07340324118207817,
+      "far_edges": 0.0018270401948842874,
+      "corner_links": 9,
+      "geodesic_ratio_median": 1.0705993249993604,
+      "geodesic_ratio_p95": 1.1866037462539676,
+      "outline": {
+        "hull_over_min_rectangle": 0.9784075195574304,
+        "hull_over_min_circle": 0.6532868811573551,
+        "shape": "square",
+        "stated_size": 100.0,
+        "sample_rectangle": [
+          97.9,
+          97.7
+        ],
+        "sample_rectangle_angle_deg": 0.5,
+        "stated_area_covered": 0.65171875,
+        "bin_centres_outside_stated": 0.0,
+        "wall_gap_median": 1.8753475390472394,
+        "wall_gap_p90": 2.9197914180183306,
+        "wall_gap_bins_median": 0.7501390156188957
+      }
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
     "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/kanter_2025.png"
+  },
+  {
+    "dataset": "hc2_ec013_527",
+    "units": "pixel",
+    "kind": "open",
+    "source": "crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm (pixels; the scale is inferred from that side)",
+    "env_kind": "declared",
+    "env": {
+      "n_bins": 5329,
+      "n_dims": 2,
+      "n_edges": 20880,
+      "bin_size": 2.5099999999999993,
+      "components": 1,
+      "major_components": 1,
+      "component_sizes": [
+        5329
+      ],
+      "sparse_bins": 0.4514918371176581,
+      "unsupported_edges": 0.43884099616858235,
+      "far_edges": 0.22375478927203066,
+      "edge_gap_max_bins": 7.421467530645834,
+      "corner_links": 0,
+      "holes": 0,
+      "hole_bins": 0,
+      "largest_hole_bins": 0,
+      "thin_bins": 0.6018014636892475,
+      "geodesic_ratio_median": 1.0576884624514924,
+      "geodesic_ratio_p95": 1.097080834607677,
+      "n_pairs": 2850
+    },
+    "outline": {
+      "hull_over_min_rectangle": 0.9596111625386847,
+      "hull_over_min_circle": 0.6555854157180876,
+      "shape": "square",
+      "stated_size": null,
+      "sample_rectangle": [
+        180.9,
+        179.6
+      ],
+      "sample_rectangle_angle_deg": 0.2,
+      "stated_area_covered": 1.0,
+      "bin_centres_outside_stated": 0.0,
+      "wall_gap_median": 0.46010251952548714,
+      "wall_gap_p90": 0.6558044515667721,
+      "wall_gap_bins_median": 0.18330777670338122
+    },
+    "open_field_preset": {
+      "n_bins": 4520,
+      "holes": 3,
+      "stated_area_covered": 0.8702859760802469
+    },
+    "declared": {
+      "frac_samples_outside": 0.00012329240025644818,
+      "fit": {
+        "centre_x": 169.50953517090815,
+        "centre_y": 117.12092726695981,
+        "rotation_rad": 3.1415663657331327,
+        "samples_side_a": 177.02292945293362,
+        "samples_side_b": 175.41504918842517,
+        "size_residual_a": -0.021093426117230862,
+        "size_residual_b": -0.02998472944052244
+      }
+    },
+    "samples_env": {
+      "n_bins": 3210,
+      "components": 1,
+      "major_components": 1,
+      "holes": 216,
+      "hole_bins": 1319,
+      "sparse_bins": 0.08566978193146417,
+      "far_edges": 0.0008099625392325605,
+      "corner_links": 78,
+      "geodesic_ratio_median": 1.1068884840323756,
+      "geodesic_ratio_p95": 1.2280332353890848,
+      "outline": {
+        "hull_over_min_rectangle": 0.9596111625386847,
+        "hull_over_min_circle": 0.6555854157180876,
+        "shape": "square",
+        "stated_size": null,
+        "sample_rectangle": [
+          180.9,
+          179.6
+        ],
+        "sample_rectangle_angle_deg": 0.2,
+        "stated_area_covered": 0.6175853587962963,
+        "bin_centres_outside_stated": 0.00031152647975077883,
+        "wall_gap_median": 3.7690125792718723,
+        "wall_gap_p90": 8.208842597680688,
+        "wall_gap_bins_median": 1.5015986371601064
+      }
+    },
+    "verdict": "matches",
+    "verdict_reason": "",
+    "figure": "/Users/edeno/Documents/GitHub/neurospatial/data/datasets/figures/environment_fidelity/hc2_ec013_527.png"
   }
 ]

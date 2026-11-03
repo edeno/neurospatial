@@ -37,13 +37,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3972+gad3f42a0a",
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "1456e63118c0c3f79efeeaebd589be1ab83fdd98"
+    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
   },
   "load_warnings": [],
   "operations": {
@@ -57,7 +57,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.054,
+      "seconds": 0.056,
       "peak_mb": 3.5
     },
     "env.occupancy": {
@@ -71,8 +71,17 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.035,
+      "seconds": 0.036,
       "peak_mb": 16.1
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "rates.spatial": {
       "status": "ok",
@@ -85,8 +94,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.24,
-      "peak_mb": 19.5
+      "seconds": 0.176,
+      "peak_mb": 16.1
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -113,7 +122,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.197,
+      "seconds": 0.219,
       "peak_mb": 16.3
     },
     "cells.place_screen": {
@@ -125,7 +134,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.008,
       "peak_mb": 10.6
     },
     "cells.grid_score": {
@@ -136,7 +145,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.015,
       "peak_mb": 0.5
     },
     "cells.border_score": {
@@ -145,8 +154,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
-      "peak_mb": 0.4
+      "seconds": 0.001,
+      "peak_mb": 0.2
     },
     "hd.tuning": {
       "status": "n/a",
@@ -170,8 +179,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.104,
-      "peak_mb": 22.8
+      "seconds": 0.099,
+      "peak_mb": 22.1
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -181,8 +190,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.29,
-      "peak_mb": 16.0
+      "seconds": 2.69,
+      "peak_mb": 5.5
     },
     "env.from_graph": {
       "status": "ok",
@@ -193,7 +202,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.007,
       "peak_mb": 0.1
     },
     "behavior.segment_by_velocity": {
@@ -205,7 +214,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.029,
+      "seconds": 0.031,
       "peak_mb": 16.8
     },
     "behavior.laps": {
@@ -232,10 +241,19 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.115,
-      "peak_mb": 3.0
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.read_pose": {
       "status": "n/a",
       "summary": {},
       "note": "params has no nwb_source (not an NWB dataset)",
@@ -255,6 +273,7 @@
       "warnings": []
     }
   },
+  "env_kind": "inferred",
   "hazards": [
     {
       "hazard": "spike_times_in_ms",

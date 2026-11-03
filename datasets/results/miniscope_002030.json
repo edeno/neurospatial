@@ -7,7 +7,8 @@
     "positions: read_position, cm; range checked: 10-105 by 9-103 cm in the 96 cm arena",
     "times: rate 30 Hz; 21,427 frames = 714 s, the stated ~12 min session",
     "headings: processing/behavior/headdirection (radians), wrapped to [-pi, pi]; 0.7 % of stored samples lie outside it",
-    "activity: processing/ophys/Fluorescence/Calcium (dF/F), frame times from rate"
+    "activity: processing/ophys/Fluorescence/Calcium (dF/F), frame times from rate",
+    "environment: declared circle (diameter 96, DANDI 002030 description: 'circular open-field arena (96 cm in diameter)'); placement fitted: centre_x 57.8, centre_y 56.2, samples_diameter 95.9, size_residual -0.00087"
   ],
   "expectations": [
     {
@@ -32,13 +33,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "9c1311b6c4e5f03d0ad6947b41297d2acab761b6"
   },
   "load_warnings": [],
   "operations": {
@@ -52,22 +53,36 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.032,
-      "peak_mb": 1.5
+      "seconds": 0.042,
+      "peak_mb": 1.6
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 714.2,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.26666666666667993,
-        "max_s": 117.63333333333335
+        "total_s": 713.9000000000001,
+        "frac_bins_visited": 0.3677363399826539,
+        "median_s_per_visited_bin": 0.2666666666666657,
+        "max_s": 124.53333333333337
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
-      "peak_mb": 2.7
+      "seconds": 0.203,
+      "peak_mb": 5.8
+    },
+    "env.declared": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 1153,
+        "n_dims": 2,
+        "max_extent": 95.0,
+        "frac_samples_outside": 0.0003266906239790918
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.019,
+      "peak_mb": 3.0
     },
     "rates.spatial": {
       "status": "n/a",
@@ -104,6 +119,11 @@
       "note": "needs spike_times",
       "warnings": []
     },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
     "decode.position": {
       "status": "n/a",
       "note": "needs spike_times",
@@ -129,20 +149,17 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.923,
+      "peak_mb": 22.2
     },
     "behavior.laps": {
-      "status": "ok",
-      "summary": {
-        "n_laps": 1,
-        "n_counter-clockwise": 1
-      },
-      "note": "",
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.018,
-      "peak_mb": 4.0
+      "seconds": 0.03,
+      "peak_mb": 2.6
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -168,8 +185,17 @@
       "note": "head_direction: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.214,
-      "peak_mb": 2.0
+      "seconds": 0.346,
+      "peak_mb": 2.3
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [],
+      "seconds": 1.568,
+      "peak_mb": 15.4
     },
     "imaging.rates": {
       "status": "missing",
@@ -184,16 +210,17 @@
       "status": "workaround",
       "summary": {
         "n_cells": 26,
-        "frac_nan_bins": 0.0,
-        "median_peak": 0.5833714497833298
+        "frac_nan_bins": 0.632263660017346,
+        "median_peak": 0.3743813482889601
       },
       "note": "one event per dF/F transient: onset above median + 3 robust SD (1.4826 x MAD), end below median + 1 SD; then compute_spatial_rates (harness heuristic, no published source)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.353,
-      "peak_mb": 5.9
+      "seconds": 1.183,
+      "peak_mb": 34.9
     }
   },
+  "env_kind": "declared",
   "hazards": [
     {
       "hazard": "headings_in_degrees",
@@ -224,21 +251,16 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
-      "response": "silent",
-      "message": "",
+      "response": "raised",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, samples out of bounds or at NaN positions), so occupancy is zero in every bin. Fix: check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 714.2,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.26666666666667993,
-        "max_s": 117.63333333333335
+        "total_s": 713.9000000000001,
+        "frac_bins_visited": 0.3677363399826539,
+        "median_s_per_visited_bin": 0.2666666666666657,
+        "max_s": 124.53333333333337
       },
-      "hazard_summary": {
-        "total_s": 714.2,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 141.1833333333333,
-        "max_s": 369.8666666666667
-      }
+      "hazard_summary": null
     },
     {
       "hazard": "length_unit_off_by_100",
@@ -252,13 +274,10 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "raised",
-      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 1,
-        "n_counter-clockwise": 1
-      },
+      "clean_summary": {},
       "hazard_summary": null
     },
     {

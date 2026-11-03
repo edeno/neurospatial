@@ -7,7 +7,8 @@
     "positions: track_data columns x, y by the description's column names; labelled mm, read as cm (ranges -62..60, -5..134)",
     "times: 0.02 * arange(n) s; track_data's rate attribute (0.02) is the period",
     "headings: none; track_data column hd is the direction of movement from x, y",
-    "activity: firing_rates (labelled uv) as binned rates in Hz"
+    "activity: firing_rates (labelled uv) as binned rates in Hz",
+    "environment: declared rectangle (150 x 130, Gonzalez & Giocomo 2024 eLife Methods: 'The dimensions of field are 1.3m x 1.5m'); placement fitted: centre_x -2.11, centre_y 64.5, rotation_rad 1.57, samples_side_a 138, samples_side_b 120, size_residual_a -0.0821, size_residual_b -0.0797"
   ],
   "expectations": [
     {
@@ -37,13 +38,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "1af734223c1738b283566320a975cd1c2d42d7c2"
   },
   "load_warnings": [],
   "operations": {
@@ -57,22 +58,36 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.165,
+      "seconds": 0.402,
       "peak_mb": 8.0
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 1318.0600000000002,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.21999999999999886,
-        "max_s": 23.080000000000297
+        "total_s": 1318.06,
+        "frac_bins_visited": 0.6699775712912528,
+        "median_s_per_visited_bin": 0.20000000000015916,
+        "max_s": 25.419999999999895
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
-      "peak_mb": 8.2
+      "seconds": 0.594,
+      "peak_mb": 17.1
+    },
+    "env.declared": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 3121,
+        "n_dims": 2,
+        "max_extent": 150.0,
+        "frac_samples_outside": 0.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.06,
+      "peak_mb": 9.3
     },
     "rates.spatial": {
       "status": "n/a",
@@ -109,6 +124,11 @@
       "note": "needs headings, spike_times",
       "warnings": []
     },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
     "decode.position": {
       "status": "n/a",
       "note": "needs spike_times",
@@ -138,14 +158,12 @@
       "peak_mb": 0.0
     },
     "behavior.laps": {
-      "status": "ok",
-      "summary": {
-        "n_laps": 0
-      },
-      "note": "",
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.028,
+      "seconds": 0.064,
       "peak_mb": 8.2
     },
     "behavior.turn_sequence": {
@@ -172,7 +190,16 @@
       "note": "position: not found, but the loader found it",
       "gap": null,
       "warnings": [],
-      "seconds": 0.1,
+      "seconds": 0.183,
+      "peak_mb": 0.2
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.186,
       "peak_mb": 0.2
     },
     "imaging.rates": {
@@ -188,16 +215,17 @@
       "status": "workaround",
       "summary": {
         "n_cells": 46,
-        "frac_nan_bins": 0.0,
-        "median_peak": 63.18135621484342
+        "frac_nan_bins": 0.3300224287087472,
+        "median_peak": 65.18920915260404
       },
       "note": "occupancy-weighted mean binned rate per spatial bin (harness)",
       "gap": "G-029",
       "warnings": [],
-      "seconds": 0.037,
+      "seconds": 0.112,
       "peak_mb": 9.3
     }
   },
+  "env_kind": "declared",
   "hazards": [
     {
       "hazard": "length_unit_off_by_100",
@@ -223,16 +251,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 1318.0600000000002,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.21999999999999886,
-        "max_s": 23.080000000000297
+        "total_s": 1318.06,
+        "frac_bins_visited": 0.6699775712912528,
+        "median_s_per_visited_bin": 0.20000000000015916,
+        "max_s": 25.419999999999895
       },
       "hazard_summary": {
         "total_s": 1318.06,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 171.83999999999997,
-        "max_s": 852.6000000000001
+        "frac_bins_visited": 0.0006408202499198974,
+        "median_s_per_visited_bin": 659.03,
+        "max_s": 1016.6799999999998
       }
     },
     {
@@ -247,12 +275,10 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "raised",
-      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 0
-      },
+      "clean_summary": {},
       "hazard_summary": null
     },
     {
@@ -288,16 +314,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 1318.0600000000002,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.21999999999999886,
-        "max_s": 23.080000000000297
+        "total_s": 1318.06,
+        "frac_bins_visited": 0.6699775712912528,
+        "median_s_per_visited_bin": 0.20000000000015916,
+        "max_s": 25.419999999999895
       },
       "hazard_summary": {
-        "total_s": 1318.0600000000002,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 15.940000000000033,
-        "max_s": 437.2599999999998
+        "total_s": 1318.06,
+        "frac_bins_visited": 0.01281640499839795,
+        "median_s_per_visited_bin": 15.989999999999775,
+        "max_s": 323.8800000000009
       }
     },
     {
@@ -312,12 +338,10 @@
     {
       "hazard": "positions_read_as_mm",
       "op": "behavior.laps",
-      "response": "raised",
-      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 0
-      },
+      "clean_summary": {},
       "hazard_summary": null
     },
     {

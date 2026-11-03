@@ -1,10 +1,13 @@
 """Does each recording's Environment capture the apparatus: its shape and connectivity?
 
 For each loader in ``run.LOADERS`` with positions, the environment is built as
-the driver builds it (``operations._env``: ``Environment.from_samples`` from
-every tracked sample at the loader's ``bin_size``) and measured against the
-tracked samples and, where a source states it, the apparatus. Where the loader
-gives the authors' track graph, it is also built with ``operations._graph_env``.
+the driver builds it (``operations._env``: the apparatus the loader declares in
+``geometry["environment"]``, else ``Environment.from_samples`` from every
+tracked sample at the loader's ``bin_size``) and measured against the tracked
+samples and, where a source states it, the apparatus. For a declared
+environment the samples-built one is measured too, against the same
+reference, outline and room (``samples_env``). Where the loader gives the
+authors' track graph, it is also built with ``operations._graph_env``.
 
 Measures of the environment against the samples:
 
@@ -42,7 +45,8 @@ Measures against the apparatus, where a source gives it:
   else ``ASSUMED_TRACK_WIDTH_CM``), the share of samples within ``w / 2`` of
   the reference and of bin centres within ``w / 2`` plus half a bin. None for
   the lattice, where every point is within 11.4 cm of a bar.
-- **arena outline**: for a stated square or circle, the stated shape is
+- **arena outline**: for a declared arena, its outline as the loader placed
+  it; else, for a stated square or circle, the stated shape is
   placed on the samples (a square along the samples' minimum rotated
   rectangle, a circle at the centre of the samples' extent) and the share of
   its area covered by bins, the share of bin centres more than half a bin
@@ -60,7 +64,8 @@ tracked): bins, neighbour links (thinned when there are many; unsupported
 ones in red) and samples, with the reference overlaid; three projections and
 height slices for 3-D recordings.
 
-Writes ``results/studies/environment_fidelity.{md,json}``. Run:
+Writes ``results/studies/environment_fidelity.{md,json}``; with dataset keys
+given, only their rows are replaced. Run:
 ``MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python
 datasets/studies/environment_fidelity.py [KEY ...]``.
 """
@@ -86,8 +91,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _fetch import cache_root  # noqa: E402
+from _geometry import MAX_CENTRE_OFFSET, MAX_SIZE_RESIDUAL  # noqa: E402
 from _record import Recording  # noqa: E402
-from operations import _env, _graph_env  # noqa: E402
+from operations import _env, _graph_env, _samples_env, env_kind  # noqa: E402
 from run import LOADERS  # noqa: E402
 
 RESULTS = HERE.parent / "results" / "studies"
@@ -104,6 +110,12 @@ ALIGN_STEP_SAMPLES = 10
 LOOP_CLOSURE_SHARE = 0.1
 ALIGN_MIN_SPEED = 10.0
 ALIGN_DEGREES = 20.0
+# Layouts whose bins are the active cells of a regular grid (``grid_edges`` and
+# ``active_mask``): from samples, and a grid masked by a declared polygon.
+GRID_LAYOUTS = ("RegularGrid", "ShapelyPolygon")
+# A declared environment should place nearly every tracked sample; this allows
+# tracking glitches and a head LED leaning past a wall or edge.
+MAX_SAMPLES_OUTSIDE = 0.02
 
 
 # --- Apparatus stated by a source read for this study ---------------------------
@@ -150,28 +162,39 @@ APPARATUS: dict[str, Apparatus] = {
         size=96.0,
     ),
     "giocomo_000405": Apparatus(
-        "open", "no size stated in the file or dandiset description", False
+        "open",
+        "Gonzalez & Giocomo 2024 eLife Methods (open-access PDF): 'The dimensions"
+        " of field are 1.3m x 1.5m'",
+        True,
+        shape="rectangle",
+        notes="150 x 130 cm; placed by the loader",
     ),
     "gardner_2022_grid": Apparatus(
         "open",
-        "loader: 1.5 m box 'in the paper'; the paper was not read and the"
-        " Figshare description gives no size",
-        False,
+        "Gardner et al. 2022 Methods (open-access PDF): 'square open-field (OF)"
+        " arena of size 1.5 x 1.5 m', 50 cm walls",
+        True,
         shape="square",
         size=150.0,
     ),
     "vollan_of": Apparatus(
         "open",
-        "Vollan et al. 2025 Methods: square open field, floor 150 x 150 cm",
+        "Vollan et al. 2025 Methods: 150 x 150 cm box, except one rat's dark-room"
+        " session and the lit session after it, in 'a circular arena 150 cm in"
+        " diameter'; this file's session type is 'open_field_light' and its"
+        " samples are round (G-114)",
         True,
-        shape="square",
+        shape="circle",
         size=150.0,
     ),
     "rsc_000987": Apparatus(
         "open",
-        "NWB session_description: 'square arena' (no size)",
+        "NWB session_description: 'square arena'; Mehrotra, Levenstein et al."
+        " 2023 bioRxiv Methods: square of 'removable walls (width: 80 cm, height:"
+        " 50 cm)'",
         True,
         shape="square",
+        size=80.0,
     ),
     "ca1ca3_001880": Apparatus(
         "open",
@@ -192,6 +215,15 @@ APPARATUS: dict[str, Apparatus] = {
         True,
         shape="circle",
         size=190.0,
+    ),
+    "hc2_ec013_527": Apparatus(
+        "open",
+        "crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x"
+        " 180 cm ...)', ec013.527 180 cm (pixels; the scale is inferred from that"
+        " side)",
+        True,
+        shape="square",
+        notes="placed by the loader in pixels",
     ),
     "senzai_000003": Apparatus(
         "open",
@@ -306,8 +338,8 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "hafting_2008_nird": Apparatus(
         "track",
-        "loader quotes the archive readme ('mostly 320 cm'); readme not read here",
-        False,
+        "archive readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; no width",
+        True,
         track_length=320.0,
     ),
     "takigawa_7114733": Apparatus(
@@ -816,12 +848,18 @@ def rectangle_of(samples: NDArray[np.float64]) -> tuple[float, float, float]:
 
 
 def outline_measures(
-    env: Any, samples: NDArray[np.float64], app: Apparatus
+    env: Any, samples: NDArray[np.float64], app: Apparatus | None, shape: Any = None
 ) -> dict[str, Any]:
-    """Coverage of the stated shape by bins, bin area outside it, and wall gaps."""
+    """Coverage of the stated shape by bins, bin area outside it, and wall gaps.
+
+    ``shape`` is the stated outline as placed by the loader (a declared
+    environment's polygon); without it the stated square or circle is placed
+    here (``stated_shape``).
+    """
     import shapely
 
-    shape = stated_shape(samples, app)
+    if shape is None:
+        shape = stated_shape(samples, app)
     bin_size = float(np.min(env.bin_sizes) ** (1 / env.n_dims))
     step = COVER_STEP_BINS * float(np.mean(np.diff(np.asarray(env.grid_edges[0]))))
     xmin, ymin, xmax, ymax = shape.bounds
@@ -867,8 +905,8 @@ def outline_measures(
         "hull_over_min_circle": float(
             hull.area / shapely.minimum_bounding_circle(hull).area
         ),
-        "shape": app.shape,
-        "stated_size": app.size,
+        "shape": None if app is None else app.shape,
+        "stated_size": None if app is None else app.size,
         "sample_rectangle": [round(long, 1), round(short, 1)],
         "sample_rectangle_angle_deg": round(angle, 1),
         "stated_area_covered": covered,
@@ -895,7 +933,7 @@ def measure_env(
     pairs = np.asarray(env.edge_pairs)
     bin_size = (
         float(np.mean(np.diff(np.asarray(env.grid_edges[0]))))
-        if env.layout_type == "RegularGrid"
+        if env.layout_type in GRID_LAYOUTS
         else float(np.median(np.asarray(env.bin_sizes)))
     )
     tree = cKDTree(samples)
@@ -918,7 +956,7 @@ def measure_env(
         "far_edges": float(np.mean(gaps > bin_size)) if len(gaps) else 0.0,
         "edge_gap_max_bins": float(gaps.max() / bin_size) if len(gaps) else 0.0,
     }
-    if env.layout_type == "RegularGrid":
+    if env.layout_type in GRID_LAYOUTS:
         active = np.asarray(env.active_mask)
         index = grid_index(env)
         corners = corner_links(index, pairs, active)
@@ -1275,6 +1313,29 @@ def bar_alignment(rec: Recording, ref: Reference) -> dict[str, Any]:
     }
 
 
+def placement_reasons(declared: dict[str, Any]) -> list[str]:
+    """Why a declared environment's placement does not fit the samples, if it does not."""
+    reasons = []
+    outside = declared["frac_samples_outside"]
+    if outside > MAX_SAMPLES_OUTSIDE:
+        reasons.append(
+            f"{outside:.1%} of samples outside the declared environment"
+            f" (limit {MAX_SAMPLES_OUTSIDE:.0%})"
+        )
+    fit = declared.get("fit") or {}
+    for key, value in fit.items():
+        if key.startswith("size_residual") and value < -MAX_SIZE_RESIDUAL:
+            reasons.append(f"samples' fitted size {value:+.0%} of the stated ({key})")
+    if "centre_offset" in fit:
+        radius = fit["samples_diameter"] / (1 + fit["size_residual"]) / 2
+        if fit["centre_offset"] > MAX_CENTRE_OFFSET * radius:
+            reasons.append(
+                f"samples' centre {fit['centre_offset']:.3g} from the stated centre"
+                f" (limit {MAX_CENTRE_OFFSET:.0%} of the radius {radius:.3g})"
+            )
+    return reasons
+
+
 def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     """Verdict against the stated apparatus, and the reasons for a mismatch.
 
@@ -1287,6 +1348,14 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     ``LOOP_CLOSURE_SHARE`` of its length) and that the bins join them (their
     path no longer than the camera distance plus that share). An assumed
     track width is reported but not judged.
+
+    A declared environment covers its own outline by construction, so its
+    coverage is not judged; its placement is instead: the share of tracked
+    samples it cannot place (at most ``MAX_SAMPLES_OUTSIDE``), the samples'
+    fitted size against the stated one (``_geometry.MAX_SIZE_RESIDUAL``
+    short; samples past the wall show up as samples outside), and a stated
+    centre's distance from the samples' (``_geometry.MAX_CENTRE_OFFSET`` of
+    the radius).
     """
     if app is None or not app.verified:
         return "not verified", "no source read here states the geometry"
@@ -1298,8 +1367,11 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
             f"{n} part{'s' if n != 1 else ''} with 1% of the bins or more, apparatus"
             f" has {app.n_parts}"
         )
+    declared = row.get("declared")
+    if declared:
+        reasons += placement_reasons(declared)
     outline = row.get("outline")
-    if outline:
+    if outline and not declared:
         if outline["stated_area_covered"] < 0.9:
             filled = row["open_field_preset"]["stated_area_covered"]
             reasons.append(
@@ -1373,7 +1445,7 @@ def _draw(
     pairs = np.asarray(env.edge_pairs)
     gaps = measures["_gaps"]
     bin_size = measures["bin_size"]
-    if env.n_dims == 2 and env.layout_type == "RegularGrid":
+    if env.n_dims == 2 and env.layout_type in GRID_LAYOUTS:
         active = np.asarray(env.active_mask)
         padded = np.pad(~active, 1, constant_values=True)
         labels = ndimage.label(
@@ -1414,7 +1486,7 @@ def _draw(
     good = np.flatnonzero(gaps <= bin_size)
     if len(good) > MAX_DRAWN_EDGES:
         good = rng.choice(good, MAX_DRAWN_EDGES, replace=False)
-    if env.n_dims != 2 or env.layout_type != "RegularGrid":
+    if env.n_dims != 2 or env.layout_type not in GRID_LAYOUTS:
         ax.add_collection(
             LineCollection(
                 centers[pairs[good]][:, :, dims],
@@ -1548,45 +1620,107 @@ def _public(value: Any) -> Any:
     return value
 
 
+def declared_outline(env: Any) -> Any:
+    """The polygon a declared 2-D environment was built from, or None."""
+    domain = getattr(env.arena, "polygonal_domain", None)
+    return domain() if env.n_dims == 2 and domain is not None else None
+
+
+# Measures of the samples-built environment reported beside a declared one.
+COMPARED = (
+    "n_bins",
+    "components",
+    "major_components",
+    "holes",
+    "hole_bins",
+    "sparse_bins",
+    "far_edges",
+    "corner_links",
+    "geodesic_ratio_median",
+    "geodesic_ratio_p95",
+)
+
+
+def samples_env_measures(
+    rec: Recording,
+    cache: dict[str, Any],
+    samples: NDArray[np.float64],
+    app: Apparatus | None,
+    ref: Reference | None,
+    outline: Any,
+    room: NDArray[np.float64] | None,
+) -> dict[str, Any]:
+    """The samples-built environment's measures, for comparison with a declared one.
+
+    The same seed, reference, placed outline and room as the declared
+    environment's, so the two differ only by the environment.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        env = _samples_env(rec, cache)
+    measures = measure_env(env, samples, np.random.default_rng(SEED))
+    out: dict[str, Any] = {k: measures[k] for k in COMPARED if k in measures}
+    if ref is not None:
+        out["reference"] = against_reference(measures, env, samples, ref)
+    if outline is not None:
+        out["outline"] = outline_measures(env, samples, app, outline)
+    if room is not None:
+        out["room"] = bat_room(env, samples, room, rec)
+    if "lattice_bars_cm" in rec.geometry and ref is not None:
+        out["adjacent_bars"] = adjacent_bar_pairs(bin_graph(env), env, samples, ref)
+    return out
+
+
 def analyse(rec: Recording, *, figures: bool = True) -> dict[str, Any]:
-    """Every measure for one recording, and the figure."""
+    """Every measure for one recording, and the figure.
+
+    The environment is the driver's: the declared apparatus when the loader
+    gives one (``geometry["environment"]``), else built from the samples.
+    For a declared environment the samples-built one is measured as well
+    (``samples_env``), against the same reference, outline and room.
+    """
+    from neurospatial import Environment
+
     rng = np.random.default_rng(SEED)
     app = APPARATUS.get(rec.dataset)
     samples = tracked(rec)
+    cache: dict[str, Any] = {}
+    kind = env_kind(rec, cache)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        env = _env(rec, {})
+        env = _env(rec, cache)
     row: dict[str, Any] = {
         "dataset": rec.dataset,
         "units": rec.position_units,
         "kind": None if app is None else app.kind,
         "source": None if app is None else app.source,
+        "env_kind": kind,
     }
     measures = measure_env(env, samples, rng)
     row["env"] = measures
     ref = reference_for(rec, app) if env.n_dims > 1 else None
-    outline = None
     if ref is not None:
         row["reference"] = against_reference(measures, env, samples, ref)
+    outline = declared_outline(env) if kind == "declared" else None
     if (
-        app is not None
+        outline is None
+        and app is not None
         and app.shape is not None
         and app.size is not None
         and env.n_dims == 2
     ):
-        row["outline"] = outline_measures(env, samples, app)
         outline = stated_shape(samples, app)
+    if outline is not None:
+        row["outline"] = outline_measures(env, samples, app, outline)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            from neurospatial import Environment
-
             filled = Environment.open_field(
                 rec.positions, bin_size=rec.params["bin_size"], units=_units(rec)
             )
         row["open_field_preset"] = {
             "n_bins": int(filled.n_bins),
             "holes": len(hole_sizes(np.asarray(filled.active_mask))),
-            "stated_area_covered": outline_measures(filled, samples, app)[
+            "stated_area_covered": outline_measures(filled, samples, app, outline)[
                 "stated_area_covered"
             ],
         }
@@ -1603,6 +1737,17 @@ def analyse(rec: Recording, *, figures: bool = True) -> dict[str, Any]:
         lattice["adjacent_bars"] = adjacent_bar_pairs(bin_graph(env), env, samples, ref)
         lattice["movement_along_bars"] = bar_alignment(rec, ref)
         row["lattice"] = lattice
+    if kind == "declared":
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            placed = np.asarray(env.bin_at(samples))
+        row["declared"] = {
+            "frac_samples_outside": float(np.mean(placed < 0)),
+            "fit": dict(rec.geometry.get("environment_fit", {})),
+        }
+        row["samples_env"] = samples_env_measures(
+            rec, cache, samples, app, ref, outline, room
+        )
     row["verdict"], row["verdict_reason"] = verdict(row, app)
     if figures:
         row["figure"] = save_figure(rec, env, samples, measures, ref, outline, room)
@@ -1619,19 +1764,75 @@ def _fmt(value: Any, spec: str) -> str:
     return format(value, spec)
 
 
+def compare_table(rows: list[dict[str, Any]]) -> list[str]:
+    """Declared environments beside the samples-built ones (declared / samples)."""
+    declared = [row for row in rows if "samples_env" in row]
+    if not declared:
+        return []
+    lines = [
+        "",
+        "## Declared against samples-built environments",
+        "",
+        "Each cell: declared / samples-built. Outside: share of tracked samples"
+        " the declared environment cannot place (`env.bin_at` -1), judged against"
+        f" {MAX_SAMPLES_OUTSIDE:.0%}. Covered and wall gap: against the outline the"
+        " loader placed; a declared environment covers its own outline by"
+        " construction, so only the samples-built value is evidence.",
+        "",
+        "| Dataset | Bins | Components (1 %) | Holes (bins) | Sparse bins | Far links |"
+        " Geodesic / straight | Env / track | Covered | Wall gap | Outside |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+
+    def pair(a: Any, b: Any, spec: str) -> str:
+        return f"{_fmt(a, spec)} / {_fmt(b, spec)}"
+
+    for row in declared:
+        env, base = row["env"], row["samples_env"]
+        holes = (
+            f"{env.get('holes', '–')} ({env.get('hole_bins', '–')}) /"
+            f" {base.get('holes', '–')} ({base.get('hole_bins', '–')})"
+        )
+        ref, base_ref = row.get("reference", {}), base.get("reference", {})
+        outline, base_outline = row.get("outline", {}), base.get("outline", {})
+        lines.append(
+            f"| {row['dataset']} | {env['n_bins']} / {base['n_bins']} |"
+            f" {env['components']} ({env['major_components']}) /"
+            f" {base['components']} ({base['major_components']}) | {holes} |"
+            f" {pair(env['sparse_bins'], base['sparse_bins'], '.0%')} |"
+            f" {pair(env['far_edges'], base['far_edges'], '.2%')} |"
+            f" {pair(env['geodesic_ratio_median'], base['geodesic_ratio_median'], '.2f')} |"
+            f" {pair(ref.get('env_over_track_median'), base_ref.get('env_over_track_median'), '.2f')} |"
+            f" {pair(outline.get('stated_area_covered'), base_outline.get('stated_area_covered'), '.0%')} |"
+            f" {pair(outline.get('wall_gap_median'), base_outline.get('wall_gap_median'), '.1f')} |"
+            f" {row['declared']['frac_samples_outside']:.2%} |"
+        )
+    return lines
+
+
+def merge_rows(
+    existing: list[dict[str, Any]], new: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """``existing`` with each dataset's row replaced by its row in ``new``, in order."""
+    fresh = {row["dataset"]: row for row in new}
+    merged = [fresh.pop(row["dataset"], row) for row in existing]
+    return merged + list(fresh.values())
+
+
 def render(rows: list[dict[str, Any]]) -> str:
     lines = [
         "# Environment fidelity",
         "",
         "Generated by `datasets/studies/environment_fidelity.py`; see its docstring"
-        " for each measure. Environments are the driver's (`from_samples` on every"
+        " for each measure. Environments are the driver's: `declared` from the"
+        " apparatus the loader states, else `inferred` (`from_samples` on every"
         " tracked sample at the loader's `bin_size`). Unsupported: share of"
         " neighbour links with no sample within half a bin of the link's midpoint"
         " (far: within one bin). Env / track: median geodesic over the distance"
         " along the reference for sample pairs.",
         "",
-        "| Dataset | Kind | Bins | Dims | Components (1 % of bins or more) | Holes (bins) | Sparse / thin bins | Unsupported / far links | Corner links | Geodesic / straight (median, p95) | On-track samples / bins | Env / track (median, p5) | Outline: covered / centres outside / wall gap / hull over rectangle, circle | Verdict |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Dataset | Kind | Env | Bins | Dims | Components (1 % of bins or more) | Holes (bins) | Sparse / thin bins | Unsupported / far links | Corner links | Geodesic / straight (median, p95) | On-track samples / bins | Env / track (median, p5) | Outline: covered / centres outside / wall gap / hull over rectangle, circle | Verdict |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in rows:
         env, ref, outline = row["env"], row.get("reference", {}), row.get("outline")
@@ -1647,8 +1848,12 @@ def render(rows: list[dict[str, Any]]) -> str:
             if ref
             else "–"
         )
+        by_construction = (
+            " (by construction)" if row.get("env_kind") == "declared" else ""
+        )
         outline_cell = (
-            f"{outline['stated_area_covered']:.0%} / {outline['bin_centres_outside_stated']:.0%} /"
+            f"{outline['stated_area_covered']:.0%}{by_construction} /"
+            f" {outline['bin_centres_outside_stated']:.0%} /"
             f" {outline['wall_gap_median']:.1f} / {outline['hull_over_min_rectangle']:.2f},"
             f" {outline['hull_over_min_circle']:.2f}"
             if outline
@@ -1658,13 +1863,15 @@ def render(rows: list[dict[str, Any]]) -> str:
             f": {row['verdict_reason']}" if row["verdict_reason"] else ""
         )
         lines.append(
-            f"| {row['dataset']} | {row['kind']} | {env['n_bins']} | {env['n_dims']} |"
+            f"| {row['dataset']} | {row['kind']} | {row.get('env_kind', 'inferred')} |"
+            f" {env['n_bins']} | {env['n_dims']} |"
             f" {env['components']} ({env['major_components']}) | {holes} | {env['sparse_bins']:.0%} / {env['thin_bins']:.0%} |"
             f" {env['unsupported_edges']:.1%} / {env['far_edges']:.2%} |"
             f" {env.get('corner_links', '–')} |"
             f" {_fmt(env['geodesic_ratio_median'], '.2f')}, {_fmt(env['geodesic_ratio_p95'], '.2f')} |"
             f" {on_track} | {track} | {outline_cell} | {verdict_cell} |"
         )
+    lines += compare_table(rows)
     lines += ["", "## Sources and details", ""]
     for row in rows:
         lines.append(f"### {row['dataset']}")
@@ -1678,6 +1885,8 @@ def render(rows: list[dict[str, Any]]) -> str:
             "one_d",
             "room",
             "lattice",
+            "declared",
+            "samples_env",
         ):
             if key in row:
                 lines.append(f"- {key}: `{json.dumps(_public(row[key]), default=str)}`")
@@ -1773,6 +1982,9 @@ if __name__ == "__main__":
     rows = run(keys)
     RESULTS.mkdir(parents=True, exist_ok=True)
     public = [_public(row) for row in rows]
+    previous = RESULTS / "environment_fidelity.json"
+    if sys.argv[1:] and previous.exists():
+        public = merge_rows(json.loads(previous.read_text()), public)
     (RESULTS / "environment_fidelity.json").write_text(
         json.dumps(public, indent=2, default=str) + "\n"
     )

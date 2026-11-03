@@ -36,6 +36,14 @@ Analysis choices (``params``):
 - ``bin_size`` 2.5 cm; ``analysis_epochs`` the tracked span
   (``position_time_support``).
 - ``dt`` 0.25 s and alternating 60 s ``train_epochs``/``test_epochs``.
+
+Environment: built from the samples (inferred). The file says only "square
+arena". The study's bioRxiv preprint (Mehrotra, Levenstein et al. 2023,
+10.1101/2023.09.12.557442, Methods, read) describes "removable walls (width:
+80 cm, height: 50 cm)" arranged into a square, and for the RSC dataset a
+70 cm circle as well; the samples' fitted square is 52.6 x 52.1 cm, 34 % short
+of 80 cm, so the stated size is refused (``_geometry.MAX_SIZE_RESIDUAL``)
+until a source explains the difference (G-130).
 """
 
 from __future__ import annotations
