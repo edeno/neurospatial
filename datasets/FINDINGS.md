@@ -410,8 +410,12 @@ Answered 2026-11-02.
    score: no.
 5. **Laps in open arenas (proposal 2).** Not yet decided.
 6. **New capabilities.** Plan NWB reader coverage (6) and periodic 1-D tracks
-   (8). Defer continuous-signal rate maps (5) and heading decoding (7); heading
-   decoding is wanted later.
+   (8). Loop tracks get a factory, `Environment.from_loop(length=, bin_size=,
+   track_width=)`, that builds a cyclic track graph laid out on a circle of
+   that circumference, plus a helper that maps linear position onto it; a
+   cyclic track graph already wraps distances and laps. Defer
+   continuous-signal rate maps (5) and heading decoding (7); heading decoding
+   is wanted later.
 7. **Next batch.** Run more datasets, chosen by coverage, with the long-term
    aim of loading most of the catalog. The restricted unpickler approach
    applies to pickled formats such as Gardner 2022.
