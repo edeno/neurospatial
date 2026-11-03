@@ -4,7 +4,7 @@
   "source": "https://dandiarchive.org/dandiset/000447/0.250724.2224 sub-JDS-NFN-AM2/sub-JDS-NFN-AM2_behavior+ecephys.nwb (asset b048bd0a-48a4-4d19-ad96-fd879666bca5)",
   "license": "CC-BY-4.0",
   "conversions": [
-    "positions: Position/SpatialSeries columns 0, 1 (cm); column 2 is speed in cm/s (r = 0.71 with the speed from x, y), dropped",
+    "positions: Position/SpatialSeries columns 0, 1 (cm); range checked: 14.8 to 130.9 by 0.1 to 106.2 cm (largest span 116.1, expected 80-200); column 2 is speed in cm/s (median ratio 0.57 to the speed from x, y while moving, r = 0.71), dropped",
     "epochs: trials table rows as trials, split by trajectory_type (1 inbound, 0 outbound); 'epoch intervals' as run"
   ],
   "expectations": [
@@ -31,7 +31,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "5a814f34e6bc76b02adf2a7749506ef330b074b9"
   },
   "load_warnings": [
     {
@@ -53,7 +53,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.195,
+      "seconds": 0.269,
       "peak_mb": 6.4
     },
     "env.occupancy": {
@@ -67,7 +67,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.06,
+      "seconds": 0.049,
       "peak_mb": 10.7
     },
     "rates.spatial": {
@@ -81,7 +81,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.807,
+      "seconds": 0.611,
       "peak_mb": 56.7
     },
     "rates.spatial_information": {
@@ -109,7 +109,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.584,
+      "seconds": 0.406,
       "peak_mb": 14.8
     },
     "cells.place_screen": {
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.069,
+      "seconds": 0.068,
       "peak_mb": 88.0
     },
     "cells.grid_score": {
@@ -134,7 +134,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.567,
+      "seconds": 0.418,
       "peak_mb": 11.1
     },
     "cells.border_score": {
@@ -162,7 +162,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.506,
+      "seconds": 0.435,
       "peak_mb": 125.8
     },
     "io.nwb_roundtrip": {
@@ -173,8 +173,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.71,
-      "peak_mb": 12.9
+      "seconds": 2.721,
+      "peak_mb": 13.4
     },
     "env.from_graph": {
       "status": "n/a",
@@ -194,7 +194,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.046,
+      "seconds": 0.04,
       "peak_mb": 10.7
     },
     "behavior.laps": {
@@ -206,7 +206,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.067,
+      "seconds": 0.053,
       "peak_mb": 10.0
     },
     "behavior.turn_sequence": {
@@ -245,8 +245,8 @@
           "count": 1
         }
       ],
-      "seconds": 6.405,
-      "peak_mb": 31.3
+      "seconds": 10.457,
+      "peak_mb": 31.4
     },
     "imaging.rates": {
       "status": "n/a",
@@ -412,7 +412,7 @@
         "n_units": 57,
         "frac_nan_bins": 0.002068027210884354,
         "median_peak_hz": 100.50251256277917,
-        "median_mean_hz": 1.3300117206436257
+        "median_mean_hz": 1.3300117206436268
       }
     },
     {

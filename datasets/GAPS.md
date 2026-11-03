@@ -697,9 +697,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Evidence: Gardner rat R day 1 has 483 module units, not the 250–450
   expected from memory of the paper. The 000044 loaders add the file's sleep
   states as epochs (as the figure-8 loader does), so the epoch names are not
-  only `pre`/`maze`/`post`. The 000044 position extents (about 133 cm on the
-  circular track) are wider than expected: the single LED moves with the
-  head beyond the track.
+  only `pre`/`maze`/`post`. The 000044 position extents are wider than
+  expected, and the scale is not the cause: 2-D steps match the linearized
+  coordinate's steps (median ratio 0.98 on the linear track, 1.01 on the
+  circular one). On the 1.6 m linear track only 16 % of tracked maze-epoch
+  samples are on the track (the linearized coordinate is defined); the rest
+  lie off it, so the positions span about 2 m in each direction. On the
+  circular track 72 % are on the track and the span is 134 cm, wider than the
+  92 cm diameter a 290 cm circumference implies; why is not resolved.
 - Harness workaround: none (the expectations stay as registered)
 - Proposed change: none
 - Status: won't fix (the expectations, not the loaders, were wrong)
@@ -734,6 +739,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   sleep by a stated rule (multiunit rate in 1 ms bins, 15 ms Gaussian; peak
   above mean + 3 SD; bounded by mean crossings; 50–500 ms): 2010 bursts on
   the circular track, 1646 on the linear track; the first 200 are decoded.
+- Result: on these candidates `DAVIDSON_2009` calls 0 of 200 replay on both
+  sessions (95 % CI 0–1.8 %), `GROSMARK_2016` 9.5 % (circular) and 14 %
+  (linear). The events are decoded on the linearized coordinate (G-038),
+  sleep candidates are not ripples, and the circular track is cut into a line
+  (G-021), so the difference is not yet a statement about the methods.
 - Proposed change: none (neurospatial does not detect ripples from LFP;
   `replay.burst_onset_times` is per unit)
 - Status: won't fix (data quirk)
@@ -757,4 +767,24 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   2 tracks the speed from x, y (r = 0.71)
 - Proposed change: the reader-coverage plan's column choice (proposal 6);
   nothing on raw arrays can tell speed from a third spatial axis
+- Status: open
+
+## G-043: On Vollan's speed-filtered data, real units carry less spatial information than their circular shifts
+
+- Datasets: vollan_lt, vollan_of
+- Operation / step: rates.information_vs_shifts
+- Kind: wrong-result (candidate; cause not found)
+- Evidence: open field (rat 26018, 644 units, 233 in grid modules): median
+  information 0.436 bits/spike, median over 4 shifts 0.596; 22 % of units
+  beat every shift. Linear track: 0.289 vs 0.424, 12 %. On every other
+  recording real units are far above their shifts (000044: 0.83 vs 0.08).
+  The grid scores of the same units match the authors' module medians on
+  modules 1–2, so spikes and positions are aligned. Not the cause: bridging
+  of the speed-filter gaps (with `max_gap=0.025` s, 2.5 sampling intervals,
+  0.431 vs 0.589, 24 %). Untested: whether the shift rule, which shifts over
+  the whole span including the removed stretches, moves spikes into a few
+  tracked samples; and whether firing locked to slow periods matters.
+- Harness workaround: none
+- Proposed change: undecided; find the cause before trusting shuffle verdicts
+  on speed-filtered data
 - Status: open

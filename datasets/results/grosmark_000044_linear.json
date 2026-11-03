@@ -4,8 +4,8 @@
   "source": "https://dandiarchive.org/dandiset/000044/0.261005.2101 sub-Achilles/sub-Achilles_ses-Achilles-10252013_behavior+ecephys.nwb (asset c0ac352b-9da5-44b0-b73d-41a9ee3c3b1d)",
   "license": "CC-BY-4.0",
   "conversions": [
-    "positions: read_position 1.6mLinearMazePosition/1.6mLinearMazeSpatialSeries, m times 100 -> cm",
-    "params['linearized']: 1.6mLinearMazeLinearizedPosition, m times 100 -> cm; 0.01% of finite samples are exactly 0",
+    "positions: read_position 1.6mLinearMazePosition/1.6mLinearMazeSpatialSeries, m times 100 -> cm; range checked: -60.0 to 138.5 by -57.2 to 162.8 cm (largest span 220.1, expected 150-260); 16% of tracked samples are on the track (linearized coordinate defined)",
+    "params['linearized']: 1.6mLinearMazeLinearizedPosition, m times 100 -> cm, 0 to 160 cm; 0.01% of finite samples are exactly 0",
     "epochs: intervals/epochs labels without 'Epoch', lower case; sleep states from processing/behavior/states",
     "events['candidate_events']: first 200 of 1646 population bursts in POST non-REM (rule in population_bursts); the file has no ripple table"
   ],
@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "5a814f34e6bc76b02adf2a7749506ef330b074b9"
   },
   "load_warnings": [],
   "operations": {
@@ -57,7 +57,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.092,
+      "seconds": 0.169,
       "peak_mb": 5.9
     },
     "env.occupancy": {
@@ -71,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.083,
+      "seconds": 0.133,
       "peak_mb": 8.7
     },
     "rates.spatial": {
@@ -85,7 +85,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.602,
+      "seconds": 0.878,
       "peak_mb": 298.5
     },
     "rates.spatial_information": {
@@ -98,7 +98,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.003,
       "peak_mb": 10.1
     },
     "rates.information_vs_shifts": {
@@ -113,8 +113,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.275,
-      "peak_mb": 367.5
+      "seconds": 3.412,
+      "peak_mb": 367.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -125,7 +125,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.025,
+      "seconds": 0.033,
       "peak_mb": 49.2
     },
     "cells.grid_score": {
@@ -138,7 +138,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.858,
+      "seconds": 1.342,
       "peak_mb": 37.4
     },
     "cells.border_score": {
@@ -147,7 +147,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 1.6
     },
     "hd.tuning": {
@@ -166,7 +166,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.637,
+      "seconds": 1.104,
       "peak_mb": 298.4
     },
     "io.nwb_roundtrip": {
@@ -177,8 +177,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.362,
-      "peak_mb": 12.3
+      "seconds": 3.235,
+      "peak_mb": 11.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -198,7 +198,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.092,
+      "seconds": 0.127,
       "peak_mb": 5.1
     },
     "behavior.laps": {
@@ -207,7 +207,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.023,
+      "seconds": 0.036,
       "peak_mb": 15.3
     },
     "behavior.turn_sequence": {
@@ -232,7 +232,7 @@
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 387.182,
+      "seconds": 547.027,
       "peak_mb": 346.9
     },
     "io.nwb_readers": {
@@ -245,7 +245,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries', 'processing/behavior/1.6mLinearMazePosition/1.6mLinearMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 27.984,
+      "seconds": 32.924,
       "peak_mb": 334.4
     },
     "imaging.rates": {
