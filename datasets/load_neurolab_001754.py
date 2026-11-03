@@ -147,7 +147,9 @@ def load(cache: Path | None = None) -> Recording:
         conversions=(
             "positions: read_position, pixels, no calibration in the file; range"
             f" checked: {np.nanmin(positions[:, 0]):.0f}-{np.nanmax(positions[:, 0]):.0f}"
-            f" by {np.nanmin(positions[:, 1]):.0f}-{np.nanmax(positions[:, 1]):.0f} px",
+            f" by {np.nanmin(positions[:, 1]):.0f}-{np.nanmax(positions[:, 1]):.0f} px;"
+            " the file does not say whether pixel y runs up or down the image, so y"
+            " is kept as stored",
             f"positions: {int(lost.sum())} samples at exactly (0, 255), the lost-LED"
             " code, set to NaN; other samples with x exactly 0:"
             f" {int(np.sum(raw[~lost, 0] == 0))}, kept",

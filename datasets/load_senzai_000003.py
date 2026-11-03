@@ -163,7 +163,9 @@ def load(cache: Path | None = None) -> Recording:
             " metres;"
             f" range checked: {np.nanmin(positions[:, 0]):.0f}-"
             f"{np.nanmax(positions[:, 0]):.0f} by {np.nanmin(positions[:, 1]):.0f}-"
-            f"{np.nanmax(positions[:, 1]):.0f}: pixels, kept as pixels (no calibration)",
+            f"{np.nanmax(positions[:, 1]):.0f}: pixels, kept as pixels (no calibration);"
+            " reference frame 'unknown', so whether pixel y runs up or down the image"
+            " is not stated and y is kept as stored",
             f"times: starting_time {start} s + index / {rate} Hz; the implied"
             f" {duration:.1f} s matches the LFP's {lfp_duration:.1f} s and the last"
             f" spike at {last_spike:.1f} s",

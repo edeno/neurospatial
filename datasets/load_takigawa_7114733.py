@@ -187,7 +187,8 @@ def load(cache: Path | None = None) -> Recording:
         conversions=(
             "positions: clean.x, clean.y (pixels) x each track's own cm_per_pixel"
             f" ({', '.join(f'{f:.4f}' for f in factors)}; session average"
-            f" {float(position.cm_per_pixel):.4f} not used)",
+            f" {float(position.cm_per_pixel):.4f} not used); the source does not say"
+            " whether pixel y runs up or down the image, so y is kept as stored",
             "range checked: principal-axis extent per track"
             f" {', '.join(f'{e:.1f}' for e in extents)} cm (expected"
             f" {_TRACK_EXTENT_CM[0]:g}-{_TRACK_EXTENT_CM[1]:g})",
