@@ -311,6 +311,15 @@ def test_crcns_interrupt_stops_without_the_request_frames(
     assert [f for f in tmp_path.rglob("*") if f.is_file()] == []
 
 
+@pytest.mark.parametrize(("code", "status"), [(3, 3), (0, 0), (None, 1), ("x", 1)])
+def test_crcns_system_exit_keeps_an_integer_exit_code(portal, code, status, tmp_path):
+    # A message is not kept (it could hold the form), so it exits with 1.
+    portal.reply = SystemExit(f"{_USER}:{_PASSWORD}" if code == "x" else code)
+    raised = _raised(_fetch_file, tmp_path)
+    assert type(raised) is SystemExit
+    assert raised.code == status
+
+
 def test_crcns_missing_member_error_shows_no_credentials(portal, tmp_path):
     portal.reply = _PortalResponse(
         _tar_gz({_MEMBER: b"file bytes"}), "application/octet-stream"

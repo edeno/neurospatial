@@ -227,14 +227,16 @@ def _crcns_open(path: str) -> Any:
     chained exception: the request's frames hold the password and the
     portal's pages can echo the account name. A ``KeyboardInterrupt`` or
     ``SystemExit`` during the request is raised again as a fresh exception
-    of the same type, without those frames.
+    of the same type, without those frames; a ``SystemExit`` keeps an integer
+    exit code and exits with 1 for any other code (a message could hold the
+    form).
     """
     _crcns_require_account()
     opener = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
     )
     failure = None
-    stopped: type[BaseException] | None = None
+    stopped: BaseException | None = None
     try:
         response = opener.open(CRCNS_PORTAL, data=_crcns_login_form(path), timeout=300)
     except urllib.error.HTTPError as exc:
@@ -243,8 +245,10 @@ def _crcns_open(path: str) -> Any:
     except urllib.error.URLError as exc:
         failure = f"failed: {type(exc.reason).__name__}"
     except BaseException as exc:  # any error's frames hold the form, Ctrl-C's too
-        if isinstance(exc, KeyboardInterrupt | SystemExit):
-            stopped = type(exc)
+        if isinstance(exc, KeyboardInterrupt):
+            stopped = KeyboardInterrupt()
+        elif isinstance(exc, SystemExit):
+            stopped = SystemExit(exc.code if isinstance(exc.code, int) else 1)
         else:
             failure = f"failed: {type(exc).__name__}"
     if stopped is not None:
