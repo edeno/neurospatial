@@ -1,0 +1,83 @@
+[
+  {
+    "dataset": "sargolini_000582",
+    "origin_share": 0.0,
+    "fewest_bins": 41
+  },
+  {
+    "dataset": "peyrache_mouse32",
+    "heading_bins": 36
+  },
+  {
+    "dataset": "figure8_000552",
+    "origin_share": 0.0,
+    "fewest_bins": 112
+  },
+  {
+    "dataset": "rosenberg_labyrinth",
+    "origin_share": 0.0,
+    "fewest_bins": 61
+  },
+  {
+    "dataset": "yartsev_bat_demo",
+    "origin_share": 0.0,
+    "fewest_bins": 11
+  },
+  {
+    "dataset": "miniscope_002030",
+    "origin_share": 0.0,
+    "fewest_bins": 39,
+    "heading_bins": 36,
+    "heading_bins_running": 36
+  },
+  {
+    "dataset": "giocomo_000405",
+    "origin_share": 0.0,
+    "fewest_bins": 51
+  },
+  {
+    "dataset": "giocomo_001701",
+    "origin_share": 0.0,
+    "fewest_bins": 32,
+    "heading_bins": 36,
+    "heading_bins_running": 36
+  },
+  {
+    "dataset": "gardner_2022_grid",
+    "origin_share": 0.0,
+    "fewest_bins": 60,
+    "heading_bins": 36,
+    "heading_bins_running": 36
+  },
+  {
+    "dataset": "vollan_lt",
+    "origin_share": 0.0,
+    "fewest_bins": 16,
+    "heading_bins": 36,
+    "heading_bins_running": 36
+  },
+  {
+    "dataset": "vollan_of",
+    "origin_share": 0.0,
+    "fewest_bins": 58,
+    "heading_bins": 36,
+    "heading_bins_running": 36
+  },
+  {
+    "dataset": "grosmark_000044_circular",
+    "origin_share": 0.0,
+    "fewest_bins": 53,
+    "linearized_origin_share": 0.0023255433091498665
+  },
+  {
+    "dataset": "grosmark_000044_linear",
+    "origin_share": 0.0,
+    "fewest_bins": 81,
+    "linearized_origin_share": 9.674922600619196e-05
+  },
+  {
+    "dataset": "jadhav_000447",
+    "origin_share": 0.0,
+    "fewest_bins": 44
+  }
+]

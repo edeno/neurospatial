@@ -19,6 +19,16 @@
       "verdict": "noisy",
       "gap": "G-001",
       "reason": "Second warning in the same decode.position call for the spikes outside tracking (sleep); same false alarm as the position-window one."
+    },
+    "neurospatial UserWarning: About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run.": {
+      "verdict": "correct",
+      "gap": null,
+      "reason": "The authors removed samples slower than 5 cm/s, so the series really is boolean-masked; the message's own fix (max_gap below the shortest removed run) applies."
+    },
+    "neurospatial UserWarning: About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.": {
+      "verdict": "correct",
+      "gap": null,
+      "reason": "The authors removed samples slower than 5 cm/s, so the series really is boolean-masked; the message's own fix (max_gap below the shortest removed run) applies."
     }
   },
   "hazards": {
@@ -40,7 +50,7 @@
     "sargolini_000582/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "New warnings: all units silent for 363 s, and 100% of spikes outside tracking with 'about 1000 times ... divide them by 1000'. Peak rates fall to 0."
+      "reason": "New warning: All 6 units are silent from 0.0 s to 362.7 s (363 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(st"
     },
     "sargolini_000582/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
@@ -60,7 +70,7 @@
     "peyrache_mouse32/headings_in_degrees/hd.tuning": {
       "verdict": "caught",
       "gap": null,
-      "reason": "New warning names the evidence (largest 180, steps of 359.9) and the fix (np.radians or angle_unit='deg'); the clean run's spike-drop warning repeats."
+      "reason": "New warning: compute_directional_rates: headings look like degrees (largest magnitude 180, all within ±360, and consecutive values differ by up to 359.9, more than"
     },
     "peyrache_mouse32/spike_times_in_ms/hd.tuning": {
       "verdict": "caught",
@@ -311,6 +321,306 @@
       "verdict": "no effect",
       "gap": null,
       "reason": "Mirroring does not change speeds or occupancy."
+    },
+    "gardner_2022_grid/headings_in_degrees/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: compute_directional_rates: headings look like degrees (largest magnitude 180, all within ±360, and consecutive values differ by up to 360, more than t"
+    },
+    "gardner_2022_grid/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 483 units are silent from 7457.0 s to 14778.0 s (7321 s) while position is tracked. If the electrophysiology was not recording then, pass spike_wi"
+    },
+    "gardner_2022_grid/spike_times_in_ms/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 483 units are silent from 7457.0 s to 14778.0 s (7321 s) while position is tracked. If the electrophysiology was not recording then, pass spike_wi"
+    },
+    "gardner_2022_grid/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [1.4779770374298096, 1.4748399257659912] in every dimension."
+    },
+    "gardner_2022_grid/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": "G-014",
+      "reason": "Occupancy itself does not warn, but Environment.from_samples warns in the same workflow (bin_size at least the data extent)."
+    },
+    "gardner_2022_grid/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bandwidth=5 spans the environment (extent 5 cm), which can erase spatial tuning. Choose an explicit bandwidth in the same units as positions; check en"
+    },
+    "gardner_2022_grid/headings_as_stored/hd.tuning": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Headings in [0, 2pi) give identical tuning: angles are used modulo 2pi."
+    },
+    "grosmark_000044_circular/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "18.5 % of samples become (0, 0), outside the track; one extra bin. Check 1 (origin share) would fire."
+    },
+    "grosmark_000044_circular/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "55 s of occupancy appear at the origin bin (max bin 15 s -> 102 s). Check 1 would fire."
+    },
+    "grosmark_000044_circular/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Spikes during untracked time are binned at the origin; peak rates shift slightly. Check 1 would fire."
+    },
+    "grosmark_000044_circular/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to and from the origin read as running: 633 -> 657 segments. Check 1 would fire."
+    },
+    "grosmark_000044_circular/missing_positions_as_zero/behavior.laps": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "1 lap before and after (laps are already wrong here, G-037)."
+    },
+    "grosmark_000044_circular/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 104 units are silent from 19848.5 s to 19949.3 s (101 s) while position is tracked. If the electrophysiology was not recording then, pass spike_wi"
+    },
+    "grosmark_000044_circular/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [1.2937265917602998, 1.3372093023255813] in every dimension."
+    },
+    "grosmark_000044_circular/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bi"
+    },
+    "grosmark_000044_circular/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty. Fix: 1"
+    },
+    "grosmark_000044_circular/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "Positions /100 make every speed fall below min_speed: 0 segments, no environment built, so check 2 cannot see it."
+    },
+    "grosmark_000044_circular/length_unit_off_by_100/behavior.laps": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no h"
+    },
+    "grosmark_000044_linear/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Untracked samples become (0, 0); one extra bin. Check 1 would fire."
+    },
+    "grosmark_000044_linear/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "97 s of occupancy appear at the origin bin. Check 1 would fire."
+    },
+    "grosmark_000044_linear/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Spikes during untracked time are binned at the origin; median peak 15.9 -> 16.5 Hz. Check 1 would fire."
+    },
+    "grosmark_000044_linear/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to and from the origin read as running: 522 -> 574 segments. Check 1 would fire."
+    },
+    "grosmark_000044_linear/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 8414280/8414607 spike_times (100%) across all neurons fell outside the position time window [18079.5, 20147]; spike_times.min()=36.15 spike_times.max("
+    },
+    "grosmark_000044_linear/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [1.984679032278987, 2.20088829509912] in every dimension."
+    },
+    "grosmark_000044_linear/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bi"
+    },
+    "grosmark_000044_linear/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty. Fix: 1"
+    },
+    "grosmark_000044_linear/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "0 segments; no environment built, so check 2 cannot see it."
+    },
+    "jadhav_000447/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 57 units are silent from 10745.8 s to 11691.4 s (946 s) while position is tracked. If the electrophysiology was not recording then, pass spike_win"
+    },
+    "jadhav_000447/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [1.160716021351598, 1.0613520130309406] in every dimension."
+    },
+    "jadhav_000447/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: "
+    },
+    "jadhav_000447/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: pass max_"
+    },
+    "jadhav_000447/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "0 segments; no environment built, so check 2 cannot see it."
+    },
+    "jadhav_000447/length_unit_off_by_100/behavior.laps": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no h"
+    },
+    "jadhav_000447/speed_read_as_a_dimension/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-042",
+      "reason": "The only warning is about memory (a 48 x 44 x 118 grid); nothing says the third column is not a length."
+    },
+    "jadhav_000447/speed_read_as_a_dimension/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-042",
+      "reason": "Occupancy spread over speed as a third axis: median 0.60 -> 0.04 s per bin."
+    },
+    "jadhav_000447/speed_read_as_a_dimension/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-042",
+      "reason": "Rate maps over (x, y, speed): median peak 10 -> 100 Hz from near-empty bins."
+    },
+    "jadhav_000447/speed_read_as_a_dimension/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-042",
+      "reason": "Speed computed in (x, y, speed) space: 535 -> 686 running segments."
+    },
+    "jadhav_000447/speed_read_as_a_dimension/behavior.laps": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop."
+    },
+    "vollan_lt/headings_in_degrees/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: compute_directional_rates: headings look like degrees (largest magnitude 180, all within ±360, and consecutive values differ by up to 359.6, more than"
+    },
+    "vollan_lt/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 214394/214394 spike_times (100%) across all neurons fell outside the position time window [7227.56, 8412.35]; spike_times.min()=7.22756e+06 spike_time"
+    },
+    "vollan_lt/spike_times_in_ms/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 214394/214394 spike_times (100%) across all neurons fell outside the position time window [7227.56, 8412.35]; spike_times.min()=7.22756e+06 spike_time"
+    },
+    "vollan_lt/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [0.37129783630371094, 2.1623010635375977] in every dimension."
+    },
+    "vollan_lt/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": "G-014",
+      "reason": "Environment.from_samples warns in the same workflow."
+    },
+    "vollan_lt/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bandwidth=5 spans the environment (extent 5 cm), which can erase spatial tuning. Choose an explicit bandwidth in the same units as positions; check en"
+    },
+    "vollan_lt/times_rebuilt_from_dt/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Positions are unchanged; the environment does not use times."
+    },
+    "vollan_lt/times_rebuilt_from_dt/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-040",
+      "reason": "Total occupancy 319 -> 300 s and per-bin medians nearly unchanged; the error is the spike alignment, which the spike rows catch."
+    },
+    "vollan_lt/times_rebuilt_from_dt/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 114595/214394 spike_times (53%) across all neurons fell outside the position time window [7227.56, 7527.55]; spike_times.min()=7227.56 spike_times.max"
+    },
+    "vollan_lt/times_rebuilt_from_dt/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 114595/214394 spike_times (53%) across all neurons fell outside the position time window [7227.56, 7527.55]; spike_times.min()=7227.56 spike_times.max"
+    },
+    "vollan_of/headings_in_degrees/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: compute_directional_rates: headings look like degrees (largest magnitude 180, all within ±360, and consecutive values differ by up to 359.9, more than"
+    },
+    "vollan_of/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 830777/830777 spike_times (100%) across all neurons fell outside the position time window [3449.02, 5047.69]; spike_times.min()=3.44902e+06 spike_time"
+    },
+    "vollan_of/spike_times_in_ms/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: 830777/830777 spike_times (100%) across all neurons fell outside the position time window [3449.02, 5047.69]; spike_times.min()=3.44902e+06 spike_time"
+    },
+    "vollan_of/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [1.4192953705787659, 1.4019140005111694] in every dimension."
+    },
+    "vollan_of/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught upstream",
+      "gap": "G-014",
+      "reason": "Environment.from_samples warns in the same workflow."
+    },
+    "vollan_of/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: bandwidth=5 spans the environment (extent 5 cm), which can erase spatial tuning. Choose an explicit bandwidth in the same units as positions; check en"
+    },
+    "vollan_of/length_unit_off_by_100/behavior.laps": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no h"
+    },
+    "vollan_of/times_rebuilt_from_dt/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "Positions are unchanged; the environment does not use times."
+    },
+    "vollan_of/times_rebuilt_from_dt/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-040",
+      "reason": "Total occupancy 639 -> 600 s, per-bin medians unchanged; the spike rows catch the misalignment."
+    },
+    "vollan_of/times_rebuilt_from_dt/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 644 units are silent from 3520.1 s to 3590.4 s (70 s) while position is tracked. If the electrophysiology was not recording then, pass spike_windo"
+    },
+    "vollan_of/times_rebuilt_from_dt/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "New warning: All 644 units are silent from 3520.1 s to 3590.4 s (70 s) while position is tracked. If the electrophysiology was not recording then, pass spike_windo"
+    },
+    "vollan_of/times_rebuilt_from_dt/behavior.laps": {
+      "verdict": "silent",
+      "gap": "G-015",
+      "reason": "0 -> 1 lap in an open arena once the gaps are closed (laps in open arenas, decision 5)."
     }
   },
   "cells": {
@@ -349,6 +659,42 @@
     },
     "yartsev_bat_demo/behavior.laps": {
       "gap": "G-015"
+    },
+    "gardner_2022_grid/cells.border_score": {
+      "gap": "G-005"
+    },
+    "gardner_2022_grid/behavior.laps": {
+      "gap": "G-015"
+    },
+    "grosmark_000044_circular/cells.border_score": {
+      "gap": "G-005"
+    },
+    "grosmark_000044_circular/io.nwb_readers": {
+      "gap": "G-012"
+    },
+    "grosmark_000044_linear/cells.border_score": {
+      "gap": "G-005"
+    },
+    "grosmark_000044_linear/behavior.laps": {
+      "gap": "G-015"
+    },
+    "grosmark_000044_linear/io.nwb_readers": {
+      "gap": "G-012"
+    },
+    "jadhav_000447/cells.border_score": {
+      "gap": "G-005"
+    },
+    "jadhav_000447/io.nwb_readers": {
+      "gap": "G-042"
+    },
+    "vollan_lt/cells.border_score": {
+      "gap": "G-005"
+    },
+    "vollan_lt/behavior.laps": {
+      "gap": "G-015"
+    },
+    "vollan_of/cells.border_score": {
+      "gap": "G-005"
     }
   }
 }

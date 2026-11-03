@@ -147,6 +147,7 @@ def spatial_information(rec: Recording, cache: dict[str, Any]) -> Outcome:
 
 
 N_SHIFTS = 4
+REPLAY_ON_LINEARIZED_GAP = "G-038"
 MIN_SHIFT_S = 20.0
 
 
@@ -434,13 +435,30 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
             "n/a",
             note="needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
         )
-    env, dt = _env(rec, cache), rec.params["replay_dt"]
+    dt = rec.params["replay_dt"]
+    positions, status, gap, note = rec.positions, "ok", None, ""
+    if positions.shape[1] > 1 and "linearized" in rec.params:
+        # Replay scores need a position along a track; a track recorded in 2-D
+        # is decoded on the file's own linearized coordinate instead.
+        from neurospatial import Environment
+
+        positions = np.asarray(rec.params["linearized"], dtype=float).reshape(-1, 1)
+        env = Environment.from_samples(
+            positions,
+            bin_size=rec.params["bin_size"],
+            units=_units(rec),
+            name=f"{rec.dataset}-linearized",
+        )
+        status, gap = "workaround", REPLAY_ON_LINEARIZED_GAP
+        note = "decoded on params['linearized'], the file's track coordinate"
+    else:
+        env = _env(rec, cache)
     spikes = list(rec.spike_times or ())
     rates = compute_spatial_rates(
         env,
         spikes,
         rec.times,
-        rec.positions,
+        positions,
         min_speed=rec.params.get("min_speed"),
         epochs=rec.params.get("train_epochs"),
     )
@@ -463,7 +481,7 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
     for row in detection_rates(table).itertuples():
         summary[f"{row.method}_rate"] = float(row.rate)
         summary[f"{row.method}_ci"] = f"{row.ci_low:.3f}-{row.ci_high:.3f}"
-    return Outcome("ok", summary)
+    return Outcome(status, summary, note=note, gap=gap)
 
 
 _TO_CM = {"m": 100.0, "cm": 1.0, "mm": 0.1}

@@ -14,7 +14,7 @@ spikes keep far more information (median 3.55 bits/spike) than that estimate
    have. Then the estimate matches simulated Poisson cells, simulated bursty
    cells show more, and real units' shift null sits above the estimate.
 
-Steps (all seeds fixed; written to ``results/information_bias_null.{md,json}``):
+Steps (all seeds fixed; written to ``results/studies/information_bias_null.{md,json}``):
 
 - Simulated untuned cells on each recording's own trajectory and analysis
   settings (``operations._rates``): ``N_SIM`` Poisson units and ``N_SIM``
@@ -48,7 +48,7 @@ sys.path.insert(0, str(HERE.parent))
 from _record import Recording  # noqa: E402
 from operations import MIN_SHIFT_S, _env, _rates  # noqa: E402
 
-RESULTS = HERE.parent / "results"
+RESULTS = HERE.parent / "results" / "studies"
 DATASETS = (
     "yartsev_bat_demo",
     "sargolini_000582",
@@ -290,7 +290,7 @@ if __name__ == "__main__":
         out = json.loads((RESULTS / "information_bias_null.json").read_text())
     else:
         out = run(tuple(sys.argv[1:]) or DATASETS)
-        RESULTS.mkdir(exist_ok=True)
+        RESULTS.mkdir(parents=True, exist_ok=True)
         (RESULTS / "information_bias_null.json").write_text(
             json.dumps(out, indent=2) + "\n"
         )

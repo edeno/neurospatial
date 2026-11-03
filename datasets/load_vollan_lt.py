@@ -28,8 +28,9 @@ What the loader converts:
   this rat), Kilosort labels ``good`` and ``mua`` both kept as the authors
   shared them. Grid-module membership (``acorrCluId``, ``isGrid``) goes to
   ``params``: a unit's ``acorrCluId`` k (0 for none) is the k-th entry of
-  ``unitAcorrClus.grid``, whose ``nUnits`` match the counts (checked); that
-  entry's ``cluId`` is a different number and is not used.
+  ``unitAcorrClus.grid``, defined on the open-field session, so a module
+  counts at most its ``nUnits`` units (checked; 84 of 85 here); that entry's
+  ``cluId`` is a different number and is not used.
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` None (the
 data are already speed-filtered); ``dt`` 0.25 s and alternating 60 s
@@ -135,8 +136,10 @@ def read_session(path: Path) -> dict[str, Any]:
 
     sizes = per_module("nUnits").astype(int)
     found = np.array([modules.count(k) for k in range(1, grid.size + 1)])
-    if not np.array_equal(sizes, found):
-        msg = f"unit acorrCluId counts {found} no longer match the module sizes {sizes}"
+    # Modules are defined on the open-field session; another session's file
+    # can hold fewer of their units, never more.
+    if np.any(found > sizes):
+        msg = f"unit acorrCluId counts {found} exceed the module sizes {sizes}"
         raise ValueError(msg)
     return {
         "t": series("t"),

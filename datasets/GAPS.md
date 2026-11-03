@@ -116,6 +116,15 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   the map on the neurospatial side moves unit 2 from 0.179 to 0.307 — and the
   undefined-lag rule accounts for the rest (0.307 vs 0.551 on opexebo's
   autocorrelogram). A threshold near 0.3–0.4 would classify unit 2 differently.
+- More evidence (populations): on Gardner 2022 (483 module units) and
+  Vollan 2025 rat 26018 (233 units in three modules), `reference_checks.md`
+  sections 2b–2c score each unit under every convention. A NaN-aware Pearson
+  at every lag with at least 20 overlapping bins (option a) is closest to
+  opexebo on Gardner (r 0.966 vs 0.886 for today's rule) and closest to the
+  authors' own module medians on Vollan: module 3, the largest spacing,
+  scores 0.16 with today's quarter-overlap rule against the authors' 0.68
+  (option a 0.77, opexebo 0.48). The quarter-overlap rule over the full lag
+  range reproduces today's scores exactly, which checks the harness version.
 - Harness workaround: none
 - Proposed change: undecided — compare the overlap rule and NaN handling with
   BNT/opexebo's `normxcorr2_general`, then either match it or document why not.
@@ -203,7 +212,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-012: `read_position(position_name=)` rejects the `Position` container name
 
-- Datasets: figure8_000552
+- Datasets: figure8_000552, grosmark_000044_circular, grosmark_000044_linear
 - Operation / step: loader (`read_position`), io.nwb_readers
 - Kind: error-message
 - Evidence: with two position series, `read_position(nwbfile)` refuses to
@@ -213,7 +222,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   full series paths. The container name is what a user sees first in the file.
   With default arguments (`io.nwb_readers`) the refusal is the right
   behavior; the cell is an error because a reader raised, as the operation
-  defines it.
+  defines it. 000044 repeats it: `position_name="CircularMazePosition"` is
+  refused, and the default call lists the linearized series as a second
+  Position candidate.
 - Harness workaround: the loader passes the full series path
 - Proposed change: accept a `Position` container name when it holds one series.
 - Status: open
@@ -258,7 +269,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-015: `detect_laps` finds laps on a maze with no loop
 
-- Datasets: rosenberg_labyrinth, sargolini_000582, miniscope_002030
+- Datasets: rosenberg_labyrinth, sargolini_000582, miniscope_002030, jadhav_000447, vollan_of
 - Operation / step: behavior.laps
 - Kind: wrong-result
 - Evidence: the labyrinth is a binary tree (`nx.is_tree` on the track graph is
@@ -278,6 +289,12 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Status: partly fixed (#265): mazes and 3-D spaces are refused; open arenas
   (000582 box, 002030 arena) still give one lap each, apparently because
   unvisited patches inside an arena built from samples count as holes
+- More evidence (second batch): on the open arenas, Gardner's 1.5 m box is
+  refused ("no loop"), Vollan rat 26018's box gives 0 laps (1 once the
+  speed-filter gaps are closed, hazard `times_rebuilt_from_dt`), and the
+  000447 W-track, a track with no loop built from samples, gives 1 clockwise
+  lap. Straight tracks (000044 linear, Vollan linear) are refused, as they
+  should be. On a real loop the opposite fails: G-037.
 
 ## G-016: A track graph without `track_width` cannot place positions
 
@@ -358,7 +375,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-021: No periodic 1-D track: a linearized loop is treated as a line
 
-- Datasets: figure8_000552
+- Datasets: figure8_000552, grosmark_000044_circular
 - Operation / step: behavior.laps, behavior.segment_by_velocity, env.from_samples
 - Kind: missing-feature
 - Evidence: the file's linearized position runs around the figure-8 as a loop
@@ -369,6 +386,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   speed spikes of about 6,500 cm/s. `Environment.from_graph` cannot express
   the loop either: its node positions must be in the positions' coordinates,
   and on a 1-D axis 0 and 222 are different points.
+- More evidence: the 1 m circular track of 000044 (Achilles 11012013)
+  stores a linearized coordinate from 0 to 290 cm that wraps 123 times; its
+  replay cell decodes on it as a line (G-038).
 - Harness workaround: none (laps cell is `err`)
 - Proposed change: undecided — a periodic 1-D track (a length and a flag that
   the ends meet), or a documented recipe that embeds a linearized loop as a
@@ -629,3 +649,112 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (the expectation stays as registered)
 - Proposed change: none
 - Status: won't fix (the expectation, not the loader, was wrong)
+
+## G-037: `detect_laps` finds 1 lap where a rat ran about 100 laps of a circular track
+
+- Datasets: grosmark_000044_circular
+- Operation / step: behavior.laps (`detect_laps(env, times, positions)`, defaults)
+- Kind: wrong-result
+- Evidence: Achilles 11012013 runs the 1 m circular track for 45 min. The
+  angle of the 2-D position around the track's centre turns −97 times net
+  (222 turns counting both directions), and the file's linearized coordinate
+  wraps 123 times. On an environment built from the samples (a ring with a
+  real hole), `detect_laps` returns 1 lap with its defaults; `min_overlap=0.5`
+  returns 34; `max_gap=None` or `max_gap=10.0` returns 0. 18.5 % of samples
+  are untracked (NaN) and the tracked samples have 23 gaps over 1 s. The
+  default method matches laps against a reference lap at 80 % overlap; on a
+  real trajectory with tracking gaps almost no lap reaches that.
+- Harness workaround: none
+- Proposed change: undecided; find which step loses the laps (reference-lap
+  choice, overlap on gappy laps, segmentation at gaps) and test on this
+  session, where the true count is known from the angle.
+- Status: open
+
+## G-038: Replay on a track recorded in 2-D needs the track coordinate
+
+- Datasets: grosmark_000044_circular, grosmark_000044_linear
+- Operation / step: replay.compare_methods
+- Kind: missing-feature
+- Evidence: with 2-D positions, `compare_replay_methods` refuses: "needs a
+  position along a track, but this is a 2-D RegularGrid environment", and
+  suggests `Environment.linear_track(endpoints=...)`,
+  `Environment.maze(...)` or `Environment.from_graph(...)`. The refusal is
+  right and says what to do. For the 1.6 m linear track, a user would need
+  the track's endpoints, which the file does not state. For the circular
+  track no factory fits: it is a loop (G-021).
+- Harness workaround: the operation decodes on the file's own linearized
+  coordinate (`params["linearized"]`, a 1-D environment), status
+  `workaround`. On the circular track that treats the loop as a line (G-021).
+- Proposed change: the loop factory agreed for G-021; nothing for the linear
+  track beyond the existing message.
+- Status: open
+
+## G-039: Pre-registered expectations that were wrong in the second batch
+
+- Datasets: gardner_2022_grid, grosmark_000044_circular, grosmark_000044_linear
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: Gardner rat R day 1 has 483 module units, not the 250–450
+  expected from memory of the paper. The 000044 loaders add the file's sleep
+  states as epochs (as the figure-8 loader does), so the epoch names are not
+  only `pre`/`maze`/`post`. The 000044 position extents (about 133 cm on the
+  circular track) are wider than expected: the single LED moves with the
+  head beyond the track.
+- Harness workaround: none (the expectations stay as registered)
+- Proposed change: none
+- Status: won't fix (the expectations, not the loaders, were wrong)
+
+## G-040: Vollan files are speed-filtered and list fewer sessions than they hold
+
+- Datasets: vollan_lt, vollan_of
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: the authors removed every sample slower than 5 cm/s, so `t` has
+  gaps (132 longer than 2 dt on the linear track, the longest 332 s). The
+  documentation says so, and also gives `dt` and `nt`: a reader building
+  times from them would close the gaps and shift every later sample against
+  the spikes (hazard `times_rebuilt_from_dt`). The linear-track file's
+  `sessions` lists 7227–7486 s, but samples run to 8412 s (55 % lie outside
+  the listed session). Grid modules are defined on the open-field session:
+  the linear-track file holds 84 of its module's 85 units.
+- Harness workaround: none; gaps kept, every sample kept, module counts
+  checked as at most the module size
+- Proposed change: none for neurospatial (the hazard row shows whether it
+  notices rebuilt times)
+- Status: won't fix (data quirk)
+
+## G-041: 000044 has no ripple table; replay candidates are population bursts
+
+- Datasets: grosmark_000044_circular, grosmark_000044_linear
+- Operation / step: loader, replay.compare_methods
+- Kind: data-quirk
+- Evidence: a walk of the whole file finds units, position, epochs and a
+  sleep-state table, but no ripple or candidate-event intervals.
+- Harness workaround: the loader finds population bursts in POST non-REM
+  sleep by a stated rule (multiunit rate in 1 ms bins, 15 ms Gaussian; peak
+  above mean + 3 SD; bounded by mean crossings; 50–500 ms): 2010 bursts on
+  the circular track, 1646 on the linear track; the first 200 are decoded.
+- Proposed change: none (neurospatial does not detect ripples from LFP;
+  `replay.burst_onset_times` is per unit)
+- Status: won't fix (data quirk)
+
+## G-042: A speed column read as a position axis is flagged only by a memory warning
+
+- Datasets: jadhav_000447
+- Operation / step: io.nwb_readers, env.from_samples, env.occupancy, rates.spatial, behavior.segment_by_velocity
+- Kind: silent-hazard
+- Evidence: 000447 stores x, y and speed in one `SpatialSeries` under the
+  unit "centimeters; centimeters/second". `read_position` refuses it with a
+  clear message ("has 3 columns and declares unit 'centimeters;
+  centimeters/second', which is not one length or pixel unit … a column may
+  hold speed"), which is the right behavior and why the `io.nwb_readers` cell
+  is an error. A user who reads the array with pynwb and passes all three
+  columns gets a 3-D environment with only a memory warning (a
+  48 × 44 × 118 grid), occupancy spread over speed (median 0.60 → 0.04 s per
+  bin), rate maps from near-empty bins (median peak 10 → 100 Hz) and 535 →
+  686 running segments. Nothing says the third axis is not a length.
+- Harness workaround: the loader keeps columns 0 and 1 and checks that column
+  2 tracks the speed from x, y (r = 0.71)
+- Proposed change: the reader-coverage plan's column choice (proposal 6);
+  nothing on raw arrays can tell speed from a third spatial axis
+- Status: open

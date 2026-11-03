@@ -38,7 +38,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
+    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
   },
   "load_warnings": [],
   "operations": {
@@ -52,7 +52,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.244,
+      "seconds": 0.251,
       "peak_mb": 18.3
     },
     "env.occupancy": {
@@ -66,7 +66,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.211,
+      "seconds": 0.206,
       "peak_mb": 32.5
     },
     "rates.spatial": {
@@ -123,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.061,
+      "seconds": 0.064,
       "peak_mb": 0.8
     },
     "behavior.segment_by_velocity": {
@@ -135,16 +135,16 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.219,
+      "seconds": 0.218,
       "peak_mb": 16.1
     },
     "behavior.laps": {
       "status": "error",
       "summary": {},
-      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.46,
+      "seconds": 1.449,
       "peak_mb": 32.2
     },
     "behavior.turn_sequence": {
@@ -156,7 +156,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.028,
+      "seconds": 1.014,
       "peak_mb": 32.2
     },
     "replay.compare_methods": {
@@ -167,7 +167,7 @@
     "io.nwb_readers": {
       "status": "n/a",
       "summary": {},
-      "note": "params has no nwb_path (not an NWB dataset)",
+      "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
       "seconds": 0.0,
