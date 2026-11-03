@@ -68,7 +68,10 @@ NEUROSPATIAL_UPDATE_API_SNAPSHOT=1 uv run pytest tests/test_public_api_snapshot.
   Result methods (`is_*_cell()`, `classify()`, `label_cell_types()`) are
   threshold screens and take no `criterion=`.
 - `method="binned"` is the unsmoothed occupancy-normalized histogram unless a
-  `bandwidth` is passed; the kernel methods default to a 5 cm bandwidth.
+  `bandwidth` is passed. The kernel methods default to a 5 cm bandwidth when
+  `env.units` is a metric unit. With unset, pixel or custom units, spatial and
+  view smoothing fall back to 2.5 median bin spacings and warn with the value;
+  object- and boundary-vector maps need an explicit `bandwidth=`.
 
 ## Canonical argument order
 

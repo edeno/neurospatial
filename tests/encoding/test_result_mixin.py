@@ -122,17 +122,21 @@ def test_directional_correlation_of_a_map_flat_up_to_rounding_is_nan(
     assert np.isnan(result.correlation("rev", "fwd"))
 
 
-def test_directional_summary_includes_correlation(linear_env: Environment) -> None:
+def test_directional_summary_reads_back_each_peak(linear_env: Environment) -> None:
+    """Each direction's peak is a summary entry and a ``peak_firing_rates`` entry."""
     n = linear_env.n_bins
-    result = _directional(
-        linear_env, np.linspace(1.0, 5.0, n), np.linspace(5.0, 1.0, n)
-    )
+    outbound = np.linspace(1.0, 5.0, n)
+    outbound[0] = np.nan  # an unsupported bin is not a peak
+    result = _directional(linear_env, outbound, np.linspace(5.0, 2.0, n))
     s = result.summary()
-    assert s["n_directions"] == 2
-    assert s["n_bins"] == n
-    assert np.isclose(s["correlation"], -1.0)
-    assert "peak_fwd" in s
-    assert "peak_rev" in s
+    assert s["n_directions"] == result.n_directions == 2
+    assert s["n_bins"] == result.n_bins == n
+    assert s["peak_firing_rates[fwd]"] == result.peak_firing_rates["fwd"] == 5.0
+    assert s["peak_firing_rates[rev]"] == result.peak_firing_rates["rev"] == 5.0
+    assert "peak_firing_rates[fwd]=5 Hz" in repr(result)
+    # A two-label comparison needs its labels, so it is a method, not a key.
+    assert "correlation" not in s
+    assert np.isclose(result.correlation("fwd", "rev"), -1.0)
 
 
 def test_result_to_dataframe_tidy(
@@ -180,8 +184,16 @@ def test_place_fields_result_surface() -> None:
     assert s["n_fields"] == 2
     assert s["total_bins"] == 3
 
+    # One row per field bin: the tidy (unit, bin) table.
+    bins = result.to_dataframe()
+    assert bins["unit_id"].tolist() == [4, 4, 4]
+    assert bins["field"].tolist() == [0, 0, 1]
+    assert bins["bin"].tolist() == [0, 1, 5]
+    np.testing.assert_array_equal(bins["bin_center_x"], env.bin_centers[[0, 1, 5], 0])
+    np.testing.assert_allclose(bins["firing_rate"], [0.0, 1.0, 5.0])
+
     # One row per field, computed from the field's own bins.
-    df = result.to_dataframe()
+    df = result.fields_table()
     assert df["unit_id"].tolist() == [4, 4]
     assert df["field"].tolist() == [0, 1]
     assert df["n_bins"].tolist() == [2, 1]
@@ -199,9 +211,11 @@ def test_place_fields_result_surface() -> None:
         excluded_reason="mean_rate_above_threshold",
     )
     assert excluded.summary()["n_excluded"] == 1
-    empty_df = excluded.to_dataframe()
+    empty_df = excluded.fields_table()
     assert list(empty_df.columns[:3]) == ["unit_id", "field", "n_bins"]
     assert len(empty_df) == 0
+    assert list(excluded.to_dataframe().columns[:3]) == ["unit_id", "field", "bin"]
+    assert len(excluded.to_dataframe()) == 0
     assert excluded.summary_table().index.isna().all()
 
 
@@ -319,6 +333,28 @@ class TestResultRepr:
         assert repr(Path(units)) == (
             f"Path(length=12.5{shown}, speed=2{speed}, duration=3 s)"
         )
+
+    def test_coordinate_unit_falls_back_to_the_environment(self) -> None:
+        """A result that carries ``env`` and no ``units`` shows ``env.units``."""
+
+        class Decoded(ResultMixin):
+            _repr_units = MappingProxyType({"error": "{units}", "speed": "{units}/s"})
+
+            def __init__(self, env: Environment, units: str | None = None) -> None:
+                self.env = env
+                if units is not None:
+                    self.units = units
+
+            def summary(self) -> dict:
+                return {"error": 4.5, "speed": 2.0}
+
+        positions = np.linspace(0, 9, 10)[:, None]
+        in_cm = Environment.from_samples(positions, bin_size=1.0, units="cm")
+        assert repr(Decoded(in_cm)) == "Decoded(error=4.5 cm, speed=2 cm/s)"
+        # The result's own unit, when it records one, comes first.
+        assert repr(Decoded(in_cm, units="m")) == "Decoded(error=4.5 m, speed=2 m/s)"
+        unknown = Environment.from_samples(positions, bin_size=1.0)
+        assert repr(Decoded(unknown)) == "Decoded(error=4.5, speed=2)"
 
     def test_tuning_peak_location_takes_the_variable_unit(self) -> None:
         from neurospatial.encoding import compute_tuning_curve

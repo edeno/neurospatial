@@ -1,8 +1,10 @@
 # Quickstart
 
-In a few lines, neurospatial turns spike times and a trajectory into a **place
-field** — a smoothed map of where a neuron fires in space. This page walks
-through that end-to-end analysis on simulated data, then explains the pieces.
+In a few lines, neurospatial turns spike times and a trajectory into a
+**firing-rate map**: a neuron's firing rate in each small area of the arena.
+A **place field** is a thresholded region of that map, a contiguous patch of
+high firing rate, not the whole map. This page walks through the end-to-end
+analysis on simulated data, then explains the pieces.
 
 ## Install
 
@@ -135,10 +137,13 @@ plt.show()
 Four concepts carried that analysis. They are worth a minute now; the
 [Core Concepts](core-concepts.md) page goes deeper.
 
-**Environment.** `Environment.from_samples(...)` discretized the continuous
-arena into a grid of **bins** (small square tiles), keeping only the bins your
-samples actually covered. Presets cover common apparatus:
-`Environment.open_field` also keeps unvisited patches inside the arena, and
+**Environment.** `Environment.from_polygon(box(0, 0, 100, 100), ...)`
+discretized the continuous arena into a grid of **bins** (small square tiles),
+keeping every bin inside the arena outline: 50 x 50 = 2500 bins of 2 cm,
+visited or not. `Environment.from_samples(positions, ...)` instead keeps only
+the bins your samples covered. Presets cover common apparatus:
+`Environment.open_field` builds the arena from a trajectory and fills the
+unvisited holes inside the explored area, and
 `Environment.linear_track` and `Environment.maze` build linearized tracks (see
 [presets](../user-guide/environments.md#presets)). `env.n_bins` reports how
 many bins there are, and every later step — occupancy, smoothing, plotting —

@@ -251,6 +251,29 @@ def test_shape_edge_cases_keep_their_precise_messages(session, rates, counts):
         BayesianDecoder(env).fit(padded, times, positions)
 
 
+def test_rectangular_list_of_counts_is_a_count_matrix(session, rates):
+    """A nested list of whole-number counts decodes like the same ndarray.
+
+    Every row here increases, as spike trains do, but the rows have one
+    length and hold non-negative whole numbers: a count matrix.
+    """
+    nested = [[0, 1, 3], [1, 2, 4], [0, 1, 2]]
+    from_list = decode_position(session.env, nested, rates, dt=0.1)
+    from_array = decode_position(session.env, np.array(nested), rates, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
+
+
+def test_equal_length_spike_trains_are_still_refused_as_counts(session, rates):
+    # Equal-length trains in seconds are fractional: still spike trains.
+    trains = [np.asarray(train[:5]) for train in session.spike_times]
+    assert len({train.size for train in trains}) == 1
+    with pytest.raises(TypeError, match="got 3 spike trains"):
+        decode_position(session.env, trains, rates, dt=0.1)
+    one_spike_each = [[0.5], [1.2], [3.3]]
+    with pytest.raises(TypeError, match="got 3 spike trains"):
+        decode_position(session.env, one_spike_each, rates, dt=0.1)
+
+
 def test_list_of_pynapple_trains_passed_as_counts(session, rates):
     nap = pytest.importorskip("pynapple")
     trains = [nap.Ts(np.asarray(t)) for t in session.spike_times]
@@ -269,3 +292,36 @@ def test_bin_spike_trains_accepts_one_epoch_as_an_array(session):
         epochs=np.array([0.0, 30.0]),
     )
     assert counts.shape == (1, session.env.n_bins)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda s, r, c: compute_spatial_rate(
+            s.spike_times[0], s.times, s.positions, s.env
+        ),
+        lambda s, r, c: decode_position(c, s.env, r, dt=0.025),
+        lambda s, r, c: is_place_cell(
+            s.spike_times[0], s.env, s.times, s.positions, criterion="threshold"
+        ),
+    ],
+    ids=["env-last", "decode-env-second", "place-cell-env-second"],
+)
+def test_misplaced_environment_says_move_it_first(session, rates, counts, call):
+    """Each call fills every positional slot, so it binds; the Environment in
+    a later slot is named, not a raw NumPy error from the data in its place."""
+    with pytest.raises(TypeError, match="not the first positional argument") as caught:
+        call(session, rates, counts)
+    assert "with env first" in str(caught.value)
+    assert "Environment.from_samples" not in str(caught.value)
+
+
+def test_missing_environment_advice_names_units(session):
+    """Building an environment without units= would trigger the units-free
+    bandwidth warning, so the advice to build one includes it."""
+    data = np.asarray(session.positions)
+    with pytest.raises(TypeError, match="expects an Environment") as caught:
+        compute_spatial_rate(data, session.spike_times[0], session.times, data)
+    assert 'Environment.from_samples(positions, bin_size=2.0, units="cm")' in str(
+        caught.value
+    )

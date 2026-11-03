@@ -946,9 +946,13 @@ def _no_variation(values: NDArray[np.float64]) -> bool:
 
 
 def _observed_z_scores(
-    values: NDArray[np.float64], *, no_variation: str, invert: bool
+    values: NDArray[np.float64], *, no_variation: str | None, invert: bool
 ) -> NDArray[np.float64]:
-    """Z-scores over the finite entries; NaN elsewhere, or everywhere if none."""
+    """Z-scores over the finite entries; NaN elsewhere, or everywhere if none.
+
+    ``no_variation`` is the warning for entries that do not vary, or None
+    for no warning.
+    """
     z_scores = np.full(values.shape, np.nan)
     finite = np.isfinite(values)
     if not finite.any():
@@ -958,7 +962,7 @@ def _observed_z_scores(
     std = np.std(observed)
     if std < _NO_VARIATION_TOLERANCE:
         # One observed trial always has std 0; that is not a finding.
-        if observed.size > 1:
+        if observed.size > 1 and no_variation is not None:
             warnings.warn(
                 no_variation,
                 category=UserWarning,
@@ -1373,7 +1377,7 @@ def compute_vte_session(
         as stopped. With units that are not a metric length, pass it explicitly.
     head_sweep_weight : float, default=0.5
         Weight for head sweep in VTE index (1-head_sweep_weight for speed), in [0, 1].
-        Default 0.5 weights both equally.
+        Default 0.5 weights both equally; 0 gives a speed-only index.
     vte_threshold : float, default=0.5
         Threshold for VTE classification (finite).
         Trial is VTE if ``vte_index >= vte_threshold``.
@@ -1424,7 +1428,8 @@ def compute_vte_session(
         When two or more trials have head sweeps that do not differ (session
         std below 1e-10 rad, as on straight runs), every trial has
         ``is_vte=None``: ranking such trials would classify on speed alone.
-        Without any measured trial the session statistics and
+        With ``head_sweep_weight=0`` the index is speed alone, so they are
+        classified, with no warning. Without any measured trial the session statistics and
         ``vte_fraction`` are NaN.
 
     Raises
@@ -1605,11 +1610,15 @@ def compute_vte_session(
     speeds = np.array([m.mean_speed for m in measured])
     # Trials whose head sweeps do not differ (straight runs, sums of
     # floating-point noise) cannot be ranked by sweeping: a verdict would rest
-    # on speed alone, so they are left unclassified.
+    # on speed alone, so they are left unclassified, unless head_sweep_weight=0
+    # asked for a speed-only index.
+    speed_only = head_sweep_weight == 0.0
     sweeps_vary = not _no_variation(head_sweeps)
     z_head_sweeps = _observed_z_scores(
         head_sweeps,
-        no_variation="No variation in head sweep magnitude across trials "
+        no_variation=None
+        if speed_only
+        else "No variation in head sweep magnitude across trials "
         f"(std below {_NO_VARIATION_TOLERANCE:g} rad): every trial has the same "
         "head sweep, as on straight runs, so is_vte is <NA> (unclassified) for "
         "every trial instead of a verdict on speed alone.\n"
@@ -1636,7 +1645,7 @@ def compute_vte_session(
                 vte_index=vte_idx,
                 is_vte=(
                     classify_vte(vte_idx, threshold=vte_threshold)
-                    if sweeps_vary
+                    if sweeps_vary or speed_only
                     else None
                 ),
             )

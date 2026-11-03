@@ -1785,3 +1785,49 @@ def test_session_trial_without_duration_has_no_samples_and_no_warning(
     statuses = [r.status for r in result.trial_results]
     assert statuses.count("no_samples") == 1
     assert statuses.count("ok") == 2
+
+
+def test_speed_only_index_classifies_straight_runs():
+    """head_sweep_weight=0 asks for a speed-only index, so straight runs at
+    different speeds are classified, with no head-sweep warning.
+
+    Six straight approaches at 10-60 cm/s: the speed z-scores are those of
+    six evenly spaced values, (2.5 - k) / sqrt(35 / 12) for trial k, negated
+    so the slowest trial scores highest.
+    """
+    from shapely.geometry import box
+
+    from neurospatial import Environment
+    from neurospatial.behavior.vte import compute_vte_session
+
+    env = Environment.from_polygon(box(0, 0, 100, 10), bin_size=2.0, units="cm")
+    regions = Regions()
+    regions.add("center", polygon=box(70, 0, 80, 10))
+    env = env.with_regions(regions)
+    times, positions, trials, t0 = [], [], [], 0.0
+    for speed in (10, 20, 30, 40, 50, 60):
+        x = np.arange(0.0, 90.0, speed * 0.02)
+        t = t0 + np.arange(x.size) * 0.02
+        times.append(t)
+        positions.append(np.c_[x, np.full_like(x, 5.0)])
+        trials.append(Trial(t[0], t[-1] + 0.01, "start", "center", "reached"))
+        t0 = t[-1] + 5.0
+    args = (env, np.concatenate(times), np.vstack(positions))
+    kwargs = {
+        "region": "center",
+        "trials": Intervals(trials),
+        "window_duration": 0.5,
+        "min_speed": 5.0,
+    }
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_vte_session(*args, head_sweep_weight=0.0, **kwargs)
+    expected = (2.5 - np.arange(6)) / np.sqrt(35 / 12)
+    index = np.array([t.vte_index for t in result.trial_results])
+    assert_allclose(index, expected, rtol=1e-6)
+    assert [t.is_vte for t in result.trial_results] == list(expected >= 0.5)
+
+    # Weighting head sweeps, which do not vary, still leaves them unclassified.
+    with pytest.warns(UserWarning, match="No variation in head sweep"):
+        weighted = compute_vte_session(*args, head_sweep_weight=0.5, **kwargs)
+    assert all(t.is_vte is None for t in weighted.trial_results)

@@ -1386,10 +1386,11 @@ def test_large_pixel_bandwidth_is_written_without_exponent(walk_session):
     [
         ("cm", {}),
         ("m", {}),
+        ("mm", {}),
         (None, {"bandwidth": 12.5}),
         (None, {"method": "binned"}),
     ],
-    ids=["cm", "m", "explicit-bandwidth", "binned"],
+    ids=["cm", "m", "mm", "explicit-bandwidth", "binned"],
 )
 def test_no_fallback_warning_with_metric_units_explicit_bandwidth_or_binned(
     walk_session, units, kwargs
@@ -1400,7 +1401,7 @@ def test_no_fallback_warning_with_metric_units_explicit_bandwidth_or_binned(
     from neurospatial import compute_spatial_rate
 
     spike_times, times, positions = walk_session
-    scale = 0.01 if units == "m" else 1.0
+    scale = {"m": 0.01, "mm": 10.0}.get(units, 1.0)  # positions are in cm
     env = Environment.from_samples(positions * scale, bin_size=5.0 * scale, units=units)
     with warnings.catch_warnings():
         warnings.simplefilter("error")

@@ -546,17 +546,17 @@ class TestDirectionalRateResultPreferredDirection:
         assert isinstance(pref_dir, float)
 
 
-class TestDirectionalRateResultPreferredDirectionDeg:
-    """Test DirectionalRateResult.preferred_direction_deg method."""
+class TestDirectionalRateResultPreferredDirectionRange:
+    """DirectionalRateResult.preferred_direction stays on the circle."""
 
-    def test_preferred_direction_deg_conversion(
+    def test_preferred_direction_in_valid_range(
         self,
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """preferred_direction_deg equals degrees conversion of preferred_direction."""
+        """preferred_direction returns a value in [-pi, pi] radians."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         result = DirectionalRateResult(
@@ -567,30 +567,7 @@ class TestDirectionalRateResultPreferredDirectionDeg:
             bandwidth=None,
         )
 
-        pref_dir_rad = result.preferred_direction
-        pref_dir_deg = result.preferred_direction_deg
-        np.testing.assert_allclose(pref_dir_deg, np.degrees(pref_dir_rad))
-
-    def test_preferred_direction_deg_in_valid_range(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """preferred_direction_deg returns value in [-180, 180]."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        pref_dir_deg = result.preferred_direction_deg
-        assert -180 <= pref_dir_deg <= 180
+        assert -np.pi <= result.preferred_direction <= np.pi
 
 
 class TestDirectionalRateResultPeakFiringRate:
@@ -868,17 +845,17 @@ class TestDirectionalRateResultTuningWidth:
         assert np.isnan(width)
 
 
-class TestDirectionalRateResultTuningWidthDeg:
-    """Test DirectionalRateResult.tuning_width_deg method."""
+class TestDirectionalRateResultTuningWidthRange:
+    """DirectionalRateResult.tuning_width is a half-width within half a circle."""
 
-    def test_tuning_width_deg_conversion(
+    def test_tuning_width_valid_range(
         self,
         single_firing_rate: np.ndarray,
         single_occupancy: np.ndarray,
         bin_centers: np.ndarray,
         bin_size: float,
     ) -> None:
-        """tuning_width_deg equals degrees conversion of tuning_width."""
+        """tuning_width returns a value in (0, pi] radians, or NaN."""
         from neurospatial.encoding.directional import DirectionalRateResult
 
         result = DirectionalRateResult(
@@ -889,32 +866,9 @@ class TestDirectionalRateResultTuningWidthDeg:
             bandwidth=None,
         )
 
-        width_rad = result.tuning_width
-        width_deg = result.tuning_width_deg
-        np.testing.assert_allclose(width_deg, np.degrees(width_rad))
-
-    def test_tuning_width_deg_valid_range(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """tuning_width_deg returns value in (0, 180]."""
-        from neurospatial.encoding.directional import DirectionalRateResult
-
-        result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
-        )
-
-        width_deg = result.tuning_width_deg
-        # Should be at most 180 degrees
-        if not np.isnan(width_deg):
-            assert 0 < width_deg <= 180
+        width = result.tuning_width
+        if not np.isnan(width):
+            assert 0 < width <= np.pi
 
 
 @pytest.fixture(scope="module")
@@ -4362,9 +4316,7 @@ def test_undefined_tuning_metrics_are_nan(rate, occupancy) -> None:
         bandwidth=None,
     )
     assert np.isnan(result.preferred_direction)
-    assert np.isnan(result.preferred_direction_deg)
     assert np.isnan(result.tuning_width)
-    assert np.isnan(result.tuning_width_deg)
     assert "undefined" in result.interpretation()
     population = DirectionalRatesResult(
         firing_rates=np.vstack([rate, 1.0 + np.cos(centers)]),

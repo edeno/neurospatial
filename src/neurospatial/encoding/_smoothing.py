@@ -86,16 +86,30 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
 
     The default is 5 cm in declared metric units. For unspecified, pixel or
     custom units, it is 2.5 median graph-edge lengths (or bin widths when no
-    edges exist); callers announce that fallback with
-    :func:`warn_if_default_bandwidth_fallback` once their inputs are
-    validated. Polar environments use physical graph lengths and radial
+    edges exist). Polar environments use physical graph lengths and radial
     extent; their angular coordinate never enters a length comparison.
-    An explicit value is always in environment coordinates; a positive one
-    below a quarter of the median bin length warns, since it barely smooths
-    and is usually in other units (metres on a cm environment).
+    An explicit value is always in environment coordinates. Callers announce
+    a units-free default and an explicit value far below the bin size with
+    :func:`warn_about_bandwidth` once their inputs are validated.
+
+    Raises
+    ------
+    InputError
+        If ``bandwidth`` is neither None nor one finite real number.
     """
-    if bandwidth is not None and bandwidth > 0:
-        _warn_if_below_bin_length(env, float(bandwidth))
+    from neurospatial.encoding._base import _real_scalar
+
+    value = None if bandwidth is None else _real_scalar(bandwidth)
+    if bandwidth is not None and (value is None or not np.isfinite(value)):
+        raise InputError(
+            _format_error(
+                f"bandwidth={bandwidth!r} is not a finite number.",
+                why="bandwidth is the smoothing kernel's standard deviation in "
+                "env.units.",
+                fix="pass a number such as bandwidth=5.0 (in env.units), or "
+                "bandwidth=None for the default.",
+            )
+        )
     if bandwidth is None:
         from neurospatial._units import units_per_centimeter
 
@@ -129,16 +143,18 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
     return float(bandwidth)
 
 
-def warn_if_default_bandwidth_fallback(
+def warn_about_bandwidth(
     env: Any, bandwidth: float | None, resolved: float, method: str
 ) -> bool:
-    """Warn when a kernel method smooths with the units-free default.
+    """Warn about an explicit bandwidth below a bin or a units-free default.
 
-    Without metric ``env.units`` the 5 cm default cannot be converted, so
-    :func:`resolve_spatial_bandwidth` falls back to 2.5 median bin spacings
-    and the smoothing length depends on the bin size. Call this after the
-    inputs are validated, so an input error is never preceded (or, with
-    warnings as errors, replaced) by this warning.
+    A positive explicit ``bandwidth`` below a quarter of the median bin
+    length barely smooths and is usually in other units (metres on a cm
+    environment). Without metric ``env.units`` the 5 cm default cannot be
+    converted, so :func:`resolve_spatial_bandwidth` falls back to 2.5 median
+    bin spacings for a kernel method and the smoothing length depends on the
+    bin size. Call this after the inputs are validated, so an input error is
+    never preceded (or, with warnings as errors, replaced) by these warnings.
 
     Parameters
     ----------
@@ -154,10 +170,12 @@ def warn_if_default_bandwidth_fallback(
     Returns
     -------
     bool
-        Whether the fallback applied and the warning was issued.
+        Whether the units-free default applied and its warning was issued.
     """
     from neurospatial._units import units_per_centimeter
 
+    if bandwidth is not None and bandwidth > 0:
+        _warn_if_below_bin_length(env, float(bandwidth))
     if bandwidth is not None or method not in ("diffusion_kde", "gaussian_kde"):
         return False
     if units_per_centimeter(env.units) is not None:
@@ -899,16 +917,15 @@ def validate_min_occupancy(min_occupancy: float) -> float:
         compares False with every occupancy, so it would mask every bin
         without the fully-masked warning.
     """
-    if min_occupancy is None:
-        raise InputError(
-            _format_error(
-                "min_occupancy=None is not a threshold.",
-                why="Why: min_occupancy is the seconds a bin must be occupied for "
-                "its rate to count; it has no None default",
-                fix="pass min_occupancy=0.0 for no masking, or a dwell time in "
-                "seconds such as 0.5",
-            )
-        )
+    from neurospatial._validation import refuse_none_thresholds
+
+    refuse_none_thresholds(
+        min_occupancy=min_occupancy,
+        why="min_occupancy is the seconds a bin must be occupied for its rate "
+        "to count; it has no None default",
+        fix="pass min_occupancy=0.0 for no masking, or a dwell time in seconds "
+        "such as 0.5",
+    )
     value = float(min_occupancy)
     if not (np.isfinite(value) and value >= 0.0):
         raise InputError(

@@ -408,6 +408,16 @@ def resolve_speed(
         ``env.occupancy``. It is an error to pass ``speed``
         without ``min_speed`` (see Raises): a bare ``speed`` would otherwise be
         silently ignored.
+    max_gap : float or None
+        Longest stretch of missing tracking, in seconds, to bridge: the time
+        between consecutive valid samples (a dropped frame and a NaN row are
+        the same missing sample). Longer gaps are excluded as tracking losses;
+        ``None`` bridges every gap. The default is calibrated for typical video
+        and DeepLabCut tracking; choose a value longer than routine dropped or
+        low-confidence frames and shorter than real tracking losses or pickups.
+    break_before : ndarray of bool, shape (n_samples,), or None
+        Already validated declared recording breaks; the derived speed is
+        never smoothed across one.
 
     Returns
     -------
@@ -419,21 +429,10 @@ def resolve_speed(
     Raises
     ------
     ValueError
-        If ``speed`` is provided without ``min_speed`` (the message names both
-        ``speed`` and ``min_speed``).
-        If a ``speed`` array is passed whose length does not match
-        ``times`` (the message names ``speed``).
-
-    max_gap : float or None
-        Longest stretch of missing tracking, in seconds, to bridge: the time
-        between consecutive valid samples (a dropped frame and a NaN row are
-        the same missing sample). Longer gaps are excluded as tracking losses;
-        ``None`` bridges every gap. The default is calibrated for typical video
-        and DeepLabCut tracking; choose a value longer than routine dropped or
-        low-confidence frames and shorter than real tracking losses or pickups.
-    break_before : ndarray of bool, shape (n_samples,), or None
-        Already validated declared recording breaks; the derived speed is
-        never smoothed across one.
+        From :func:`neurospatial._intervals.validate_speed_gate`: if
+        ``speed`` is provided without ``min_speed`` (the message names both
+        ``speed`` and ``min_speed``), or a ``speed`` array is passed whose
+        shape is not ``(n_samples,)`` (the message names ``speed``).
 
     Notes
     -----

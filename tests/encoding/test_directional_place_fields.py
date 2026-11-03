@@ -495,7 +495,14 @@ class TestComputeDirectionalPlaceFields:
         # it returns an empty frame carrying the documented column schema.
         df = result.to_dataframe()
         assert len(df) == 0
-        for col in ("direction", "bin", "coord_0", "firing_rate", "occupancy"):
+        for col in (
+            "unit_id",
+            "direction",
+            "bin",
+            "bin_center_x",
+            "firing_rate",
+            "occupancy",
+        ):
             assert col in df.columns
 
 
@@ -703,3 +710,50 @@ def test_spike_drop_warning_does_not_depend_on_the_label_a_cell_fires_in(shuttle
         assert len(drops) == 1
         messages.append(drops[0].split(" spike_times")[0])
     assert messages[0] == messages[1] == "3000/3400"
+
+
+def test_directional_dataframe_is_one_row_per_unit_direction_bin():
+    """The table carries unit_id and the shared bin-center column names."""
+    env = Environment.from_samples(
+        np.column_stack([np.linspace(0, 20, 50), np.linspace(0, 10, 50)]),
+        bin_size=5.0,
+        units="cm",
+    )
+    n = env.n_bins
+    forward, reverse = np.arange(n, dtype=float), np.arange(n, dtype=float)[::-1]
+    occupancy = np.full(n, 2.0)
+    result = DirectionalPlaceFields(
+        firing_rates={"fwd": forward, "rev": reverse},
+        occupancy={"fwd": occupancy, "rev": occupancy},
+        env=env,
+        unit_id="tt3_c1",
+    )
+
+    df = result.to_dataframe()
+
+    assert list(df.columns) == [
+        "unit_id",
+        "direction",
+        "bin",
+        "bin_center_x",
+        "bin_center_y",
+        "firing_rate",
+        "occupancy",
+    ]
+    assert (df["unit_id"] == "tt3_c1").all()
+    for label, rate in (("fwd", forward), ("rev", reverse)):
+        rows = df[df["direction"] == label]
+        np.testing.assert_array_equal(rows["bin"], np.arange(n))
+        np.testing.assert_array_equal(rows["firing_rate"], rate)
+        np.testing.assert_array_equal(
+            rows[["bin_center_x", "bin_center_y"]], env.bin_centers
+        )
+    assert df.attrs["units"]["bin_center_x"] == "cm"
+    assert df.attrs["units"]["firing_rate"] == "Hz"
+
+    unlabelled = DirectionalPlaceFields(
+        firing_rates={"fwd": forward},
+        occupancy={"fwd": occupancy},
+        env=env,
+    ).to_dataframe()
+    assert unlabelled["unit_id"].isna().all()

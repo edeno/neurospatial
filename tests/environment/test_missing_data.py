@@ -472,7 +472,7 @@ def test_occupancy_with_no_usable_sample_raises(
         positions = inside.copy()
         positions[1::2] = np.nan
     with pytest.raises(
-        InputError, match=r"excluded ALL.*so occupancy is zero in every bin"
+        InputError, match=r"excluded ALL[\s\S]*occupancy is zero in every bin"
     ):
         # Below two frames, so each missing sample's gap is a tracking loss.
         env.occupancy(times, positions, time_allocation=allocation, max_gap=1.5 / 30)

@@ -1314,3 +1314,39 @@ def test_unmeasured_metrics_are_nan_not_none():
             goal=np.ones(2),
             metric="euclidean",
         )
+
+
+def test_interval_summary_reads_back_from_the_result():
+    """Each interval summary key is a property; means skip undefined intervals.
+
+    Three intervals toward the point (10, 0): two fully observed runs of
+    4 cm from 10 cm and 5 cm away, and one whose goal is unreachable
+    (``shortest_length=inf``) and that lost a frame.
+    """
+    from neurospatial.behavior.navigation import PathEfficiencyResult
+
+    result = PathEfficiencyResult(
+        traveled_length=[4.0, 4.0, 2.0],
+        shortest_length=[10.0, 5.0, np.inf],
+        time_efficiency=[np.nan] * 3,
+        angular_efficiency=[1.0, 1.0, 0.5],
+        start_position=np.zeros((3, 2)),
+        goal=(np.array([10.0, 0.0]),) * 3,
+        metric="euclidean",
+        fully_observed=[True, True, False],
+        interval_ids=[0, 1, 2],
+        units="cm",
+    )
+    expected = {
+        "n_intervals": 3,
+        "n_fully_observed": 2,
+        "mean_traveled_length": (4.0 + 4.0 + 2.0) / 3,
+        # The unreachable goal has no finite shortest length.
+        "mean_shortest_length": (10.0 + 5.0) / 2,
+        # Efficiency 10/4 and 5/4; the third interval's is undefined.
+        "mean_efficiency": (2.5 + 1.25) / 2,
+    }
+    assert result.summary() == pytest.approx(expected)
+    for key, value in expected.items():
+        assert getattr(result, key) == pytest.approx(value), key
+    assert "mean_shortest_length=7.5 cm" in repr(result)

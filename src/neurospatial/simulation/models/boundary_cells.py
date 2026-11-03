@@ -67,10 +67,10 @@ from neurospatial.simulation.models.base import (
     _check_positive,
     _digest,
     _draw_rng,
+    _keep_draw,
     _model_inputs,
     _set_rates,
     _shared,
-    _snapshot_rng,
     _tuned_rate,
 )
 
@@ -348,11 +348,16 @@ class BoundaryVectorCellModel:
     boundary_source : {'physical', 'analysis'}, default='physical'
         The arena's declared walls, or the edges of the environment's bins.
     rng : numpy.random.Generator or int or None, optional
-        Random generator or seed for the random ``preferred_direction``. When None and the
-        direction is drawn, the model draws a seed from the operating system
-        and keeps it in ``rng``, so ``dataclasses.replace`` and pickling
-        keep the drawn direction. A generator is copied when the model is built: the caller's generator
-        is not advanced, and ``replace`` draws the same values.
+        Random generator or seed for the random ``preferred_direction``, read
+        as ``np.random.default_rng(rng)``: ``rng=0`` and
+        ``rng=np.random.default_rng(0)`` draw the same direction. An int
+        reproduces the direction. A generator is advanced by the draw, so
+        successive models built from one generator get different directions;
+        the model then keeps the drawn direction in ``preferred_direction``
+        and sets ``rng`` to None. When None and the direction is drawn, the
+        model draws a seed from the operating system and keeps it in
+        ``rng``. Either way, ``dataclasses.replace`` and pickling keep the
+        drawn direction.
 
     Attributes
     ----------
@@ -361,7 +366,8 @@ class BoundaryVectorCellModel:
         (-pi, pi], and the default distance and tolerance. Every parameter is
         also an attribute holding the argument as passed, so
         ``preferred_distance``, ``preferred_direction`` and
-        ``distance_tolerance`` read None when left to their defaults.
+        ``distance_tolerance`` read None when left to their defaults; a
+        direction drawn from a generator is kept in ``preferred_direction``.
         ``dataclasses.replace(model, preferred_distance=40.0)`` builds a new
         model as the constructor would, so a default tolerance follows the
         new distance.
@@ -425,7 +431,6 @@ class BoundaryVectorCellModel:
     _reference_drive: float = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        _snapshot_rng(self)
         env = self.env
         call = "BoundaryVectorCellModel()"
         distance = self.preferred_distance
@@ -441,6 +446,7 @@ class BoundaryVectorCellModel:
         direction = self.preferred_direction
         if direction is None:
             direction = float(_draw_rng(self).uniform(-np.pi, np.pi))
+            _keep_draw(self, "preferred_direction", direction)
         _check_positive("preferred_distance", distance, allow_zero=True)
         _check_positive("distance_tolerance", tolerance)
         _check_angle("preferred_direction", direction)

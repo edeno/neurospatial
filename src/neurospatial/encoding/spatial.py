@@ -68,6 +68,7 @@ from neurospatial._results import (
 )
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import refuse_none_thresholds
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
     BandwidthRule,
@@ -276,8 +277,13 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     >>> fields = detect_place_fields(env, rate, bandwidth=0.0)
     >>> fields.n_fields
     1
-    >>> list(fields.to_dataframe().columns[:5])
+    >>> list(fields.fields_table().columns[:5])
     ['unit_id', 'field', 'n_bins', 'area', 'peak_rate']
+    >>> table = fields.to_dataframe()  # one row per field bin
+    >>> list(table.columns)
+    ['unit_id', 'field', 'bin', 'bin_center_x', 'firing_rate']
+    >>> len(table) == fields.total_bins
+    True
     """
 
     fields: Sequence[NDArray[np.int64]]
@@ -385,8 +391,11 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         """Unit of each table column: Hz, env units, measure units or none."""
         length = self.env.units or ""
         units = {
+            "field": "",
+            "bin": "",
             "n_bins": "",
             "area": _measure_units(self.env),
+            "firing_rate": "Hz",
             "peak_rate": "Hz",
             "mean_rate": "Hz",
             "n_fields": "",
@@ -398,13 +407,60 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
                 "rad"
                 if name.endswith("angle")
                 else length
-                if name.startswith("centroid_")
+                if name.startswith(("centroid_", "bin_center_"))
                 else "",
             )
             for name in columns
         }
 
     def to_dataframe(self) -> pd.DataFrame:
+        """One row per field bin: which field each bin belongs to, and its rate.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``unit_id`` (``<NA>`` without one), ``field`` (0 for the
+            field with the highest peak), ``bin`` (the bin index),
+            ``bin_center_x``, ``bin_center_y``, ... (environment units;
+            ``bin_center_distance`` and ``bin_center_angle`` (rad) on a polar
+            environment) and ``firing_rate`` (Hz). Rows follow the fields in
+            order, then each field's bins. No rows when no field was
+            detected. ``df.attrs`` holds ``units`` (per column), ``bandwidth``
+            and ``excluded_reason``. :meth:`fields_table` has one row per
+            field.
+        """
+        import pandas as pd
+
+        from neurospatial._results import _coord_dim_names
+
+        names = [f"bin_center_{name}" for name in _coord_dim_names(self.env)]
+        bins = (
+            np.concatenate(self.fields) if self.fields else np.empty(0, dtype=np.int64)
+        )
+        field = np.repeat(
+            np.arange(len(self.fields), dtype=np.int64),
+            [len(f) for f in self.fields],
+        )
+        centers = np.asarray(self.env.bin_centers, dtype=np.float64)[bins]
+        columns = ["unit_id", "field", "bin", *names, "firing_rate"]
+        df = pd.DataFrame(
+            {
+                "unit_id": pd.Series([self._table_unit_id()] * len(bins), dtype=object),
+                "field": field,
+                "bin": bins,
+                **{name: centers[:, i] for i, name in enumerate(names)},
+                "firing_rate": self.firing_rate[bins],
+            },
+            columns=columns,
+        )
+        df.attrs.update(
+            units=self._columns_units(columns[1:]),
+            bandwidth=self.bandwidth,
+            excluded_reason=self.excluded_reason,
+        )
+        return df
+
+    def fields_table(self) -> pd.DataFrame:
         """One row per detected field, with its size, rates and centroid.
 
         Returns
@@ -417,11 +473,14 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             (Hz, mean over the field's bins weighted by their measure) and
             ``centroid_x``, ``centroid_y``, ... (the rate-weighted centroid,
             :func:`~neurospatial.encoding.rate_map_centroid`, in environment
-            units; on a polar environment ``centroid_distance`` and
-            ``centroid_angle`` (rad) of the geodesic centroid, a field bin,
-            because averaging angles and distances is not a position). No
+            units; on a track, the geodesic centroid, a field bin, because the
+            mean of a field around a corner lies off the track; on a polar
+            environment ``centroid_distance`` and ``centroid_angle`` (rad) of
+            the geodesic centroid, because averaging angles and distances is
+            not a position). No
             rows when no field was detected. ``df.attrs`` holds
             ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
+            :meth:`to_dataframe` has one row per field bin.
         """
         import pandas as pd
 
@@ -430,10 +489,13 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
 
         measures = np.asarray(self.env.bin_sizes, dtype=np.float64)
         names = [f"centroid_{name}" for name in _coord_dim_names(self.env)]
-        # Averaging (distance, angle) bin centers is not a position: a polar
-        # map's centroid is the field bin nearest the rest (the geodesic one).
+        # Averaging (distance, angle) bin centers is not a position, and the
+        # mean of a field around a track's corner is off the track: there the
+        # centroid is the field bin nearest the rest (the geodesic one).
         method: Literal["euclidean", "geodesic"] = (
-            "geodesic" if self.env.coordinate_kind == "polar" else "euclidean"
+            "geodesic"
+            if self.env.coordinate_kind == "polar" or self.env.is_linearized_track
+            else "euclidean"
         )
         rows = []
         for k, bins in enumerate(self.fields):
@@ -3049,6 +3111,11 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             "min_grid_score": min_grid_score,
             "min_border_score": min_border_score,
         }
+        refuse_none_thresholds(
+            min_spatial_info=min_spatial_info,
+            min_grid_score=min_grid_score,
+            min_border_score=min_border_score,
+        )
         given: dict[str, NDArray[np.float64] | None] = {}
         for name, value in (
             ("grid_scores", grid_scores),
@@ -3813,7 +3880,7 @@ def _spatial_rate_maps(
     )
     from neurospatial.encoding._smoothing import (
         smooth_rate_maps_batch,
-        warn_if_default_bandwidth_fallback,
+        warn_about_bandwidth,
     )
     from neurospatial.encoding._spatial_counts import (
         _warn_if_population_silent,
@@ -3958,9 +4025,9 @@ def _spatial_rate_maps(
         )
         return maps(empty, occupancy, None)
 
-    # The inputs are valid, so a units-free default bandwidth is announced
-    # here rather than ahead of an input error.
-    warn_if_default_bandwidth_fallback(env, bandwidth, resolved_bandwidth, method)
+    # The inputs are valid, so a bandwidth below a bin or a units-free
+    # default is announced here rather than ahead of an input error.
+    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
     # Apply batch smoothing to compute firing rates
     # When backend="jax", uses JAX for the core rate computation
     firing_rates = smooth_rate_maps_batch(
@@ -4859,6 +4926,9 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         recorded wherever position was.
     missing_label : hashable or None
         The label value treated as missing, besides ``None`` and ``NaN``.
+    unit_id : int or str or None, default=None
+        The unit the maps belong to, written to the ``unit_id`` column of
+        :meth:`to_dataframe` (``<NA>`` when None).
 
     Raises
     ------
@@ -4897,6 +4967,7 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         default=None, kw_only=True, compare=False
     )
     missing_label: Hashable | None = field(default=None, kw_only=True, compare=False)
+    unit_id: int | str | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         """Validate, own each direction's arrays and prevent replacing entries."""
@@ -4935,6 +5006,30 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
     def labels(self) -> tuple[Hashable, ...]:
         """Direction labels in iteration order."""
         return tuple(self.firing_rates)
+
+    @property
+    def n_directions(self) -> int:
+        """Number of direction labels."""
+        return len(self.firing_rates)
+
+    @property
+    def n_bins(self) -> int:
+        """Number of spatial bins of each direction's map (``env.n_bins``)."""
+        return int(self.env.n_bins)
+
+    @property
+    def peak_firing_rates(self) -> Mapping[Hashable, float]:
+        """Each direction's peak firing rate in Hz, keyed by label.
+
+        The largest rate over the bins with a rate (not NaN); NaN for a
+        direction with none.
+        """
+        peaks: dict[Hashable, float] = {}
+        for label in self.labels:
+            rate = _to_numpy(self.firing_rates[label])
+            supported = rate[~np.isnan(rate)]
+            peaks[label] = float(supported.max()) if supported.size else np.nan
+        return MappingProxyType(peaks)
 
     def __getstate__(self) -> dict[str, Any]:
         """Serialize read-only mappings as ordinary dictionaries."""
@@ -5109,10 +5204,10 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         dict
             Mapping with ``n_directions`` (int), ``n_bins`` (int), the
             analysis settings ``spike_window``, ``spike_window_assumed`` and
-            ``missing_label``, and one ``peak_<label>`` entry per direction
-            giving that direction's peak firing rate (Hz). When exactly two
-            directions are present, a ``correlation`` entry (Pearson r between
-            the two maps) is also included.
+            ``missing_label``, and one ``peak_firing_rates[<label>]`` entry
+            per direction giving that direction's peak firing rate (Hz), as
+            read from :attr:`peak_firing_rates`. Compare two directions'
+            maps with :meth:`correlation` and :meth:`directionality_index`.
 
         Examples
         --------
@@ -5137,35 +5232,41 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         True
         """
         out: dict[str, Any] = {
-            "n_directions": len(self.labels),
+            "n_directions": self.n_directions,
             "spike_window_assumed": self.spike_window_assumed,
             "spike_window": None
             if self.spike_window is None
             else self.spike_window.tolist(),
             "missing_label": self.missing_label,
-            "n_bins": int(self.env.n_bins),
+            "n_bins": self.n_bins,
         }
-        for label in self.labels:
-            rate = _to_numpy(self.firing_rates[label])
-            out[f"peak_{label}"] = float(np.nanmax(rate))
-        if len(self.labels) == 2:
-            out["correlation"] = self.correlation(self.labels[0], self.labels[1])
+        for label, peak in self.peak_firing_rates.items():
+            out[f"peak_firing_rates[{label}]"] = peak
         return out
 
+    def _repr_unit(self, key: str) -> str:
+        """``"Hz"`` for each direction's peak firing rate."""
+        if key.startswith("peak_firing_rates["):
+            return "Hz"
+        return super()._repr_unit(key)
+
     def to_dataframe(self) -> pd.DataFrame:
-        """Tidy/long-form table: one row per (direction, bin).
+        """Tidy/long-form table: one row per (unit, direction, bin).
 
         Stacks the per-direction rate maps into long form with a ``direction``
         identifier column, so directional results ``pandas.concat`` cleanly
-        with other tidy result tables. Bin-center coordinates are emitted as
-        ``coord_0``, ``coord_1``, ... columns.
+        with other tidy result tables.
 
         Returns
         -------
         pandas.DataFrame
-            Long-form table with columns ``direction`` (the label), ``bin`` (int),
-            ``coord_0`` ... (float), ``firing_rate`` (float, Hz), and
-            ``occupancy`` (float, seconds).
+            Long-form table with columns ``unit_id`` (``<NA>`` without one),
+            ``direction`` (the label), ``bin`` (int), the bin-center columns
+            (``bin_center_x``, ``bin_center_y``, ...), ``firing_rate``
+            (float, Hz) and ``occupancy`` (float, seconds).
+            ``df.attrs["units"]`` gives each column's unit: the environment's
+            ``units`` for the bin centers (``""`` when unset), ``"Hz"`` and
+            ``"s"``.
 
         Examples
         --------
@@ -5183,8 +5284,11 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         ...     },
         ...     occupancy={"fwd": np.ones(n), "rev": np.ones(n)},
         ...     env=env,
+        ...     unit_id=7,
         ... )
         >>> df = result.to_dataframe()
+        >>> list(df.columns)
+        ['unit_id', 'direction', 'bin', 'bin_center_x', 'firing_rate', 'occupancy']
         >>> sorted(df["direction"].unique())
         ['fwd', 'rev']
         >>> len(df) == 2 * n
@@ -5192,42 +5296,50 @@ class DirectionalPlaceFields(ReadOnlyArraysMixin, ResultMixin):
         """
         import pandas as pd
 
-        bin_centers = np.asarray(self.env.bin_centers)
-        if bin_centers.ndim == 1:
-            bin_centers = bin_centers[:, None]
-        n_bins, n_dims = bin_centers.shape
+        from neurospatial._results import _bin_center_coords
 
-        frames: list[pd.DataFrame] = []
-        for label in self.labels:
-            rate = _to_numpy(self.firing_rates[label]).ravel()
-            occ = _to_numpy(self.occupancy[label]).ravel()
-            direction = np.empty(n_bins, dtype=object)
-            direction[:] = [label] * n_bins
-            data: dict[str, Any] = {
+        n_bins = self.env.n_bins
+        centers = {
+            name: np.asarray(values)
+            for name, (_dim, values) in _bin_center_coords(self.env, n_bins).items()
+        }
+        unit_id = pd.NA if self.unit_id is None else self.unit_id
+        n_rows = n_bins * len(self.labels)
+        direction = np.empty(n_rows, dtype=object)
+        direction[:] = [label for label in self.labels for _ in range(n_bins)]
+
+        def stacked(maps: Mapping[Hashable, NDArray[np.float64]]) -> NDArray[Any]:
+            if not self.labels:
+                return np.array([], dtype=np.float64)
+            return np.concatenate(
+                [_to_numpy(maps[label]).ravel() for label in self.labels]
+            )
+
+        df = pd.DataFrame(
+            {
+                "unit_id": pd.Series([unit_id] * n_rows, dtype=object),
                 "direction": direction,
-                "bin": np.arange(n_bins, dtype=np.int64),
+                "bin": np.tile(np.arange(n_bins, dtype=np.int64), len(self.labels)),
+                **{
+                    name: np.tile(values.astype(np.float64), len(self.labels))
+                    for name, values in centers.items()
+                },
+                "firing_rate": stacked(self.firing_rates),
+                "occupancy": stacked(self.occupancy),
             }
-            for d in range(n_dims):
-                data[f"coord_{d}"] = bin_centers[:, d]
-            data["firing_rate"] = rate
-            data["occupancy"] = occ
-            frames.append(pd.DataFrame(data))
-        if not frames:
-            # No labelled directions (e.g. every label passed to
-            # compute_directional_place_fields was missing, leaving
-            # labels == ()). Return an empty frame with the documented column
-            # schema instead of letting pd.concat([]) raise "No objects to
-            # concatenate".
-            empty: dict[str, NDArray[Any]] = {
-                "direction": np.array([], dtype=object),
-                "bin": np.array([], dtype=np.int64),
-            }
-            for d in range(n_dims):
-                empty[f"coord_{d}"] = np.array([], dtype=np.float64)
-            empty["firing_rate"] = np.array([], dtype=np.float64)
-            empty["occupancy"] = np.array([], dtype=np.float64)
-            return pd.DataFrame(empty)
-        return pd.concat(frames, ignore_index=True)
+        )
+        df.attrs["units"] = {
+            "unit_id": "",
+            "direction": "",
+            "bin": "",
+            **{
+                name: "rad" if name == "bin_center_angle" else self.env.units or ""
+                for name in centers
+            },
+            "firing_rate": "Hz",
+            "occupancy": "s",
+        }
+        return df
 
     def plot(
         self, *, ax: Axes | Sequence[Axes] | None = None, **kwargs: Any
@@ -5603,7 +5715,7 @@ def compute_directional_place_fields(
     from neurospatial._intervals import intersect_intervals
     from neurospatial.encoding._smoothing import (
         resolve_spatial_bandwidth,
-        warn_if_default_bandwidth_fallback,
+        warn_about_bandwidth,
     )
     from neurospatial.encoding._spatial_counts import require_allocentric
 
@@ -5671,7 +5783,7 @@ def compute_directional_place_fields(
         # A units-free default warns here, once per call; the per-label maps
         # then get the resolved value, so they do not warn once per label.
         resolved = resolve_spatial_bandwidth(env, None)
-        if warn_if_default_bandwidth_fallback(env, None, resolved, method):
+        if warn_about_bandwidth(env, None, resolved, method):
             bandwidth = resolved
     for code in order:
         label = values[code]
@@ -5813,8 +5925,8 @@ def detect_place_fields(
         peak rate, with the map, its bandwidth and unit, and
         ``excluded_reason``, which says whether the ``max_mean_rate`` filter
         excluded the map. The result is iterable, indexable and sized like a
-        list of fields; ``to_dataframe()`` tabulates each field's size, rates
-        and centroid.
+        list of fields; ``fields_table()`` tabulates each field's size, rates
+        and centroid, and ``to_dataframe()`` lists each field's bins.
 
     Raises
     ------
@@ -5953,16 +6065,19 @@ def detect_place_fields(
         )
     unit_ids: list[Any] | None
     if isinstance(firing_rate, SpatialRateResult):
+        # A glm map has no kernel and records None; it is unsmoothed (0).
         recorded = (
             0.0 if firing_rate.bandwidth is None else float(firing_rate.bandwidth)
         )
         if bandwidth is None:
             bandwidth = recorded
-        elif firing_rate.bandwidth is not None and bandwidth != recorded:
+        elif bandwidth != recorded:
             raise ValueError(
                 _format_error(
                     f"detect_place_fields got bandwidth={bandwidth!r}, but the "
-                    f"rate result was estimated with bandwidth={recorded!r}.",
+                    "rate result was estimated with "
+                    f"bandwidth={firing_rate.bandwidth!r} "
+                    f"(method={firing_rate.method!r}).",
                     why="Why: the bandwidth sets the smallest field one noisy "
                     "bin makes after smoothing, so it must be the map's own",
                     fix="drop bandwidth= to use the result's, or recompute the "
@@ -7504,6 +7619,7 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         min_info: float,
         correction: Literal["holm", "fdr_bh"] | None,
     ) -> dict[str, NDArray[np.float64]]:
+        refuse_none_thresholds(alpha=level, min_spatial_info=min_info)
         adjusted, cannot_reject = self._adjusted(level, correction)
         with np.errstate(invalid="ignore"):
             passed = adjusted < level
@@ -7998,6 +8114,7 @@ class PlaceCellSignificanceResult(UnitSelectionMixin, ResultMixin):
         """
         from neurospatial.encoding._metrics import _warn_unknown_bias
 
+        refuse_none_thresholds(alpha=alpha, min_info=min_info)
         with np.errstate(invalid="ignore"):
             significant = self.p_value < alpha
         debiased = self.observed - self.spatial_information_bias

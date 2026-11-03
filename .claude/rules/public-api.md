@@ -73,7 +73,10 @@ Each terminal verb means the same thing on every result class:
   `unit_ids` raise. Decode results use `("time", "bin")` with no unit axis.
   Never conflate the two. PSTH results have no `to_xarray()`.
 - `summary()` returns a flat dict of scalars; `plot(*, ax=None, ...)` (after
-  `idx` on population results) returns the `Axes`. `Environment.plot` and `plot_field` also take
+  `idx` on population results) returns the `Axes`. A plot drawn on several
+  panels takes one axes per panel in `ax=` and returns them as a tuple (the
+  PSTH raster and histogram, one 2-D map per direction of
+  `DirectionalPlaceFields`). `Environment.plot` and `plot_field` also take
   `backend="fastplotlib"`, which returns the fastplotlib figure; typing
   overloads keep the `Axes` return for the default.
 

@@ -9,8 +9,6 @@ repr that shows its scale.
 
 from __future__ import annotations
 
-import warnings
-
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
@@ -141,7 +139,7 @@ def test_detect_place_fields_accepts_rate_result(open_field, open_field_rates):
     with pytest.raises(TypeError, match=r"for unit in rates"):
         encoding.detect_place_fields(s.env, rates)
 
-    table = fields.to_dataframe()
+    table = fields.fields_table()
     assert {"unit_id", "area", "peak_rate"} <= set(table.columns)
     assert (table["unit_id"] == rates.unit_ids[3]).all()
     for row, bins in zip(table.itertuples(), fields, strict=True):
@@ -151,6 +149,45 @@ def test_detect_place_fields_accepts_rate_result(open_field, open_field_rates):
     assert fields.summary_table().index.tolist() == [rates.unit_ids[3]]
     ax = fields.plot()
     plt.close(ax.figure)
+
+
+def test_place_fields_dataframe_has_one_row_per_field_bin(open_field, open_field_rates):
+    """to_dataframe() is the tidy (unit, field, bin) table of the contract."""
+    s, rates = open_field, open_field_rates
+    fields = next(
+        f
+        for f in (encoding.detect_place_fields(s.env, unit) for unit in rates)
+        if f.n_fields >= 1
+    )
+    table = fields.to_dataframe()
+    assert list(table.columns) == [
+        "unit_id",
+        "field",
+        "bin",
+        "bin_center_x",
+        "bin_center_y",
+        "firing_rate",
+    ]
+    assert len(table) == fields.total_bins
+    assert (table["unit_id"] == fields.unit_id).all()
+    for k, bins in enumerate(fields):
+        rows = table[table["field"] == k]
+        np.testing.assert_array_equal(rows["bin"], bins)
+        np.testing.assert_array_equal(
+            rows[["bin_center_x", "bin_center_y"]], s.env.bin_centers[bins]
+        )
+        np.testing.assert_array_equal(rows["firing_rate"], fields.firing_rate[bins])
+    assert table.attrs["units"]["firing_rate"] == "Hz"
+    assert table.attrs["units"]["bin_center_x"] == s.env.units
+    # One row per field in the field table, whose bin counts match.
+    per_field = fields.fields_table()
+    assert per_field["n_bins"].tolist() == table.groupby("field").size().tolist()
+
+    empty = encoding.detect_place_fields(
+        s.env, np.zeros(s.env.n_bins), bandwidth=0.0
+    ).to_dataframe()
+    assert empty.empty
+    assert list(empty.columns) == list(table.columns)
 
 
 def test_place_fields_plot_on_a_track_marks_linear_positions(tmaze):
@@ -189,7 +226,7 @@ def test_place_fields_tables_on_a_polar_environment():
     rate[list(env.connectivity.neighbors(peak))] = 4.0  # a field larger than a bin
     fields = encoding.detect_place_fields(env, rate, bandwidth=0.0)
     assert fields.n_fields == 1
-    table = fields.to_dataframe()
+    table = fields.fields_table()
     centroid = table[["centroid_distance", "centroid_angle"]].to_numpy()[0]
     assert any(np.allclose(centroid, env.bin_centers[b]) for b in fields.fields[0])
     assert table.attrs["units"]["centroid_angle"] == "rad"
@@ -198,6 +235,32 @@ def test_place_fields_tables_on_a_polar_environment():
     assert summary["largest_field_area"].iloc[0] == pytest.approx(
         env.bin_sizes[fields.fields[0]].sum()
     )
+
+
+def test_track_field_centroid_stays_on_the_track():
+    """A field around a track's corner has a centroid on the track, not inside it."""
+    from neurospatial import Environment
+
+    env = Environment.linear_track(
+        node_positions=[(0, 0), (100, 0), (100, 60)], bin_size=2.0, units="cm"
+    )
+    linear = env.to_linear(env.bin_centers)
+    # A field centered on the corner (linear position 100 cm), spanning both arms.
+    rate = 8 * np.exp(-((linear - 100) ** 2) / (2 * 8**2))
+    fields = encoding.detect_place_fields(env, rate, bandwidth=0.0)
+    assert fields.n_fields == 1
+    bins = fields.fields[0]
+    centers = env.bin_centers[bins]
+    assert (centers[:, 1] > 1.0).any()  # bins on the second arm
+    assert (centers[:, 0] < 99.0).any()  # and on the first
+    centroid = fields.fields_table()[["centroid_x", "centroid_y"]].to_numpy()[0]
+    # The Euclidean mean of the two arms lies inside the corner, off the track;
+    # the centroid is the field bin with the least rate-weighted distance to
+    # the others along the track (one path, so |difference in linear position|).
+    distance = np.abs(linear[bins][:, None] - linear[bins][None, :])
+    medoid = bins[np.argmin(distance @ rate[bins])]
+    np.testing.assert_allclose(centroid, env.bin_centers[medoid])
+    assert np.min(np.linalg.norm(env.bin_centers - centroid, axis=1)) < 1e-9
 
 
 def test_detect_place_fields_array_needs_bandwidth(open_field, open_field_rates):
@@ -209,14 +272,27 @@ def test_detect_place_fields_array_needs_bandwidth(open_field, open_field_rates)
         encoding.detect_place_fields(open_field.env, open_field_rates[0], bandwidth=1.0)
 
 
+def test_detect_place_fields_glm_refuses_a_bandwidth(open_field):
+    """A glm map has no kernel: only bandwidth None or 0 is its own."""
+    s = open_field
+    glm = encoding.compute_spatial_rate(
+        s.env, s.spike_times[0], s.times, s.positions, method="glm"
+    )
+    assert glm.bandwidth is None
+    default = encoding.detect_place_fields(s.env, glm)
+    zero = encoding.detect_place_fields(s.env, glm, bandwidth=0.0)
+    assert default.bandwidth == zero.bandwidth == 0.0
+    assert default.n_fields == zero.n_fields
+    with pytest.raises(ValueError, match=r"estimated with bandwidth=None"):
+        encoding.detect_place_fields(s.env, glm, bandwidth=50.0)
+
+
 def test_binned_rates_give_unsmoothed_fields(open_field):
     """A ``method="binned"`` result records bandwidth 0: the peak bin is the floor."""
     s = open_field
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        binned = encoding.compute_spatial_rates(
-            s.env, s.spike_times, s.times, s.positions, method="binned"
-        )
+    binned = encoding.compute_spatial_rates(
+        s.env, s.spike_times, s.times, s.positions, method="binned"
+    )
     fields = encoding.detect_place_fields(s.env, binned[0])
     assert fields.bandwidth == 0.0
 
@@ -268,18 +344,16 @@ def test_place_cell_significance_matches_the_dict_it_replaced(open_field):
     returned a result object, on the same seeded session and shuffles.
     """
     s = open_field
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)  # warnings of the short map
-        result = encoding.place_cell_significance(
-            s.env, s.spike_times, s.times, s.positions, n_shuffles=49, rng=0
-        )
+    result = encoding.place_cell_significance(
+        s.env, s.spike_times, s.times, s.positions, n_shuffles=49, rng=0
+    )
     with pytest.warns(UserWarning, match="information bias is unknown"):
         screen = result.classify()
     np.testing.assert_array_equal(
         result.p_value, [0.02, 0.02, 0.02, 0.12, 0.02, 0.02, 0.02, 0.02]
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
+    # Unit 0 is significant but has too few spikes to estimate its bias.
+    with pytest.warns(UserWarning, match="information bias is unknown"):
         verdicts = [
             encoding.is_place_cell(
                 s.env, train, s.times, s.positions, unit_id=unit, n_shuffles=49, rng=0
@@ -296,9 +370,9 @@ def test_tables_carry_units(open_field, tmaze, tmaze_trials):
     from neurospatial.events import peri_event_histogram
 
     s = open_field
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        decoded = decode_session(s.env, s.spike_times, s.times, s.positions)
+    decoded = decode_session(s.env, s.spike_times, s.times, s.positions)
+    # The simulated runs are straight, so no trial has a head sweep to rank.
+    with pytest.warns(UserWarning, match="No variation in head sweep magnitude"):
         vte = compute_vte_session(
             tmaze.env,
             tmaze.times,

@@ -36,9 +36,9 @@ DEFAULT_RING_WIDTH_CM = 5.0
 DEFAULT_DIRECTION_BIN_SIZE = np.pi / 6
 
 POLAR_ESTIMATORS: Mapping[str, BandwidthRule] = MappingProxyType(
-    {**KERNEL_ESTIMATORS, "binned": "none"}
+    {**KERNEL_ESTIMATORS, "binned": "zero"}
 )
-"""Polar estimators: ``"binned"`` is the raw bin rate and does not smooth."""
+"""Polar estimators: ``"binned"`` is the raw bin rate and records bandwidth 0."""
 
 
 class _PolarRateMixin:
@@ -220,7 +220,7 @@ def require_known_bandwidth(
 
     Raises
     ------
-    ValueError
+    InputError
         If ``method="binned"`` gets a positive ``bandwidth``, or a kernel
         method has no ``bandwidth`` and ``units`` is not a known length unit.
     """
@@ -244,7 +244,7 @@ def require_known_bandwidth(
     if bandwidth is not None:
         return
     if units_per_centimeter(units) is None:
-        raise ValueError(
+        raise InputError(
             _format_error(
                 f"{context}: method={method!r} needs a bandwidth because "
                 f"{_unknown_units(units)}.",

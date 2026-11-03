@@ -2,6 +2,87 @@
 
 ## [Unreleased]
 
+### Fixes from the review of the result contract, warnings and simulators
+
+**Breaking**
+
+- `PlaceFieldsResult.to_dataframe()` is one row per field bin with a
+  `unit_id` column, as for every rate result; the per-field table is the new
+  `fields_table()`. Field centroids on a track are field bins (geodesic), so
+  a field round a corner no longer gets a centroid off the track.
+- `DirectionalRateResult.preferred_direction_deg` and `.tuning_width_deg`
+  are removed; use `np.degrees(result.preferred_direction)`. The
+  head-direction simulator's ground truth drops its `preferred_direction_deg`
+  and `tuning_width_deg` keys too.
+- `DirectionalPlaceFields.to_dataframe()` has a `unit_id` column (from a new
+  `unit_id=` field, `<NA>` without one) and `bin_center_*` columns in place
+  of `coord_*`. Its `summary()` shows the peaks as
+  `peak_firing_rates[<label>]`, read from the new `peak_firing_rates`
+  mapping, and drops `correlation`, which needs two labels: call
+  `correlation()`.
+- `detect_place_fields` refuses a `bandwidth` other than None or 0 for a
+  `method="glm"` rate result, which has no kernel to match; it used the
+  value silently.
+- `detect_laps` refuses a `direction` the environment cannot produce:
+  `"increasing"` or `"decreasing"` round a loop, `"clockwise"` or
+  `"counter-clockwise"` on a linear track. Such a filter matched no lap and
+  returned none without a word.
+- Unsmoothed object-vector and boundary-vector maps (`method="binned"`)
+  record `bandwidth=0.0`, as spatial binned maps do; `None` now means only
+  a method without a kernel (`"glm"`).
+- The result screens (`is_place_cell()`, `classify()`,
+  `label_cell_types()` and the significance results) refuse `None` for a
+  threshold such as `min_info` with an `InputError`, as `min_occupancy`
+  does, instead of failing on a comparison.
+
+**Fixed**
+
+- Cell models built from one generator differ. `PlaceCellModel`,
+  `HeadDirectionCellModel` and `BoundaryVectorCellModel` copied a generator
+  `rng` without advancing it, so `[PlaceCellModel(env, rng=g) for _ in
+  range(n)]` gave `n` cells with the same center. The draw now advances the
+  generator and the model keeps the drawn value, so `replace` and pickling
+  rebuild it; `rng=0` and `rng=np.random.default_rng(0)` still give the same
+  model.
+- `tmaze_alternation_session(rng=g)` draws the first arm from a stream
+  spawned like the rest of the session, so sessions from one generator no
+  longer all start on the same arm. An int `rng` now picks a different first
+  arm than before (`rng=42` starts on the right).
+- Every public result's `summary()` key reads back from the result:
+  `DecodingSummary.mean_peak_probability`, `AssemblyPattern.n_members`,
+  `NullSpikeData.n_cells` and `.n_spikes`, `ReplayEventSimulation.n_spikes`
+  and `.n_active_cells`, `DecisionBoundaryMetrics.mean_distance_to_decision_boundary`,
+  `ShuffledDataset.n_events`, `DirectionalPlaceFields.n_bins` and
+  `.n_directions`, and the interval forms of `PathEfficiencyResult` and
+  `GoalDirectedMetrics` (`n_intervals`, `mean_efficiency`, `n_reached`, ...)
+  are properties. The contract test now covers every `ResultMixin` class.
+  `GoalDirectedMetrics(..., interval_ids=...)` accepts the default scalar
+  `arrival_tested`.
+- A count matrix passed as a list of rows, such as `[[0, 1], [1, 3]]`, is
+  read as counts; it was refused as spike trains when its rows increased.
+- The boolean-masking warning catches fragmented masks (kept runs of a few
+  frames between long removed runs), which inflated occupancy several-fold
+  with no warning. It reads regular sampling as steps near whole multiples
+  of one interval, with a chance check so irregular sampling stays silent.
+  The message names both causes, a boolean mask or dropped tracking frames,
+  and the fix for each.
+- An `Environment` passed in another positional slot is caught, also when
+  the call still binds (`decode_position(counts, env, rates, dt=0.1)`), and
+  the error says to move it first. The advice to build an environment
+  includes `units="cm"`.
+- The small-bandwidth warning fires after the inputs are validated, so a
+  length mismatch raises its `InputError` under warnings-as-errors; a
+  non-numeric `bandwidth` is an `InputError`.
+- A unit with no spikes inside `epochs` no longer gets the "check that
+  spike_times and times share units" warning; spikes on another clock still
+  warn.
+- The millisecond-`dt` refusal of `decode_position` applies only to
+  `dt > 1` s, so overlapping windows (600 ms windows every 5 ms) decode.
+- `compute_vte_session(..., head_sweep_weight=0.0)` classifies trials on
+  speed alone instead of leaving `is_vte` empty and warning about head
+  sweeps.
+- The all-intervals-excluded refusal states what, why and how to fix.
+
 ### The units-free default bandwidth warns
 
 **Changed**
@@ -222,13 +303,13 @@
   `[detect_place_fields(env, unit) for unit in rates]`.
 - `detect_place_fields` returns a `PlaceFieldsResult` that keeps its map:
   `env`, `firing_rate`, `bandwidth` and `unit_id` are required fields.
-  `to_dataframe()` is now one row per field (`unit_id`, `field`, `n_bins`,
-  `area`, `peak_rate`, `mean_rate`, `centroid_*`) instead of one row per
-  `(field, bin)`; the bins stay in `result.fields`.
+  `to_dataframe()` is one row per field bin (`unit_id`, `field`, `bin`,
+  `bin_center_*`, `firing_rate`), and the per-field table (`unit_id`,
+  `field`, `n_bins`, `area`, `peak_rate`, `mean_rate`, `centroid_*`) is
+  `fields_table()`.
 - No-argument scalars on single-unit results are properties, not methods:
   `DirectionalRateResult.mean_vector_length`, `.preferred_direction`,
-  `.preferred_direction_deg`, `.tuning_width`, `.tuning_width_deg`,
-  `.tuning_pvalue` and `.largest_unvisited_arc` (also on
+  `.tuning_width`, `.tuning_pvalue` and `.largest_unvisited_arc` (also on
   `DirectionalRatesResult`); `ObjectVectorRateResult.preferred_direction`
   and `.preferred_distance`; `BoundaryVectorRateResult.preferred_direction`
   and `.preferred_distance`. Drop the `()`.
@@ -601,7 +682,7 @@ values.
   and so those of `tmaze_alternation_session`, are discs as wide as the
   corridor, not points, so `detect_trials(env, times, positions,
   regions=[...])` accepts them. `path_progress` values on the T-maze change,
-  because its start and goal are now 5 cm discs. At a `bin_size` near the
+  because its start and goal are now discs of 5 cm radius. At a `bin_size` near the
   corridor width (10 cm, for example) a disc covers no 2-D bin, and
   `make_t_maze` warns and names the regions.
 - `env.plot()` on a one-dimensional grid, such as `linear_track_session().env`,

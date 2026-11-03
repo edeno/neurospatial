@@ -588,6 +588,9 @@ def _head_direction_classify(
     alpha: float,
 ) -> NDArray[np.bool_]:
     """The shared MVL and occupancy-corrected tuning-test screen."""
+    from neurospatial._validation import refuse_none_thresholds
+
+    refuse_none_thresholds(min_mvl=min_mvl, alpha=alpha)
     inputs = _tuning_inputs(result)
     _warn_if_headings_incomplete(inputs["occupancy"])
     mvls = _mean_vector_lengths(inputs["rates"], inputs["centers"])
@@ -1044,47 +1047,10 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
         See Also
         --------
-        preferred_direction_deg : Same result in degrees
         mean_vector_length : Strength of directional tuning
         neurospatial.stats.circular.circular_mean : Underlying circular mean function
         """
         return float(_preferred_directions(self.firing_rate, self.bin_centers))
-
-    @property
-    def preferred_direction_deg(self) -> float:
-        """Compute the preferred direction in degrees.
-
-        This is a convenience method that returns the preferred direction
-        converted to degrees.
-
-        Returns
-        -------
-        float
-            Preferred direction in degrees, range [-180, 180].
-
-        See Also
-        --------
-        preferred_direction : Same result in radians
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.directional import DirectionalRateResult
-        >>> n_bins = 60
-        >>> bin_centers = np.linspace(-np.pi, np.pi, n_bins, endpoint=False)
-        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
-        >>> result = DirectionalRateResult(
-        ...     firing_rate=firing_rate,
-        ...     occupancy=np.ones(n_bins) * 0.5,
-        ...     bin_centers=bin_centers,
-        ...     bin_size=np.pi / 30,
-        ...     bandwidth=None,
-        ... )
-        >>> pref_deg = result.preferred_direction_deg
-        >>> bool(np.abs(pref_deg - 90) < 6)  # Close to 90 degrees
-        True
-        """
-        return float(np.degrees(self.preferred_direction))
 
     def peak_firing_rate(self) -> float:
         """Get the maximum firing rate.
@@ -1242,49 +1208,11 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
         See Also
         --------
-        tuning_width_deg : Same result in degrees
         mean_vector_length : Alternative tuning strength measure
         """
         return _directional_tuning_width(
             np.asarray(self.firing_rate, dtype=np.float64), self.bin_size
         )
-
-    @property
-    def tuning_width_deg(self) -> float:
-        """Compute the tuning width (half-width at half-maximum) in degrees.
-
-        This is a convenience method that returns the tuning width
-        converted to degrees.
-
-        Returns
-        -------
-        float
-            Tuning width in degrees, range (0, 180]. Returns NaN if
-            tuning width cannot be determined.
-
-        See Also
-        --------
-        tuning_width : Same result in radians
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.directional import DirectionalRateResult
-        >>> n_bins = 60
-        >>> bin_centers = np.linspace(-np.pi, np.pi, n_bins, endpoint=False)
-        >>> firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - np.pi / 2) - 1))
-        >>> result = DirectionalRateResult(
-        ...     firing_rate=firing_rate,
-        ...     occupancy=np.ones(n_bins) * 0.5,
-        ...     bin_centers=bin_centers,
-        ...     bin_size=np.pi / 30,
-        ...     bandwidth=None,
-        ... )
-        >>> width_deg = result.tuning_width_deg
-        >>> width_deg < 60  # Sharp tuning < 60 degrees
-        True
-        """
-        return float(np.degrees(self.tuning_width))
 
     @property
     def largest_unvisited_arc(self) -> float:
@@ -1567,10 +1495,14 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
         if is_hd:
             lines.append("*** HEAD DIRECTION CELL ***")
-            lines.append(f"Preferred direction: {self.preferred_direction_deg:.1f} deg")
+            lines.append(
+                f"Preferred direction: {np.degrees(self.preferred_direction):.1f} deg"
+            )
             lines.append(f"Mean vector length: {mvl:.3f} (threshold = {min_mvl})")
             lines.append(f"Peak firing rate: {self.peak_firing_rate():.1f} Hz")
-            lines.append(f"Tuning width (HWHM): {self.tuning_width_deg:.1f} deg")
+            lines.append(
+                f"Tuning width (HWHM): {np.degrees(self.tuning_width):.1f} deg"
+            )
             lines.append(f"Tuning test: p = {pval:.4f}")
         else:
             lines.append("Not classified as HD cell")
@@ -3462,13 +3394,13 @@ def plot_head_direction_tuning(
 
         # Mark preferred direction
         if show_preferred_direction:
-            pfd_deg = result.preferred_direction_deg
+            pfd_deg = np.degrees(result.preferred_direction)
             ax.axvline(pfd_deg, color="red", linewidth=2, linestyle="--", zorder=3)
 
     # Show metrics text box if requested
     if show_metrics:
         metrics_text = (
-            f"PFD: {result.preferred_direction_deg:.1f}°\n"
+            f"PFD: {np.degrees(result.preferred_direction):.1f}°\n"
             f"MVL: {result.mean_vector_length:.3f}\n"
             f"Peak: {result.peak_firing_rate():.1f} Hz"
         )

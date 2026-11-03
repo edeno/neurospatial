@@ -108,3 +108,73 @@ def test_zero_filled_rates_warn_names_the_decoder_fix(open_field_120s, trained):
     message = str(record[0].message)
     assert "BayesianDecoder.from_rates(rates)" in message
     assert "decode_position" not in message
+
+
+@pytest.mark.parametrize("decode", [decode_position, decode_position_summary])
+def test_long_overlapping_windows_are_not_called_milliseconds(trained, decode):
+    """600 ms windows stepped by 5 ms: dt is 120 times the spacing, in seconds."""
+    env, rates, counts, _ = trained
+    times = np.arange(200) * 0.005
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        decode(env, counts[:200], rates, dt=0.6, times=times)
+
+
+@pytest.mark.parametrize(
+    ("dt", "refused"), [(1.0, False), (float(np.nextafter(1.0, 2.0)), True)]
+)
+def test_milliseconds_refusal_needs_dt_above_one_second(trained, dt, refused):
+    """At the 1 s cutoff, with dt 200 times the 5 ms spacing either side."""
+    env, rates, counts, _ = trained
+    times = np.arange(200) * 0.005
+    if refused:
+        with pytest.raises(ValueError, match="milliseconds"):
+            decode_position(env, counts[:200], rates, dt=dt, times=times)
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            decode_position(env, counts[:200], rates, dt=dt, times=times)
+
+
+def test_milliseconds_refusal_needs_dt_100_times_the_spacing(trained):
+    """dt=25 (meant as ms) on 0.25 s centers is 100 times the spacing."""
+    env, rates, counts, _ = trained
+    times = np.arange(200) * 0.25
+    with pytest.raises(ValueError, match=r"100 times the 0\.25 s spacing"):
+        decode_position(env, counts[:200], rates, dt=25.0, times=times)
+    with pytest.warns(UserWarning, match="longer than 1 second"):
+        decode_position(env, counts[:200], rates, dt=24.9, times=times)
+
+
+@pytest.mark.parametrize(
+    ("dt", "warns"), [(1.0, False), (float(np.nextafter(1.0, 2.0)), True)]
+)
+def test_bin_spikes_dt_warning_starts_above_one_second(open_field_120s, dt, warns):
+    trains = open_field_120s.spike_times
+    if warns:
+        with pytest.warns(UserWarning, match="longer than 1 second"):
+            bin_spikes_in_time(trains, dt=dt)
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            bin_spikes_in_time(trains, dt=dt)
+
+
+@pytest.mark.parametrize(("n_zero", "warns"), [(5, False), (6, True)])
+def test_zero_filled_warning_starts_above_five_percent(n_zero, warns):
+    """On 100 bins, 5 all-zero bins is the 5% cutoff; 6 is above it."""
+    from neurospatial import Environment
+
+    edges = (np.arange(11.0), np.arange(11.0))
+    env = Environment.from_grid_mask(np.ones((10, 10), dtype=bool), edges)
+    assert env.n_bins == 100
+    models = np.full((2, env.n_bins), 2.0)
+    models[:, :n_zero] = 0.0
+    counts = np.array([[1, 0], [0, 2], [1, 1]])
+    if warns:
+        with pytest.warns(UserWarning, match=f"{n_zero} of 100 bins have rate 0"):
+            decode_position(env, counts, models, dt=0.1)
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            decode_position(env, counts, models, dt=0.1)

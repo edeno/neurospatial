@@ -337,10 +337,15 @@ class AssemblyPattern(ReadOnlyArraysMixin, ResultMixin):
         """Labels of the core members, in ``member_indices`` order."""
         return np.asarray(self.unit_ids)[self.member_indices]
 
+    @property
+    def n_members(self) -> int:
+        """Number of core members, ``len(member_indices)``."""
+        return int(self.member_indices.size)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
-            "n_members": int(self.member_indices.size),
+            "n_members": self.n_members,
             "explained_variance_ratio": self.explained_variance_ratio,
         }
 

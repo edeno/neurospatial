@@ -582,9 +582,14 @@ class ShuffledDataset(ReadOnlyArraysMixin, ResultMixin):
             object.__setattr__(self, "spike_counts", counts)
         self._own_arrays()
 
+    @property
+    def n_events(self) -> int:
+        """Number of shuffled events."""
+        return len(self.events)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        return {"null": self.null, "n_events": len(self.events)}
+        return {"null": self.null, "n_events": self.n_events}
 
 
 # --------------------------------------------------------------------------

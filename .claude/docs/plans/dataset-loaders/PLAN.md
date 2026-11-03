@@ -109,6 +109,7 @@ Methods:
 
 - `rec.load_lfp(channel=None) -> tuple[ndarray, float]`: on request only. It raises `NotImplementedError` for datasets whose loader has no LFP yet, and says which.
 - `rec.plot_overview(*, fig=None) -> matplotlib.figure.Figure`. This is not `plot`, because the rules fix `plot(*, ax=None)` to return one Axes, and the overview has six panels.
+- `rec.animation(*, time_range=None, trail_length=None) -> Animation`: an interactive or movie scene of the session, built on `neurospatial.animation` (task 6b).
 - `rec.summary() -> dict`: flat scalars, every key a property of `rec`.
 - `repr(rec)`: the full summary text.
 
@@ -159,6 +160,27 @@ Methods:
    - 60 s of position over time with a raster.
 
    A panel with no data says "not in this dataset" instead of drawing empty axes. Test by reading the artists back: the occupancy image equals `env.occupancy`'s values, and its NaNs are masked.
+6b. **Interactive view and movie** (`_overview.py`).
+    `rec.animation(*, time_range=None, trail_length=None)` returns an
+    `Animation` (`src/neurospatial/animation/scene.py:290`,
+    `Animation(env, fields, *, frame_times=None, overlays=None, title=None, window_seconds=2.0, show_regions=False, ...)`).
+
+    - **The scene:**
+      - **field:** occupancy over the environment, from `env.occupancy`, as a single static field stream. NaN marks unvisited bins.
+      - **overlays:**
+        - `PositionOverlay(positions, times, trail_length=..., units=rec.position_units)` (`animation/overlays.py:217`, fields at 337–347);
+        - `HeadDirectionOverlay` if `headings` (`overlays.py:636`);
+        - `SpikeRasterOverlay(spike_times, unit_ids=...)` (`overlays.py:2007`, fields at 2062–2068);
+        - `EventOverlay` for `events` (`overlays.py:844`);
+        - `EpochOverlay(epochs)` (`overlays.py:2212`).
+      - **regions:** `show_regions=True` when the environment has regions.
+      - **scope:** the default `time_range` is the first 60 s of tracking, so the first `.show()` opens fast. A recording without positions (Peyrache) raises `InputError`, saying the session has no positions and pointing to `headings` and `spike_times`.
+    - **What the user does next:** `Animation.show(backend=...)` (`scene.py:657`) to open it, and `Animation.export(path, *, time_range, fps, ...)` (`scene.py:505`) for a movie.
+    - **Not a workaround:**
+      - `Animation` refuses scenes without a field stream (`scene.py:345`, "fields must contain at least one stream"). If a single-sample static field is refused or animates wrongly, fix that in `neurospatial.animation` with its own test and a CHANGELOG line. Don't work around it here.
+      - The same applies to any overlay that can't take a `Recording`'s arrays as they are.
+    - **Docs:** the user guide shows `rec.animation().show(backend="fastplotlib")` and a 10 s export. The 3-D bat page shows the room in fastplotlib or napari.
+
 7. **Registry and catalog.**
    - **Registry contents.** `registry/<dataset>.json` holds:
      - dataset metadata: citation, species, brain regions, apparatus, license as the archive states it, the dataset's stated position span and sampling rate;
@@ -236,6 +258,9 @@ Methods:
 | `test_checks.py::test_origin_zeros_fail` | 1% of samples at exactly (0, 0) fails, and 0.05% passes |
 | `tests/datasets/test_summary.py::test_summary_text` | a synthetic recording prints the six sections in order, "Watch out" last; an unverified one prints "Not yet checked by hand" |
 | `tests/datasets/test_overview.py::test_occupancy_panel_is_the_data` | the occupancy panel's array equals `env.occupancy(...)` and its NaNs are masked; a dataset without headings shows "not in this dataset" |
+| `tests/datasets/test_overview.py::test_animation_scene_holds_the_data` | `rec.animation()` on a synthetic recording has the occupancy field and position, raster, event and epoch overlays built from `rec`'s arrays; a heading-only recording raises `InputError` naming what is missing |
+| `test_overview.py::test_animation_export_frames` | a 2 s widget-backend export of a synthetic recording at 10 fps has 20 frames, headless |
+| `test_overview.py::test_animation_show_fastplotlib` (`gui`) | `.show(backend="fastplotlib")` opens on 2-D and 3-D synthetic recordings |
 | `tests/datasets/test_catalog.py::test_registry_complete` | every registry session has a SHA-256, a size and a license field; exactly one `default` per dataset |
 | `tests/datasets/test_fetch.py` (moved) plus `::test_crcns_http_client_error_hides_credentials` | the cache, checksums and refusals behave as before; a `RemoteDisconnected` traceback with `capture_locals=True` contains neither secret |
 | `tests/nwb/...::test_<reader>_<fix>` | one per `io.nwb` reader fix, on a synthetic pynwb file |
