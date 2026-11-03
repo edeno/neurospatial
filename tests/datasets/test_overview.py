@@ -10,6 +10,7 @@ mpl.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import pytest
 
 from neurospatial._exceptions import InputError
@@ -145,7 +146,7 @@ def test_animation_scene_holds_the_data(square_recording):
     )
     epochs = {o.label: o for o in scene.overlays if isinstance(o, EpochOverlay)}
     assert set(epochs) == {"run", "rest"}
-    np.testing.assert_array_equal(epochs["rest"]._intervals, rec.epochs["rest"])
+    np.testing.assert_array_equal(epochs["rest"].epochs, rec.epochs["rest"])
     # The default window is the first 60 s of tracking (here the whole session).
     assert scene.frame_times[0] == rec.times[0]
     # 100 Hz tracking is drawn at 30 frames a second, a rate viewers can play.
@@ -222,3 +223,131 @@ def test_animation_show_fastplotlib(dims, square_recording, room_recording):
     rec = square_recording if dims == 2 else room_recording
     view = rec.animation().show(backend="fastplotlib")
     view.close()
+
+
+def _normalised(values, edges):
+    counts, _ = np.histogram(values[np.isfinite(values)], bins=edges)
+    return counts / counts.sum()
+
+
+def _bar_heights(ax):
+    return np.array([p.get_height() for p in ax.patches])
+
+
+@pytest.fixture
+def two_region_recording(square_recording):
+    """Six units: four in CA1, two in DG, so the counts differ."""
+    regions = ["CA1"] * 4 + ["DG"] * 2
+    units = pd.DataFrame(
+        {"brain_region": regions, "label": ["pyramidal"] * 6},
+        index=square_recording.units.index,
+    )
+    return dataclasses.replace(square_recording, units=units, params={"min_speed": 5.0})
+
+
+def test_environment_panel_path_is_the_positions(square_recording):
+    ax = _titled(square_recording.plot_overview(), "Environment and path")
+    path = ax.collections[-1]
+    np.testing.assert_array_equal(path.get_offsets(), square_recording.positions)
+
+
+def test_speed_panel_is_the_speed_histogram(two_region_recording):
+    from neurospatial.behavior import compute_speed
+
+    rec = two_region_recording
+    ax = _titled(rec.plot_overview(), "Speed")
+    speed = compute_speed(rec.times, rec.positions)
+    speed = speed[np.isfinite(speed)]
+    expected, _ = np.histogram(speed, bins=60)
+    np.testing.assert_array_equal(_bar_heights(ax), expected)
+    # The speed itself, from successive positions, agrees up to the smoothing.
+    step = np.linalg.norm(np.diff(rec.positions, axis=0), axis=1) / np.diff(rec.times)
+    assert abs(np.median(speed) - np.median(step)) < 0.15 * np.median(step)
+
+
+def test_heading_panels_are_the_normalised_histograms(two_region_recording):
+    from neurospatial.behavior import heading_from_velocity
+
+    rec = two_region_recording
+    ax = _titled(rec.plot_overview(), "Head direction")
+    edges = np.linspace(-np.pi, np.pi, 37)
+    np.testing.assert_allclose(_bar_heights(ax), _normalised(rec.headings, edges))
+    (inset,) = ax.child_axes
+    travel = heading_from_velocity(rec.times, rec.positions, min_speed=5.0)
+    offset = (rec.headings - travel + np.pi) % (2 * np.pi) - np.pi
+    np.testing.assert_allclose(_bar_heights(inset), _normalised(offset, edges))
+    assert "while running" in inset.get_title()
+
+
+def test_all_nan_headings_are_missing(square_recording):
+    rec = dataclasses.replace(
+        square_recording, headings=np.full(len(square_recording.times), np.nan)
+    )
+    ax = _titled(rec.plot_overview(), "Head direction")
+    assert any("not in this dataset" in t for t in _texts(ax))
+    assert not ax.patches
+
+
+def test_unit_bars_count_the_regions(two_region_recording):
+    ax = _titled(two_region_recording.plot_overview(), "Units per region")
+    labels = [t.get_text() for t in ax.get_xticklabels()]
+    assert labels == ["CA1", "DG"]
+    np.testing.assert_array_equal(_bar_heights(ax), [4, 2])
+    (inset,) = ax.child_axes
+    assert _bar_heights(inset).sum() == two_region_recording.n_units
+
+
+def test_time_panel_skips_leading_nan_positions(square_recording):
+    positions = np.array(square_recording.positions)
+    positions[:300] = np.nan  # three seconds without tracking
+    rec = dataclasses.replace(square_recording, positions=positions)
+    ax = _titled(rec.plot_overview(), "First 60 s")
+    top, bottom = ax.child_axes
+    start = rec.times[300]
+    assert bottom.get_xlim() == (start, start + 60.0)
+    inside = (rec.times >= start) & (rec.times < start + 60.0)
+    (x_line, _y_line) = top.lines
+    np.testing.assert_array_equal(x_line.get_xdata(), rec.times[inside])
+    assert rec.animation().frame_times[0] == pytest.approx(start)
+
+
+def test_animation_shows_regions_when_the_environment_has_them(square_recording):
+    from neurospatial.regions import Region
+
+    env = square_recording.env.with_regions(
+        {"well": Region(name="well", kind="point", data=[50.0, 50.0])}
+    )
+    rec = dataclasses.replace(square_recording, env=env)
+    assert rec.animation().show_regions is True
+
+
+def test_animation_refuses_a_window_of_one_frame(square_recording):
+    # Three samples at 100 Hz is 0.02 s: one frame at 30 frames a second.
+    with pytest.raises(InputError, match=r"at least 0\.067 s"):
+        square_recording.animation(time_range=(10.0, 10.03))
+
+
+def test_interval_events_do_not_replace_epochs(square_recording):
+    rec = dataclasses.replace(
+        square_recording,
+        epochs={"run": np.array([[0.0, 30.0]])},
+        events={"run": np.array([[40.0, 45.0]])},
+    )
+    labels = {
+        o.label: o for o in rec.animation().overlays if isinstance(o, EpochOverlay)
+    }
+    assert set(labels) == {"run", "event: run"}
+    np.testing.assert_array_equal(labels["run"].epochs, rec.epochs["run"])
+    np.testing.assert_array_equal(labels["event: run"].epochs, rec.events["run"])
+
+
+def test_1d_positions_say_the_path_is_not_drawn(square_recording):
+    from neurospatial import Environment
+
+    x = np.asarray(square_recording.positions[:, :1])
+    env = Environment.from_samples(x, bin_size=5.0, units="cm")
+    rec = dataclasses.replace(
+        square_recording, env=env, positions=x, headings=None, heading_source=""
+    )
+    ax = _titled(rec.plot_overview(), "Environment and path")
+    assert any("1-D" in t for t in _texts(ax))

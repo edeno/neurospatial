@@ -95,7 +95,26 @@ def _panel_environment(rec: Recording, ax: Axes) -> None:
         return
     rec.env.plot(ax=ax)
     if rec.positions.shape[1] == 2:
-        ax.plot(rec.positions[:, 0], rec.positions[:, 1], c="tab:red", lw=0.6, zorder=5)
+        ax.scatter(
+            rec.positions[:, 0],
+            rec.positions[:, 1],
+            s=1,
+            c="tab:red",
+            linewidths=0,
+            alpha=0.5,
+            zorder=5,
+            rasterized=True,
+        )
+    else:
+        ax.text(
+            0.5,
+            0.97,
+            "path not drawn for 1-D positions",
+            ha="center",
+            va="top",
+            transform=ax.transAxes,
+            color="0.35",
+        )
     ax.set_title(title)
 
 
@@ -135,6 +154,9 @@ def _panel_heading(rec: Recording, ax: Axes) -> None:
     edges = np.linspace(-np.pi, np.pi, 37)
     centers = (edges[:-1] + edges[1:]) / 2
     headings = rec.headings[np.isfinite(rec.headings)]
+    if not headings.size:
+        _missing(ax, "Head direction", "every heading is NaN")
+        return
     counts, _ = np.histogram(headings, bins=edges)
     ax.bar(centers, counts / counts.sum(), width=np.diff(edges), color="0.5")
     ax.set_title("Head direction (0 = East)", pad=14)
@@ -323,6 +345,16 @@ def animation(
     if np.median(np.diff(frame_times)) < 1.0 / MAX_FRAME_RATE:
         # Tracking faster than a viewer can play: draw 30 frames a second.
         frame_times = np.arange(frame_times[0], frame_times[-1], 1.0 / MAX_FRAME_RATE)
+    if len(frame_times) < 2:
+        raise InputError(
+            _format_error(
+                f"time_range ({start:g}, {stop:g}) gives {len(frame_times)} frame "
+                f"at {MAX_FRAME_RATE:g} frames a second.",
+                why="a scene needs at least two frames.",
+                fix=f"pass a time_range at least {2 / MAX_FRAME_RATE:.3f} s long "
+                "inside the recording.",
+            )
+        )
     # A field row is held until the next row, so a static field is two equal
     # rows at the scene's first and last frame.
     occupancy = occupancy_field(rec)
@@ -354,7 +386,7 @@ def animation(
         overlays.append(EventOverlay.from_trajectory(points, rec.positions, rec.times))
     intervals = {
         **{k: v for k, v in rec.epochs.items() if len(v)},
-        **{k: v for k, v in rec.events.items() if v.ndim == 2 and len(v)},
+        **{f"event: {k}": v for k, v in rec.events.items() if v.ndim == 2 and len(v)},
     }
     for index, (name, rows) in enumerate(intervals.items()):
         overlays.append(
