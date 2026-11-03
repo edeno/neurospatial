@@ -417,9 +417,11 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             (Hz, mean over the field's bins weighted by their measure) and
             ``centroid_x``, ``centroid_y``, ... (the rate-weighted centroid,
             :func:`~neurospatial.encoding.rate_map_centroid`, in environment
-            units; on a polar environment ``centroid_distance`` and
-            ``centroid_angle`` (rad) of the geodesic centroid, a field bin,
-            because averaging angles and distances is not a position). No
+            units; on a track, the geodesic centroid, a field bin, because the
+            mean of a field around a corner lies off the track; on a polar
+            environment ``centroid_distance`` and ``centroid_angle`` (rad) of
+            the geodesic centroid, because averaging angles and distances is
+            not a position). No
             rows when no field was detected. ``df.attrs`` holds
             ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
         """
@@ -430,10 +432,13 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
 
         measures = np.asarray(self.env.bin_sizes, dtype=np.float64)
         names = [f"centroid_{name}" for name in _coord_dim_names(self.env)]
-        # Averaging (distance, angle) bin centers is not a position: a polar
-        # map's centroid is the field bin nearest the rest (the geodesic one).
+        # Averaging (distance, angle) bin centers is not a position, and the
+        # mean of a field around a track's corner is off the track: there the
+        # centroid is the field bin nearest the rest (the geodesic one).
         method: Literal["euclidean", "geodesic"] = (
-            "geodesic" if self.env.coordinate_kind == "polar" else "euclidean"
+            "geodesic"
+            if self.env.coordinate_kind == "polar" or self.env.is_linearized_track
+            else "euclidean"
         )
         rows = []
         for k, bins in enumerate(self.fields):

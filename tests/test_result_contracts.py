@@ -200,6 +200,31 @@ def test_place_fields_tables_on_a_polar_environment():
     )
 
 
+def test_track_field_centroid_stays_on_the_track():
+    """A field around a track's corner has a centroid on the track, not inside it."""
+    from neurospatial import Environment
+
+    env = Environment.linear_track(
+        node_positions=[(0, 0), (100, 0), (100, 60)], bin_size=2.0, units="cm"
+    )
+    linear = env.to_linear(env.bin_centers)
+    # A field centered on the corner (linear position 100 cm), spanning both arms.
+    rate = 8 * np.exp(-((linear - 100) ** 2) / (2 * 8**2))
+    fields = encoding.detect_place_fields(env, rate, bandwidth=0.0)
+    assert fields.n_fields == 1
+    bins = fields.fields[0]
+    centers = env.bin_centers[bins]
+    assert (centers[:, 1] > 1.0).any() and (centers[:, 0] < 99.0).any()
+    centroid = fields.to_dataframe()[["centroid_x", "centroid_y"]].to_numpy()[0]
+    # The Euclidean mean of the two arms lies inside the corner, off the track;
+    # the centroid is the field bin with the least rate-weighted distance to
+    # the others along the track (one path, so |difference in linear position|).
+    distance = np.abs(linear[bins][:, None] - linear[bins][None, :])
+    medoid = bins[np.argmin(distance @ rate[bins])]
+    np.testing.assert_allclose(centroid, env.bin_centers[medoid])
+    assert np.min(np.linalg.norm(env.bin_centers - centroid, axis=1)) < 1e-9
+
+
 def test_detect_place_fields_array_needs_bandwidth(open_field, open_field_rates):
     with pytest.raises(ValueError, match=r"bandwidth(.|\n)*Fix:"):
         encoding.detect_place_fields(
