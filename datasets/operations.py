@@ -720,8 +720,16 @@ def _reader_result(
 
 
 def _same_times(got: Any, expected: Any) -> bool:
+    """Whether two clocks agree to a hundredth of the sampling interval.
+
+    The tolerance is absolute: a relative one grows with the clock's value
+    (0.18 s at 18,000 s for ``np.allclose``'s default).
+    """
     got, expected = np.asarray(got, dtype=float), np.asarray(expected, dtype=float)
-    return got.shape == expected.shape and np.allclose(got, expected)
+    if got.shape != expected.shape:
+        return False
+    tolerance = 0.01 * float(np.median(np.diff(expected))) if expected.size > 1 else 0.0
+    return bool(np.allclose(got, expected, rtol=0.0, atol=tolerance))
 
 
 def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:

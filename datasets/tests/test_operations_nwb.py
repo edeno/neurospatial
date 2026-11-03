@@ -133,3 +133,14 @@ def test_readers_compare_pixels_with_pixels(tmp_path):
     )
     outcome = nwb_readers(rec, {})
     assert outcome.summary["position"] == "ok"
+
+
+def test_same_times_tolerance_is_absolute():
+    # 18,000 s into a 30 Hz session, a 0.18 s offset is five frames: the
+    # relative tolerance of np.allclose would call the clocks the same.
+    from operations import _same_times
+
+    times = 18_000.0 + np.arange(1000) / 30.0
+    assert _same_times(times, times + 1e-6)
+    assert not _same_times(times, times + 0.18)
+    assert not _same_times(times, times + 0.5 / 30.0)
