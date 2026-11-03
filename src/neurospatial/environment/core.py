@@ -192,6 +192,18 @@ def _check_backend(backend: str) -> str:
 
 
 # Smoothing methods require mode: no one mode is right for every field.
+_BIN_SIZE_CHOICE = (
+    "bin_size is the edge length of one bin, in the units of positions, and "
+    "no single size suits every arena or question.",
+    "pass bin_size= in the units of positions, as in "
+    'Environment.from_samples(positions, bin_size=2.0, units="cm")',
+)
+_FRAME_TIMES_CHOICE = (
+    "frame_times gives one time in seconds for each frame (each row of "
+    "fields), so playback and overlays line up with the recording.",
+    "pass frame_times= with one time per frame, as in "
+    "env.animate_fields(fields, frame_times=np.arange(n_frames) / fps)",
+)
 _MODE_CHOICE = (
     "a field of values per bin (a rate map) and a field of totals per bin "
     "(counts, occupancy) are smoothed differently, and the modes give "
@@ -3302,7 +3314,7 @@ class Environment(Generic[_C]):
         )
 
     @classmethod
-    @keyword_hint("bin_size")
+    @keyword_hint("bin_size", missing={"bin_size": _BIN_SIZE_CHOICE})
     @reads_pynapple_samples
     def from_samples(
         cls,
@@ -6213,6 +6225,7 @@ class Environment(Generic[_C]):
             **kwargs,
         )
 
+    @keyword_hint(missing={"frame_times": _FRAME_TIMES_CHOICE})
     @reads_pynapple_samples
     def animate_fields(
         self,

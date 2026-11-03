@@ -40,7 +40,9 @@ def keyword_hint(
     ``order``, it maps each extra positional value onto those keywords and
     shows the corrected call; otherwise it lists the keyword-only options
     without guessing which one was meant. Every other call, including
-    other argument errors, runs the function unchanged. The signature,
+    other argument errors, runs the function unchanged. A function whose first
+    parameter is ``env`` also explains a call that leaves the environment out
+    (and so fails to bind) by showing the canonical argument order. The signature,
     docstring and ``__wrapped__`` are the function's own. On a method, the
     corrected call is shown on ``env``, the name the documentation gives an
     environment.
@@ -97,6 +99,12 @@ def keyword_hint(
                 f"keyword_hint missing names options that are not required {optional}."
             )
             raise TypeError(msg)
+        env_first = positional[:1] == ["env"]
+        canonical = ", ".join(
+            name
+            for name in positional
+            if parameters[name].default is inspect.Parameter.empty
+        )
         accepts_any_keyword = any(p.kind is p.VAR_KEYWORD for p in parameters.values())
         title = function.__qualname__
         # The caller neither passes nor sees the class or instance a
@@ -172,10 +180,33 @@ def keyword_hint(
                 )
             )
 
+        def env_missing_error(args: tuple[Any, ...]) -> TypeError | None:
+            """Blame the environment when the call fails to bind without one."""
+            from neurospatial.environment import Environment
+
+            if not args or isinstance(args[0], Environment):
+                return None
+            return TypeError(
+                _format_error(
+                    f"{title}() was called without an environment: its first "
+                    f"argument is {_shown(args[0])}, not an Environment.",
+                    why="Why: the first argument is the environment, then the "
+                    "data, so every value after it is read as the wrong input.",
+                    fix=f"call {title}({canonical}, ...), with env first.",
+                )
+            )
+
         @functools.wraps(function)
         def guarded(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             if len(args) > len(positional):
                 raise positional_error(args, kwargs)
+            if env_first:
+                try:
+                    signature.bind(*args, **kwargs)
+                except TypeError:
+                    error = env_missing_error(args)
+                    if error is not None:
+                        raise error from None
             for name, (reason, advice) in required.items():
                 if name not in kwargs:
                     raise TypeError(

@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### First-run mistakes get a What/Why/Fix error
+
+**Fixed**
+
+- `Environment.from_samples(positions)` without `bin_size` and
+  `Environment.animate_fields(fields)` without `frame_times` now say what is
+  missing, why there is no default and show a runnable call, instead of
+  Python's bare "missing keyword-only argument" message.
+- Calling an encoding or decoding function without the environment, such as
+  `compute_spatial_rate(spike_times, times, positions)`, used to blame the
+  last argument (`missing 1 required positional argument: 'positions'`). It
+  now says the first argument is the environment and shows the canonical
+  order, `compute_spatial_rate(env, spike_times, times, positions)`. This
+  covers every public `compute_*_rate(s)`, `decode_*`, `is_*_cell`,
+  `*_significance`, `has_place_field` and `decoding_*` function whose first
+  parameter is `env`. Valid calls and errors raised inside the function are
+  unchanged.
+
 ### Spike times in milliseconds warn with `epochs`
 
 **Fixed**

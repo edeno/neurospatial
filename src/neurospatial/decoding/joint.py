@@ -24,6 +24,7 @@ from numpy.typing import NDArray
 from scipy.special import logsumexp
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin, read_only_copy
 from neurospatial._validation import validate_instance
@@ -204,6 +205,7 @@ class JointDecodingResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decode_jointly(
     env: Environment | Mapping[str, Environment],

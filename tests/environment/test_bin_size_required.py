@@ -17,8 +17,15 @@ from neurospatial import Environment
 def test_from_samples_requires_bin_size():
     rng = np.random.default_rng(42)
     data = rng.random((100, 2)) * 10
-    with pytest.raises(TypeError, match=r"missing.*required.*bin_size"):
+    with pytest.raises(TypeError) as caught:
         Environment.from_samples(data)
+    message = str(caught.value)
+    assert message.startswith("Environment.from_samples() needs bin_size=.")
+    assert "in the units of positions" in message
+    assert message.splitlines()[-1] == (
+        "Fix: pass bin_size= in the units of positions, as in "
+        'Environment.from_samples(positions, bin_size=2.0, units="cm")'
+    )
 
 
 def test_from_samples_accepts_explicit_bin_size():

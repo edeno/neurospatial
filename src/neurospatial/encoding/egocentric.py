@@ -69,6 +69,7 @@ from neurospatial._intervals import (
     run_time_bounds,
     start_allocated_occupancy,
 )
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._observation import validate_break_before
 from neurospatial._plotting import _require_polar
 from neurospatial._pynapple import reads_pynapple_samples
@@ -1461,6 +1462,7 @@ class ObjectVectorRatesResult(
         return _object_vector_summary_frame(self, index=index_ids)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_egocentric_rate(
     env: Environment | None,
@@ -1744,6 +1746,7 @@ def compute_egocentric_rate(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_object_vector_rate(
     env: Environment | None,
@@ -2523,6 +2526,7 @@ def _object_vector_rate(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_egocentric_rates(
     env: Environment | None,
@@ -2883,6 +2887,7 @@ def compute_egocentric_rates(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_object_vector_rates(
     env: Environment | None,
@@ -3589,6 +3594,7 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
     return float(np.clip(distance_selectivity * direction_selectivity, 0.0, 1.0))
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def is_object_vector_cell(
     env: Environment | None,
@@ -3870,6 +3876,7 @@ def is_object_vector_cell(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def is_egocentric_object_vector_cell(
     env: Environment | None,
@@ -4761,6 +4768,7 @@ def _object_vector_significance(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def object_vector_cell_significance(
     env: Environment | None,
@@ -5010,6 +5018,7 @@ def object_vector_cell_significance(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def egocentric_object_vector_cell_significance(
     env: Environment | None,
