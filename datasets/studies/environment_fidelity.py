@@ -37,9 +37,11 @@ Measures against the apparatus, where a source gives it:
   of them is the shortest path along the segments, computed here with NumPy
   and SciPy, independently of neurospatial. The ratio of the environment's
   geodesic to it is near 1 when the environment follows the track; below 1
-  the environment takes a short cut the animal's body could not.
-- **on-track share**: share of samples and of bin centres within one track
-  width of the reference (the stated width, else ``ASSUMED_TRACK_WIDTH_CM``).
+  the environment takes a short cut the track does not offer.
+- **on-track share**: on a track of full width ``w`` (the stated width,
+  else ``ASSUMED_TRACK_WIDTH_CM``), the share of samples within ``w / 2`` of
+  the reference and of bin centres within ``w / 2`` plus half a bin. None for
+  the lattice, where every point is within 11.4 cm of a bar.
 - **arena outline**: for a stated square or circle, the stated shape is
   placed on the samples (a square along the samples' minimum rotated
   rectangle, a circle at the centre of the samples' extent) and the share of
@@ -99,6 +101,7 @@ COVER_STEP_BINS = 0.25
 MAJOR_COMPONENT_SHARE = 0.01
 THIN_BIN_SAMPLES = 5
 ALIGN_STEP_SAMPLES = 10
+LOOP_CLOSURE_SHARE = 0.1
 ALIGN_MIN_SPEED = 10.0
 ALIGN_DEGREES = 20.0
 
@@ -310,7 +313,8 @@ APPARATUS: dict[str, Apparatus] = {
     "takigawa_7114733": Apparatus(
         "track",
         "Tirole et al. 2022: two novel 2 m linear tracks, view-obstructing"
-        " dividers; file: each track's centreline (199.8, 199.6 cm)",
+        " dividers; file: each track's centreline (199.8, 199.6 cm; not an"
+        " independent check, cm_per_pixel comes from the 2 m length)",
         True,
         track_length=200.0,
         n_parts=2,
@@ -344,8 +348,10 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "yartsev_bat_demo": Apparatus(
         "3d",
-        "file r_lim ('boundaries of the room', NP_Bat_Demo.m) and the feeder"
-        " coordinates in NP_Bat_Demo.m",
+        "Forli et al. 2025 Methods (Zotero full-text cache): indoor flight room"
+        " 5.6 x 5.2 x 2.5 m, two feeders on the wall at one end; file r_lim"
+        " ('boundaries of the room', NP_Bat_Demo.m) 5.8 x 5.2 x 2.3 m and the"
+        " feeder coordinates r_fd in NP_Bat_Demo.m",
         True,
     ),
     "grieves_2020_lattice": Apparatus(
@@ -762,7 +768,9 @@ def reference_for(rec: Recording, app: Apparatus | None) -> Reference | None:
         return None
     if stated_width is not None:
         ref.width, ref.width_stated = stated_width, True
-    elif rec.position_units == "cm":
+    elif rec.position_units == "cm" and "lattice_bars_cm" not in geometry:
+        # No on-track share for the lattice: every point inside it is within
+        # 11.4 cm (a cube's centre) of a bar, so a band says nothing.
         ref.width = ASSUMED_TRACK_WIDTH_CM
     return ref
 
@@ -946,6 +954,23 @@ def measure_env(
     return out
 
 
+def on_track_shares(
+    sample_distance: NDArray[np.float64],
+    bin_distance: NDArray[np.float64],
+    width: float,
+    bin_size: float,
+) -> tuple[float, float]:
+    """Shares of samples and of bins on a track of full width ``width``.
+
+    A sample is on the track within ``width / 2`` of its centreline; a bin is
+    when its cell can reach the track, its centre within ``width / 2 +
+    bin_size / 2``.
+    """
+    on_samples = float(np.mean(sample_distance <= width / 2))
+    on_bins = float(np.mean(bin_distance <= width / 2 + bin_size / 2))
+    return on_samples, on_bins
+
+
 def against_reference(
     env_out: dict[str, Any], env: Any, samples: NDArray[np.float64], ref: Reference
 ) -> dict[str, Any]:
@@ -957,7 +982,11 @@ def against_reference(
     along = along_track_distance(
         ref, seg_s[first], along_s[first], seg_s[second], along_s[second]
     )
-    usable = along >= MIN_PAIR_BINS * env_out["bin_size"]
+    usable = (
+        np.isfinite(along)
+        & np.isfinite(geo)
+        & (along >= MIN_PAIR_BINS * env_out["bin_size"])
+    )
     ratio = geo[usable] / along[usable]
     out: dict[str, Any] = {
         "reference": ref.label,
@@ -978,8 +1007,9 @@ def against_reference(
     if ref.width is not None:
         out["track_width"] = ref.width
         out["track_width_stated"] = ref.width_stated
-        out["samples_on_track"] = float(np.mean(dist_s <= ref.width))
-        out["bins_on_track"] = float(np.mean(dist_b <= ref.width))
+        out["samples_on_track"], out["bins_on_track"] = on_track_shares(
+            dist_s, dist_b, ref.width, env_out["bin_size"]
+        )
     return out
 
 
@@ -1106,6 +1136,7 @@ def lattice_measures(
         track_width=width,
     )
     occupancy = np.asarray(bar_env.occupancy(rec.times, rec.positions))
+    placed = np.asarray(bar_env.bin_at(samples))
     return {
         "n_bars": len(np.asarray(rec.geometry["lattice_bars_cm"])),
         "bar_spacing": spacing,
@@ -1132,8 +1163,43 @@ def lattice_measures(
         ),
         "from_graph_track_width": width,
         "from_graph_occupancy_share_of_bins": float(np.mean(occupancy > 0)),
+        "from_graph_samples_placed": float(np.mean(placed >= 0)),
         "_bar_env": bar_env,
     }
+
+
+def face_adjacent(
+    foot: NDArray[np.float64], direction: NDArray[np.float64], spacing: float
+) -> tuple[NDArray[np.intp], NDArray[np.intp]]:
+    """Pairs of points on parallel bars one spacing apart across a cube face.
+
+    Parameters
+    ----------
+    foot : ndarray, shape (n, 3)
+        Each point's nearest point on its bar.
+    direction : ndarray, shape (n, 3)
+        Unit direction of that bar.
+    spacing : float
+        Distance between neighbouring parallel bars.
+
+    Returns
+    -------
+    i, j : ndarray, shape (n_pairs,)
+        Pairs (i < j) on parallel bars whose feet are one spacing apart (within
+        20 %) and offset across the bars, not along them: the offset makes an
+        angle of more than about 84 degrees with the bar (|cos| < 0.1). Two
+        consecutive segments of one bar are also parallel and one spacing
+        apart, but offset along the bar, so they are left out.
+    """
+    parallel = np.abs(np.abs(direction @ direction.T) - 1) < 1e-3
+    offset = foot[None, :, :] - foot[:, None, :]
+    separation = np.linalg.norm(offset, axis=2)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        along = np.abs(np.einsum("ijk,ik->ij", offset, direction)) / separation
+    across = np.nan_to_num(along, nan=1.0) < 0.1
+    near = np.abs(separation - spacing) < 0.2 * spacing
+    i, j = np.nonzero(np.triu(parallel & near & across, 1))
+    return i, j
 
 
 def adjacent_bar_pairs(
@@ -1141,11 +1207,12 @@ def adjacent_bar_pairs(
 ) -> dict[str, Any]:
     """Distances between samples at the middle of adjacent parallel bars.
 
-    A sample counts when it is within ``face`` / 2 of a bar and in the middle
-    fifth of a segment between crossings. Two such samples on parallel bars
-    one spacing apart are joined along the bars by at least one spacing (half a
-    segment, a crossing bar, half a segment); straight across the face they
-    are one spacing apart.
+    A sample counts when it is within a third of the spacing of a bar and in
+    the middle fifth of a segment between crossings. Two such samples on
+    parallel bars that bound one cube face (``face_adjacent``) are one spacing
+    apart straight across the face; along the bars the route is half a
+    segment to a crossing, the crossing segment and half a segment back:
+    about two spacings.
     """
     dist, seg, along = project(samples, ref)
     lengths = ref.lengths
@@ -1157,11 +1224,7 @@ def adjacent_bar_pairs(
     a = ref.nodes[ref.edges[:, 0]]
     direction = (ref.nodes[ref.edges[:, 1]] - a) / lengths[:, None]
     foot = a[seg[idx]] + along[idx, None] * direction[seg[idx]]
-    parallel = np.abs(np.abs(direction[seg[idx]] @ direction[seg[idx]].T) - 1) < 1e-3
-    separation = np.linalg.norm(foot[:, None] - foot[None], axis=2)
-    i, j = np.nonzero(
-        np.triu(parallel & (np.abs(separation - spacing) < 0.2 * spacing), 1)
-    )
+    i, j = face_adjacent(foot, direction[seg[idx]], spacing)
     bins = np.asarray(env.bin_at(samples[idx]))
     geo = geodesics(env_graph, bins[i], bins[j])
     track = along_track_distance(
@@ -1217,10 +1280,13 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
 
     Checked when stated: the number of separate apparatus (components of at
     least ``MAJOR_COMPONENT_SHARE`` of the bins), a square or circle's
-    coverage, a track's length (within 10 %), the share of bins within a
-    stated track width (90 %), the environment's geodesic against the distance
-    along the track (median 0.9 or more), the room bounds and a 1-D loop's
-    closure. An assumed track width is reported but not judged.
+    coverage, a track's length (within 10 %), the share of bins on a track of
+    the stated width (90 %, ``on_track_shares``), the environment's geodesic
+    against the distance along the track (median 0.9 or more), the room
+    bounds, and for a 1-D loop that its ends meet in the camera (within
+    ``LOOP_CLOSURE_SHARE`` of its length) and that the bins join them (their
+    path no longer than the camera distance plus that share). An assumed
+    track width is reported but not judged.
     """
     if app is None or not app.verified:
         return "not verified", "no source read here states the geometry"
@@ -1268,10 +1334,18 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
         )
     one_d = row.get("one_d")
     if one_d and "loop" in app.notes and "camera_distance_between_ends" in one_d:
-        reasons.append(
-            f"loop ends {one_d['end_to_end_geodesic']:.0f} apart along the bins,"
-            f" {one_d['camera_distance_between_ends']:.0f} in the camera"
-        )
+        camera = one_d["camera_distance_between_ends"]
+        length = one_d["range"][1] - one_d["range"][0]
+        if camera > LOOP_CLOSURE_SHARE * length:
+            reasons.append(
+                f"the loop's ends are {camera:.0f} apart in the camera: the"
+                " coordinate does not close"
+            )
+        elif one_d["end_to_end_geodesic"] > camera + LOOP_CLOSURE_SHARE * length:
+            reasons.append(
+                f"loop ends {one_d['end_to_end_geodesic']:.0f} apart along the bins,"
+                f" {camera:.0f} in the camera"
+            )
     return ("mismatch", "; ".join(reasons)) if reasons else ("matches", "")
 
 

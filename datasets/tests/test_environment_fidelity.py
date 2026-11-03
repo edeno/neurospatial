@@ -12,11 +12,14 @@ from studies.environment_fidelity import (
     bar_alignment,
     corner_links,
     edge_midpoint_gaps,
+    face_adjacent,
     grid_index,
     hole_sizes,
     lattice_reference,
+    on_track_shares,
     outline_measures,
     project,
+    verdict,
 )
 
 from neurospatial import Environment
@@ -184,3 +187,69 @@ def test_bar_alignment_of_movement_along_and_across_the_bars():
     # A cube diagonal is 54.7 degrees from every axis.
     assert share(diagonal)["share_within_degrees"] == 0.0
     assert 0.1 < out["share_isotropic"] < 0.3
+
+
+def test_face_adjacent_pairs_are_across_the_bars_not_along_one():
+    x = np.array([1.0, 0.0, 0.0])
+    foot = np.array(
+        [
+            [5.0, 0.0, 0.0],  # middle of a segment of the bar along x at y = 0
+            [5.0, 10.0, 0.0],  # the parallel bar across the face: adjacent
+            [15.0, 0.0, 0.0],  # next segment of the same bar: not adjacent
+            [5.0, 0.0, 10.0],  # the parallel bar above: adjacent
+        ]
+    )
+    i, j = face_adjacent(foot, np.repeat(x[None], 4, axis=0), spacing=10.0)
+    # (1, 3) are 14.1 apart, across a face diagonal: not adjacent either.
+    assert list(zip(i.tolist(), j.tolist(), strict=True)) == [(0, 1), (0, 3)]
+
+
+def test_on_track_shares_use_half_the_full_width():
+    samples = np.array([0.0, 2.0, 3.0, 3.5])
+    bins = np.array([0.0, 4.0, 4.5])
+    on_samples, on_bins = on_track_shares(samples, bins, width=6.0, bin_size=2.0)
+    assert on_samples == pytest.approx(3 / 4)  # within 3 of the centreline
+    assert on_bins == pytest.approx(2 / 3)  # within 3 + 1
+
+
+def _row(major=1, bins_on_track=0.95, ratio=1.0, stated=True):
+    return {
+        "env": {"major_components": major},
+        "reference": {
+            "reference_length": 100.0,
+            "track_width_stated": stated,
+            "bins_on_track": bins_on_track,
+            "env_over_track_median": ratio,
+        },
+    }
+
+
+def test_verdict_judges_only_stated_facts():
+    track = Apparatus("track", "test", True, track_length=100.0, track_width=6.0)
+    assert verdict(_row(), track) == ("matches", "")
+    status, reason = verdict(_row(major=2, ratio=0.7), track)
+    assert status == "mismatch"
+    assert "2 parts" in reason
+    assert "0.70" in reason
+    # An assumed width is reported, not judged.
+    assert verdict(_row(bins_on_track=0.5, stated=False), track)[0] == "matches"
+    assert verdict(_row(bins_on_track=0.5), track)[0] == "mismatch"
+    assert verdict(_row(), Apparatus("track", "test", False))[0] == "not verified"
+
+
+def test_verdict_tests_loop_closure():
+    loop = Apparatus("track", "test", True, notes="1-D loop")
+
+    def row(end_to_end, camera):
+        return {
+            "env": {"major_components": 1},
+            "one_d": {
+                "range": [0.0, 200.0],
+                "end_to_end_geodesic": end_to_end,
+                "camera_distance_between_ends": camera,
+            },
+        }
+
+    assert verdict(row(200.0, 3.0), loop)[0] == "mismatch"  # a loop cut open
+    assert "does not close" in verdict(row(200.0, 60.0), loop)[1]
+    assert verdict(row(10.0, 3.0), loop)[0] == "matches"
