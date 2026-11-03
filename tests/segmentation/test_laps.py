@@ -189,11 +189,8 @@ class TestDetectLaps:
 
     def test_detect_laps_empty_trajectory(self):
         """Test lap detection on empty trajectory."""
-        # Deterministic grid
-        x = np.linspace(40, 60, 11)
-        xx, yy = np.meshgrid(x, x)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=5.0)
+        # A ring track: an open arena has no loop and is refused.
+        env = Environment.from_samples(_ring_arc(0, 2 * np.pi, 400), bin_size=5.0)
         times = np.array([], dtype=np.float64)
 
         from neurospatial.behavior.segmentation import detect_laps
@@ -658,7 +655,7 @@ class TestRegionLapsGoRoundTheLoop:
             )
 
     def test_open_arena_raises(self):
-        """Circling in an open arena has no loop for the region to cut."""
+        """Circling in an open arena: the arena has no hole, so no loop."""
         from neurospatial.behavior.segmentation import detect_laps
 
         x = np.linspace(0, 100, 101)
@@ -668,7 +665,7 @@ class TestRegionLapsGoRoundTheLoop:
         regions.add("start", polygon=Point(80.0, 50.0).buffer(5.0))
         env = env.with_regions(regions)
         positions = _ring_arc(0, 4 * np.pi, 601)
-        with pytest.raises(ValueError, match="method='auto'"):
+        with pytest.raises(ValueError, match="has no hole to run around"):
             detect_laps(
                 env,
                 np.arange(601) / 30.0,

@@ -1501,13 +1501,14 @@ def visibility_occupancy(
         and strictly increasing, ``positions`` is not ``(n_time, 2)``, ``headings``
         is not ``(n_time,)``, ``max_gap`` is not positive, or ``epochs`` or
         ``break_before`` is malformed.
+    InputError
+        When every interval is excluded (by ``max_gap``, ``epochs``,
+        ``break_before`` or missing samples).
 
     Warns
     -----
     UserWarning
-        When every interval is excluded (by ``max_gap``, ``epochs``,
-        ``break_before`` or missing samples), or when the median sampling
-        interval exceeds ``max_gap``.
+        When the median sampling interval exceeds ``max_gap``.
 
     Notes
     -----

@@ -150,7 +150,7 @@ def open_field_session(
     algorithms.
     """
     # Import here to avoid circular dependencies
-    from neurospatial.simulation.session import simulate_session
+    from neurospatial.simulation.session import _simulate_session
 
     _require_positive("duration", duration, units=" (seconds)")
     _require_positive("arena_size", arena_size, units=" (cm)")
@@ -166,7 +166,7 @@ def open_field_session(
     env = _square_arena(arena_size, bin_size)
 
     # Simulate session with place cells and OU trajectory
-    return simulate_session(
+    return _simulate_session(
         env,
         duration=duration,
         n_cells=n_place_cells,
@@ -175,6 +175,8 @@ def open_field_session(
         coverage="uniform",
         rng=rng,
         show_progress=False,  # Disable progress bar for convenience function
+        call="open_field_session",
+        explicit=("duration", "arena_size", "bin_size", "n_place_cells", "rng"),
         **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
 
@@ -306,7 +308,7 @@ def linear_track_session(
     """
     # Import here to avoid circular dependencies
     from neurospatial.environment import Environment
-    from neurospatial.simulation.session import simulate_session
+    from neurospatial.simulation.session import _simulate_session
 
     _require_positive("duration", duration)
     _require_positive("track_length", track_length)
@@ -332,7 +334,7 @@ def linear_track_session(
     # place fields unless the caller chose others.
     kwargs.setdefault("width", TRACK_PLACE_FIELD_WIDTH_CM)
     kwargs.setdefault("max_rate", TRACK_PLACE_FIELD_PEAK_HZ)
-    return simulate_session(
+    return _simulate_session(
         env,
         duration=duration,
         n_cells=n_place_cells,
@@ -342,6 +344,15 @@ def linear_track_session(
         n_laps=n_laps,
         rng=rng,
         show_progress=False,  # Disable progress bar for convenience function
+        call="linear_track_session",
+        explicit=(
+            "duration",
+            "track_length",
+            "bin_size",
+            "n_place_cells",
+            "n_laps",
+            "rng",
+        ),
         **kwargs,  # Pass through model parameters (e.g., max_rate, width)
     )
 

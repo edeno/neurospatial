@@ -905,9 +905,14 @@ for lap_id, lap in zip(laps.interval_ids, laps):
 **Algorithm**:
 1. Template: on a loop track, the first trip from the first sample's bin
    that goes round the loop (a turn back at the start of the recording is
-   skipped); on a back-and-forth track or in an open arena, from the first
-   sample to the first return to its bin after a trip to the far side of the
-   track (a bin at least half the greatest path distance away)
+   skipped); on a loop wider than that bin and its neighbours (an annulus, a
+   wide track), from the first sample to the first return to its bin after a
+   trip to the far side of the loop (a bin at least half the greatest path
+   distance away). `method="auto"` and `"region"` need a loop: a track graph
+   with a cycle, or an area with a hole whose inscribed circle has a radius
+   above one bin (bins from `from_samples` shrink a ring's hole by up to a
+   bin on each side). A linear track, a tree or plus maze and an open arena are
+   refused; use `method="reference"` or `detect_trials` there
 2. Candidate lap boundaries: each pass through the template's first bin (or
    a neighbor), at the sample nearest that bin
 3. A lap ends at the first boundary where the bins visited since an earlier
@@ -956,8 +961,9 @@ to no lap; tracking jitter across the region's edge does not split a lap. Each
 lap runs from the entry before its trip to the entry that ends it; if the
 recording starts inside the start region, the first lap starts at the first
 sample. Region laps have `overlap_score = NaN` (no template). The region method
-needs a loop of connected bins: in an open arena use `method="auto"` or
-`"reference"`, and on a back-and-forth track use [`detect_trials`](#from-positions-or-port-events-to-trials).
+needs a loop, as `method="auto"` does, and a start region drawn across the
+loop's whole width; in an open arena use `method="reference"`, and on a
+back-and-forth track use [`detect_trials`](#from-positions-or-port-events-to-trials).
 
 ```python
 from neurospatial import Regions

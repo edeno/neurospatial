@@ -34,7 +34,7 @@ from numpy.typing import NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._pynapple import is_pynapple_type, tsgroup_unit_table
 from neurospatial._results import as_label_array, plain_value, resolve_unit_ids
-from neurospatial._validation import timestamps_of
+from neurospatial._validation import _refuse_wrong_kind, timestamps_of
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -181,11 +181,21 @@ def _one_d_train(train: Any, unit: int | None) -> NDArray[np.float64]:
     which = "spike_times" if unit is None else f"spike_times for unit {unit}"
     arr = np.asarray(timestamps_of(train, name=which), dtype=np.float64)
     if arr.ndim != 1:
+        table = arr.ndim == 2 and arr.shape[1] == 2 and arr.shape[0] > 2
         raise ValueError(
             _format_error(
                 f"{which} must be 1-D, got shape {arr.shape}.",
-                why=f"Why: spike input is {_SPIKE_FORMS}.",
-                fix="pass one 1-D array of spike times per unit.",
+                why="Why: one unit's spike times are a 1-D array of event "
+                "times in seconds.",
+                fix=(
+                    "for a table of (spike time, unit) rows, pass one train per "
+                    "unit: {u: table[table[:, 1] == u, 0] for u in "
+                    "np.unique(table[:, 1])}"
+                    if table
+                    else "pass one 1-D array of spike times per unit, e.g. "
+                    "np.ravel(spike_times) for one unit stored as a row or "
+                    "column."
+                ),
             )
         )
     _refuse_spike_raster(arr, which)
@@ -238,7 +248,9 @@ def in_time_order(train: NDArray[np.float64]) -> NDArray[np.float64]:
     return train
 
 
-def as_spike_train(spike_times: Any) -> NDArray[np.float64]:
+def as_spike_train(
+    spike_times: Any, *, call: str, population: str | None
+) -> NDArray[np.float64]:
     """Coerce one unit's spike times to a finite 1-D float64 array in time order.
 
     Parameters
@@ -246,6 +258,11 @@ def as_spike_train(spike_times: Any) -> NDArray[np.float64]:
     spike_times : array-like or one-unit train
         A 1-D array, a list of scalars, a pynapple ``Ts``/``Tsd`` or a pandas
         ``Series`` of spike times in seconds.
+    call : str
+        The public single-unit function, without parentheses, for messages.
+    population : str or None
+        Its population counterpart, named when several trains are passed;
+        None when there is none.
 
     Returns
     -------
@@ -253,6 +270,9 @@ def as_spike_train(spike_times: Any) -> NDArray[np.float64]:
 
     Raises
     ------
+    TypeError
+        If the input holds several units' trains (a list of trains or a 2-D
+        array of equal-length trains), or is a result object.
     ValueError
         If the input is not 1-D, is a spike raster, or holds a NaN or
         infinite value.
@@ -260,9 +280,16 @@ def as_spike_train(spike_times: Any) -> NDArray[np.float64]:
     Examples
     --------
     >>> from neurospatial._spikes import as_spike_train
-    >>> as_spike_train([0.5, -0.2, 0.1])
+    >>> as_spike_train([0.5, -0.2, 0.1], call="f", population="fs")
     array([-0.2,  0.1,  0.5])
     """
+    _refuse_wrong_kind(
+        spike_times,
+        name="spike_times",
+        caller=call,
+        expected="spike_train",
+        population=population,
+    )
     train = _one_d_train(spike_times, None)
     _refuse_non_finite(train, "spike_times")
     return in_time_order(train)

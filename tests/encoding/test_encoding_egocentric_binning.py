@@ -15,7 +15,7 @@ The egocentric binning differs from spatial binning in that:
 import numpy as np
 import pytest
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial.encoding._egocentric_counts import prepare_egocentric_binning
 from neurospatial.encoding.egocentric import compute_egocentric_rate
 
@@ -828,8 +828,8 @@ class TestEgocentricNaNHandling:
         assert np.isnan(distances[1, 0]), "Position outside: should have NaN distance"
 
     @pytest.mark.filterwarnings("ignore:Interval filtering excluded ALL:UserWarning")
-    def test_occupancy_with_nan_distances(self, env_with_hole: Environment):
-        """Occupancy computation should handle NaN distances gracefully."""
+    def test_occupancy_with_nan_distances_is_refused(self, env_with_hole: Environment):
+        """No sample has a geodesic distance to an object in the hole: refused."""
         n_time = 100
         rng = np.random.default_rng(42)
         # Some positions inside, some outside
@@ -842,21 +842,18 @@ class TestEgocentricNaNHandling:
         # Object in the hole (outside env)
         object_positions = np.array([[75.0, 75.0]])
 
-        # Should not raise an error
-        _, occupancy, _env = _bin(
-            [],
-            times,
-            positions,
-            headings,
-            object_positions,
-            **GRID,
-            metric="geodesic",
-            env=env_with_hole,
-        )
-
-        # Occupancy should be all zeros or NaN (object outside env)
-        # because we can never compute a valid distance to the object
-        assert occupancy.shape == (10 * 12,)
+        # No frame has a distance bin, so no interval is usable.
+        with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+            _bin(
+                [],
+                times,
+                positions,
+                headings,
+                object_positions,
+                **GRID,
+                metric="geodesic",
+                env=env_with_hole,
+            )
 
     def test_spike_binning_with_nan_distances(self, env_with_hole: Environment):
         """Spike binning should handle NaN distances gracefully."""

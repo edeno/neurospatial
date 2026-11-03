@@ -9,7 +9,6 @@ and binning logic that example-based tests might miss.
 from __future__ import annotations
 
 import numpy as np
-import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from shapely import Polygon
@@ -279,9 +278,9 @@ class TestEnvironmentOccupancyProperties:
             occupancy.sum(), times[-1] - times[0], rtol=1e-12, atol=0
         )
 
-    # Random positions can all fall outside an irregular environment's bins;
-    # occupancy must still be non-negative (zero) in that case.
-    @pytest.mark.filterwarnings("ignore:Interval filtering excluded ALL:UserWarning")
+    # Random positions can all fall outside an irregular environment's bins,
+    # which leaves no usable interval and is refused; the first samples sit at
+    # bin centers so some time is always analysed.
     @given(environment_2d_strategy(min_samples=100, max_samples=300))
     @settings(max_examples=20, deadline=15000)
     def test_occupancy_non_negative(self, env: Environment):
@@ -293,6 +292,7 @@ class TestEnvironmentOccupancyProperties:
         hi = np.array([r[1] for r in env.dimension_ranges])
 
         positions = rng.uniform(lo, hi, size=(n_samples, 2))
+        positions[:20] = env.bin_centers[rng.integers(env.n_bins, size=20)]
         # times must be monotonically increasing
         times = np.sort(rng.uniform(0, n_samples / 30.0, n_samples))
 

@@ -27,7 +27,11 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
-from neurospatial._validation import validate_choice, validate_instance
+from neurospatial._validation import (
+    _refuse_wrong_kind,
+    validate_choice,
+    validate_instance,
+)
 from neurospatial.encoding._comparison import (
     _TOPOLOGIES,
     _UNIT_SELECTIONS,
@@ -431,14 +435,26 @@ def population_coverage(
     .. [1] Wilson, M. A., & McNaughton, B. L. (1993). Dynamics of the hippocampal
            ensemble code for space. Science, 261(5124), 1055-1058.
     """
+    _refuse_wrong_kind(
+        firing_rates,
+        name="firing_rates",
+        caller="population_coverage",
+        expected="array",
+    )
     if env.n_bins <= 0:
         msg = f"Environment has no bins (n_bins={env.n_bins})"
         raise ValueError(msg)
 
     # Validate firing_rates shape
     if firing_rates.ndim != 2:
-        msg = f"firing_rates must be 2D (n_neurons, n_bins), got shape {firing_rates.shape}"
-        raise ValueError(msg)
+        raise ValueError(
+            _format_error(
+                "population_coverage(): firing_rates must be 2-D (n_neurons, "
+                f"n_bins), got shape {firing_rates.shape}.",
+                fix="pass rates.firing_rates from compute_spatial_rates, or "
+                "firing_rate[np.newaxis, :] for one neuron.",
+            )
+        )
 
     if firing_rates.shape[1] != env.n_bins:
         msg = (

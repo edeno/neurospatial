@@ -254,11 +254,11 @@ class TestPopulationCoverage:
         """Test error for non-2D firing_rates."""
         rng = np.random.default_rng(42)
         firing_rates_1d = rng.random(simple_env.n_bins)
-        with pytest.raises(ValueError, match="firing_rates must be 2D"):
+        with pytest.raises(ValueError, match="firing_rates must be 2-D"):
             population_coverage(simple_env, firing_rates_1d, bandwidth=0.0)  # type: ignore[arg-type]
 
         firing_rates_3d = rng.random((5, simple_env.n_bins, 3))
-        with pytest.raises(ValueError, match="firing_rates must be 2D"):
+        with pytest.raises(ValueError, match="firing_rates must be 2-D"):
             population_coverage(simple_env, firing_rates_3d, bandwidth=0.0)  # type: ignore[arg-type]
 
     def test_threshold_out_of_range_error(self, simple_env: Environment) -> None:

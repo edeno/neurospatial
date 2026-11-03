@@ -1,8 +1,10 @@
-"""Position-only analyses warn when their gap/epoch gates exclude every interval.
+"""Position-only analyses refuse input whose gap/epoch gates exclude every interval.
 
 Tracking sampled more coarsely than ``max_gap`` (or epochs on the wrong clock)
 leaves no observed interval. An empty or all-NaN result must not look like a
-scientific answer, so the shared gate names ``max_gap`` at the user's call site.
+scientific answer, so the shared gate raises ``InputError`` naming ``max_gap``.
+``add_positions`` keeps the position of an event at a sample's own time, so it
+warns at the user's call site instead.
 """
 
 import warnings
@@ -11,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from neurospatial import Environment, Intervals, Regions
+from neurospatial import Environment, InputError, Intervals, Regions
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial.behavior import (
     compute_path_efficiency,
@@ -80,7 +82,7 @@ def nan_bridged_track(coarse_track):
 def _vte_session(env, times, positions, **kwargs):
     """VTE session with a straight approach and one through a turnaround.
 
-    With every interval excluded, both trials are unmeasured, with a warning.
+    With every interval excluded, the session is refused.
     """
     trials = Intervals(
         [
@@ -169,17 +171,37 @@ CALLS = {
 }
 
 
+# An event at a sample's own time keeps that sample's position, so the
+# result stays meaningful and this call warns instead.
+_WARNS = {"add_positions"}
+
+
+def _excluded_message(name, call, match):
+    """Run ``call``, which excludes every interval, and return the message.
+
+    The detectors in ``_WARNS`` warn once at the caller; the rest raise.
+    """
+    if name in _WARNS:
+        with pytest.warns(UserWarning, match=match) as record:
+            call()
+        messages = [w for w in record if "excluded ALL" in str(w.message)]
+        assert len(messages) == 1
+        assert messages[0].filename == __file__
+        return str(messages[0].message)
+    with pytest.raises(InputError, match=match) as caught:
+        call()
+    return str(caught.value)
+
+
 @pytest.mark.parametrize("name", sorted(CALLS))
-def test_coarse_sampling_warns_at_call_site(coarse_track, name):
+def test_coarse_sampling_is_refused_at_call_site(coarse_track, name):
     env, times, positions = coarse_track
-    with pytest.warns(
-        UserWarning, match=rf"excluded ALL.*max_gap={DEFAULT_MAX_GAP}"
-    ) as record:
-        CALLS[name](env, times, positions)
-    messages = [w for w in record if "excluded ALL" in str(w.message)]
-    assert len(messages) == 1
-    assert "max_gap=None" in str(messages[0].message)
-    assert messages[0].filename == __file__
+    message = _excluded_message(
+        name,
+        lambda: CALLS[name](env, times, positions),
+        rf"excluded ALL.*max_gap={DEFAULT_MAX_GAP}",
+    )
+    assert "max_gap=None" in message
 
 
 # The detectors that bin positions into the environment.
@@ -197,18 +219,17 @@ _POSITION_CALLS = sorted(CALLS)
 
 
 @pytest.mark.parametrize("name", _POSITION_CALLS)
-def test_gaps_across_missing_samples_warn_at_call_site(nan_bridged_track, name):
-    # The shared warning judges the intervals left after missing samples are
+def test_gaps_across_missing_samples_are_refused_at_call_site(nan_bridged_track, name):
+    # The shared check judges the intervals left after missing samples are
     # bridged, not each sampling interval on its own.
     env, times, positions = nan_bridged_track
-    with pytest.warns(UserWarning, match=r"excluded ALL.*max_gap=0\.15") as record:
-        CALLS[name](env, times, positions, max_gap=0.15)
-    messages = [w for w in record if "excluded ALL" in str(w.message)]
-    assert len(messages) == 1
-    message = str(messages[0].message)
+    message = _excluded_message(
+        name,
+        lambda: CALLS[name](env, times, positions, max_gap=0.15),
+        r"excluded ALL.*max_gap=0\.15",
+    )
     assert "gaps across missing samples" in message
     assert "max_gap=None" in message
-    assert messages[0].filename == __file__
 
 
 # The session helper asserts the coarse track's per-trial warnings.
@@ -231,15 +252,12 @@ def test_rows_outside_the_environment_are_not_bridged_by_region_detectors(
     env, times, positions = nan_bridged_track
     outside = positions.copy()
     outside[1::2] = [500.0, 500.0]
-    with (
-        pytest.warns(UserWarning, match="outside the environment"),
-        pytest.warns(
-            UserWarning,
-            match=r"excluded ALL.*samples out of bounds or at NaN positions",
-        ) as record,
-    ):
-        CALLS[name](env, times, outside, max_gap=None)
-    assert record[0].filename == __file__
+    with pytest.warns(UserWarning, match="outside the environment"):
+        _excluded_message(
+            name,
+            lambda: CALLS[name](env, times, outside, max_gap=None),
+            r"excluded ALL.*samples out of bounds or at NaN positions",
+        )
 
 
 @pytest.mark.parametrize("name", sorted(CALLS))
@@ -254,8 +272,8 @@ def test_disabling_the_gap_gate_is_silent(coarse_track, name):
 
 def test_detect_region_crossings_recovers_crossings_without_gap_gate(coarse_track):
     env, times, positions = coarse_track
-    with pytest.warns(UserWarning, match="excluded ALL"):
-        assert detect_region_crossings(env, times, positions, region="mid_area") == []
+    with pytest.raises(InputError, match="excluded ALL"):
+        detect_region_crossings(env, times, positions, region="mid_area")
     assert (
         len(
             detect_region_crossings(
@@ -268,12 +286,11 @@ def test_detect_region_crossings_recovers_crossings_without_gap_gate(coarse_trac
 
 def test_epochs_on_the_wrong_clock_name_epochs(coarse_track):
     _, times, positions = coarse_track
-    with pytest.warns(UserWarning, match=r"excluded ALL.*epochs") as record:
+    with pytest.raises(InputError, match=r"excluded ALL.*epochs") as caught:
         segment_by_velocity(
             times, positions, min_speed=1.0, max_gap=None, epochs=[(1e4, 6e4)]
         )
-    message = str(next(w for w in record if "excluded ALL" in str(w.message)).message)
-    assert "max_gap=" not in message
+    assert "max_gap=" not in str(caught.value)
 
 
 def test_partial_exclusion_is_silent():
@@ -291,11 +308,16 @@ def test_fewer_than_two_samples_is_silent():
 
 
 @pytest.mark.parametrize("name", _REGION_DETECTORS)
-def test_region_detectors_warn_when_nothing_is_observed(coarse_track, name):
+def test_region_detectors_refuse_when_nothing_is_observed(coarse_track, name):
     """Epochs on another clock or all-NaN positions leave no observation."""
     env, times, positions = coarse_track
-    with pytest.warns(UserWarning, match=r"excluded ALL.*epochs") as record:
-        assert len(CALLS[name](env, times, positions, epochs=[(1e4, 6e4)])) == 0
-    assert record[0].filename == __file__
-    with pytest.warns(UserWarning, match="excluded ALL"):
-        assert len(CALLS[name](env, times, np.full_like(positions, np.nan))) == 0
+    _excluded_message(
+        name,
+        lambda: CALLS[name](env, times, positions, epochs=[(1e4, 6e4)]),
+        r"excluded ALL.*epochs",
+    )
+    _excluded_message(
+        name,
+        lambda: CALLS[name](env, times, np.full_like(positions, np.nan)),
+        "excluded ALL",
+    )

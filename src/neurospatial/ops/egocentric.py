@@ -153,8 +153,8 @@ def allocentric_to_egocentric(
     if points.ndim < 2:
         msg = (
             f"Cannot transform points: invalid shape {points.shape}.\n\n"
-            f"WHAT: points must be 2D array with shape (n_points, 2)\n"
-            f"WHY: Each point needs (x, y) coordinates for transformation\n\n"
+            f"points must be 2D array with shape (n_points, 2)\n"
+            f"Why: Each point needs (x, y) coordinates for transformation\n\n"
             f"Fix:\n"
             f"1. Reshape your array: points.reshape(-1, 2)\n"
             f"2. Check data loading - array may have been squeezed\n"
@@ -173,8 +173,8 @@ def allocentric_to_egocentric(
     if points.ndim > 3:
         msg = (
             f"Invalid points dimensionality: got {points.ndim}D array.\n\n"
-            f"WHAT: points must be 2D (n_points, 2) or 3D (n_time, n_points, 2)\n"
-            f"WHY: 2D broadcasts same points to all timepoints; 3D allows time-varying\n\n"
+            f"points must be 2D (n_points, 2) or 3D (n_time, n_points, 2)\n"
+            f"Why: 2D broadcasts same points to all timepoints; 3D allows time-varying\n\n"
             f"Fix:\n"
             f"1. Static points: use shape (n_points, 2)\n"
             f"2. Time-varying: use shape (n_time, n_points, 2)\n"
@@ -271,8 +271,8 @@ def egocentric_to_allocentric(
     if ego_points.ndim != 3 or ego_points.shape[2] != 2:
         msg = (
             f"Cannot transform ego_points: invalid shape {ego_points.shape}.\n\n"
-            f"WHAT: ego_points must be 3D with shape (n_time, n_points, 2)\n"
-            f"WHY: Each point needs (x, y) egocentric coordinates per timepoint\n\n"
+            f"ego_points must be 3D with shape (n_time, n_points, 2)\n"
+            f"Why: Each point needs (x, y) egocentric coordinates per timepoint\n\n"
             f"Fix:\n"
             f"1. Reshape your array to (n_time, n_points, 2)\n"
             f"2. This is the shape returned by allocentric_to_egocentric\n"
@@ -473,8 +473,8 @@ def compute_egocentric_distance(
     if metric not in ("euclidean", "geodesic"):
         msg = (
             f"Invalid distance metric: '{metric}'.\n\n"
-            f"WHAT: metric must be 'euclidean' or 'geodesic'\n"
-            f"WHY: These are the supported distance algorithms\n\n"
+            f"metric must be 'euclidean' or 'geodesic'\n"
+            f"Why: These are the supported distance algorithms\n\n"
             f"Fix:\n"
             f"1. Use 'euclidean' for straight-line distances (default, faster)\n"
             f"2. Use 'geodesic' for boundary-respecting distances (requires env)"
@@ -484,8 +484,8 @@ def compute_egocentric_distance(
     if metric == "geodesic" and env is None:
         msg = (
             "Cannot compute geodesic distances: missing environment.\n\n"
-            "WHAT: metric='geodesic' requires env parameter\n"
-            "WHY: Geodesic distances follow paths that respect environment boundaries\n\n"
+            "metric='geodesic' requires env parameter\n"
+            "Why: Geodesic distances follow paths that respect environment boundaries\n\n"
             "Fix:\n"
             "1. Pass the environment: compute_egocentric_distance(..., env=env)\n"
             "2. Or use 'euclidean' for straight-line distances:\n"
@@ -503,8 +503,8 @@ def compute_egocentric_distance(
             msg = (
                 f"targets time axis {targets.shape[0]} does not match positions "
                 f"length {n_time}.\n\n"
-                f"WHAT: a 3D targets array must have shape (n_time, n_targets, 2)\n"
-                f"WHY: each timepoint's distance is computed against that "
+                f"a 3D targets array must have shape (n_time, n_targets, 2)\n"
+                f"Why: each timepoint's distance is computed against that "
                 f"timepoint's targets\n\n"
                 f"Fix:\n"
                 f"1. Pass static targets as a 2D (n_targets, 2) array, or\n"

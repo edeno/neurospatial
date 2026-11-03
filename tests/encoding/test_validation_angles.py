@@ -7,6 +7,8 @@ import warnings
 import numpy as np
 import pytest
 
+from neurospatial import InputError
+
 
 @pytest.fixture(scope="module")
 def session() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -132,13 +134,13 @@ def test_shuffle_warns_once_for_degree_headings(session) -> None:
     assert len(messages) == 1
 
 
-def test_all_nan_headings_warning_names_headings(session) -> None:
+def test_all_nan_headings_error_names_headings(session) -> None:
     """With no finite heading, the fix concerns headings, not positions."""
     from neurospatial.encoding import compute_directional_rate
 
     times, _, headings, spikes = session
-    with pytest.warns(UserWarning, match="excluded ALL") as caught:
+    with pytest.raises(InputError, match="excluded ALL") as caught:
         compute_directional_rate(spikes, times, np.full_like(headings, np.nan))
-    message = next(str(w.message) for w in caught if "excluded ALL" in str(w.message))
+    message = str(caught.value)
     assert "NaN headings" in message
     assert "positions" not in message

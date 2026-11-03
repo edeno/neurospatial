@@ -2,6 +2,99 @@
 
 ## [Unreleased]
 
+### Errors name the call to make
+
+**Breaking**
+
+- A selection that leaves no usable sampling interval now raises
+  `InputError` instead of warning and returning an empty map, zero
+  occupancy or all-NaN values. This covers `times` in milliseconds or a
+  `pd.DatetimeIndex`, `epochs` on another clock, positions that are all NaN
+  or all outside the environment, and a `min_speed` above every speed, in
+  every analysis that gates sampling intervals (rate maps, `env.occupancy`,
+  `bin_sequence`, `transitions`, decoders, behavior detectors including
+  `detect_region_visits`, `visibility_occupancy`). The message is the one the
+  warning gave, and names the positions only when the positions excluded
+  intervals. `warn_on_drop=False` does not silence it. Calls whose result
+  stays meaningful at the exact samples still warn and return:
+  `add_positions`, `heading_from_velocity(allow_all_nan=True)`, animation
+  overlays and decoding ground truth. A deliberately empty selection (an
+  `Intervals` with no rows) still warns, and a label of
+  `compute_directional_place_fields` with no analyzable time still gets a
+  NaN map with zero occupancy.
+- These inputs raise `TypeError`, naming the call that takes them, where
+  they raised `ValueError` before:
+  - a list of spike trains, or equal-length trains stacked in a 2-D array,
+    passed to a single-unit function (`compute_spatial_rate`,
+    `is_place_cell`, `compute_directional_rate`, `is_head_direction_cell`,
+    the other single-unit rate functions and predicates,
+    `compute_directional_place_fields`, `add_modulation`);
+  - `decode_position` and `decode_position_summary` given a list of spike
+    trains or the `(counts, bin_edges)` tuple of `bin_spikes_in_time` as
+    counts, or a one-unit `SpatialRateResult` as rate maps;
+  - `spatial_information`, `sparsity`, `selectivity` and
+    `information_per_second` given a rate result instead of an array;
+  - `population_coverage` given a rate result (an `AttributeError` before);
+  - `BayesianDecoder.fit` given a spike count matrix (a 0/1 raster still
+    raises the raster `ValueError`).
+- `detect_laps(method="auto" | "region")` reads the topology of the space
+  instead of counting cycles of the bin graph, whose grid neighbours and
+  junction bins always form short cycles. It refuses an open arena and a
+  tree, plus or W maze, which it used to cut into "laps", and accepts a
+  track graph with a cycle (a figure-eight) or a 2-D area with a hole whose
+  inscribed circle has a radius above one bin (an annulus; bins from
+  `from_samples` shrink a ring's hole by up to a bin on each side). A 3-D
+  environment is refused.
+
+**Added**
+
+- `neurospatial.InputError`, a `ValueError` and `NeurospatialError`, raised
+  for unusable arguments at the public boundary: the shared `times` /
+  `positions` validation, a selection with no usable interval, `unit_ids` of
+  the wrong length or with repeats, spike counts and rate maps with
+  different numbers of neurons, an angular `bin_size` wider than half a
+  circle, a decoding `dt` in milliseconds and `detect_laps` in a space with
+  no loop. `except ValueError` still catches all of them.
+- Wrong-kind messages name the fix: `r.spatial_information()` for a result
+  passed to `spatial_information`, `compute_spatial_rates` for a one-unit
+  result passed to `decode_position`, `.firing_rates` for
+  `population_coverage`, `bin_spikes_in_time` for trains passed as counts,
+  and `decode_position` for a count matrix passed to `BayesianDecoder.fit`
+  (which used to suggest a fix for MATLAB zero padding). A table of
+  `(spike time, unit)` rows gets a fix that splits it by unit.
+- Typos get "Did you mean ...?": keywords of `open_field_session`,
+  `linear_track_session` and `simulate_session` (reported under the function
+  called), `decode_session` and `decode_session_summary` keywords, and every
+  option checked by the shared choice validator, which now names the
+  calling function (`method="gaussian"` suggests `"gaussian_kde"`).
+- `warn_on_drop=` on every encoding function that can warn about dropped
+  spikes: `compute_directional_rate(s)`, `is_head_direction_cell`,
+  `head_direction_cell_significance`, `compute_egocentric_rate(s)`,
+  `compute_object_vector_rate(s)`, `is_object_vector_cell`,
+  `is_egocentric_object_vector_cell`, `object_vector_cell_significance`,
+  `egocentric_object_vector_cell_significance`, `compute_view_rate(s)`,
+  `is_spatial_view_cell`, `spatial_view_cell_significance`,
+  `compute_tuning_curve(s)` and `compute_directional_place_fields`.
+
+**Changed**
+
+- Messages use `Why:` instead of `WHY:` and no longer start with `WHAT:`.
+  `Environment()` (E1006) gives its fix once. The messages of
+  `spatial_autocorrelation_radial`, `credible_region`, `confusion_matrix`,
+  `population_coverage`, `plot_field`, `decode_position` (fractional counts)
+  and the replay spike-count check now say why and how to fix the input.
+
+**Fixed**
+
+- The spike-drop warning ("N/M spike_times (P%) fell outside the position
+  time window") counted every spike outside the tracked time, even spikes
+  outside the requested `epochs` or `spike_window`. Head direction tracked
+  only during wake, analysed with `epochs=wake`, warned that the sleep
+  spikes were lost. Only spikes inside the analysed windows count now.
+  Spikes on another clock still count in full: milliseconds, spike times
+  far beyond every time and window bound, or spikes of which none falls
+  inside the windows or inside the tracked time (a clock offset).
+
 ### Consistent defaults and one return type per function
 
 **Breaking**

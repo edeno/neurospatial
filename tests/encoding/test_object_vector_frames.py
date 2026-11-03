@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from neurospatial import encoding
+from neurospatial import InputError, encoding
 
 
 def test_allocentric_equals_zero_heading_egocentric(ou_env, ou_2min, noise_trains, obj):
@@ -456,10 +456,10 @@ def test_without_an_environment_every_sample_counts():
     assert np.sum(result.occupancy) == pytest.approx(times[-1] - times[0])
 
 
-def test_all_samples_outside_the_environment_warn_like_place_maps():
+def test_all_samples_outside_the_environment_raise_like_place_maps():
     env, times, positions, _headings, spikes = _arena_session()
-    with pytest.warns(UserWarning, match="samples out of bounds or at NaN positions"):
-        result = encoding.compute_object_vector_rate(
+    with pytest.raises(InputError, match="samples out of bounds or at NaN positions"):
+        encoding.compute_object_vector_rate(
             env,
             spikes,
             times,
@@ -468,7 +468,6 @@ def test_all_samples_outside_the_environment_warn_like_place_maps():
             distance_range=(0.0, 2000.0),
             distance_bin_size=5.0,
         )
-    assert np.all(np.isnan(result.firing_rate))
 
 
 def test_preferred_vector_of_an_unmeasured_map_is_nan():

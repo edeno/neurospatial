@@ -388,10 +388,7 @@ def detect_region_visits(
         If names are not strings.
     RegionNotFoundError
         If a selected region does not exist.
-
-    Warns
-    -----
-    UserWarning
+    InputError
         If no sampling interval is observed (for example ``epochs`` on
         another clock, all-NaN positions, or every gap longer than
         ``max_gap``), naming the gate to fix, as for every detector.

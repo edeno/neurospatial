@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, fields
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
@@ -676,8 +676,8 @@ def simulate_session(
         Trajectory and cell-model parameters, by the names of the functions
         and models that take them. Each goes only where it applies: a model
         parameter of a cell type the session does not simulate is refused,
-        and an unknown name raises ``TypeError`` from the trajectory
-        function.
+        and an unknown name raises ``TypeError`` that suggests the closest
+        accepted name.
 
         **Trajectory parameters**, by ``trajectory_method``:
 
@@ -842,6 +842,62 @@ def simulate_session(
     Solstad, T., et al. (2008). Representation of geometric borders in the
         entorhinal cortex. Science, 322, 1865-1868.
     """
+    return _simulate_session(
+        env,
+        duration=duration,
+        n_cells=n_cells,
+        cell_type=cell_type,
+        trajectory_method=trajectory_method,
+        coverage=coverage,
+        show_progress=show_progress,
+        rng=rng,
+        call="simulate_session",
+        explicit=_SIMULATE_SESSION_PARAMETERS,
+        **kwargs,
+    )
+
+
+#: The explicit parameters of ``simulate_session``, for typo suggestions.
+_SIMULATE_SESSION_PARAMETERS = (
+    "env",
+    "duration",
+    "n_cells",
+    "cell_type",
+    "trajectory_method",
+    "coverage",
+    "show_progress",
+    "rng",
+)
+
+#: Parameters the session sets itself, never taken from ``**kwargs``.
+_SESSION_SET = frozenset({"env", "duration", "rng", "call"})
+
+
+def _simulate_session(
+    env: Environment,
+    *,
+    duration: float,
+    n_cells: int,
+    cell_type: Literal["place", "border", "grid", "mixed"],
+    trajectory_method: Literal["ou", "sinusoidal", "laps"],
+    coverage: Literal["uniform", "random"],
+    show_progress: bool,
+    rng: np.random.Generator | int | None,
+    call: str,
+    explicit: Sequence[str],
+    **kwargs: Any,
+) -> SimulationSession:
+    """Run :func:`simulate_session`, reporting keyword errors as ``call``.
+
+    ``call`` is the public function the user called, and ``explicit`` its
+    named parameters, so a misspelled keyword forwarded by a wrapper such as
+    ``open_field_session`` is reported under the wrapper's name with the
+    closest name it accepts.
+    """
+    import inspect
+
+    from neurospatial._keyword_hint import unexpected_keywords_error
+
     # Import functions here to avoid circular imports
     from neurospatial.simulation.models import GridCellModel, PlaceCellModel
     from neurospatial.simulation.trajectory import (
@@ -895,6 +951,31 @@ def simulate_session(
             value = kwargs.pop(name)
             for params in model_params.values():
                 params[name] = value
+
+    # The remaining keywords go to the trajectory function, so check them
+    # here and report a typo against the function the user called.
+    trajectory_functions: dict[str, Callable[..., Any]] = {
+        "ou": simulate_trajectory_ou,
+        "sinusoidal": simulate_trajectory_sinusoidal,
+        "laps": _simulate_trajectory_laps,
+    }
+    trajectory_function = trajectory_functions[trajectory_method]
+    trajectory_parameters = (
+        set(inspect.signature(trajectory_function).parameters) - _SESSION_SET
+    )
+    unknown = set(kwargs) - trajectory_parameters
+    if unknown:
+        accepted = set(explicit) | trajectory_parameters | set(_RATE_PARAMETERS)
+        for kind in present:
+            accepted |= _MODEL_PARAMETERS[kind]
+        raise unexpected_keywords_error(
+            unknown,
+            accepted - _SESSION_SET,
+            call=call,
+            fix=f"remove {', '.join(sorted(unknown))}; extra keywords of "
+            f"{call}() are the cell-model parameters and the parameters of "
+            f"{trajectory_function.__name__.lstrip('_')}().",
+        )
 
     # Independent streams for the trajectory, the field parameters and the
     # spikes, so that spike draws are not correlated with the movement.

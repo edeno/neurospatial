@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 from neurospatial.layout import create_layout
 
 pytestmark = pytest.mark.filterwarnings(
@@ -443,7 +443,7 @@ def occupancy_envs() -> dict[str, Environment]:
 
 
 @pytest.mark.parametrize(("name", "samples", "allocation"), _NO_USABLE_SAMPLE_CASES)
-def test_occupancy_with_no_usable_sample_warns(
+def test_occupancy_with_no_usable_sample_raises(
     occupancy_envs, name, samples, allocation
 ):
     env = occupancy_envs[name]
@@ -471,11 +471,8 @@ def test_occupancy_with_no_usable_sample_warns(
         # Every interval has a NaN end, so a straight path has no length.
         positions = inside.copy()
         positions[1::2] = np.nan
-    with pytest.warns(
-        UserWarning, match="excluded ALL.*so occupancy is zero in every bin"
+    with pytest.raises(
+        InputError, match=r"excluded ALL.*so occupancy is zero in every bin"
     ):
         # Below two frames, so each missing sample's gap is a tracking loss.
-        occupancy = env.occupancy(
-            times, positions, time_allocation=allocation, max_gap=1.5 / 30
-        )
-    np.testing.assert_array_equal(occupancy, 0.0)
+        env.occupancy(times, positions, time_allocation=allocation, max_gap=1.5 / 30)

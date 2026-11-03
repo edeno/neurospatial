@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from neurospatial import behavior
+from neurospatial import InputError, behavior
 from neurospatial._intervals import validate_max_gap
 from neurospatial._observation import (
     ObservationSupport,
@@ -20,7 +20,7 @@ from neurospatial._observation import (
 
 
 def _support(
-    times, x=None, *, max_gap=0.5, epochs=None, break_before=None
+    times, x=None, *, max_gap=0.5, epochs=None, break_before=None, raise_if_empty=True
 ) -> ObservationSupport:
     times = np.asarray(times, dtype=float)
     x = np.arange(times.size, dtype=float) if x is None else np.asarray(x, float)
@@ -33,6 +33,7 @@ def _support(
         epochs=epochs,
         break_before=break_before,
         result="the result is empty",
+        raise_if_empty=raise_if_empty,
     )[2]
 
 
@@ -86,27 +87,34 @@ def test_nan_row_gap_longer_than_max_gap_breaks_the_path():
     np.testing.assert_array_equal(s.interval_gates, [True, False, False, True])
 
 
-@pytest.mark.filterwarnings("ignore:.*max_gap:UserWarning")
-def test_bridged_gaps_longer_than_max_gap_warn_once():
+def test_bridged_gaps_longer_than_max_gap_raise():
     # Each 0.1 s sampling interval passes max_gap; each 0.2 s gap across a
     # missing row does not, so nothing is usable.
     x = np.arange(10.0)
     x[1::2] = np.nan
+    with pytest.raises(InputError, match="gaps across missing samples"):
+        _support(np.arange(10) * 0.1, x, max_gap=0.15)
+
+
+def test_raise_if_empty_false_warns_once_instead():
+    """A caller whose result stands without an interval gets one warning."""
+    x = np.arange(10.0)
+    x[1::2] = np.nan
     with pytest.warns(UserWarning, match="excluded ALL") as record:
-        support = _support(np.arange(10) * 0.1, x, max_gap=0.15)
+        support = _support(np.arange(10) * 0.1, x, max_gap=0.15, raise_if_empty=False)
     assert len(record) == 1
     assert "gaps across missing samples" in str(record[0].message)
     assert not support.interval_mask.any()
 
 
 @pytest.mark.parametrize("observed", [[], [2]], ids=["none", "one"])
-def test_no_observed_interval_warns_that_samples_are_missing(observed):
+def test_no_observed_interval_says_that_samples_are_missing(observed):
     """Missing samples, not the gates, leave nothing usable: say so."""
     x = np.full(5, np.nan)
     x[observed] = 1.0
-    with pytest.warns(UserWarning, match="excluded ALL.*samples are finite") as record:
+    with pytest.raises(InputError, match=r"excluded ALL.*samples are finite") as caught:
         _support(np.arange(5) * 0.1, x)
-    message = str(record[0].message)
+    message = str(caught.value)
     assert f"{len(observed)} of 5 samples are observed" in message
     assert "max_gap" not in message
 
@@ -169,16 +177,15 @@ def test_sample_in_epochs_excludes_the_stop_instant():
     """The interval ending at an epoch's stop is inside; that sample is not."""
     s = _support([0, 0.5, 1.0, 1.5, 2.0], epochs=[(0, 1.0), (1.5, 3.0)])
     np.testing.assert_array_equal(s.sample_in_epochs, [True, True, False, True, True])
-    with pytest.warns(UserWarning, match="excluded ALL"):
-        one_interval = _support([0, 1.0])
+    one_interval = _support([0, 1.0], max_gap=None)
     np.testing.assert_array_equal(one_interval.sample_in_epochs, [True, True])
 
 
 def test_max_gap_none_keeps_long_interval():
     s = _support([0, 10], max_gap=None)
     np.testing.assert_array_equal(s.interval_mask, [True])
-    with pytest.warns(UserWarning, match="max_gap"):
-        assert not _support([0, 10]).interval_mask.any()
+    with pytest.raises(InputError, match="max_gap"):
+        _support([0, 10])
 
 
 @pytest.mark.parametrize("bad", [0, -1, np.nan, np.inf, "0.5", True])
@@ -355,26 +362,22 @@ def test_signals_one_dimensional_signal_is_one_feature():
     assert len(supports) == 1
 
 
-def test_signals_shared_gate_warns_once_for_many_features():
+def test_signals_shared_gate_raises_once_for_many_features():
     times = [0.0, 0.1, 0.2, 1.0, 1.1]
-    with pytest.warns(
-        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals"
-    ) as record:
+    with pytest.raises(
+        InputError, match=r"Interval filtering excluded ALL trajectory intervals"
+    ):
         _signals(times, np.ones((5, 3)), max_gap=0.05)
-    assert len(record) == 1
 
 
-def test_signals_warn_once_when_bridged_gaps_exclude_every_feature():
+def test_signals_raise_when_bridged_gaps_exclude_every_feature():
     # Every sampling interval passes max_gap; every gap across a missing row
     # does not, in every feature.
     times = np.arange(20) * 0.1
     sig = np.ones((20, 2))
     sig[1::2] = np.nan
-    with pytest.warns(UserWarning, match="excluded ALL") as record:
-        _, _, supports = _signals(times, sig, max_gap=0.15)
-    assert len(record) == 1
-    assert "gaps across missing samples" in str(record[0].message)
-    assert not any(support.interval_mask.any() for support in supports)
+    with pytest.raises(InputError, match="gaps across missing samples"):
+        _signals(times, sig, max_gap=0.15)
 
 
 def test_signals_one_usable_feature_keeps_the_table_silent(recwarn):
@@ -552,7 +555,7 @@ def test_label_codes_none_and_nan_are_missing():
 
 def test_missing_label_that_differs_only_in_case_warns():
     labels = np.array(["rest", "run", "rest"], dtype=object)
-    with pytest.warns(UserWarning, match="missing_label='Rest'.*'rest'"):
+    with pytest.warns(UserWarning, match=r"missing_label='Rest'.*'rest'"):
         _, values = label_codes(labels, "Rest")
     assert values == ["rest", "run"]
 

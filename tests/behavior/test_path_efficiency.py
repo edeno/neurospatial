@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from neurospatial import Environment
+from neurospatial import Environment, InputError
 
 
 def _arena(lo=-30.0, hi=110.0, bin_size=5.0):
@@ -203,14 +203,13 @@ class TestTraveledPathLength:
 
         assert length == 2.0
 
-    def test_no_usable_interval_is_nan(self):
-        """Single sample and all-missing positions give NaN, not 0.0."""
+    def test_no_usable_interval_is_nan_or_refused(self):
+        """A single sample gives NaN, not 0.0; all-missing positions are refused."""
         from neurospatial.behavior.navigation import traveled_path_length
 
         assert np.isnan(traveled_path_length(np.array([0.0]), np.array([[1.0, 2.0]])))
-        with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-            length = traveled_path_length(np.arange(3) * 0.1, np.full((3, 2), np.nan))
-        assert np.isnan(length)
+        with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+            traveled_path_length(np.arange(3) * 0.1, np.full((3, 2), np.nan))
 
     def test_stationary_observed_travel_is_zero(self):
         from neurospatial.behavior.navigation import traveled_path_length
@@ -886,7 +885,7 @@ class TestSubgoalEfficiency:
         times = np.arange(11) / 10
         subgoals = np.array([[0.0, 0.0], [100.0, 0.0]])
 
-        with pytest.warns(UserWarning, match="subgoal 0 .* is never approached"):
+        with pytest.warns(UserWarning, match=r"subgoal 0 .* is never approached"):
             result = subgoal_efficiency(
                 env, times, positions, subgoals, metric="euclidean"
             )

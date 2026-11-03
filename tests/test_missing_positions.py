@@ -129,6 +129,12 @@ FUNCTION_VALUES = {
     ("distance_to_goal", "goal"): "goal",
 }
 POPULATION_SPIKES = [SPIKE_TIMES, np.sort(_SPIKE_RNG.uniform(0, 60, 300))]
+# Options whose default does not apply to this session. The open arena has no
+# loop, so laps are matched to the first round trip (one 10 s period).
+OPTION_VALUES = {
+    ("detect_laps", "method"): "reference",
+    ("detect_laps", "reference_lap"): ENV.bin_at(POSITIONS[TIMES < 10.0]),
+}
 
 
 def _call(function, *, deleted):
@@ -151,6 +157,9 @@ def _call(function, *, deleted):
             parameter.VAR_POSITIONAL,
             parameter.VAR_KEYWORD,
         )
+        if (function.__name__, name) in OPTION_VALUES:
+            kwargs[name] = OPTION_VALUES[function.__name__, name]
+            continue
         if optional and name not in {"times", "positions"}:
             continue
         if name == "times":

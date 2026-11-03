@@ -168,7 +168,7 @@ def time_to_nearest_event(
         msg = (
             f"max_time must be a finite non-negative number of seconds, got "
             f"{max_time!r}.\n"
-            "  WHY: max_time is the largest time-to-event magnitude returned.\n"
+            "  Why: max_time is the largest time-to-event magnitude returned.\n"
             "  Fix: Use max_time >= 0, or None for no clipping."
         )
         raise ValueError(msg)

@@ -591,3 +591,115 @@ def test_directionality_index_separates_bidirectional_and_one_way_cells():
         assert abs(di[0][0]) < 0.05
         assert di[1][0] == pytest.approx(expected, abs=0.05)
         assert di[1][1] == pytest.approx(-di[1][0])
+
+
+def test_label_seen_only_where_positions_are_missing_is_a_nan_map():
+    """A label whose samples have no position has no analyzable time.
+
+    Its map is NaN with zero occupancy, as for a label with no window; the
+    other labels are unaffected and nothing is refused or warned about.
+    """
+    import warnings
+
+    from neurospatial.simulation import open_field_session
+
+    session = open_field_session(duration=60.0, n_place_cells=1, rng=0)
+    labels = np.full(len(session.times), "A", dtype=object)
+    labels[1000:1005] = "B"
+    positions = session.positions.copy()
+    positions[999:1006] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_directional_place_fields(
+            session.env, session.spike_times[0], session.times, positions, labels
+        )
+    assert set(result.firing_rates) == {"A", "B"}
+    assert np.isfinite(result.firing_rates["A"]).any()
+    assert result.occupancy["A"].sum() > 50.0
+    assert np.isnan(result.firing_rates["B"]).all()
+    assert_array_equal(result.occupancy["B"], 0.0)
+
+
+def test_population_is_refused_once_per_unit():
+    from neurospatial.simulation import open_field_session
+
+    session = open_field_session(duration=10.0, n_place_cells=2, rng=0)
+    labels = np.full(len(session.times), "A", dtype=object)
+    with pytest.raises(TypeError, match=r"got 2 trains") as caught:
+        compute_directional_place_fields(
+            session.env,
+            list(session.spike_times),
+            session.times,
+            session.positions,
+            labels,
+        )
+    message = str(caught.value)
+    assert "compute_directional_place_fields() once per unit" in message
+    assert "compute_spatial_rate" not in message
+
+
+@pytest.fixture(scope="module")
+def shuttle():
+    """Back-and-forth runs on a 100 x 10 cm strip, labelled by direction."""
+    rng = np.random.default_rng(0)
+    times = np.arange(0.0, 300.0, 1 / 30)
+    x = 50 + 40 * np.sin(times / 5)
+    positions = np.c_[x, np.full_like(x, 5.0)]
+    env = Environment.from_samples(
+        np.c_[rng.uniform(0, 100, 5000), rng.uniform(0, 10, 5000)], bin_size=5
+    )
+    velocity = np.gradient(x)
+    labels = np.where(velocity > 0, "out", "in").astype(object)
+    return env, times, positions, labels, velocity
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "positions in another frame",
+        "tiny max_gap",
+        "all positions NaN",
+        "spike_window off-clock",
+    ],
+)
+def test_wholly_unusable_recording_is_refused(shuttle, change):
+    """No label can be analyzed because nothing can: refused, as for one map."""
+    from neurospatial import InputError
+
+    env, times, positions, labels, _ = shuttle
+    spikes = np.sort(np.random.default_rng(1).uniform(0, 300, 500))
+    options = {}
+    if change == "positions in another frame":
+        positions = positions + 1000.0
+    elif change == "tiny max_gap":
+        options["max_gap"] = 0.001
+    elif change == "all positions NaN":
+        positions = np.full_like(positions, np.nan)
+    else:
+        options["spike_window"] = np.array([[1e6, 1e6 + 10]])
+    with pytest.raises(InputError, match="excluded ALL"):
+        compute_directional_place_fields(
+            env, spikes, times, positions, labels, **options
+        )
+
+
+def test_spike_drop_warning_does_not_depend_on_the_label_a_cell_fires_in(shuttle):
+    """Spikes after the tracking are counted once over the whole recording."""
+    import warnings
+
+    env, times, positions, labels, velocity = shuttle
+    rng = np.random.default_rng(2)
+    sleep = rng.uniform(360.0, 2100.0, 3000)
+    outbound = times[(velocity > 0) & (np.abs(positions[:, 0] - 70) < 5)]
+    both = times[np.abs(positions[:, 0] - 70) < 5]
+    messages = []
+    for awake in (rng.choice(outbound, 400), rng.choice(both, 400)):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            compute_directional_place_fields(
+                env, np.sort(np.r_[awake, sleep]), times, positions, labels
+            )
+        drops = [str(w.message) for w in caught if "fell outside" in str(w.message)]
+        assert len(drops) == 1
+        messages.append(drops[0].split(" spike_times")[0])
+    assert messages[0] == messages[1] == "3000/3400"

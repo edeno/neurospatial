@@ -61,7 +61,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import validate_choice
 from neurospatial.encoding._core_numpy import compute_firing_rates_batch
@@ -688,6 +688,7 @@ def validate_pooled(pooled: Any, method: str) -> None:
 def _validate_spatial_method_params(
     method: str,
     *,
+    owner: str,
     bandwidth: float | None,
     min_occupancy: float,
     penalty: float | None,
@@ -717,6 +718,8 @@ def _validate_spatial_method_params(
     ----------
     method : str
         The requested estimator.
+    owner : str
+        The public function, without parentheses, named in the error.
     bandwidth : float or None
         Ratio-method smoothing (``None`` = "not set").
     min_occupancy : float
@@ -740,9 +743,7 @@ def _validate_spatial_method_params(
         On an unknown method, a mutual-exclusivity violation, or an out-of-domain
         ``penalty`` / ``rank``.
     """
-    if method not in _SPATIAL_METHODS:
-        msg = f"method must be one of {list(_SPATIAL_METHODS)}, got {method!r}"
-        raise ValueError(msg)
+    validate_choice(method, _SPATIAL_METHODS, name="method", owner=f"{owner}()")
     min_occupancy = validate_min_occupancy(min_occupancy)
 
     if method == "glm":
@@ -774,13 +775,19 @@ def _validate_spatial_method_params(
     return validated_penalty, validated_rank
 
 
-def _validate_smoothing_parameters(method: str, bandwidth: float) -> None:
-    """Validate smoothing method and bandwidth without requiring count arrays."""
+def _validate_smoothing_parameters(
+    method: str, bandwidth: float, *, owner: str = "Rate estimation"
+) -> None:
+    """Validate smoothing method and bandwidth without requiring count arrays.
+
+    ``owner`` is the public call named in the error, e.g.
+    ``"compute_view_rate()"``.
+    """
     validate_choice(
         method,
         ("diffusion_kde", "gaussian_kde", "binned"),
         name="method",
-        owner="Rate estimation",
+        owner=owner,
     )
 
     # Validate bandwidth (binned allows 0). Bandwidth is in environment units
@@ -813,13 +820,13 @@ def validate_min_occupancy(min_occupancy: float) -> float:
 
     Raises
     ------
-    ValueError
+    InputError
         If ``min_occupancy`` is None, NaN, infinite or negative. A NaN threshold
         compares False with every occupancy, so it would mask every bin
         without the fully-masked warning.
     """
     if min_occupancy is None:
-        raise ValueError(
+        raise InputError(
             _format_error(
                 "min_occupancy=None is not a threshold.",
                 why="Why: min_occupancy is the seconds a bin must be occupied for "
@@ -830,7 +837,7 @@ def validate_min_occupancy(min_occupancy: float) -> float:
         )
     value = float(min_occupancy)
     if not (np.isfinite(value) and value >= 0.0):
-        raise ValueError(
+        raise InputError(
             _format_error(
                 f"min_occupancy must be a finite number of seconds >= 0, got {min_occupancy}.",
                 why="Why: it is the minimum time the animal must spend in a bin for its rate to count",

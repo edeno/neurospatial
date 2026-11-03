@@ -331,11 +331,11 @@ def test_invalid_method_message_lists_options_in_declared_order():
     assert len(set(outputs)) == 1
     spatial, view = outputs[0].strip().splitlines()
     assert spatial == (
-        "method must be one of ['diffusion_kde', 'gaussian_kde', 'binned', 'glm'], "
-        "got 'invalid'"
+        "compute_spatial_rates() got method='invalid'; method must be one of "
+        "'diffusion_kde', 'gaussian_kde', 'binned', 'glm'."
     )
     assert view == (
-        "Rate estimation got method='invalid'; method must be one of "
+        "compute_view_rates() got method='invalid'; method must be one of "
         "'diffusion_kde', 'gaussian_kde', 'binned'."
     )
 

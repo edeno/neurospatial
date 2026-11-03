@@ -111,7 +111,7 @@ def intervals_to_events(
     if which not in valid_which:
         msg = (
             f"'which' must be one of {valid_which}, got '{which}'.\n"
-            "  WHY: Only 'start', 'stop', or 'both' are valid options.\n"
+            "  Why: Only 'start', 'stop', or 'both' are valid options.\n"
             "  Fix: Use which='start' to extract start times only."
         )
         raise ValueError(msg)
@@ -120,7 +120,7 @@ def intervals_to_events(
     if missing:
         msg = (
             f"{call}: fields to preserve not found: {missing}.\n"
-            "  WHY: only fields of the intervals can be copied onto events.\n"
+            "  Why: only fields of the intervals can be copied onto events.\n"
             f"  Fix: choose from {list(rows.fields)}."
         )
         raise ValueError(msg)
@@ -161,7 +161,7 @@ def _refuse_inverted(
         msg = (
             f"{call}: interval row(s) {_format_rows(labels)} stop before they "
             f"start (e.g. start {starts[k]:g} s, stop {stops[k]:g} s).\n"
-            "  WHY: an interval [start, stop) needs stop >= start; a negative "
+            "  Why: an interval [start, stop) needs stop >= start; a negative "
             "duration means a start and stop were mismatched.\n"
             "  Fix: repair those rows, or pair starts and stops by an id with "
             "match_by=."
@@ -280,7 +280,7 @@ def events_to_intervals(
         if n_start != n_stop:
             msg = (
                 f"Event counts don't match: {n_start} starts, {n_stop} stops.\n"
-                "  WHY: Sequential pairing requires equal numbers of start/stop events.\n"
+                "  Why: Sequential pairing requires equal numbers of start/stop events.\n"
                 "  Fix: Use match_by='column_name' for non-sequential pairing,\n"
                 "       or ensure equal numbers of start and stop events."
             )
@@ -299,14 +299,14 @@ def events_to_intervals(
             if match_by not in frame.columns:
                 msg = (
                     f"Column '{match_by}' not found in {name}.\n"
-                    f"  WHY: Cannot match by a column that doesn't exist.\n"
+                    f"  Why: Cannot match by a column that doesn't exist.\n"
                     f"  Available columns: {list(frame.columns)}"
                 )
                 raise ValueError(msg)
             if frame[match_by].isna().any():
                 msg = (
                     f"{call}: {name}[{match_by!r}] has missing values.\n"
-                    "  WHY: a row without an id cannot be paired.\n"
+                    "  Why: a row without an id cannot be paired.\n"
                     f"  Fix: drop or label those rows before pairing by {match_by!r}."
                 )
                 raise ValueError(msg)
@@ -322,7 +322,7 @@ def events_to_intervals(
                 f"Found unmatched values in '{match_by}' column.\n"
                 f"  Start events with no matching stop: {unmatched_start}\n"
                 f"  Stop events with no matching start: {unmatched_stop}\n"
-                "  WHY: Each start event needs a matching stop event.\n"
+                "  Why: Each start event needs a matching stop event.\n"
                 f"  Fix: Ensure all values in '{match_by}' column have both start and stop."
             )
             raise ValueError(msg)
@@ -343,7 +343,7 @@ def events_to_intervals(
                 f"start/stop pairing.\n"
                 f"  Duplicated in start_events: {start_dups.tolist()}\n"
                 f"  Duplicated in stop_events: {stop_dups.tolist()}\n"
-                "  WHY: Matching by a non-unique key would cross-join "
+                "  Why: Matching by a non-unique key would cross-join "
                 "(Cartesian product) every repeated value, producing more "
                 "intervals than real start/stop pairs.\n"
                 "  Fix: De-duplicate so each value of "
@@ -378,7 +378,7 @@ def events_to_intervals(
             msg = (
                 f"{call}: start_events has an 'interval_id' column, which becomes "
                 "the ids of the intervals, but its values are not unique integers.\n"
-                "  WHY: an interval_id identifies one interval; events from two "
+                "  Why: an interval_id identifies one interval; events from two "
                 "sessions concatenated together repeat them.\n"
                 "  Fix: drop the column, or renumber it so each pair has its own id."
             )
@@ -408,7 +408,7 @@ def _refuse_unpaired_sequence(starts: np.ndarray, stops: np.ndarray) -> None:
     msg = (
         f"events_to_intervals: start and stop events do not alternate in time: "
         f"{problem} (pair {k} in time order).\n"
-        "  WHY: sequential pairing takes the k-th start with the k-th stop, so a "
+        "  Why: sequential pairing takes the k-th start with the k-th stop, so a "
         "missing or extra event pairs every later event with the wrong partner.\n"
         "  Fix: repair the missing or extra event near that time, or pair by an "
         "id column with match_by=."

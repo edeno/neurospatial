@@ -224,12 +224,12 @@ def require_known_bandwidth(
         If ``method="binned"`` gets a positive ``bandwidth``, or a kernel
         method has no ``bandwidth`` and ``units`` is not a known length unit.
     """
-    from neurospatial._exceptions import _format_error
+    from neurospatial._exceptions import InputError, _format_error
     from neurospatial._units import units_per_centimeter
 
     if method == "binned":
         if bandwidth is not None and bandwidth > 0:
-            raise ValueError(
+            raise InputError(
                 _format_error(
                     f"{context}: method='binned' got bandwidth={bandwidth!r}, "
                     "but binned polar maps are not smoothed.",

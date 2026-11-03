@@ -173,6 +173,9 @@ class BayesianDecoder:
         a single knob covers both the fit and predict passes (the default would
         otherwise warn once per pass). Prediction raises, whatever this
         setting, when every spike lies before or after the decode bins.
+        Spikes outside ``epochs`` and ``spike_window`` are not checked, so a
+        clock offset that leaves some spikes inside them goes unreported:
+        compare ``spike_times.min()`` and ``.max()`` with ``times`` yourself.
 
     Attributes
     ----------
@@ -313,6 +316,7 @@ warn_on_drop
         # compute_spatial_rate's.
         _validate_spatial_method_params(
             self.method,
+            owner="BayesianDecoder",
             bandwidth=self.bandwidth,
             min_occupancy=self.min_occupancy,
             penalty=self.penalty,
@@ -754,7 +758,15 @@ warn_on_drop
         """
         from neurospatial._intervals import resolve_time_windows
         from neurospatial._spikes import as_labelled_spike_trains
+        from neurospatial._validation import _refuse_wrong_kind
         from neurospatial.decoding.session import _fit_encoding_model
+
+        _refuse_wrong_kind(
+            spike_times,
+            name="spike_times",
+            caller="BayesianDecoder.fit",
+            expected="spike_times",
+        )
 
         # Capture unit identity once, from the ORIGINAL spike input (temporal
         # restriction never changes which units exist, only their spike counts).

@@ -776,14 +776,14 @@ class TestAddModulation:
             add_modulation(np.linspace(0, 5, n_spikes), **params)
 
     @pytest.mark.parametrize(
-        ("spike_times", "match"),
+        ("spike_times", "error", "match"),
         [
-            (np.array([0.1, np.nan, 0.3]), "spike_times"),
-            (np.zeros((2, 2)), "1-D"),
+            (np.array([0.1, np.nan, 0.3]), ValueError, "spike_times"),
+            (np.zeros((2, 2)), TypeError, r"call add_modulation\(\) once per unit"),
         ],
     )
-    def test_invalid_spike_times_raise(self, spike_times, match):
-        with pytest.raises(ValueError, match=match):
+    def test_invalid_spike_times_raise(self, spike_times, error, match):
+        with pytest.raises(error, match=match):
             add_modulation(spike_times, modulation_freq=8.0)
 
     def test_spikes_in_any_order_are_modulated_in_time_order(self):

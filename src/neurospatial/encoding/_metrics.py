@@ -43,6 +43,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
+from neurospatial._validation import _refuse_wrong_kind
 from neurospatial.encoding._base import _is_jax_array
 from neurospatial.encoding._field_metrics import _relative_measures
 
@@ -248,6 +249,9 @@ def spatial_information(
     batch_spatial_information : Vectorized version for populations
     sparsity : Complementary measure of spatial selectivity
     """
+    _refuse_wrong_kind(
+        firing_rate, name="firing_rate", caller="spatial_information", expected="array"
+    )
     # Check if JAX array and dispatch to JAX implementation
     if _is_jax_array(firing_rate) or _is_jax_array(occupancy):
         import jax.numpy as jnp
@@ -808,6 +812,9 @@ def sparsity(
     batch_sparsity : Vectorized version for populations
     spatial_information : Complementary measure of spatial selectivity
     """
+    _refuse_wrong_kind(
+        firing_rate, name="firing_rate", caller="sparsity", expected="array"
+    )
     # Check if JAX array and dispatch to JAX implementation
     if _is_jax_array(firing_rate) or _is_jax_array(occupancy):
         import jax.numpy as jnp
@@ -1265,6 +1272,9 @@ def selectivity(
     .. [1] opexebo package (Moser Lab):
            https://github.com/kavli-ntnu/opexebo
     """
+    _refuse_wrong_kind(
+        firing_rate, name="firing_rate", caller="selectivity", expected="array"
+    )
     firing_rate = np.asarray(firing_rate)
     occupancy = np.asarray(occupancy)
 
@@ -1374,6 +1384,12 @@ def information_per_second(
     .. [1] Markus et al. (1994). Interactions between location and task affect
            the spatial and directional firing of hippocampal neurons. J Neurosci 14(11).
     """
+    _refuse_wrong_kind(
+        firing_rate,
+        name="firing_rate",
+        caller="information_per_second",
+        expected="array",
+    )
     # Compute Skaggs information (bits/spike)
     info_content = spatial_information(firing_rate, occupancy=occupancy, base=base)
 

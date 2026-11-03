@@ -5,7 +5,8 @@ from __future__ import annotations
 import functools
 import importlib
 import inspect
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from difflib import get_close_matches
 from typing import Any, ParamSpec, TypeVar
 
 from neurospatial._exceptions import _format_error
@@ -198,3 +199,57 @@ def keyword_hint(
         return guarded
 
     return decorate
+
+
+def unexpected_keywords_error(
+    unknown: Iterable[str], accepted: Iterable[str], *, call: str, fix: str
+) -> TypeError:
+    """A ``TypeError`` for unknown keywords, naming the closest accepted ones.
+
+    For a function that forwards ``**kwargs``, so the error names the
+    function the user called rather than the one the keywords reach.
+
+    Parameters
+    ----------
+    unknown : iterable of str
+        The keywords the function does not take.
+    accepted : iterable of str
+        Every keyword it takes, its explicit parameters included.
+    call : str
+        The public function, without parentheses.
+    fix : str
+        The ``Fix:`` line when no accepted keyword is close.
+
+    Returns
+    -------
+    TypeError
+
+    Examples
+    --------
+    >>> print(
+    ...     unexpected_keywords_error(
+    ...         ["bandwdth"], ["bandwidth", "dt"], call="f", fix="see help(f)."
+    ...     )
+    ... )
+    f() got an unexpected keyword argument 'bandwdth'. Did you mean 'bandwidth'?
+    Fix: pass bandwidth=.
+    """
+    names = sorted(unknown)
+    choices = sorted(set(accepted))
+    matches = {name: get_close_matches(name, choices, n=1) for name in names}
+    if len(names) == 1:
+        what = f"{call}() got an unexpected keyword argument {names[0]!r}."
+    else:
+        listed = ", ".join(repr(name) for name in names)
+        what = f"{call}() got unexpected keyword arguments {listed}."
+    hints = [
+        f"{match[0]!r}" if len(names) == 1 else f"{match[0]!r} for {name!r}"
+        for name, match in matches.items()
+        if match
+    ]
+    if hints:
+        what += f" Did you mean {', '.join(hints)}?"
+    found = [match[0] for match in matches.values() if match]
+    if found and len(found) == len(names):
+        fix = f"pass {', '.join(f'{name}=' for name in found)}."
+    return TypeError(_format_error(what, fix=fix))

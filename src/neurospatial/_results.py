@@ -28,7 +28,7 @@ from typing import Any, Literal, Protocol, TypeVar
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._optional import require_optional
 
 
@@ -117,7 +117,7 @@ def require_label_sequence(labels: Any, *, name: str, call: str, example: str) -
     """
     if isinstance(labels, str | bytes) or np.ndim(labels) == 0:
         item = name.removesuffix("_ids")
-        raise ValueError(
+        raise InputError(
             _format_error(
                 f"{call} got {name}={labels!r}; it must be a sequence of "
                 f"labels, one per {item}.",
@@ -448,7 +448,7 @@ def resolve_unit_ids(
 
     Raises
     ------
-    ValueError
+    InputError
         If ``unit_ids`` is a single string or number, if ``unit_ids`` and
         ``input_ids`` are both given and differ in length, order, value or
         kind (``1`` and ``1.0`` are different labels), if the resolved labels
@@ -461,7 +461,7 @@ def resolve_unit_ids(
     if unit_ids is not None and input_ids is not None:
         given, carried = as_label_array(unit_ids), as_label_array(input_ids)
         if not _same_labels(given, carried):
-            raise ValueError(
+            raise InputError(
                 _format_error(
                     f"{call} got unit_ids={given.tolist()}, but the spike input "
                     f"is already labelled {carried.tolist()}.",
@@ -481,7 +481,7 @@ def resolve_unit_ids(
     resolved = read_only_copy(as_label_array(unit_ids))
     where = f" in {context}" if context else ""
     if resolved.ndim != 1:
-        raise ValueError(
+        raise InputError(
             _format_error(
                 f"unit_ids must be 1-D{where}: got shape {resolved.shape}.",
                 why="Why: unit_ids labels one identity per unit (row).",
@@ -490,7 +490,7 @@ def resolve_unit_ids(
             )
         )
     if resolved.shape[0] != n_units:
-        raise ValueError(
+        raise InputError(
             _format_error(
                 f"unit_ids length mismatch{where}: got {resolved.shape[0]} "
                 f"label(s) but there are {n_units} unit(s).",
@@ -503,7 +503,7 @@ def resolve_unit_ids(
     labels = resolved.tolist()
     missing = _missing_label_positions(labels)
     if missing:
-        raise ValueError(
+        raise InputError(
             _format_error(
                 f"unit_ids{where} has a missing label (None or NaN) at "
                 f"position(s) {missing[:5]}.",
@@ -523,7 +523,7 @@ def resolve_unit_ids(
             else "pass one distinct label per unit, or omit unit_ids= to "
             "number the units 0..n-1."
         )
-        raise ValueError(
+        raise InputError(
             _format_error(
                 f"unit_ids must be unique{where}: label(s) {duplicated} are repeated.",
                 why="Why: results index units by label, so a repeated label "

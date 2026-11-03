@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from neurospatial import InputError
 from neurospatial._intervals import (
     IntervalGates,
     interval_gates,
@@ -88,11 +89,11 @@ def test_max_gap_above_the_sampling_interval_is_silent(recwarn, offset):
 
 
 def test_all_excluded_without_named_gates_reads_cleanly():
-    with pytest.warns(
-        UserWarning, match=r"Interval filtering excluded ALL trajectory intervals, so"
-    ) as record:
+    with pytest.raises(
+        InputError, match=r"Interval filtering excluded ALL trajectory intervals, so"
+    ) as caught:
         warn_excluded_intervals(IntervalGates(np.arange(4.0), np.zeros(3, bool), None))
-    message = str(record[0].message)
+    message = str(caught.value)
     assert "gate(s) )" not in message
     assert "Fix: ." not in message
     assert "Fix: check that the samples are finite" in message

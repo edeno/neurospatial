@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from shapely.geometry import box
 
-from neurospatial import Environment, Intervals, Regions
+from neurospatial import Environment, InputError, Intervals, Regions
 from neurospatial.behavior import (
     RegionVisit,
     detect_region_visits,
@@ -82,12 +82,15 @@ def test_sampled_crossings_dwell_and_trials_between(region_env):
 
 
 def test_singleton_visit_kept_without_windows(region_env):
-    """A visit seen in one sample is an observation with no time."""
-    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
+    """A visit seen in one sample is an observation with no time.
+
+    The last interval, outside every region, keeps the recording usable.
+    """
+    with pytest.warns(UserWarning, match="probably not in seconds"):
         visits = _visits(
             region_env,
-            [0, 3, 5],
-            [0.0, 2.0, 4.0],
+            [0, 3, 5, 1, 1],
+            [0.0, 2.0, 4.0, 6.0, 6.1],
             regions=["A", "B", "C"],
             max_gap=0.5,
         )
@@ -235,15 +238,15 @@ def test_disjoint_epochs_keep_original_indices_and_censor_each_restart(region_en
 
 
 def test_fractional_epoch_limits_do_not_interpolate_dwell(region_env):
-    with pytest.warns(UserWarning, match="excluded ALL trajectory intervals"):
-        (visit,) = _visits(
-            region_env,
-            [0, 0, 0],
-            [0.0, 1.0, 2.0],
-            regions=["A"],
-            max_gap=None,
-            epochs=(0.5, 1.5),
-        )
+    # The second epoch keeps one usable interval, outside every region.
+    (visit,) = _visits(
+        region_env,
+        [0, 0, 0, 1, 1],
+        [0.0, 1.0, 2.0, 3.0, 4.0],
+        regions=["A"],
+        max_gap=None,
+        epochs=[(0.5, 1.5), (3.0, 4.0)],
+    )
     assert (visit.start_index, visit.stop_index) == (1, 2)
     assert not visit.entry_observed
     assert not visit.exit_observed
@@ -342,9 +345,9 @@ def test_records_do_not_alias_inputs_and_are_immutable(region_env):
         visits[0].entry_observed = False
 
 
-def test_millisecond_times_warn_instead_of_splitting_every_visit(region_env):
+def test_millisecond_times_raise_instead_of_splitting_every_visit(region_env):
     times = np.array([0.0, 0.2, 0.7, 1.2, 2.0, 2.5, 3.0, 4.0]) * 1000.0
-    with pytest.warns(UserWarning, match="probably not in seconds"):
+    with pytest.raises(InputError, match="probably not in seconds"):
         _visits(region_env, [1, 0, 0, 1, 3, 3, 4, 5], times, regions=["A", "B", "C"])
 
 

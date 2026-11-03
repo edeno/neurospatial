@@ -30,10 +30,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._constants import DISCARD_WARN_FRACTION
-from neurospatial._exceptions import IncompatibleEnvironmentError, _format_error
+from neurospatial._exceptions import (
+    IncompatibleEnvironmentError,
+    InputError,
+    _format_error,
+)
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._validation import validate_float_dtype
+from neurospatial._validation import _refuse_wrong_kind, validate_float_dtype
 from neurospatial.decoding._result import DecodingResult, DecodingSummary
 from neurospatial.decoding._time_bins import (
     centered_bin_support,
@@ -538,6 +542,12 @@ def decode_position(
     dt = validate_dt(dt)
     dtype = validate_float_dtype(dtype, stored="posteriors")
     time_chunk = _validate_time_chunk(time_chunk, allow_none=True)
+    _refuse_wrong_kind(
+        spike_counts,
+        name="spike_counts",
+        caller="decode_position",
+        expected="spike_counts",
+    )
     spike_counts = np.asarray(spike_counts)
     _refuse_dt_in_milliseconds(times, dt, context="decode_position")
     rates, prior = _prepare_decode_inputs(
@@ -589,7 +599,7 @@ def _refuse_dt_in_milliseconds(times: Any, dt: float, *, context: str) -> None:
     spacing = float(np.median(np.diff(centers)))
     if not (np.isfinite(spacing) and spacing > 0 and dt >= 100.0 * spacing):
         return
-    raise ValueError(
+    raise InputError(
         _format_error(
             f"{context}: dt={dt:g} s is {dt / spacing:.0f} times the {spacing:g} s "
             "spacing of times.",
@@ -688,6 +698,10 @@ def _prepare_decode_inputs(
                 fix="pass compute_spatial_rates(env, spike_times, times, "
                 "positions), or an (n_neurons, n_bins) array of rates on env",
             )
+        )
+    else:
+        _refuse_wrong_kind(
+            encoding_models, name="encoding_models", caller=context, expected="rates"
         )
     prior = resolve_prior(env, prior, spatial_support, n_time, context=context)
     models = np.asarray(models_on_support(np.asarray(rate_maps), spatial_support))
@@ -849,14 +863,20 @@ def _validate_spike_counts(spike_counts: NDArray[Any]) -> None:
             # The entry with the largest fractional part, to find in the input.
             fractional_part = np.abs(spike_counts - rounded)
             worst_value = float(spike_counts.flat[int(fractional_part.argmax())])
-            msg = (
-                f"spike_counts contains {n_fractional} fractional entr"
-                f"{'y' if n_fractional == 1 else 'ies'} (e.g., {worst_value:g}). "
-                "Spike counts must be integer-valued. Cast with "
-                "`spike_counts.astype(np.int64)` after confirming the "
-                "non-integer values are not a binning bug upstream."
+            raise ValueError(
+                _format_error(
+                    f"spike_counts contains {n_fractional} fractional entr"
+                    f"{'y' if n_fractional == 1 else 'ies'} (e.g., "
+                    f"{worst_value:g}).",
+                    why="Why: the Poisson likelihood takes whole spike counts "
+                    "per time bin; spike times or rates passed as counts would "
+                    "give a valid-looking but wrong posterior.",
+                    fix="bin spike times with bin_spikes_in_time(spike_times, "
+                    "dt=...) and pass the counts; cast with "
+                    "spike_counts.astype(np.int64) only if the values are "
+                    "counts stored as floats.",
+                )
             )
-            raise ValueError(msg)
 
 
 def _posterior_blocks(
@@ -1134,6 +1154,12 @@ def decode_position_summary(
     )
     dt = validate_dt(dt)
     dtype = validate_float_dtype(dtype, stored="posteriors")
+    _refuse_wrong_kind(
+        spike_counts,
+        name="spike_counts",
+        caller="decode_position_summary",
+        expected="spike_counts",
+    )
     spike_counts = np.asarray(spike_counts)
     n_time = len(spike_counts)
     _refuse_dt_in_milliseconds(times, dt, context="decode_position_summary")

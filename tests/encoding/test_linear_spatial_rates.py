@@ -7,7 +7,12 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon, box
 
-from neurospatial import Environment, compute_spatial_rate, compute_spatial_rates
+from neurospatial import (
+    Environment,
+    InputError,
+    compute_spatial_rate,
+    compute_spatial_rates,
+)
 from neurospatial.decoding import BayesianDecoder
 
 
@@ -395,28 +400,26 @@ def test_linear_missing_endpoints_and_sampling_gap_gate_complete_intervals():
     np.testing.assert_allclose(result.occupancy, [0.5, 0.5])
     np.testing.assert_allclose(result.firing_rate, [2.0, 2.0])
     assert result.analysis_settings["observed_intervals"] == [[0.0, 1.0]]
-    excluded = compute_spatial_rate(
-        grid(), spikes, times, positions, max_gap=0.5, **options
-    )
-    np.testing.assert_array_equal(excluded.occupancy, [0.0, 0.0])
-    assert excluded.analysis_settings["observed_intervals"] == []
+    # Every interval exceeds max_gap: nothing usable, whatever warn_on_drop.
+    with pytest.raises(InputError, match="excluded ALL"):
+        compute_spatial_rate(grid(), spikes, times, positions, max_gap=0.5, **options)
 
 
 def test_linear_recording_window_gate_preserves_complete_observation_rule():
-    result = compute_spatial_rate(
-        grid(),
-        np.array([0.5, 1.5]),
-        np.array([0.0, 2.0]),
-        np.array([[0.0, 0.5], [2.0, 0.5]]),
-        method="binned",
-        bandwidth=0,
-        time_allocation="linear",
-        max_gap=None,
-        epochs=(0.25, 1.75),
-        warn_on_drop=False,
-    )
-    np.testing.assert_array_equal(result.occupancy, [0.0, 0.0])
-    assert result.analysis_settings["observed_intervals"] == []
+    # The one interval is not inside the epoch as a whole, so none is usable.
+    with pytest.raises(InputError, match=r"excluded ALL.*epochs"):
+        compute_spatial_rate(
+            grid(),
+            np.array([0.5, 1.5]),
+            np.array([0.0, 2.0]),
+            np.array([[0.0, 0.5], [2.0, 0.5]]),
+            method="binned",
+            bandwidth=0,
+            time_allocation="linear",
+            max_gap=None,
+            epochs=(0.25, 1.75),
+            warn_on_drop=False,
+        )
 
 
 @pytest.mark.parametrize("function", [compute_spatial_rate, compute_spatial_rates])

@@ -466,8 +466,14 @@ def confusion_matrix(
 
     # Validate shapes
     if posterior.ndim != 2:
-        msg = f"posterior must be 2D, got shape {posterior.shape}"
-        raise ValueError(msg)
+        raise ValueError(
+            _format_error(
+                "confusion_matrix(): posterior must be 2-D (n_time_bins, n_bins), "
+                f"got shape {posterior.shape}.",
+                fix="pass result.posterior from decode_position, or add a time "
+                "axis to a single posterior with posterior[np.newaxis, :].",
+            )
+        )
     if posterior.shape[1] != n_bins:
         msg = (
             f"posterior has {posterior.shape[1]} bins but environment has {n_bins} bins"

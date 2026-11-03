@@ -824,7 +824,7 @@ def add_modulation(
                 "the trough",
             )
         )
-    spike_times = as_spike_train(spike_times)
+    spike_times = as_spike_train(spike_times, call="add_modulation", population=None)
 
     rng = np.random.default_rng(rng)
     phases = 2 * np.pi * modulation_freq * spike_times - modulation_phase

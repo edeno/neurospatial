@@ -24,7 +24,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     format_times_positions_error,
@@ -127,7 +127,7 @@ def _raise_input_problems(context: str, problems: list[tuple[str, str]]) -> None
         if len(problems) == 1
         else "invalid inputs:\n" + "\n".join(f"- {what}" for what, _ in problems)
     )
-    raise ValueError(
+    raise InputError(
         _format_error(
             f"{context}: {details}",
             why="Why: timestamps in seconds and sample-aligned coordinates are needed to assign observations to the correct bins.",
@@ -292,7 +292,7 @@ def validate_trajectory(
                 f"times length ({len(times)}) must match headings length ({len(headings)})."
             )
     if problems:
-        raise ValueError(
+        raise InputError(
             format_times_positions_error(
                 problems,
                 looks_swapped,

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
+from neurospatial import InputError
+
 
 @dataclass
 class IntervalSetLike:
@@ -293,18 +295,17 @@ def test_break_before_matches_an_equivalent_gap():
     )
 
 
-def test_all_excluding_breaks_are_named_in_the_warning():
+def test_all_excluding_breaks_are_named_in_the_error():
     from neurospatial._intervals import observed_interval_mask
 
     times = np.arange(3) * 0.1
-    with pytest.warns(UserWarning, match="break_before"):
-        mask = observed_interval_mask(
+    with pytest.raises(InputError, match="break_before"):
+        observed_interval_mask(
             times,
             max_gap=0.5,
             epochs=None,
             break_before=np.array([False, True, True]),
         )
-    assert not mask.any()
 
 
 @pytest.mark.parametrize("how", ["direct", "replace", "deepcopy", "pickle"])

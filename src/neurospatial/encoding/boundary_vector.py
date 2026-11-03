@@ -912,7 +912,13 @@ def compute_boundary_vector_rate(
 
     population = _boundary_vector_rates(
         env,
-        [as_spike_train(spike_times)],
+        [
+            as_spike_train(
+                spike_times,
+                call="compute_boundary_vector_rate",
+                population="compute_boundary_vector_rates",
+            )
+        ],
         times,
         positions,
         headings,
@@ -1001,7 +1007,9 @@ def _boundary_vector_rates(
         env, f"{context}()", measures="distance and direction to the walls"
     )
     _check_boundary_labels(direction_frame, boundary_source)
-    _validate_smoothing_parameters(method, 1.0 if bandwidth is None else bandwidth)
+    _validate_smoothing_parameters(
+        method, 1.0 if bandwidth is None else bandwidth, owner=f"{context}()"
+    )
     distance_range, n_distance_bins, n_direction_bins = resolve_polar_grid(
         env.units,
         distance_range=_resolve_wall_range(env.units, distance_range, context=context),

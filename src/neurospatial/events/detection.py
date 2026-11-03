@@ -138,6 +138,9 @@ def add_positions(
         epochs=epochs,
         break_before=break_before,
         result="events between samples get NaN positions",
+        # An event at a sample's own time still gets that sample's position,
+        # so the result stays meaningful when no interval is usable.
+        raise_if_empty=False,
     )
     if not 1 <= xyz.shape[1] <= 3:
         msg = (

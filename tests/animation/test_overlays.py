@@ -439,9 +439,7 @@ class TestVideoOverlayValidation:
     def test_alpha_lower_bound(self):
         """Test that alpha < 0.0 raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.raises(
-            ValueError, match=r"WHAT: alpha must be between"
-        ) as exc_info:
+        with pytest.raises(ValueError, match=r"alpha must be between") as exc_info:
             VideoOverlay(source=data, alpha=-0.1)
 
         error_msg = str(exc_info.value)
@@ -451,9 +449,7 @@ class TestVideoOverlayValidation:
     def test_alpha_upper_bound(self):
         """Test that alpha > 1.0 raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.uint8)
-        with pytest.raises(
-            ValueError, match=r"WHAT: alpha must be between"
-        ) as exc_info:
+        with pytest.raises(ValueError, match=r"alpha must be between") as exc_info:
             VideoOverlay(source=data, alpha=1.5)
 
         error_msg = str(exc_info.value)
@@ -473,7 +469,7 @@ class TestVideoOverlayValidation:
     def test_array_wrong_ndim(self):
         """Test that 3D array (not 4D) raises ValueError."""
         data = np.zeros((16, 16, 3), dtype=np.uint8)  # Missing frames dimension
-        with pytest.raises(ValueError, match=r"WHAT: Video array must be") as exc_info:
+        with pytest.raises(ValueError, match=r"Video array must be") as exc_info:
             VideoOverlay(source=data)
 
         error_msg = str(exc_info.value)
@@ -482,9 +478,7 @@ class TestVideoOverlayValidation:
     def test_array_wrong_channels(self):
         """Test that non-RGB array (not 3 channels) raises ValueError."""
         data = np.zeros((10, 16, 16, 4), dtype=np.uint8)  # RGBA, not RGB
-        with pytest.raises(
-            ValueError, match=r"WHAT: Video array must have"
-        ) as exc_info:
+        with pytest.raises(ValueError, match=r"Video array must have") as exc_info:
             VideoOverlay(source=data)
 
         error_msg = str(exc_info.value)
@@ -494,7 +488,7 @@ class TestVideoOverlayValidation:
         """Test that non-uint8 array raises ValueError."""
         data = np.zeros((10, 16, 16, 3), dtype=np.float32)  # float, not uint8
         with pytest.raises(
-            ValueError, match=r"WHAT: Video array must have dtype uint"
+            ValueError, match=r"Video array must have dtype uint"
         ) as exc_info:
             VideoOverlay(source=data)
 
@@ -949,7 +943,7 @@ class TestValidateShape:
         """Test that dimension mismatch raises ValueError."""
         data = np.array([[0.0, 1.0], [2.0, 3.0]])  # 2D
         expected_ndims = 3  # Expecting 3D
-        with pytest.raises(ValueError, match=r"WHAT: Shape mismatch for") as exc_info:
+        with pytest.raises(ValueError, match=r"Shape mismatch for") as exc_info:
             _validate_shape(data, expected_ndims, name="test_data")
 
         error_msg = str(exc_info.value)
@@ -967,7 +961,7 @@ class TestValidateShape:
         """Test that 1D array raises error when 2D expected."""
         data = np.array([0.0, 1.0, 2.0])  # 1D
         expected_ndims = 2
-        with pytest.raises(ValueError, match=r"WHAT: Shape mismatch for") as exc_info:
+        with pytest.raises(ValueError, match=r"Shape mismatch for") as exc_info:
             _validate_shape(data, expected_ndims, name="test_data")
 
         error_msg = str(exc_info.value)
@@ -984,9 +978,7 @@ class TestValidateShape:
         """Test that 3D+ arrays raise clear error about invalid shape."""
         data = np.array([[[0.0, 1.0], [2.0, 3.0]]])  # 3D array
         expected_ndims = 2
-        with pytest.raises(
-            ValueError, match=r"WHAT: Invalid array shape for"
-        ) as exc_info:
+        with pytest.raises(ValueError, match=r"Invalid array shape for") as exc_info:
             _validate_shape(data, expected_ndims, name="test_data")
 
         error_msg = str(exc_info.value)
@@ -1025,7 +1017,7 @@ class TestValidateTemporalAlignment:
         overlay_times = np.array([0.0, 1.0, 2.0])
         frame_times = np.array([5.0, 6.0, 7.0])
         with pytest.raises(
-            ValueError, match=r"WHAT: No temporal overlap between"
+            ValueError, match=r"No temporal overlap between"
         ) as exc_info:
             _validate_temporal_alignment(
                 overlay_times, frame_times, name="test_overlay"
@@ -1652,7 +1644,7 @@ class TestConvertOverlaysToData:
         n_frames = 2
 
         # Should raise ValueError from _validate_shape
-        with pytest.raises(ValueError, match=r"WHAT: Shape mismatch for") as exc_info:
+        with pytest.raises(ValueError, match=r"Shape mismatch for") as exc_info:
             _convert_on_frames(
                 overlays=[overlay],
                 frame_times=frame_times,
