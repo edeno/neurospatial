@@ -1062,8 +1062,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   catch (0, 255) as well as (0, 0)
 - Status: open
 - More evidence (environment fidelity): the driver's environment pools the
-  five sessions, which overlap in the image (all span about 50-250 px):
-  2,174 bins, one main part. The staircase session alone gives 1,233 bins
+  five sessions, four of which overlap in the image (the 1st-99th
+  percentile of x spans about 0-255 px in sessions 2-5; session 1, a BL
+  run, spans only x 16-40 by y 166-220 px): 2,174 bins, one main part. The staircase session alone gives 1,233 bins
   in 23 parts (2 with 1 % of the bins or more), 74 holes and 58 % of its
   bins holding fewer than 5 samples; its samples fill x 0-239 and y 81-254
   px (1st-99th percentile) with no visible track, so whether staircase parts at different
