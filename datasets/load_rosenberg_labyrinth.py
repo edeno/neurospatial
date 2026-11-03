@@ -38,7 +38,11 @@ Analysis choices (``params``):
 - ``min_speed`` 1 cell/s: about one corridor width per second.
 
 Declared environment (``geometry["environment"]``): the track graph rebuilt
-from the repository's ``NewMaze`` (every edge, 0.5-cell bins along it) with a
+from the repository's ``NewMaze`` with each of its 64 dead ends moved half a
+cell on, to the end wall the repository's ``MazeWall`` draws round the last
+cell (the graph's run ends are cell centres, so the floor runs half a cell
+past them; the entrance, open to the home cage, is not moved), every edge
+kept and 0.5-cell bins along it, with a
 physical width chosen as one cell, the corridor pitch, so a corridor ends at
 the wall it shares with its neighbour; the paper's corridors are 1-1/8
 inches wide on a 1.5 inch grid (0.75 of a cell). 4.6 % of nose samples lie
@@ -203,6 +207,29 @@ def maze_graph(levels: int = _LEVELS) -> Any:
     return graph
 
 
+def to_end_walls(graph: Any) -> Any:
+    """``graph`` with each dead end moved half a cell on, to its end wall.
+
+    ``NewMaze`` ends a run at the centre of its last cell, but the maze's
+    walls (``MazeWall``, same file) go round an end cell half a cell past its
+    centre (``c1 + nw``, ``c1 + ne``), so the floor runs that far. The
+    entrance, open to the home cage, is left where it is.
+    """
+    extended = graph.copy()
+    for node in graph.nodes:
+        if node == "entrance" or graph.degree(node) != 1:
+            continue
+        (parent,) = graph.neighbors(node)
+        end = np.asarray(graph.nodes[node]["pos"], dtype=float)
+        step = end - np.asarray(graph.nodes[parent]["pos"], dtype=float)
+        end = end + 0.5 * step / np.linalg.norm(step)
+        extended.nodes[node]["pos"] = (float(end[0]), float(end[1]))
+        extended.edges[parent, node]["distance"] = float(
+            np.linalg.norm(end - np.asarray(graph.nodes[parent]["pos"], dtype=float))
+        )
+    return extended
+
+
 def load(cache: Path | None = None) -> Recording:
     """Fetch mouse B1's trajectory and return it with the maze graph."""
     path = fetch(
@@ -248,10 +275,11 @@ def load(cache: Path | None = None) -> Recording:
         ),
     )
     entries, line = declared_geometry(
-        rec.geometry["graph"],
+        to_end_walls(rec.geometry["graph"]),
         rec.positions,
         times=rec.times,
-        kind="binary-tree labyrinth, the repository's track graph",
+        kind="binary-tree labyrinth, the repository's track graph with each dead"
+        " end extended half a cell to its end wall (MazeWall)",
         source="Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py):"
         " corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)'"
         " on a 1.5 inch grid",
