@@ -54,6 +54,7 @@ from _record import (
     alternating_blocks,
     check_expectations,
     checked_span,
+    heading_vs_movement,
     validate_recording,
 )
 
@@ -85,6 +86,7 @@ _SHA256 = "fd0f62bc04c588d56b8810b98e250588e22c37684d39c4db3809ad491a8c8aa5"
 _CELL = re.compile(r"r926_06042018_t(\d+)_c(\d+)$")
 _SPAN_CM = (120.0, 200.0)
 _MM_PER_CM = 10.0
+RUNNING_CM_S = 10.0
 
 
 def _vector(group: Any, name: str) -> np.ndarray:
@@ -104,6 +106,9 @@ def load(cache: Path | None = None) -> Recording:
         times = _vector(part, "pot")
         stored = np.column_stack([_vector(part, k) for k in ("pox", "poy", "poz")])
         velocity = _vector(part, "pov")
+        flat = sdata["lattice"]
+        azimuth = np.angle(np.exp(1j * np.radians(_vector(flat, "poh"))))
+        camera = np.column_stack([_vector(flat, "pox"), _vector(flat, "poy")])
         cells = sorted(
             (int(m[1]), int(m[2]), name) for name in sdata if (m := _CELL.match(name))
         )
@@ -122,6 +127,13 @@ def load(cache: Path | None = None) -> Recording:
         raise ValueError(msg)
     positions = stored / _MM_PER_CM
     span = checked_span(positions, *_SPAN_CM)
+    # The azimuth against the camera's 2-D frame and against the 3-D frame.
+    in_camera = heading_vs_movement(
+        times, camera / _MM_PER_CM, azimuth, min_speed=RUNNING_CM_S
+    )
+    in_lattice = heading_vs_movement(
+        times, positions[:, :2], azimuth, min_speed=RUNNING_CM_S
+    )
     lattice = np.array([[times[0], times[-1]]])
     train, test = alternating_blocks(times[0], times[-1], 60.0)
     return Recording(
@@ -150,8 +162,13 @@ def load(cache: Path | None = None) -> Recording:
             "times: lattice_3d pot as stored (s)",
             f"units: {len(spikes)} tetrode/cluster fields; cluster 0 of each tetrode"
             f" ({n_unsorted} spikes, unsorted) left out",
-            "headings: none (lattice.poh is in the overhead camera's frame, not the"
-            " 3-D frame)",
+            "headings: none; lattice.poh minus the direction of movement above"
+            f" {RUNNING_CM_S:g} cm/s: in the camera's 2-D frame (lattice.pox, poy)"
+            f" mean {np.degrees(in_camera[0]):.1f} deg, spread"
+            f" {np.degrees(in_camera[1]):.1f} deg; in the 3-D frame's x, y mean"
+            f" {np.degrees(in_lattice[0]):.1f} deg, spread"
+            f" {np.degrees(in_lattice[1]):.1f} deg: not a heading in the positions'"
+            " frame",
         ),
     )
 
