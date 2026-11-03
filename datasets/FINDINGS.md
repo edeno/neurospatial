@@ -51,7 +51,7 @@ frames), hc-31 (a 48 m track in inches and µs) and hc-18 (a model train,
 
 Declared environments (details in [ENVIRONMENT_FIDELITY.md](ENVIRONMENT_FIDELITY.md),
 [BATCH_FAITHFUL_ARENAS.md](BATCH_FAITHFUL_ARENAS.md) and
-[BATCH_FAITHFUL_TRACKS.md](BATCH_FAITHFUL_TRACKS.md)): 29 loaders now declare
+[BATCH_FAITHFUL_TRACKS.md](BATCH_FAITHFUL_TRACKS.md)): 30 loaders now declare
 the apparatus a source states (an outline, a room, a track graph, the
 lattice's bars), and every recording is run twice, on the declared
 environment (`results/`) and on one built from the samples
@@ -98,12 +98,19 @@ from the first five batches; the full rerun after this batch refreshes them.
   Poisson cells; bursty cells and real units sit 2–7× above it. A
   sparse-occupancy warning would be the wrong fix (proposal 4).
 - **Declared environments are right where the samples-built ones are not.**
-  All 10 declared arenas and 3-D environments match their stated size
-  (within 15 %), against 2 of 10 built from the samples. Of 19 declared
-  tracks, 10 match, 2 mismatch (000044's linear stem has too few samples;
-  one Takigawa segment's samples lie 4 px to one side) and 7 cannot be
-  checked against a fact independent of the samples, against 4, 6 and 9
-  built from the samples. Samples cannot show walls thinner than a bin (the
+  9 of the 10 declared arenas and 3-D environments match their stated size
+  (within 15 %), against 2 of 10 built from the samples; the bat's room is
+  a mismatch, now that a room is judged by its faces: 17 of the 57 flight
+  samples nearest one wall lie 1.4 m past it, at the perch beyond `r_lim`
+  (G-025). Of 20 declared tracks, 13 match and 7 cannot be checked against
+  a fact independent of the samples, against 4 matches, 7 mismatches and
+  9 not verified built from the samples. The two earlier track mismatches
+  (000044's linear reward areas, a Takigawa stretch 4 cm to one side) are
+  stretches shorter than the 20 bins a judged stretch needs, so they are
+  reported; on Takigawa's tracks and the labyrinth no stretch is that long,
+  and only the reach past the free ends judges them. The lattice's
+  placement is not judged (its bars are tilted, and a head above a bar
+  biases any offset); its match rests on its stated side. Samples cannot show walls thinner than a bin (the
   labyrinth's corridors join, G-110) or tell apart two apparatus in one
   camera frame (G-113). Head samples beyond a track's width or short of a
   wall are expected (headstage LEDs, swings, camera projection), so they
@@ -113,7 +120,10 @@ from the first five batches; the full rerun after this batch refreshes them.
   track splits the recording and costs laps (G-151). Border scores run on
   declared arenas, and are -1 for most cells where the tracked head stays a
   few cm off the wall (407 of 619 on Vollan's open field, G-131). Grid
-  scores of grid cells do not change (Gardner median 0.952 against 0.949).
+  scores of grid cells do not change (Gardner median 0.953 against 0.949).
+  Decoding errors fell where train and test now alternate within each arm
+  instead of by even and odd trial, which split them by direction or loop:
+  000447's familiar W-track 35.9 to 4.9 cm, the figure-8 7.8 to 5.9 cm.
 - **Biggest missing capability**: spatial maps from calcium imaging or binned
   rates (G-029), deferred; loop tracks (G-021), now on the plan.
 
@@ -474,7 +484,7 @@ decision 4).
   - A wrong length unit inside a declared environment collapses the
     positions into a few bins (G-132).
 - **Evidence.** ENVIRONMENT_FIDELITY.md and the two BATCH_FAITHFUL
-  documents, on the 29 declared recordings; each gap entry gives the
+  documents, on the 30 declared recordings; each gap entry gives the
   counts.
 - **Change.**
   - Separate the apparatus's physical width from the placement tolerance

@@ -79,7 +79,7 @@ principal axis) is reported but does not judge.
 
 | Dataset | Kind | Bins | Dims | Components (1 % of bins or more) | Holes (bins) | Sparse / thin bins | Unsupported / far links | Corner links | Geodesic / straight (median, p95) | On-track samples / bins | Env / track (median, p5) | Outline: covered / centres outside / wall gap / hull over rectangle, circle | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| sargolini_000582 | open | 1399 | 2 | 1 (1) | 72 (136) | 6% / 14% | 7.6% / 0.10% | 12 | 1.06, 1.12 | – | – | 89% / 0% / 1.2 / 0.99, 0.64 | mismatch: bins cover 89% of the stated square (95% with holes filled) |
+| sargolini_000582 | open | 1399 | 2 | 1 (1) | 72 (136) | 6% / 14% | 7.6% / 0.10% | 12 | 1.06, 1.12 | – | – | 86% / 0% / 1.3 / 0.99, 0.64 | mismatch: bins cover 86% of the stated square (94% with holes filled) |
 | figure8_000552 | track | 667 | 2 | 3 (1) | 7 (806) | 6% / 13% | 3.4% / 0.00% | 6 | 1.21, 1.68 | – | – | – | matches |
 | figure8_000552_linearized | track | 112 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.04 | – | – | – | mismatch: loop ends 222 apart along the bins, 3 in the camera |
 | rosenberg_labyrinth | track | 2780 | 2 | 1 (1) | 41 (185) | 4% / 10% | 2.4% / 0.05% | 8 | 1.08, 1.76 | 95% / 99% | 0.66, 0.28 | – | mismatch: 795 links join places far apart along the track (through a wall or gap); geodesic 0.66 x the distance along the track |
@@ -87,7 +87,7 @@ principal axis) is reported but does not judge.
 | miniscope_002030 | open | 455 | 2 | 1 (1) | 19 (722) | 13% / 31% | 8.0% / 0.09% | 8 | 1.21, 1.52 | – | – | 37% / 0% / 0.3 / 0.79, 0.97 | mismatch: bins cover 37% of the stated circle (99% with holes filled) |
 | giocomo_000405 | open | 2076 | 2 | 1 (1) | 105 (446) | 5% / 20% | 6.1% / 0.03% | 22 | 1.06, 1.13 | – | – | 67% / 0% / 6.3 / 0.96, 0.67 | mismatch: bins cover 67% of the stated rectangle (80% with holes filled) |
 | giocomo_001701 | track | 266 | 2 | 1 (1) | 0 (0) | 8% / 8% | 0.4% / 0.00% | 0 | 1.12, 1.71 | – | – | – | not verified: no stated fact independent of the samples checks it |
-| gardner_2022_grid | open | 3463 | 2 | 1 (1) | 0 (0) | 0% / 0% | 0.1% / 0.00% | 0 | 1.06, 1.10 | – | – | 96% / 0% / 1.9 / 0.99, 0.65 | matches |
+| gardner_2022_grid | open | 3463 | 2 | 1 (1) | 0 (0) | 0% / 0% | 0.1% / 0.00% | 0 | 1.06, 1.10 | – | – | 96% / 0% / 1.6 / 0.99, 0.65 | matches |
 | vollan_lt | track | 556 | 2 | 1 (1) | 11 (34) | 7% / 7% | 3.5% / 0.06% | 3 | 1.04, 1.13 | 57% / 58% (assumed width) | 1.04, 1.00 | – | mismatch: 2 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
 | vollan_of | open | 2041 | 2 | 1 (1) | 131 (297) | 9% / 8% | 8.4% / 0.12% | 17 | 1.07, 1.13 | – | – | 75% / 0% / 4.3 / 0.81, 0.94 | mismatch: bins cover 75% of the stated circle (83% with holes filled) |
 | grosmark_000044_circular | track | 1547 | 2 | 2 (1) | 17 (609) | 2% / 11% | 1.9% / 0.02% | 10 | 1.09, 1.40 | 69% / 43% (assumed width) | 0.93, 0.83 | – | matches |
@@ -121,7 +121,7 @@ principal axis) is reported but does not judge.
 | aeryjones_000165 | track | 163 | 2 | 1 (1) | 0 (0) | 7% / 18% | 1.5% / 0.00% | 0 | 1.03, 1.07 | 100% / 100% (assumed width) | 1.03, 0.99 | – | matches |
 | dyads_001845 | track | 245 | 2 | 4 (3) | 6 (32) | 9% / 84% | 14.0% / 0.00% | 9 | 1.04, 1.19 | – | – | – | mismatch: 3 parts with 1% of the bins or more, apparatus has 1; 3 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
 | senzai_000003 | open | 840 | 2 | 1 (1) | 17 (33) | 3% / 21% | 3.6% / 0.00% | 0 | 1.04, 1.15 | – | – | – | not verified: no source read here states the geometry |
-| kanter_2025 | open | 1049 | 2 | 1 (1) | 49 (460) | 7% / 8% | 6.6% / 0.18% | 9 | 1.07, 1.19 | – | – | 65% / 0% / 1.9 / 0.98, 0.65 | mismatch: bins cover 65% of the stated square (94% with holes filled) |
+| kanter_2025 | open | 1049 | 2 | 1 (1) | 49 (460) | 7% / 8% | 6.6% / 0.18% | 9 | 1.07, 1.19 | – | – | 65% / 0% / 1.6 / 0.98, 0.65 | mismatch: bins cover 65% of the stated square (94% with holes filled) |
 
 ## What the numbers say
 
@@ -264,10 +264,11 @@ paper's room too.
 
 Twenty-two track and maze loaders now try to declare their apparatus as a
 track graph (`geometry["environment"]`, [BATCH_FAITHFUL_TRACKS.md](BATCH_FAITHFUL_TRACKS.md));
-19 do, and three fitted layouts are refused on misfit evidence and stay
+20 do, and two fitted layouts are refused on misfit evidence and stay
 inferred (000447's novel W-track and the Z-track, whose fitted lengths are
-more than 15 % off the stated ones, and 001845, whose W-maze base is
-barely sampled; G-153). The study measures each declared environment
+more than 15 % off the stated ones; G-153). 001845's W-maze was refused for
+its thinly sampled base while support was judged per segment; judged per
+stretch it is kept. The study measures each declared environment
 beside the samples-built one ("Declared environments" in the results). In
 the table above figure8_000552 is the camera positions (the 1-D row is
 `figure8_000552_linearized`) and jadhav_000447 is the novel W-track (the
@@ -275,12 +276,19 @@ familiar one is jadhav_000447_familiar).
 
 A declared track is judged by one function for any declared environment
 (`_geometry.judge_declared`), on misfit evidence: a straight stretch of
-track (at least 20 bins, an arm's length, not crossing a corner) whose
-samples lie a median of more than one bin to one side, a segment with no
-sample within a bin over more than a quarter of its length, samples that
+track (at least 20 bins, an arm's length, not crossing a corner or a
+junction) whose samples lie a median of more than one bin to one side, a
+stretch with no sample within a bin over more than a quarter of its length
+(points half a bin apart; the part within 3 bins of a free end is
+reported, not judged, as for walls), no samples near any stretch at all
+(a NaN bias is a mismatch, not a pass), samples that
 reach past the track's free ends by more than 15 % of its length (summed
 over the ends: a track drawn too short), or a stated length more than 15 %
-off (`MAX_SIZE_RESIDUAL`, one tolerance for every stated size). An outline
+off (`MAX_SIZE_RESIDUAL`, one tolerance for every stated size). A stretch
+that cannot grow to 20 bins (a reward arm between a junction and its end)
+has its bias and support reported, not judged; support is judged per
+stretch, not per segment, so it does not depend on how the graph is cut
+into segments. An outline
 is also judged by how far its samples fall short of its side (at most
 15 %; they may fall short of the walls but not reach past them). The
 share of samples beyond the physical width is not misfit: the tracked
@@ -303,28 +311,33 @@ are in bins, so in physical units they vary with each recording's bin
 was set after seeing the data (it was 10 bins until the 000044 circle was
 refused on one short side under its reward area). How sensitive the judge
 is to misfits of known size is not measured here: that is the survey's
-simulation ladder (phase 6, rungs 2-3, planted misfits). Of the 19
+simulation ladder (phase 6, rungs 2-3, planted misfits). Of the 20
 declared tracks:
 
-- 10 match. On a stated size against the samples' own: Vollan's linear
+- 13 match. On a stated size against the samples' own: Vollan's linear
   track +5.5 %, 000568 +5.1 %, 000165 -1.6 %, the 000044 circle's diameter
   -0.2 % (its worst stretch 2.38 cm to one side, against a 2.5 cm limit:
   close to it), 000447's familiar W-track (base -1.2 %, arms +6.5 %),
-  hc-28's W-track (base -10.5 %, arms -11.1 %, within the 15 %), and
-  Shipley's eight arms (-5.9 to +3.4 %). On the authors' geometry as
-  stated: J16's graph, hc-31's track coordinate (length +0.3 %) and the
-  labyrinth's graph. The labyrinth was a mismatch in the tracks round: its
-  graph ends at the centre of each dead-end cell, and the samples reached
-  15.6 % of its length past its ends. The repository's `MazeWall` draws the
-  end wall half a cell past that centre, so the loader now moves each of
-  the 64 dead ends half a cell on; the samples reach 3.0 % of the length
-  past the free ends (the 64 and the entrance), and its worst stretch is
-  0.49 cell to one side, against a 0.5-cell limit: close to it.
-- 2 are mismatches on misfit. Takigawa's authors' centreline lies 4.12 cm
-  to one side of its samples on one stretch (the limit is one 4 cm bin).
-  000044's linear 15 cm reward-area segments have no sample within a bin of
-  their centreline over 44 % of their length (the samples spread across the
-  reward areas).
+  hc-28's W-track (base -10.5 %, arms -11.1 %, within the 15 %), 001845's
+  W-maze (base +14 %, arms +7 %: close to the limit) and Shipley's eight
+  arms (-5.9 to +3.4 %). On the authors' geometry or the file's coordinate
+  as stated: J16's graph, hc-31's track coordinate (length +0.3 %), 000044's
+  linear track, Takigawa's centrelines and the labyrinth's graph. The
+  labyrinth was a mismatch in the tracks round: its graph ended at the
+  centre of each dead-end cell, and the samples reached 15.6 % of its
+  length past its ends; the loader now moves each of the 64 dead ends half
+  a cell on, to the end wall `MazeWall` draws, and the samples reach 3.0 %
+  past the free ends.
+- Two verdicts changed with the stretch rule, both from mismatch to
+  matches. 000044's linear 15 cm reward-area segments, with no sample
+  within a bin over 44 % of their length, are shorter than a judged
+  stretch, so their support is reported. Takigawa's stretch 4.12 cm to one
+  side of its samples (limit one 4 cm bin) is shorter than 20 bins (80 cm);
+  no stretch of its centrelines reaches 20 bins, and none of the
+  labyrinth's corridors does (worst 0.49 cell to one side, reported), so on
+  these two neither the bias nor the support is judged, and only the reach
+  past the free ends can fail them. Whether a shorter stretch should be
+  judged is a maintainer decision.
 - 7 are not verified: no stated size compared and no independent
   reference (the figure-8, the X maze, Agarwal's maze, 001695, hc-3, whose
   pixel scale comes from the same 250 cm), hc-18's circuit, whose shape no
@@ -334,11 +347,12 @@ declared tracks:
   checks nothing. The tracks round called it a match on the authors'
   graph.
 - Beyond the physical width, as a tracking measure: J16 63.8 %, hc-28
-  37.3 %, hc-3 26.3 %, 000447's familiar W-track 13.0 %, 000568 12.4 %, the
-  labyrinth 2.0 % (one cell, chosen; 12.8 % at the paper's 0.75 cell;
-  4.6 % and 17.9 % before its dead ends reached their walls),
-  Shipley 0.3 % of all samples. On J16 the graph is placed right (median
-  signed offset -1.3 to +1.8 cm per corridor) and the share falls from 87 %
+  37.3 %, hc-3 26.3 %, 000447's familiar W-track 13.0 %, 000568 12.4 %
+  (positions as stored), 001845 6.1 %, the labyrinth 2.0 % (one cell,
+  chosen; 12.8 % at the paper's 0.75 cell; 4.6 % and 17.9 % before its dead
+  ends reached their walls), Shipley 0.7 % of the judged samples. On J16
+  the graph is placed right (median signed offset -1.3 to +1.8 cm per
+  corridor) and the share falls from 87 %
   stopped to 35 % above 30 cm/s (G-152).
 - Against their own geometry the declared environments measure only their
   binning: the labyrinth's path along its bins is 0.96 x the distance along
@@ -404,27 +418,42 @@ of the lattice's bar segments with no sample within a bin: the tracked LEDs
 sit on a headstage above the animal, so head samples fall short of walls
 and bars (the maintainer's rule, G-157). The share of samples outside the
 outline or room is a tracking measure, reported split by speed, not judged
-(the arenas' earlier limit of 2 % is gone). A room is judged on stated
-sizes only.
+(the arenas' earlier limit of 2 % is gone). A room is judged as an outline
+is, per face: each judged sample is assigned to the face it lies farthest
+past (inside, the nearest face), and the 95th percentile of a face's
+samples' distance past it more than one bin is a mismatch; and on its
+stated sizes. The lattice's placement is not judged: in 3-D a side of a bar
+is not defined, its bars are tilted (no bar is vertical, so a horizontal
+frame offset cannot be read from vertical bars), and a head held above a
+bar biases the offset, so its verdict rests on the stated side alone.
 
-All ten declared arenas and 3-D environments match:
+Nine of the ten declared arenas and 3-D environments match, and the bat's
+room is a mismatch:
 
-- On the stated size against the samples' own: 000582 (sides -0.5 % and
-  -2.9 %), 002030 (diameter -0.1 %), 000405 (-8.2 %, -8.0 %), Gardner
-  (-2.9 %, -3.3 %), Vollan's 150 cm circle (diameter -4.3 %, centre 2.2 %
+- On the stated size against the samples' own: 000582 (sides -0.1 % and
+  -2.6 %), 002030 (diameter +0.0 %), 000405 (-6.9 %, -6.3 %), Gardner
+  (-1.9 %, -2.4 %), Vollan's 150 cm circle (diameter -4.0 %, centre 2.2 %
   of the radius off; the samples' extent -14.9 % of the outline, just
-  inside the 15 %), Kanter (-2.6 %, -3.4 %), hc-2's platform (-2.1 %,
-  -3.0 %) and the water maze (+1.0 %, centre 2.7 % of the radius from the
-  stated one). 0-0.34 % of their samples lie outside the outline. The bat's
-  room matches on `r_lim` against the paper's room (x +3.6 %, y +0.0 %,
-  z -8.0 %); 3.66 % of all its samples, and 0.11 % of the flight samples
-  the analyses use, lie outside `r_lim`, reported, not judged (G-025). The
-  lattice matches on the authors' bars (side +0.0 % of the stated 97 cm).
-- Support, reported: 69 % of one side of 000405 has no sample within
-  7.5 cm, 31 % of Vollan's circle, 36 % of one side of hc-2's platform; on
-  the lattice 90 % of the 882 segments have over a quarter of their length
-  with no head sample within one 4 cm bin (the head is a median 6.0 cm from
-  a bar). Before the rule these four were mismatches on support alone.
+  inside the 15 %), Kanter (-2.1 %, -2.3 %), hc-2's platform (+0.0 %,
+  -0.8 %) and the water maze (+0.2 %, centre 0.9 % of the radius from the
+  stated one). The stated shapes are placed after a radial trim of the
+  samples (`_geometry._tracked`), which moved these residuals by up to 2
+  points. 0-0.34 % of their judged samples lie outside the outline. The
+  lattice matches on the authors' bars (side +0.0 % of the stated 97 cm);
+  its placement is not judged (above).
+- The bat's room is a mismatch on its faces: `r_lim`'s sizes match the
+  paper's room (x +3.6 %, y +0.0 %, z -8.0 %), but of the 57 flight samples
+  nearest the y-low face, 17 lie 1.4 m past it (the perch beyond `r_lim`,
+  G-025), so that face's 95th percentile is 1.41 m past the wall against a
+  0.2 m limit. 0.11 % of the flight samples lie outside `r_lim` (3.66 % of
+  all samples). Until this round a room was judged on its sizes only, and
+  a room with every sample 10 m outside had no misfit.
+- Support, reported: 71 % of one side of 000405 has no sample within
+  7.5 cm, 31 % of Vollan's circle, 48 % of one side of hc-2's platform; on
+  the lattice no bar stretch reaches 20 bins (the bars cross every 16 cm),
+  so its support is reported per segment (the head is a median 6.0 cm
+  from a bar). Before the support rule 000405, Vollan's circle, hc-2 and
+  the lattice were mismatches on support alone.
 
 The lattice is built with a placement tolerance chosen from the samples,
 2 x the head's 99th percentile distance from a bar (30.8 cm), not a stated

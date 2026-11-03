@@ -37,19 +37,19 @@ error). Each loader writes the placement and residuals as its last
 
 | Recording | Environment | Source (read) | Placement | Residual (samples' fit vs stated) | Samples outside |
 | --- | --- | --- | --- | --- | --- |
-| sargolini_000582 | declared: 100 x 100 cm square | NWB `session_description`: "a 1 x 1 meter enclosure" | fitted: centre (0.0, 0.1), rotation 90 deg | 99.5 x 97.1 cm: -0.5 %, -2.9 % | 0.02 % |
-| miniscope_002030 | declared: 96 cm circle | DANDI 002030 description: "circular open-field arena (96 cm in diameter)" | fitted centre (57.8, 56.2) | 95.9 cm: -0.1 % | 0.03 % |
-| giocomo_000405 | declared: 150 x 130 cm rectangle | Gonzalez & Giocomo 2024, eLife 13:RP85646, Methods "Open-Field" (open-access PDF): "The dimensions of field are 1.3m x 1.5m" | fitted: centre (-2.1, 64.5); the 1.5 m side matched to the samples' longer side | 138 x 120 cm: -8.2 %, -8.0 % | 0 % |
-| gardner_2022_grid | declared: 150 x 150 cm square | Gardner et al. 2022, Nature 602:123, Methods "Open-field foraging task" (open-access PDF): "square open-field (OF) arena of size 1.5 x 1.5 m", 50 cm walls | fitted: centre (1.0, -0.1) | 146 x 145 cm: -2.9 %, -3.3 % | 0 % |
-| vollan_of | declared: 150 cm circle | Vollan et al. 2025 Methods (Zotero PDF): the one exception to the 150 cm box, "a circular arena 150 cm in diameter", for a dark-room session and the lit session after it in the same arena; the file's session type `open_field_light` | stated centre (0, 0) (`mat_files.md`: "relative to arena center"); fitted centre 1.65 cm off | 144 cm: -4.3 % | 0 % |
-| kanter_2025 | declared: 100 x 100 cm square | NWB epochs table: `arena_dimensions` [100, 100, 50] cm | fitted: centre (8.7, -24.8) (the stated frame, "Bottom left of the arena", does not hold) | 97.4 x 96.6 cm: -2.6 %, -3.4 % | 0 % |
-| watermaze_10248158 | declared: circle of radius 95 units | `Experiment.json` `arena.bounds` (centre and radius) | stated centre (133.7, 103.5); fitted centre 2.6 units off | 192 units: +1.0 % (within one 5-unit bin) | 0.34 % |
-| hc2_ec013_527 | declared: 180 cm square with a drop edge, 180.8 px at the inferred scale | `crcns-hc2-data-description.pdf` (read): "an elevated square platform (180 cm x 180 cm, or 120 cm x 120 cm)", ec013.527 180 cm in its session table | fitted: centre (170, 117) px | 177 x 175 px: -2.1 %, -3.0 % (the longer side is the scale's source, so only the shorter side is a check) | 0.01 % |
+| sargolini_000582 | declared: 100 x 100 cm square | NWB `session_description`: "a 1 x 1 meter enclosure" | fitted: centre (0.3, -0.1), rotation 0 deg | 99.9 x 97.4 cm: -0.1 %, -2.6 % | 0.02 % |
+| miniscope_002030 | declared: 96 cm circle | DANDI 002030 description: "circular open-field arena (96 cm in diameter)" | fitted centre (57.9, 56.2) | 96.0 cm: +0.0 % | 0.03 % |
+| giocomo_000405 | declared: 150 x 130 cm rectangle | Gonzalez & Giocomo 2024, eLife 13:RP85646, Methods "Open-Field" (open-access PDF): "The dimensions of field are 1.3m x 1.5m" | fitted: centre (-1.2, 64.2); the 1.5 m side matched to the samples' longer side | 140 x 122 cm: -6.9 %, -6.3 % | 0 % |
+| gardner_2022_grid | declared: 150 x 150 cm square | Gardner et al. 2022, Nature 602:123, Methods "Open-field foraging task" (open-access PDF): "square open-field (OF) arena of size 1.5 x 1.5 m", 50 cm walls | fitted: centre (0.7, 0.2) | 147 x 146 cm: -1.9 %, -2.4 % | 0 % |
+| vollan_of | declared: 150 cm circle | Vollan et al. 2025 Methods (Zotero PDF): the one exception to the 150 cm box, "a circular arena 150 cm in diameter", for a dark-room session and the lit session after it in the same arena; the file's session type `open_field_light` | stated centre (0, 0) (`mat_files.md`: "relative to arena center"); fitted centre 1.66 cm off | 144 cm: -4.0 % | 0 % |
+| kanter_2025 | declared: 100 x 100 cm square | NWB epochs table: `arena_dimensions` [100, 100, 50] cm | fitted: centre (8.7, -24.6) (the stated frame, "Bottom left of the arena", does not hold) | 97.9 x 97.7 cm: -2.1 %, -2.3 % | 0 % |
+| watermaze_10248158 | declared: circle of radius 95 units | `Experiment.json` `arena.bounds` (centre and radius) | stated centre (133.7, 103.5); fitted centre 0.9 units off | 190 units: +0.2 % | 0.34 % |
+| hc2_ec013_527 | declared: 180 cm square with a drop edge, 180.8 px at the inferred scale | `crcns-hc2-data-description.pdf` (read): "an elevated square platform (180 cm x 180 cm, or 120 cm x 120 cm)", ec013.527 180 cm in its session table | fitted: centre (169, 116) px | 181 x 179 px: +0.0 %, -0.8 % (the longer side is the scale's source, so only the shorter side is a check) | 0.01 % |
 | grieves_2020_lattice | declared: the 147 bars as a graph, 343 crossings, 882 segments, all kept | Grieves et al. 2020 Supplementary Methods (open access): 6 x 6 x 6 cubic lattice, 0.97 m a side, tubes 150 mm long and 10 mm across; the file's `lattice_3d` bars and `lattice_type` "diagonal" | the file's bars, in the positions' frame (not fitted) | head a median 6.0 cm from the nearest bar (99th percentile 15.4); `track_width` 30.8 cm = 2 x that 99th percentile | 1.0 % |
 | yartsev_bat_demo | declared: the room, every voxel of a grid tiling `r_lim` (5.8 x 5.2 x 2.3 m) exactly, 29 x 26 x 11 cells of 0.2 x 0.2 x 0.209 m | `NP_Bat_Demo.m` (`r_lim`, "boundaries of the room"); Forli et al. 2025 Methods (Zotero full text): "an indoor flight room (n = 4 bats, 5.6 m x 5.2 m x 2.5 m)" | the file's frame (not fitted) | samples span 5.69 x 6.72 x 1.88 m; outside `r_lim` 3.66 %, outside the paper's size centred on `r_lim` 3.77 % | 3.66 % |
 | rsc_000987 | inferred | NWB: "square arena"; Mehrotra, Levenstein et al. 2023 bioRxiv Methods (open-access PDF): square of "removable walls (width: 80 cm, height: 50 cm)" | – | 52.6 x 52.1 cm against 80 cm: -34 %, refused (G-130) | – |
 | ca1ca3_001880 | inferred | no size in the file or the DANDI description; the paper (Neuron 2026) could not be read | – | – | – |
-| hafting_2008_nird | inferred | archive readme (read): "a linear track (mostly 320 cm)", no width | – | `Environment.bin_at` refuses a track without `track_width`, and no source gives one | – |
+| hafting_2008_nird | declared as a track (BATCH_FAITHFUL_TRACKS.md): a 320 cm line in the file's frame | archive readme (read): "a linear track (mostly 320 cm)", no width | the file's coordinates, which the authors scaled to the stated 320 cm (so the length checks nothing) | not verified (see the tracks page) | – |
 | senzai_000003 | inferred | pixels with no stated scale; the open field and the theta maze share one image with no epochs between them | – | – | – |
 
 Each loader also records what its positions track
@@ -185,31 +185,41 @@ with no sample within a bin, is reported, not judged: head samples fall
 short of walls and bars because the tracked LEDs sit on a headstage above
 the animal (the maintainer's rule, G-157). Samples outside the outline or
 room are a tracking measure, reported by speed, not judged. A verdict of
-"matches" needs a stated fact (a size, or the authors' bars). All ten
-match:
+"matches" needs a stated fact (a size, or the authors' bars). A room is
+judged as an outline is, per face (the 95th percentile of the samples
+nearest a face more than one bin past it is a mismatch); the lattice's
+placement is not judged (its bars are tilted, so no bar is vertical, and a
+head held above a bar biases any offset), so its match rests on its stated
+side. Nine of the ten match and the bat's room is a mismatch. Shares are
+over the judged samples (`analysis_epochs`):
 
 | Recording | Verdict | Stated fact (fitted vs stated) | Samples outside | Worst side: no sample within 3 bins (reported) | Outermost samples inside the wall (95th percentile, worst side) |
 | --- | --- | --- | --- | --- | --- |
-| sargolini_000582 | matches | -0.5 %, -2.9 % | 0.02 % | 0 % | 0.9 cm |
-| miniscope_002030 | matches | diameter -0.1 % | 0.03 % | 0 % | 0.1 cm |
-| giocomo_000405 | matches | -8.2 %, -8.0 % | 0 % | 69 % | 7.3 cm |
-| gardner_2022_grid | matches | -2.9 %, -3.3 % | 0 % | 0 % | 3.6 cm |
-| vollan_of | matches | diameter -4.3 %, centre 2.2 % of the radius | 0 % | 31 % | 3.3 cm |
-| kanter_2025 | matches | -2.6 %, -3.4 % | 0 % | 0 % | 1.8 cm |
-| watermaze_10248158 | matches | diameter +1.0 %, centre 2.7 % of the radius | 0.34 % | 0 % | 0.2 units |
-| hc2_ec013_527 | matches | -2.1 %, -3.0 % | 0.01 % | 36 % | 4.1 px |
-| grieves_2020_lattice | matches | side +0.0 % of 97 cm (the file's bars) | 1.0 % (placement tolerance) | 90 % of segments over 25 % unsupported within 4 cm | – |
-| yartsev_bat_demo | matches | `r_lim` against the paper's room: +3.6 %, +0.0 %, -8.0 % | 3.66 % (0.11 % of flight samples) | – | – |
+| sargolini_000582 | matches | -0.1 %, -2.6 % | 0 % | 0 % | 0.8 cm |
+| miniscope_002030 | matches | diameter +0.0 % | 0.05 % | 0 % | 0.1 cm |
+| giocomo_000405 | matches | -6.9 %, -6.3 % | 0 % | 71 % | 7.2 cm |
+| gardner_2022_grid | matches | -1.9 %, -2.4 % | 0 % | 0 % | 3.7 cm |
+| vollan_of | matches | diameter -4.0 %, centre 2.2 % of the radius | 0 % | 31 % | 3.3 cm |
+| kanter_2025 | matches | -2.1 %, -2.3 % | 0 % | 0 % | 1.9 cm |
+| watermaze_10248158 | matches | diameter +0.2 %, centre 0.9 % of the radius | 0.34 % | 0 % | 0.2 units |
+| hc2_ec013_527 | matches | +0.0 %, -0.8 % | 0.00 % | 48 % | 3.7 px |
+| grieves_2020_lattice | matches | side +0.0 % of 97 cm (the file's bars); placement not judged | 1.0 % (placement tolerance) | every bar segment is shorter than a judged stretch; the worst has no head sample within 4 cm (reported) | – |
+| yartsev_bat_demo | mismatch | `r_lim` against the paper's room: +3.6 %, +0.0 %, -8.0 %; but 17 of the 57 flight samples nearest the y-low face lie 1.4 m past it (95th percentile 1.41 m, limit 0.2 m) | 0.11 % of flight samples (3.66 % of all) | – | – |
 
-Before the rule the four (000405, Vollan's circle, hc-2's platform and the
-lattice) were mismatches on support alone: the tracked head keeps 3-7 cm
-off the walls of the first three and a median 6.0 cm off the lattice's
-bars, while every stated size fits within 15 %. The checks that remain
-(15 % and one bin past a wall) were not tuned to these recordings, and
-how sensitive they are is not measured here (G-157). In
-the faithful-arenas round nine of the ten passed and the bat's room was a
-mismatch on its 3.7 % of samples outside `r_lim`; that share is now a room
-measure (G-025), and the room matches on its stated sides.
+The residuals moved by up to 2 points from the faithful-arenas round: the
+stated shapes are now placed after a radial trim of the samples (the
+farthest 0.4 % from their median) instead of a per-axis one, which kept
+glitches off a diagonal. Before the support rule the four (000405,
+Vollan's circle, hc-2's platform and the lattice) were mismatches on
+support alone: the tracked head keeps 3-7 cm off the walls of the first
+three and a median 6.0 cm off the lattice's bars, while every stated size
+fits within 15 %. The checks that remain (15 % and one bin past a wall or
+face) were not tuned to these recordings, and how sensitive they are is
+not measured here (G-157). In the faithful-arenas round the bat's room was
+a mismatch on its 3.7 % of samples outside `r_lim`, then a match on its
+stated sides once that share became a room measure (G-025); judged per
+face on the flight samples, it is a mismatch again, on the flights that
+reach the perch beyond the y-low wall.
 
 The lattice's `track_width` is a placement tolerance chosen from the
 samples, 2 x the head's 99th percentile distance from a bar (30.8 cm), not

@@ -599,6 +599,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   room (median 2.36 m against 2.18 m on the visited voxels; chance 2.56 and
   2.64 m): 14 % of the room's voxels are visited in flight, and the uniform
   prior covers the rest.
+- More evidence (review round): a room is now judged as an outline is, per
+  face (`_geometry.judge_declared`: each judged sample assigned to the face
+  it lies farthest past, inside the nearest; the 95th percentile of a
+  face's samples past it more than one bin is a mismatch). On the flight
+  samples, 57 are nearest the y-low face and 17 of them lie 1.4 m past it,
+  at the perch beyond `r_lim`, so that face's 95th percentile is 1.41 m
+  against a 0.2 m limit: the room is a mismatch. The sizes still match
+  (x +3.6 %, y +0.0 %, z -8.0 %).
 
 ## G-026: The figure-8's linearized position wraps around
 
@@ -2284,6 +2292,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   and arms of 64.9-75.8 cm (-11 %, kept). 001845's W-maze (base 91.6 cm,
   arms 80.4-93.9 cm) is refused for its thinly sampled base (80 % of a base
   segment has no sample within a bin in 123 s of pose, G-116), not its size.
+  With support judged per straight stretch of 20 bins (review round), the
+  thin part is a short base segment between junctions, reported, and the
+  W-maze is kept (base +14 %, arms +7 %; fidelity: matches).
   Shipley's radial maze agrees: centre to arm end 86.9-95.5 cm against the
   stated 80 cm arm plus a 12.35 cm platform radius (92.35 cm; -6 % to +3 %).
 - Harness workaround: a refused layout stays inferred; a kept one uses the
@@ -2415,6 +2426,15 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   diameter -4.3 %, hc-2 -2.1 % and -3.0 %, the lattice's side +0.0 % of the
   stated 97 cm with the authors' bars), and all ten declared arenas and
   3-D environments match.
+- More evidence (review round): the stated shapes are now placed after a
+  radial trim of the samples, and the residuals are 000405 -6.9 % and
+  -6.3 %, Vollan's diameter -4.0 %, hc-2 +0.0 % and -0.8 %. A room is now
+  judged per face as an outline per side, and the bat's room is a
+  mismatch (G-025), so nine of the ten match. Track support is judged per
+  straight stretch of 20 bins, not per segment, with the 3 bins nearest a
+  free end reported, as for walls; the lattice's segments (16 cm between
+  crossings, below 20 bins) have their support reported, and its placement
+  is not judged (tilted bars; a head above a bar biases any offset).
 - Proposed change: none in neurospatial; in the harness, measure the
   remaining checks' sensitivity on planted misfits (phase 6, rungs 2-3)
 - Status: resolved (harness rule)
