@@ -187,7 +187,7 @@
           -0.08347411770264303,
           -0.2132670691379389
         ],
-        "frame_offset_judged": 0.08306040188093369,
+        "frame_offset_judged": 0.08192124020430137,
         "frame_offset_vertical": null,
         "frame_pieces": 7,
         "frame_min_eigenvalue": 3.0068789145591546,
@@ -196,6 +196,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_spacing": 30.92605583459141,
         "frame_offset_one_step": [
           -0.05451839215659572,
           -0.20216973744948327
@@ -358,7 +359,7 @@
           -0.10696999753406507,
           0.025580600486779695
         ],
-        "frame_offset_judged": 0.10507915542209202,
+        "frame_offset_judged": 0.10478781787011243,
         "frame_offset_vertical": null,
         "frame_pieces": 127,
         "frame_min_eigenvalue": 42.0,
@@ -367,6 +368,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 16,
         "frame_converged": true,
+        "frame_spacing": 1.0,
         "frame_offset_one_step": [
           -0.03467087200645814,
           0.014359038116239627
@@ -415,9 +417,11 @@
       "facts": [
         "the authors' graph as stated"
       ],
-      "unverified": [],
-      "verdict": "matches",
-      "verdict_reason": "on the authors' graph as stated"
+      "unverified": [
+        "the frame offset cannot be read beyond half the corridor spacing (G-160): its 1.5 window is wider than half the 1 spacing between parallel pieces"
+      ],
+      "verdict": "not verified",
+      "verdict_reason": "the frame offset cannot be read beyond half the corridor spacing (G-160): its 1.5 window is wider than half the 1 spacing between parallel pieces (otherwise matches on the authors' graph as stated)"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/rosenberg_labyrinth.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/rosenberg_labyrinth_declared.png"
@@ -904,7 +908,7 @@
           -0.17434211382596523,
           -0.020738566763655993
         ],
-        "frame_offset_judged": 0.12378964824131286,
+        "frame_offset_judged": 0.12455443000393174,
         "frame_offset_vertical": null,
         "frame_pieces": 5,
         "frame_min_eigenvalue": 1.9958539191918658,
@@ -913,6 +917,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 3,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           -0.18842165719767004,
           -0.0060254851053736505
@@ -1171,6 +1176,7 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.0,
           0.0
@@ -1429,7 +1435,7 @@
           0.7603196829169102,
           -0.76761385027317
         ],
-        "frame_offset_judged": 1.0423445661997952,
+        "frame_offset_judged": 1.0416528632260385,
         "frame_offset_vertical": null,
         "frame_pieces": 72,
         "frame_min_eigenvalue": 36.0,
@@ -1438,6 +1444,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 6,
         "frame_converged": true,
+        "frame_spacing": 84.12590661387419,
         "frame_offset_one_step": [
           0.621799992399616,
           -0.5200076245638343
@@ -1612,7 +1619,7 @@
           0.04794153048461778,
           3.220385666343478
         ],
-        "frame_offset_judged": 2.9484887584690638,
+        "frame_offset_judged": 2.9465236111276853,
         "frame_offset_vertical": null,
         "frame_pieces": 3,
         "frame_min_eigenvalue": -2.959929494504145e-16,
@@ -1626,6 +1633,7 @@
         "frame_judged_unconstrained": 1,
         "frame_iterations": 13,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.020099510739626236,
           1.3501483084103332
@@ -1822,7 +1830,7 @@
           0.05522388979620488,
           0.37639289233776635
         ],
-        "frame_offset_judged": 0.12024167688828676,
+        "frame_offset_judged": 0.12024167688828447,
         "frame_offset_vertical": null,
         "frame_pieces": 5,
         "frame_min_eigenvalue": 1.9696550152090886,
@@ -1831,6 +1839,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 5,
         "frame_converged": true,
+        "frame_spacing": 39.18858041009625,
         "frame_offset_one_step": [
           0.05470347650238904,
           0.31396119692836977
@@ -2046,6 +2055,7 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.0,
           0.0
@@ -2276,7 +2286,7 @@
           -0.9083207543603876,
           -0.2616377495818024
         ],
-        "frame_offset_judged": 0.8962442434056931,
+        "frame_offset_judged": 0.8942934844942546,
         "frame_offset_vertical": null,
         "frame_pieces": 5,
         "frame_min_eigenvalue": 2.0015809223280736,
@@ -2285,6 +2295,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_spacing": 31.93153643658181,
         "frame_offset_one_step": [
           -0.7733237846681003,
           -0.1418119016581525
@@ -2404,6 +2415,7 @@
         "frame_judged_unconstrained": 1,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.0
         ],
@@ -2506,7 +2518,7 @@
           -0.00552999748212596,
           0.16377330316672398
         ],
-        "frame_offset_judged": 0.14106018321328054,
+        "frame_offset_judged": 0.14173457281139457,
         "frame_offset_vertical": null,
         "frame_pieces": 72,
         "frame_min_eigenvalue": 27.817963972081646,
@@ -2515,6 +2527,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 3,
         "frame_converged": true,
+        "frame_spacing": 478.2203242100798,
         "frame_offset_one_step": [
           -0.0008271783724739722,
           0.15287917743904664
@@ -2670,7 +2683,7 @@
           4.639210895118046,
           2.228704637407118
         ],
-        "frame_offset_judged": 9.38247467601516,
+        "frame_offset_judged": 9.379747656857377,
         "frame_offset_vertical": 2.228704637407118,
         "frame_pieces": 738,
         "frame_min_eigenvalue": 481.99999999999994,
@@ -2679,6 +2692,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 22,
         "frame_converged": true,
+        "frame_spacing": 16.166666666666643,
         "frame_offset_one_step": [
           -1.4104933399554818,
           0.6000610349755885,
@@ -2737,10 +2751,11 @@
         "the authors' bars (file) as stated"
       ],
       "unverified": [
-        "the frame offset depends on the estimator (G-160): 1.52 in one step, 9.38 refitted, over 792 and 738 pieces; limit 1 bin, 4"
+        "the frame offset depends on the estimator (G-160): 1.52 in one step, 9.38 refitted, over 792 and 738 pieces; limit 1 bin, 4",
+        "the frame offset cannot be read beyond half the corridor spacing (G-160): its 12 window is wider than half the 16.2 spacing between parallel pieces"
       ],
       "verdict": "not verified",
-      "verdict_reason": "the frame offset depends on the estimator (G-160): 1.52 in one step, 9.38 refitted, over 792 and 738 pieces; limit 1 bin, 4 (otherwise matches on lattice_side +0% of the stated; the authors' bars (file) as stated)"
+      "verdict_reason": "the frame offset depends on the estimator (G-160): 1.52 in one step, 9.38 refitted, over 792 and 738 pieces; limit 1 bin, 4; the frame offset cannot be read beyond half the corridor spacing (G-160): its 12 window is wider than half the 16.2 spacing between parallel pieces (otherwise matches on lattice_side +0% of the stated; the authors' bars (file) as stated)"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grieves_2020_lattice.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grieves_2020_lattice_declared.png"
@@ -2986,7 +3001,7 @@
           0.9425522777677333,
           -2.0703003247355842
         ],
-        "frame_offset_judged": 1.585677772904415,
+        "frame_offset_judged": 1.584342965143578,
         "frame_offset_vertical": null,
         "frame_pieces": 8,
         "frame_min_eigenvalue": 3.775352185390097,
@@ -2995,6 +3010,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 7,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           1.2081790130265713,
           -1.1198667197076229
@@ -3150,6 +3166,7 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.0,
           0.0
@@ -3289,7 +3306,7 @@
           -0.5662159639813285,
           -0.5439571411303517
         ],
-        "frame_offset_judged": 0.5669161496851914,
+        "frame_offset_judged": 0.566209700401785,
         "frame_offset_vertical": null,
         "frame_pieces": 9,
         "frame_min_eigenvalue": 4.388767049999681,
@@ -3298,6 +3315,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_spacing": 91.71725492401572,
         "frame_offset_one_step": [
           -0.47309326459459516,
           -0.5074314352714187
@@ -3456,7 +3474,7 @@
           -0.0004207672889326654,
           -0.08826361856976568
         ],
-        "frame_offset_judged": 0.0050432803520628205,
+        "frame_offset_judged": 0.005043280352057103,
         "frame_offset_vertical": null,
         "frame_pieces": 5,
         "frame_min_eigenvalue": 1.0927282046811764,
@@ -3470,6 +3488,7 @@
         "frame_judged_unconstrained": 1,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_spacing": 41.346310072108594,
         "frame_offset_one_step": [
           -0.0005054841984946504,
           -0.10603453657756969
@@ -3579,7 +3598,7 @@
           0.17270890209351378,
           -0.06799115772170995
         ],
-        "frame_offset_judged": 0.05312715873968803,
+        "frame_offset_judged": 0.054303645288298216,
         "frame_offset_vertical": null,
         "frame_pieces": 9,
         "frame_min_eigenvalue": 4.043483045075705,
@@ -3588,6 +3607,7 @@
         "frame_judged_unconstrained": 0,
         "frame_iterations": 4,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.14496657177630431,
           -0.08007056068023972
@@ -3798,6 +3818,7 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.0,
           0.0
@@ -4008,6 +4029,7 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.0,
           0.0
@@ -4157,6 +4179,7 @@
         "frame_judged_unconstrained": 2,
         "frame_iterations": 1,
         "frame_converged": true,
+        "frame_spacing": Infinity,
         "frame_offset_one_step": [
           0.0,
           0.0
@@ -4281,7 +4304,7 @@
           -0.00024311185629035233,
           0.003173926716943914
         ],
-        "frame_offset_judged": 8.635087148983255e-05,
+        "frame_offset_judged": 8.63508714938415e-05,
         "frame_offset_vertical": null,
         "frame_pieces": 5,
         "frame_min_eigenvalue": 1.9503430286063463,
@@ -4295,6 +4318,7 @@
         "frame_judged_unconstrained": 1,
         "frame_iterations": 2,
         "frame_converged": true,
+        "frame_spacing": 47.4061970194454,
         "frame_offset_one_step": [
           -0.0002431118562906585,
           0.0031739267169479113
