@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -82,7 +83,18 @@ def test_read_pose_operation_reports_nan_share(pose_recording):
     assert outcome.summary["keypoint"] == "tail"
 
 
-def test_read_pose_operation_is_na_without_pose(pose_recording, tmp_path):
+def test_read_pose_operation_feeds_rate_maps_with_spikes(pose_recording):
+    rng = np.random.default_rng(1)
+    duration = (N_SAMPLES - 1) / 30.0
+    spikes = tuple(np.sort(rng.uniform(0.0, duration, 200)) for _ in range(2))
+    rec = replace(pose_recording, spike_times=spikes, unit_ids=np.arange(2))
+    outcome = read_pose_operation(rec, {})
+    assert outcome.status == "ok"
+    assert outcome.summary["fed"] == "compute_spatial_rates"
+    assert outcome.summary["nan_share_tail"] == pytest.approx(NAN_SHARE, abs=0.01)
+
+
+def test_read_pose_operation_is_na_without_pose(tmp_path):
     path = tmp_path / "empty.nwb"
     nwbfile = pynwb.NWBFile(
         session_description="no pose",
