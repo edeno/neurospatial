@@ -22,8 +22,10 @@ from neurospatial.datasets._errors import REFUSING_CHECKS
 
 if TYPE_CHECKING:
     import pandas as pd
+    from matplotlib.figure import Figure
 
     from neurospatial import Environment, Intervals
+    from neurospatial.animation import Animation
 
 __all__ = ["Conversion", "Provenance", "Recording"]
 
@@ -669,6 +671,66 @@ class Recording(ReadOnlyArraysMixin):
         from neurospatial.datasets._summary import summary_text
 
         return summary_text(self)
+
+    def plot_overview(self, *, fig: Figure | None = None) -> Figure:
+        """Draw six panels that show the session at a glance.
+
+        The environment with the path, occupancy (gray: never visited), the
+        speed histogram with ``params["min_speed"]`` marked, a head-direction
+        polar histogram beside heading minus direction of travel, units per
+        brain region with spikes per unit, and the first 60 s of position
+        with the spike raster. A panel the dataset has no data for says "not
+        in this dataset". This is not ``plot``: the rules fix ``plot`` to one
+        Axes.
+
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure, optional
+            An empty figure to draw into; a new one when None.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+        """
+        from neurospatial.datasets._overview import plot_overview
+
+        return plot_overview(self, fig)
+
+    def animation(
+        self,
+        *,
+        time_range: tuple[float, float] | None = None,
+        trail_length: int | None = None,
+    ) -> Animation:
+        """Build an interactive or movie scene of the session.
+
+        Occupancy of the whole session over the environment, with the path,
+        headings, spike raster, events and epochs of the window on top.
+        Open it with ``.show(backend="fastplotlib")`` or write a movie with
+        ``.export("session.mp4", time_range=(0, 10), fps=10)``.
+
+        Parameters
+        ----------
+        time_range : (float, float), optional
+            Seconds [start, stop) on the recording's clock. Default: the
+            first 60 s of tracking, so the first ``show()`` opens fast.
+        trail_length : int, optional
+            Length of the path trail behind the animal, in frames.
+
+        Returns
+        -------
+        neurospatial.animation.Animation
+
+        Raises
+        ------
+        InputError
+            If the session has no positions (it then has ``headings`` and
+            ``spike_times`` to use directly), or ``time_range`` holds fewer
+            than two samples.
+        """
+        from neurospatial.datasets._overview import animation
+
+        return animation(self, time_range=time_range, trail_length=trail_length)
 
     def _repr_html_(self) -> str:
         """The summary text, preformatted, for Jupyter."""

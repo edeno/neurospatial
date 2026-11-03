@@ -36,6 +36,16 @@
   11 or more identical positions, steps faster than a stated speed limit and
   units with no spikes in the analysed epochs are reported in "Watch out"
   with their numbers; no array is changed.
+- `Recording.plot_overview(*, fig=None)` draws six panels: the environment
+  with the path, occupancy (never-visited bins drawn as missing), speed with
+  `params["min_speed"]` marked, head direction beside heading minus direction
+  of travel, units per brain region with spikes per unit, and the first 60 s of
+  position with the spike raster. A panel the dataset has no data for says "not
+  in this dataset". `Recording.animation(*, time_range=None,
+  trail_length=None)` returns an `Animation` of the session: occupancy over the
+  environment with the path, headings, spike raster, events and epochs on top,
+  from the first 60 s of tracking by default, to open with `.show()` or write
+  with `.export()`. A session without positions raises `InputError`.
 
 ### Fixes from the review of the result contract, warnings and simulators
 
