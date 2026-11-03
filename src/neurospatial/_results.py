@@ -1030,10 +1030,14 @@ class ResultMixin:
         """Unit of the result's positions and distances; None when unknown.
 
         The result's ``units`` attribute when it records one (the
-        environment's length unit).
+        environment's length unit), else the ``units`` of the ``env`` it
+        carries (``DecodingResult``, ``PlaceFieldsResult``).
         """
-        units = getattr(self, "units", None)
-        return units if isinstance(units, str) and units else None
+        for owner in (self, getattr(self, "env", None)):
+            units = getattr(owner, "units", None)
+            if isinstance(units, str) and units:
+                return units
+        return None
 
     def _repr_unit(self, key: str) -> str:
         """The unit shown after ``key``'s value; ``""`` for none or unknown."""

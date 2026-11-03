@@ -324,6 +324,28 @@ class TestResultRepr:
             f"Path(length=12.5{shown}, speed=2{speed}, duration=3 s)"
         )
 
+    def test_coordinate_unit_falls_back_to_the_environment(self) -> None:
+        """A result that carries ``env`` and no ``units`` shows ``env.units``."""
+
+        class Decoded(ResultMixin):
+            _repr_units = MappingProxyType({"error": "{units}", "speed": "{units}/s"})
+
+            def __init__(self, env: Environment, units: str | None = None) -> None:
+                self.env = env
+                if units is not None:
+                    self.units = units
+
+            def summary(self) -> dict:
+                return {"error": 4.5, "speed": 2.0}
+
+        positions = np.linspace(0, 9, 10)[:, None]
+        in_cm = Environment.from_samples(positions, bin_size=1.0, units="cm")
+        assert repr(Decoded(in_cm)) == "Decoded(error=4.5 cm, speed=2 cm/s)"
+        # The result's own unit, when it records one, comes first.
+        assert repr(Decoded(in_cm, units="m")) == "Decoded(error=4.5 m, speed=2 m/s)"
+        unknown = Environment.from_samples(positions, bin_size=1.0)
+        assert repr(Decoded(unknown)) == "Decoded(error=4.5, speed=2)"
+
     def test_tuning_peak_location_takes_the_variable_unit(self) -> None:
         from neurospatial.encoding import compute_tuning_curve
 
