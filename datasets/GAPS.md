@@ -267,7 +267,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: warn when the environment has fewer than a handful of bins
   along a dimension (the existing check only fires at one bin or fewer).
 - Status: open
-- More evidence (archive batch): `length_unit_off_by_100` is caught by `Environment.from_samples` on all seven new cm recordings (bin at least the extent), but `segment_by_velocity` finds 0 running segments silently on each (281, 603, 491, 715, 516 and 290 -> 0; 668 -> 1 on the Z-track), and on hafting_2008_nird and olafsdottir_5566548 occupancy and rate maps change without a warning of their own (occupancy 655.6 -> 0.24 s and 1266 -> 0.84 s).
+- More evidence (archive batch): `length_unit_off_by_100` is caught by `Environment.from_samples` on all seven new cm recordings (bin at least the extent), but `segment_by_velocity` finds 0 running segments silently on each (281, 604, 491, 715, 516 and 290 -> 0; 668 -> 1 on the Z-track), and on hafting_2008_nird and olafsdottir_5566548 occupancy and rate maps change without a warning of their own (occupancy 655.6 -> 0.24 s and 1266 -> 0.84 s).
 
 ## G-015: `detect_laps` finds laps on a maze with no loop
 
@@ -334,7 +334,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: warn when a sizeable share of samples sit at exactly the
   same coordinate (or at exactly 0) between moving samples.
 - Status: open
-- More evidence (archive batch): NaN positions as (0, 0) are silent on the water maze (0.29 % of samples), Takigawa (85 %: everything off the tracks), the Z-track (29 %: largest occupancy bin 43.9 -> 291.1 s) and the 3-arm maze, both as NaN -> 0 and as the file's own `xMM = yMM = 0` sentinel (0.20 %). Check 1 (origin share >= 0.1 %) would fire on all four.
+- More evidence (archive batch): NaN positions as (0, 0) are silent on the water maze (0.29 % of samples), Takigawa (85 %: everything off the tracks), the Z-track (29 %: largest occupancy bin 43.9 -> 290.6 s) and the 3-arm maze, both as NaN -> 0 and as the file's own `xMM = yMM = 0` sentinel (0.20 %). Check 1 (origin share >= 0.1 %) would fire on all four.
 
 ## G-018: Replay methods run on one-time-bin events without a warning
 
@@ -438,7 +438,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none
 - Proposed change: undecided (revisit after G-022)
 - Status: open
-- More evidence (archive batch): on the Grieves lattice (24 units, 4 cm bins in 3-D) the median decoding error is 82.7 cm against a geodesic chance of 76.5 cm.
+- More evidence (archive batch): on the Grieves lattice (24 units, 4 cm bins in 3-D) the median decoding error is 82.7 cm against a geodesic chance of 76.8 cm.
 
 ## G-024: Grid and border scores refuse 3-D environments
 
@@ -826,7 +826,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Kind: data-quirk
 - Evidence: the Takigawa extent check took the two 2 m tracks as one span
   (180–240 cm), but the tracks lie side by side in the camera frame and
-  together span 251 cm in x. J16's `headings_span_the_circle` assumed the
+  together span 249 cm in y (each track's own principal-axis extent is 186
+  and 194 cm, G-076). J16's `headings_span_the_circle` assumed the
   file's `head_orientation` would be used as head direction; the loader
   leaves it out (G-072), so the check has nothing to measure.
 - Harness workaround: none (the expectations stay as registered)
@@ -915,14 +916,20 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Operation / step: loader
 - Kind: data-quirk
 - Evidence: in RAT5_SESS1 each track's `cm_per_pixel` (from its 2 m length)
-  is 0.388 and 0.443; the session's `cm_per_pixel` 0.426 is their average.
-  One factor keeps both tracks in one frame but makes track 1 read about
-  10 % long and track 2 about 4 % short. In the record, `RAT1_SESS2_*` and
-  `RAT4_SESS1_*` are byte-identical (same MD5 for both the clusters and the
-  position files), so one of those two sessions is not what its name says.
-- Harness workaround: the loader uses the average and says so
+  is 0.388 and 0.443; the session's `cm_per_pixel` 0.426 is their average,
+  and with it track 1 reads about 10 % long and track 2 about 4 % short.
+  With each track's own factor, the tracks' extents along their principal
+  axes are 186.3 and 194.2 cm (the tracks are not straight, so less than the
+  2 m path), and the two stay at least 32 cm apart, so no 4 cm bin holds
+  both. In the record, `RAT1_SESS2_*` and `RAT4_SESS1_*` are byte-identical
+  (same MD5 for both the clusters and the position files), so one of those
+  two sessions is not what its name says.
+- Harness workaround: the loader converts each track with its own factor and
+  range-checks each track's principal-axis extent (170–205 cm); a first
+  version used the session average
 - Proposed change: none
-- Status: won't fix (data quirk)
+- Status: fixed in the loader (scale); won't fix (the duplicate sessions are
+  the record's)
 
 ## G-077: The water-maze file gives no length unit
 
@@ -950,18 +957,26 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   chance level with `np.linalg.norm`. On open fields the two differ by at
   most about 8 %, but on mazes they do not: on the Olafsdottir Z-track the
   median error is 115 cm (geodesic) against a Euclidean chance of 112 cm,
-  which read as chance; the geodesic chance is 140 cm. The harness now
-  computes chance with `decoding_error(..., metric="geodesic")`. A user
-  writing the same baseline by hand would make the same mistake: nothing
-  in the result says which metric its error used.
-- Harness workaround: none (fixed in the harness)
+  which read as chance; the geodesic chance is 142 cm. The harness now
+  computes chance with `decoding_error(..., metric="geodesic")`, shuffling
+  the true positions within each connected part of the bin graph: a global
+  shuffle on Takigawa's two separate tracks puts 51 % of pairs an infinite
+  path apart (median inf); within each track the chance is 68.3 cm, and the
+  share of cross-part pairs is reported as `chance_frac_disconnected`.
+  Every geodesic chance differs from the old straight-line one when a
+  recording is rerun, open fields included (quantized to bin centres, and
+  8-connected paths up to about 8 % longer than the straight line). A user
+  writing the same baseline by hand would make the same mistakes: nothing in
+  the result says which metric its error used.
+- Harness workaround: none (fixed in the harness; tested on a U-shaped track
+  and on two separate boxes)
 - Proposed change: show the metric next to the error in the decoding
   tutorial, and give a chance-level helper that uses the same metric
 - Status: open
 
 ## G-079: The large-grid warning suggests a smaller bin than the one in use
 
-- Datasets: grieves_2020_lattice (hazard probed by hand)
+- Datasets: grieves_2020_lattice (hazard probed once by hand, not by the driver)
 - Operation / step: env.from_samples, rates.spatial
 - Kind: error-message
 - Evidence: with Grieves' mm positions taken as cm (×10) and `bin_size=4.0`,
@@ -969,9 +984,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   429, 371) (61,753,692 bins). Estimated memory usage: 83863.5 MB … Fix:
   increase bin_size; … For example, use bin_size=2.0". The example is a
   fixed string (`src/neurospatial/layout/helpers/utils.py:412`), here half
-  the bin size in use. The environment itself built in 1.3 s (109,862
-  visited bins, 4.4 GB peak); `compute_spatial_rates` on it then ran for
-  over an hour at 18 GB inside the driver before it was stopped. The
+  the bin size in use. These numbers come from a one-off manual run, not
+  from a committed script: the environment built in 1.3 s (109,862 visited
+  bins, 4.4 GB peak), and in a first driver run, before the hazard was taken
+  out of `HAZARDS`, `compute_spatial_rates` on it ran for over an hour at
+  18 GB before the run was stopped. The
   warning is the only signal of the unit error, which makes it the right
   place to name the likely cause.
 - Harness workaround: the hazard is documented in the loader and left out
@@ -988,14 +1005,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Operation / step: env.from_samples, env.occupancy, rates.spatial, behavior.segment_by_velocity
 - Kind: silent-hazard
 - Evidence: each loader converts pixels with a calibration the source
-  states (390 and 274 pixels per metre, 0.426 cm per pixel). With the pixels
-  kept and called cm, nothing warns on any of the three: the Z-track's
-  environment grows from 556 to 4281 bins (extent 172 → 664 "cm"), the
-  radial maze from 697 to 3488 (177 → 480), the two 2 m tracks from 1000 to
-  3994 (252 → 592); speeds 2.4–3.9 × too high pass the speed gates (running
-  occupancy 1266 → 1702 s, 1350 → 1737 s, 1103 → 1510 s) and median peak
-  rates rise 3–8 × from sparse bins (3.8 → 30.2 Hz, 16.7 → 60.1 Hz,
-  11.7 → 25.3 Hz). The fewer-than-5-bins check (decision 1) cannot see a
+  states (390 and 274 pixels per metre; 0.388 and 0.443 cm per pixel on
+  Takigawa's two tracks). With the pixels kept and called cm, nothing warns
+  on any of the three: the Z-track's environment grows from 556 to 4281
+  bins (extent 172 → 664 "cm"), the radial maze from 697 to 3488
+  (177 → 480), the two 2 m tracks from 952 to 3997 (252 → 592); speeds
+  2.3–3.9 × too high pass the speed gates (running occupancy 1266 → 1702 s,
+  1350 → 1737 s, 1093 → 1510 s) and median peak rates rise 2–8 × from sparse
+  bins (3.8 → 30.2 Hz, 16.7 → 60.1 Hz, 11.3 → 25.3 Hz). The fewer-than-5-bins check (decision 1) cannot see a
   scale error in this direction; only a stated apparatus size can.
 - Harness workaround: none (each loader range-checks its span against the
   apparatus with `checked_span`)
