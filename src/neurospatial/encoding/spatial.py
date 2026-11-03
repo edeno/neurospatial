@@ -279,10 +279,12 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     1
     >>> list(fields.fields_table().columns[:5])
     ['unit_id', 'field', 'n_bins', 'area', 'peak_rate']
-    >>> table = fields.to_dataframe()  # one row per field bin
+    >>> table = fields.to_dataframe()  # one row per bin, labeled by field
     >>> list(table.columns)
-    ['unit_id', 'field', 'bin', 'bin_center_x', 'firing_rate']
-    >>> len(table) == fields.total_bins
+    ['unit_id', 'bin', 'bin_center_x', 'field', 'firing_rate']
+    >>> len(table) == env.n_bins
+    True
+    >>> int(table["field"].notna().sum()) == fields.total_bins
     True
     """
 
@@ -313,6 +315,19 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
                 )
             )
         fields = _owned_field_bins(self.fields, owner="PlaceFieldsResult")
+        every = np.concatenate(fields) if fields else np.empty(0, dtype=np.int64)
+        shared, counts = np.unique(every, return_counts=True)
+        if np.any(counts > 1):
+            raise ValueError(
+                _format_error(
+                    f"PlaceFieldsResult: fields share bin "
+                    f"{int(shared[np.argmax(counts > 1)])}.",
+                    why="Why: detection assigns each bin to at most one field, "
+                    "and to_dataframe() labels each bin with its one field",
+                    fix="pass disjoint fields, each bin listed once, as "
+                    "detect_place_fields returns them",
+                )
+            )
         rate = np.asarray(self.firing_rate, dtype=np.float64)
         n_bins = self.env.n_bins
         if rate.shape != (n_bins,) or any(
@@ -414,42 +429,44 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
     def to_dataframe(self) -> pd.DataFrame:
-        """One row per field bin: which field each bin belongs to, and its rate.
+        """One row per bin: its rate and the field it belongs to, if any.
 
         Returns
         -------
         pandas.DataFrame
-            Columns ``unit_id`` (``<NA>`` without one), ``field`` (0 for the
-            field with the highest peak), ``bin`` (the bin index),
+            One row per bin of the environment, in bin order, with columns
+            ``unit_id`` (``<NA>`` without one), ``bin`` (the bin index),
             ``bin_center_x``, ``bin_center_y``, ... (environment units;
             ``bin_center_distance`` and ``bin_center_angle`` (rad) on a polar
-            environment) and ``firing_rate`` (Hz). Rows follow the fields in
-            order, then each field's bins. No rows when no field was
-            detected. ``df.attrs`` holds ``units`` (per column), ``bandwidth``
-            and ``excluded_reason``. :meth:`fields_table` has one row per
-            field.
+            environment), ``field`` (nullable integer: 0 for the field with
+            the highest peak, ``<NA>`` for a bin outside every field) and
+            ``firing_rate`` (Hz; NaN where the map is unsupported). One
+            ``field`` column suffices because fields are disjoint: detection
+            assigns each bin to at most one field, and a coalescent field
+            (``detect_subfields``) replaces the region it was found in rather
+            than nesting inside it. Select ``df[df["field"] == k]`` for the
+            bins of field ``k``. ``df.attrs`` holds ``units`` (per column),
+            ``bandwidth`` and ``excluded_reason``. :meth:`fields_table` has
+            one row per field.
         """
         import pandas as pd
 
         from neurospatial._results import _coord_dim_names
 
         names = [f"bin_center_{name}" for name in _coord_dim_names(self.env)]
-        bins = (
-            np.concatenate(self.fields) if self.fields else np.empty(0, dtype=np.int64)
-        )
-        field = np.repeat(
-            np.arange(len(self.fields), dtype=np.int64),
-            [len(f) for f in self.fields],
-        )
-        centers = np.asarray(self.env.bin_centers, dtype=np.float64)[bins]
-        columns = ["unit_id", "field", "bin", *names, "firing_rate"]
+        n_bins = self.env.n_bins
+        field = pd.array([pd.NA] * n_bins, dtype="Int64")
+        for k, bins in enumerate(self.fields):
+            field[bins] = k
+        centers = np.asarray(self.env.bin_centers, dtype=np.float64)
+        columns = ["unit_id", "bin", *names, "field", "firing_rate"]
         df = pd.DataFrame(
             {
-                "unit_id": pd.Series([self._table_unit_id()] * len(bins), dtype=object),
-                "field": field,
-                "bin": bins,
+                "unit_id": pd.Series([self._table_unit_id()] * n_bins, dtype=object),
+                "bin": np.arange(n_bins, dtype=np.int64),
                 **{name: centers[:, i] for i, name in enumerate(names)},
-                "firing_rate": self.firing_rate[bins],
+                "field": field,
+                "firing_rate": self.firing_rate.copy(),
             },
             columns=columns,
         )
@@ -473,25 +490,34 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             (Hz, mean over the field's bins weighted by their measure) and
             ``centroid_x``, ``centroid_y``, ... (the rate-weighted centroid,
             :func:`~neurospatial.encoding.rate_map_centroid`, in environment
-            units; on a track, the geodesic centroid, a field bin, because the
-            mean of a field around a corner lies off the track; on a polar
-            environment ``centroid_distance`` and ``centroid_angle`` (rad) of
-            the geodesic centroid, because averaging angles and distances is
-            not a position). No
+            units). On a track, where the mean of a field around a corner
+            lies off the track, the centroid is the rate-weighted mean
+            distance along the track (``env.to_linear``), mapped back onto it
+            (``env.linear_to_nd``); a field over a branch point or an
+            ``edge_spacing`` gap has no such mean, and its centroid is the
+            geodesic one, a field bin. On a polar environment the columns are
+            ``centroid_distance`` and ``centroid_angle`` (rad) of the geodesic
+            centroid, because averaging angles and distances is not a
+            position. No
             rows when no field was detected. ``df.attrs`` holds
             ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
-            :meth:`to_dataframe` has one row per field bin.
+            :meth:`to_dataframe` has one row per bin, labeled by field.
         """
         import pandas as pd
 
         from neurospatial._results import _coord_dim_names
-        from neurospatial.encoding._field_metrics import field_size, rate_map_centroid
+        from neurospatial.encoding._field_metrics import (
+            _track_centroid,
+            field_size,
+            rate_map_centroid,
+        )
 
         measures = np.asarray(self.env.bin_sizes, dtype=np.float64)
         names = [f"centroid_{name}" for name in _coord_dim_names(self.env)]
-        # Averaging (distance, angle) bin centers is not a position, and the
-        # mean of a field around a track's corner is off the track: there the
-        # centroid is the field bin nearest the rest (the geodesic one).
+        # Averaging (distance, angle) bin centers is not a position: a polar
+        # centroid is the field bin nearest the rest (the geodesic one). The
+        # mean of a field around a track's corner is off the track, so a
+        # track's centroid is the mean distance along it, mapped back onto it.
         method: Literal["euclidean", "geodesic"] = (
             "geodesic"
             if self.env.coordinate_kind == "polar" or self.env.is_linearized_track
@@ -500,9 +526,15 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         rows = []
         for k, bins in enumerate(self.fields):
             rates = self.firing_rate[bins]
-            centroid = rate_map_centroid(
-                self.env, self.firing_rate, bins, method=method
+            centroid = (
+                _track_centroid(self.env, self.firing_rate, bins)
+                if self.env.is_linearized_track
+                else None
             )
+            if centroid is None:
+                centroid = rate_map_centroid(
+                    self.env, self.firing_rate, bins, method=method
+                )
             rows.append(
                 {
                     "unit_id": self._table_unit_id(),
@@ -4019,15 +4051,17 @@ def _spatial_rate_maps(
         )
         return maps(glm_firing_rates, occupancy, fit)
 
+    # The inputs are valid, so a bandwidth below a bin or a units-free
+    # default is announced here rather than ahead of an input error, and
+    # also for a population with no units: the bandwidth is wrong either way.
+    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
+
     if n_neurons == 0:
         empty = _to_backend(
             np.empty((0, env.n_bins), dtype=dtype), resolved_backend, dtype=dtype
         )
         return maps(empty, occupancy, None)
 
-    # The inputs are valid, so a bandwidth below a bin or a units-free
-    # default is announced here rather than ahead of an input error.
-    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
     # Apply batch smoothing to compute firing rates
     # When backend="jax", uses JAX for the core rate computation
     firing_rates = smooth_rate_maps_batch(
@@ -6072,6 +6106,8 @@ def detect_place_fields(
         if bandwidth is None:
             bandwidth = recorded
         elif bandwidth != recorded:
+            # glm takes no bandwidth, so its fix names a kernel method.
+            glm = firing_rate.bandwidth is None
             raise ValueError(
                 _format_error(
                     f"detect_place_fields got bandwidth={bandwidth!r}, but the "
@@ -6079,9 +6115,21 @@ def detect_place_fields(
                     f"bandwidth={firing_rate.bandwidth!r} "
                     f"(method={firing_rate.method!r}).",
                     why="Why: the bandwidth sets the smallest field one noisy "
-                    "bin makes after smoothing, so it must be the map's own",
-                    fix="drop bandwidth= to use the result's, or recompute the "
-                    "rates with the bandwidth you want",
+                    "bin makes after smoothing, so it must be the map's own"
+                    + (
+                        "; a glm map has no kernel, so its fields are detected "
+                        "at bandwidth 0"
+                        if glm
+                        else ""
+                    ),
+                    fix="drop bandwidth= to use the result's"
+                    + (
+                        "; to choose a smoothing scale, compute the rates with a "
+                        "kernel method, compute_spatial_rate(..., "
+                        f"method='diffusion_kde', bandwidth={bandwidth!r})"
+                        if glm
+                        else ", or recompute the rates with the bandwidth you want"
+                    ),
                 )
             )
         rates = np.atleast_2d(
@@ -7832,6 +7880,8 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         """
         import pandas as pd
 
+        # Refuse None before the percentile and the correction use alpha.
+        refuse_none_thresholds(alpha=alpha, min_spatial_info=min_spatial_info)
         level = alpha
         percentile = 100.0 * (1.0 - level)
         with warnings.catch_warnings():

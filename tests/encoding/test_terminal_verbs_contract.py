@@ -221,6 +221,31 @@ def test_single_unit_to_dataframe_uses_unit_id_when_set(spatial_batch):
     assert (df["unit_id"] == spatial_batch.unit_ids[1]).all()
 
 
+def test_place_fields_to_dataframe_is_dense():
+    """Detected fields export one row per bin, labeled by field, not field bins only."""
+    from neurospatial.encoding import detect_place_fields
+
+    env = Environment.from_samples(
+        np.arange(0.0, 101.0, 2.0)[:, None], bin_size=2.0, units="cm"
+    )
+    x = env.bin_centers[:, 0]
+    rate = 8.0 * np.exp(-((x - 25.0) ** 2) / 50.0) + 6.0 * np.exp(
+        -((x - 75.0) ** 2) / 50.0
+    )
+    fields = detect_place_fields(env, rate, bandwidth=0.0)
+    assert fields.n_fields == 2
+    df = fields.to_dataframe()
+    assert len(df) == env.n_bins
+    np.testing.assert_array_equal(df["bin"], np.arange(env.n_bins))
+    assert df["unit_id"].isna().all()
+    # Field 0 holds the higher peak, at 25 cm; bins between the fields have none.
+    labels = df["field"].to_numpy(dtype=float, na_value=np.nan)
+    np.testing.assert_array_equal(labels[np.abs(x - 25.0) < 2], 0)
+    np.testing.assert_array_equal(labels[np.abs(x - 75.0) < 2], 1)
+    assert np.isnan(labels[np.abs(x - 50.0) < 2]).all()
+    assert df["field"].notna().sum() == fields.total_bins
+
+
 # ---------------------------------------------------------------------------
 # Every public result class
 # ---------------------------------------------------------------------------

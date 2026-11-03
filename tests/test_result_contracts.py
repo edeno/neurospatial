@@ -151,8 +151,8 @@ def test_detect_place_fields_accepts_rate_result(open_field, open_field_rates):
     plt.close(ax.figure)
 
 
-def test_place_fields_dataframe_has_one_row_per_field_bin(open_field, open_field_rates):
-    """to_dataframe() is the tidy (unit, field, bin) table of the contract."""
+def test_place_fields_dataframe_has_one_row_per_bin(open_field, open_field_rates):
+    """to_dataframe() is the dense (unit, bin) table, each bin labeled by field."""
     s, rates = open_field, open_field_rates
     fields = next(
         f
@@ -162,21 +162,28 @@ def test_place_fields_dataframe_has_one_row_per_field_bin(open_field, open_field
     table = fields.to_dataframe()
     assert list(table.columns) == [
         "unit_id",
-        "field",
         "bin",
         "bin_center_x",
         "bin_center_y",
+        "field",
         "firing_rate",
     ]
-    assert len(table) == fields.total_bins
+    assert len(table) == s.env.n_bins
+    np.testing.assert_array_equal(table["bin"], np.arange(s.env.n_bins))
     assert (table["unit_id"] == fields.unit_id).all()
+    np.testing.assert_array_equal(
+        table[["bin_center_x", "bin_center_y"]], s.env.bin_centers
+    )
+    np.testing.assert_array_equal(table["firing_rate"], fields.firing_rate)
+    # Each field's bins carry its index; every other bin is outside a field.
+    expected = np.full(s.env.n_bins, -1)
     for k, bins in enumerate(fields):
-        rows = table[table["field"] == k]
-        np.testing.assert_array_equal(rows["bin"], bins)
-        np.testing.assert_array_equal(
-            rows[["bin_center_x", "bin_center_y"]], s.env.bin_centers[bins]
-        )
-        np.testing.assert_array_equal(rows["firing_rate"], fields.firing_rate[bins])
+        expected[bins] = k
+    assert table["field"].dtype == "Int64"
+    np.testing.assert_array_equal(table["field"].isna(), expected < 0)
+    np.testing.assert_array_equal(
+        table["field"].dropna().to_numpy(int), expected[expected >= 0]
+    )
     assert table.attrs["units"]["firing_rate"] == "Hz"
     assert table.attrs["units"]["bin_center_x"] == s.env.units
     # One row per field in the field table, whose bin counts match.
@@ -186,7 +193,8 @@ def test_place_fields_dataframe_has_one_row_per_field_bin(open_field, open_field
     empty = encoding.detect_place_fields(
         s.env, np.zeros(s.env.n_bins), bandwidth=0.0
     ).to_dataframe()
-    assert empty.empty
+    assert len(empty) == s.env.n_bins
+    assert empty["field"].isna().all()
     assert list(empty.columns) == list(table.columns)
 
 
@@ -237,16 +245,35 @@ def test_place_fields_tables_on_a_polar_environment():
     )
 
 
-def test_track_field_centroid_stays_on_the_track():
-    """A field around a track's corner has a centroid on the track, not inside it."""
+def test_straight_track_field_centroid_is_the_rate_weighted_mean():
+    """On a straight track the centroid is the rate-weighted mean x, not a bin."""
+    from neurospatial import Environment
+
+    env = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [120.0, 0.0]], bin_size=10.0, units="cm"
+    )
+    x = env.bin_centers[:, 0]
+    rate = 20 * np.exp(-0.5 * ((x - 58.0) / 8.0) ** 2)
+    fields = encoding.detect_place_fields(env, rate, bandwidth=0.0)
+    assert fields.n_fields == 1
+    bins = fields.fields[0]
+    centroid = fields.fields_table()[["centroid_x", "centroid_y"]].to_numpy()[0]
+    # Equal 10 cm bins: the weight of each bin is its rate.
+    expected_x = np.sum(x[bins] * rate[bins]) / np.sum(rate[bins])
+    assert expected_x == pytest.approx(57.2, abs=0.05)  # between bin centers
+    np.testing.assert_allclose(centroid, [expected_x, 0.0], atol=1e-9)
+
+
+def test_track_field_centroid_on_a_corner_stays_on_the_track():
+    """A field around a corner has its centroid on the track, not inside it."""
     from neurospatial import Environment
 
     env = Environment.linear_track(
         node_positions=[(0, 0), (100, 0), (100, 60)], bin_size=2.0, units="cm"
     )
     linear = env.to_linear(env.bin_centers)
-    # A field centered on the corner (linear position 100 cm), spanning both arms.
-    rate = 8 * np.exp(-((linear - 100) ** 2) / (2 * 8**2))
+    # A field on the corner (linear position 100 cm), spanning both arms.
+    rate = 8 * np.exp(-((linear - 102.4) ** 2) / (2 * 8**2))
     fields = encoding.detect_place_fields(env, rate, bandwidth=0.0)
     assert fields.n_fields == 1
     bins = fields.fields[0]
@@ -254,13 +281,54 @@ def test_track_field_centroid_stays_on_the_track():
     assert (centers[:, 1] > 1.0).any()  # bins on the second arm
     assert (centers[:, 0] < 99.0).any()  # and on the first
     centroid = fields.fields_table()[["centroid_x", "centroid_y"]].to_numpy()[0]
-    # The Euclidean mean of the two arms lies inside the corner, off the track;
-    # the centroid is the field bin with the least rate-weighted distance to
-    # the others along the track (one path, so |difference in linear position|).
-    distance = np.abs(linear[bins][:, None] - linear[bins][None, :])
-    medoid = bins[np.argmin(distance @ rate[bins])]
+    # Equal 2 cm bins. The rate-weighted mean distance along the track, from
+    # the start, is past the corner, on the second arm: x = 100, y = mean - 100.
+    mean_linear = np.sum(linear[bins] * rate[bins]) / np.sum(rate[bins])
+    assert mean_linear > 100.0
+    np.testing.assert_allclose(centroid, [100.0, mean_linear - 100.0], atol=1e-9)
+    # Not snapped to a bin center: the bins on the second arm sit at odd y.
+    assert np.min(np.linalg.norm(env.bin_centers - centroid, axis=1)) > 0.1
+
+
+def test_track_field_centroid_across_a_junction_is_a_field_bin():
+    """A field over a T junction has no mean distance along the track.
+
+    Its bins lie on three arms, which the linear coordinate puts in separate
+    stretches; the centroid is then the field bin with the least rate-weighted
+    track distance to the others.
+    """
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    graph.add_node(1, pos=(0.0, 40.0))
+    graph.add_node(2, pos=(-30.0, 40.0))
+    graph.add_node(3, pos=(30.0, 40.0))
+    graph.add_edge(0, 1, distance=40.0)
+    graph.add_edge(1, 2, distance=30.0)
+    graph.add_edge(1, 3, distance=30.0)
+    env = Environment.from_graph(
+        graph, edge_order=[(0, 1), (1, 2), (1, 3)], bin_size=2.0, units="cm"
+    )
+    junction = np.array([0.0, 40.0])
+    distance = np.linalg.norm(env.bin_centers - junction, axis=1)
+    rate = 8 * np.exp(-(distance**2) / (2 * 4**2))
+    fields = encoding.detect_place_fields(env, rate, bandwidth=0.0)
+    assert fields.n_fields == 1
+    bins = fields.fields[0]
+    centers = env.bin_centers[bins]
+    assert (centers[:, 0] < -1).any()  # the left arm
+    assert (centers[:, 0] > 1).any()  # the right arm
+    assert (centers[:, 1] < 39).any()  # and the stem
+    centroid = fields.fields_table()[["centroid_x", "centroid_y"]].to_numpy()[0]
+    # Every pair of field bins is joined through the junction, so the track
+    # distance between them is the sum of their distances to it.
+    track = distance[bins][:, None] + distance[bins][None, :]
+    np.fill_diagonal(track, 0.0)
+    medoid = bins[np.argmin(track @ rate[bins])]
     np.testing.assert_allclose(centroid, env.bin_centers[medoid])
-    assert np.min(np.linalg.norm(env.bin_centers - centroid, axis=1)) < 1e-9
 
 
 def test_detect_place_fields_array_needs_bandwidth(open_field, open_field_rates):
@@ -283,8 +351,18 @@ def test_detect_place_fields_glm_refuses_a_bandwidth(open_field):
     zero = encoding.detect_place_fields(s.env, glm, bandwidth=0.0)
     assert default.bandwidth == zero.bandwidth == 0.0
     assert default.n_fields == zero.n_fields
-    with pytest.raises(ValueError, match=r"estimated with bandwidth=None"):
+    with pytest.raises(ValueError, match=r"estimated with bandwidth=None") as caught:
         encoding.detect_place_fields(s.env, glm, bandwidth=50.0)
+    message = str(caught.value)
+    # glm takes no bandwidth, so the fix cannot be to refit glm with one.
+    assert "has no kernel" in message
+    assert "bandwidth 0" in message
+    assert "method='diffusion_kde'" in message
+    assert "recompute the rates with the bandwidth you want" not in message
+    with pytest.raises(ValueError, match=r"cannot be combined with method='glm'"):
+        encoding.compute_spatial_rate(
+            s.env, s.spike_times[0], s.times, s.positions, method="glm", bandwidth=5.0
+        )
 
 
 def test_binned_rates_give_unsmoothed_fields(open_field):

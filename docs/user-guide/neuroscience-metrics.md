@@ -44,7 +44,7 @@ fields = detect_place_fields(env, rates,
 # fields[0] = np.array([10, 11, 12, 23, 24, 25])  # Bin indices for field 1
 # fields[1] = np.array([45, 46, 56, 57])          # Bin indices for field 2
 fields.fields_table()  # one row per field: area, peak_rate, mean_rate, centroid
-fields.to_dataframe()  # one row per field bin: field, bin, bin center, firing_rate
+fields.to_dataframe()  # one row per bin: bin center, field (<NA> outside fields), firing_rate
 fields.plot()          # the rate map with each field's bins marked
 ```
 
