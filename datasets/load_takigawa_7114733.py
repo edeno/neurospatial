@@ -20,11 +20,14 @@ What the loader converts:
   camera's own timestamps, 0.028-0.053 s apart). Only samples on a track
   (``position.linear(k).cropped_indices``) are kept; the rest of the session
   (rest pot, transfers) is NaN.
-- Pixels to cm with ``position.cm_per_pixel`` (0.426), the average of the
-  two tracks' own calibrations (0.388 and 0.443, from each track's 2 m
-  length and mask). One factor keeps the two tracks in one consistent
-  frame; with it, distances on track 1 read about 10 % long and on track 2
-  about 4 % short. The span is range checked.
+- Pixels to cm with each track's own ``position.linear(k).cm_per_pixel``
+  (0.388 and 0.443, from the track's 2 m length and mask), not the
+  session's ``cm_per_pixel`` (0.426, their average), which makes track 1
+  read about 10 % long and track 2 about 4 % short. The two tracks are
+  then in one frame only approximately; they stay at least 32 cm apart, so
+  no bin holds both. Each track's extent along its principal axis is range
+  checked (170-205 cm; the tracks are not straight, so it is less than the
+  2 m path length).
 - Spike times (s, the same Neuralynx clock) are split by ``spike_id``;
   ``unit_ids`` are ``id_conversion``'s 1000 x tetrode + cluster.
 
@@ -46,7 +49,6 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
-    checked_span,
     intersect_intervals,
     validate_recording,
 )
@@ -80,7 +82,7 @@ _FILES = {
     "RAT5_SESS1_extracted_clusters.mat": "c8b486790c26a871a1ef34377805f8672c48e4ff8c41c44616f1f1c2a5291b36",
     "RAT5_SESS1_extracted_position.mat": "85472dfc7b3c9c560e1c951e9f81759c7da221c948b01ece7d1437eb50bdcb46",
 }
-_SPAN_CM = (180.0, 300.0)
+_TRACK_EXTENT_CM = (170.0, 205.0)
 _TRACK_M = 2.0
 
 
@@ -104,18 +106,25 @@ def load(cache: Path | None = None) -> Recording:
     clean = position.clean
     times = np.asarray(clean.t, dtype=float)
     pixels = np.column_stack([clean.x, clean.y]).astype(float)
-    cm_per_pixel = float(position.cm_per_pixel)
     positions = np.full_like(pixels, np.nan)
-    epochs, track_factors = {}, []
+    epochs, factors, extents = {}, [], []
     for k, track in enumerate(position.linear, start=1):
         if float(track.length) != _TRACK_M:
             msg = f"track {k} length {track.length} m, not the README's 2 m"
             raise ValueError(msg)
         on = np.asarray(track.cropped_indices, dtype=int) - 1
-        positions[on] = pixels[on] * cm_per_pixel
+        factor = float(track.cm_per_pixel)
+        positions[on] = pixels[on] * factor
+        extent = principal_extent(positions[on])
+        if not _TRACK_EXTENT_CM[0] <= extent <= _TRACK_EXTENT_CM[1]:
+            msg = (
+                f"track {k} spans {extent:.1f} cm along its principal axis, outside"
+                f" {_TRACK_EXTENT_CM}; recheck cm_per_pixel"
+            )
+            raise ValueError(msg)
         epochs[f"track_{k}"] = np.array([[times[on[0]], times[on[-1]]]])
-        track_factors.append(float(track.cm_per_pixel))
-    span = checked_span(positions, *_SPAN_CM)
+        factors.append(factor)
+        extents.append(extent)
     interpolated = np.zeros(len(times), dtype=bool)
     interpolated[np.asarray(position.interpolated_indices, dtype=int) - 1] = True
     on_track = np.isfinite(positions).all(axis=1)
@@ -138,6 +147,7 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=spikes,
         unit_ids=conversion[:, 1],
         epochs=epochs,
+        geometry={"cm_per_pixel_per_track": factors},
         params={
             "bin_size": 4.0,
             "min_speed": 5.0,
@@ -147,9 +157,12 @@ def load(cache: Path | None = None) -> Recording:
             "test_epochs": intersect_intervals(blocks[1], tracks),
         },
         conversions=(
-            f"positions: clean.x, clean.y (pixels) x cm_per_pixel {cm_per_pixel:.4f}"
-            f" (tracks' own: {', '.join(f'{f:.4f}' for f in track_factors)})",
-            span,
+            "positions: clean.x, clean.y (pixels) x each track's own cm_per_pixel"
+            f" ({', '.join(f'{f:.4f}' for f in factors)}; session average"
+            f" {float(position.cm_per_pixel):.4f} not used)",
+            "range checked: principal-axis extent per track"
+            f" {', '.join(f'{e:.1f}' for e in extents)} cm (expected"
+            f" {_TRACK_EXTENT_CM[0]:g}-{_TRACK_EXTENT_CM[1]:g})",
             "positions: NaN outside each track's cropped_indices"
             f" ({on_track.mean():.1%} of samples on a track)",
             f"positions: {np.mean(interpolated[on_track]):.1%} of on-track samples"
@@ -161,11 +174,24 @@ def load(cache: Path | None = None) -> Recording:
     )
 
 
+def principal_extent(xy: np.ndarray) -> float:
+    """Extent of 2-D samples along their first principal axis."""
+    centred = xy - xy.mean(axis=0)
+    axis = np.linalg.svd(centred, full_matrices=False)[2][0]
+    return float(np.ptp(centred @ axis))
+
+
 def pixels_labelled_cm(rec: Recording) -> Recording:
     # The stored x, y are pixels; a reader that missed cm_per_pixel would
-    # keep them and call them cm (2.35 x too large).
+    # keep them and call them cm (2.26 and 2.58 x too large).
     assert rec.positions is not None
-    return replace(rec, positions=rec.positions / 0.42599001942669384)
+    assert rec.times is not None
+    positions = rec.positions.copy()
+    for k, factor in enumerate(rec.geometry["cm_per_pixel_per_track"], start=1):
+        ((start, stop),) = rec.epochs[f"track_{k}"]
+        inside = (rec.times >= start) & (rec.times <= stop)
+        positions[inside] /= factor
+    return replace(rec, positions=positions)
 
 
 HAZARDS = {"pixels_labelled_cm": pixels_labelled_cm}
