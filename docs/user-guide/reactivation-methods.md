@@ -387,8 +387,8 @@ median of the statistic:
 rate_session = sessions["rate_change"]
 
 
-def counts_of(data, epochs, bin_size=0.1):
-    return bin_spikes_in_time(data.spike_times, dt=bin_size, epochs=epochs)[0]
+def counts_of(data, epochs, dt=0.1):
+    return bin_spikes_in_time(data.spike_times, dt=dt, epochs=epochs)[0]
 
 
 template_correlations = pairwise_correlations(
@@ -431,8 +431,8 @@ analysis at 0.1 to 5 s:
 <!-- docs-test: run -->
 ```python
 wide = [
-    dataclasses.replace(KUDRIMOTI_1999, name=f"{bin_size:g} s", dt=bin_size)
-    for bin_size in (0.1, 0.25, 1.0, 5.0)
+    dataclasses.replace(KUDRIMOTI_1999, name=f"{dt:g} s", dt=dt)
+    for dt in (0.1, 0.25, 1.0, 5.0)
 ]
 names = ["reactivated", "no_reactivation", "rate_change"]
 wide_table = compare_sessions(wide, names)
@@ -472,15 +472,15 @@ three sessions:
 
 <!-- docs-test: run -->
 ```python
-bin_sizes = (0.05, 0.1, 0.25)
+dts = (0.05, 0.1, 0.25)
 by_bin = [
-    dataclasses.replace(KUDRIMOTI_1999, name=f"EV {b * 1000:g} ms", dt=b)
-    for b in bin_sizes
+    dataclasses.replace(KUDRIMOTI_1999, name=f"EV {dt * 1000:g} ms", dt=dt)
+    for dt in dts
 ] + [
     dataclasses.replace(
-        PEYRACHE_2010, name=f"assembly {b * 1000:g} ms", dt=b, test=None
+        PEYRACHE_2010, name=f"assembly {dt * 1000:g} ms", dt=dt, test=None
     )
-    for b in bin_sizes
+    for dt in dts
 ]
 print(by_session(compare_sessions(by_bin, names)).round(3).T.to_string())
 ```
