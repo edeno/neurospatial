@@ -1,12 +1,15 @@
 # Real-data survey: findings
 
-Eight public recordings were loaded into plain arrays and run through 22
-neurospatial operations, each recording was re-run with known defects put back
-(58 probes), and three results were compared with pynapple and opexebo. This
-document ranks what that showed into proposed changes to neurospatial. The
-evidence lives in [GAPS.md](GAPS.md) (gap entries `G-###`) and
-[results/](results/) (`matrix.md`, `warnings.md`, `reference_checks.md`, one
-JSON per dataset); every number below can be traced there.
+Eight public recordings were loaded into plain arrays and run through 19
+operations (18 calls into neurospatial and one harness workaround), each
+recording was re-run with known defects put back (58 probes), and three results
+were compared with pynapple and opexebo. This document ranks what that showed
+into proposed changes to neurospatial. The evidence lives in
+[GAPS.md](GAPS.md) (gap entries `G-###`) and [results/](results/)
+(`matrix.md`, `warnings.md`, `reference_checks.md`, one JSON per dataset).
+A few calibration numbers were computed directly from the loaders instead
+(marked *loader-computed*); each says how, so it can be recomputed with
+`load()` and the hazard functions in `_calibration.py`.
 
 Datasets: DANDI 000582 (rat MEC open field), OSF Mouse32 (mouse ADn head
 direction), DANDI 000552 (mouse CA1 figure-8, ripples, sleep), the Rosenberg
@@ -26,8 +29,10 @@ X maze, mislabelled head direction).
   one neurospatial warning fired that should not have (the spike-drop warning
   when tracking covers part of the session, G-001, being fixed).
 - **Warnings are not aggressive enough.** Of 58 probes, 19 defects passed
-  silently and changed the result. Four simple checks, calibrated below,
-  would catch most of them without firing on any clean recording.
+  silently and changed the result. Three checks calibrated below (exact-origin
+  samples, too few bins, squeezed headings) fire on none of the clean
+  recordings and would catch 15 of the 19; a fourth (spike span vs epochs)
+  waits on G-001's fix.
 - **Two wrong results need fixing first**: `read_head_direction` turns radians
   labelled "degrees" into a 6° arc, after which every unit looks like a sharp
   head-direction cell (G-030/G-031); and `detect_laps` finds laps where there is
@@ -61,12 +66,14 @@ dataset is the evidence, the section says why that is enough.
      degrees-labelled series has every finite value within ±π and uses most of
      the circle.
   2. The directional entry points warn when headings cover little of the
-     circle. Calibration on the clean recordings (36 direction bins, a bin
-     counts if it holds ≥ 0.5 % of samples): Mouse32, 002030 and 001701 use
-     36/36 bins; the misread 001701 headings use 2/36. A threshold of fewer than
-     half the bins separates them. Not yet calibrated on a linear track, where
-     headings cluster in two opposite directions; the next batch includes one
-     (W-track, below) before this check lands.
+     circle. Calibration on the clean recordings (*loader-computed*: 36
+     direction bins, a bin counts if it holds ≥ 0.5 % of samples): Mouse32,
+     002030 and 001701 use 36/36 bins; the misread 001701 headings use 2/36. A
+     threshold of fewer than half the bins separates them. Not yet calibrated
+     on a linear track, where head direction clusters in two opposite
+     directions; none of the eight recordings has one, so a linear-track
+     session with verified head direction must be found and checked before
+     this check lands.
 - **Module.** `io/nwb` (reader), `encoding/directional` (check).
 - **Changes results.** Only for files that are mislabelled today, which are
   currently wrong.
@@ -78,7 +85,8 @@ dataset is the evidence, the section says why that is enough.
   labyrinth give 3 "laps"; grid neighbours give one "lap" in the 000582 box and
   one in the 002030 arena; the shrunken 000405 arena gives 3. Four datasets.
 - **Change.** Test for a loop on the track (or ignore cycles confined to one
-  junction or to grid neighbours). Taken by the UX-fixes plan, phase 6.
+  junction or to grid neighbours). Being fixed in the UX-fixes work (branch
+  `fix/ux-error-gaps`).
 - **Module.** `behavior`. **Changes results.** Yes: spurious laps disappear.
 
 ### 3. Grid scores disagree with opexebo because of the autocorrelogram (G-006)
@@ -90,14 +98,20 @@ dataset is the evidence, the section says why that is enough.
   opexebo's autocorrelogram: max difference 0.012); the autocorrelograms differ
   in two conventions: opexebo zero-fills unvisited bins (zero-filling moves
   unit 2 to 0.307), and neurospatial leaves undefined the lags where fewer than
-  a quarter of visited bins overlap (2822 of 5041 lags). One dataset with a
-  reference disagreement is the plan's bar.
-- **Needs a design decision.** (a) Match BNT/opexebo (zero-fill and full
-  lags) as the default, keeping the stricter rule as an option; (b) keep the
-  NaN-respecting autocorrelogram but relax the overlap rule; (c) keep both and
-  document the difference with this comparison. Before choosing, repeat the
-  check on a dataset with many grid cells (Gardner 2022, next batch).
-- **Module.** `encoding/grid`. **Changes results.** Yes under (a) or (b).
+  a quarter of visited bins overlap (2822 of 5041 lags). A disagreement with
+  an independent implementation on the same inputs is enough evidence by
+  itself; how widespread it is needs more grid cells.
+- **Needs a design decision.** Zero-filling treats unvisited bins as 0 Hz,
+  which the project's rule that missing is not zero rules out as a default.
+  (a) Compute opexebo's full lag extent without zero-filling (a NaN-aware
+  correlation at every lag with any overlap); (b) keep today's
+  autocorrelogram but relax the quarter-overlap rule; (c) offer zero-filling
+  only as an explicit opt-in for matching opexebo, and document the
+  difference with this comparison. Only opexebo was run; whether BNT itself
+  behaves the same is not checked. Before choosing, repeat the check on a
+  dataset with many grid cells (Gardner 2022, next batch).
+- **Module.** `encoding/grid`. **Changes results.** Yes under (a) or (b);
+  not under (c).
 
 ### 4. Spatial information on sparse occupancy (G-022)
 
@@ -124,9 +138,9 @@ Only two neurospatial warning messages fired on correctly loaded data, both
 the spike-drop warning when tracking covers part of a long recording (Mouse32
 sleep spikes, figure-8 sleep spikes): a false alarm whose advice ("check that
 spike_times and times share units") is wrong there, and a second copy of it
-inside the same `decode.position` call (G-001). Both are in the UX-fixes plan
-(phase 6: count only spikes inside the requested epochs, one discarded-data
-warning per call). No threshold needs loosening. The only other warning was
+inside the same `decode.position` call (G-001). Both are being fixed in the
+UX-fixes work (branch `fix/ux-error-gaps`: count only spikes inside the
+requested epochs, one discarded-data warning per call). No threshold needs loosening. The only other warning was
 hdmf's own deprecation notice while reading a 2022 file.
 
 ### Not aggressive enough
@@ -142,41 +156,56 @@ hdmf's own deprecation notice while reading a 2022 file.
 | Mirrored frame (image y down) | 5 | 0 | 0 | 4 | 1 |
 | **Total** | **58** | **22** | **19** | **11** | **6** |
 
-Proposed checks, each with its calibration on the clean recordings (a new
-warning must fire on none of them) and on the hazards:
+Proposed checks, each with its hits on the clean recordings (a new warning
+must fire on none of them) and on the hazards. The calibration numbers are
+*loader-computed*.
 
 1. **Missing positions stored as 0 (G-017).** Warn when at least 0.1 % of
-   tracked samples sit exactly at the origin. Clean: 0 of 7 recordings with
-   positions have any sample exactly at the origin. Hazards: catches the
-   labyrinth (4.9 %), 001701 (2.6 %) and the bat (0.24 %); misses 000582 (one
-   sample, harmless). A broader rule ("many samples at one exact coordinate")
-   would misfire: the clean bat recording has 15 % of samples at one perch
-   position. Module: the shared position checks behind `Environment.from_samples`,
-   the rate functions and `segment_by_velocity`.
+   tracked samples sit exactly at the origin. Clean: none of the 7 recordings
+   with positions has a single sample exactly at the origin. Hazards: catches
+   the labyrinth (4.9 %), 001701 (2.6 %) and the bat (0.24 %), which covers all
+   10 silent probes of this defect; misses 000582 (one sample, harmless). A
+   broader rule ("many samples at one exact coordinate") would misfire: the
+   clean bat recording has 15 % of samples at one perch position. Untested
+   case: tracking in integer pixels, or a clipped linearization where 0 is a
+   real place (an animal waiting at the start of a track); the next batch's
+   000044 and 000447 runs must cover it before the check lands. Module: the
+   shared position checks behind `Environment.from_samples`, the rate
+   functions and `segment_by_velocity`.
 2. **Length unit off by 100 (G-014).** Warn when the environment has fewer than
-   5 bins along a dimension. Clean: the fewest is 10 (bat height). Hazards:
-   every ÷100 case has 1–2 bins per dimension; today's check only fires at
-   ≤ 1 bin and missed the figure-8 (2 bins). The ×100 case is already refused
-   (bat, 9 × 10⁹ bins). Speed thresholds hide the same error in
-   `segment_by_velocity` and the occupancy speed gate (668 vs 69 segments on
-   the bat; 14 s vs 522 s occupancy on the figure-8); naming the track length
-   in the environment repr would make it visible. Module: `environment`.
+   5 bins along a dimension (counted from `env.grid_shape`). Clean: the fewest
+   is 11 (bat height). Hazards: every ÷100 case has 2–3 bins along each
+   dimension (figure-8: 3; the 2-D arenas: 2 × 2). Today's check fires only
+   when the bin size is at least the data extent in every dimension, so it
+   missed the figure-8. This covers the figure-8's 4 silent probes (the
+   environment would warn in the same workflow). The ×100 case is already
+   refused (bat, 9 × 10⁹ bins), but a speed threshold alone still hides it:
+   `segment_by_velocity` on the bat finds 668 segments instead of 69 without
+   building an environment. Module: `environment`.
 3. **Spike times in ms (G-010).** Compare the spike span with the span of the
    requested epochs (or the whole tracking) rather than with `times` alone.
    Today the clock-ratio hint catches it when tracking covers the recording
-   (000582, bat, 001701) and misses it when tracking covers part (Mouse32,
-   figure-8: rates drop to 0 with only the usual warning). Depends on G-001's
-   fix. Module: `encoding/_spatial_counts`.
-4. **Replay on events too short for the score (G-018).** Warn when an event
-   has fewer time bins than a recipe's score needs, naming the recipe's event
-   rule (both `DAVIDSON_2009` and `GROSMARK_2016` say ≥ 100 ms). Figure-8 awake
-   ripples: 48 of 71 are one 20 ms bin. This warning should fire on that clean
-   data: the events are too short. Module: `replay`.
-5. **Headings squeezed into a small arc (G-031)** — see Wrong results 1.
+   (000582, bat, 001701) and misses it when tracking covers part: on the
+   figure-8 rates drop to 0, on Mouse32 the median mean vector length moves
+   from 0.436 to 0.389 and 10 units lose a value, both with only the usual
+   warning. Clean-run hits cannot be measured yet: the clean Mouse32 and
+   figure-8 runs already emit the spike-drop warning this check would refine
+   (G-001). Module: `encoding/_spatial_counts`.
+4. **Headings squeezed into a small arc (G-031)** — see Wrong results 1; covers
+   the one silent probe of that defect.
 
-Undetectable by values, so the answer is documentation: a mirrored frame flips
-every left and right turn while the share of left turns stays near 0.5
-(G-020); positions read as mm look like a plausible small arena (000405 ÷10).
+The remaining silent probe (positions read as mm, `behavior.laps`) is the
+spurious-lap bug of proposal 2, not the unit error. Undetectable by values, so
+the answer is documentation: a mirrored frame flips every left and right turn
+while the share of left turns stays near 0.5 (G-020); positions read as mm look
+like a plausible small arena (000405 ÷10).
+
+A separate rule, not calibrated against hazards because it should fire on
+clean data: **warn when a replay event has fewer time bins than a recipe's
+score needs (G-018)**, naming the recipe's event rule (both `DAVIDSON_2009` and
+`GROSMARK_2016` say ≥ 100 ms). On the figure-8, 48 of the 71 awake ripples are
+one 20 ms bin (*loader-computed*: ripple durations from the file's Ripples
+table). Module: `replay`.
 
 ## Missing capabilities
 
@@ -189,8 +218,9 @@ every left and right turn while the share of left turns stays near 0.5
   onsets passed as spike times. The onset rule needs thresholds the library
   cannot see and saturates at high event rates.
 - **Change.** A value-weighted rate map: occupancy-normalized mean of a signal
-  per bin, sharing the rate maps' bins, NaN rules, smoothing and result type;
-  plus a documented ΔF/F recipe. Deconvolution stays out of scope.
+  per bin, sharing the rate maps' bins, NaN rules and smoothing, with the
+  signal's own unit (ΔF/F is not Hz); plus a documented ΔF/F recipe.
+  Deconvolution stays out of scope.
 - **Module.** `encoding`. **Changes results.** No (new entry point).
 
 ### 6. NWB readers for data outside the standard places (G-011, G-012, G-032)
@@ -214,7 +244,8 @@ every left and right turn while the share of left turns stays near 0.5
 - **Problem.** There is no public heading decoder.
 - **Evidence.** Mouse32: pynapple's `decode_bayes` on the 31 ADn units reaches
   8.9° median error (outside tracking gaps), reproducing its tutorial's 19,590
-  samples. A reference result neurospatial cannot produce.
+  samples. A reference result neurospatial cannot produce. One dataset is
+  enough here: the gap is a missing entry point, not a property of the data.
 - **Needs a design decision.** A circular (ring) environment the existing
   decoder accepts, or a documented recipe.
 - **Module.** `decoding`, `environment`. **Changes results.** No.
@@ -256,15 +287,15 @@ every left and right turn while the share of left turns stays near 0.5
 - **Turn directions assume y up (G-020).** Say so in `graph_turn_sequence`.
 - **`DAVIDSON_2009` verdicts depend on the batch (G-027).** The pseudo-event
   null draws from the events passed together: the same stationary events are
-  called replay 7/8 times with sweeps and 0/16 alone. Stationary events can be
-  replay; the point is the batch dependence. Say it in the recipe and the
-  replay guide.
+  called replay 7/8 times with sweeps and 0/16 alone (simulated events, 100
+  shuffles per null). Stationary events can be replay; the point is the batch
+  dependence. Say it in the recipe and the replay guide.
 
 ## Performance
 
 Nothing to fix at these sizes. The slowest operation was the replay comparison
 on 71 events with published shuffle counts (14 s); the largest traced peak was
-265 MB (bat, four extra rate maps); the bat run peaked at 1.3 GB resident.
+265 MB (bat, four extra rate maps).
 Long recordings with thousands of replay events (the 4,226 figure-8 sleep
 ripples) are the next scale to measure.
 
@@ -284,7 +315,7 @@ ripples) are the next scale to measure.
 | G-026 | Linearized loop wraps around | Support it (proposal 8) |
 | G-028 | Behavior starts before the neural recording | Leave to `spike_window=` when the recording span is known; nothing warned about the bat's 1.35 s of flight before the first spike |
 | G-025 | Positions outside the stated room bounds | Leave to the loader; only an environment with declared bounds could flag them |
-| G-008 | Head-direction frame not stated | Return the empty frame from `read_head_direction` (it returns None), so callers can see it is unknown |
+| G-008 | Head-direction frame not stated | Keep it visible: `read_head_direction` returns `frame=None` for the file's empty `reference_frame`; say in its docs that None means the file does not state where 0 points |
 | G-033 | Labels disagree with values (mm, period as rate, "uv") | Leave to the loader: these are generic `TimeSeries` the readers do not read |
 | G-009, G-034, G-035 | One LED; ΔF/F scale; inverted LFP conversion | Nothing |
 | G-019, G-036 | Pre-registered expectations that were wrong | Nothing (kept as registered) |
@@ -306,14 +337,14 @@ harness's `_fetch.py` (77 lines) would be the starting point.
 Chosen to fill the weakest cells of the matrix: operations exercised on only
 one recording, or never.
 
-| Dataset | Fills |
+| Dataset | Fills (operation ids from `results/matrix.md`) |
 | --- | --- |
-| Gardner 2022 grid modules (Figshare 16764508, CC0) | `cells.grid_score` at scale for proposal 3 (hundreds of grid cells vs six). Needs a decision: its `.npz` files require `allow_pickle`; the restricted-unpickler approach used for the labyrinth would apply |
-| Shin & Jadhav W-track (DANDI 000447, already used in the project) | A real track graph with arms and wells: `env.from_graph`, `behavior.laps`, `behavior.turn_sequence` with spikes; a linear-track heading distribution to calibrate proposal 1's check; its velocity-as-third-column quirk |
-| Plitt & Giocomo VR imaging (DANDI 000054) | `deconvolved` activity (never run), the −500 position sentinel (a new hazard), 1-D VR tracks |
-| Grieves 2020 climbing lattice (UCL RDR, CC0, 11.2 GB zip) | A second 3-D dataset to test G-022 and G-023 off the bat; a lattice-shaped 3-D graph. Needs `inflate64` for its Deflate64 zip |
-| Zhang 2022 egocentric boundary cells (Figshare 21647423, CC BY) | Egocentric operations, never exercised; MATLAB `sdata` structs |
-| Grosmark & Buzsáki (DANDI 000044, already used) | Replay on long sleep candidate events (G-018 at scale), circular track (proposal 8), the 4-hour runtime case |
+| Gardner 2022 grid modules (Figshare 16764508, CC0) | `cells.grid_score` and the reference grid check on a grid-module population (the catalog lists modules Q, R, S; unit counts unverified) instead of six units. Needs a decision: its `.npz` files require `allow_pickle`; a restricted unpickler like the labyrinth's may apply |
+| Shin & Jadhav W-track (DANDI 000447, already used in the project) | `env.from_graph`, `behavior.laps` and `behavior.turn_sequence` on a real track graph with spikes; `io.nwb_readers` on its velocity-as-third-position-column quirk; check 1's untested start-of-track case. Head direction is not listed (position is x, y, velocity) |
+| Plitt & Giocomo VR imaging (DANDI 000054) | `imaging.rates` and `imaging.rates_workaround` on deconvolved activity (never run); the −500 position sentinel as a new hazard; 1-D VR tracks |
+| Grieves 2020 climbing lattice (UCL RDR, CC0, 11.2 GB zip) | `rates.information_vs_shifts` and `decode.position` on a second 3-D dataset (tests G-022 and G-023 off the bat); `env.from_graph` on a lattice-shaped 3-D space. Needs `inflate64` for its Deflate64 zip |
+| Zhang 2022 egocentric boundary cells (Figshare 21647423, CC BY) | Egocentric boundary operations, not yet in the matrix (a new column). The record says "summarized datasets" in MATLAB `sdata` structs; whether raw positions and spikes are included is unverified, so open it before committing to it |
+| Grosmark & Buzsáki (DANDI 000044, already used) | `replay.compare_methods` on sleep ripples with PRE and POST sleep around the maze (about 4 h each), the 1 m circular track for proposal 8, check 1's start-of-track case, and the long-recording runtime |
 
 ## Tutorial candidates
 
@@ -328,8 +359,8 @@ one recording, or never.
 
 | Gap | Where it is addressed |
 | --- | --- |
-| G-001, G-010 | Warning calibration (too aggressive; check 3); G-001 in UX-fixes phase 6 |
-| G-002 | Fixed (UX-fixes phase 3b) |
+| G-001, G-010 | Warning calibration (too aggressive; check 3); G-001 being fixed on branch `fix/ux-error-gaps` |
+| G-002 | Fixed (#262) |
 | G-003 | Docs |
 | G-004 | Proposal 7 |
 | G-005, G-016 | Friction |
@@ -337,11 +368,11 @@ one recording, or never.
 | G-007, G-023 | Docs |
 | G-008, G-009, G-019, G-025, G-028, G-033–G-036 | Data quirks |
 | G-011, G-012, G-032 | Proposal 6 |
-| G-013 | Fixed (UX-fixes phase 3b) |
+| G-013 | Fixed (#262) |
 | G-014 | Warning calibration, check 2 |
-| G-015 | Proposal 2 (UX-fixes phase 6) |
+| G-015 | Proposal 2 (being fixed on branch `fix/ux-error-gaps`) |
 | G-017 | Warning calibration, check 1 |
-| G-018 | Warning calibration, check 4 |
+| G-018 | Warning calibration, separate rule |
 | G-020 | Docs; undetectable |
 | G-021, G-026 | Proposal 8 |
 | G-022 | Proposal 4 |
@@ -353,15 +384,17 @@ one recording, or never.
 ## Decisions for the maintainer
 
 1. **Head-direction label check (proposal 1):** ship the reader refusal now as
-   its own PR, and the coverage warning after the W-track calibration?
-2. **Grid score (proposal 3):** match BNT/opexebo, relax the overlap rule, or
-   document the difference — and wait for the Gardner comparison first?
+   its own PR, and the coverage warning after a linear-track calibration?
+2. **Grid score (proposal 3):** opexebo's full lag extent without zero-filling,
+   a relaxed overlap rule, or zero-filling as an opt-in with the difference
+   documented — and wait for the Gardner comparison first?
 3. **Spatial information bias (proposal 4):** run the shuffle-null test of
    `spatial_information_bias` before deciding between correcting it and
    warning on sparse occupancy?
-4. **Warning checks 1, 2 and 4:** add them as calibrated here (origin share
-   ≥ 0.1 %, fewer than 5 bins per dimension, events shorter than the score
-   needs)? Check 3 waits for G-001's fix.
+4. **Warnings:** add checks 1 and 2 as calibrated here (origin share ≥ 0.1 %
+   after the start-of-track case is checked; fewer than 5 bins per dimension)
+   and the separate rule for replay events shorter than the score needs?
+   Check 3 waits for G-001's fix, check 4 for proposal 1.
 5. **New capabilities:** which of continuous-signal rate maps (5), NWB reader
    coverage (6), heading decoding (7) and periodic tracks (8) to plan, and in
    what order?
