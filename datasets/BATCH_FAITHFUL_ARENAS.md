@@ -177,34 +177,36 @@ function as the declared tracks (`_geometry.judge_declared`; the arenas'
 own `placement_reasons`, with its 2 % limit on samples outside, was folded
 into it). A declared outline covers itself by construction, so the
 evidence is the samples against it: samples reaching more than one bin
-past a wall, a side with no sample within 3 bins over more than 15 % of
-its length (a circle is one side), the samples' extent more than 15 % short
-of the outline, a stated size more than 15 % from the samples' fitted size,
-and a stated centre more than 15 % of the radius off. Samples outside the
-outline or room are a tracking measure, reported by speed, not judged. A
-verdict of "matches" needs a stated fact (a size, or the authors' bars).
-Six of the ten match and four are mismatches (G-157):
+past a wall, the samples' extent more than 15 % short of the outline, a
+stated size more than 15 % from the samples' fitted size, and a stated
+centre more than 15 % of the radius off. The share of a side with no
+sample within 3 bins (a circle is one side), and of the lattice's segments
+with no sample within a bin, is reported, not judged: head samples fall
+short of walls and bars because the tracked LEDs sit on a headstage above
+the animal (the maintainer's rule, G-157). Samples outside the outline or
+room are a tracking measure, reported by speed, not judged. A verdict of
+"matches" needs a stated fact (a size, or the authors' bars). All ten
+match:
 
-| Recording | Verdict | Stated fact (fitted vs stated) | Samples outside | Worst side: no sample within 3 bins | Outermost samples inside the wall (95th percentile, worst side) |
+| Recording | Verdict | Stated fact (fitted vs stated) | Samples outside | Worst side: no sample within 3 bins (reported) | Outermost samples inside the wall (95th percentile, worst side) |
 | --- | --- | --- | --- | --- | --- |
 | sargolini_000582 | matches | -0.5 %, -2.9 % | 0.02 % | 0 % | 0.9 cm |
 | miniscope_002030 | matches | diameter -0.1 % | 0.03 % | 0 % | 0.1 cm |
-| giocomo_000405 | mismatch | -8.2 %, -8.0 % | 0 % | 69 % | 7.3 cm |
+| giocomo_000405 | matches | -8.2 %, -8.0 % | 0 % | 69 % | 7.3 cm |
 | gardner_2022_grid | matches | -2.9 %, -3.3 % | 0 % | 0 % | 3.6 cm |
-| vollan_of | mismatch | diameter -4.3 %, centre 2.2 % of the radius | 0 % | 31 % | 3.3 cm |
+| vollan_of | matches | diameter -4.3 %, centre 2.2 % of the radius | 0 % | 31 % | 3.3 cm |
 | kanter_2025 | matches | -2.6 %, -3.4 % | 0 % | 0 % | 1.8 cm |
 | watermaze_10248158 | matches | diameter +1.0 %, centre 2.7 % of the radius | 0.34 % | 0 % | 0.2 units |
-| hc2_ec013_527 | mismatch | -2.1 %, -3.0 % | 0.01 % | 36 % | 4.1 px |
-| grieves_2020_lattice | mismatch | side +0.0 % of 97 cm (the file's bars) | 1.0 % (placement tolerance) | 90 % of segments over 25 % unsupported within 4 cm | – |
+| hc2_ec013_527 | matches | -2.1 %, -3.0 % | 0.01 % | 36 % | 4.1 px |
+| grieves_2020_lattice | matches | side +0.0 % of 97 cm (the file's bars) | 1.0 % (placement tolerance) | 90 % of segments over 25 % unsupported within 4 cm | – |
 | yartsev_bat_demo | matches | `r_lim` against the paper's room: +3.6 %, +0.0 %, -8.0 % | 3.66 % (0.11 % of flight samples) | – | – |
 
-The four mismatches rest only on support: the tracked head keeps 3-7 cm
-off the walls of 000405, Vollan's circle and hc-2's platform, and a median
-6.0 cm off the lattice's bars, so whole sides or segments have no sample
-within the limit while every stated size fits within 15 %. The limits (3
-bins, 15 % of a side, one bin along a segment) were not tuned to these
-recordings, and how sensitive they are is not measured here; the same
-numbers would follow from a wall drawn a few cm too far out (G-157). In
+Before the rule the four (000405, Vollan's circle, hc-2's platform and the
+lattice) were mismatches on support alone: the tracked head keeps 3-7 cm
+off the walls of the first three and a median 6.0 cm off the lattice's
+bars, while every stated size fits within 15 %. The checks that remain
+(15 % and one bin past a wall) were not tuned to these recordings, and
+how sensitive they are is not measured here (G-157). In
 the faithful-arenas round nine of the ten passed and the bat's room was a
 mismatch on its 3.7 % of samples outside `r_lim`; that share is now a room
 measure (G-025), and the room matches on its stated sides.

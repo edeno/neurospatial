@@ -2382,16 +2382,13 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Operation / step: `_geometry.judge_declared` (fidelity study, declared
   environments)
 - Kind: harness-limitation
-- Evidence: one verdict for every declared environment flags part of the
-  apparatus with no sample near it: an outline side (a run of edges turning
-  less than 10 degrees; a circle is one side) with no sample within 3 bins
-  over more than 15 % of its length, and a track segment with no sample
-  within one bin over more than 25 % of it. Both limits were set before
-  this rerun of the arenas but without measuring their sensitivity; the
-  3 bins come from the tracks round, the 15 % from the maintainer's rule.
-  Four declared environments fail only this check. On 000405 69 % of one
-  side of the 150 x 130 cm field has no sample within 7.5 cm; the samples'
-  own rectangle is 8.2 % and 8.0 % short of the stated sides and their
+- Evidence: the support check flagged an outline side (a run of edges
+  turning less than 10 degrees; a circle is one side) with no sample within
+  3 bins over more than 15 % of its length, and a lattice bar segment with
+  no sample within one bin over more than 25 % of it. Four declared
+  environments failed only this check. On 000405 69 % of one side of the
+  150 x 130 cm field has no sample within 7.5 cm; the samples' own
+  rectangle is 8.2 % and 8.0 % short of the stated sides and their
   outermost 5 % stay 7.3 cm inside the nearest wall all round. On Vollan's
   150 cm circle 31 % of the wall has none within 7.5 cm (samples' diameter
   4.3 % short, centre 2.2 % of the radius from the stated one). On hc-2's
@@ -2399,14 +2396,20 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   samples' sides 2.1 % and 3.0 % short). On the lattice 90 % of the 882
   bar segments have over 25 % of their length with no head sample within
   one 4 cm bin: the head is a median 6.0 cm from the nearest bar. In each
-  case the tracked point (a head marker) keeps off the walls or bars, which
-  the survey's rules expect, and the same numbers would follow from a wall
-  drawn a few cm too far out, so the check cannot tell them apart at these
-  limits.
-- Harness workaround: none; the verdicts stand as "mismatch" with the
-  reason, and the stated sizes, which all four fit within 15 %, are
-  reported beside them.
-- Proposed change: harness only; measure the check's sensitivity on
-  planted misfits (phase 6, rungs 2-3) and set the support distance from
-  a stated tracking offset where a source gives one
-- Status: open
+  case the tracked point (a head marker) keeps off the walls or bars, and
+  the same numbers would follow from a wall drawn a few cm too far out.
+- Harness workaround: the maintainer's rule (2026-11-03): head samples fall
+  short of walls and bars because the tracked LEDs sit on a headstage above
+  the animal, so for declared outlines (arenas, circles, rooms) and the
+  lattice the support share is reported (`fit["max_side_unsupported"]`,
+  `fit["max_unsupported"]`), not judged. A misplaced or wrongly sized
+  outline is caught by samples reaching past the opposite wall, the samples'
+  fitted size against the stated size, and the stated centre. Track segment
+  coverage, within the placement tolerance, stays a criterion. With it the
+  four now match on their stated sizes (000405 -8.2 % and -8.0 %, Vollan's
+  diameter -4.3 %, hc-2 -2.1 % and -3.0 %, the lattice's side +0.0 % of the
+  stated 97 cm with the authors' bars), and all ten declared arenas and
+  3-D environments match.
+- Proposed change: none in neurospatial; in the harness, measure the
+  remaining checks' sensitivity on planted misfits (phase 6, rungs 2-3)
+- Status: resolved (harness rule)

@@ -395,37 +395,36 @@ They are judged by the same function as the tracks
 (`_geometry.judge_declared`). A declared outline covers itself by
 construction, so it is judged on misfit evidence: samples reaching more than
 one bin past a wall (the 95th percentile of their signed distance to each
-edge), a side (a run of edges turning less than 10 degrees; a circle is one
-side) with no sample within 3 bins over more than 15 % of its length, the
-samples' extent across the outline more than 15 % short of it, a stated
-size more than 15 % from the samples' own fitted size, and a stated centre
-more than 15 % of the radius from the samples' centre. The share of samples
-outside the outline or room is a tracking measure, reported split by
-speed, not judged (the arenas' earlier limit of 2 % is gone). A room is
-judged on stated sizes only.
+edge), the samples' extent across the outline more than 15 % short of it, a
+stated size more than 15 % from the samples' own fitted size, and a stated
+centre more than 15 % of the radius from the samples' centre. The share of
+a side (a run of edges turning less than 10 degrees; a circle is one side)
+with no sample within 3 bins is reported, not judged, and so is the share
+of the lattice's bar segments with no sample within a bin: the tracked LEDs
+sit on a headstage above the animal, so head samples fall short of walls
+and bars (the maintainer's rule, G-157). The share of samples outside the
+outline or room is a tracking measure, reported split by speed, not judged
+(the arenas' earlier limit of 2 % is gone). A room is judged on stated
+sizes only.
 
-Of the ten declared arenas and 3-D environments, 6 match and 4 are
-mismatches:
+All ten declared arenas and 3-D environments match:
 
-- Match, on the stated size against the samples' own: 000582 (sides
-  -0.5 % and -2.9 %), 002030 (diameter -0.1 %), Gardner (-2.9 %, -3.3 %),
-  Kanter (-2.6 %, -3.4 %) and the water maze (+1.0 %, centre 2.7 % of the
-  radius from the stated one). 0-0.34 % of their samples lie outside the
-  outline. The bat's room matches on `r_lim` against the paper's room
-  (x +3.6 %, y +0.0 %, z -8.0 %); 3.66 % of all its samples, and 0.11 % of
-  the flight samples the analyses use, lie outside `r_lim`, reported, not
-  judged (G-025).
-- Mismatch on wall or segment support only (G-157): 000405 (69 % of one
-  side with no sample within 7.5 cm; the samples' sides -8.2 % and -8.0 %),
-  Vollan's 150 cm circle (31 % of its wall; diameter -4.3 %, centre 2.2 %
+- On the stated size against the samples' own: 000582 (sides -0.5 % and
+  -2.9 %), 002030 (diameter -0.1 %), 000405 (-8.2 %, -8.0 %), Gardner
+  (-2.9 %, -3.3 %), Vollan's 150 cm circle (diameter -4.3 %, centre 2.2 %
   of the radius off; the samples' extent -14.9 % of the outline, just
-  inside the 15 %), hc-2's platform (36 % of one side; sides -2.1 %,
-  -3.0 %), and the lattice, whose bars are the authors' (side +0.0 % of
-  the stated 97 cm) but 90 % of whose 882 segments have over a quarter of
-  their length with no head sample within one 4 cm bin (the head is a
-  median 6.0 cm from a bar). The tracked head keeps off the walls or bars
-  in all four, which these limits cannot tell from a wall drawn too far
-  out.
+  inside the 15 %), Kanter (-2.6 %, -3.4 %), hc-2's platform (-2.1 %,
+  -3.0 %) and the water maze (+1.0 %, centre 2.7 % of the radius from the
+  stated one). 0-0.34 % of their samples lie outside the outline. The bat's
+  room matches on `r_lim` against the paper's room (x +3.6 %, y +0.0 %,
+  z -8.0 %); 3.66 % of all its samples, and 0.11 % of the flight samples
+  the analyses use, lie outside `r_lim`, reported, not judged (G-025). The
+  lattice matches on the authors' bars (side +0.0 % of the stated 97 cm).
+- Support, reported: 69 % of one side of 000405 has no sample within
+  7.5 cm, 31 % of Vollan's circle, 36 % of one side of hc-2's platform; on
+  the lattice 90 % of the 882 segments have over a quarter of their length
+  with no head sample within one 4 cm bin (the head is a median 6.0 cm from
+  a bar). Before the rule these four were mismatches on support alone.
 
 The lattice is built with a placement tolerance chosen from the samples,
 2 x the head's 99th percentile distance from a bar (30.8 cm), not a stated
