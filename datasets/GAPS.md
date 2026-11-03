@@ -99,6 +99,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: undecided — probably none beyond surfacing the requirement
   in the border-score docs and the quickstart.
 - Status: open
+- More evidence (archive batch): the same refusal on hafting_2008_nird, takigawa_7114733, olafsdottir_5566548, shipley_30902972, agarwal_24757638 and j16_23020757; none of these sources gives wall positions in the tracking frame. `rates.egocentric_boundary` meets the same requirement and runs with `boundary_source="analysis"` (G-082).
 - More evidence (NWB breadth batch): the same refusal on all eight new
   recordings with spikes and 2-D positions (000987, 001880, 001695, 001754,
   000568, 000165, 000003, Kanter): every environment there is built from
@@ -291,6 +292,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: warn when the environment has fewer than a handful of bins
   along a dimension (the existing check only fires at one bin or fewer).
 - Status: open
+- More evidence (archive batch): `length_unit_off_by_100` is caught by `Environment.from_samples` on all seven new cm recordings (bin at least the extent), but `segment_by_velocity` finds 0 running segments silently on each (281, 604, 491, 715, 516 and 290 -> 0; 668 -> 1 on the Z-track), and on hafting_2008_nird and olafsdottir_5566548 occupancy and rate maps change without a warning of their own (occupancy 655.6 -> 0.24 s and 1266 -> 0.84 s).
 - More evidence (NWB breadth batch): `segment_by_velocity` with positions
   /100 finds 0 running segments, silently, on 001880 (1,030 clean), 001695
   (315), 000568 (458) and 001845 (10); the environment and rate steps on the
@@ -324,6 +326,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   000447 W-track, a track with no loop built from samples, gives 1 clockwise
   lap. Straight tracks (000044 linear, Vollan linear) are refused, as they
   should be. On a real loop the opposite fails: G-037.
+- More evidence (archive batch): refused ("no loop") on the water maze, the two Takigawa tracks, the Z-track, the radial maze and the 3-arm maze, and on the 3-D lattice ("cannot tell whether this 3-D environment has a loop"); none of these has a loop, so the refusals are right. The water-maze pool is an open arena that is refused, not given a spurious lap.
 - More evidence (NWB breadth batch): refused ("no loop") on the 000987 and
   001880 arenas, the 001695, 000568 and 000165 linear tracks, the 001754
   staircase session (all five sessions' tracks in one image), the 001845
@@ -344,6 +347,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: none beyond showing `track_width=` in the `from_graph`
   example; the refusal is the right behavior.
 - Status: open
+- More evidence (archive batch): hafting_2008_nird (a one-edge 320 cm track) and j16_23020757 (the authors' 10-node bandit-maze graph) build with `from_graph` (80 and 248 bins) but `detect_laps` and `graph_turn_sequence` refuse both, because neither source states the track width.
 
 ## G-017: Missing positions stored as 0 silently change movement segments and turns
 
@@ -364,6 +368,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: warn when a sizeable share of samples sit at exactly the
   same coordinate (or at exactly 0) between moving samples.
 - Status: open
+- More evidence (archive batch): NaN positions as (0, 0) are silent on the water maze (0.29 % of samples), Takigawa (85 %: everything off the tracks), the Z-track (29 %: largest occupancy bin 43.9 -> 290.6 s) and the 3-arm maze, both as NaN -> 0 and as the file's own `xMM = yMM = 0` sentinel (0.20 %). Check 1 (origin share >= 0.1 %) would fire on all four.
 - More evidence (NWB breadth batch): silent on 001880 (5.3 % NaN, mostly
   off the maze: 1,080 -> 1,085 bins, 1,030 -> 1,035 movement segments),
   001845 (38 % NaN: 245 -> 248 bins, 10 -> 14 segments), 001754 (8.8 % NaN:
@@ -413,6 +418,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: say in `graph_turn_sequence` that left and right assume a
   y-up (right-handed) frame and that image coordinates must be flipped first.
 - Status: open
+- More evidence (archive batch): on the Z-track the y flip undone (hazard `image_y_down`) leaves every summary identical; the frame cannot be checked without a heading (one LED) or a stated layout.
 
 ## G-021: No periodic 1-D track: a linearized loop is treated as a line
 
@@ -458,6 +464,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   shuffle null on sparse occupancy; warn when most visited bins hold very
   little time, and point to `min_occupancy` or larger bins.
 - Status: open
+- More evidence (archive batch): the Grieves lattice (3-D, 4 cm bins, 8182 visited bins, 24 % of them under 0.1 s, median 0.23 s) gives the information-bias study's second sparse 3-D case. Untuned Poisson cells: mean information / mean bias 0.94, 1.00, 1.00 at 0.5, 2, 8 Hz (200 cells each); bursty cells 3.0, 4.1, 4.7. Real units (17 with a defined bias, 100 shifts each): median information 0.579, bias 0.169, shift-null mean 0.392, null / bias 2.51; 6 % pass the bias rule but not the shifts' 95th percentile (bat, rerun: 0.92 and 2.24 at 8 Hz, null / bias 2.19, 44 %). The estimate holds for Poisson cells on sparse 3-D occupancy; the gap to the shift null is temporal structure, as on the bat.
 
 ## G-023: 3-D position decoding is near chance on the bat session
 
@@ -472,6 +479,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none
 - Proposed change: undecided (revisit after G-022)
 - Status: open
+- More evidence (archive batch): on the Grieves lattice (24 units, 4 cm bins in 3-D) the median decoding error is 82.7 cm against a geodesic chance of 76.8 cm.
 
 ## G-024: Grid and border scores refuse 3-D environments
 
@@ -487,6 +495,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (cells are `err`)
 - Proposed change: none
 - Status: won't fix (behaves as documented)
+- More evidence (archive batch): grid and border scores refuse the Grieves lattice (3-D) the same way.
 
 ## G-025: 3.6 % of the bat's positions lie outside the room bounds the file states
 
@@ -776,6 +785,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: none for neurospatial (the hazard row shows whether it
   notices rebuilt times)
 - Status: won't fix (data quirk)
+- More evidence (archive batch): run on vollan_lt and vollan_of, `compute_boundary_vector_rates` warns that "about 6 % of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked": correct, the authors removed every sample under 5 cm/s.
 
 ## G-041: 000044 has no ripple table; replay candidates are population bursts
 
@@ -1144,4 +1154,275 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   awake periods. `read_position` finds neither series (G-032).
 - Harness workaround: the loader reads sensor 0 with pynwb and keeps pixels
 - Proposed change: none for neurospatial beyond G-032
+- Status: open
+
+## G-070: Zhang 2022's deposit holds cell summaries, not tracking
+
+- Datasets: zhang_2022_ebc (dropped)
+- Operation / step: dataset selection
+- Kind: data-quirk
+- Evidence: Figshare 21647423 (`Zhang et al Figshare data.zip`, 197 MB) holds
+  MATLAB code and three MATLAB `table` files, `All_BDcells.mat` (370 rows,
+  48 cells, 14 rats), `All_HDcells.mat` (`mdata_2box` 189 rows,
+  `mdata_4box` 587 rows) and `All_TDcells.mat`, read with `mat-io`. Each
+  row has one cell's spike times and spike indices into a tracking stream,
+  and the authors' rate maps, egocentric maps and scores; no column holds
+  per-sample positions or head directions (checked on `All_BDcells` and
+  `All_HDcells`; the paper's data statement says "Summarized datasets").
+  Without the tracking, no occupancy or egocentric map can be computed, so
+  the dataset is dropped. The egocentric operation therefore has no
+  dataset whose authors classified egocentric boundary cells to compare with.
+- Harness workaround: none (not loaded)
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-071: Pre-registered expectations that were wrong in the archive batch
+
+- Datasets: takigawa_7114733, j16_23020757
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: the Takigawa extent check took the two 2 m tracks as one span
+  (180–240 cm), but the tracks lie side by side in the camera frame and
+  together span 249 cm in y (each track's own principal-axis extent is 186
+  and 194 cm, G-076). J16's `headings_span_the_circle` assumed the
+  file's `head_orientation` would be used as head direction; the loader
+  leaves it out (G-072), so the check has nothing to measure.
+- Harness workaround: none (the expectations stay as registered)
+- Proposed change: none
+- Status: won't fix (the expectations, not the loaders, were wrong)
+
+## G-072: J16's head orientation sits 13° off the direction of movement
+
+- Datasets: j16_23020757
+- Operation / step: loader (frame check), hd.tuning, rates.egocentric_boundary
+- Kind: data-quirk
+- Evidence: `head_orientation` (radians, [−π, π], 36 of 36 direction bins
+  covered) minus the direction of movement above 10 cm/s has a circular
+  mean of +13.1° and a median spread of 20.4°; the offset has the same sign
+  on all nine corridors (+3.9° to +20.5°) and is the same against the
+  file's own `head_velocity` (+13.4°). The frame check refuses a mean
+  beyond 0.2 rad (11.5°), so the loader leaves `headings` empty and keeps
+  the series in `params["head_orientation"]`. A 13° rotation is not a frame
+  error (those are 90°, 180° or a mirror); it is either the headstage
+  mounting or the rat's head posture, and the file cannot tell which. 21 of
+  the 203 units have no spikes in this epoch.
+- Harness workaround: none (headings not used)
+- Proposed change: none for neurospatial. For the harness: decide whether
+  the frame check should separate a frame error (|mean| near π/2 or π)
+  from a small constant offset.
+- Status: open (question for the maintainer)
+
+## G-073: Agarwal's `headDirDeg` is not a head direction
+
+- Datasets: agarwal_24757638
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: in session rec02, 78 % of tracked samples of `headDirDeg` are
+  exactly 0 and the rest sit on 45° steps (106 distinct values in 4.7
+  million samples); heading minus direction of movement above 10 cm/s has
+  a median spread of 89.4°, what an unrelated angle gives. Untracked
+  samples are stored as `xMM = yMM = 0` (0.20 %). The record documents
+  neither.
+- Harness workaround: the loader leaves `headings` empty and sets
+  `xPix = yPix = 0` samples to NaN
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-074: The Grieves lattice files leave units and frames undocumented
+
+- Datasets: grieves_2020_lattice
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: `lattice_3d.pox/poy/poz` have no stated unit; the speed of the
+  stored positions is 10.03 × the stored velocity `pov` (median), and
+  `pov`'s median of 11.7 is a climbing rat's speed in cm/s, so positions
+  are mm. The head direction `lattice.poh` is the azimuth in the overhead
+  camera's 2-D frame: against `lattice.pox/poy` heading minus movement has
+  mean −0.8° and spread 42°, against the 3-D frame's x, y the mean is
+  −113°. Each tetrode's cluster 0 field holds only `spike_times`
+  (0.68–1.5 million spikes, 5.7 million in all), the unsorted remainder.
+  The zip uses Deflate64, which Python's `zipfile` cannot inflate.
+- Harness workaround: the loader divides by 10 with the speed-ratio check,
+  leaves out headings and cluster 0, and `_fetch` inflates Deflate64 with
+  `inflate64` and checks the CRC-32
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-075: Shipley's position header says 30 Hz; the camera ran at 30.05 Hz
+
+- Datasets: shipley_30902972
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: `trialData.pos` concatenates 12 trials' tracking (146,101
+  samples) and states `sample_rate 30.0 hz`; sample index / 30 Hz ends
+  4870.0 s, 8 s after the last spike (4862.1 s). The file maps each curated
+  spike to its position sample (`tetrode(k).pos_sample`); a line per trial
+  through those pairs gives 30.047–30.064 Hz and trial offsets within
+  0.4 s, worst residual 41 ms. `pos.dir` equals `dir_disp`: with one LED it
+  is the direction of displacement, not head direction. The Kilosort
+  `spike_times.npy` / 30 kHz for the 71 `good` clusters equals the 1,201,058
+  curated tetrode timestamps exactly.
+- Harness workaround: the loader times the position samples with the
+  per-trial fit
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-076: Takigawa's two tracks have different pixel calibrations; two sessions are duplicates
+
+- Datasets: takigawa_7114733
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: in RAT5_SESS1 each track's `cm_per_pixel` (from its 2 m length)
+  is 0.388 and 0.443; the session's `cm_per_pixel` 0.426 is their average,
+  and with it track 1 reads about 10 % long and track 2 about 4 % short.
+  With each track's own factor, the tracks' extents along their principal
+  axes are 186.3 and 194.2 cm (the tracks are not straight, so less than the
+  2 m path), and the two stay at least 32 cm apart, so no 4 cm bin holds
+  both. In the record, `RAT1_SESS2_*` and `RAT4_SESS1_*` are byte-identical
+  (same MD5 for both the clusters and the position files), so one of those
+  two sessions is not what its name says.
+- Harness workaround: the loader converts each track with its own factor and
+  range-checks each track's principal-axis extent (170–205 cm); a first
+  version used the session average
+- Proposed change: none
+- Status: fixed in the loader (scale); won't fix (the duplicate sessions are
+  the record's)
+
+## G-077: The water-maze file gives no length unit
+
+- Datasets: watermaze_10248158
+- Operation / step: loader, behavior.segment_by_velocity
+- Kind: data-quirk
+- Evidence: EthoVision's raw coordinates and the arena description (pool
+  circle radius 95, platform radius 10) carry no unit or pixels-per-cm
+  calibration, in the file, the Figshare record or the Rtrack export. The
+  loader keeps `position_units="arbitrary"`, so no speed threshold can be
+  stated and `behavior.segment_by_velocity` is n/a. Each trial's clock
+  starts at 0 and the file holds no time between trials.
+- Harness workaround: trials laid 200 s apart on one clock, with a NaN
+  sample marking each trial's end
+- Proposed change: none
+- Status: won't fix (data quirk)
+
+## G-078: The harness's decoding chance level used straight-line distance against a geodesic error
+
+- Datasets: all with `decode.position`
+- Operation / step: decode.position
+- Kind: docs
+- Evidence: `DecodingResult.error_against` measures along the bin graph by
+  default (`metric="geodesic"`, documented); the harness computed its
+  chance level with `np.linalg.norm`. On open fields the two differ by at
+  most about 8 %, but on mazes they do not: on the Olafsdottir Z-track the
+  median error is 115 cm (geodesic) against a Euclidean chance of 112 cm,
+  which read as chance; the geodesic chance is 142 cm. The harness now
+  computes chance with `decoding_error(..., metric="geodesic")`, shuffling
+  the true positions within each connected part of the bin graph: a global
+  shuffle on Takigawa's two separate tracks puts 51 % of pairs an infinite
+  path apart (median inf); within each track the chance is 68.3 cm, and the
+  share of cross-part pairs is reported as `chance_frac_disconnected`.
+  Every geodesic chance differs from the old straight-line one when a
+  recording is rerun, open fields included (quantized to bin centres, and
+  8-connected paths up to about 8 % longer than the straight line). A user
+  writing the same baseline by hand would make the same mistakes: nothing in
+  the result says which metric its error used.
+- Harness workaround: none (fixed in the harness; tested on a U-shaped track
+  and on two separate boxes)
+- Proposed change: show the metric next to the error in the decoding
+  tutorial, and give a chance-level helper that uses the same metric
+- Status: open
+
+## G-079: The large-grid warning suggests a smaller bin than the one in use
+
+- Datasets: grieves_2020_lattice (hazard probed once by hand, not by the driver)
+- Operation / step: env.from_samples, rates.spatial
+- Kind: error-message
+- Evidence: with Grieves' mm positions taken as cm (×10) and `bin_size=4.0`,
+  `Environment.from_samples` warns "Creating large grid with shape (388,
+  429, 371) (61,753,692 bins). Estimated memory usage: 83863.5 MB … Fix:
+  increase bin_size; … For example, use bin_size=2.0". The example is a
+  fixed string (`src/neurospatial/layout/helpers/utils.py:412`), here half
+  the bin size in use. These numbers come from a one-off manual run, not
+  from a committed script: the environment built in 1.3 s (109,862 visited
+  bins, 4.4 GB peak), and in a first driver run, before the hazard was taken
+  out of `HAZARDS`, `compute_spatial_rates` on it ran for over an hour at
+  18 GB before the run was stopped. The
+  warning is the only signal of the unit error, which makes it the right
+  place to name the likely cause.
+- Harness workaround: the hazard is documented in the loader and left out
+  of the driver's probes
+- Proposed change: compute the example from the current `bin_size` and the
+  grid shape (e.g. the bin size that keeps the grid under the threshold),
+  and say that a grid this large often means positions in a smaller unit
+  than stated
+- Status: open
+
+## G-080: Pixels taken for cm (a 2–4× scale error) are silent
+
+- Datasets: olafsdottir_5566548, shipley_30902972, takigawa_7114733 (hazard `pixels_labelled_cm`)
+- Operation / step: env.from_samples, env.occupancy, rates.spatial, behavior.segment_by_velocity
+- Kind: silent-hazard
+- Evidence: each loader converts pixels with a calibration the source
+  states (390 and 274 pixels per metre; 0.388 and 0.443 cm per pixel on
+  Takigawa's two tracks). With the pixels kept and called cm, nothing warns
+  on any of the three: the Z-track's environment grows from 556 to 4281
+  bins (extent 172 → 664 "cm"), the radial maze from 697 to 3488
+  (177 → 480), the two 2 m tracks from 952 to 3997 (252 → 592); speeds
+  2.3–3.9 × too high pass the speed gates (running occupancy 1266 → 1702 s,
+  1350 → 1737 s, 1093 → 1510 s) and median peak rates rise 2–8 × from sparse
+  bins (3.8 → 30.2 Hz, 16.7 → 60.1 Hz, 11.3 → 25.3 Hz). The fewer-than-5-bins check (decision 1) cannot see a
+  scale error in this direction; only a stated apparatus size can.
+- Harness workaround: none (each loader range-checks its span against the
+  apparatus with `checked_span`)
+- Proposed change: none on raw arrays. Where an environment is built from an
+  arena outline (`from_polygon`, or an `arena=` with a stated size), samples
+  far outside it could warn.
+- Status: open
+
+## G-081: A position clock a fraction of a percent slow shifts spikes against positions silently
+
+- Datasets: shipley_30902972 (hazard `clock_from_header_rate`)
+- Operation / step: env.occupancy, rates.spatial, behavior.segment_by_velocity
+- Kind: silent-hazard
+- Evidence: timing Shipley's positions as index / 30 Hz, the header's
+  nominal rate, instead of the camera's measured 30.05 Hz puts positions up
+  to 8 s late by the session's end. Occupancy barely changes (1349.5 s
+  both ways) but the median peak rate falls from 16.7 to 10.7 Hz, and no
+  warning fires: the spikes all still fall inside the (slightly longer)
+  tracking span. On Vollan (G-040) closing gaps shortened the span and the
+  drop warning caught it; a drift that lengthens the span is invisible to
+  that check.
+- Harness workaround: the loader times samples from the file's
+  spike-to-sample map (G-075)
+- Proposed change: none in neurospatial (no value check can see a slow
+  clock); a loader-side check, as here, is the only defence
+- Status: open
+
+## G-082: No egocentric boundary cell test, and no speed gate on boundary maps
+
+- Datasets: gardner_2022_grid, vollan_of, vollan_lt, giocomo_001701 (the
+  operation run on the earlier recordings with head direction)
+- Operation / step: rates.egocentric_boundary
+- Kind: missing-feature
+- Evidence: `compute_boundary_vector_rates(..., direction_frame="egocentric",
+  boundary_source="analysis")` runs on every recording with head direction
+  (an environment from samples declares no walls, so the edge of the
+  visited bins stands for them; the default `"physical"` raises as for
+  border scores, G-005). The share of units whose peak lies in the outermost
+  ring (45–50 cm), where the docstring says untuned cells peak by chance
+  (16–31 % of untuned simulated cells), is 10 % of 483 units in Gardner's
+  1.5 m box, 48 % of 644 in Vollan's open field, 33 % of 320 on 001701's
+  X maze and 44 % of 389 on Vollan's linear track (where "walls" are the
+  track's edges). Median distance information is 0.02–0.05 bits. There is no
+  public verdict for boundary-vector or egocentric boundary cells (no
+  `is_*` predicate; there are ones for place, head-direction, object-vector,
+  egocentric object-vector and spatial-view cells),
+  so these maps cannot be screened. `compute_boundary_vector_rates` also has
+  no `min_speed=`, unlike `compute_spatial_rates`; the operation runs on all
+  samples. No new recording in this batch has usable head direction (G-072,
+  G-073, G-074; one LED on the others), and Zhang 2022's authors'
+  classification could not be compared (G-070).
+- Harness workaround: none (the operation runs with `boundary_source="analysis"`)
+- Proposed change: a shuffle verdict for boundary-vector and egocentric
+  boundary maps with the same `criterion=` contract as the other
+  predicates; `min_speed=` on the boundary-vector entry points
 - Status: open

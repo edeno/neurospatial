@@ -21,8 +21,9 @@ def test_driver_statuses_on_simulated_recording(simulated_record):
     statuses = {
         op: entry["status"] for op, entry in simulated_record["operations"].items()
     }
-    assert statuses.pop("hd.tuning") == "n/a"
-    assert simulated_record["operations"]["hd.tuning"]["note"] == "needs headings"
+    for op_id in ("hd.tuning", "rates.egocentric_boundary"):
+        assert statuses.pop(op_id) == "n/a"
+        assert simulated_record["operations"][op_id]["note"] == "needs headings"
     # An outline inferred from samples has no declared walls, so the physical
     # border score refuses it; the operation records that as an error.
     border = simulated_record["operations"]["cells.border_score"]

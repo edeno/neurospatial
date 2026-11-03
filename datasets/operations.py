@@ -255,6 +255,51 @@ def hd_tuning(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
 
 
+def chance_errors(
+    env: Any, actual: np.ndarray, *, seed: int
+) -> tuple[np.ndarray, float]:
+    """Chance decoding errors: each true position against a shuffled other one.
+
+    The true positions at the decoded times are permuted (seeded) within
+    each connected part of the environment's bin graph, and each pair's
+    distance is measured as ``error_against`` measures by default
+    (geodesic, along the bin graph). A permutation across parts would put
+    pairs an infinite path apart; their share under one global permutation
+    is returned alongside.
+
+    Parameters
+    ----------
+    env : Environment
+    actual : ndarray, shape (n, n_dims)
+        Finite true positions at the decoded times.
+    seed : int
+
+    Returns
+    -------
+    errors : ndarray, shape (n,)
+        Geodesic distance of each within-part pair.
+    frac_disconnected : float
+        Share of pairs in different parts under a global permutation.
+    """
+    import networkx as nx
+
+    from neurospatial.decoding.metrics import decoding_error
+
+    rng = np.random.default_rng(seed)
+    part_of_bin = np.full(env.n_bins, -1)
+    for label, part in enumerate(nx.connected_components(env.connectivity)):
+        part_of_bin[list(part)] = label
+    bins = np.asarray(env.bin_at(actual))
+    part = np.where(bins >= 0, part_of_bin[np.clip(bins, 0, None)], -1)
+    frac_disconnected = float(np.mean(part != part[rng.permutation(len(part))]))
+    shuffled = actual.copy()
+    for label in np.unique(part):
+        members = np.flatnonzero(part == label)
+        shuffled[members] = actual[members[rng.permutation(len(members))]]
+    errors = decoding_error(env, shuffled, actual, metric="geodesic")
+    return np.asarray(errors, dtype=float), frac_disconnected
+
+
 def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
     from neurospatial.decoding import BayesianDecoder
 
@@ -271,23 +316,21 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
     result = decoder.predict(spikes, rec.times, epochs=test)
     error = result.error_against(rec.times, rec.positions)
-    # Chance: distance between each decoded bin's true position and the true
-    # position of a random other decoded bin (seeded permutation).
     actual = np.column_stack(
         [
             np.interp(result.times, rec.times, column)
             for column in np.asarray(rec.positions).T
         ]
     )
-    actual = actual[np.isfinite(actual).all(axis=1)]
-    shuffled = actual[np.random.default_rng(0).permutation(len(actual))]
+    chance, disconnected = chance_errors(
+        result.env, actual[np.isfinite(actual).all(axis=1)], seed=0
+    )
     return Outcome(
         "ok",
         {
             "median_error": float(np.nanmedian(error)),
-            "chance_median_error": float(
-                np.median(np.linalg.norm(actual - shuffled, axis=1))
-            ),
+            "chance_median_error": float(np.nanmedian(chance)),
+            "chance_frac_disconnected": disconnected,
             "units": str(rec.position_units),
             "n_time_bins": int(result.n_time_bins),
         },
@@ -771,6 +814,61 @@ def imaging_rates_workaround(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
 
 
+def egocentric_boundary(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Egocentric boundary maps: rate by distance and egocentric direction to walls.
+
+    Uses ``compute_boundary_vector_rates`` with ``direction_frame="egocentric"``
+    and its defaults (0-50 cm in 5 cm rings, 30 degree bins, unsmoothed). An
+    environment built from samples declares no walls, so the walls are the
+    edge of the visited bins (``boundary_source="analysis"``). The summary
+    counts units whose peak is in the outermost ring, where the docstring
+    says untuned cells peak by chance, and units whose peak is on the left
+    (egocentric direction in (0, pi)).
+    """
+    from neurospatial.encoding import compute_boundary_vector_rates
+
+    if rec.positions.shape[1] != 2:
+        return Outcome("n/a", note="egocentric boundary maps need 2-D positions")
+    rates = compute_boundary_vector_rates(
+        _env(rec, cache),
+        list(rec.spike_times or ()),
+        rec.times,
+        rec.positions,
+        rec.headings,
+        direction_frame="egocentric",
+        boundary_source="analysis",
+        epochs=rec.params.get("analysis_epochs"),
+    )
+    cache["egocentric_boundary"] = rates
+    table = rates.summary_table()
+    distance = np.asarray(table["preferred_distance"], dtype=float)
+    direction = np.asarray(table["preferred_direction"], dtype=float)
+    low, high = rates.distance_range
+    ring = (high - low) / rates.n_distance_bins
+    peaked = np.isfinite(distance)
+    return Outcome(
+        "ok",
+        {
+            "n_units": len(table),
+            "n_with_peak": int(peaked.sum()),
+            "median_preferred_distance": float(np.median(distance[peaked]))
+            if peaked.any()
+            else float("nan"),
+            "frac_peak_in_last_ring": float(np.mean(distance[peaked] > high - ring))
+            if peaked.any()
+            else float("nan"),
+            "frac_peak_on_left": float(np.mean(np.sin(direction[peaked]) > 0))
+            if peaked.any()
+            else float("nan"),
+            **{
+                "distance_information_" + k: v
+                for k, v in _finite_stats(table["distance_information"]).items()
+            },
+        },
+        note="walls = edge of the visited bins (boundary_source='analysis')",
+    )
+
+
 _SPIKES_AND_POSITIONS = ("positions", "spike_times")
 
 OPERATIONS: tuple[Operation, ...] = (
@@ -785,6 +883,11 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("cells.grid_score", _SPIKES_AND_POSITIONS, grid_scores),
     Operation("cells.border_score", _SPIKES_AND_POSITIONS, border_scores),
     Operation("hd.tuning", ("headings", "spike_times"), hd_tuning),
+    Operation(
+        "rates.egocentric_boundary",
+        ("positions", "headings", "spike_times"),
+        egocentric_boundary,
+    ),
     Operation("decode.position", _SPIKES_AND_POSITIONS, decode_position),
     Operation("io.nwb_roundtrip", _SPIKES_AND_POSITIONS, nwb_roundtrip),
     Operation("env.from_graph", ("positions",), env_from_graph),
