@@ -158,5 +158,15 @@ operation cells; each writes to `results/studies/`:
    unit against the value ranges, and list every conversion.
 3. Add `HAZARDS` for any quirk the loader corrects, so the driver can check
    whether neurospatial would have caught it.
+   Where a source states the apparatus, declare it in
+   `geometry["environment"]`, a zero-argument callable returning the
+   environment, placed on the clean samples inside `load()`: arenas with
+   `_geometry` (a stated square or circle), tracks and mazes with `_tracks`
+   (a graph from the authors' file or a stated layout fitted to the samples,
+   the stated width or one measured, the fit residual in `conversions`). The
+   driver analyses it (`env_kind` "declared" in the matrix);
+   `run.py --inferred-env` reruns on samples-built environments into
+   `results/inferred_env/` for comparison
+   (`studies/declared_vs_inferred.py`).
 4. Run the driver, give every non-`ok` cell and every new warning or hazard row
    a gap entry or verdict, and commit the results.
