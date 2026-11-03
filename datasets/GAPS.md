@@ -2049,8 +2049,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   and arms of 64.9-75.8 cm (-11 %, kept). 001845's W-maze (base 91.6 cm,
   arms 80.4-93.9 cm) is refused for its thinly sampled base (80 % of a base
   segment has no sample within a bin in 123 s of pose, G-116), not its size.
-  Shipley's radial maze agrees: centre to arm end 84.7-99.0 cm against the
-  stated 80 cm arm plus a 12.35 cm platform radius (92.35 cm; -8 % to +7 %).
+  Shipley's radial maze agrees: centre to arm end 86.9-95.5 cm against the
+  stated 80 cm arm plus a 12.35 cm platform radius (92.35 cm; -6 % to +3 %).
 - Harness workaround: a refused layout stays inferred; a kept one uses the
   fitted lengths, which are the samples' frame, and states the comparison in
   `conversions`
