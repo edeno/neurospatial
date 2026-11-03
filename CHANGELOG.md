@@ -44,7 +44,8 @@
   in this dataset". `Recording.animation(*, time_range=None,
   trail_length=None)` returns an `Animation` of the session: occupancy over the
   environment with the path, headings, spike raster, events and epochs on top,
-  from the first 60 s of tracking by default, to open with `.show()` or write
+  from the first 60 s of tracking by default (30 frames a second when tracking
+  is faster), to open with `.show()` or write
   with `.export()`. A session without positions raises `InputError`.
 
 ### Fixes from the review of the result contract, warnings and simulators

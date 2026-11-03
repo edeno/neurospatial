@@ -21,6 +21,9 @@ __all__: list[str] = []
 #: Seconds of tracking the overview's time panel and the animation open on.
 WINDOW_SECONDS = 60.0
 
+#: Frames per second of the scene's clock for faster tracking (viewers play at most 60).
+MAX_FRAME_RATE = 30.0
+
 _EPOCH_COLORS = ("gold", "tab:cyan", "tab:pink", "tab:olive", "tab:purple")
 
 
@@ -88,11 +91,9 @@ def _panel_environment(rec: Recording, ax: Axes) -> None:
     if rec.env.n_dims == 3:
         _note(ax, title, "3-D environment:\nopen rec.animation()")
         return
-    rec.env.plot(ax=ax, show_connectivity=False)
+    rec.env.plot(ax=ax)
     if rec.positions.shape[1] == 2:
-        ax.plot(
-            rec.positions[:, 0], rec.positions[:, 1], c="tab:red", lw=0.4, alpha=0.7
-        )
+        ax.plot(rec.positions[:, 0], rec.positions[:, 1], c="tab:red", lw=0.6, zorder=5)
     ax.set_title(title)
 
 
@@ -257,7 +258,9 @@ def animation(
         The session.
     time_range : (float, float), optional
         Seconds [start, stop) to show, on the recording's clock. Default: the
-        first 60 s of tracking.
+        first 60 s of tracking. The scene has one frame per tracking sample,
+        or 30 frames a second when tracking is faster; the overlays keep their
+        own samples.
     trail_length : int, optional
         Length of the path trail behind the animal, in frames.
 
@@ -315,6 +318,9 @@ def animation(
             )
         )
     frame_times = rec.times[window]
+    if np.median(np.diff(frame_times)) < 1.0 / MAX_FRAME_RATE:
+        # Tracking faster than a viewer can play: draw 30 frames a second.
+        frame_times = np.arange(frame_times[0], frame_times[-1], 1.0 / MAX_FRAME_RATE)
     # A field row is held until the next row, so a static field is two equal
     # rows at the scene's first and last frame.
     occupancy = occupancy_field(rec)

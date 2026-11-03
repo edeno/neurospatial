@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")
+mpl.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -57,10 +57,12 @@ def test_occupancy_panel_is_the_data(square_recording):
     masked = np.ma.getmaskarray(array).ravel()[nearest]
     occupancy = rec.env.occupancy(rec.times, rec.positions)
     visited = occupancy > 0
-    assert visited.any() and (~visited).any()
+    assert visited.any()
+    assert (~visited).any()
     np.testing.assert_allclose(shown[visited], occupancy[visited])
     # Never-visited bins are masked, so they draw in the NaN color.
-    assert masked[~visited].all() and not masked[visited].any()
+    assert masked[~visited].all()
+    assert not masked[visited].any()
     assert not _texts(ax)
     # Every sample is a visited bin: the occupancy sums to the tracked time.
     assert occupancy.sum() == pytest.approx(rec.times[-1] - rec.times[0], rel=0.02)
@@ -96,7 +98,7 @@ def test_time_panel_draws_the_first_minute(square_recording):
     rec = square_recording
     ax = _titled(rec.plot_overview(), "First 60 s")
     top, bottom = ax.child_axes
-    (x_line, y_line) = top.lines
+    (x_line, _y_line) = top.lines
     stop = rec.times[0] + 60.0
     n_window = int(np.sum((rec.times >= rec.times[0]) & (rec.times < stop)))
     np.testing.assert_array_equal(x_line.get_ydata(), rec.positions[:n_window, 0])
@@ -131,7 +133,8 @@ def test_animation_scene_holds_the_data(square_recording):
     position = kinds[PositionOverlay]
     np.testing.assert_array_equal(position.positions, rec.positions)
     np.testing.assert_array_equal(position.times, rec.times)
-    assert position.trail_length == 10 and position.units == "cm"
+    assert position.trail_length == 10
+    assert position.units == "cm"
     np.testing.assert_array_equal(kinds[HeadDirectionOverlay].headings, rec.headings)
     raster = kinds[SpikeRasterOverlay]
     assert len(raster.spike_times) == rec.n_units
@@ -145,12 +148,15 @@ def test_animation_scene_holds_the_data(square_recording):
     np.testing.assert_array_equal(epochs["rest"]._intervals, rec.epochs["rest"])
     # The default window is the first 60 s of tracking (here the whole session).
     assert scene.frame_times[0] == rec.times[0]
+    # 100 Hz tracking is drawn at 30 frames a second, a rate viewers can play.
+    np.testing.assert_allclose(np.diff(scene.frame_times), 1 / 30)
     assert scene.frame_times[-1] < rec.times[0] + 60.0
 
 
 def test_animation_time_range(square_recording):
     scene = square_recording.animation(time_range=(10.0, 20.0))
-    assert scene.frame_times[0] >= 10.0 and scene.frame_times[-1] < 20.0
+    assert scene.frame_times[0] >= 10.0
+    assert scene.frame_times[-1] < 20.0
     with pytest.raises(InputError, match="time_range"):
         square_recording.animation(time_range=(1000.0, 1010.0))
 
@@ -162,7 +168,8 @@ def test_animation_regions_follow_the_environment(square_recording):
 def test_animation_needs_positions(heading_recording):
     with pytest.raises(InputError, match="no positions") as raised:
         heading_recording.animation()
-    assert "headings" in str(raised.value) and "spike_times" in str(raised.value)
+    assert "headings" in str(raised.value)
+    assert "spike_times" in str(raised.value)
 
 
 def test_animation_export_frames(square_recording, tmp_path):
@@ -211,6 +218,7 @@ def test_track_recording_overview_and_scene(track_recording):
 @pytest.mark.gui
 @pytest.mark.parametrize("dims", [2, 3])
 def test_animation_show_fastplotlib(dims, square_recording, room_recording):
+    pytest.importorskip("fastplotlib")
     rec = square_recording if dims == 2 else room_recording
     view = rec.animation().show(backend="fastplotlib")
     view.close()
