@@ -26,6 +26,13 @@ What the loader converts:
   ``spike_times`` (s, the same clock), except cluster 0 of each tetrode:
   those six fields hold only ``spike_times`` (0.68-1.5 million each, no cell
   analyses), the unsorted remainder. 24 units remain.
+- Lattice: ``sdata.lattice_3d.lx/ly/lz`` hold the lattice's 147 bars in
+  the positions' frame (mm, start, stop and a NaN separator per bar; each
+  bar 970 mm, the cube's side) and ``sdata.config3.lattice_type`` reads
+  "diagonal": this rat climbed the tilted lattice. Divided by 10 -> cm,
+  kept in ``geometry["lattice_bars_cm"]``, shape (147, 2, 3); the loader
+  checks there are 147 bars (7 x 7 per axis), each 97.0 cm (the paper's
+  Supplementary Methods: 0.97 m a side).
 - Head direction is not used. ``sdata.lattice.poh`` (degrees) is the azimuth
   in the overhead camera's 2-D frame: against the 2-D positions
   (``sdata.lattice.pox/poy``) heading minus movement direction has mean
@@ -86,6 +93,10 @@ _SHA256 = "fd0f62bc04c588d56b8810b98e250588e22c37684d39c4db3809ad491a8c8aa5"
 _CELL = re.compile(r"r926_06042018_t(\d+)_c(\d+)$")
 _SPAN_CM = (120.0, 200.0)
 _MM_PER_CM = 10.0
+# Supplementary Methods: a 6 x 6 x 6 lattice of cubes, 0.97 m a side, so 7 x 7
+# bars along each of the three axes.
+_N_BARS = 147
+_LATTICE_SIDE_CM = 97.0
 RUNNING_CM_S = 10.0
 
 
@@ -106,6 +117,8 @@ def load(cache: Path | None = None) -> Recording:
         times = _vector(part, "pot")
         stored = np.column_stack([_vector(part, k) for k in ("pox", "poy", "poz")])
         velocity = _vector(part, "pov")
+        bars = np.column_stack([_vector(part, k) for k in ("lx", "ly", "lz")])
+        lattice_type = "".join(map(chr, sdata["config3"]["lattice_type"][()].ravel()))
         flat = sdata["lattice"]
         azimuth = np.angle(np.exp(1j * np.radians(_vector(flat, "poh"))))
         camera = np.column_stack([_vector(flat, "pox"), _vector(flat, "poy")])
@@ -126,6 +139,21 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"position speed / pov = {ratio:.2f}; expected 10 (mm vs cm/s)"
         raise ValueError(msg)
     positions = stored / _MM_PER_CM
+    triplets = bars.reshape(-1, 3, 3)
+    bars_cm = triplets[:, :2] / _MM_PER_CM
+    bar_lengths = np.linalg.norm(bars_cm[:, 1] - bars_cm[:, 0], axis=1)
+    if (
+        len(bars_cm) != _N_BARS
+        or not np.isnan(triplets[:, 2]).all()
+        or np.isnan(bars_cm).any()
+        or not np.allclose(bar_lengths, _LATTICE_SIDE_CM, atol=0.1)
+    ):
+        msg = (
+            f"lattice_3d lx/ly/lz: expected {_N_BARS} (start, stop, NaN) bars of"
+            f" {_LATTICE_SIDE_CM:g} cm, got {len(bars_cm)} with lengths"
+            f" {bar_lengths.min():.1f}-{bar_lengths.max():.1f} cm"
+        )
+        raise ValueError(msg)
     span = checked_span(positions, *_SPAN_CM)
     # The azimuth against the camera's 2-D frame and against the 3-D frame.
     in_camera = heading_vs_movement(
@@ -147,6 +175,7 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=tuple(spikes),
         unit_ids=np.asarray(ids),
         epochs={"lattice": lattice},
+        geometry={"lattice_bars_cm": bars_cm, "lattice_type": lattice_type},
         params={
             "bin_size": 4.0,
             "min_speed": 3.0,
@@ -160,6 +189,8 @@ def load(cache: Path | None = None) -> Recording:
             f" position speed / pov median {ratio:.2f})",
             span,
             "times: lattice_3d pot as stored (s)",
+            f"geometry['lattice_bars_cm']: lattice_3d lx, ly, lz / 10, {len(bars_cm)}"
+            f" bars; config3.lattice_type {lattice_type!r}",
             f"units: {len(spikes)} tetrode/cluster fields; cluster 0 of each tetrode"
             f" ({n_unsorted} spikes, unsorted) left out",
             "headings: none; lattice.poh minus the direction of movement above"

@@ -342,6 +342,20 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   staircase session (all five sessions' tracks in one image), the 001845
   W-maze and the 000003 arena, as it should be. Kanter's 1 m open field
   gives 1 clockwise "lap" (cell `ok`): the open-arena case that #265 left.
+- More evidence (environment fidelity, `studies/environment_fidelity.py`):
+  the unvisited patches are counted. Holes (unvisited cells that visited
+  bins enclose) in the driver's environments: 000582 72 holes (136 bins, a
+  10 min session), 002030 19 (722 bins: the mouse ran along the wall and
+  crossed the 96 cm arena on a few paths, so bins cover 37 % of the stated
+  circle), Kanter 49 (460 bins, 65 % of the 1 m square covered), 000405 105
+  (446), Vollan's open field 131 (297), the water maze 8 (9); none in
+  Gardner's (143 min), 001880's (287 min) or 000987's (20 min).
+  `Environment.open_field` (the same with `fill_holes=True`) removes them:
+  000582 keeps 2 holes and its bins then cover 94 % of the 1 m square,
+  002030 none (99 % of the circle), Kanter none (94 %), 000405 none. Around
+  the holes the outlines match the stated squares: the outermost bins come
+  within a median 1.6 cm (0.6 bin) of the stated wall in 000582, Kanter and
+  Gardner, so border and boundary measures see the wall where it is.
 
 ## G-016: A track graph without `track_width` cannot place positions
 
@@ -532,6 +546,22 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (positions kept as recorded; rate maps use flights)
 - Proposed change: none
 - Status: open
+- More evidence (environment fidelity): Forli et al. 2025 (Methods) give
+  the indoor flight room as 5.6 x 5.2 x 2.5 m with two feeders on the wall
+  at one end; `r_lim` spans 5.8 x 5.2 x 2.3 m, so its y range is the room's
+  width, and the samples down to y = -4.2 m lie outside the room the paper
+  describes as well. The 0.2 m voxel environment from
+  all samples has 4.4 % of its 1,352 voxels outside `r_lim`: a corridor of
+  voxels runs out of the room to y = -4.2 m (1.77 m past the wall) at
+  x = -2.6 m, z = 0.9 m, where 2.4 % of the resting samples sit. 97.6 % of
+  the samples are rest, mostly at one perch on the -x wall
+  (-2.7 to -2.4, 1.5, 1.8 m). Of the two feeders `NP_Bat_Demo.m` places
+  (`r_fd`, both at x = 2.8 m, the +x wall: the paper's "wall at one end"),
+  one lies in a voxel and the other 0.17 m from the nearest voxel centre,
+  outside the environment (the script itself corrects `r_fd` to the nearest
+  rest cluster within 0.2 m). The voxels reach the x walls and the
+  ceiling (within 0.11 m) but stop 0.12 m above the floor. The room's walls
+  are not part of the environment, only the visited voxels.
 
 ## G-026: The figure-8's linearized position wraps around
 
@@ -795,6 +825,21 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (the expectations stay as registered)
 - Proposed change: none
 - Status: won't fix (the expectations, not the loaders, were wrong)
+- More evidence (environment fidelity): what the off-track 84 % of
+  000044's linear-track samples are. The linearized coordinate covers the
+  stem (0-160 cm, the paper's 1.6 m stem). Of the tracked samples, 61 % sit
+  beyond its west end (x -51 to -26 cm, y -49 to 6 cm, about 1,000 s, slow:
+  median 12 cm/s against 54 cm/s on the stem) and 17 % beyond its east end
+  (x 129-137 cm): the two reward ends, where the head covers a wider area
+  (25 by 55 cm at the west end) than the paper's 15 cm reward areas on the
+  track; 3.5 % are the first 110 s, before the rat reached the track
+  (y 64-161 cm); 2.2 % lie beside the stem. The environment from all samples
+  has 1,096 bins in 21 parts (3 with 1 % of the bins or more: the track with
+  its ends, 872 bins; where the rat was before the track, y 104-164 cm, 178;
+  12 on the way between). On the circular track the
+  linearized coordinate's two ends (0 and 290 cm) sit 27 cm apart in the
+  camera, so the coordinate does not close the loop; a circle through the
+  centreline is about 106 cm across, the paper's 1 m maze.
 
 ## G-040: Vollan files are speed-filtered and list fewer sessions than they hold
 
@@ -981,6 +1026,15 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: none beyond G-017's repeated-coordinate check, which would
   catch (0, 255) as well as (0, 0)
 - Status: open
+- More evidence (environment fidelity): the driver's environment pools the
+  five sessions, which overlap in the image (all span about 50-250 px):
+  2,174 bins, one main part. The staircase session alone gives 1,233 bins
+  in 23 parts (2 with 1 % of the bins or more), 74 holes and 58 % of its
+  bins holding fewer than 5 samples; its samples fill x 0-239 and y 81-254
+  px (1st-99th percentile) with no visible track, so whether staircase parts at different
+  heights overlap in the overhead view cannot be read from the data, and the
+  layout (DANDI 001754: three yaw and three pitch turns of 90 degrees closing
+  a loop) gives no dimensions to compare. Not verified.
 
 ## G-054: 000568's video timestamps run 22.6 s ahead of its position timestamps
 
@@ -1276,6 +1330,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   `inflate64` and checks the CRC-32
 - Proposed change: none
 - Status: won't fix (data quirk)
+- More evidence (environment fidelity): the session file does document the
+  lattice: `lattice_3d.lx/ly/lz` hold its 147 bars in the positions' frame
+  (mm; 97 cm each, the paper's 0.97 m cube) and `config3.lattice_type` is
+  "diagonal", the tilted lattice; the loader now returns them as
+  `geometry["lattice_bars_cm"]` (G-111 uses them).
 
 ## G-075: Shipley's position header says 30 Hz; the camera ran at 30.05 Hz
 
@@ -1645,3 +1704,202 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: use a lag of several samples for integer-pixel tracking in
   future loaders
 - Status: fixed in the harness (option added); earlier loaders keep lag 1
+
+## G-110: An environment from samples joins the labyrinth's corridors through the walls between them
+
+- Datasets: rosenberg_labyrinth
+- Operation / step: env.from_samples (`studies/environment_fidelity.py`)
+- Kind: wrong-result
+- Evidence: in the repository's layout (`NewMaze`) the corridors are one
+  cell wide and neighbouring corridors abut, so nose samples on the two sides
+  of a wall fall in neighbouring 0.25-cell bins. `Environment.from_samples`
+  (2,780 bins, one component) fills almost the whole 15 x 15-cell square: for
+  random sample pairs (seeded) the path through its bins is a median 0.66 x
+  the distance along the authors' corridors (5th percentile 0.28). Nothing in
+  the samples shows the walls: 0.05 % of links have no sample within a bin of
+  their midpoint (2.4 % none within half a bin), because the mouse came close
+  to both sides of every wall. The track-graph environment the driver also
+  builds (`from_graph`, 350 bins) follows the corridors.
+- Harness workaround: none (`env.occupancy` and the other operations that
+  take `_env` use the sample-built grid; `laps` and `turn_sequence` use the
+  graph)
+- Proposed change: say in the `from_samples` docs that it cannot see walls
+  thinner than a bin, and point mazes to `from_graph` or to declared walls
+  (`arena=` with walls, which close the links they cross); in the harness,
+  use the graph environment for the labyrinth
+- Status: open
+
+## G-111: A voxel environment of the climbing lattice has no bars; a bar graph is buildable but not offered
+
+- Datasets: grieves_2020_lattice
+- Operation / step: env.from_samples (`studies/environment_fidelity.py`)
+- Kind: missing-feature
+- Evidence: the file stores the tilted lattice's 147 bars (`lattice_3d
+  lx/ly/lz`, 97 cm long, crossings 16.2 cm apart; the paper's Supplementary
+  Methods: a 6 x 6 x 6 cubic lattice 0.97 m a side, rotated to stand on a
+  vertex). The 4 cm voxel environment has 8,193 voxels in one component. Head
+  positions are a median 6.0 cm from the nearest bar (95th percentile 10.4
+  cm) and 17 % of them are farther from every bar than the centre of a
+  cube face (8.1 cm), so the head does move through the space between bars,
+  and only 0.7 % of voxel links have no sample within a bin of their
+  midpoint. But the voxel graph has no notion of the bars the rat stood on:
+  for random sample pairs (seeded) its path length is a median 0.77 x the distance
+  along the bars (5th percentile 0.62); for 5,478 pairs of samples at the
+  middle of parallel bars that bound one cube face (16.6 cm apart in a
+  straight line; about two spacings, 32 cm, along the bars) it is a median
+  18.2 cm against 31.1 cm along the bars, and below 0.75 x the bar distance
+  for 83 % of them. `Environment.from_graph` with 3-D node
+  positions builds the bar network (343 crossings, 882 bar segments: 4,410
+  bins, one component) and, with `track_width=` twice the 99th-percentile
+  offset (30.8 cm), places 99.0 % of head positions on it, but no
+  constructor takes a set of bars, and the edge order must list every
+  segment (G-112). Head movement is only weakly aligned with the bars (22 %
+  of 0.2 s steps within 20 degrees of a bar axis, 18 % for random
+  directions), so the voxel and bar distances bracket the head's travel.
+- Harness workaround: none (the driver's 3-D operations use the voxels)
+- Proposed change: a documented recipe, or a constructor, for climbing
+  structures from their bars (segments in 3-D); state in the 3-D docs that a
+  voxel environment from head positions measures the head's space, not the
+  climbing paths
+- Status: open
+
+## G-112: `Environment.from_graph` silently drops graph edges missing from `edge_order`, but still counts positions on them as on the track
+
+- Datasets: grieves_2020_lattice (a bar graph built for this study); any
+  graph with a loop
+- Operation / step: env.from_graph
+- Kind: wrong-result
+- Evidence: bins and links come only from `edge_order`
+  (`src/neurospatial/layout/helpers/graph.py:142` loops over it;
+  `track_pairs`, line 285, joins only its segments' ends), but the track
+  footprint (`TrackArena`) is built from every graph edge
+  (`src/neurospatial/environment/_factories.py:805-808`). With
+  `edge_order=list(nx.dfs_edges(graph))`, the order the driver's `_graph_env`
+  uses, the lattice's graph of 882 bar segments becomes 1,710 bins over 342
+  segments, a spanning tree: the 540 that close its loops are left out, with
+  no warning; listing every edge gives 4,410 bins. A 100 cm square loop shows
+  the consequence (repro below): the depth-first order keeps 3 of its 4
+  edges (60 bins against 80), with 0 warnings, and with `track_width=10`
+  `contains` still accepts (0, 50) on the dropped edge, while `bin_at` puts
+  (0, 10) and (0, 50) both in bin 0 at (2.5, 0) and `occupancy` counts them
+  there. A loop always loses its closing edge this way. The docstring says
+  only that `edge_order` "defines the 1D bin ordering". The driver's graphs
+  so far are trees (labyrinth, J16, Hafting), so its results are unaffected.
+
+  ```python
+  import networkx as nx, numpy as np
+  from neurospatial import Environment
+  g = nx.Graph()
+  for k, p in enumerate([(0, 0), (100, 0), (100, 100), (0, 100)]):
+      g.add_node(k, pos=p)
+  g.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 0)])
+  order = list(nx.dfs_edges(g, source=0))  # [(0, 1), (1, 2), (2, 3)]
+  env = Environment.from_graph(g, order, bin_size=5.0, track_width=10.0)
+  pts = np.array([[0.0, 10.0], [0.0, 50.0]])  # on the dropped edge (3, 0)
+  env.n_bins, env.contains(pts), env.bin_at(pts)  # 60, [True True], [0 0]
+  ```
+- Harness workaround: the study lists every edge after the depth-first ones
+- Proposed change: refuse an `edge_order` that leaves graph edges out (or
+  build the footprint from `edge_order` only and warn); in the harness, order
+  every edge (depth-first first)
+- Status: open
+
+## G-113: The driver builds one environment from every sample, merging apparatus that share a camera frame
+
+- Datasets: jadhav_000447, neurolab_001754, senzai_000003, grosmark_000044_linear
+- Operation / step: env.from_samples and every operation that uses it
+- Kind: wrong-result
+- Evidence: `operations._env` bins every tracked sample; `analysis_epochs`
+  restricts occupancy, not bins. 000447's novel W-track (runs 1 and 3) and
+  familiar W-track (run 2) are rotated 90° in the same camera frame (DANDI
+  000447 describes the novel, familiar, novel sequence): their union is one
+  1,465-bin block about 110 x 105 cm with path lengths a median 1.07 x the
+  straight line, while each W alone (1,172 and 788 bins) gives
+  medians of 1.19 and 2.53 (95th percentile up to 4.9), the detours
+  of a maze. The loader sets no `analysis_epochs`, so 000447's rate maps also
+  pool the two mazes. 001754's five sessions (three apparatus) overlap in the
+  image: all sessions give 2,174 bins, the staircase session alone 1,233.
+  000003 pools an open field and a maze (stated by the loader). On 000044's
+  linear track the first 110 s, before the rat reached the track, add a path
+  up to y = 161 cm (3.5 % of samples).
+- Harness workaround: none
+- Proposed change: in the harness, build one environment per apparatus from
+  the samples of its epochs (a loader parameter such as
+  `params["environment_epochs"]`), and give 000447 one per maze
+- Status: open
+
+## G-114: The Vollan open-field session is round, not the stated 150 cm square
+
+- Datasets: vollan_of
+- Operation / step: env.from_samples (`studies/environment_fidelity.py`)
+- Kind: data-quirk
+- Evidence: Vollan et al. 2025 Methods state a 150 x 150 cm square box for the
+  open-field rats and two exceptions: a 150 cm circular arena in a dark room
+  and a 1 m x 1 m square with a transparent floor.
+  Rat 26018's samples (`of/26018_2.mat`) fill a disc: their convex hull is
+  0.81 of its minimum rotated rectangle and 0.94 of its minimum enclosing
+  circle (a square explored to its corners gives about 1 and 0.64; Kanter's
+  1 m square gives 0.98 and 0.65), the hull spans 139.7 by 135.0 cm, and a 150
+  cm square placed on the samples is 57 % covered by bins with a median
+  13.5 cm between its wall and the nearest bin. The 1 m square is ruled out
+  by the 1.4 m span. Either this is the circular session or the rat avoided
+  the corners; the file does not say which arena it is.
+- Harness workaround: none (the loader says "an open field about 1.5 m
+  across")
+- Proposed change: none in neurospatial; record the arena per session in the
+  loader once the source says which
+- Status: open
+
+## G-115: A 1-D environment from a linearized coordinate with gaps between edges falls into one part per corridor
+
+- Datasets: j16_23020757 (and any track linearized with `edge_spacing`)
+- Operation / step: env.from_samples on `params["linearized"]` (the replay
+  operation's environment for a 2-D track, G-038)
+- Kind: friction
+- Evidence: J16's `linear_position` lays the nine corridors end to end with
+  15 cm gaps. `Environment.from_samples` on it at 4 cm gives 129 bins in 9
+  components (gaps of 16 cm between them), so the centre junction is lost and
+  every corridor is unreachable from the others (end-to-end path infinite).
+  The track-graph environment (`from_graph` with the same graph) keeps the
+  junction. The replay operation does not run on J16 (no ripples), so no
+  result changed.
+- Harness workaround: none
+- Proposed change: in the harness, decode a 2-D track's replay on its graph
+  environment when the loader gives one; in neurospatial, say in the
+  `from_samples` docs that a linearized coordinate with edge gaps needs
+  `from_graph`
+- Status: open
+
+## G-116: 001845's W-maze environment falls into three parts
+
+- Datasets: dyads_001845
+- Operation / step: env.from_samples
+- Kind: data-quirk
+- Evidence: the file's 123 s of head positions (38 % NaN, G-056) give 245
+  bins in 4 components, 3 of them with 1 % of the bins or more: the
+  middle and lower arms are not joined to the stem, so path lengths between
+  arms are infinite. A W-maze is one connected track (DANDI 001845: paired
+  W-mazes).
+- Harness workaround: none
+- Proposed change: none in neurospatial; this file is the smallest of the
+  dandiset and too short for a maze environment
+- Status: open
+
+## G-117: Tracking jumps on the Z-track add a second diagonal of bins
+
+- Datasets: olafsdottir_5566548
+- Operation / step: env.from_samples
+- Kind: data-quirk
+- Evidence: 140 steps between consecutive 50 Hz samples are longer than 10
+  cm (the longest 166 cm). The isolated samples they leave make a sparse
+  second diagonal and a vertical streak beside the Z (figure), so the
+  environment has 556 bins in 7 components (2 with 1 % of bins or more),
+  27 % of its bins hold fewer than 5 samples (0.1 s), and most stray bins
+  join the main part, so the environment holds off-track places.
+  `from_samples(..., bin_count_threshold=4)` keeps 425 bins (410 in the
+  largest part).
+- Harness workaround: none
+- Proposed change: in the loader, drop samples that jump faster than a rat
+  runs (the cause, reflections or a second light, is not checked); in
+  neurospatial, none beyond `bin_count_threshold`
+- Status: open
