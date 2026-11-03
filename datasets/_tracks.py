@@ -382,7 +382,12 @@ def frame_offset(
     most ``FRAME_MAX_ITERATIONS``; ``frame_converged``,
     ``frame_iterations``): on corridors a few bins long, samples moved off
     one are taken by its neighbours or leave the window, and a single step
-    recovers only half to two thirds of a shift.
+    recovers only half to two thirds of a shift. On a lateral scatter wider
+    than the window the refitted window follows the heavier side instead, so
+    the single step is reported too (``frame_offset_one_step``,
+    ``frame_offset_judged_one_step``, ``frame_pieces_one_step``: its pieces
+    are those with samples near them before any shift), and
+    ``judge_declared`` reads both.
 
     No single piece decides. A direction is read only where, with any one
     piece left out, the others still add up to at least one piece lying
@@ -403,7 +408,8 @@ def frame_offset(
     ``frame_pieces``, ``frame_min_eigenvalue`` and ``frame_max_eigenvalue``
     (of ``sum P_k``: the fit's condition), ``frame_unconstrained`` and
     ``frame_judged_unconstrained`` (how many directions not read have a
-    judged component), ``frame_iterations`` and ``frame_converged``.
+    judged component), ``frame_iterations`` and ``frame_converged``, and the
+    single step's offset, judged norm and pieces.
     """
     _, nodes, edges = graph_arrays(graph)
     samples = tracked(positions)
@@ -452,9 +458,37 @@ def frame_offset(
         largest = np.max(1.0 - (directions @ vectors) ** 2, axis=0)
         return values, vectors, values - largest >= MIN_FRAME_EIGENVALUE
 
+    def left_out(
+        directions: NDArray[np.float64],
+        offsets: NDArray[np.float64],
+        basis: NDArray[np.float64],
+        shift: NDArray[np.float64],
+    ) -> float:
+        """The smallest judged norm with any one piece left out, from the
+        medians found at ``shift``: the other pieces move it by
+        ``(B' A_j B)^-1 B' (sum m - m_j)`` (exact for a single step from 0)."""
+        if not basis.shape[1]:
+            return float(np.linalg.norm(shift[:judged_axes]))
+        judged = float("inf")
+        residual = offsets.sum(axis=0)
+        for direction, offset in zip(directions, offsets, strict=True):
+            left = (
+                basis.T
+                @ (
+                    (len(directions) - 1) * np.eye(n_dims)
+                    - directions.T @ directions
+                    + np.outer(direction, direction)
+                )
+                @ basis
+            )
+            moved = shift + basis @ np.linalg.solve(left, basis.T @ (residual - offset))
+            judged = min(judged, float(np.linalg.norm(moved[:judged_axes])))
+        return judged
+
     judged_axes = 2 if n_dims == 3 else n_dims
     shift = np.zeros(n_dims)
     converged = False
+    one_step: dict[str, Any] = {}
     for iteration in range(1, FRAME_MAX_ITERATIONS + 1):
         directions, offsets = medians(samples - shift)
         if not len(directions):
@@ -470,34 +504,30 @@ def frame_offset(
                 "frame_judged_unconstrained": judged_axes,
                 "frame_iterations": iteration,
                 "frame_converged": False,
+                "frame_offset_one_step": [nan] * n_dims,
+                "frame_offset_judged_one_step": nan,
+                "frame_pieces_one_step": 0,
             }
         values, vectors, read = read_directions(directions)
         basis = vectors[:, read]
         update = basis @ ((basis.T @ offsets.sum(axis=0)) / values[read])
+        if iteration == 1:
+            one_step = {
+                "frame_offset_one_step": update.tolist(),
+                "frame_offset_judged_one_step": left_out(
+                    directions, offsets, basis, np.zeros(n_dims)
+                ),
+                "frame_pieces_one_step": len(directions),
+            }
         shift = shift + update
         if np.linalg.norm(update) < FRAME_CONVERGED_BINS * tolerance:
             converged = True
             break
-    # Leave one piece out, linearised at the converged shift: the remaining
-    # pieces' residual medians move it by (B' A_j B)^-1 B' (sum m - m_j).
-    judged = float("inf") if read.any() else 0.0
-    residual = offsets.sum(axis=0)
-    for direction, offset in zip(directions, offsets, strict=True):
-        left = (
-            basis.T
-            @ (
-                (len(directions) - 1) * np.eye(n_dims)
-                - directions.T @ directions
-                + np.outer(direction, direction)
-            )
-            @ basis
-        )
-        moved = shift + basis @ np.linalg.solve(left, basis.T @ (residual - offset))
-        judged = min(judged, float(np.linalg.norm(moved[:judged_axes])))
     unread = vectors[:, ~read].T
     return {
         "frame_offset": shift.tolist(),
-        "frame_offset_judged": judged,
+        # Linearised at the converged shift, where the medians' sum is ~0.
+        "frame_offset_judged": left_out(directions, offsets, basis, shift),
         "frame_offset_vertical": float(shift[2]) if n_dims == 3 else None,
         "frame_pieces": len(directions),
         "frame_min_eigenvalue": float(values[0]),
@@ -508,6 +538,7 @@ def frame_offset(
         ),
         "frame_iterations": iteration,
         "frame_converged": converged,
+        **one_step,
     }
 
 

@@ -2009,6 +2009,13 @@ def measure_declared(
             if ref
             else ""
         )
+    if status != "mismatch" and judged["unverified"]:
+        # A check that reads differently by estimator confirms nothing.
+        reason = "; ".join(judged["unverified"]) + (
+            f" (otherwise matches {reason})" if status == "matches" else ""
+        )
+        status = "not verified"
+    out["unverified"] = judged["unverified"]
     out["verdict"], out["verdict_reason"] = status, reason
     return out
 
@@ -2151,7 +2158,7 @@ def render(rows: list[dict[str, Any]]) -> str:
             " same samples. Verdict: misfit evidence (`_geometry.judge_declared`: a"
             " stretch of track whose samples lie to one side by more than a bin, the"
             " whole track or lattice offset from its samples by more than a bin"
-            " (horizontally on the lattice), a"
+            " by both estimators below (horizontally on the lattice), a"
             " track segment with no sample near it, a stated length off by more than"
             " 15 %; on an outline or the lattice the share with no sample near it is"
             " reported, not judged: the tracked head keeps off walls and bars),"
@@ -2166,14 +2173,17 @@ def render(rows: list[dict[str, Any]]) -> str:
             " |lateral offset| and the worst stretch's median signed offset. Frame"
             " offset: one translation of the samples off the whole track or lattice"
             " (`_tracks.frame_offset`, every straight piece's median perpendicular"
-            " offset, each piece weighted once), its components, the judged norm"
-            " (the smallest with any one piece left out; horizontal on the lattice)"
-            " against one bin, and in brackets the pieces used and the directions"
-            " not read (no piece, or only one, crosses them). Env /"
+            " offset, each piece weighted once), the refitted shift's components,"
+            " the judged norm (the smallest with any one piece left out; horizontal"
+            " on the lattice) from a single least-squares step and from the shift"
+            " refitted until it settles, against one bin (a mismatch when both"
+            " exceed it, not verified when they straddle it), and in brackets the"
+            " pieces each used and the directions not read (no piece, or only"
+            " one, crosses them). Env /"
             " track: `own` when the reference is the geometry the track was declared"
             " from, which then measures only its binning.",
             "",
-            "| Dataset | Tracked point | Declared from | Bins | Components (1 % of bins or more) | Physical width | Beyond physical | Tolerance (outside) | Lateral: median, worst stretch | Frame offset: components; judged (pieces, unread) | Far links | Env / track (median, p5) | Verdict |",
+            "| Dataset | Tracked point | Declared from | Bins | Components (1 % of bins or more) | Physical width | Beyond physical | Tolerance (outside) | Lateral: median, worst stretch | Frame offset: refitted components; judged one step / refitted (pieces, unread) | Far links | Env / track (median, p5) | Verdict |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for row in declared:
@@ -2212,8 +2222,10 @@ def render(rows: list[dict[str, Any]]) -> str:
             frame = (
                 "("
                 + ", ".join(_fmt(v, "+.2f") for v in fit["frame_offset"])
-                + f"); {_fmt(fit['frame_offset_judged'], '.2f')}"
-                f" ({fit['frame_pieces']}, {fit['frame_judged_unconstrained']})"
+                + f"); {_fmt(fit['frame_offset_judged_one_step'], '.2f')} /"
+                f" {_fmt(fit['frame_offset_judged'], '.2f')}"
+                f" ({fit['frame_pieces_one_step']} / {fit['frame_pieces']},"
+                f" {fit['frame_judged_unconstrained']})"
                 if "frame_offset" in fit
                 else "–"
             )

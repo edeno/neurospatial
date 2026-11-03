@@ -518,7 +518,11 @@ def judge_declared(
       offset, any length, limit one bin (``MAX_SIDE_BIAS_BINS``), over both
       axes in 2-D and the horizontal ones in 3-D (the vertical, raised by a
       head above the bars, is reported); a direction no piece crosses, or
-      only one does, is not read;
+      only one does, is not read. It is read twice, by a single
+      least-squares step and by the refitted shift: a misfit when both
+      exceed the limit, and when they straddle it the reason is listed in
+      ``unverified`` (the verdict is "not verified" unless another check
+      gives a mismatch);
     - an outline (a polygonal domain): per side, how far the samples nearest
       it reach past it (their ``OUTER_QUANTILE`` signed distance, positive
       beyond the wall; limit ``MAX_SIDE_BIAS_BINS`` bins: an outline moved off
@@ -556,8 +560,8 @@ def judge_declared(
     No sample near the declared geometry (no stretch, side or face with
     samples near it) is a misfit, not a pass.
 
-    Returns ``{"kind", "misfit": [reasons], "fit": {...}, "outside": share or
-    None, "outside_by_speed": {...}}``.
+    Returns ``{"kind", "misfit": [reasons], "unverified": [reasons], "fit":
+    {...}, "outside": share or None, "outside_by_speed": {...}}``.
     """
     from _tracks import edge_fit, frame_offset, misfit_reasons, segment_distance
 
@@ -575,6 +579,7 @@ def judge_declared(
         "fit": {},
         "outside": None,
         "outside_by_speed": {},
+        "unverified": [],
     }
     beyond = None
     if is_track:
@@ -595,14 +600,25 @@ def judge_declared(
                     "no samples near the declared geometry (no piece has 10"
                     " samples within 3 bins of it)"
                 )
-        elif fit["frame_offset_judged"] > fit["frame_offset_limit"]:
+        else:
+            # Read by both the single step and the refitted shift: a misfit
+            # when both exceed the limit, unverified when they straddle it.
             plane = " horizontally" if samples.shape[1] == 3 else ""
-            out["misfit"].append(
-                f"the samples lie {fit['frame_offset_judged']:.3g}{plane} off the"
-                f" track as a whole (one translation fitted to"
-                f" {fit['frame_pieces']} pieces; limit"
-                f" {MAX_SIDE_BIAS_BINS:g} bin, {fit['frame_offset_limit']:.3g})"
+            both = (fit["frame_offset_judged_one_step"], fit["frame_offset_judged"])
+            over = [value > fit["frame_offset_limit"] for value in both]
+            values = (
+                f"{both[0]:.3g} in one step, {both[1]:.3g} refitted, over"
+                f" {fit['frame_pieces_one_step']} and {fit['frame_pieces']} pieces;"
+                f" limit {MAX_SIDE_BIAS_BINS:g} bin, {fit['frame_offset_limit']:.3g}"
             )
+            if all(over):
+                out["misfit"].append(
+                    f"the samples lie{plane} off the track as a whole ({values})"
+                )
+            elif any(over):
+                out["unverified"].append(
+                    f"the frame offset depends on the estimator (G-160): {values}"
+                )
         if fit["end_overshoot"] > MAX_SIZE_RESIDUAL:
             out["misfit"].append(
                 f"samples reach {fit['end_overshoot']:.0%} of the track's length"

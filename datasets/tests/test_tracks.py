@@ -543,24 +543,43 @@ def test_a_maze_of_short_corridors_in_place_has_no_frame_offset(grid_maze):
     assert np.linalg.norm(fit["frame_offset"]) < 0.2 * FRAME_BIN
     assert fit["frame_unconstrained"] == []
     assert judged["misfit"] == []
+    assert judged["unverified"] == []
 
 
 @pytest.mark.parametrize("axis", [0, 1])
 def test_a_maze_of_short_corridors_moved_off_its_samples_is_misfit(grid_maze, axis):
-    # Samples 1.5 bins (3.75 cm) off the maze along x, then y: the 12
-    # corridors across that axis each see the shift, those along it see none,
-    # so s = (3.75, 0) or (0, 3.75).
+    # Samples 2 bins (5 cm) off the maze along x, then y: the 12 corridors
+    # across that axis each see the shift, those along it see none, so the
+    # refitted s = (5, 0) or (0, 5). A single step reads less (neighbouring
+    # corridors take samples moved off one) but still more than a bin, so
+    # both estimators exceed the limit: a misfit.
     graph, samples = grid_maze
     shift = np.zeros(2)
-    shift[axis] = 1.5 * FRAME_BIN
+    shift[axis] = 2.0 * FRAME_BIN
     judged = _judged(graph, samples + shift)
-    np.testing.assert_allclose(
-        judged["fit"]["frame_offset"], shift, atol=0.2 * FRAME_BIN
-    )
+    fit = judged["fit"]
+    np.testing.assert_allclose(fit["frame_offset"], shift, atol=0.2 * FRAME_BIN)
+    assert fit["frame_offset_judged_one_step"] > FRAME_BIN
+    assert fit["frame_offset_judged_one_step"] < fit["frame_offset_judged"]
     assert any("as a whole" in r for r in judged["misfit"])
+    assert judged["unverified"] == []
     # Negative control: without the frame check nothing fails it (no judged
     # stretch, no free end, no stated size).
     assert _old_reasons(judged) == []
+
+
+def test_a_frame_offset_the_estimators_disagree_on_is_not_verified(grid_maze):
+    # 1.2 bins (3 cm) off along x: the refitted shift recovers it (above the
+    # limit), a single step reads under a bin. The check neither passes nor
+    # fails the maze; it lists why it is unverified.
+    graph, samples = grid_maze
+    judged = _judged(graph, samples + np.array([1.2 * FRAME_BIN, 0.0]))
+    fit = judged["fit"]
+    assert fit["frame_offset"][0] == pytest.approx(1.2 * FRAME_BIN, abs=0.2 * FRAME_BIN)
+    assert fit["frame_offset_judged"] > FRAME_BIN > fit["frame_offset_judged_one_step"]
+    assert judged["misfit"] == []
+    assert len(judged["unverified"]) == 1
+    assert "depends on the estimator" in judged["unverified"][0]
 
 
 def tilted_lattice(n_cubes: int = 3, side: float = 16.0) -> np.ndarray:
@@ -629,13 +648,17 @@ def test_a_tilted_lattice_reports_the_head_height_and_judges_the_horizontal(
     assert fit["frame_min_eigenvalue"] == pytest.approx(
         2 / 3 * fit["frame_pieces"], rel=1e-6
     )
-    assert judged["misfit"] == []
-    # Moved 1.5 bins (6 cm) horizontally: misfit, recovered within 0.2 bin.
+    assert judged["misfit"] == judged["unverified"] == []
+    # Moved 1.5 bins (6 cm) horizontally: the refitted shift recovers it
+    # within 0.2 bin, but a single step reads under a bin (samples moved off a
+    # bar leave its window or go to a crossing bar), so the check is
+    # unverified, not a misfit.
     moved = _judged_lattice(env, samples + np.array([6.0, 0.0, 0.0]))
-    np.testing.assert_allclose(moved["fit"]["frame_offset"], [6.0, 0.0, 6.0], atol=0.8)
-    assert any("horizontally off the track as a whole" in r for r in moved["misfit"])
-    # Negative control: the lattice's other checks do not see it.
-    assert _old_reasons(moved) == []
+    fit = moved["fit"]
+    np.testing.assert_allclose(fit["frame_offset"], [6.0, 0.0, 6.0], atol=0.8)
+    assert fit["frame_offset_judged"] > 4.0 > fit["frame_offset_judged_one_step"]
+    assert moved["misfit"] == []
+    assert "depends on the estimator" in moved["unverified"][0]
 
 
 def test_a_single_straight_track_cannot_read_its_along_track_offset():
