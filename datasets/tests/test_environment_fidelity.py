@@ -687,9 +687,14 @@ def test_declared_box_without_a_stated_size_is_not_verified(
     assert declared["verdict"] == "not verified"
 
 
-def test_a_track_drawn_in_the_files_frame_needs_a_stated_length(track_samples):
+def test_a_track_drawn_in_the_files_frame_is_verified_only_by_a_stated_length(
+    track_samples,
+):
     # The loader's graph is the line it drew in the file's frame, so as the
     # study's reference it is the declaration itself, not an independent fact.
+    # Only a stated length residual turns "not verified" into a verdict; the
+    # residual is the loader's (fitted, stated) pair, given here, not derived
+    # from the samples (``_tracks.declared_geometry`` derives it).
     graph = nx.Graph()
     graph.add_node("a", pos=(0.0, 0.0))
     graph.add_node("b", pos=(100.0, 0.0))

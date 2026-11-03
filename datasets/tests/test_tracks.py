@@ -256,7 +256,7 @@ def scattered_w():
 def test_lateral_scatter_is_not_refused(scattered_w):
     truth, points = scattered_w
     entries, line = _declare(truth, points)
-    assert entries, line
+    assert "environment" in entries, line
     assert entries["environment_fit"]["outside_physical_width"] > 0.2
 
 
@@ -415,7 +415,7 @@ def test_a_loop_is_judged_over_stretches_not_polygon_sides(ring_samples):
     entries, line = _declare(loop, ring_samples, track_width=None)
     # The reward area's lean is local: a 4.4 cm side shows it, a 50 cm stretch
     # does not, and the loop is kept.
-    assert entries, line
+    assert "environment" in entries, line
     assert entries["environment_fit"]["max_edge_bias"] < 2.5
     # The same circle moved 4 cm sideways is refused.
     moved = polyline_graph(circle_points(np.array([4.0, 0.0]), 50.0, 72), closed=True)
