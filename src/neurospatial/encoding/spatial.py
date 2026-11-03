@@ -2133,6 +2133,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         arrays (it runs the shuffle test by default); a result does not keep
         the spike times it was computed from. To detect a field, use
         ``has_place_field()``; field detection also flags most noise units.
+        It tests information alone, so it can disagree with the ``is_place``
+        column of :meth:`summary_table`, which also excludes known grid and
+        border cells: a grid cell that passes information is True here and
+        False there, and a unit with too few spikes for an information bias
+        is False here and ``<NA>`` there.
 
         Parameters
         ----------
@@ -2968,9 +2973,10 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
               walls without observed bins, for the physical border score), so
               any label is possible. ``summary_table()`` records the reason in
               ``attrs['unavailable_metrics']``; no warning is raised. Its
-              ``is_place`` column gives the place answer without the missing
-              test: True when spatial information reaches its cutoff and the
-              unit is not a known grid or border cell.
+              ``is_place`` column is True when spatial information reaches
+              its cutoff and the unit was not shown to be a grid or border
+              cell. Without the border score, border cells are not
+              excluded, so a True is a place-or-border candidate.
 
             Grid and border cells are defined on 2-D maps, so on a 1-D track
             neither applies and a tuned cell is ``"place"``. A neuron whose
@@ -3087,6 +3093,12 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         For multi-class labels (``"place"``, ``"grid"``, ``"border"``,
         ``"grid+border"``, ...) use :meth:`label_cell_types` instead.
+
+        It tests information alone, so it can disagree with the ``is_place``
+        column of :meth:`summary_table`, which also excludes known grid and
+        border cells: a grid cell that passes information is True here and
+        False there, and a unit with too few spikes for an information bias
+        is False here and ``<NA>`` there.
 
 
         Parameters
@@ -3208,13 +3220,21 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
               each score reaches its screen cutoff (a grid score only with a
               hexagonal first ring); ``<NA>`` when the score applies to this
               environment but cannot be computed
-            - is_place (if include_classification=True): passes the
-              spatial-information screen and is not a known grid or border
-              cell. A grid or border score that cannot be computed does not
-              block it, so on an environment without measured walls it still
-              answers which units are place cells where ``cell_type`` is
-              ``"undetermined"``; ``<NA>`` when the information test is
-              unknown and the unit is neither grid nor border
+            - is_place (if include_classification=True): True when the unit
+              passes the spatial-information screen and was not shown to be
+              a grid or border cell. A grid or border score that cannot be
+              computed does not block it, so it stays defined where
+              ``cell_type`` is ``"undetermined"``; but without measured
+              walls border cells are not excluded, and a True is a
+              place-or-border candidate. ``<NA>`` when the information test
+              is unknown, except False for a known grid or border cell. It
+              can disagree with :meth:`classify`, which tests information
+              alone: a grid cell that passes information is True there and
+              False here, and a unit with too few spikes for an information
+              bias is False there and ``<NA>`` here. The shuffle verdicts
+              :func:`is_place_cell` and the ``is_place_cell`` column of
+              :class:`PlaceCellSignificanceResult` also test information
+              alone
             - cell_type (if include_classification=True): the
               ``label_cell_types()`` label: ``"grid"``, ``"border"``,
               ``"grid+border"``, ``"place"``, ``"unclassified"`` or
@@ -3244,7 +3264,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         **Common pandas workflows**:
 
         - Filter: ``df[df["cell_type"] == "place"]``, or ``df[df["is_place"]]``
-          when the border test is unavailable (``<NA>`` rows are dropped)
+          for place-or-border candidates when the border test is unavailable
+          (``<NA>`` rows are dropped)
         - Sort: ``df.sort_values("spatial_information", ascending=False)``
         - Top-N: ``df.nlargest(10, "peak_firing_rate")``
 
@@ -3273,10 +3294,12 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         >>> place_cells = df[df["cell_type"] == "place"]
 
         >>> # This environment has no measured walls, so there is no border
-        >>> # score and every label is "undetermined"; is_place still answers
+        >>> # score and every label is "undetermined". is_place still screens
+        >>> # information; these untuned units fail it.
         >>> df["cell_type"].unique().tolist()
         ['undetermined']
-        >>> place_cells = df[df["is_place"]]
+        >>> df["is_place"].tolist()
+        [False, False, False]
 
         >>> # Sort by spatial information
         >>> top_cells = df.sort_values("spatial_information", ascending=False)
@@ -6438,6 +6461,11 @@ def is_place_cell(
     the fast screen: it applies only the ``min_info`` cutoff, like
     :meth:`SpatialRateResult.is_place_cell`. To detect a field, use
     ``has_place_field()``; field detection also flags most noise units.
+    Both criteria test information alone; the ``is_place`` column of
+    :meth:`SpatialRatesResult.summary_table` and of
+    :meth:`CellTypeSignificanceResult.summary_table` also excludes known grid
+    and border cells, so a grid cell that passes information is True here and
+    False there.
 
     Parameters
     ----------
@@ -7596,9 +7624,11 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             ``m`` tests with equal ``n_finite`` need
             ``m / (n_finite + 1) < alpha``. On a 1-D environment
             grid and border do not apply, so a significant cell is
-            ``"place"``. ``summary_table()["is_place"]`` gives the place
-            answer without an undetermined grid or border test: True for a
-            unit that passes the place test and is not a grid or border cell.
+            ``"place"``. ``summary_table()["is_place"]`` is True for a unit
+            that passes the place test and was not shown to be a grid or
+            border cell, even when a grid or border test is undetermined;
+            without a border test border cells are not excluded, so a True
+            is then a place-or-border candidate.
         """
         return _cell_type_labels(self._outcomes(alpha, min_spatial_info, correction))
 
@@ -7639,10 +7669,14 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             requirements of
             :meth:`label_cell_types`; ``<NA>`` when the statistic applies but
             could not be computed or the test cannot reach ``alpha``),
-            ``is_place`` (``passes_spatial_information`` and not a grid or
-            border cell; an undetermined grid or border test does not block
-            it, and an undetermined place test of a unit that is neither
-            gives ``<NA>``) and ``cell_type`` from :meth:`label_cell_types`. ``df.attrs`` records ``alpha``,
+            ``is_place`` (``passes_spatial_information`` and not shown to be
+            a grid or border cell; an undetermined grid or border test does
+            not block it, so without a border test a True is a
+            place-or-border candidate; ``<NA>`` when the place test is
+            undetermined, except False for a known grid or border cell; it
+            can disagree with :meth:`PlaceCellSignificanceResult.classify`,
+            which tests information alone) and ``cell_type`` from
+            :meth:`label_cell_types`. ``df.attrs`` records ``alpha``,
             ``correction``, ``classification_thresholds``, ``null_percentile``,
             ``n_shuffles``, ``min_shift``,
             ``shuffle_type``, ``method``, ``bandwidth``, ``boundary_source``,
@@ -7906,7 +7940,10 @@ class PlaceCellSignificanceResult(UnitSelectionMixin, ResultMixin):
         (``p_value < alpha``) and its bias-corrected information
         (``observed - spatial_information_bias``) is at least ``min_info``,
         the rule of ``is_place_cell(..., criterion="shuffle")``, which gives
-        the same answer for the same seeded unit.
+        the same answer for the same seeded unit. It tests information alone;
+        the ``is_place`` column of
+        :meth:`CellTypeSignificanceResult.summary_table` also excludes units
+        with a significant grid or border score.
 
         Parameters
         ----------
@@ -8163,9 +8200,11 @@ def spatial_cell_type_significance(
     track, the grid score needs a regular grid of rectangular cells, and the
     physical border score needs measured walls with observed bins along
     them. Those statistics have NaN p-values and their reason in
-    ``unavailable_metrics``, and the labels are ``"undetermined"``;
-    ``summary_table()["is_place"]`` still gives the place answer without
-    them. A map with no field of the minimum size has no
+    ``unavailable_metrics``. Where such a statistic applies but cannot be
+    computed the label is ``"undetermined"``; ``summary_table()["is_place"]``
+    is then True for a unit whose information test passes and that was not
+    shown to be a grid or border cell, a place-or-border candidate when the
+    border test is missing. A map with no field of the minimum size has no
     border score, so its p-value is NaN and it is not a border cell. A null
     map without a defined score is left out of that unit's p-value, which is
     (1 + k) / (1 + n) with n the finite null scores and k those at least the
