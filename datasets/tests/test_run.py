@@ -135,3 +135,89 @@ def test_subset_run_keeps_other_operations(
         partial["operations"]["env.from_samples"]
         == full["operations"]["env.from_samples"]
     )
+
+
+def _warning_op(rec, cache):
+    import warnings
+
+    from operations import Outcome
+
+    warnings.warn("bins without support: 3", UserWarning, stacklevel=1)
+    return Outcome("ok")
+
+
+def _probe_setup():
+    import dataclasses
+    from types import SimpleNamespace
+
+    from operations import Outcome
+
+    # A probed operation that warns on clean and hazardous data alike: its
+    # hazard response is silent, because the warning is in the clean run.
+    ops = (
+        Operation("env.from_samples", ("positions",), _warning_op),
+        Operation("other.op", ("positions",), lambda r, c: Outcome("ok")),
+    )
+    module = SimpleNamespace(
+        EXPECTATIONS={},
+        HAZARDS={
+            "copied_positions": lambda r: dataclasses.replace(
+                r, positions=r.positions.copy()
+            )
+        },
+    )
+    return ops, module
+
+
+def test_subset_run_probes_only_against_its_fresh_clean_results(
+    simulated_recording, tmp_path
+):
+    ops, module = _probe_setup()
+    full = run_recording(simulated_recording, module, operations=ops, results=tmp_path)
+    rows = [(h["hazard"], h["op"], h["response"]) for h in full["hazards"]]
+    assert ("copied_positions", "env.from_samples", "silent") in rows
+    # A subset run that does not rerun the probed operation keeps its row;
+    # one with no earlier results probes nothing it did not rerun.
+    for results in (tmp_path, tmp_path / "fresh"):
+        partial = run_recording(
+            simulated_recording,
+            module,
+            op_ids=["other.op"],
+            operations=ops,
+            results=results,
+        )
+        responses = {(h["hazard"], h["op"]): h["response"] for h in partial["hazards"]}
+        assert responses.get(("copied_positions", "env.from_samples"), "silent") == (
+            "silent"
+        )
+    rerun = run_recording(
+        simulated_recording,
+        module,
+        op_ids=["env.from_samples"],
+        operations=ops,
+        results=tmp_path,
+    )
+    row = next(h for h in rerun["hazards"] if h["op"] == "env.from_samples")
+    assert row["response"] == "silent"
+
+
+def test_subset_run_stamps_only_the_cells_it_reran(simulated_recording, tmp_path):
+    ops, module = _probe_setup()
+    run_recording(simulated_recording, module, operations=ops, results=tmp_path)
+    path = tmp_path / f"{simulated_recording.dataset}.json"
+    record = json.loads(path.read_text())
+    record["versions"] = {"git_commit": "old"}
+    path.write_text(json.dumps(record))
+    partial = run_recording(
+        simulated_recording,
+        module,
+        op_ids=["other.op"],
+        operations=ops,
+        results=tmp_path,
+    )
+    assert partial["versions"] == {"git_commit": "old"}
+    assert "versions" not in partial["operations"]["env.from_samples"]
+    assert partial["operations"]["other.op"]["versions"]["git_commit"] != "old"
+    kept = [h for h in partial["hazards"] if h["op"] == "env.from_samples"]
+    assert kept
+    assert all("versions" not in h for h in kept)

@@ -159,6 +159,8 @@ def probe_hazards(
     operations: tuple[Any, ...] = OPERATIONS,
     probe_ops: tuple[str, ...] = PROBE_OPS,
     cache_seed: Mapping[str, Any] | None = None,
+    *,
+    report_unreached: bool = True,
 ) -> list[dict[str, Any]]:
     """Re-run ``probe_ops`` on each hazardous version of ``rec``.
 
@@ -169,7 +171,9 @@ def probe_hazards(
     respond to the hazard; it gets a ``not probed`` row saying so, as does a
     hazard that reaches no probed operation, so nothing vanishes from the table.
     ``cache_seed`` starts each probe's operation cache (the run's settings,
-    such as ``inferred_env``).
+    such as ``inferred_env``). ``report_unreached=False`` leaves out the
+    rows for hazards that reach none of ``probe_ops`` (a run probing a
+    subset of the operations cannot tell).
     """
     rows = []
     for name, make in hazards_for(module, rec).items():
@@ -221,7 +225,7 @@ def probe_hazards(
                     hazard_summary=None if outcome is None else dict(outcome.summary),
                 )
             )
-        if not reached:
+        if not reached and report_unreached:
             rows.append(
                 _row(
                     name,

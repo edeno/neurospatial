@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _calibration import captured, probe_hazards
+from _calibration import PROBE_OPS, captured, probe_hazards
 from _record import check_expectations, validate_recording
 from operations import OPERATIONS, Outcome, env_kind
 
@@ -149,15 +149,19 @@ def run_recording(
 
     With ``op_ids``, only those operations are re-run and their entries are
     merged into the dataset's existing results file, so the other cells keep
-    their last results. With ``inferred_env``, every operation uses the
-    environment built from the samples even when the loader declares one.
+    their last results. Only the rerun operations are probed, against their
+    fresh clean results; the other hazard rows are kept. The record keeps
+    the earlier run's ``versions``, and each rerun cell and probe row carries
+    its own. With ``inferred_env``, every operation uses the environment
+    built from the samples even when the loader declares one.
     """
     path = results / f"{rec.dataset}.json"
-    previous = (
-        json.loads(path.read_text())["operations"]
-        if op_ids is not None and path.exists()
-        else {}
+    previous_record = (
+        json.loads(path.read_text()) if op_ids is not None and path.exists() else {}
     )
+    previous = previous_record.get("operations", {})
+    versions = _versions()
+    subset = op_ids is not None
     record: dict[str, Any] = {
         "dataset": rec.dataset,
         "session": rec.session,
@@ -165,7 +169,7 @@ def run_recording(
         "license": rec.license,
         "conversions": list(rec.conversions),
         "expectations": check_expectations(rec, getattr(module, "EXPECTATIONS", {})),
-        "versions": _versions(),
+        "versions": previous_record.get("versions", versions) if subset else versions,
         "load_warnings": load_warnings or [],
         "operations": dict(previous),
     }
@@ -196,9 +200,28 @@ def run_recording(
             "seconds": round(seconds, 3),
             "peak_mb": round(peak / 1e6, 1),
         }
-    record["hazards"] = probe_hazards(
-        module, rec, record["operations"], operations, cache_seed=seed
-    )
+        if subset:
+            record["operations"][op.op_id]["versions"] = versions
+    if not subset:
+        record["hazards"] = probe_hazards(
+            module, rec, record["operations"], operations, cache_seed=seed
+        )
+    else:
+        rerun = tuple(op_id for op_id in PROBE_OPS if op_id in op_ids)
+        fresh = probe_hazards(
+            module,
+            rec,
+            record["operations"],
+            operations,
+            probe_ops=rerun,
+            cache_seed=seed,
+            report_unreached=False,
+        )
+        for row in fresh:
+            row["versions"] = versions
+        record["hazards"] = [
+            row for row in previous_record.get("hazards", []) if row["op"] not in rerun
+        ] + fresh
     results.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2, default=_jsonable) + "\n")
     return record
