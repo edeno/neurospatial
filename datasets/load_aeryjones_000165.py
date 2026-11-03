@@ -10,18 +10,23 @@ linear-track file of 23.3 MB.
 
 What the loader converts:
 
-- Times: the 45,114 position samples (1,504 s at 30 frames/s) have only
-  32,340 distinct timestamps on a 0.0518 s grid; 12,774 timestamps hold two
-  samples. The loader keeps one sample per timestamp, the mean of the samples
-  that share it.
+- Times: the 45,114 position samples come exactly 30 per second overall
+  (1,504 s), but their timestamps are irregular: 12,774 intervals are zero
+  (a timestamp repeated), 213 are under 1 ms, 3,620 are 1-30 ms, and the
+  rest 30-104 ms (most near 52 ms). The loader keeps one sample per distinct
+  timestamp (32,340), the mean of the samples that share it.
 - Spikes: every non-empty channel's train starts with a spike at exactly
   0.0 s. Spikes run continuously to 269.6 s (the LFP is 275 s long), then
   every channel is silent until a 0.7 s fragment at 461.3-462.1 s, while
-  tracking runs to 1,504 s. Read as seconds, the spikes are spatially tuned (mean spatial
-  information 0.78 bits/spike), and stretched to the tracking span they are
-  less so (0.54 at x 3.26), so they are seconds on the tracking clock and
-  cover only its first 270 s (checked once while writing this loader). The
-  spike at 0.0 is dropped from each train; the late fragment is kept.
+  tracking runs to 1,504 s. The spikes are ASSUMED to be seconds on the
+  tracking clock with the same zero, because every channel has a spike at
+  exactly 0.0 s and the LFP, like the spikes, starts at 0. The alignment is
+  not shown by the data: a scan of constant offsets (5 s steps over the
+  tracking, mean 1-D Skaggs information of the 29 channels with at least 50
+  spikes, binned along the track) ranks offset 0 only 11th of 247, below
+  offsets of 325-465 s. Multi-unit channels are weakly tuned, so the scan
+  cannot name the right offset either. The spike at 0.0 is dropped from each
+  train; the late fragment is kept.
 - Length unit: positions are labelled centimeters, but the tracked span is
   35 by 6 (1st-99th percentile) and the 90th percentile speed 6.6 per s:
   short and slow for a mouse linear track in cm, and the paper is not at
@@ -152,6 +157,9 @@ def load(cache: Path | None = None) -> Recording:
         conversions=(
             f"times: {len(raw_times)} samples on {len(times)} distinct timestamps;"
             " samples sharing a timestamp averaged",
+            "spike_times: ASSUMED on the tracking clock with offset 0 (every channel"
+            " has a spike at exactly 0.0 s; the LFP starts at 0); a constant-offset"
+            " scan of 1-D Skaggs information ranks offset 0 11th of 247",
             "positions: read_position, labelled cm; range checked (1st-99th"
             f" percentile span {span[0]:.1f} by {span[1]:.1f}): too short for a"
             " mouse linear track in cm to confirm the label, kept as arbitrary units",
