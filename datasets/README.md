@@ -37,7 +37,9 @@ Files are downloaded once into `data/datasets/` (git-ignored) or into
 `$NEUROSPATIAL_DATA_DIR` when it is set, and every file is checked against a
 pinned SHA-256. A file whose checksum does not match is never overwritten. Data
 are not redistributed here; each loader records the dataset's license.
-The labyrinth's trajectories and Gardner's spike trains are Python pickles;
+Zip members are read by HTTP byte range; Deflate64 members (Grieves 2020),
+which Python's `zipfile` cannot inflate, are inflated with `inflate64` and
+CRC-checked. The labyrinth's trajectories and Gardner's spike trains are Python pickles;
 their loaders read them with restricted unpicklers that resolve only the
 globals and dtypes those files hold, and refuse every other one (Gardner's
 loader also lists a pickle's imports from its opcodes before unpickling).
@@ -62,6 +64,14 @@ HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 | `grosmark_000044_circular` | Rat CA1 on a 1 m circular track with sleep before and after (DANDI 000044) | streamed from 9.2 GB | CC-BY-4.0 |
 | `grosmark_000044_linear` | Rat CA1 on a 1.6 m linear track with sleep before and after (DANDI 000044) | streamed from 8.7 GB | CC-BY-4.0 |
 | `jadhav_000447` | Rat CA1 and PFC units on a W-track (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
+| `grieves_2020_lattice` | Rat CA1 in a 3-D climbing lattice (UCL RDR 9926477; one Deflate64 member of an 11.2 GB zip by byte range) | 431 MB | CC0 |
+| `watermaze_10248158` | Mouse Morris water-maze swim paths, EthoVision JSON, behavior only (Figshare 10248158) | 9.9 MB | CC-BY-4.0 |
+| `olafsdottir_5566548` | Rat hippocampus and deep MEC tetrodes on a Z-track, Axona files (Zenodo 5566548; 34 members of a 9.9 GB zip by byte range) | 105 MB | CC-BY-4.0 |
+| `takigawa_7114733` | Rat CA1 on two novel 2 m linear tracks (Zenodo 7114733) | 20.0 MB | CC0 |
+| `hafting_2008_nird` | Rat MEC grid cells on a 320 cm linear track (NIRD 10.11582/2017.00020; 4 members of a 20.9 MB zip by byte range) | 1.0 MB | CC-BY-4.0 |
+| `j16_23020757` | Rat hippocampus in a spatial bandit maze with its track graph, `.npz` without pickles (Zenodo 23020757) | 75.1 MB | CC-BY-4.0 |
+| `agarwal_24757638` | Rat CA1 and mPFC on a 3-arm maze with a wheel delay (Figshare 24757638) | 226 MB | CC-BY-4.0 |
+| `shipley_30902972` | Mouse CA1 tetrodes on an 8-arm radial maze and sleep, Kilosort NPY + MATLAB (UCL RDR 30902972; 4 members of a 4.4 GB zip by byte range) | 67 MB | CC-BY-4.0 |
 
 NWB loaders set `params["nwb_source"]` to the cached file, or to the URL of a
 file read by byte range. The `io.nwb_readers`
