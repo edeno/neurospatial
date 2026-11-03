@@ -255,17 +255,20 @@ def test_verdict_tests_loop_closure():
     assert verdict(row(10.0, 3.0), loop)[0] == "matches"
 
 
-def _declared_track(positions, *, placed_by, geometry=None, width=6.0):
+def _declared_track(positions, *, placed_by, geometry=None, width=6.0, graph=None):
     from _tracks import declared_geometry, straight_track
 
-    graph, _ = straight_track(positions, 100.0)
+    if graph is None:
+        graph, _ = straight_track(positions, 100.0)
     entries, _ = declared_geometry(
         graph,
         positions,
         kind="track",
         source="test",
+        times=np.arange(len(positions)) / 30.0,
+        tracked_point="simulated",
         bin_size=2.5,
-        track_width=width,
+        physical_width=width,
         units="cm",
         name="track",
         placement="p",
@@ -312,7 +315,8 @@ def test_declared_track_against_an_independent_reference_can_match(track_samples
     out = _measure(rec, TRACK)
     assert out["reference_independent"] is True
     assert out["frac_samples_outside"] < 0.01
-    assert out["track_width_kind"] == "stated"
+    assert out["physical_width_kind"] == "stated"
+    assert out["track_width_kind"] == "placement tolerance"
     assert out["reference"]["env_over_track_median"] == pytest.approx(1.0, abs=0.05)
     assert out["verdict"] == "matches"
 
@@ -336,16 +340,37 @@ def test_declared_track_without_an_independent_reference_is_not_verified(
     assert out["verdict"] == "not verified"
 
 
-def test_declared_track_with_many_samples_outside_is_a_mismatch(track_samples):
-    # The head leans 5 cm past a 6 cm track that the authors' graph declares
-    # (not fitted, so not refused by the loader): most samples are outside.
+def test_head_scatter_past_the_physical_width_is_reported_not_judged(track_samples):
+    # The head swings 6 cm (SD) about a 6 cm track: 62 % of samples are
+    # beyond the physical width, yet the track is where they are.
     leaning = track_samples.copy()
-    leaning[::2, 1] += 5.0
-    leaning[1::2, 1] -= 5.0
-    out = _measure(_declared_track(leaning, placed_by="authors' graph"), TRACK)
-    assert out["frac_samples_outside"] > 0.5
+    leaning[:, 1] = np.random.default_rng(6).normal(0, 6.0, len(leaning))
+    graph = nx.Graph()
+    graph.add_node("a", pos=(0.0, 0.0))
+    graph.add_node("b", pos=(100.0, 0.0))
+    graph.add_edge("a", "b", distance=100.0)
+    rec = _declared_track(
+        leaning, placed_by="fitted to the samples", geometry={"graph": graph}
+    )
+    out = _measure(rec, TRACK)
+    assert out["outside_physical_width"] == pytest.approx(0.62, abs=0.03)
+    assert out["frac_samples_outside"] < 0.02  # the tolerance keeps them
+    assert out["misfit"] == []
+    assert out["verdict"] == "matches"
+
+
+def test_authors_track_beside_its_samples_is_a_mismatch(track_samples):
+    # The authors' graph (not fitted, so the loader keeps it) lies 6 cm to one
+    # side of every sample: misfit evidence, whatever the width.
+    from _tracks import polyline_graph
+
+    shifted = track_samples + np.array([0.0, 6.0])
+    axis = polyline_graph(np.array([[0.0, 0.0], [100.0, 0.0]]), closed=False)
+    out = _measure(
+        _declared_track(shifted, placed_by="authors' graph", graph=axis), TRACK
+    )
     assert out["verdict"] == "mismatch"
-    assert "outside the declared environment" in out["verdict_reason"]
+    assert "to one side" in out["verdict_reason"]
 
 
 def test_merged_replaces_only_the_rerun_datasets_and_their_views():
