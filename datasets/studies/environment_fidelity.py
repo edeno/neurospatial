@@ -2010,9 +2010,12 @@ def measure_declared(
             else ""
         )
     if status != "mismatch" and judged["unverified"]:
-        # A check that reads differently by estimator confirms nothing.
-        reason = "; ".join(judged["unverified"]) + (
-            f" (otherwise matches {reason})" if status == "matches" else ""
+        # A check that cannot be read confirms nothing; the earlier reason
+        # (a match's facts, a misfit against the samples, or no stated fact)
+        # is kept after it.
+        unread = "; ".join(judged["unverified"])
+        reason = unread + (
+            f" (otherwise matches {reason})" if status == "matches" else f"; {reason}"
         )
         status = "not verified"
     out["unverified"] = judged["unverified"]

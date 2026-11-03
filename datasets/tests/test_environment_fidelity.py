@@ -735,3 +735,32 @@ def test_a_track_drawn_in_the_files_frame_is_verified_only_by_a_stated_length(
     out = _measure(stated, TRACK)
     assert out["verdict"] == "matches"
     assert out["verdict_reason"] == "on length +0% of the stated"
+
+
+def test_an_unread_check_keeps_the_earlier_reason(track_samples, monkeypatch):
+    # A check listed as unverified is added to the reason, not put in its
+    # place: the earlier "no stated fact" text stays.
+    from studies import environment_fidelity
+
+    real = environment_fidelity.judge_declared
+
+    def with_unread(*args, **kwargs):
+        judged = real(*args, **kwargs)
+        judged["unverified"].append("an unread check")
+        return judged
+
+    monkeypatch.setattr(environment_fidelity, "judge_declared", with_unread)
+    graph = nx.Graph()
+    graph.add_node("a", pos=(0.0, 0.0))
+    graph.add_node("b", pos=(100.0, 0.0))
+    graph.add_edge("a", "b", distance=100.0)
+    rec = _declared_track(
+        track_samples,
+        placed_by="file's coordinates",
+        geometry={"graph": graph},
+        graph=graph,
+    )
+    out = _measure(rec, TRACK)
+    assert out["verdict"] == "not verified"
+    assert out["verdict_reason"].startswith("an unread check; ")
+    assert "no stated fact independent of the samples" in out["verdict_reason"]
