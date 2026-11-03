@@ -1,0 +1,308 @@
+{
+  "dataset": "miniscope_002030",
+  "session": "FOF_F53_1D",
+  "source": "https://dandiarchive.org/dandiset/002030/0.261016.1321 sub-F53/sub-F53_ses-FOF-F53-1D_behavior+ophys.nwb",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "positions: read_position, cm; range checked: 10-105 by 9-103 cm in the 96 cm arena",
+    "times: rate 30 Hz; 21,427 frames = 714 s, the stated ~12 min session",
+    "headings: processing/behavior/headdirection (radians), wrapped to [-pi, pi]; 0.7 % of stored samples lie outside it",
+    "activity: processing/ophys/Fluorescence/Calcium (dF/F), frame times from rate",
+    "environment: declared circle (diameter 96, DANDI 002030 description: 'circular open-field arena (96 cm in diameter)'); placement fitted: centre_x 57.6, centre_y 56.5, samples_diameter 94.6, size_residual -0.0151"
+  ],
+  "expectations": [
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=29.0, high=31.0), got 30.000000000001705"
+    },
+    {
+      "key": "position_extent_at_most_100_cm",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "activity_is_dff",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "1af734223c1738b283566320a975cd1c2d42d7c2"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 455,
+        "n_dims": 2,
+        "max_extent": 95.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.143,
+      "peak_mb": 1.5
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 714.2,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.26666666666667993,
+        "max_s": 117.63333333333335
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.022,
+      "peak_mb": 2.7
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "rates.spatial": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.place_screen": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.grid_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.border_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_roundtrip": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no min_speed",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.laps": {
+      "status": "ok",
+      "summary": {
+        "n_laps": 1,
+        "n_counter-clockwise": 1
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.037,
+      "peak_mb": 4.1
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_readers": {
+      "status": "workaround",
+      "summary": {
+        "position": "ok (loader used this reader)",
+        "head_direction": "not found, but the loader found it",
+        "units": "absent (file has none)"
+      },
+      "note": "head_direction: not found, but the loader found it",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.419,
+      "peak_mb": 2.0
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.376,
+      "peak_mb": 0.4
+    },
+    "imaging.rates": {
+      "status": "missing",
+      "summary": {},
+      "note": "no public spatial map from a continuous signal: compute_spatial_rates and compute_tuning_curve(s) take spike times",
+      "gap": "G-029",
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "imaging.rates_workaround": {
+      "status": "workaround",
+      "summary": {
+        "n_cells": 26,
+        "frac_nan_bins": 0.0,
+        "median_peak": 0.5833714497833298
+      },
+      "note": "one event per dF/F transient: onset above median + 3 robust SD (1.4826 x MAD), end below median + 1 SD; then compute_spatial_rates (harness heuristic, no published source)",
+      "gap": "G-029",
+      "warnings": [],
+      "seconds": 0.726,
+      "peak_mb": 5.9
+    }
+  },
+  "env_kind": "inferred",
+  "hazards": [
+    {
+      "hazard": "headings_in_degrees",
+      "op": "",
+      "response": "not probed",
+      "message": "changes ['headings'], which no probed operation reads",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.from_samples",
+      "response": "warned",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9489018366241979, 0.9412925082050404] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.018978 (in the same units as positions), or choose a size below the data extent",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 455,
+        "n_dims": 2,
+        "max_extent": 95.0
+      },
+      "hazard_summary": {
+        "n_bins": 4,
+        "n_dims": 2,
+        "max_extent": 2.5
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 714.2,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.26666666666667993,
+        "max_s": 117.63333333333335
+      },
+      "hazard_summary": {
+        "total_s": 714.2,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 141.1833333333333,
+        "max_s": 369.8666666666667
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "raised",
+      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_laps": 1,
+        "n_counter-clockwise": 1
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "headings_as_stored",
+      "op": "",
+      "response": "not probed",
+      "message": "changes ['headings'], which no probed operation reads",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}

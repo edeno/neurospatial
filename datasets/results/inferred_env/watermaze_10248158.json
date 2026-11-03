@@ -1,0 +1,343 @@
+{
+  "dataset": "watermaze_10248158",
+  "session": "B6_6",
+  "source": "https://ndownloader.figshare.com/files/21738963",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "positions: raw.x, raw.y as stored; unit not stated (arbitrary)",
+    "positions: range checked: farthest sample 99.5 units from the pool centre (stated radius 95, limit 1.1 x radius)",
+    "range checked: 37.1 to 223.8 by 10.0 to 196.7 units (largest span 186.8, expected 171-209)",
+    "positions: 13 empty-string samples -> NaN",
+    "times: each trial's raw.t (from 0) + 200 s x trial index, trials in day/trial order",
+    "times: one NaN sample 0.08 s after each trial's last sample",
+    "environment: declared circle (diameter 190, Experiment.json arena.bounds: circle, radius 95 tracking units); placement fitted: stated_centre_x 134, stated_centre_y 104, centre_offset 1.88, samples_diameter 187, size_residual -0.0163"
+  ],
+  "expectations": [
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=12.4, high=12.6), got 12.500000000011369"
+    },
+    {
+      "key": "behavior_only",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "thirty_trials",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "two_probe_trials",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "inside_the_pool",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 1144,
+        "n_dims": 2,
+        "max_extent": 190.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.197,
+      "peak_mb": 4.6
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 1185.6799999999998,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.9599999999994759,
+        "max_s": 5.999999999999659
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.009,
+      "peak_mb": 1.9
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "rates.spatial": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.place_screen": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.grid_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.border_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_roundtrip": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no min_speed",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.016,
+      "peak_mb": 2.4
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_readers": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "env_kind": "inferred",
+  "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 1144,
+        "n_dims": 2,
+        "max_extent": 190.0
+      },
+      "hazard_summary": {
+        "n_bins": 1147,
+        "n_dims": 2,
+        "max_extent": 225.0
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 1185.6799999999998,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.9599999999994759,
+        "max_s": 5.999999999999659
+      },
+      "hazard_summary": {
+        "total_s": 1188.0799999999983,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.8800000000005639,
+        "max_s": 6.479999999998995
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "trials_back_to_back",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 1144,
+        "n_dims": 2,
+        "max_extent": 190.0
+      },
+      "hazard_summary": {
+        "n_bins": 1144,
+        "n_dims": 2,
+        "max_extent": 190.0
+      }
+    },
+    {
+      "hazard": "trials_back_to_back",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 1185.6799999999998,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.9599999999994759,
+        "max_s": 5.999999999999659
+      },
+      "hazard_summary": {
+        "total_s": 1186.96,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 0.9599999999998605,
+        "max_s": 6.4799999999999045
+      }
+    },
+    {
+      "hazard": "trials_back_to_back",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "trials_back_to_back",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "trials_back_to_back",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}

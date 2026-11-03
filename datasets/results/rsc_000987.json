@@ -41,13 +41,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3971+g9ce92cfa4",
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
+    "git_commit": "b9aa70282ae26ed9b9153de7b4e25d2dd0c7a9b2"
   },
   "load_warnings": [
     {
@@ -69,8 +69,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.683,
-      "peak_mb": 31.2
+      "seconds": 0.075,
+      "peak_mb": 7.0
     },
     "env.occupancy": {
       "status": "ok",
@@ -83,8 +83,17 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.022,
+      "seconds": 0.034,
       "peak_mb": 15.0
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "rates.spatial": {
       "status": "ok",
@@ -97,8 +106,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.282,
-      "peak_mb": 38.8
+      "seconds": 0.26,
+      "peak_mb": 34.8
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -125,7 +134,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.4,
+      "seconds": 0.581,
       "peak_mb": 42.6
     },
     "cells.place_screen": {
@@ -137,7 +146,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.01,
       "peak_mb": 8.5
     },
     "cells.grid_score": {
@@ -150,7 +159,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.185,
+      "seconds": 0.243,
       "peak_mb": 2.7
     },
     "cells.border_score": {
@@ -159,8 +168,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
-      "peak_mb": 0.5
+      "seconds": 0.001,
+      "peak_mb": 0.3
     },
     "hd.tuning": {
       "status": "ok",
@@ -173,22 +182,41 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.09,
+      "seconds": 0.116,
       "peak_mb": 34.8
+    },
+    "rates.egocentric_boundary": {
+      "status": "ok",
+      "summary": {
+        "n_units": 37,
+        "n_with_peak": 37,
+        "median_preferred_distance": 32.5,
+        "frac_peak_in_last_ring": 0.35135135135135137,
+        "frac_peak_on_left": 0.35135135135135137,
+        "distance_information_median": 0.03362104444242604,
+        "distance_information_max": 0.5399074896091256,
+        "distance_information_n_finite": 37
+      },
+      "note": "walls = edge of the visited bins (boundary_source='analysis')",
+      "gap": null,
+      "warnings": [],
+      "seconds": 22.281,
+      "peak_mb": 512.7
     },
     "decode.position": {
       "status": "ok",
       "summary": {
         "median_error": 31.035533905932738,
-        "chance_median_error": 29.330795346714364,
+        "chance_median_error": 30.695436482630058,
+        "chance_frac_disconnected": 0.0,
         "units": "cm",
         "n_time_bins": 2390
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.152,
-      "peak_mb": 35.4
+      "seconds": 0.27,
+      "peak_mb": 34.8
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -198,8 +226,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.544,
-      "peak_mb": 5.0
+      "seconds": 4.774,
+      "peak_mb": 4.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -216,8 +244,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.735,
-      "peak_mb": 21.4
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "behavior.laps": {
       "status": "error",
@@ -225,7 +253,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.019,
+      "seconds": 0.042,
       "peak_mb": 15.0
     },
     "behavior.turn_sequence": {
@@ -243,8 +271,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.108,
-      "peak_mb": 3.0
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "error",
@@ -264,8 +292,8 @@
           "count": 10
         }
       ],
-      "seconds": 0.627,
-      "peak_mb": 23.7
+      "seconds": 1.201,
+      "peak_mb": 23.5
     },
     "io.read_pose": {
       "status": "n/a",
@@ -281,8 +309,8 @@
           "count": 10
         }
       ],
-      "seconds": 1.314,
-      "peak_mb": 12.4
+      "seconds": 1.038,
+      "peak_mb": 0.6
     },
     "imaging.rates": {
       "status": "n/a",
@@ -295,6 +323,7 @@
       "warnings": []
     }
   },
+  "env_kind": "inferred",
   "hazards": [
     {
       "hazard": "headings_in_degrees",
