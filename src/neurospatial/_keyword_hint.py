@@ -233,8 +233,13 @@ def keyword_hint(
                     error = env_error(args, kwargs, bind_error)
                     if error is not None:
                         raise error from bind_error
+            # A misspelled keyword explains the missing option better than the
+            # hint does: Python's own error names it and the likely spelling.
+            misspelled = not accepts_any_keyword and any(
+                name not in parameters for name in kwargs
+            )
             for name, (reason, advice) in required.items():
-                if name not in kwargs:
+                if name not in kwargs and not misspelled:
                     raise TypeError(
                         _format_error(
                             f"{title}() needs {name}=.",
