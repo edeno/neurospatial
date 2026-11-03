@@ -1180,7 +1180,8 @@ p-value is `(1 + k) / (1 + n)` over the `n` finite null scores. When
 `1 / (1 + n)` is not below `alpha` the test cannot reject, and
 `spatial_cell_type_significance` labels the unit `"undetermined"` rather than
 `"unclassified"`; its `summary_table()` reports `n` as
-`<statistic>_n_finite_null`. With `correction="holm"` the cutoff is stricter:
+`<statistic>_n_finite_null`, and its `is_place` column still answers the place
+question when only the grid or border test is undetermined. With `correction="holm"` the cutoff is stricter:
 a unit's three tests need `3 / (1 + n) < alpha` at Holm's first step, so with
 39 shuffles (smallest p 0.025) every test is undetermined under Holm although
 each passes uncorrected.

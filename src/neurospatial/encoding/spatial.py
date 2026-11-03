@@ -918,7 +918,15 @@ def _cell_type_labels(
 def _cell_type_columns(
     outcomes: Mapping[str, NDArray[np.float64]],
 ) -> dict[str, Any]:
-    """``passes_<statistic>`` columns (``<NA>`` when unknown) and ``cell_type``."""
+    """``passes_<statistic>``, ``is_place`` and ``cell_type`` columns.
+
+    ``passes_<statistic>`` is ``<NA>`` where the outcome is unknown.
+    ``is_place`` is ``passes_spatial_information`` and not a known grid or
+    border cell: a grid or border test that could not be scored does not
+    block it, unlike ``cell_type``, which is ``"undetermined"`` then.
+    ``<NA>`` information gives ``<NA>`` unless the unit is a known grid or
+    border cell (False).
+    """
     import pandas as pd
 
     columns: dict[str, Any] = {
@@ -928,6 +936,11 @@ def _cell_type_columns(
         )
         for name, values in outcomes.items()
     }
+    grid_or_border = (outcomes["grid_score"] == 1) | (outcomes["border_score"] == 1)
+    # Kleene logic: <NA> information stays <NA> unless the unit is grid or border.
+    columns["is_place"] = columns["passes_spatial_information"] & pd.array(
+        ~grid_or_border, dtype="boolean"
+    )
     columns["cell_type"] = _cell_type_labels(outcomes)
     return columns
 
@@ -1358,8 +1371,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         Parameters
         ----------
         include_classification : bool, default=True
-            Include the fixed-threshold screen columns ``passes_*`` and
-            ``cell_type``.
+            Include the fixed-threshold screen columns ``passes_*``,
+            ``is_place`` and ``cell_type``.
 
         boundary_source : {'physical', 'analysis'}, default='physical'
             Border geometry source. Unsupported physical metrics are NaN and
@@ -1374,8 +1387,8 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
 
         Notes
         -----
-        The ``passes_*`` columns and ``cell_type`` are a fixed-threshold
-        screen with known false positives; see :meth:`SpatialRatesResult.label_cell_types` for the cutoffs, their
+        The ``passes_*``, ``is_place`` and ``cell_type`` columns are a
+        fixed-threshold screen with known false positives; see :meth:`SpatialRatesResult.label_cell_types` for the cutoffs, their
         provenance and measured false-positive rates. The cutoffs are in
         ``df.attrs["classification_thresholds"]``. For a verdict, call
         :func:`spatial_cell_type_significance` with the raw arrays.
@@ -2954,7 +2967,10 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
               rectangular cells for the grid score; no measured walls, or
               walls without observed bins, for the physical border score), so
               any label is possible. ``summary_table()`` records the reason in
-              ``attrs['unavailable_metrics']``; no warning is raised.
+              ``attrs['unavailable_metrics']``; no warning is raised. Its
+              ``is_place`` column gives the place answer without the missing
+              test: True when spatial information reaches its cutoff and the
+              unit is not a known grid or border cell.
 
             Grid and border cells are defined on 2-D maps, so on a 1-D track
             neither applies and a tuned cell is ``"place"``. A neuron whose
@@ -3162,7 +3178,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
             repeated label raises ``ValueError``.
         include_classification : bool, default True
             Whether to include the fixed-threshold screen columns
-            (``passes_*`` and ``cell_type``, as from ``label_cell_types()``).
+            (``passes_*``, ``is_place`` and ``cell_type``, as from
+            ``label_cell_types()``).
 
         boundary_source : {'physical', 'analysis'}, default='physical'
             Border geometry source. Unsupported physical metrics are NaN and
@@ -3191,6 +3208,13 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
               each score reaches its screen cutoff (a grid score only with a
               hexagonal first ring); ``<NA>`` when the score applies to this
               environment but cannot be computed
+            - is_place (if include_classification=True): passes the
+              spatial-information screen and is not a known grid or border
+              cell. A grid or border score that cannot be computed does not
+              block it, so on an environment without measured walls it still
+              answers which units are place cells where ``cell_type`` is
+              ``"undetermined"``; ``<NA>`` when the information test is
+              unknown and the unit is neither grid nor border
             - cell_type (if include_classification=True): the
               ``label_cell_types()`` label: ``"grid"``, ``"border"``,
               ``"grid+border"``, ``"place"``, ``"unclassified"`` or
@@ -3198,8 +3222,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         Notes
         -----
-        The ``passes_*`` columns and ``cell_type`` are a fixed-threshold
-        screen with known false positives; see :meth:`label_cell_types` for the cutoffs, their
+        The ``passes_*``, ``is_place`` and ``cell_type`` columns are a
+        fixed-threshold screen with known false positives; see :meth:`label_cell_types` for the cutoffs, their
         provenance and measured false-positive rates. The cutoffs are in
         ``df.attrs["classification_thresholds"]``. For a verdict, call
         :func:`spatial_cell_type_significance` with the raw arrays.
@@ -3219,7 +3243,8 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         **Common pandas workflows**:
 
-        - Filter: ``df[df["cell_type"] == "place"]``
+        - Filter: ``df[df["cell_type"] == "place"]``, or ``df[df["is_place"]]``
+          when the border test is unavailable (``<NA>`` rows are dropped)
         - Sort: ``df.sort_values("spatial_information", ascending=False)``
         - Top-N: ``df.nlargest(10, "peak_firing_rate")``
 
@@ -3246,6 +3271,12 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
 
         >>> # Filter for place cells
         >>> place_cells = df[df["cell_type"] == "place"]
+
+        >>> # This environment has no measured walls, so there is no border
+        >>> # score and every label is "undetermined"; is_place still answers
+        >>> df["cell_type"].unique().tolist()
+        ['undetermined']
+        >>> place_cells = df[df["is_place"]]
 
         >>> # Sort by spatial information
         >>> top_cells = df.sort_values("spatial_information", ascending=False)
@@ -7565,7 +7596,9 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             ``m`` tests with equal ``n_finite`` need
             ``m / (n_finite + 1) < alpha``. On a 1-D environment
             grid and border do not apply, so a significant cell is
-            ``"place"``.
+            ``"place"``. ``summary_table()["is_place"]`` gives the place
+            answer without an undetermined grid or border test: True for a
+            unit that passes the place test and is not a grid or border cell.
         """
         return _cell_type_labels(self._outcomes(alpha, min_spatial_info, correction))
 
@@ -7581,14 +7614,14 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         Parameters
         ----------
         alpha : float, default=0.05
-            Significance level for ``passes_*`` and ``cell_type``, and the
-            null percentile reported, ``100 * (1 - alpha)``.
+            Significance level for ``passes_*``, ``is_place`` and
+            ``cell_type``, and the null percentile reported, ``100 * (1 - alpha)``.
         min_spatial_info : float, default=0.5
             Bias-corrected information cutoff of the place label
             (bits/spike); see :meth:`label_cell_types`.
         correction : {"holm", "fdr_bh"} or None, default=None
-            Multiple-comparison correction of ``passes_*`` and ``cell_type``;
-            see :meth:`label_cell_types`.
+            Multiple-comparison correction of ``passes_*``, ``is_place`` and
+            ``cell_type``; see :meth:`label_cell_types`.
 
         Returns
         -------
@@ -7605,9 +7638,11 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             (adjusted ``p_value < alpha``, with the place and grid
             requirements of
             :meth:`label_cell_types`; ``<NA>`` when the statistic applies but
-            could not be computed or the test cannot reach ``alpha``) and
-            ``cell_type``
-            from :meth:`label_cell_types`. ``df.attrs`` records ``alpha``,
+            could not be computed or the test cannot reach ``alpha``),
+            ``is_place`` (``passes_spatial_information`` and not a grid or
+            border cell; an undetermined grid or border test does not block
+            it, and an undetermined place test of a unit that is neither
+            gives ``<NA>``) and ``cell_type`` from :meth:`label_cell_types`. ``df.attrs`` records ``alpha``,
             ``correction``, ``classification_thresholds``, ``null_percentile``,
             ``n_shuffles``, ``min_shift``,
             ``shuffle_type``, ``method``, ``bandwidth``, ``boundary_source``,
@@ -8128,7 +8163,9 @@ def spatial_cell_type_significance(
     track, the grid score needs a regular grid of rectangular cells, and the
     physical border score needs measured walls with observed bins along
     them. Those statistics have NaN p-values and their reason in
-    ``unavailable_metrics``. A map with no field of the minimum size has no
+    ``unavailable_metrics``, and the labels are ``"undetermined"``;
+    ``summary_table()["is_place"]`` still gives the place answer without
+    them. A map with no field of the minimum size has no
     border score, so its p-value is NaN and it is not a border cell. A null
     map without a defined score is left out of that unit's p-value, which is
     (1 + k) / (1 + n) with n the finite null scores and k those at least the

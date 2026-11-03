@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Place cells are listed in arenas without measured walls
+
+**Added**
+
+- `summary_table()` of spatial rate results (single and population) and of
+  `spatial_cell_type_significance` has an `is_place` column, next to
+  `cell_type`: True for a unit that passes the spatial-information test and
+  is not a known grid or border cell, `<NA>` when the information test is
+  unknown. On an environment without measured walls, such as one from
+  `Environment.from_samples`, the border score cannot be computed and every
+  `cell_type` is `"undetermined"`, because any cell could be a border cell;
+  `is_place` still answers which units are place cells.
+
 ### Spike times in milliseconds warn with `epochs`
 
 **Fixed**

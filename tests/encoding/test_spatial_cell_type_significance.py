@@ -91,6 +91,7 @@ def test_result_layout_and_table(significance_recording):
         *(f"{name}_null_percentile" for name in STATISTICS),
         *(f"{name}_n_finite_null" for name in STATISTICS),
         *(f"passes_{name}" for name in STATISTICS),
+        "is_place",
         "cell_type",
     ]
     assert table.attrs["null_percentile"] == 90.0
