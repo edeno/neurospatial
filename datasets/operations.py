@@ -563,7 +563,23 @@ def turn_sequence(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
 
 
+# Replay runs as a smoke test: comparing published replay methods is not a
+# goal of the survey (maintainer's decision), so a few events and shuffles
+# show that the methods run on the recording, not how they compare.
+REPLAY_MAX_EVENTS = 20
+REPLAY_N_SHUFFLES = 50
+
+
 def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Run ``DAVIDSON_2009`` and ``GROSMARK_2016`` on the first candidate events.
+
+    A smoke run, not a comparison of the methods: comparing published replay
+    methods is not a survey goal. Only the first ``REPLAY_MAX_EVENTS`` events
+    in time are decoded, with ``REPLAY_N_SHUFFLES`` shuffles per method
+    (``params["replay_n_shuffles"]`` overrides it), far fewer than either
+    paper used, so the detection rates show that the methods run on the
+    recording and are not estimates to compare.
+    """
     from neurospatial.encoding import compute_spatial_rates
     from neurospatial.replay import (
         compare_replay_methods,
@@ -585,6 +601,9 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
             note="needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
         )
     dt = rec.params["replay_dt"]
+    n_candidates = len(ripples)
+    ripples = np.asarray(ripples, dtype=float).reshape(-1, 2)
+    ripples = ripples[np.argsort(ripples[:, 0], kind="stable")][:REPLAY_MAX_EVENTS]
     positions, status, gap, note = rec.positions, "ok", None, ""
     declared_track = env_kind(rec, cache) == "declared" and bool(
         _env(rec, cache).is_linearized_track
@@ -619,10 +638,11 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
         epochs=rec.params.get("train_epochs"),
     )
     events, counts = decode_intervals(env, spikes, ripples, rates, dt=dt)
-    methods = [DAVIDSON_2009, GROSMARK_2016]
-    if (n_shuffles := rec.params.get("replay_n_shuffles")) is not None:
-        # Fewer shuffles than published, for quick checks; real runs omit it.
-        methods = [dataclasses.replace(m, n_shuffles=n_shuffles) for m in methods]
+    n_shuffles = rec.params.get("replay_n_shuffles", REPLAY_N_SHUFFLES)
+    methods = [
+        dataclasses.replace(m, n_shuffles=n_shuffles)
+        for m in (DAVIDSON_2009, GROSMARK_2016)
+    ]
     table = compare_replay_methods(
         env,
         events,
@@ -633,7 +653,12 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
         dt=dt,
         rng=0,
     )
-    summary: dict[str, float | int | str] = {"n_events": len(events), "events": kind}
+    summary: dict[str, float | int | str] = {
+        "n_events": len(events),
+        "n_candidates": n_candidates,
+        "n_shuffles": n_shuffles,
+        "events": kind,
+    }
     for row in detection_rates(table).itertuples():
         summary[f"{row.method}_rate"] = float(row.rate)
         summary[f"{row.method}_ci"] = f"{row.ci_low:.3f}-{row.ci_high:.3f}"
