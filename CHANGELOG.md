@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### The boolean-masking warning ignores irregular sampling
+
+**Fixed**
+
+- The boolean-masking warning ("runs of removed samples lasting 0.25 s to
+  max_gap") fired on irregularly sampled `times`, where some steps land near
+  a whole multiple of the median step by chance. It now looks for removed
+  samples only when at least 75% of the steps lie within half of the median
+  step, as in a regular recording, timestamp jitter included. Positions
+  sampled at spike times (DANDI 001754) no longer get this warning, whose
+  speed-mask diagnosis did not apply to them.
+
 ### A first-timer, or an assistant, can find the right function
 
 **Breaking**
