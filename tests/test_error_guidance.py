@@ -251,6 +251,29 @@ def test_shape_edge_cases_keep_their_precise_messages(session, rates, counts):
         BayesianDecoder(env).fit(padded, times, positions)
 
 
+def test_rectangular_list_of_counts_is_a_count_matrix(session, rates):
+    """A nested list of whole-number counts decodes like the same ndarray.
+
+    Every row here increases, as spike trains do, but the rows have one
+    length and hold non-negative whole numbers: a count matrix.
+    """
+    nested = [[0, 1, 3], [1, 2, 4], [0, 1, 2]]
+    from_list = decode_position(session.env, nested, rates, dt=0.1)
+    from_array = decode_position(session.env, np.array(nested), rates, dt=0.1)
+    np.testing.assert_array_equal(from_list.posterior, from_array.posterior)
+
+
+def test_equal_length_spike_trains_are_still_refused_as_counts(session, rates):
+    # Equal-length trains in seconds are fractional: still spike trains.
+    trains = [np.asarray(train[:5]) for train in session.spike_times]
+    assert len({train.size for train in trains}) == 1
+    with pytest.raises(TypeError, match="got 3 spike trains"):
+        decode_position(session.env, trains, rates, dt=0.1)
+    one_spike_each = [[0.5], [1.2], [3.3]]
+    with pytest.raises(TypeError, match="got 3 spike trains"):
+        decode_position(session.env, one_spike_each, rates, dt=0.1)
+
+
 def test_list_of_pynapple_trains_passed_as_counts(session, rates):
     nap = pytest.importorskip("pynapple")
     trains = [nap.Ts(np.asarray(t)) for t in session.spike_times]
