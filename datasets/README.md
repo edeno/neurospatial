@@ -37,9 +37,14 @@ Files are downloaded once into `data/datasets/` (git-ignored) or into
 `$NEUROSPATIAL_DATA_DIR` when it is set, and every file is checked against a
 pinned SHA-256. A file whose checksum does not match is never overwritten. Data
 are not redistributed here; each loader records the dataset's license.
-The labyrinth's trajectories are Python pickles; its loader reads them with a
-restricted unpickler that resolves only the trajectory record and int64 or
-float64 NumPy arrays, and refuses every other global or dtype.
+The labyrinth's trajectories and Gardner's spike trains are Python pickles;
+their loaders read them with restricted unpicklers that resolve only the
+globals and dtypes those files hold, and refuse every other one (Gardner's
+loader also lists a pickle's imports from its opcodes before unpickling).
+
+Multi-GB DANDI files (000044, 000447) are not downloaded: the loader checks the
+SHA-256 DANDI publishes for the asset, then reads the few datasets it needs by
+HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 
 | Dataset | What it is | Size | License |
 | --- | --- | --- | --- |
@@ -51,12 +56,30 @@ float64 NumPy arrays, and refuses every other global or dtype.
 | `miniscope_002030` | Mouse CA1 one-photon calcium imaging (ΔF/F), circular open field (DANDI 002030) | 4.9 MB | CC-BY-4.0 |
 | `giocomo_000405` | Rat open field with binned firing rates and mislabelled tracking (DANDI 000405, draft) | 27.1 MB | unstated (draft) |
 | `giocomo_001701` | Mouse MEC and CA1 units on an X maze, head direction labelled degrees (DANDI 001701) | 13.0 MB | CC-BY-4.0 |
+| `gardner_2022_grid` | Rat MEC grid modules 1–3 in an open field, 483 units (Figshare 16764508; one zip member by byte range) | 168.9 MB | CC0 |
+| `vollan_lt` | Rat MEC Neuropixels units on a linear track with tracked head direction (EBRAINS 10.25493/R5FR-EDG) | 110.6 MB | CC-BY-SA-4.0 |
+| `vollan_of` | Rat MEC Neuropixels grid modules in an open field, with the authors' grid scores (EBRAINS 10.25493/R5FR-EDG) | 205.7 MB | CC-BY-SA-4.0 |
+| `grosmark_000044_circular` | Rat CA1 on a 1 m circular track with sleep before and after (DANDI 000044) | streamed from 9.2 GB | CC-BY-4.0 |
+| `grosmark_000044_linear` | Rat CA1 on a 1.6 m linear track with sleep before and after (DANDI 000044) | streamed from 8.7 GB | CC-BY-4.0 |
+| `jadhav_000447` | Rat CA1 and PFC units on a W-track (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
 
 NWB loaders set `params["nwb_source"]` to the cached file, or to the URL of a
 file read by byte range. The `io.nwb_readers`
 operation then runs neurospatial's position, head-direction and unit readers
 on it with default arguments and compares what they return with the loader's
 range-checked arrays.
+
+## Studies
+
+`studies/` holds analyses that use the loaders but are not dataset ×
+operation cells; each writes to `results/studies/`:
+
+- `warning_calibration.py`: the numbers behind proposed warnings (samples
+  exactly at the origin, fewest bins per dimension, head-direction coverage)
+  on every clean recording.
+- `information_bias_null.py`: `spatial_information_bias` against simulated
+  untuned Poisson and bursty cells on each recording's own occupancy, and
+  real units against 100 circular shifts.
 
 ## Read the results
 
