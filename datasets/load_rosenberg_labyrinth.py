@@ -36,6 +36,13 @@ Analysis choices (``params``):
 - ``bin_size`` 0.25 cells for 2-D environments (4 bins per corridor width);
   ``graph_bin_size`` 0.5 cells along the track graph.
 - ``min_speed`` 1 cell/s: about one corridor width per second.
+
+Declared environment (``geometry["environment"]``): the track graph rebuilt
+from the repository's ``NewMaze`` (every edge, 0.5-cell bins along it) with a
+track width of one cell, the corridor pitch, so a corridor's footprint ends
+at the wall it shares with its neighbour. The paper's corridors are 1-1/8
+inches wide on a 1.5 inch grid (0.75 of a cell); at that width 18 % of nose
+samples would fall outside the track, at one cell 4.6 %.
 """
 
 from __future__ import annotations
@@ -49,6 +56,7 @@ from typing import Any, ClassVar
 import numpy as np
 from _fetch import fetch
 from _record import Range, Recording, check_expectations, validate_recording
+from _tracks import declared_geometry, with_declared
 
 DATASET = {
     "key": "rosenberg_labyrinth",
@@ -215,7 +223,7 @@ def load(cache: Path | None = None) -> Recording:
             np.asarray(traj.fr)[:, 1] / _FRAME_RATE,
         ]
     )
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session=_MOUSE,
         source=_URL,
@@ -238,6 +246,22 @@ def load(cache: Path | None = None) -> Recording:
             "geometry['graph']: rebuilt from NewMaze (MM_Maze_Utils.py) plus an entrance node",
         ),
     )
+    entries, line = declared_geometry(
+        rec.geometry["graph"],
+        rec.positions,
+        kind="binary-tree labyrinth, the repository's track graph",
+        source="Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py):"
+        " corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)'"
+        " on a 1.5 inch grid",
+        bin_size=rec.params["graph_bin_size"],
+        track_width=rec.geometry["track_width"],
+        units=None,
+        name=DATASET["key"],
+        placement="the maze cells of the repository's own alignment (not fitted)",
+        # The authors' graph is not a fitted placement, so it is not refused.
+        max_median_offset=np.inf,
+    )
+    return with_declared(rec, entries, line)
 
 
 def _image_y_down(rec: Recording) -> Recording:
