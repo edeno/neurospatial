@@ -138,12 +138,29 @@ DEFAULT_MAX_GAP = 1.0
 #: stay below it.
 MASKED_RUN_MIN_DURATION = 0.25
 
-#: Least share of sampling steps within half of the median step for the
-#: boolean-masking check to read the median as the sampling interval. Masked
-#: regular recordings keep at least 0.9 of their steps there, also with 10 ms
-#: of timestamp jitter at 30 Hz; uniform or exponential irregular steps keep
-#: about 0.5 or 0.35, and positions sampled at spike times (DANDI 001754) 0.17.
+#: Largest distance, as a fraction of the sampling interval, from a sampling
+#: step to a whole multiple of the interval for the step to count as a
+#: whole number of samples.
+MASKED_MULTIPLE_TOLERANCE = 0.25
+
+#: Least share of sampling steps within ``MASKED_MULTIPLE_TOLERANCE`` of a
+#: whole multiple of the sampling interval for the boolean-masking check to
+#: read the sampling as regular. Measured on simulated 30 Hz recordings
+#: (``test_masking_gate_calibration``): a speed mask keeps 1.0, 0.97 with
+#: timestamps jittered within a 10 ms window and 0.86 with Gaussian jitter of
+#: 4 ms SD; a fragmented mask (kept runs of 1-4 frames between removed runs
+#: of 10-40) keeps 1.0, though only 0.6 of its steps are within half of the
+#: median step. Uniform or exponential irregular steps, and positions
+#: sampled at spike times (0.17 of steps within half of the median step, as
+#: in DANDI 001754), keep about 0.5, the share of random steps that land
+#: near a multiple.
 MASKED_REGULAR_SHARE = 0.75
+
+#: Largest probability that random steps put at least as many steps near a
+#: multiple, for the boolean-masking check to read the sampling as regular.
+#: Without it, 41 in 40,000 short runs (11-54 steps) of uniform irregular
+#: steps reached ``MASKED_REGULAR_SHARE`` by chance and warned.
+MASKED_REGULAR_CHANCE = 1e-4
 
 
 def validate_max_gap(max_gap: Any) -> float | None:
@@ -1905,20 +1922,57 @@ def _rounded_fix(median_dt: float) -> str:
     )
 
 
+def _sampling_interval(dt: NDArray[np.float64]) -> float:
+    """The sampling interval of steps that may skip removed samples.
+
+    The median step is a gap when most steps skip samples (a fragmented
+    mask keeps runs of one or two frames), so the interval is read from the
+    shortest steps: the median of the steps within half of the
+    shortest-steps median, which are the steps of one sample.
+
+    Parameters
+    ----------
+    dt : ndarray, shape (n_steps,)
+        Positive sampling steps in seconds.
+
+    Returns
+    -------
+    float
+        The interval in seconds.
+
+    Examples
+    --------
+    Most steps skip samples, but the interval is still the 0.1 s step:
+
+    >>> import numpy as np
+    >>> dt = np.r_[np.full(3, 0.1), np.full(7, 1.2)]
+    >>> float(np.median(dt)), round(_sampling_interval(dt), 6)
+    (1.2, 0.1)
+    """
+    low = float(np.quantile(dt, 0.1))
+    # An element of dt, so the steps near it below include it.
+    shortest = float(np.quantile(dt[dt <= 1.5 * low], 0.5, method="lower"))
+    one_sample = dt[(dt > 0.5 * shortest) & (dt < 1.5 * shortest)]
+    return float(np.median(one_sample))
+
+
 def _masked_sample_fraction(
     times: NDArray[np.float64], kept: NDArray[np.bool_], max_gap: float
 ) -> float:
     """Fraction of the analysed time spent in long, bridged runs of removed samples.
 
     Boolean masking (``times[speed > 5]``) removes whole samples, so the
-    steps left are whole multiples of the median sampling interval. Only
-    kept steps no longer than ``max_gap`` whose removed run lasts at least
-    ``MASKED_RUN_MIN_DURATION`` count: shorter runs are dropped frames,
-    longer steps are recording gaps, and steps outside the kept intervals
-    (between epochs, for example) are not bridged. The median is the
-    sampling interval only when ``MASKED_REGULAR_SHARE`` of the steps lie
-    within half of it; irregular sampling, whose steps say nothing about
-    removed samples, counts nothing.
+    steps left are whole multiples of the sampling interval
+    (:func:`_sampling_interval`). Only kept steps no longer than ``max_gap``
+    whose removed run lasts at least ``MASKED_RUN_MIN_DURATION`` count:
+    shorter runs are dropped frames, longer steps are recording gaps, and
+    steps outside the kept intervals (between epochs, for example) are not
+    bridged. The sampling counts as regular only when at least
+    ``MASKED_REGULAR_SHARE`` of the steps lie within
+    ``MASKED_MULTIPLE_TOLERANCE`` of a whole multiple of the interval, and
+    random steps would put that many there with probability at most
+    ``MASKED_REGULAR_CHANCE``; irregular sampling, whose steps say nothing
+    about removed samples, counts nothing.
 
     Parameters
     ----------
@@ -1960,11 +2014,25 @@ def _masked_sample_fraction(
     dt = np.diff(times)
     if dt.size < 10:
         return 0.0
-    step = float(np.median(dt))
+    step = _sampling_interval(dt)
     if not np.isfinite(step) or step <= 0:
         return 0.0
     ratio = dt / step
-    if np.mean((ratio > 0.5) & (ratio < 1.5)) < MASKED_REGULAR_SHARE:
+    n_near = int(
+        np.count_nonzero(
+            (ratio >= 0.5)
+            & (np.abs(ratio - np.round(ratio)) < MASKED_MULTIPLE_TOLERANCE)
+        )
+    )
+    if n_near < MASKED_REGULAR_SHARE * dt.size:
+        return 0.0
+    # Random steps land near a multiple with probability 2 * tolerance, so a
+    # few steps can reach the share by chance: also require at least n_near
+    # of them to be improbable for random steps.
+    from scipy.special import bdtrc
+
+    chance = float(bdtrc(n_near - 1, dt.size, 2 * MASKED_MULTIPLE_TOLERANCE))
+    if chance > MASKED_REGULAR_CHANCE:
         return 0.0
     skipped_time = (ratio - 1.0) * step
     skipped = (
