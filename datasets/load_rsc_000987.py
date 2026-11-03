@@ -207,16 +207,9 @@ def _vertical_axis_as_floor(rec: Recording) -> Recording:
     )
 
 
-def _metres_read_as_cm(rec: Recording) -> Recording:
-    # The blank unit read as the survey's cm: values 100 times too small.
-    assert rec.positions is not None
-    return replace(rec, positions=rec.positions / 100.0)
-
-
-HAZARDS = {
-    "vertical_axis_as_floor": _vertical_axis_as_floor,
-    "blank_unit_read_as_cm": _metres_read_as_cm,
-}
+# The blank unit read as cm (metres 100 times too small) is the generic
+# length_unit_off_by_100 probe.
+HAZARDS = {"vertical_axis_as_floor": _vertical_axis_as_floor}
 
 
 if __name__ == "__main__":
