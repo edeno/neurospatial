@@ -632,6 +632,25 @@ class TestEstimateSpectralRadius:
         expected_bound = 2.0 * float(np.max(laplacian.diagonal()))
         assert radius == pytest.approx(expected_bound)
 
+    def test_estimate_is_the_largest_eigenvalue_on_every_call(self, simple_2d_env):
+        """A fixed ARPACK start vector: the same float each call, and exact.
+
+        The vector of ones is this Laplacian's eigenvector of eigenvalue 0,
+        so the start vector must not be it.
+        """
+        from neurospatial.ops.basis import _estimate_spectral_radius
+
+        laplacian = self._laplacian(simple_2d_env).astype(float)
+        dense = np.max(np.linalg.eigvalsh(laplacian.toarray()))
+        radii = [_estimate_spectral_radius(laplacian) for _ in range(3)]
+        assert radii[0] == pytest.approx(dense, rel=1e-12)
+        assert radii[1] == radii[0]
+        assert radii[2] == radii[0]
+        first = chebyshev_filter_basis(simple_2d_env, n_centers=5, rng=0)
+        np.testing.assert_array_equal(
+            chebyshev_filter_basis(simple_2d_env, n_centers=5, rng=0), first
+        )
+
 
 def _face_hops(env, source):
     """Hop count from ``source`` across shared cell faces (conductance > 0)."""

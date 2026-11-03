@@ -48,6 +48,10 @@
   spawned like the rest of the session, so sessions from one generator no
   longer all start on the same arm. An int `rng` now picks a different first
   arm than before (`rng=42` starts on the right).
+- `chebyshev_filter_basis` returns the same floats on every call with the
+  same `rng`. Its spectral-radius estimate started ARPACK from an unseeded
+  random vector, so repeated calls differed by about 1e-15; it now starts
+  from a fixed one.
 - Every public result's `summary()` key reads back from the result:
   `DecodingSummary.mean_peak_probability`, `AssemblyPattern.n_members`,
   `NullSpikeData.n_cells` and `.n_spikes`, `ReplayEventSimulation.n_spikes`

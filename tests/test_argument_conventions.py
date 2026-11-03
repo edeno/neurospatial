@@ -1159,16 +1159,6 @@ def test_rng_calls_cover_every_public_rng_function():
     assert sorted(_rng_calls()) == _public_rng_functions()
 
 
-# Compared to a tolerance, not bit for bit, each with its reason.
-_RNG_PARITY_TOLERANCE = {
-    # Its spectral-radius estimate starts ARPACK from an unseeded random
-    # vector, so two calls with rng=0 already differ in the last bits. Its
-    # centers, the only use of rng, come from select_basis_centers, which is
-    # compared exactly.
-    "neurospatial.ops.chebyshev_filter_basis": 1e-12,
-}
-
-
 @pytest.mark.parametrize("name", _public_rng_functions())
 def test_seed_and_its_fresh_generator_agree(name):
     """``rng=0`` and ``rng=np.random.default_rng(0)`` give the same result."""
@@ -1176,11 +1166,7 @@ def test_seed_and_its_fresh_generator_agree(name):
 
     call = _rng_calls()[name]
     seeded, generated = call(0), call(np.random.default_rng(0))
-    if name in _RNG_PARITY_TOLERANCE:
-        tolerance = _RNG_PARITY_TOLERANCE[name]
-        np.testing.assert_allclose(seeded, generated, rtol=0, atol=tolerance)
-    else:
-        assert _canonical(seeded) == _canonical(generated), name
+    assert _canonical(seeded) == _canonical(generated), name
 
 
 @pytest.mark.parametrize(
