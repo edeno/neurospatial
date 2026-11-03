@@ -2,8 +2,9 @@
 
 What was recorded: rat 29629 ("Karri"), 29 Oct 2024, Neuropixels 2.0 probes in
 lateral entorhinal cortex (156 units) and CA1 (224 units; 125 of the 380 are
-"good", the rest "mua"), foraging in a 1 m square arena: 7.5 min empty, then
-three novel objects placed one at a time for 7.5 min each. Head position and
+"good", the rest "mua"), foraging in a 1 m square arena: 605 s empty, then
+three novel objects placed one at a time for 450, 523 and 452 s (the data
+descriptor says about 7.5 min each; the file's epochs). Head position and
 direction from OptiTrack motion capture at 120 Hz, projected onto the floor.
 
 Where it lives: EBRAINS dataset 10.25493/GTVB-FQR, CC-BY-SA-4.0, public

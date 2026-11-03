@@ -25,13 +25,15 @@ What the loader converts:
   (x1, y1 in front) minus the direction of movement while running has a
   circular mean of -25.5 deg and a median spread of 51 deg with one-frame
   steps, but ``rawpos`` is whole pixels, so one-frame directions are
-  quantised; over 15 frames (0.5 s) it is -14.4 deg and 18.8 deg, over 30
-  frames -12.7 and 17.1. The authors' ``pos`` ``dir`` against their smoothed
+  quantised; over 15 frames (0.5 s) it is -14.4 deg and 18.8 deg (over 30
+  frames, measured once while writing this loader and not recorded, -12.7
+  and 17.1). The authors' ``pos`` ``dir`` against their smoothed
   positions gives -21.9 and 28.0. What remains looks like a mounting offset
   of about -15 to -20 deg plus a direction-dependent residual (sector means
   -30 to +3 deg at 15 frames). The mean stays outside the frame check's
   0.2 rad at every lag, so the heading is not kept rather than corrected by
-  a rotation fitted to the data. Both lags are recorded in ``conversions``.
+  a rotation fitted to the data. Lags 1 and 15, for both LED orders, are
+  recorded in ``conversions``.
 - The untracked zeros sit at the pixel origin, which is outside the track:
   the driver's generic ``missing_positions_as_zero`` hazard (NaN -> 0) puts
   exactly those frames back, so it is this file's own defect.
