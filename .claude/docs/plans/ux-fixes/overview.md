@@ -143,6 +143,12 @@ defaults, renamed arguments) are listed as **Breaking**.
   calibrated spread threshold). See `datasets/GAPS.md`.
 - **The other `*_significance` functions** still return dicts; give them
   population results like `PlaceCellSignificanceResult`.
+- **`detect_laps` loop rule on `from_samples` arenas** (real-data survey,
+  2026-11-02): unvisited patches inside an open arena count as holes, so
+  running round an unvisited centre (DANDI 002030) gives a lap. Decide
+  whether holes come only from declared walls/obstacles.
+- **`TuningCurveResult.peak_location()`** returns a shape-(1,) array on 1-D
+  tuning curves.
 - **`keyword_hint` has no hook for unexpected keywords**, so a result screen
   called with `criterion=` gives a plain `TypeError`.
 
