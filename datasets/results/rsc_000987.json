@@ -1,0 +1,521 @@
+{
+  "dataset": "rsc_000987",
+  "session": "A7803-210726",
+  "source": "https://dandiarchive.org/dandiset/000987/0.261003.2342 sub-A7803/sub-A7803_ses-20240509T213129_behavior+ecephys.nwb (asset fccdeeeb-6f18-4c39-b385-d68932b2e665)",
+  "license": "CC-BY-4.0",
+  "conversions": [
+    "positions: Position/x and -Position/z (blank unit) x 100, cm; y is vertical (span 9.0 cm); range checked: -24.2-28.5 by -42.1-11.0 cm",
+    "headings: CompassDirection/ry (radian, 0-2 pi) wrapped to [-pi, pi]; frame not verified: heading_vs_movement mean +0.51 rad, spread 49 deg (10 Hz, > 10 cm/s)",
+    "epochs: epochs table by tag (sleep, wake); SWS, UP, DOWN intervals; position_time_support as tracking"
+  ],
+  "expectations": [
+    {
+      "key": "n_units",
+      "passed": true,
+      "detail": "expected 37, got 37"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=99.0, high=101.0), got 99.99999999781721"
+    },
+    {
+      "key": "arena_extent_cm",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "headings_span_the_circle",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "headings_follow_movement",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev3971+g9ce92cfa4",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "cc8af6df63a32f6244e01fa42466f52f8869bd86"
+  },
+  "load_warnings": [
+    {
+      "category": "DeprecationWarning",
+      "origin": "third-party",
+      "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+      "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+      "count": 10
+    }
+  ],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 453,
+        "n_dims": 2,
+        "max_extent": 55.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.069,
+      "peak_mb": 7.0
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 1202.7939500000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 1.699999999999818,
+        "max_s": 28.61835000000383
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.034,
+      "peak_mb": 15.0
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 37,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 5.565237284788247,
+        "median_mean_hz": 3.604291548821215
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.242,
+      "peak_mb": 34.8
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 0.020561858655837068,
+        "bits_per_spike_max": 0.8153258424396116,
+        "bits_per_spike_n_finite": 37
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 1.1
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 0.020561858655837068,
+        "median_shifted_bits_per_spike": 0.008667599159936264,
+        "frac_above_every_shift": 0.8378378378378378,
+        "n_units": 37,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.702,
+      "peak_mb": 42.6
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 1,
+        "n_units": 37
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.009,
+      "peak_mb": 8.5
+    },
+    "cells.grid_score": {
+      "status": "ok",
+      "summary": {
+        "median": -0.46634303482002415,
+        "max": 0.1561688404818096,
+        "n_finite": 18
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.188,
+      "peak_mb": 2.7
+    },
+    "cells.border_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 0.3
+    },
+    "hd.tuning": {
+      "status": "ok",
+      "summary": {
+        "n_units": 37,
+        "mean_vector_length_median": 0.08416820749591199,
+        "mean_vector_length_max": 0.9174097967667656,
+        "mean_vector_length_n_finite": 37
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.206,
+      "peak_mb": 34.8
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 31.035533905932738,
+        "chance_median_error": 29.330795346714364,
+        "units": "cm",
+        "n_time_bins": 2390
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.241,
+      "peak_mb": 34.8
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 453
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 3.144,
+      "peak_mb": 5.4
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no min_speed",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.05,
+      "peak_mb": 15.0
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "summary": {},
+      "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.nwb_readers": {
+      "status": "error",
+      "summary": {
+        "position": "raised ValueError",
+        "head_direction": "raised ValueError",
+        "units": "ok (loader used this reader)"
+      },
+      "note": "position: ValueError: Found 3 Position series candidates: ['acquisition/Position/x', 'acquisition/Position/y', 'acquisition/Position/z'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='acquisition/Position/x'. | head_direction: ValueError: Found 3 CompassDirection series candidates: ['acquisition/CompassDirection/rx', 'acquisition/CompassDirection/ry', 'acquisition/CompassDirection/rz'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass compass_name= with one of these paths, e.g. compass_name='acquisition/CompassDirection/rx'.",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "DeprecationWarning",
+          "origin": "third-party",
+          "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "count": 10
+        }
+      ],
+      "seconds": 0.995,
+      "peak_mb": 23.6
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "DeprecationWarning",
+          "origin": "third-party",
+          "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "count": 10
+        }
+      ],
+      "seconds": 0.976,
+      "peak_mb": 0.7
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "hazards": [
+    {
+      "hazard": "headings_in_degrees",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 359.9, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 37,
+        "mean_vector_length_median": 0.08416820749591199,
+        "mean_vector_length_max": 0.9174097967667656,
+        "mean_vector_length_n_finite": 37
+      },
+      "hazard_summary": {
+        "n_units": 37,
+        "mean_vector_length_median": 0.011698997015249785,
+        "mean_vector_length_max": 0.09414872463144336,
+        "mean_vector_length_n_finite": 37
+      }
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "954693/955016 spike_times (100%) across all neurons fell outside the position time window [3880.16, 5082.95]; spike_times.min()=4.2 spike_times.max()=5.08518e+06. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 37,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 5.565237284788247,
+        "median_mean_hz": 3.604291548821215
+      },
+      "hazard_summary": {
+        "n_units": 37,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 0.03325212289395195,
+        "median_mean_hz": 0.0031188851485546023
+      }
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "954693/955016 spike_times (100%) across all neurons fell outside the position time window [3880.16, 5082.95]; spike_times.min()=4.2 spike_times.max()=5.08518e+06. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 37,
+        "mean_vector_length_median": 0.08416820749591199,
+        "mean_vector_length_max": 0.9174097967667656,
+        "mean_vector_length_n_finite": 37
+      },
+      "hazard_summary": {
+        "n_units": 37,
+        "mean_vector_length_median": 0.2808669445064762,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 30
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.from_samples",
+      "response": "warned",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.5269940000000001, 0.531648] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.010633 (in the same units as positions), or choose a size below the data extent",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 453,
+        "n_dims": 2,
+        "max_extent": 55.0
+      },
+      "hazard_summary": {
+        "n_bins": 4,
+        "n_dims": 2,
+        "max_extent": 2.5
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 1202.7939500000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 1.699999999999818,
+        "max_s": 28.61835000000383
+      },
+      "hazard_summary": {
+        "total_s": 1202.7939500000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 266.4055249999981,
+        "max_s": 485.8633000000009
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "bandwidth=5 spans the environment (extent 5 cm), which can erase spatial tuning. Choose an explicit bandwidth in the same units as positions; check env.units and the scale of your recording.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 37,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 5.565237284788247,
+        "median_mean_hz": 3.604291548821215
+      },
+      "hazard_summary": {
+        "n_units": 37,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 3.6689986116420603,
+        "median_mean_hz": 3.6614613911416845
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "vertical_axis_as_floor",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 453,
+        "n_dims": 2,
+        "max_extent": 55.0
+      },
+      "hazard_summary": {
+        "n_bins": 91,
+        "n_dims": 2,
+        "max_extent": 55.0
+      }
+    },
+    {
+      "hazard": "vertical_axis_as_floor",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 1202.7939500000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 1.699999999999818,
+        "max_s": 28.61835000000383
+      },
+      "hazard_summary": {
+        "total_s": 1202.7939500000002,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 3.3198499999998603,
+        "max_s": 89.17499999999154
+      }
+    },
+    {
+      "hazard": "vertical_axis_as_floor",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 37,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 5.565237284788247,
+        "median_mean_hz": 3.604291548821215
+      },
+      "hazard_summary": {
+        "n_units": 37,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 4.579294384302037,
+        "median_mean_hz": 3.6674702125996053
+      }
+    },
+    {
+      "hazard": "vertical_axis_as_floor",
+      "op": "behavior.segment_by_velocity",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "vertical_axis_as_floor",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "vertical_axis_as_floor",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}
