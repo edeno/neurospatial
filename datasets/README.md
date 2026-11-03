@@ -104,6 +104,12 @@ operation cells; each writes to `results/studies/`:
 - `egocentric_boundary_survey.py`: the `rates.egocentric_boundary` operation
   on every recording with head direction, without rewriting the driver's
   results.
+- `environment_fidelity.py`: whether the environment the driver builds for
+  each recording has the apparatus's shape and connectivity (components,
+  holes, links no sample comes near, path lengths against the distance along
+  the track or the lattice's bars, the outline against a stated arena);
+  figures go to `$NEUROSPATIAL_DATA_DIR/figures/environment_fidelity/`, not
+  tracked. Summary in [ENVIRONMENT_FIDELITY.md](ENVIRONMENT_FIDELITY.md).
 
 ## Read the results
 
