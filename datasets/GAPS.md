@@ -104,6 +104,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   recordings with spikes and 2-D positions (000987, 001880, 001695, 001754,
   000568, 000165, 000003, Kanter): every environment there is built from
   samples.
+- More evidence (faithful arenas batch): with the stated outline declared
+  (`Environment.from_polygon`), `border_scores()` runs on 000582, Gardner,
+  Vollan's open field, Kanter and hc-2 (cells `ok`); 000987, 001880,
+  000003 and Hafting stay built from samples and still refuse. On the
+  samples-built environments, `boundary_source="analysis"` would make the
+  edges of unvisited holes walls: 515 of 574 Vollan units, 258 of 299 Kanter
+  units and all 34 hc-2 units then score above 0.5. Declared walls bring
+  their own failure where the head never reaches the wall bins (G-131).
 
 ## G-006: Grid score differs from opexebo on the same rate map because of the autocorrelogram
 
@@ -356,6 +364,12 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   the holes the outlines match the stated squares: the outermost bins come
   within a median 1.6 cm (0.6 bin) of the stated wall in 000582, Kanter and
   Gardner, so border and boundary measures see the wall where it is.
+- More evidence (faithful arenas batch): with the stated outline declared,
+  `detect_laps` refuses every open arena ("no loop"): 000582, 002030,
+  000405, Vollan's open field, Kanter and hc-2, which gave 0-1 spurious laps
+  on the samples-built environment (`results/inferred_env/`). The refusal is
+  right; the holes of a samples-built arena were the loops. On the 3-D
+  lattice declared as its bars it finds a lap instead (G-134).
 
 ## G-016: A track graph without `track_width` cannot place positions
 
@@ -562,6 +576,19 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   rest cluster within 0.2 m). The voxels reach the x walls and the
   ceiling (within 0.11 m) but stop 0.12 m above the floor. The room's walls
   are not part of the environment, only the visited voxels.
+- More evidence (faithful arenas batch): the loader now declares the room,
+  every 0.2 m voxel inside `r_lim` (9,048 voxels, `from_samples` with
+  `dimension_ranges=r_lim` and `infer_active_bins=False`), so the corridor
+  of voxels to y = -4.2 m is gone (0 % of voxels outside the room, against
+  4.4 %) and both feeders lie in the environment. The 3.66 % of samples
+  outside `r_lim` are not placed (`env.declared` `frac_samples_outside`).
+  Forli et al. 2025 state the indoor room as 5.6 x 5.2 x 2.5 m and an
+  outdoor enclosure 10.1 m long; `r_lim` and the samples' 5.7 m span place
+  this session indoors. The paper's size centred on `r_lim` would leave
+  3.77 % outside, cutting samples at the x walls (they reach x = +-2.85 m),
+  so `r_lim` is used. Decoding is unchanged (median 2.12 m against 2.18 m;
+  chance 2.55 and 2.64 m) and 13 % of the room's voxels are visited in
+  flight.
 
 ## G-026: The figure-8's linearized position wraps around
 
@@ -1514,6 +1541,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   boundary maps with the same `criterion=` contract as the other
   predicates; `min_speed=` on the boundary-vector entry points
 - Status: open
+- More evidence (faithful arenas batch): with the walls declared, the
+  outermost-ring share falls from 48 % to 5 % of Vollan's open-field units
+  (median preferred distance 42.5 -> 7.5 cm, median distance information
+  0.021 -> 0.068 bits) and from 38 % to 20 % on Kanter (37.5 cm), while
+  Gardner, with no holes in its samples-built environment, barely moves
+  (10 % -> 13 %, 12.5 cm both). The 48 % was the edges of unvisited holes
+  standing in for walls. Kanter's share of units peaking on the left also
+  moves, 0.85 -> 0.47.
 
 ## G-090: The same session in CRCNS hc-11 and DANDI 000044 differs only in its sleep scoring
 
@@ -1762,6 +1797,19 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   voxel environment from head positions measures the head's space, not the
   climbing paths
 - Status: open
+- More evidence (faithful arenas batch): the loader now declares the bars
+  (`_geometry.lattice_graph`: 343 crossings, 882 segments, all kept;
+  `track_width` 30.8 cm = 2 x the 99th-percentile head-to-bar distance, no
+  source states how far the head reaches; the Supplementary Methods give
+  the tubes as 10 mm across). Against the bars the declared environment's
+  path is a median 0.95 x the distance along the bars (voxels: 0.77), and
+  for the 5,478 pairs on parallel bars of one face it is 30.4 cm against
+  31.1 along the bars (voxels: 18.2). It places 99.0 % of head positions;
+  57 % of its 4,410 bins get occupancy. Spatial information rises (median
+  0.86 against 0.78 bits/spike), decoding is at chance on both (97.0 cm
+  against chance 97.0 on the bars, 82.7 against 76.8 on the voxels), and
+  `detect_laps` now finds a lap (G-134). The voxel environment stays
+  available with `--inferred-env`.
 
 ## G-112: `Environment.from_graph` silently drops graph edges missing from `edge_order`, but still counts positions on them as on the track
 
@@ -1848,7 +1896,18 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   across")
 - Proposed change: none in neurospatial; record the arena per session in the
   loader once the source says which
-- Status: open
+- Status: resolved in the harness: the file's session type is
+  `open_field_light` (`Dsession.sessions.type`). Of the 18 other open-field
+  files downloaded for this survey, 16 are `open_field` with square samples
+  (hull 0.98-1.00 of its minimum rectangle, one at 0.92) and 2 are
+  `open_field_darkness` with round ones (0.79). The paper's one circular
+  arena (150 cm) held the dark-room session and "a succeeding recording
+  session with room lights on (same arena)" (Extended Data Fig. 9k), so the
+  loader declares a 150 cm circle centred at the origin (`mat_files.md`:
+  positions "relative to arena center"). The paper names no rat or file, so
+  this is an inference from the session type and the samples' shape. The
+  samples' fitted circle is 140 cm across (residual -6.6 %) and its centre
+  0.9 cm from the origin.
 
 ## G-115: A 1-D environment from a linearized coordinate with gaps between edges falls into one part per corridor
 
@@ -1902,4 +1961,121 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: in the loader, drop samples that jump faster than a rat
   runs (the cause, reflections or a second light, is not checked); in
   neurospatial, none beyond `bin_count_threshold`
+- Status: open
+
+## G-130: 000987's samples span 52 cm where the study's square has 80 cm walls
+
+- Datasets: rsc_000987
+- Operation / step: loader (declared environment)
+- Kind: data-quirk
+- Evidence: the file says only "square arena". The study's preprint
+  (Mehrotra, Levenstein et al. 2023, bioRxiv 10.1101/2023.09.12.557442,
+  Methods) builds the square from "removable walls (width: 80 cm, height:
+  50 cm)" and gives the RSC mice a 70 cm circle as well. The samples' fitted
+  rectangle (after trimming 0.1 % per tail) is 52.6 x 52.1 cm, 34 % short of
+  80 cm, and the samples fill a square (convex hull 0.98 of its minimum
+  rectangle, 0.64 of its minimum circle), so this is the square, not the
+  circle. A mouse tracked on the head reaches within a few cm of a wall in
+  the other open fields here (000582: 99.5 x 97.1 cm in a 1 m box), so the
+  gap is not the head's distance from the wall. Either the walls overlap to
+  make a smaller square, or the position unit (read as metres from the
+  value ranges, unlabelled in the file) is off by about 1.5.
+  `_geometry.declared_rectangle` refuses an 80 cm square (residual -34 %,
+  limit 15 %), so the environment stays built from the samples.
+- Harness workaround: none (environment inferred)
+- Proposed change: none in neurospatial; read the published methods (Current
+  Biology 2024, not available here) for the square's size
+- Status: open
+
+## G-131: With declared walls, border scores are -1 for most cells where the tracked point stays a few cm off the wall
+
+- Datasets: vollan_of, hc2_ec013_527 (also gardner_2022_grid, kanter_2025, sargolini_000582)
+- Operation / step: cells.border_score on a declared environment
+- Kind: wrong-result
+- Evidence: declaring the stated outline (`Environment.from_polygon`) lets
+  `border_scores()` run (G-005), but the bins along the wall are the ones
+  the tracked head never enters: the samples-built environment's outermost
+  bins sit a median 4.3 cm (Vollan's 150 cm circle) and 3.8 px (hc-2's
+  180 cm square) inside the declared wall
+  (`results/studies/environment_fidelity.md`). `observed_wall_fraction` of
+  the first unit's map is 0.014 on Vollan's open field and 0.049 on hc-2
+  (0.47 Gardner, 0.42 Kanter, 0.50 000582). The coverage term counts an
+  unvisited piece of wall as not covered (documented in `border_score`,
+  unlike BNT/opexebo, which look up to 8 bins inward), so coverage is near 0
+  and the score is -1 for 407 of 619 units on Vollan's open field and 27 of
+  36 on hc-2 (60 of 483 on Gardner, 20 of 337 on Kanter, 1 of 6 on 000582).
+  No unit reaches 0.5 on Vollan or hc-2. With the samples-built
+  environment and `boundary_source="analysis"`, the opposite happens: the
+  edges of unvisited holes count as walls and 515 of 574 Vollan units, 258
+  of 299 Kanter units and all 34 hc-2 units score above 0.5.
+- Harness workaround: none (the scores are reported as computed)
+- Proposed change: in neurospatial, a documented way to score a wall the
+  tracked point cannot reach (BNT's inward lookup, or a wall offset by the
+  tracking point's distance from the body), and a warning from
+  `border_scores` when `observed_wall_fraction` is small; in the harness,
+  report `observed_wall_fraction` beside the scores
+- Status: open
+
+## G-132: A wrong length unit inside a declared environment collapses the positions into a few bins without a warning
+
+- Datasets: sargolini_000582, gardner_2022_grid, giocomo_000405, kanter_2025, vollan_of (hazard probes)
+- Operation / step: env.occupancy, rates.spatial on a declared environment
+- Kind: silent-hazard
+- Evidence: with the samples-built environment, metres labelled cm
+  (hazard `length_unit_off_by_100`, positions x 0.01) are caught by
+  `Environment.from_samples` ("bin_size=2.5 is at least the per-axis data
+  extent") and by `compute_spatial_rates` ("bandwidth=5 spans the
+  environment"). With the stated arena declared, neither runs: the
+  environment is the right size and the positions shrink into its centre.
+  Occupancy piles into 1 of 1601 bins on 000582 (600 s), 2 of 3601 on
+  Gardner, 2 of 1601 on Kanter, 4 of 2828 on Vollan's open field, and
+  `compute_spatial_rates` returns maps 99.9 % NaN, with no warning. Positions
+  read as mm on 000405 (x 0.1) cover 1.3 % of the declared 1.5 x 1.3 m field,
+  again silent. Where the shrunk positions leave the declared outline (the
+  002030 circle sits at 10-105 cm), occupancy raises ("Interval filtering
+  excluded ALL trajectory intervals ... check that positions use the
+  environment's coordinates"), and positions 100 x too large raise on the
+  bat's room. A declared environment makes a unit error visible (the
+  samples cover a tiny share of a known arena) but nothing reports it.
+- Harness workaround: none (`env.declared` reports `frac_samples_outside`,
+  which stays 0 when the positions shrink inside)
+- Proposed change: warn in `occupancy` and `compute_spatial_rates` when the
+  samples span a small share of an environment with a declared outline (for
+  example under a tenth of its extent on every axis), naming the units
+- Status: open
+
+## G-133: Egocentric boundary maps refuse a recording in pixels unless `distance_range` is given
+
+- Datasets: hc2_ec013_527
+- Operation / step: rates.egocentric_boundary
+- Kind: friction
+- Evidence: `compute_boundary_vector_rates(..., direction_frame="egocentric")`
+  raises "distance_range is required because env.units='pixel' is not a
+  known length unit ... pass distance_range=(0.0, max_distance) and
+  distance_bin_size in the units of positions", with the declared and the
+  samples-built environment alike. The refusal is right: the default 0-50 cm
+  rings cannot be placed without a scale. The loader has one,
+  `geometry["inferred_cm_per_pixel"]` (0.995), but the operation passes the
+  defaults.
+- Harness workaround: none (cell `err`)
+- Proposed change: in the harness, pass `distance_range` and
+  `distance_bin_size` converted with the loader's inferred scale for pixel
+  recordings; none in neurospatial
+- Status: open
+
+## G-134: `detect_laps` reports a lap on the 3-D lattice's bar graph
+
+- Datasets: grieves_2020_lattice
+- Operation / step: behavior.laps on the declared bar-graph environment
+- Kind: wrong-result
+- Evidence: on the voxel environment `detect_laps(method="auto")` refuses:
+  "cannot tell whether this 3-D environment has a loop". On the declared
+  environment, `Environment.from_graph` on the lattice's 343 crossings and
+  882 segments, it accepts the graph (every cube face is a cycle) and
+  returns 1 lap of direction "unknown". A climbing lattice has no loop a lap
+  goes round: its cycles are the faces of its cubes, as a junction clique
+  was for the labyrinth (G-015). The cell is `ok`.
+- Harness workaround: none
+- Proposed change: refuse a graph whose node positions are 3-D, as for 3-D
+  grids, or ask for the loop explicitly
 - Status: open
