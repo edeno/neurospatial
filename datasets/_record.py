@@ -269,3 +269,35 @@ def heading_vs_movement(
     mean = float(np.angle(np.mean(np.exp(1j * diff))))
     spread = float(np.median(np.abs(np.angle(np.exp(1j * (diff - mean))))))
     return mean, spread
+
+
+def checked_span(
+    positions: NDArray[np.float64], low: float, high: float, *, units: str = "cm"
+) -> str:
+    """Refuse positions whose largest per-axis span is outside ``[low, high]``.
+
+    A loader states the span it expects of the apparatus in ``units``; a span
+    outside it means a unit or scale error. Returns the line for
+    ``conversions``.
+    """
+    tracked = positions[np.isfinite(positions).all(axis=1)]
+    lo, hi = tracked.min(axis=0), tracked.max(axis=0)
+    span = hi - lo
+    if not low <= span.max() <= high:
+        msg = (
+            f"largest position span {span.max():.1f} {units} is outside the expected"
+            f" {low:g}-{high:g} {units}; recheck the unit and scale"
+        )
+        raise ValueError(msg)
+    axes = " by ".join(f"{a:.1f} to {b:.1f}" for a, b in zip(lo, hi, strict=True))
+    return f"range checked: {axes} {units} (largest span {span.max():.1f}, expected {low:g}-{high:g})"
+
+
+def intersect_intervals(
+    a: NDArray[np.float64], b: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Pairwise intersections of two sets of [start, stop) rows, shape (n, 2)."""
+    start = np.maximum(a[:, None, 0], b[None, :, 0])
+    stop = np.minimum(a[:, None, 1], b[None, :, 1])
+    keep = stop > start
+    return np.column_stack([start[keep], stop[keep]])

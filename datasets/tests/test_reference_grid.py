@@ -44,3 +44,15 @@ def test_nan_aware_autocorrelation_skips_unvisited_bins():
     # Zero-filling would change the correlation wherever unvisited bins overlap.
     zero_filled = _direct(np.nan_to_num(rate_map), 5)
     assert np.nanmax(np.abs(zero_filled - expected)) > 0.05
+
+
+def test_nan_aware_autocorrelation_constant_overlap_is_nan():
+    rng = np.random.default_rng(2)
+    rate_map = rng.gamma(2.0, 1.0, (12, 12))
+    rate_map[:6, :6] = 3.0  # a constant patch, as in a silent stretch
+    expected = _direct(rate_map, 3)
+    got = nan_aware_autocorrelation(rate_map, 3)
+    np.testing.assert_array_equal(np.isnan(got), np.isnan(expected))
+    defined = np.isfinite(expected)
+    np.testing.assert_allclose(got[defined], expected[defined], atol=1e-8)
+    assert np.isnan(nan_aware_autocorrelation(np.full((8, 8), 2.0), 3)).all()

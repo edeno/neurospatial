@@ -302,7 +302,8 @@ def nan_aware_autocorrelation(rate_map: np.ndarray, min_overlap: int) -> np.ndar
     """Pearson autocorrelation at every lag over the bins visited at both ends.
 
     Unvisited bins (NaN) are left out, never treated as 0 Hz; a lag is NaN when
-    fewer than ``min_overlap`` visited bins overlap. Sums over each lag's
+    fewer than ``min_overlap`` visited bins overlap, or when either side of the
+    overlap is constant. Sums over each lag's
     overlap come from FFT correlations of the masked map and its mask.
 
     Parameters
@@ -331,9 +332,14 @@ def nan_aware_autocorrelation(rate_map: np.ndarray, min_overlap: int) -> np.ndar
     sxx = overlap_sum(values**2, visited)
     syy = overlap_sum(visited, values**2)
     sxy = overlap_sum(values, values)
+    var_x = n * sxx - sx**2
+    var_y = n * syy - sy**2
+    # A side with no variance over the overlap has no correlation; FFT
+    # round-off would otherwise leave a tiny denominator and a value of ±1.
+    flat = (var_x <= 1e-10 * np.abs(n * sxx)) | (var_y <= 1e-10 * np.abs(n * syy))
     with np.errstate(invalid="ignore", divide="ignore"):
-        r = (n * sxy - sx * sy) / np.sqrt((n * sxx - sx**2) * (n * syy - sy**2))
-    r[n < min_overlap] = np.nan
+        r = (n * sxy - sx * sy) / np.sqrt(var_x * var_y)
+    r[(n < min_overlap) | flat] = np.nan
     return np.clip(r, -1.0, 1.0)
 
 
@@ -374,6 +380,7 @@ def grid_population_check(
     title: str,
     units: np.ndarray,
     author_medians: dict[int, float] | None = None,
+    author_spacing_cm: dict[int, float] | None = None,
 ) -> list[str]:
     """Grid-score conventions compared on a population of grid-module units.
 
@@ -412,7 +419,9 @@ def grid_population_check(
         " neurospatial's `grid_score`, except opexebo, which uses its own."
         " (a) and (b) correlate visited bins only at every lag with at least 20"
         " or a quarter of the visited bins overlapping; (c) zero-fills unvisited"
-        f" bins as opexebo does. Verdicts use the conventional cutoff {GRID_CUTOFF}.",
+        f" bins as opexebo does. Verdicts use the conventional cutoff {GRID_CUTOFF}"
+        " (not a cutoff from either paper); a score that is undefined where"
+        " opexebo's is defined counts as a different verdict.",
         "",
         "| Convention | Median score | r vs opexebo | Max abs. difference | Verdicts that differ from opexebo |",
         "| --- | --- | --- | --- | --- |",
@@ -424,12 +433,16 @@ def grid_population_check(
             if both.sum() > 2
             else float("nan")
         )
+        # An undefined score is a different verdict from a defined one.
+        scored = np.isfinite(reference)
         differ = int(
             np.sum((values[both] > GRID_CUTOFF) != (reference[both] > GRID_CUTOFF))
+            + np.sum(~np.isfinite(values) & scored)
         )
         lines.append(
             f"| {name} | {np.nanmedian(values):.3f} | {r:.3f} |"
-            f" {np.nanmax(np.abs(values[both] - reference[both])):.3f} | {differ} of {int(both.sum())} |"
+            f" {np.nanmax(np.abs(values[both] - reference[both])):.3f} |"
+            f" {differ} of {int(scored.sum())} |"
         )
     lines.append("")
     if author_medians:
@@ -438,13 +451,18 @@ def grid_population_check(
             "Per module, median score against the authors' median unit grid score"
             " (their own maps and scorer):",
             "",
-            "| Module | Units | Authors | " + " | ".join(CONVENTIONS) + " |",
-            "| --- | --- | --- | " + " | ".join("---" for _ in CONVENTIONS) + " |",
+            "| Module | Units | Spacing (cm, authors) | Authors | "
+            + " | ".join(CONVENTIONS)
+            + " |",
+            "| --- | --- | --- | --- | "
+            + " | ".join("---" for _ in CONVENTIONS)
+            + " |",
         ]
         for module, median in sorted(author_medians.items()):
             member = modules == module
             lines.append(
-                f"| {module} | {int(member.sum())} | {median:.2f} | "
+                f"| {module} | {int(member.sum())} |"
+                f" {(author_spacing_cm or {}).get(module, float('nan')):.0f} | {median:.2f} | "
                 + " | ".join(
                     f"{np.nanmedian(arrays[c][member]):.2f}" for c in CONVENTIONS
                 )
@@ -535,6 +553,13 @@ def _population_sections() -> list[str]:
                 zip(
                     params["module_ids"].tolist(),
                     params["module_median_grid_score"].tolist(),
+                    strict=True,
+                )
+            ),
+            author_spacing_cm=dict(
+                zip(
+                    params["module_ids"].tolist(),
+                    params["module_spacing_cm"].tolist(),
                     strict=True,
                 )
             ),
