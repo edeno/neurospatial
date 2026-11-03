@@ -1934,6 +1934,7 @@ def measure_declared(
         bin_size=rec.params.get("graph_bin_size", rec.params["bin_size"]),
         lattice="lattice_bars_cm" in rec.geometry,
     )
+    judged_samples = positions[np.isfinite(positions).all(axis=1)]
     declared_from = rec.geometry.get("declared_from")
     independent = (
         ref is not None
@@ -1943,7 +1944,10 @@ def measure_declared(
     out: dict[str, Any] = {
         "layout": env.layout_type,
         "tracked_point": rec.geometry.get("tracked_point", "not stated"),
-        "frac_samples_outside": float(np.mean(np.asarray(env.bin_at(samples)) < 0)),
+        # Over the judged samples, as ``outside_physical_width``.
+        "frac_samples_outside": float(
+            np.mean(np.asarray(env.bin_at(judged_samples)) < 0)
+        ),
         "track_width": rec.geometry.get("declared_track_width"),
         "track_width_kind": rec.geometry.get("declared_track_width_kind"),
         "physical_width": rec.geometry.get("declared_physical_width"),
@@ -2048,10 +2052,11 @@ def compare_table(rows: list[dict[str, Any]]) -> list[str]:
         "",
         "## Declared against samples-built environments",
         "",
-        "Each cell: declared / samples-built, measured against the same samples,"
-        " reference and outline. Outside: share of tracked samples the declared"
-        " environment cannot place (`env.bin_at` -1), a tracking measure, not"
-        " judged. Covered and wall gap: against the outline the loader placed; a"
+        "Each cell: declared / samples-built, measured against the same samples"
+        " (every tracked sample), reference and outline. Outside: share of the"
+        " judged samples (those in `analysis_epochs`, as the verdict uses) the"
+        " declared environment cannot place (`env.bin_at` -1), a tracking"
+        " measure, not judged. Covered and wall gap: against the outline the loader placed; a"
         " declared environment covers its own outline by construction, so only"
         " the samples-built value is evidence.",
         "",
