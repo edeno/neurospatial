@@ -59,7 +59,10 @@ Warnings also use concrete fixes. A `bin_size` that covers every data axis warns
 what is wrong, why it matters, and how to fix the call:
 
 ```text
-InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0), so the rate map is empty. Fix: the median sampling interval is 33.33 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 33.33, or pass max_gap=None to disable gap gating.
+InputError: Invalid times/positions passed to compute_spatial_rate():
+- times and positions must have the same length; times has 995 samples, positions has 1000.
+Why: each interval [times[k], times[k+1]) is weighted by its duration, so mis-shaped, unsorted or repeated timestamps give wrong numbers.
+Fix: pass times as a sorted 1-D array of numeric timestamps in seconds, without repeats, with one numeric positions row per timestamp.
 ```
 
 The common causes:
