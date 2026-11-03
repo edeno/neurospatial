@@ -232,7 +232,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Harness workaround: none (cell is `err`)
 - Proposed change: compute speed in `occupancy` as the rate functions do (or
   require `speed=` everywhere).
-- Status: promoted (UX fixes phase 3b: every sibling taking min_speed derives speed the same way)
+- Status: fixed (UX fixes phase 3b, #262): `env.occupancy(min_speed=)` now derives speed like the rate functions; the occupancy cells are `ok` on all three datasets
 
 ## G-014: A length unit off by 100 on a 1-D track builds 3 bins without a warning
 
@@ -248,7 +248,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   the bat (cm labelled m, positions ×100) the environment refuses a 9e9-bin
   grid, but `segment_by_velocity` with the file's 0.5 m/s threshold silently
   finds 668 movement segments (882 s) instead of 69 (146 s): speeds 100 times
-  too high pass any threshold.
+  too high pass any threshold. With the speed gate in `env.occupancy` (G-013
+  fixed), the figure-8's occupancy above 4 cm/s silently falls from 521.8 s
+  to 14.0 s: speeds 100 times too low fail it.
 - Harness workaround: none
 - Proposed change: warn when the environment has fewer than a handful of bins
   along a dimension (the existing check only fires at one bin or fewer).
@@ -302,7 +304,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   is undetectable; here the zeros are 12,400 samples at exactly (0, 0). On
   the bat (0.24 % missing), the zeros land at (0, 0, 0), below the lowest
   tracked height (0.28 m): the environment loses 3 bins and the median mean
-  rate in flight drops 4 % (0.945 → 0.909 Hz), with no warning.
+  rate in flight drops 4 % (0.945 → 0.909 Hz), with no warning. With the
+  speed gate in `env.occupancy`, the labyrinth's occupancy above 1 cell/s
+  rises from 4,808 s to 5,115 s, the jumps to (0, 0) counting as movement.
 - Harness workaround: none
 - Proposed change: warn when a sizeable share of samples sit at exactly the
   same coordinate (or at exactly 0) between moving samples.

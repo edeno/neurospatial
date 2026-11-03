@@ -48,7 +48,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "5885534bfcc3a3c6cffcdaf7359e165ffc1530fe"
+    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
   },
   "load_warnings": [],
   "operations": {
@@ -62,17 +62,22 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.009,
       "peak_mb": 1.6
     },
     "env.occupancy": {
-      "status": "error",
-      "summary": {},
-      "note": "ValueError: min_speed=4.0 was given without speed.\nWhy: the speed gate compares each interval's start-sample speed with min_speed.\nFix: pass speed= (one value per sample, for example compute_speed(times, positions)), or min_speed=None.",
+      "status": "ok",
+      "summary": {
+        "total_s": 521.7981000000354,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 4.1844333333338,
+        "max_s": 13.63666666665722
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.1
+      "seconds": 0.016,
+      "peak_mb": 8.3
     },
     "rates.spatial": {
       "status": "ok",
@@ -93,7 +98,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.23,
+      "seconds": 0.184,
       "peak_mb": 135.9
     },
     "rates.spatial_information": {
@@ -129,7 +134,7 @@
           "count": 4
         }
       ],
-      "seconds": 1.651,
+      "seconds": 1.32,
       "peak_mb": 181.4
     },
     "cells.place_screen": {
@@ -141,7 +146,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.001,
       "peak_mb": 0.9
     },
     "cells.grid_score": {
@@ -193,7 +198,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.242,
+      "seconds": 0.212,
       "peak_mb": 135.8
     },
     "io.nwb_roundtrip": {
@@ -204,7 +209,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.046,
+      "seconds": 2.581,
       "peak_mb": 2.5
     },
     "env.from_graph": {
@@ -225,7 +230,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.022,
+      "seconds": 0.02,
       "peak_mb": 8.8
     },
     "behavior.laps": {
@@ -234,7 +239,7 @@
       "note": "ValueError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its bins connect without a cycle.\nWhy: on a track the animal runs back and forth, every trip out comes back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.006,
       "peak_mb": 4.3
     },
     "behavior.turn_sequence": {
@@ -266,7 +271,7 @@
           "count": 1
         }
       ],
-      "seconds": 18.493,
+      "seconds": 14.208,
       "peak_mb": 225.2
     },
     "io.nwb_readers": {
@@ -279,7 +284,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/LinearizedPosition/LinearizedSpatialSeries', 'processing/behavior/SubjectPosition/SpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/LinearizedPosition/LinearizedSpatialSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.499,
+      "seconds": 1.204,
       "peak_mb": 137.3
     },
     "imaging.rates": {
@@ -333,11 +338,21 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
-      "response": "not probed",
-      "message": "the clean run was error",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
+      "clean_summary": {
+        "total_s": 521.7981000000354,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 4.1844333333338,
+        "max_s": 13.63666666665722
+      },
+      "hazard_summary": {
+        "total_s": 13.970166666663317,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 6.7350333333333765,
+        "max_s": 6.9350999999951455
+      }
     },
     {
       "hazard": "length_unit_off_by_100",

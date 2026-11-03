@@ -41,7 +41,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "5885534bfcc3a3c6cffcdaf7359e165ffc1530fe"
+    "git_commit": "fd736ef63cbf9d641336a53c497cdccdc0617b36"
   },
   "load_warnings": [],
   "operations": {
@@ -55,7 +55,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.349,
+      "seconds": 1.089,
       "peak_mb": 30.0
     },
     "env.occupancy": {
@@ -69,7 +69,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.007,
       "peak_mb": 3.8
     },
     "rates.spatial": {
@@ -83,7 +83,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.902,
+      "seconds": 0.943,
       "peak_mb": 53.9
     },
     "rates.spatial_information": {
@@ -111,7 +111,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.073,
+      "seconds": 0.079,
       "peak_mb": 3.9
     },
     "cells.place_screen": {
@@ -123,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.104,
+      "seconds": 0.075,
       "peak_mb": 80.4
     },
     "cells.grid_score": {
@@ -136,7 +136,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.045,
+      "seconds": 0.055,
       "peak_mb": 8.5
     },
     "cells.border_score": {
@@ -175,7 +175,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.8,
+      "seconds": 3.618,
       "peak_mb": 12.1
     },
     "env.from_graph": {
@@ -193,7 +193,7 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 1.033,
+      "seconds": 1.053,
       "peak_mb": 21.4
     },
     "behavior.laps": {
@@ -205,7 +205,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.047,
+      "seconds": 0.038,
       "peak_mb": 3.8
     },
     "behavior.turn_sequence": {
@@ -223,7 +223,7 @@
       "note": "needs events['ripples'] and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.177,
+      "seconds": 0.156,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -236,7 +236,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.357,
+      "seconds": 0.34,
       "peak_mb": 2.7
     },
     "imaging.rates": {
