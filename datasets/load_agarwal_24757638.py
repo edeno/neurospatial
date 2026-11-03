@@ -29,7 +29,10 @@ What the loader converts:
 - Trials: ``Laps.startLfpInd``/``endLfpInd`` / 1250 Hz.
 
 Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s;
-``dt`` 0.25 s, even and odd trials train and test the decoder;
+``dt`` 0.25 s, train and test trials alternate within each arm
+(``Laps.dirChoice``, the arm chosen, 1-3), so both hold every arm (even and
+odd trials would split the alternation task's centre arm from its side
+arms);
 ``region`` CA1 for shanks 1-32, else mPFC; ``is_interneuron`` from
 ``Clu.isIntern``.
 
@@ -100,6 +103,9 @@ _SPAN_CM = (150.0, 260.0)
 _FIT_CAP_CM = 10.0
 _CA1_SHANKS = 32
 RUNNING_CM_S = 10.0
+# The arms are about 40 cm apart in y (median farthest y of each label's
+# trials); labels closer than this do not mark different arms.
+_ARM_SEPARATION_CM = 20.0
 
 
 def load(cache: Path | None = None) -> Recording:
@@ -144,6 +150,33 @@ def load(cache: Path | None = None) -> Recording:
             np.asarray(laps.endLfpInd, dtype=float) / _LFP_HZ,
         ]
     )
+    # Train and test alternate within each arm (``Laps.dirChoice``), so both
+    # hold every arm: on the alternation task even and odd trials would split
+    # the centre arm from the side arms.
+    arm = np.asarray(laps.dirChoice, dtype=int)
+    within = np.empty(len(arm), dtype=int)
+    for label in np.unique(arm):
+        mine = np.flatnonzero(arm == label)
+        within[mine] = np.arange(mine.size)
+    train_trials, test_trials = trials[within % 2 == 0], trials[within % 2 == 1]
+    # The arms are parallel and lie at different y; each trial's farthest
+    # sample from the middle in y must place each label's trials on its own.
+    middle = float(np.nanmedian(positions[:, 1]))
+    reach = {}
+    for label in np.unique(arm):
+        ends = []
+        for start, stop in trials[arm == label]:
+            y = positions[(times >= start) & (times < stop), 1] - middle
+            ends.append(y[np.nanargmax(np.abs(y))])
+        reach[int(label)] = float(np.median(ends))
+    if np.min(np.diff(np.sort(list(reach.values())))) < _ARM_SEPARATION_CM:
+        msg = f"Laps.dirChoice does not separate the arms in y: {reach}; recheck"
+        raise ValueError(msg)
+    split = ", ".join(
+        f"arm {label}: {int(np.sum((arm == label) & (within % 2 == 0)))}"
+        f"/{int(np.sum((arm == label) & (within % 2 == 1)))}"
+        for label in np.unique(arm)
+    )
     shank = np.asarray(clu.shank, dtype=int)
     rec = Recording(
         dataset=DATASET["key"],
@@ -155,13 +188,16 @@ def load(cache: Path | None = None) -> Recording:
         position_units="cm",
         spike_times=spikes,
         unit_ids=units,
-        epochs={"trials": trials},
+        epochs={
+            "trials": trials,
+            **{f"arm_{label}": trials[arm == label] for label in np.unique(arm)},
+        },
         params={
             "bin_size": 4.0,
             "min_speed": 5.0,
             "dt": 0.25,
-            "train_epochs": trials[::2],
-            "test_epochs": trials[1::2],
+            "train_epochs": train_trials,
+            "test_epochs": test_trials,
             "region": np.where(shank <= _CA1_SHANKS, "CA1", "mPFC"),
             "is_interneuron": np.asarray(clu.isIntern, dtype=bool),
         },
@@ -177,7 +213,13 @@ def load(cache: Path | None = None) -> Recording:
             f"headings: headDirDeg not used: {exactly_zero:.0%} of tracked samples are"
             f" exactly 0; minus movement direction above {RUNNING_CM_S:g} cm/s: mean"
             f" {np.degrees(offset):.1f} deg, median spread {np.degrees(spread):.1f} deg",
-            "epochs['trials']: Laps.startLfpInd, endLfpInd / 1250",
+            "epochs['trials']: Laps.startLfpInd, endLfpInd / 1250; epochs['arm_k']:"
+            " the trials with Laps.dirChoice k",
+            f"params train/test_epochs: trials alternating within each arm ({split}"
+            " train/test); Laps.dirChoice checked as the arm: each label's trials"
+            " reach a median "
+            + ", ".join(f"{v:+.0f}" for v in reach.values())
+            + " cm in y from the middle",
             f"params region: CA1 for shanks 1-{_CA1_SHANKS}"
             f" ({int(np.sum(shank <= _CA1_SHANKS))} units), mPFC above",
         ),
