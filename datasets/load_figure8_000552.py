@@ -121,7 +121,6 @@ def load(cache: Path | None = None) -> Recording:
         camera = read_position(nwbfile, position_name=_CAMERA)
         units = read_units(nwbfile)
         trials = read_intervals(nwbfile, interval_name="trials")
-        visited_arm = nwbfile.trials["visited_arm"][:]
         session_epochs = read_intervals(nwbfile, interval_name="epochs")
         states = nwbfile.processing["behavior"]["SleepStates"].to_dataframe()
         ripple_table = nwbfile.processing["ecephys"]["Ripples"].to_dataframe()
@@ -148,8 +147,10 @@ def load(cache: Path | None = None) -> Recording:
     # Consecutive trials alternate between the loops (``visited_arm`` left,
     # right), so train and test alternate within each loop. Checked: each
     # trial's median signed offset from the centre bar's line puts every
-    # left trial on one side and every right trial on the other.
-    arm = np.asarray([str(a) for a in visited_arm])
+    # left trial on one side and every right trial on the other. The label
+    # comes from the same time-sorted rows as the windows (this file's
+    # trials table is already in time order).
+    arm = np.asarray([str(a) for a in trials.visited_arm])
     along = (bar[1] - bar[0]) / np.linalg.norm(bar[1] - bar[0])
     side = []
     for start, stop in trial_windows:
