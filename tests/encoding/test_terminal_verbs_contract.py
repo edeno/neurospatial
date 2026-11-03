@@ -13,6 +13,8 @@ consistent across the four batch encoding result classes.
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 from result_instances import RESULT_FACTORIES, public_result_classes
@@ -399,8 +401,6 @@ def _resolve(result: object, path: str) -> object:
     A bracket key that is all digits indexes an array; any other indexes a
     mapping.
     """
-    import re
-
     value = result
     for attribute, call, key in re.findall(r"\.?(\w+)(\(\))?|\[([^\]]+)\]", path):
         if attribute:
@@ -443,7 +443,7 @@ def test_repr_names_are_accessible(name, result_instances):
     summary = result._summary_for_repr()
     assert isinstance(summary, dict), f"{name} repr has no names"
     assert summary, f"{name} repr has no names"
-    text = repr(result)
+    shown_in_repr = _repr_values(result, summary)
     for key, shown in summary.items():
         member = getattr(type(result), key, None)
         if callable(member):
@@ -454,14 +454,64 @@ def test_repr_names_are_accessible(name, result_instances):
                 and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
             ]
             assert not required, f"{name}.{key}() needs {required}"
-            assert f"{key}()=" in text, f"{name} repr does not show {key}()"
             read = getattr(result, key)()
         else:
-            assert f"{key}=" in text, f"{name} repr does not show {key}"
             read = _resolve(result, key)
             assert not callable(read), f"{name}: {key} is a method"
+        _check_repr_value(name, key, shown_in_repr[key], shown)
         if isinstance(read, list):
             read = tuple(read)
         if isinstance(shown, list):
             shown = tuple(shown)
         assert _same(read, shown), f"{name}: {key} reads {read!r}, summary {shown!r}"
+
+
+def _repr_values(result: object, summary: dict) -> dict[str, str]:
+    """Each summary key's value text in ``repr(result)``, unit included.
+
+    The repr is ``Name(k0=v0, k1()=v1, ...)`` in summary order, ``k()=``
+    for a method. Each value is cut at the next key's ``", k="``, so a value
+    may itself contain commas.
+    """
+    names = [
+        f"{key}()" if callable(getattr(type(result), key, None)) else key
+        for key in summary
+    ]
+    text = repr(result)
+    prefix = f"{type(result).__name__}({names[0]}="
+    assert text.startswith(prefix), f"repr {text!r} does not start {prefix!r}"
+    assert text.endswith(")"), f"repr {text!r} is not one call"
+    rest = text[len(prefix) : -1]
+    values: dict[str, str] = {}
+    for key, following in zip(summary, [*names[1:], None], strict=True):
+        if following is None:
+            values[key] = rest
+            break
+        cut = rest.find(f", {following}=")
+        assert cut >= 0, f"repr {text!r} does not show {following}="
+        values[key], rest = rest[:cut], rest[cut + len(f", {following}=") :]
+    return values
+
+
+# A number, optionally followed by one space and its unit.
+_NUMBER_WITH_UNIT = re.compile(
+    r"(?P<number>[-+]?(?:\d+(?:\.\d*)?(?:e[-+]?\d+)?|nan|inf))(?: (?P<unit>.+))?"
+)
+
+
+def _check_repr_value(name: str, key: str, text: str, shown: object) -> None:
+    """The repr shows ``shown``: a number to 4 significant figures and its
+    unit, any other value as ``str``."""
+    number = isinstance(shown, int | float | np.integer | np.floating)
+    if not number or isinstance(shown, bool | np.bool_):
+        assert text == str(shown), f"{name}: repr shows {key}={text}, not {shown!r}"
+        return
+    match = _NUMBER_WITH_UNIT.fullmatch(text)
+    assert match, f"{name}: repr shows {key}={text!r}, not a number and unit"
+    value = float(match["number"])
+    if np.isnan(shown):
+        assert np.isnan(value), f"{name}: repr shows {key}={text}, not nan"
+    else:
+        assert value == pytest.approx(float(shown), rel=5e-4, abs=0), (
+            f"{name}: repr shows {key}={text}, summary {shown!r}"
+        )

@@ -67,6 +67,7 @@ References
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -187,6 +188,13 @@ class PreDecisionMetrics(ResultMixin):
     >>> metrics.is_valid
     True
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "heading_mean_direction": "rad",
+            "window_duration": "s",
+        }
+    )
 
     mean_speed: float
     min_observed_speed: float
@@ -382,6 +390,12 @@ class DecisionAnalysisResult(ResultMixin):
         Names of the goal regions, in the order that ``chosen_goal``,
         ``boundary.goal_labels`` and ``boundary.crossing_directions`` index.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "entry_time": "s",
+        }
+    )
 
     entry_time: float
     pre_decision: PreDecisionMetrics

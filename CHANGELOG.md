@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Result reprs show physical units
+
+**Changed**
+
+- The repr and the Jupyter table of a result write the unit after each
+  number that has one: `SpatialRateResult(n_bins=117,
+  peak_firing_rate()=1.642 Hz, spatial_information()=0.05892 bits/spike,
+  sparsity()=0.9105, total_occupancy=50 s, ...)`. Rates are Hz, times s,
+  information bits/spike (decoding entropy bits) and angles rad. Distances
+  and speeds carry the environment's units (`preferred_distance=42.5 cm`,
+  `mean_speed=12 cm/s`) only when the result records them, and show no unit
+  otherwise; a tuning curve's `peak_location()[0]` takes the variable's
+  `units`. Scores, correlations, probabilities and counts have no unit.
+  Units cover the rate results (spatial, view, directional, object-vector,
+  boundary-vector, tuning; single and population), peri-event histograms,
+  continuous event alignment, decoding, phase precession, grid properties,
+  VTE, decision, path-efficiency and goal metrics, trajectory and MSD
+  results, simulation validation and the replay timing and distance results.
+  `summary()` values and table columns stay plain numbers.
+
 ### Spike times in milliseconds warn with `epochs`
 
 **Fixed**

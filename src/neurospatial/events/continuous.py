@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -157,6 +158,14 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         at the row's other bound. None for plain event times. When set,
         ``event_ids`` holds the rows' unique non-negative ``interval_id``.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "window_start": "s",
+            "window_stop": "s",
+            "dt": "s",
+        }
+    )
 
     feature_ids: NDArray[Any]
     value_kinds: tuple[str, ...]

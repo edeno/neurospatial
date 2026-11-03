@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -526,6 +527,14 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     --------
     neurospatial.decoding.decode_position : Create DecodingResult from spikes
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "mean_entropy": "bits",
+            "max_entropy": "bits",
+            "decoded_duration": "s",
+        }
+    )
 
     posterior: NDArray[np.float64]
     env: Environment
@@ -1572,6 +1581,14 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     DecodingResult : Full-posterior decode result.
     neurospatial.decoding.decode_position_summary : Produces this container.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "mean_entropy": "bits",
+            "max_entropy": "bits",
+            "decoded_duration": "s",
+        }
+    )
 
     times: NDArray[np.float64] | None
     mean_position: NDArray[np.float64]

@@ -13,6 +13,7 @@ whose parameters reproduce each published rule.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -96,6 +97,16 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
     --------
     replay_segments : Function that produces this result.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "longest_start_time": "s",
+            "longest_duration": "s",
+            "longest_dispersion": "{units}",
+            "longest_start_to_end_distance": "{units}",
+            "longest_path_length": "{units}",
+        }
+    )
 
     segments: NDArray[np.int64]
     start_times: NDArray[np.float64]
