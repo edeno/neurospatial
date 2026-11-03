@@ -128,6 +128,42 @@ def test_dropped_frames_are_silent():
         compute_spatial_rate(env, spikes, times[kept], positions[kept])
 
 
+def test_irregular_sampling_is_not_called_masked():
+    """Steps spread over 0.001-0.45 s have no sampling interval to be a multiple of.
+
+    By chance 3 of these 15 steps are within 10% of three times the median
+    step, about 10% of the analysed time, which reads as removed samples
+    unless most steps are the median step.
+    """
+    rng = np.random.default_rng(491)
+    positions = rng.uniform((-3.0, 11.0), (-1.0, 13.0), size=(16, 2))
+    positions[::7] = np.where(rng.random((3, 2)) < 0.5, (-3.0, 11.0), (-1.0, 13.0))
+    times = 10.0 + np.cumsum(rng.uniform(0.001, 0.45, 16))
+    edges = (np.arange(3.0) - 3.0, np.arange(3.0) + 11.0)
+    env = Environment.from_grid_mask(np.ones((2, 2), dtype=bool), edges)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        occupancy = env.occupancy(times, positions, max_gap=0.5)
+    np.testing.assert_allclose(occupancy.sum(), times[-1] - times[0], rtol=1e-12)
+
+
+def test_masked_samples_warn_with_camera_jitter():
+    """A 30 Hz camera with 4 ms timestamp jitter, 0.4 s removed every 2 s.
+
+    Fewer than half the steps are within 10% of the median step, but the
+    sampling is regular and the removed runs still warn.
+    """
+    rng = np.random.default_rng(0)
+    times = np.sort(np.arange(0.0, 600.0, 1 / 30) + rng.normal(0.0, 0.004, 18000))
+    steps = np.diff(times) / np.median(np.diff(times))
+    assert np.mean(np.abs(steps - 1.0) < 0.1) < 0.5
+    positions = np.c_[50 + 40 * np.sin(times / 7.0), 50 + 40 * np.cos(times / 11.0)]
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    kept = times % 2.0 >= 0.4
+    with pytest.warns(UserWarning, match="boolean-masked"):
+        env.occupancy(times[kept], positions[kept])
+
+
 def test_polar_bandwidth_is_compared_with_the_ring_width(
     ou_2min_env, ou_2min, obj, noise_trains
 ):
