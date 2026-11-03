@@ -860,20 +860,27 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: none
 - Status: won't fix (the expectations, not the loaders, were wrong)
 
-## G-092: hc-28's LED angle and the authors' head direction do not follow the path
+## G-092: hc-28's LED angle sits about 15–20° off the path, beyond the heading frame check
 
 - Datasets: hc28_hpa
 - Operation / step: loader (heading frame check)
 - Kind: data-quirk
-- Evidence: on HPa day 1 epoch 4, the angle from one LED to the other minus
-  the direction of movement above 10 cm/s has circular mean −25.5° and median
-  spread 51.0° (the other order: 154.5°, 51.0°). The authors' own `pos`
-  `dir` column against their smoothed x, y: −21.9°, 28.0°. The offset
-  depends on the direction of movement (−85° to +22° across 45° sectors), so
-  it is neither a frame rotation nor a fixed LED mounting angle that a
-  constant could correct. The LEDs are 15.7 cm apart (median); `pos` x, y
-  follow one LED (`arg` `diode` 1), 7.9 cm from the midpoint.
-- Harness workaround: the loader keeps positions and drops head direction
+- Evidence: on HPa day 1 epoch 4, the angle from the back LED to the front
+  LED minus the direction of movement above 10 cm/s, with one-frame steps:
+  circular mean −25.5°, median spread 51.0° (the other LED order 154.5°).
+  `rawpos` is whole pixels, so one-frame directions are quantised and most of
+  that spread, and most of the direction dependence first seen (−85° to +22°
+  across 45° sectors), is the check's artefact (G-098). With movement over
+  longer steps: 3 frames −23.3°/39.5°, 8 frames −18.8°/25.7°, 15 frames
+  −14.4°/18.8°, 30 frames −12.7°/17.1°; sector means at 15 frames −30° to
+  +3°. The authors' own `pos` `dir` against their smoothed x, y: −21.9°,
+  28.0°. This looks like a mounting offset of about −15 to −20° plus a
+  residual of about 30° that depends on the direction of movement. The LEDs
+  are 15.7 cm apart (median); `pos` x, y follow one LED (`arg` `diode` 1),
+  7.9 cm from the midpoint.
+- Harness workaround: the loader keeps positions and drops head direction:
+  the mean is outside the check's 0.2 rad at every lag, and a rotation fitted
+  to this session's movement would be tuned to the data
 - Proposed change: none for neurospatial
 - Status: won't fix (data quirk)
 
@@ -910,7 +917,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   (east) on those frames. The .whl format also does not say which LED is in
   front or whether y points down the image; the movement check picks the
   order (mean 6.2° on hc-3, 0.4° on hc-2; the other order about ±180°).
-- Harness workaround: the loader sets those frames' heading to NaN
+- Harness workaround: `_formats.two_led_heading` returns NaN on those frames
 - Proposed change: see the hazard rows in `results/warnings.md`
 - Status: open
 
@@ -972,3 +979,22 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   of tracking (here 32,500 s against 19,964 s) would see it, but sleep
   recordings legitimately run on after tracking
 - Status: open
+
+## G-098: The harness's heading frame check is biased by whole-pixel positions
+
+- Datasets: hc28_hpa (also any loader with integer-pixel tracking)
+- Operation / step: loader (`_record.heading_vs_movement`)
+- Kind: friction (harness)
+- Evidence: `heading_vs_movement` takes the direction of movement from one
+  sample to the next. On hc-28's `rawpos` (whole pixels at 30 Hz, steps of a
+  few pixels) those directions snap to a few angles, which widened the
+  spread to 51° and produced a direction-dependent offset that is mostly the
+  check's own: over 15 frames the spread is 18.8°. A simulated head running a
+  60 px circle in whole pixels at 1.6 px per frame gives a one-step spread
+  above 10° against under 3° over 10 steps
+  (`tests/test_record.py::test_heading_vs_movement_lag_removes_pixel_quantisation`).
+- Harness workaround: `heading_vs_movement(..., lag=)` (default 1, unchanged)
+  measures movement over `lag` samples; the hc-28 loader reports lags 1 and 15
+- Proposed change: use a lag of several samples for integer-pixel tracking in
+  future loaders
+- Status: fixed in the harness (option added); earlier loaders keep lag 1

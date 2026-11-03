@@ -21,14 +21,17 @@ What the loader converts:
   coordinate (the documentation says so); they become NaN. Position is the
   midpoint of the LEDs, times ``cmperpixel`` (0.65) from ``pos`` (the
   documentation calls it ``cmperpix``), so cm.
-- Head direction is not kept. The angle from one LED to the other, in
-  either order, and the ``dir`` column of the authors' ``pos`` all differ
-  from the direction of movement while running by an amount that depends on
-  the direction of movement (about -85 to +22 deg across eight direction
-  sectors, ``pos`` ``dir`` against its own smoothed positions), so neither
-  passes the frame check (``heading_vs_movement``: mean within 0.2 rad,
-  spread under 45 deg) and no fixed rotation would fix it. The check is
-  recorded in ``conversions``.
+- Head direction is not kept. The angle from the back LED to the front LED
+  (x1, y1 in front) minus the direction of movement while running has a
+  circular mean of -25.5 deg and a median spread of 51 deg with one-frame
+  steps, but ``rawpos`` is whole pixels, so one-frame directions are
+  quantised; over 15 frames (0.5 s) it is -14.4 deg and 18.8 deg, over 30
+  frames -12.7 and 17.1. The authors' ``pos`` ``dir`` against their smoothed
+  positions gives -21.9 and 28.0. What remains looks like a mounting offset
+  of about -15 to -20 deg plus a direction-dependent residual (sector means
+  -30 to +3 deg at 15 frames). The mean stays outside the frame check's
+  0.2 rad at every lag, so the heading is not kept rather than corrected by
+  a rotation fitted to the data. Both lags are recorded in ``conversions``.
 - The untracked zeros sit at the pixel origin, which is outside the track:
   the driver's generic ``missing_positions_as_zero`` hazard (NaN -> 0) puts
   exactly those frames back, so it is this file's own defect.
@@ -91,6 +94,7 @@ ARCHIVE = "hc-28/data/HPa_data.tar.gz"
 SUBDIR = "crcns_hc28"
 EPOCH = 4  # day 1: sleep, lin, rest, wtr1, rest, wtr1, sleep
 RUNNING_CM_S = 10.0
+LONG_LAG = 15  # frames, 0.5 s
 _SHA256 = {
     "HPa_data/HParawpos01.mat": "e8b19d39d2ebfddc6930c3bd0badcceb474034b061bea58a05184b5e837d5fc6",
     "HPa_data/HPapos01.mat": "a8986576d39311cbb29bd22c95a3ab95270d78881db36a8bb7ad293e2c4286f2",
@@ -128,14 +132,21 @@ def load(cache: Path | None = None) -> Recording:
     first, second = leds[:, :2] * cm_per_px, leds[:, 2:] * cm_per_px
     positions = (first + second) / 2.0
     span = checked_span(positions, 60.0, 120.0)
+    # rawpos is whole pixels: one-frame steps snap the direction of movement
+    # to a few angles, so the check is also made over LONG_LAG frames.
     offsets = {
-        order: heading_vs_movement(
-            times, positions, two_led_heading(front, back), min_speed=RUNNING_CM_S
+        (order, lag): heading_vs_movement(
+            times,
+            positions,
+            two_led_heading(front, back),
+            min_speed=RUNNING_CM_S,
+            lag=lag,
         )
         for order, (front, back) in {
             "x1, y1": (first, second),
             "x2, y2": (second, first),
         }.items()
+        for lag in (1, LONG_LAG)
     }
     pos_data = np.asarray(pos.data, dtype=float)
     if not np.array_equal(pos_data[:, 0], times):
@@ -189,12 +200,13 @@ def load(cache: Path | None = None) -> Recording:
             "headings: not kept; heading minus movement direction above"
             f" {RUNNING_CM_S:g} cm/s (circular mean, median spread, deg):"
             + "; ".join(
-                f" {order} LED in front {np.degrees(m):.1f}, {np.degrees(w):.1f}"
-                for order, (m, w) in offsets.items()
+                f" {order} LED in front, lag {lag} {np.degrees(m):.1f},"
+                f" {np.degrees(w):.1f}"
+                for (order, lag), (m, w) in offsets.items()
             )
             + f"; the authors' pos dir against their smoothed x, y"
             f" {np.degrees(their_offset[0]):.1f}, {np.degrees(their_offset[1]):.1f};"
-            " the offset depends on the direction of movement",
+            " |mean| above 0.2 rad at every lag",
             f"units: {len(trains)} clustered units of day 1 epoch {EPOCH} ({n_empty} with"
             " no spikes dropped), spike times"
             f" column 0 (s); areas {sorted(set(areas))}",
