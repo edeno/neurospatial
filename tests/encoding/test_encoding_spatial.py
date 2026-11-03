@@ -2408,7 +2408,7 @@ def trajectory_env() -> Environment:
     y = np.clip(y, 0, 100)
 
     positions = np.column_stack([x, y])
-    return Environment.from_samples(positions, bin_size=5.0)
+    return Environment.from_samples(positions, bin_size=5.0, units="cm")
 
 
 @pytest.fixture
@@ -2583,18 +2583,20 @@ class TestComputeSpatialRateFunction:
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """Undeclared coordinate units use the environment's bin spacing."""
+        """Undeclared coordinate units use the bin spacing, with a warning."""
         from neurospatial.encoding.spatial import compute_spatial_rate
 
-        result = compute_spatial_rate(
-            trajectory_env,
-            place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-        )
+        env = trajectory_env.with_metadata(units=None)
+        with pytest.warns(UserWarning, match="bandwidth=None resolved"):
+            result = compute_spatial_rate(
+                env,
+                place_cell_spikes,
+                trajectory_times,
+                trajectory_positions,
+            )
         # Undeclared units use 2.5 median bin spacings, not an assumed cm scale.
         spacing = np.median(
-            [d["distance"] for _, _, d in trajectory_env.connectivity.edges(data=True)]
+            [d["distance"] for _, _, d in env.connectivity.edges(data=True)]
         )
         assert result.bandwidth == pytest.approx(2.5 * spacing)
 
@@ -3184,18 +3186,20 @@ class TestComputeSpatialRatesFunction:
         trajectory_times: NDArray[np.float64],
         trajectory_positions: NDArray[np.float64],
     ) -> None:
-        """Undeclared coordinate units use the environment's bin spacing."""
+        """Undeclared coordinate units use the bin spacing, with a warning."""
         from neurospatial.encoding.spatial import compute_spatial_rates
 
-        result = compute_spatial_rates(
-            trajectory_env,
-            multiple_place_cell_spikes,
-            trajectory_times,
-            trajectory_positions,
-        )
+        env = trajectory_env.with_metadata(units=None)
+        with pytest.warns(UserWarning, match="bandwidth=None resolved"):
+            result = compute_spatial_rates(
+                env,
+                multiple_place_cell_spikes,
+                trajectory_times,
+                trajectory_positions,
+            )
         # Undeclared units use 2.5 median bin spacings, not an assumed cm scale.
         spacing = np.median(
-            [d["distance"] for _, _, d in trajectory_env.connectivity.edges(data=True)]
+            [d["distance"] for _, _, d in env.connectivity.edges(data=True)]
         )
         assert result.bandwidth == pytest.approx(2.5 * spacing)
 
@@ -4399,7 +4403,7 @@ def test_silent_unit_summary_has_no_peak_location():
     rng = np.random.default_rng(7)
     times = np.arange(0.0, 60.0, 1 / 30)
     positions = rng.uniform(0, 40, (times.size, 2))
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     spikes = [np.array([]), np.sort(np.random.default_rng(8).uniform(0, 60, 40))]
     table = compute_spatial_rates(env, spikes, times, positions).summary_table()
     assert table["peak_firing_rate"].iloc[0] == 0.0

@@ -53,6 +53,7 @@ Kempter, R. et al. (2012). Quantifying circular-linear associations.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -282,6 +283,13 @@ class PhasePrecessionResult(ResultMixin):
         ``p_value``. Filter on it in batch analyses instead of catching the
         warning :func:`compute_phase_precession` emits.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "normalized_slope": "rad",
+            "offset": "rad",
+        }
+    )
 
     slope: float
     offset: float

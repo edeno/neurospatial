@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -131,6 +132,13 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
     n_session_units : int
         Number of units in the validated session, selected or not.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "mean_center_error": "{units}",
+            "largest_center_error": "{units}",
+        }
+    )
 
     unit_ids: NDArray[np.int64]
     center_errors: NDArray[np.float64]

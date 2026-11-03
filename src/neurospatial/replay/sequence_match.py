@@ -21,6 +21,7 @@ import functools
 import itertools
 import math
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -28,6 +29,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import times_in_intervals
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_integer_at_least
@@ -142,6 +144,13 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
     --------
     spike_words : Function that produces this result.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "max_isi": "s",
+            "word_gap": "s",
+        }
+    )
 
     intervals: NDArray[np.float64]
     word_ids: NDArray[np.intp]
@@ -422,6 +431,7 @@ class SequenceMatchResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def best_sequence_match(
     env: Environment,
@@ -639,6 +649,12 @@ class MatchingIndexResult(ReadOnlyArraysMixin, ResultMixin):
     sequence_matching_index : Function that produces this result.
     """
 
+    _repr_units = MappingProxyType(
+        {
+            "bandwidth": "s",
+        }
+    )
+
     score: float
     match_probability: float
     n_active_cells: int
@@ -665,6 +681,7 @@ class MatchingIndexResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def sequence_matching_index(
     env: Environment,

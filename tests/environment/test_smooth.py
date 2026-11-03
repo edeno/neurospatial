@@ -438,7 +438,7 @@ def test_rate_result_is_refused_with_the_array_to_pass(population):
     rng = np.random.default_rng(0)
     times = np.arange(3000) / 30.0
     positions = rng.uniform(0, 100, (3000, 2))
-    env = Environment.from_samples(positions, bin_size=10.0)
+    env = Environment.from_samples(positions, bin_size=10.0, units="cm")
     spikes = np.sort(rng.uniform(0, times[-1], 200))
     if population:
         result = compute_spatial_rates(env, [spikes, spikes], times, positions)

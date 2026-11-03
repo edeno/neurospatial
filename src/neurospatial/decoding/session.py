@@ -18,6 +18,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, TimeWindows, resolve_time_windows
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
@@ -168,6 +169,7 @@ def _warn_if_bins_drop_observed_time(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decode_session(
     env: Environment,
@@ -864,6 +866,7 @@ def _decode_with_models(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decode_session_summary(
     env: Environment,
@@ -982,7 +985,7 @@ warn_on_drop, dtype
     >>> from neurospatial.decoding import decode_session_summary
     >>> times = np.arange(300) / 30.0
     >>> positions = np.c_[np.linspace(0.0, 10.0, len(times)), np.zeros(len(times))]
-    >>> env = Environment.from_samples(positions, bin_size=2.0)
+    >>> env = Environment.from_samples(positions, bin_size=2.0, units="cm")
     >>> spikes = [times[::10], times[::15]]
     >>> summary = decode_session_summary(env, spikes, times, positions, dt=0.1, time_chunk=8)
     >>> len(summary.map_position) > 0

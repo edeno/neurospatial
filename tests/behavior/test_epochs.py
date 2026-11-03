@@ -389,7 +389,7 @@ def test_compute_spatial_rates_honors_restriction() -> None:
     x = np.where(times < 50.0, 20.0, 80.0) + rng.normal(0.0, 2.0, times.shape)
     y = 50.0 + rng.normal(0.0, 2.0, times.shape)
     positions = np.column_stack([x, y])
-    env = Environment.from_samples(positions, bin_size=5.0)
+    env = Environment.from_samples(positions, bin_size=5.0, units="cm")
 
     trains = [
         np.sort(rng.uniform(0.0, 100.0, 300)),

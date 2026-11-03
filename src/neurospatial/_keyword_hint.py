@@ -40,7 +40,9 @@ def keyword_hint(
     ``order``, it maps each extra positional value onto those keywords and
     shows the corrected call; otherwise it lists the keyword-only options
     without guessing which one was meant. Every other call, including
-    other argument errors, runs the function unchanged. The signature,
+    other argument errors, runs the function unchanged. A function whose first
+    parameter is ``env`` also explains a call that leaves the environment out
+    (and so fails to bind) by showing the canonical argument order. The signature,
     docstring and ``__wrapped__`` are the function's own. On a method, the
     corrected call is shown on ``env``, the name the documentation gives an
     environment.
@@ -97,6 +99,12 @@ def keyword_hint(
                 f"keyword_hint missing names options that are not required {optional}."
             )
             raise TypeError(msg)
+        env_first = positional[:1] == ["env"]
+        canonical = ", ".join(
+            name
+            for name in positional
+            if parameters[name].default is inspect.Parameter.empty
+        )
         accepts_any_keyword = any(p.kind is p.VAR_KEYWORD for p in parameters.values())
         title = function.__qualname__
         # The caller neither passes nor sees the class or instance a
@@ -172,12 +180,66 @@ def keyword_hint(
                 )
             )
 
+        def env_error(
+            args: tuple[Any, ...], kwargs: dict[str, Any], bind_error: TypeError
+        ) -> TypeError | None:
+            """Explain a call that failed to bind because env is not first.
+
+            Returns ``None`` to leave Python's own error, which stays right
+            when the first value is a valid non-Environment ``env`` (``None``
+            or a mapping of environments) or the failure is not a missing
+            argument, such as a misspelled keyword.
+            """
+            from neurospatial.environment import Environment
+
+            if not args or isinstance(args[0], Environment):
+                return None
+            fix = f"call {title}({canonical}, ...), with env first."
+            misplaced = any(isinstance(value, Environment) for value in args[1:]) or (
+                isinstance(kwargs.get("env"), Environment)
+            )
+            if misplaced:
+                return TypeError(
+                    _format_error(
+                        f"{title}() got an Environment that is not the first "
+                        "positional argument.",
+                        why="Why: env must be the first positional argument; "
+                        "every value before it is read as the wrong input.",
+                        fix=fix,
+                    )
+                )
+            if args[0] is None or isinstance(args[0], Mapping):
+                return None
+            if "missing a required argument" not in str(bind_error):
+                return None
+            return TypeError(
+                _format_error(
+                    f"{title}() was called without an environment: its first "
+                    f"argument is {_shown(args[0])}, not an Environment.",
+                    why="Why: the first argument is the environment, then the "
+                    "data, so every value after it is read as the wrong input.",
+                    fix=fix,
+                )
+            )
+
         @functools.wraps(function)
         def guarded(*args: _P.args, **kwargs: _P.kwargs) -> _R:
             if len(args) > len(positional):
                 raise positional_error(args, kwargs)
+            if env_first:
+                try:
+                    signature.bind(*args, **kwargs)
+                except TypeError as bind_error:
+                    error = env_error(args, kwargs, bind_error)
+                    if error is not None:
+                        raise error from bind_error
+            # A misspelled keyword explains the missing option better than the
+            # hint does: Python's own error names it and the likely spelling.
+            misspelled = not accepts_any_keyword and any(
+                name not in parameters for name in kwargs
+            )
             for name, (reason, advice) in required.items():
-                if name not in kwargs:
+                if name not in kwargs and not misspelled:
                     raise TypeError(
                         _format_error(
                             f"{title}() needs {name}=.",

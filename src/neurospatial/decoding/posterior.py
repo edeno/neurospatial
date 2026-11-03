@@ -35,6 +35,7 @@ from neurospatial._exceptions import (
     InputError,
     _format_error,
 )
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import _refuse_wrong_kind, validate_float_dtype
@@ -362,6 +363,7 @@ def normalize_to_posterior(
     return cast("NDArray[np.float64]", out)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decode_position(
     env: Environment,
@@ -1048,6 +1050,7 @@ def _decode_summary(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decode_position_summary(
     env: Environment,

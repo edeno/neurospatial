@@ -90,7 +90,7 @@ def test_max_gap_none_drops_out_of_bounds_spikes(env_1d):
 def env_1d() -> Environment:
     """A simple 1D environment spanning 0-100."""
     positions = np.linspace(0, 100, 101).reshape(-1, 1)
-    return Environment.from_samples(positions, bin_size=10.0)
+    return Environment.from_samples(positions, bin_size=10.0, units="cm")
 
 
 @pytest.fixture

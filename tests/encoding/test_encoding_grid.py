@@ -222,7 +222,9 @@ class TestFFTAutocorrelationNeedsRectangularCells:
         x = np.linspace(-20, 20, 41)
         xx, yy = np.meshgrid(x, x)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
-        env = Environment.from_samples(positions, bin_size=4.0, layout="Hexagonal")
+        env = Environment.from_samples(
+            positions, bin_size=4.0, layout="Hexagonal", units="cm"
+        )
         rate = np.random.default_rng(1).random(env.n_bins) * 5.0
         return env, rate
 
@@ -441,7 +443,9 @@ class TestFFTAutocorrelationLagsArePhysical:
         from neurospatial import compute_spatial_rate
 
         env, spike_times, times, positions = self._grid_cell_session(
-            lambda positions: Environment.from_samples(positions, bin_size=bin_size),
+            lambda positions: Environment.from_samples(
+                positions, bin_size=bin_size, units="cm"
+            ),
             seed=7,
         )
         # Cells are exactly bin_size wide on both axes.
@@ -461,7 +465,9 @@ class TestFFTAutocorrelationLagsArePhysical:
 
         # Cell widths that differ by a few percent between the axes.
         env, spike_times, times, positions = self._grid_cell_session(
-            lambda _: Environment.from_polygon(box(0, 0, 100, 74), bin_size=(3.0, 2.9)),
+            lambda _: Environment.from_polygon(
+                box(0, 0, 100, 74), bin_size=(3.0, 2.9), units="cm"
+            ),
             seed=9,
         )
         widths = [np.diff(edge)[0] for edge in env.grid_edges]
@@ -482,7 +488,7 @@ class TestFFTAutocorrelationLagsArePhysical:
         times = np.arange(6000) / 30.0
         positions = np.random.default_rng(11).uniform(0, 80, (len(times), 2))
         spike_times = np.sort(np.random.default_rng(12).uniform(0, times[-1], 400))
-        env = Environment.from_samples(positions, bin_size=4.0)
+        env = Environment.from_samples(positions, bin_size=4.0, units="cm")
         result = compute_spatial_rate(env, spike_times, times, positions)
         expected = grid_properties(
             spatial_autocorrelation(env, np.asarray(result.firing_rate)),

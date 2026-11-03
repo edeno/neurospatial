@@ -44,7 +44,7 @@ def session():
             20.0 + 15.0 * np.cos(times / 2.0),
         ]
     )
-    env = Environment.from_samples(positions, bin_size=10.0)
+    env = Environment.from_samples(positions, bin_size=10.0, units="cm")
     trains = [np.sort(rng.uniform(0.0, 39.99, n)) for n in (80, 60, 70)]
     return env, times, positions, trains
 

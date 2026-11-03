@@ -58,6 +58,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
@@ -680,6 +681,7 @@ def _count_boundary_events(
     return spike_counts, occupancy, time_beyond, support
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_boundary_vector_rates(
     env: Environment,
@@ -885,6 +887,7 @@ def compute_boundary_vector_rates(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_boundary_vector_rate(
     env: Environment,

@@ -13,6 +13,7 @@ compute_view_rate():
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Literal
 
 import numpy as np
@@ -414,14 +415,20 @@ class TestComputeViewRateSmoothing:
 
         simple_env = simple_env.with_metadata(units=units)
         times, positions, headings = trajectory_data
-        result = compute_view_rate(
-            simple_env,
-            spike_times,
-            times,
-            positions,
-            headings,
-            boundary_source="analysis",
+        unitless = (
+            pytest.warns(UserWarning, match="bandwidth=None resolved")
+            if units is None
+            else nullcontext()
         )
+        with unitless:
+            result = compute_view_rate(
+                simple_env,
+                spike_times,
+                times,
+                positions,
+                headings,
+                boundary_source="analysis",
+            )
         assert result.bandwidth == expected
 
 

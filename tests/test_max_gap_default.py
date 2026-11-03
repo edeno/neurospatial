@@ -54,6 +54,6 @@ def test_every_public_max_gap_defaults_to_the_shared_constant():
 def test_the_default_is_recorded_as_the_value_used():
     times = np.arange(0, 20, 1 / 30)
     positions = np.column_stack([50 + 40 * np.sin(times), 50 + 40 * np.cos(times)])
-    env = Environment.from_samples(positions, bin_size=10.0)
+    env = Environment.from_samples(positions, bin_size=10.0, units="cm")
     result = compute_spatial_rate(env, np.array([1.0, 2.0]), times, positions)
     assert result.analysis_settings["max_gap"] == DEFAULT_MAX_GAP == 1.0

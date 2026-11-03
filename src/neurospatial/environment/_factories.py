@@ -503,12 +503,26 @@ def _from_samples(
     ):
         extent = np.ptp(finite_positions, axis=0)
         if np.any(extent > 0) and np.all(sizes >= extent):
-            suggested = float(np.max(extent)) / 50.0
+            # About 50 bins across the longest axis, rounded to one significant
+            # figure so the advice reads as a size a person would choose
+            # (2.0, not 1.999). One-figure rounding moves it by at most a
+            # third, which does not change the scale of the suggestion.
+            suggested = float(f"{float(np.max(extent)) / 50.0:.1g}")
+            # Four significant figures, written in full up to the thousands so
+            # extents in mm or pixels do not print as 1.48e+03.
+            shown_extent = (
+                "["
+                + ", ".join(
+                    f"{value:.4g}" if value < 1e4 else f"{value:.0f}"
+                    for value in extent
+                )
+                + "]"
+            )
             warnings.warn(
                 _format_error(
-                    f"bin_size={bin_size} is at least the per-axis data extent {extent.tolist()} in every dimension.",
-                    why="Why: this produces very few bins and may indicate a units mismatch.",
-                    fix=f"use bin_size={suggested:g} (in the same units as positions), or choose a size below the data extent",
+                    f"bin_size={bin_size} is at least the per-axis data extent {shown_extent} in every dimension.",
+                    why="Why: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.",
+                    fix=f"check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size={suggested!r}",
                 ),
                 UserWarning,
                 stacklevel=_external_stacklevel(),
