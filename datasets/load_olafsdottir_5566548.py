@@ -32,8 +32,12 @@ space-memory-navigation.org/DacqUSBFileFormats.pdf, 2018-09-03):
 What the loader converts:
 
 - Positions: big-spot x, y (pixels) / ``pixels_per_metre`` (390) x 100 -> cm;
-  1023 -> NaN. Image y points down; it is flipped (y = window_max_y - y) so
-  the frame is right-handed with +y north on the image. Range checked.
+  1023 -> NaN. The stored coordinates are relative to the tracking window
+  (y spans 4-529 pixels while the header's window runs 27-562), and image y
+  points down; y is flipped within the window (y = (window_max_y -
+  window_min_y) - y) so the frame is right-handed with +y north on the
+  image. ``pos_format`` must read ``t,x1,y1,x2,y2,numpix1,numpix2``, the
+  order the parser assumes. Range checked.
 - Times: sample index / 50 Hz (``sample_rate`` in the header).
 - Units: one per tetrode and cluster >= 1; spike times are the first
   channel's timestamps / 96 kHz.
@@ -222,10 +226,16 @@ def load(cache: Path | None = None) -> Recording:
     """Fetch the Z-track session; positions in cm, units per tetrode cluster."""
     times, spots, header = read_pos(_member(f"{_TRIAL}.pos", cache))
     ppm = float(header["pixels_per_metre"])
-    window_max_y = float(header["window_max_y"])
+    if header.get("pos_format") != "t,x1,y1,x2,y2,numpix1,numpix2":
+        msg = f"unexpected pos_format {header.get('pos_format')!r}"
+        raise ValueError(msg)
+    window_height = float(header["window_max_y"]) - float(header["window_min_y"])
     pixels = spots[:, :2].copy()
     untracked = np.isnan(pixels).any(axis=1)
-    pixels[:, 1] = window_max_y - pixels[:, 1]
+    if np.nanmax(pixels[:, 1]) > window_height:
+        msg = "y exceeds the tracking window's height; recheck the window frame"
+        raise ValueError(msg)
+    pixels[:, 1] = window_height - pixels[:, 1]
     positions = pixels / ppm * 100.0
     span = checked_span(positions, *_SPAN_CM)
     spikes, ids, regions, n_unassigned = [], [], [], 0
@@ -270,7 +280,8 @@ def load(cache: Path | None = None) -> Recording:
         },
         conversions=(
             f"positions: big spot x, y (pixels) / {ppm:g} pixels per metre x 100 -> cm",
-            f"positions: y flipped (y = {window_max_y:g} - y) to point up",
+            f"positions: y flipped within the window (y = {window_height:g} - y)"
+            " to point up",
             f"positions: {untracked.mean():.1%} of samples untracked (1023) -> NaN",
             span,
             f"times: sample index / {header['sample_rate']} (.pos header)",
@@ -291,7 +302,7 @@ def image_y_down(rec: Recording) -> Recording:
     # The y flip undone: the image frame, mirrored.
     assert rec.positions is not None
     positions = rec.positions.copy()
-    positions[:, 1] = 562.0 / 3.9 - positions[:, 1]
+    positions[:, 1] = 535.0 / 3.9 - positions[:, 1]
     return replace(rec, positions=positions)
 
 
