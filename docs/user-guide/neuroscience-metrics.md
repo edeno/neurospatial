@@ -1223,8 +1223,9 @@ firing_rate = rates.firing_rate
 fields = detect_place_fields(env, rates, detect_subfields=True)
 print(f"Detected {len(fields)} place fields")
 
-# 3. Field properties: field_size and rate_map_centroid of each field
-print(fields.to_dataframe()[["field", "area", "peak_rate", "centroid_x", "centroid_y"]])
+# 3. One row per field: its area (cm^2), peak rate (Hz) and rate-weighted
+#    centroid (cm)
+print(fields.fields_table()[["field", "area", "peak_rate", "centroid_x", "centroid_y"]])
 
 # 4. Compute single-cell metrics
 occupancy = env.occupancy(times, positions, return_seconds=True)
