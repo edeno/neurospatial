@@ -152,7 +152,9 @@ def run_recording(
     their last results. Only the rerun operations are probed, against their
     fresh clean results; the other hazard rows are kept. The record keeps
     the earlier run's ``versions``, and each rerun cell and probe row carries
-    its own. With ``inferred_env``, every operation uses the environment
+    its own. A subset run is refused when the load's ``conversions`` or
+    ``env_kind`` differ from the stored record: the cells it keeps describe
+    the stored load. With ``inferred_env``, every operation uses the environment
     built from the samples even when the loader declares one.
     """
     path = results / f"{rec.dataset}.json"
@@ -176,6 +178,21 @@ def run_recording(
     seed = {"inferred_env": True} if inferred_env else {}
     cache: dict[str, Any] = dict(seed)
     record["env_kind"] = env_kind(rec, cache)
+    if previous_record:
+        # The cells not rerun come from the stored load; a different load
+        # would mix two recordings in one record.
+        changed = [
+            key
+            for key in ("conversions", "env_kind")
+            if previous_record.get(key) != record[key]
+        ]
+        if changed:
+            msg = (
+                f"{rec.dataset}: the load's {' and '.join(changed)} differ from"
+                f" {path}, so the operations not rerun describe another load;"
+                " rerun the recording in full (without --ops)"
+            )
+            raise ValueError(msg)
     for op in operations:
         if op_ids is not None and op.op_id not in op_ids:
             continue

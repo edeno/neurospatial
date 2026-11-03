@@ -178,7 +178,8 @@ def test_subset_run_probes_only_against_its_fresh_clean_results(
     assert ("copied_positions", "env.from_samples", "silent") in rows
     # A subset run that does not rerun the probed operation keeps its row;
     # one with no earlier results probes nothing it did not rerun.
-    for results in (tmp_path, tmp_path / "fresh"):
+    key = ("copied_positions", "env.from_samples")
+    for results, expected in ((tmp_path, "silent"), (tmp_path / "fresh", None)):
         partial = run_recording(
             simulated_recording,
             module,
@@ -187,9 +188,7 @@ def test_subset_run_probes_only_against_its_fresh_clean_results(
             results=results,
         )
         responses = {(h["hazard"], h["op"]): h["response"] for h in partial["hazards"]}
-        assert responses.get(("copied_positions", "env.from_samples"), "silent") == (
-            "silent"
-        )
+        assert responses.get(key) == expected
     rerun = run_recording(
         simulated_recording,
         module,
@@ -199,6 +198,31 @@ def test_subset_run_probes_only_against_its_fresh_clean_results(
     )
     row = next(h for h in rerun["hazards"] if h["op"] == "env.from_samples")
     assert row["response"] == "silent"
+
+
+@pytest.mark.parametrize("changed", ["conversions", "env_kind"])
+def test_subset_run_refuses_a_changed_load(simulated_recording, tmp_path, changed):
+    import dataclasses
+
+    ops, module = _probe_setup()
+    run_recording(simulated_recording, module, operations=ops, results=tmp_path)
+    path = tmp_path / f"{simulated_recording.dataset}.json"
+    stored = json.loads(path.read_text())
+    if changed == "conversions":
+        rec = dataclasses.replace(
+            simulated_recording,
+            conversions=(*simulated_recording.conversions, "a new conversion"),
+        )
+    else:
+        rec = simulated_recording
+        stored["env_kind"] = "declared"
+        path.write_text(json.dumps(stored))
+    with pytest.raises(ValueError, match="rerun the recording in full"):
+        run_recording(
+            rec, module, op_ids=["other.op"], operations=ops, results=tmp_path
+        )
+    # The stored record is left as it was.
+    assert json.loads(path.read_text())["operations"] == stored["operations"]
 
 
 def test_subset_run_stamps_only_the_cells_it_reran(simulated_recording, tmp_path):
