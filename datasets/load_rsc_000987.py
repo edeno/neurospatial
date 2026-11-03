@@ -22,10 +22,13 @@ North; the loader returns (x, -z) and ``ry`` wrapped to [-pi, pi]. Under that
 frame ``_record.heading_vs_movement`` (10 Hz samples, faster than 10 cm/s)
 gives a mean offset of about +0.5 rad and a spread of about 49 degrees: the
 frame is not verified by movement (the survey's rule needs |mean| <= 0.2 rad
-and spread < 45 degrees), because a mouse that walks slowly while turning its
-head gives a wide spread and the rigid body's zero is set by hand. The
-mirror image of this frame fits movement equally well (with the angle
-negated). Measures that do not depend on the frame (mean vector length) are
+and spread < 45 degrees). Possible causes, not tested: a mouse that walks
+slowly (median 6 cm/s) while turning its head, and a rigid-body zero set by
+hand. The sign of the angle is tested: ``ry`` negated against the same
+movement gives a spread of 87 degrees (against 49), so ``ry`` turns the same
+way as the (x, -z) frame. Mirroring positions and heading together cannot be
+told apart this way, because it leaves heading minus movement unchanged.
+Measures that do not depend on the frame (mean vector length) are
 unaffected; preferred directions are not interpreted.
 
 Analysis choices (``params``):

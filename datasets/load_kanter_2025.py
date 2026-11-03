@@ -23,8 +23,12 @@ direction (``direction/head_direction``) is radians in 0 to 2 pi, frame "(x=1,
 y=0) unit vector": ``read_head_direction`` reads it; the loader keeps its
 values wrapped to [-pi, pi]. Against movement faster than 20 cm/s
 (``_record.heading_vs_movement``) the offset is about -0.3 rad with a spread of
-about 17 degrees: a constant offset, likely the rigid body's zero, larger than
-the survey's 0.2 rad rule, so the frame is recorded as not verified; mean
+about 17 degrees, larger than the survey's 0.2 rad rule, so the frame is
+recorded as not verified. The offset is not constant: over the 17 windows of
+60 s with at least 10 running samples (median 36), the window means range
+from -0.62 to +2.33 rad (circular SD 31 degrees), so no single correction
+follows from movement. The sign is tested: the heading
+negated gives a spread of 81 degrees against 17. Mean
 vector lengths do not depend on it. The units table repeats ids across the two
 probes (380 rows, 235 distinct ids), so ``read_units`` refuses it; the loader
 reads the table with pynwb and names each unit ``<area>-<id>``.
