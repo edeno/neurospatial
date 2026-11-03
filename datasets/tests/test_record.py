@@ -161,29 +161,78 @@ def test_heading_vs_movement_refuses_a_lag_below_one(pixel_circle):
         heading_vs_movement(times, positions, headings, min_speed=10.0, lag=0)
 
 
-def test_mask_lost_tracking_removes_held_runs_and_bridges():
+def _still(n: int = 60) -> tuple[np.ndarray, np.ndarray]:
+    """``n`` frames at 10 Hz moving 1 cm a frame along x (10 cm/s)."""
+    times = np.arange(n) / 10.0
+    return times, np.column_stack([np.arange(n, dtype=float), np.zeros(n)])
+
+
+def _lost(masked: np.ndarray) -> list[int]:
+    return np.flatnonzero(~np.isfinite(masked).all(axis=1)).tolist()
+
+
+def test_mask_lost_tracking_removes_held_runs():
     from _record import mask_lost_tracking
 
-    rng = np.random.default_rng(0)
-    times = np.arange(300) / 30.0
-    positions = np.cumsum(rng.normal(0, 0.3, (300, 2)), axis=0)
-    # Held for 20 frames after frame 99, then a jump of 50 cm in one frame.
-    positions[100:120] = positions[99]
-    positions[120:] += 50.0
-    # A short repeat (3 frames) is kept: below the run length.
-    positions[200:203] = positions[199]
+    times, positions = _still()
+    # Held for 12 frames after frame 19 (the animal walks on meanwhile, so
+    # the next fix is where it would be); a 3-frame repeat is kept.
+    positions[20:32] = positions[19]
+    positions[45:48] = positions[44]
+    positions[48:] -= 3.0
     masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
-    lost = ~np.isfinite(masked).all(axis=1)
-    assert np.flatnonzero(lost).tolist() == list(range(100, 120))
+    assert _lost(masked) == list(range(20, 32))
     assert np.isfinite(positions).all()  # the input is not changed
-    assert "20 samples" in line
+    assert "12 samples" in line
     assert "1 runs" in line
-    # A one-frame jump between two real fixes removes the later fix.
-    jumped = np.cumsum(rng.normal(0, 0.3, (300, 2)), axis=0)
-    jumped[150:] += 50.0
-    masked, line = mask_lost_tracking(times, jumped, min_frozen=10, max_speed=100.0)
-    assert np.flatnonzero(~np.isfinite(masked).all(axis=1)).tolist() == [150]
+
+
+def test_mask_lost_tracking_checks_the_step_after_a_held_run():
+    from _record import mask_lost_tracking
+
+    times, positions = _still()
+    # Held frames 20-31, then frame 32 jumps 200 cm: from the held run's
+    # kept first sample (frame 19, 1.3 s earlier) that is 13 + 200 cm in
+    # 1.3 s, about 164 cm/s > 100. Frame 33 is 14 cm from frame 19 in 1.4 s.
+    positions[20:32] = positions[19]
+    positions[32, 1] += 200.0
+    masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    assert _lost(masked) == [*range(20, 32), 32]
     assert "1 samples reached faster than 100 cm/s" in line
+
+
+def test_mask_lost_tracking_removes_only_a_one_frame_glitch():
+    from _record import mask_lost_tracking
+
+    times, positions = _still()
+    positions[30, 1] += 50.0  # 50 cm in 0.1 s; frame 31 is 2 cm from 29 in 0.2 s
+    masked, _ = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    assert _lost(masked) == [30]
+
+
+def test_mask_lost_tracking_removes_a_whole_excursion_and_keeps_the_return():
+    from _record import mask_lost_tracking
+
+    times, positions = _still()
+    # Frames 30-34 sit 80 cm off the path; from frame 29 the farthest
+    # (frame 34) is within 80.3 cm of it after 0.5 s, 161 cm/s > 100.
+    positions[30:35, 1] += 80.0
+    masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    assert _lost(masked) == [30, 31, 32, 33, 34]
+    assert "5 samples reached faster" in line
+
+
+def test_mask_lost_tracking_skips_input_nan_without_moving_the_anchor():
+    from _record import mask_lost_tracking
+
+    times, positions = _still()
+    positions[30] = np.nan
+    # Frame 31 jumps 50 cm: from frame 29 (the anchor; frame 30 is NaN) that
+    # is 50 cm in 0.2 s, 250 cm/s. Frame 32 is 3 cm from frame 29 in 0.3 s.
+    positions[31, 1] += 50.0
+    masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    assert _lost(masked) == [30, 31]
+    assert "1 samples reached faster" in line
 
 
 @pytest.mark.parametrize(

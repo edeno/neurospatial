@@ -7,6 +7,7 @@ is internal to the survey harness, not a proposal for a neurospatial object.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -364,9 +365,17 @@ def mask_lost_tracking(
     - frozen: a sample identical in every coordinate to the one before it,
       in a run of at least ``min_frozen`` such repeats; the run's first
       sample (the last real fix) is kept;
-    - fast: a sample reached from the previous one (after the frozen ones
-      are removed) faster than ``max_speed`` (``units`` per second), a
-      speed the animal cannot run; each such step removes its later sample.
+    - fast: one sequential pass over the remaining finite samples. The
+      anchor is the last kept sample; each later sample is kept, and becomes
+      the anchor, when its distance from the anchor over the time since it
+      is at most ``max_speed`` (``units`` per second, a speed the animal
+      cannot exceed), and is set to NaN otherwise. Samples already NaN (in
+      the input or held) are skipped and do not move the anchor. A one-frame
+      glitch removes only the glitch; an excursion removes all its samples
+      and keeps the return; the step from a held run to the next fix is
+      checked against the run's kept first sample. After a real jump of
+      distance ``d`` the pass re-anchors on its own once ``d / max_speed``
+      seconds have passed.
 
     Parameters
     ----------
@@ -400,14 +409,24 @@ def mask_lost_tracking(
         else 0.0
     )
     positions[frozen] = np.nan
-    with np.errstate(invalid="ignore", divide="ignore"):
-        speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
-    fast = np.r_[False, speed > max_speed]
+    fast = np.zeros(len(positions), dtype=bool)
+    finite = np.flatnonzero(np.isfinite(positions).all(axis=1))
+    points, clock = positions.tolist(), np.asarray(times, dtype=float).tolist()
+    if len(finite):
+        anchor = int(finite[0])
+        for k in finite[1:].tolist():  # sequential: each test needs the last kept
+            if math.dist(points[k], points[anchor]) <= max_speed * (
+                clock[k] - clock[anchor]
+            ):
+                anchor = k
+            else:
+                fast[k] = True
     positions[fast] = np.nan
     line = (
         f"tracking: {int(frozen.sum())} samples repeating the one before in runs of"
         f" {min_frozen}+ frames ({int(long_runs.sum())} runs, longest held"
         f" {longest:.1f} s) and {int(fast.sum())} samples reached faster than"
-        f" {max_speed:g} {units}/s set to NaN (held, then bridged, tracking)"
+        f" {max_speed:g} {units}/s from the last kept sample set to NaN (held, then"
+        " bridged, tracking)"
     )
     return positions, line
