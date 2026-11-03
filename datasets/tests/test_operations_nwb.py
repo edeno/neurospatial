@@ -144,3 +144,19 @@ def test_same_times_tolerance_is_absolute():
     assert _same_times(times, times + 1e-6)
     assert not _same_times(times, times + 0.18)
     assert not _same_times(times, times + 0.5 / 30.0)
+
+
+def test_readers_agree_where_the_loader_kept_samples(tmp_path):
+    # A loader that sets lost tracking to NaN (held frames) still read the
+    # same series; values the loader changed are a mismatch.
+    from dataclasses import replace
+
+    rec = _write(tmp_path / "masked.nwb", heading_unit="radians")
+    masked = rec.positions.copy()
+    masked[100:130] = np.nan
+    outcome = nwb_readers(replace(rec, positions=masked), {})
+    assert outcome.summary["position"] == "ok"
+    moved = masked.copy()
+    moved[200] += 5.0
+    outcome = nwb_readers(replace(rec, positions=moved), {})
+    assert outcome.summary["position"] == "mismatch: values differ"

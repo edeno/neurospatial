@@ -736,7 +736,8 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     """Run the NWB readers with default arguments and compare with the loader.
 
     Each reader is ``ok`` when it returns the loader's range-checked arrays
-    and times (after unit scaling), ``absent`` when neither finds the data,
+    and times (after unit scaling; positions where the loader kept a
+    sample), ``absent`` when neither finds the data,
     and otherwise a mismatch or a miss, which makes the cell a workaround; a
     reader that raises anything but "not found" makes it an error. When the
     loader itself built a field with that reader (``params["readers_used"]``),
@@ -774,7 +775,10 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
             )
         if not _same_times(value.times, rec.times):
             return "mismatch: times differ"
-        same = np.allclose(scaled, rec.positions, equal_nan=True)
+        # Compared where the loader kept a sample: samples it set to NaN
+        # (lost tracking, by a rule in ``conversions``) are its own choice.
+        kept = np.isfinite(rec.positions).all(axis=1)
+        same = np.allclose(scaled[kept], rec.positions[kept], equal_nan=True)
         return labelled("position", "ok" if same else "mismatch: values differ")
 
     def heading(value: Any) -> str:
