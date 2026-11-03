@@ -255,6 +255,51 @@ def hd_tuning(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
 
 
+def chance_errors(
+    env: Any, actual: np.ndarray, *, seed: int
+) -> tuple[np.ndarray, float]:
+    """Chance decoding errors: each true position against a shuffled other one.
+
+    The true positions at the decoded times are permuted (seeded) within
+    each connected part of the environment's bin graph, and each pair's
+    distance is measured as ``error_against`` measures by default
+    (geodesic, along the bin graph). A permutation across parts would put
+    pairs an infinite path apart; their share under one global permutation
+    is returned alongside.
+
+    Parameters
+    ----------
+    env : Environment
+    actual : ndarray, shape (n, n_dims)
+        Finite true positions at the decoded times.
+    seed : int
+
+    Returns
+    -------
+    errors : ndarray, shape (n,)
+        Geodesic distance of each within-part pair.
+    frac_disconnected : float
+        Share of pairs in different parts under a global permutation.
+    """
+    import networkx as nx
+
+    from neurospatial.decoding.metrics import decoding_error
+
+    rng = np.random.default_rng(seed)
+    part_of_bin = np.full(env.n_bins, -1)
+    for label, part in enumerate(nx.connected_components(env.connectivity)):
+        part_of_bin[list(part)] = label
+    bins = np.asarray(env.bin_at(actual))
+    part = np.where(bins >= 0, part_of_bin[np.clip(bins, 0, None)], -1)
+    frac_disconnected = float(np.mean(part != part[rng.permutation(len(part))]))
+    shuffled = actual.copy()
+    for label in np.unique(part):
+        members = np.flatnonzero(part == label)
+        shuffled[members] = actual[members[rng.permutation(len(members))]]
+    errors = decoding_error(env, shuffled, actual, metric="geodesic")
+    return np.asarray(errors, dtype=float), frac_disconnected
+
+
 def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
     from neurospatial.decoding import BayesianDecoder
 
@@ -271,27 +316,21 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
     result = decoder.predict(spikes, rec.times, epochs=test)
     error = result.error_against(rec.times, rec.positions)
-    # Chance: distance between each decoded bin's true position and the true
-    # position of a random other decoded bin (seeded permutation), in the
-    # metric error_against uses by default (geodesic, along the bin graph).
-    from neurospatial.decoding.metrics import decoding_error
-
     actual = np.column_stack(
         [
             np.interp(result.times, rec.times, column)
             for column in np.asarray(rec.positions).T
         ]
     )
-    actual = actual[np.isfinite(actual).all(axis=1)]
-    shuffled = actual[np.random.default_rng(0).permutation(len(actual))]
-    chance = decoding_error(result.env, shuffled, actual, metric="geodesic")
+    chance, disconnected = chance_errors(
+        result.env, actual[np.isfinite(actual).all(axis=1)], seed=0
+    )
     return Outcome(
         "ok",
         {
             "median_error": float(np.nanmedian(error)),
             "chance_median_error": float(np.nanmedian(chance)),
-            # Pairs in disconnected parts of the environment are inf apart.
-            "chance_frac_disconnected": float(np.mean(np.isinf(chance))),
+            "chance_frac_disconnected": disconnected,
             "units": str(rec.position_units),
             "n_time_bins": int(result.n_time_bins),
         },
