@@ -34,8 +34,9 @@ measured and probed, and the documented path is tried as written.
 - **Truth comes from outside the code under test.** In order of preference:
   - **the file:** the authors' linearization, trials, labels, events, speed,
     ripples;
-  - **planted cells:** known fields put on the real path and the declared
-    environment (6b);
+  - **simulation:** a rung of the simulation ladder below, from simulated
+    neurons on the real path up to a fully simulated session in the declared
+    real environment;
   - **the paper:** a number read in the text, cited under the
     cite-only-verified rule;
   - **an independent naive computation:** plain numpy written from the
@@ -62,6 +63,48 @@ measured and probed, and the documented path is tried as written.
   same.
 - **Agents work by domain, not by dataset.** Each domain agent covers every
   recording that carries the truth its checks need.
+
+## The simulation ladder
+
+Each rung adds one layer of reality to a session whose answer is known. When
+a check passes on one rung and fails on the next, the layer just added is the
+cause.
+
+| Rung | Behavior | Environment | Tracking | Neurons | What a failure here points at |
+| --- | --- | --- | --- | --- | --- |
+| 1 | simulated | simulated apparatus (`simulation.mazes`, arenas) | exact | simulated | the library |
+| 2 | simulated in the **declared real environment** (`simulate_trajectory_ou`, `simulate_trajectory_laps`, `simulate_trajectory_sinusoidal`) | declared | exact | simulated | the apparatus geometry and how the environment captures it |
+| 3 | as rung 2 | declared **and** built from the simulated samples | **messy**: a head point offset from the body in the heading direction and jittered sideways, gaps, LED jumps, timestamp jitter, pixel units | simulated | real-data messiness and the samples-built environment |
+| 4 | **real** path and time base | declared and samples-built | real | simulated (planted, 6b) | the real behavior: coverage, speed, stops, head spread |
+| 5 | real | declared and samples-built | real | **real** | the data, the authors' conventions, or biology |
+
+- **Calibrate the messy rung to the real data.** Rung 3 takes its messiness
+  from what the inventory (6d) measures on each recording: head-point offset
+  and spread split by speed, gap lengths, jump rates and frame-interval
+  jitter. Rung 3 is then that recording's messiness on a known answer.
+- **Behavior truth comes from the simulation.** A simulated path has known
+  laps, trials, region visits, speed, running bouts and goal arrivals. So
+  `detect_laps`, `detect_trials`, `detect_region_visits`, `compute_speed`,
+  `segment_by_velocity`, `path_progress` and `distance_to_goal` are checked
+  on rungs 2–3 in every declared environment, including the ones whose file
+  has no trials table. `tmaze_alternation_session` and `linear_track_session`
+  give whole sessions with known trials.
+- **Environment capture is scored on rungs 2–3.** Build the samples-built
+  environment from simulated samples in a known apparatus, then measure:
+  - outline coverage;
+  - shortcuts through walls or between bars, as connectivity against the
+    true graph;
+  - the analyses on top (planted fields, laps, decoding) against the truth,
+    on the declared environment and the samples-built one.
+
+  The real-data fidelity study answers the same question without a known
+  answer.
+- **Replay** is planted on rungs 4–5 with `simulate_replay_event` in quiet
+  periods (6c).
+- **Figures** (6f) are checked on rung 1–2 sessions first, where every field
+  is known, before they are checked on real data.
+- **Seeds.** Every simulated session is seeded, and its parameters are
+  saved with the results as the ground truth.
 
 ## Tasks
 
@@ -141,6 +184,7 @@ the end-to-end test a scientist would use to judge the package.
 
 | Operation | Check |
 | --- | --- |
+| `behavior.simulated` | every behavior operation below on rung 2–3 sessions in each declared environment, against the simulated laps, trials, visits, speed, bouts and goal arrivals |
 | `behavior.speed` | `compute_speed` against `file_speed`, and against a finite difference on the same smoothing |
 | `behavior.path_progress` | `path_progress` against the authors' `linearized` (rank correlation per trial, and range) |
 | `behavior.trials` | `detect_trials` and `detect_region_visits` against the `trials` table (match rate, start/stop error in s) |
@@ -368,6 +412,8 @@ time with whatever is easiest to score.
 | `test_checks.py::test_psth_counts_match_numpy` | PSTH counts equal numpy counts; shuffled events give a flat population response |
 | `datasets/tests/test_figures.py::test_plotted_array_is_the_data` | on a simulated recording, the rate-map figure's image array equals the rates and NaN bins are masked; a figure with a flipped y axis fails the orientation check |
 | `test_figures.py::test_export_frames_follow_position` | a short simulated export has duration × fps frames and the position marker maps back to the recorded position within one bin |
+| `test_checks.py::test_ladder_isolates_messiness` | a simulated session in a declared square passes the place-field check on rung 2 and reports the injected head offset's effect on rung 3, with the same seed |
+| `test_checks.py::test_simulated_laps_counted` | `detect_laps` on a `simulate_trajectory_laps` path in a declared loop counts the simulated laps |
 | `test_checks.py::test_planted_place_cell_recovered` | a place cell planted on a simulated path is found with its centre within one bin, and an untuned planted unit is not |
 | `test_checks.py::test_naive_reference_is_independent` | the numpy references in the checks import nothing from `neurospatial` beyond the inputs they are given |
 | `test_checks.py::test_seeded_rerun_is_identical` | a seeded operation run twice gives identical outputs |
