@@ -163,7 +163,7 @@ def load(cache: Path | None = None) -> Recording:
     curated = np.sort(
         np.concatenate([np.atleast_1d(t.timestamp) for t in trial.tetrode])
     )
-    if not np.allclose(np.sort(np.concatenate(spikes)), curated, atol=1e-6):
+    if not np.array_equal(np.sort(np.concatenate(spikes)), curated):
         msg = "good clusters' spike times differ from trialData's tetrode timestamps"
         raise ValueError(msg)
     pos_sample = np.concatenate([np.atleast_1d(t.pos_sample) for t in trial.tetrode])
