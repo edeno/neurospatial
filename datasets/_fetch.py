@@ -6,21 +6,30 @@ interrupted or corrupted download never leaves a file the loaders would trust.
 An existing file with a different digest is never overwritten. Files too
 large to download (multi-GB DANDI assets) are read by HTTP byte range instead,
 pinned by the SHA-256 DANDI publishes for them.
+
+CRCNS files need an account. Their helpers read the login from the
+``CRCNS_USERNAME`` and ``CRCNS_PASSWORD`` environment variables and never put
+either value, or a page the portal returns (which can echo the account name),
+into a message, a log or a file.
 """
 
 from __future__ import annotations
 
 import contextlib
 import hashlib
+import http.cookiejar
 import json
 import os
 import shutil
 import struct
+import tarfile
 import tempfile
+import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 import zlib
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import IO, Any
 
@@ -173,6 +182,137 @@ def fetch_zip_member(
                 shutil.copyfileobj(source, tmp)
 
     return _install(_download_to_temp(dest, write), dest, sha256)
+
+
+CRCNS_PORTAL = "https://portal.nersc.gov/project/crcns/download/index.php"
+
+
+def _crcns_login_form(path: str) -> bytes:
+    """The portal's login form for ``path``, from the environment's account.
+
+    The account is read and encoded in one expression, so no frame that can
+    raise holds it in a variable (a traceback that shows local variables,
+    such as ``pytest --showlocals``, would print it).
+    """
+    if missing := [
+        name for name in ("CRCNS_USERNAME", "CRCNS_PASSWORD") if name not in os.environ
+    ]:
+        msg = (
+            f"CRCNS files need a free crcns.org account: {' and '.join(missing)}"
+            " not set in the environment (set CRCNS_USERNAME and CRCNS_PASSWORD)"
+        )
+        raise KeyError(msg)
+    return urllib.parse.urlencode(
+        {
+            "fn": path,
+            "username": os.environ["CRCNS_USERNAME"],
+            "password": os.environ["CRCNS_PASSWORD"],
+            "submit": "Login",
+        }
+    ).encode()
+
+
+def _crcns_open(path: str) -> Any:
+    """Open the CRCNS file ``path`` (e.g. ``"hc-31/data/resSave.mat"``) for reading.
+
+    Posts the portal's login form with the account from the environment. A
+    failure names only ``path`` and an HTTP status, and is raised outside the
+    handler so that it carries no chained exception: the request holds the
+    password and the portal's pages can echo the account name.
+    """
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+    )
+    failure = None
+    try:
+        response = opener.open(CRCNS_PORTAL, data=_crcns_login_form(path), timeout=300)
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        failure = f"failed with HTTP {exc.code}"
+    except urllib.error.URLError as exc:
+        failure = f"failed: {type(exc.reason).__name__}"
+    if failure is not None:
+        msg = f"CRCNS download of {path} {failure}"
+        raise OSError(msg)
+    if response.headers.get_content_type() == "text/html":
+        response.close()
+        msg = (
+            f"CRCNS answered {path} with a web page instead of the file: the login"
+            " failed (check CRCNS_USERNAME and CRCNS_PASSWORD), the path is wrong,"
+            " or the portal asks for a browser step. The page is not shown because"
+            " it can contain the account name."
+        )
+        raise PermissionError(msg)
+    return response
+
+
+def fetch_crcns(
+    path: str, *, sha256: str, subdir: str, cache: Path | None = None
+) -> Path:
+    """Return a verified local copy of the CRCNS file ``path``, downloading it once."""
+    dest = cache_root(cache) / subdir / Path(path).name
+    if (found := _existing(dest, sha256)) is not None:
+        return found
+
+    def write(tmp: IO[bytes]) -> None:
+        with _crcns_open(path) as response:
+            shutil.copyfileobj(response, tmp)
+
+    return _install(_download_to_temp(dest, write), dest, sha256)
+
+
+def fetch_crcns_tar_members(
+    path: str,
+    members: Mapping[str, str],
+    *,
+    subdir: str,
+    cache: Path | None = None,
+) -> dict[str, Path]:
+    """Return verified local copies of members of the CRCNS ``.tar.gz`` at ``path``.
+
+    ``members`` maps each member's name in the archive to its pinned SHA-256;
+    each is stored under its base name. A gzip stream cannot be read by byte
+    range, so the archive is read from its start and the download stops once
+    every missing member is written; the archive itself is not kept.
+    """
+    names = [Path(member).name for member in members]
+    if len(set(names)) != len(names):
+        msg = f"members of {path} share a base name, which is how they are stored: {sorted(members)}"
+        raise ValueError(msg)
+    root = cache_root(cache) / subdir
+    found: dict[str, Path] = {}
+    missing: dict[str, tuple[Path, str]] = {}
+    for member, digest in members.items():
+        dest = root / Path(member).name
+        if (cached := _existing(dest, digest)) is not None:
+            found[member] = cached
+        else:
+            missing[member] = (dest, digest)
+    if not missing:
+        return found
+    with (
+        _crcns_open(path) as response,
+        tarfile.open(fileobj=response, mode="r|gz") as archive,
+    ):
+        for info in archive:
+            if info.name not in missing:
+                continue
+            source = archive.extractfile(info)
+            if source is None:
+                msg = f"{path}: member {info.name} is not a regular file"
+                raise ValueError(msg)
+            dest, digest = missing.pop(info.name)
+
+            def write(tmp: IO[bytes], source: IO[bytes] = source) -> None:
+                shutil.copyfileobj(source, tmp)
+
+            found[info.name] = _install(_download_to_temp(dest, write), dest, digest)
+            if not missing:
+                break
+    if missing:
+        msg = f"{path} has no member(s) {sorted(missing)}"
+        raise FileNotFoundError(msg)
+    return found
 
 
 def dandi_asset_url(asset_id: str) -> str:

@@ -28,6 +28,11 @@ What the loader converts:
   no bin holds both. Each track's extent along its principal axis is range
   checked (170-205 cm; the tracks are not straight, so it is less than the
   2 m path length).
+- Each track's ``track_mask_x``/``track_mask_y`` is not a mask outline but
+  its centreline, 1 pixel apart and 2 m long once scaled (not an independent
+  check: ``cm_per_pixel`` comes from the 2 m length): kept, in cm with the
+  same factor, as ``geometry["track_centrelines_cm"]``. The loader checks the
+  length and that the track's samples lie a median of at most 10 cm from it.
 - Spike times (s, the same Neuralynx clock) are split by ``spike_id``;
   ``unit_ids`` are ``id_conversion``'s 1000 x tetrode + cluster.
 
@@ -83,6 +88,7 @@ _FILES = {
     "RAT5_SESS1_extracted_position.mat": "85472dfc7b3c9c560e1c951e9f81759c7da221c948b01ece7d1437eb50bdcb46",
 }
 _TRACK_EXTENT_CM = (170.0, 205.0)
+_CENTRELINE_MAX_MEDIAN_CM = 10.0
 _TRACK_M = 2.0
 
 
@@ -107,7 +113,7 @@ def load(cache: Path | None = None) -> Recording:
     times = np.asarray(clean.t, dtype=float)
     pixels = np.column_stack([clean.x, clean.y]).astype(float)
     positions = np.full_like(pixels, np.nan)
-    epochs, factors, extents = {}, [], []
+    epochs, factors, extents, centrelines = {}, [], [], []
     for k, track in enumerate(position.linear, start=1):
         if float(track.length) != _TRACK_M:
             msg = f"track {k} length {track.length} m, not the README's 2 m"
@@ -125,6 +131,12 @@ def load(cache: Path | None = None) -> Recording:
         epochs[f"track_{k}"] = np.array([[times[on[0]], times[on[-1]]]])
         factors.append(factor)
         extents.append(extent)
+        centreline = (
+            np.column_stack([track.track_mask_x, track.track_mask_y]).astype(float)
+            * factor
+        )
+        check_centreline(centreline, positions[on], k)
+        centrelines.append(centreline)
     interpolated = np.zeros(len(times), dtype=bool)
     interpolated[np.asarray(position.interpolated_indices, dtype=int) - 1] = True
     on_track = np.isfinite(positions).all(axis=1)
@@ -147,7 +159,10 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=spikes,
         unit_ids=conversion[:, 1],
         epochs=epochs,
-        geometry={"cm_per_pixel_per_track": factors},
+        geometry={
+            "cm_per_pixel_per_track": factors,
+            "track_centrelines_cm": centrelines,
+        },
         params={
             "bin_size": 4.0,
             "min_speed": 5.0,
@@ -167,11 +182,38 @@ def load(cache: Path | None = None) -> Recording:
             f" ({on_track.mean():.1%} of samples on a track)",
             f"positions: {np.mean(interpolated[on_track]):.1%} of on-track samples"
             " were interpolated by the authors (interpolated_indices), kept",
+            "geometry['track_centrelines_cm']: track_mask_x, track_mask_y x the"
+            " track's cm_per_pixel; lengths "
+            + ", ".join(
+                f"{np.linalg.norm(np.diff(c, axis=0), axis=1).sum():.1f}"
+                for c in centrelines
+            )
+            + " cm",
             "times: clean.t as stored (s)",
             f"spike_times: split by spike_id into {len(spikes)} units",
             "unit_ids: id_conversion column 2 (1000 x tetrode + cluster)",
         ),
     )
+
+
+def check_centreline(centreline: np.ndarray, on_track: np.ndarray, k: int) -> None:
+    """Refuse a centreline that is not about 2 m long or not under the samples.
+
+    The length is not an independent check of the scale: the authors derived
+    ``cm_per_pixel`` from the 2 m length. The position is: the track's samples
+    must lie a median of at most ``_CENTRELINE_MAX_MEDIAN_CM`` from it.
+    """
+    from scipy.spatial import cKDTree
+
+    length = float(np.linalg.norm(np.diff(centreline, axis=0), axis=1).sum())
+    tracked = on_track[np.isfinite(on_track).all(axis=1)]
+    offset = float(np.median(cKDTree(centreline).query(tracked)[0]))
+    if not 0.95 * _TRACK_M * 100 <= length <= 1.05 * _TRACK_M * 100:
+        msg = f"track {k} centreline is {length:.1f} cm long, not about 2 m"
+        raise ValueError(msg)
+    if offset > _CENTRELINE_MAX_MEDIAN_CM:
+        msg = f"track {k} samples lie a median {offset:.1f} cm from its centreline"
+        raise ValueError(msg)
 
 
 def principal_extent(xy: np.ndarray) -> float:
