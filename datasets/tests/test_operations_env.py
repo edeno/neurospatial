@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 import networkx as nx
 import numpy as np
 import pytest
-from _geometry import fit_circle, fit_rectangle, graph_edge_order, graph_environment
+from _geometry import (
+    declared_circle,
+    declared_rectangle,
+    distance_to_segments,
+    fit_circle,
+    fit_rectangle,
+    graph_edge_order,
+    graph_environment,
+    lattice_graph,
+)
 from operations import _env, env_declared, env_kind
 
 from neurospatial import Environment
@@ -94,3 +104,86 @@ def test_fitted_circle_recovers_centre():
     assert fit["centre_y"] == pytest.approx(60.0, abs=1.0)
     assert fit["samples_diameter"] == pytest.approx(96.0, abs=2.0)
     assert polygon.area == pytest.approx(np.pi * 48.0**2, rel=0.01)
+
+
+@pytest.fixture(scope="module")
+def box_samples():
+    """Samples filling a 96 x 96 cm square centred at (10, 20): a 100 cm box's floor."""
+    rng = np.random.default_rng(2)
+    return rng.uniform(-48, 48, size=(20000, 2)) + np.array([10.0, 20.0])
+
+
+def test_declared_rectangle_records_residuals(box_samples):
+    factory, line = declared_rectangle(
+        box_samples, 100.0, 100.0, bin_size=2.5, units="cm", name="box", source="test"
+    )
+    env = factory()
+    # 100 cm / 2.5 cm bins: 40 x 40 cells, one more or less where the fitted
+    # rotation moves a cell centre across the outline.
+    assert env.n_bins == pytest.approx(1600, abs=2)
+    assert np.all(np.asarray(env.bin_at(box_samples)) >= 0)
+    # The samples' own sides are 96 cm: 4 % short of the stated 100 cm.
+    residuals = [float(v) for v in re.findall(r"size_residual_\w ([-\d.e]+)", line)]
+    assert residuals == pytest.approx([-0.04, -0.04], abs=0.005)
+    assert line.startswith("environment: declared square (100 x 100, test)")
+
+
+def test_declared_rectangle_refuses_a_wrong_size(box_samples):
+    with pytest.raises(ValueError, match=r"size_residual_a -36\.\d%"):
+        declared_rectangle(
+            box_samples, 150.0, 150.0, bin_size=2.5, units="cm", name="box", source="t"
+        )
+
+
+def test_declared_circle_at_a_stated_centre():
+    rng = np.random.default_rng(3)
+    r = 45.0 * np.sqrt(rng.uniform(0, 1, 20000))
+    theta = rng.uniform(0, 2 * np.pi, 20000)
+    points = np.column_stack([r * np.cos(theta) + 1.0, r * np.sin(theta)])
+    factory, line = declared_circle(
+        points,
+        100.0,
+        bin_size=2.0,
+        units="cm",
+        name="pool",
+        source="t",
+        centre=(0.0, 0.0),
+    )
+    env = factory()
+    centres = np.asarray(env.bin_centers)
+    assert np.hypot(*centres.T).max() <= 50.0
+    assert np.hypot(*centres.mean(axis=0)) < 1.0  # centred on the stated centre
+    fitted = dict(re.findall(r"(\w+) ([-\d.e]+)(?:,|$)", line))
+    assert float(fitted["centre_offset"]) == pytest.approx(1.0, abs=0.3)
+    assert float(fitted["size_residual"]) == pytest.approx(-0.1, abs=0.01)
+
+
+def test_lattice_graph_cuts_bars_at_crossings():
+    # A 2 x 2 x 2 cube lattice of side 20: 3 x 3 bars along each axis.
+    ticks = np.array([0.0, 10.0, 20.0])
+    bars = []
+    for axis in range(3):
+        for a in ticks:
+            for b in ticks:
+                start = np.insert(np.array([a, b]), axis, 0.0)
+                bars.append([start, np.insert(np.array([a, b]), axis, 20.0)])
+    graph = lattice_graph(np.asarray(bars), n_cubes=2)
+    assert graph.number_of_nodes() == 27
+    assert graph.number_of_edges() == 3 * 9 * 2
+    assert all(d == pytest.approx(10.0) for *_, d in graph.edges(data="distance"))
+
+
+def test_distance_to_segments_matches_brute_force():
+    rng = np.random.default_rng(5)
+    segments = rng.uniform(0, 10, size=(7, 2, 3))
+    points = rng.uniform(-2, 12, size=(50, 3))
+    t = np.linspace(0, 1, 20001)
+    dense = segments[:, None, 0] + t[None, :, None] * (
+        segments[:, None, 1] - segments[:, None, 0]
+    )
+    brute = np.linalg.norm(points[:, None, :] - dense.reshape(-1, 3)[None], axis=2).min(
+        axis=1
+    )
+    np.testing.assert_allclose(
+        distance_to_segments(points, segments, chunk=8), brute, atol=1e-3
+    )

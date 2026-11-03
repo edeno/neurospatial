@@ -14,10 +14,18 @@ on them. ``graph_edge_order`` lists every edge.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import replace
+from functools import partial
 from typing import Any
 
 import numpy as np
+from _record import Recording
 from numpy.typing import NDArray
+
+# A stated size more than this share away from the samples' own fitted size
+# is refused: the stated apparatus, the unit or the session is then wrong.
+MAX_SIZE_RESIDUAL = 0.15
 
 
 def graph_edge_order(graph: Any, root: Any = None) -> list[tuple[Any, Any]]:
@@ -155,3 +163,188 @@ def placement_line(kind: str, stated: str, fit: dict[str, float], source: str) -
     return (
         f"environment: declared {kind} ({stated}, {source}); placement fitted: {values}"
     )
+
+
+def _check_residuals(residuals: dict[str, float], max_residual: float) -> None:
+    off = {k: v for k, v in residuals.items() if abs(v) > max_residual}
+    if off:
+        detail = ", ".join(f"{k} {v:+.1%}" for k, v in off.items())
+        msg = (
+            f"the samples' fitted size differs from the stated size by more than"
+            f" {max_residual:.0%} ({detail}): check the stated size, the position"
+            " unit, or which apparatus this session used"
+        )
+        raise ValueError(msg)
+
+
+def declared_rectangle(
+    positions: NDArray[np.float64],
+    width: float,
+    height: float,
+    *,
+    bin_size: float,
+    units: str | None,
+    name: str,
+    source: str,
+    max_residual: float = MAX_SIZE_RESIDUAL,
+) -> tuple[Callable[[], Any], str]:
+    """A stated ``width`` x ``height`` arena placed on the samples.
+
+    Centre and rotation are fitted (``fit_rectangle``); the size is the
+    stated one. The residual of each side is the samples' fitted side over
+    the stated side, minus 1 (negative when the animal stays off the walls).
+
+    Returns
+    -------
+    environment : callable
+        Zero-argument ``Environment.from_polygon`` on the placed rectangle at
+        ``bin_size``; its outline is an opaque wall.
+    conversion : str
+        The ``conversions`` line: shape, size, source, placement and residuals.
+
+    Raises
+    ------
+    ValueError
+        When a side's residual exceeds ``max_residual``.
+    """
+    from neurospatial import Environment
+
+    polygon, fit = fit_rectangle(positions, width, height)
+    stated = sorted((width, height), reverse=True)
+    fit["size_residual_a"] = fit["samples_side_a"] / stated[0] - 1
+    fit["size_residual_b"] = fit["samples_side_b"] / stated[1] - 1
+    _check_residuals(
+        {k: fit[k] for k in ("size_residual_a", "size_residual_b")}, max_residual
+    )
+    shape = "square" if width == height else "rectangle"
+    factory = partial(
+        Environment.from_polygon, polygon, bin_size=bin_size, units=units, name=name
+    )
+    return factory, placement_line(shape, f"{width:g} x {height:g}", fit, source)
+
+
+def declared_circle(
+    positions: NDArray[np.float64],
+    diameter: float,
+    *,
+    bin_size: float,
+    units: str | None,
+    name: str,
+    source: str,
+    centre: tuple[float, float] | None = None,
+    max_residual: float = MAX_SIZE_RESIDUAL,
+) -> tuple[Callable[[], Any], str]:
+    """A stated circular arena of ``diameter``, centred on the samples or at ``centre``.
+
+    Without ``centre`` the centre is fitted (``fit_circle``); with it (when the
+    source states where the centre is) the fitted centre's distance from it
+    is recorded as ``centre_offset``. The residual is the samples' fitted
+    diameter over the stated one, minus 1. Returns and raises as
+    ``declared_rectangle``.
+    """
+    from shapely.geometry import Point
+
+    from neurospatial import Environment
+
+    polygon, fit = fit_circle(positions, diameter)
+    if centre is not None:
+        offset = float(
+            np.hypot(fit["centre_x"] - centre[0], fit["centre_y"] - centre[1])
+        )
+        polygon = Point(*centre).buffer(diameter / 2, quad_segs=16)
+        fit = {
+            "stated_centre_x": float(centre[0]),
+            "stated_centre_y": float(centre[1]),
+            "centre_offset": offset,
+            "samples_diameter": fit["samples_diameter"],
+        }
+    fit["size_residual"] = fit["samples_diameter"] / diameter - 1
+    _check_residuals({"size_residual": fit["size_residual"]}, max_residual)
+    factory = partial(
+        Environment.from_polygon, polygon, bin_size=bin_size, units=units, name=name
+    )
+    return factory, placement_line("circle", f"diameter {diameter:g}", fit, source)
+
+
+def with_environment(
+    rec: Recording, environment: Callable[[], Any], conversion: str
+) -> Recording:
+    """``rec`` with its declared environment and the conversion line describing it."""
+    return replace(
+        rec,
+        geometry={**rec.geometry, "environment": environment},
+        conversions=(*rec.conversions, conversion),
+    )
+
+
+def lattice_graph(bars: NDArray[np.float64], n_cubes: int) -> Any:
+    """A climbing lattice's bars as a graph of segments between their crossings.
+
+    Each full-length bar is cut at its ``n_cubes + 1`` evenly spaced
+    crossings; crossings shared by several bars (closer than 5 % of the
+    spacing) become one node.
+
+    Parameters
+    ----------
+    bars : ndarray, shape (n_bars, 2, n_dims)
+        Start and end of each full-length bar.
+    n_cubes : int
+        Cubes along each bar.
+
+    Returns
+    -------
+    networkx.Graph
+        Nodes carry ``pos`` (the crossing), edges ``distance`` (the segment's
+        length).
+    """
+    import networkx as nx
+    from scipy.spatial import cKDTree
+
+    steps = np.linspace(0.0, 1.0, n_cubes + 1)
+    points = bars[:, :1] + steps[None, :, None] * (bars[:, 1:] - bars[:, :1])
+    points = points.reshape(-1, bars.shape[2])
+    spacing = float(np.linalg.norm(bars[0, 1] - bars[0, 0])) / n_cubes
+    label = -np.ones(len(points), dtype=np.intp)
+    nodes = []
+    for k, group in enumerate(cKDTree(points).query_ball_point(points, 0.05 * spacing)):
+        if label[k] < 0:
+            members = [g for g in group if label[g] < 0]
+            label[members] = len(nodes)
+            nodes.append(points[members].mean(axis=0))
+    per_bar = label.reshape(len(bars), n_cubes + 1)
+    graph = nx.Graph()
+    for k, node in enumerate(nodes):
+        graph.add_node(k, pos=tuple(float(v) for v in node))
+    for u, v in zip(per_bar[:, :-1].ravel(), per_bar[:, 1:].ravel(), strict=True):
+        graph.add_edge(
+            int(u), int(v), distance=float(np.linalg.norm(nodes[u] - nodes[v]))
+        )
+    return graph
+
+
+def distance_to_segments(
+    points: NDArray[np.float64], segments: NDArray[np.float64], *, chunk: int = 20000
+) -> NDArray[np.float64]:
+    """Each point's distance to the nearest of ``segments``.
+
+    Parameters
+    ----------
+    points : ndarray, shape (n_points, n_dims)
+    segments : ndarray, shape (n_segments, 2, n_dims)
+        Start and end of each segment.
+
+    Returns
+    -------
+    ndarray, shape (n_points,)
+    """
+    start, step = segments[:, 0], segments[:, 1] - segments[:, 0]
+    length2 = np.einsum("sd,sd->s", step, step)
+    out = np.empty(len(points))
+    for lo in range(0, len(points), chunk):
+        block = points[lo : lo + chunk, None, :] - start[None]
+        t = np.clip(np.einsum("psd,sd->ps", block, step) / length2, 0.0, 1.0)
+        nearest = block - t[..., None] * step[None]
+        out[lo : lo + chunk] = np.sqrt(
+            np.einsum("psd,psd->ps", nearest, nearest).min(1)
+        )
+    return out
