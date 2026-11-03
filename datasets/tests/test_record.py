@@ -199,7 +199,18 @@ def test_suspect_tracking_finds_held_runs():
     assert fast == []
     assert summary["held_runs"] == 1
     assert summary["longest_held_seconds"] == pytest.approx(1.2)
-    assert "1 runs of 10+ identical samples (12 samples" in message
+    assert "1 runs of 11+ identical samples (12 repeats" in message
+
+
+@pytest.mark.parametrize(("n_identical", "runs"), [(10, 0), (11, 1)])
+def test_suspect_tracking_held_run_is_min_frozen_repeats(n_identical, runs):
+    # min_frozen=10 repeats of one value: 11 identical samples, not 10.
+    times, positions = _still()
+    positions[20 : 19 + n_identical] = positions[19]
+    held, _, summary, message = _found(times, positions)
+    assert summary["held_runs"] == runs
+    assert len(held) == (n_identical - 1) * runs
+    assert f"{runs} runs of 11+ identical samples" in message
 
 
 def test_suspect_tracking_checks_the_step_after_a_held_run():

@@ -18,7 +18,8 @@ because the default call refuses to choose between them. Ripples are read with
 pynwb from ``processing/ecephys/Ripples``; ``onMaze`` intervals are the maze
 epochs. Positions are kept as stored. Suspect tracking is reported as a load
 warning (``_record.find_suspect_tracking``): 29 % of the frames repeat the
-one before in runs of 10 or more (up to 82 s held), which may be a tracker
+one before in runs of 10 or more repeats, 11 or more identical frames (up
+to 82 s held), which may be a tracker
 repeating its last fix or a mouse still at a well or in the start box, and a
 few samples lie farther than 100 cm/s from the sample before them.
 

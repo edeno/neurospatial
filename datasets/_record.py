@@ -408,8 +408,9 @@ def find_suspect_tracking(
     removed:
 
     - held: a sample identical in every coordinate to the one before it, in
-      a run of at least ``min_frozen`` such repeats (the run's first sample,
-      the last fix before it, is not counted);
+      a run of at least ``min_frozen`` such repeats, so ``min_frozen + 1``
+      identical samples (the run's first sample, the last fix before it, is
+      not counted);
     - fast: one sequential pass over the finite samples that are not held.
       The anchor is the last sample passed; a later sample is passed, and
       becomes the anchor, when its distance from the anchor over the time
@@ -476,7 +477,7 @@ def find_suspect_tracking(
     }
     message = (
         f"suspect tracking, positions kept as stored: {summary['held_runs']} runs of"
-        f" {min_frozen}+ identical samples ({summary['held_samples']} samples,"
+        f" {min_frozen + 1}+ identical samples ({summary['held_samples']} repeats,"
         f" {summary['held_share']:.1%}; {summary['held_seconds']:.1f} s in all,"
         f" longest {summary['longest_held_seconds']:.1f} s) and"
         f" {summary['fast_samples']} samples farther than {max_speed:g} {units}/s"

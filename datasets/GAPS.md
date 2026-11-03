@@ -2447,9 +2447,10 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Datasets: ca1ca3_001880, valero_000568, rsc_000987
 - Operation / step: loader (`_record.find_suspect_tracking`, a load warning)
 - Kind: data-quirk
-- Evidence: runs of 10 or more frames identical in every coordinate, on
-  positions with sub-pixel values (about 64,000 to 154,000 distinct values
-  per axis, none on integer coordinates): 001880 29 % of the frames, in 90
+- Evidence: runs of 11 or more frames identical in every coordinate (10 or
+  more repeats of a value), on positions with sub-pixel values (about
+  64,000 to 154,000 distinct values per axis, none on integer
+  coordinates): 001880 29 % of the frames, in 90
   runs up to 82 s (most in the start box between sub-sessions, G-113);
   000568 46 runs up to 6 s; 000987 0.4 % of the frames in 22 runs up to
   1 s. A tracker that loses the animal can repeat its last fix; a still

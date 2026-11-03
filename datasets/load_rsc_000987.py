@@ -17,8 +17,8 @@ height), so y is vertical, the floor is (x, z), and the values are metres
 (a mouse at a median 6 cm/s, 90th percentile 14 cm/s, read as metres). The
 loader converts to cm. Positions and headings are kept as stored. Suspect
 tracking is reported as a load warning (``_record.find_suspect_tracking``):
-runs of 10 or more identical frames (0.4 % of the frames, in 22 runs of up
-to 1 s), which may be the motion-capture system repeating its last fix or a
+runs of 11 or more identical frames (10 or more repeats: 0.4 % of the
+frames, in 22 runs of up to 1 s), which may be the motion-capture system repeating its last fix or a
 still mouse, and samples farther than 100 cm/s from the sample before them.
 ``ry``, rotation about the vertical axis, is the yaw;
 of the three angles it alone tracks the direction of movement. Motion-capture

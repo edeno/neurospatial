@@ -45,7 +45,7 @@
       "gap": null,
       "reason": "These five recordings are in video pixels (hc-2, hc-3, hc-18, 001754, 000003), so the 5 cm default cannot apply and the smoothing follows 2.5 bins; the fix is right: hc-2 and hc-3 have a scale from a stated size, the others only bandwidth= in pixels."
     },
-    "loader UserWarning: suspect tracking, positions kept as stored: # runs of #+ identical samples (# samples, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)": {
+    "loader UserWarning: suspect tracking, positions kept as stored: # runs of #+ identical samples (# repeats, #%; # s in all, longest # s) and # samples farther than # cm/s from the last sample before them. A held run is lost tracking if the tracker repeated its last fix, or stillness; check before analysing stops (wells, ripples)": {
       "verdict": "correct",
       "gap": "G-158",
       "reason": "The survey loader's own report (001880, 000568, 000987): held runs and fast samples counted, positions kept as stored. Whether a held run is lost tracking or stillness is not tested (G-158)."

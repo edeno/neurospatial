@@ -18,8 +18,8 @@ with the video timestamps and to at most 0.85 at any shift of 5-40 s in either
 direction (checked once while writing this loader). The track runs along y
 (0.5-116.5 cm); x spans 4-21 cm, wider than the 6.35 cm track, as the LED
 moves with the head. Positions are kept as stored. Suspect tracking is
-reported as a load warning (``_record.find_suspect_tracking``): 46 runs of 10
-or more identical frames (the longest held 6 s), which may be a tracker
+reported as a load warning (``_record.find_suspect_tracking``): 46 runs of 11
+or more identical frames (10 or more repeats; the longest held 6 s), which may be a tracker
 repeating its last fix or a still mouse, and samples farther than 100 cm/s
 from the sample before them (the 99.9th percentile of this file's steps is
 218 cm/s, from jumps after held frames).
