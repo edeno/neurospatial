@@ -147,6 +147,7 @@ def load(cache: Path | None = None) -> Recording:
         units="cm",
         name=DATASET["key"],
         placement=straight_placement(fit, "cm"),
+        placed_by="samples' principal axis",
     )
     return Recording(
         dataset=DATASET["key"],

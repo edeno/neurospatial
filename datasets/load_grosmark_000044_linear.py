@@ -97,9 +97,7 @@ def declare_track(rec: Recording) -> Recording:
         placement="the stem centred on a least-squares line from the file's"
         f" linearized coordinate to the positions ({np.linalg.norm(slope):.3f} cm"
         " of 2-D distance per linearized cm), the reward areas beyond its ends",
-        # Placed by the file's own coordinate, not fitted to the sample cloud,
-        # which spreads across the reward areas; so the fit is not refused.
-        max_median_offset=np.inf,
+        placed_by="file's linearized coordinate",
         # The first 110 s (3.5 % of samples) are an excursion before the rat
         # reached the track, 140 cm and more from it; a 99th percentile would
         # make the track 3 m wide.

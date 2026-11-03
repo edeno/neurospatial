@@ -128,6 +128,10 @@ def load(cache: Path | None = None) -> Recording:
         units="cm",
         name=DATASET["key"],
         placement="the file's own frame (posx spans -160 to 160, posy is centred on 0)",
+        placed_by="authors' graph",
+        stated_lengths={
+            "length": (float(np.ptp(positions[:, 0])), 2 * _HALF_LENGTH_CM)
+        },
     )
     return Recording(
         dataset=DATASET["key"],

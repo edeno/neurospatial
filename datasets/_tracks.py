@@ -32,6 +32,13 @@ from numpy.typing import NDArray
 FIT_SAMPLES = 6000
 FIT_SEED = 0
 EDGE_POINTS = 25
+# Refusal of a fitted layout, on misfit evidence (``edge_fit``), not scatter:
+# a segment whose samples sit consistently to one side by more than a bin, or
+# a quarter of a segment's length with no sample within a bin.
+MAX_EDGE_BIAS_BINS = 1.0
+MAX_UNSUPPORTED = 0.25
+BIAS_WINDOW_BINS = 3.0
+BASE_OFFSETS = (0.05, 0.1, 0.15, 0.2)
 
 
 def graph_arrays(graph: Any) -> tuple[list[Any], NDArray[np.float64], NDArray[np.intp]]:
@@ -86,6 +93,93 @@ def graph_residual(
     if track_width is not None:
         out["share_within_half_width"] = float(np.mean(dist <= track_width / 2))
     return out
+
+
+def edge_offsets(
+    graph: Any, positions: NDArray[np.float64]
+) -> tuple[NDArray[np.intp], NDArray[np.float64], NDArray[np.float64]]:
+    """Each tracked sample's nearest segment and its signed offsets from it.
+
+    Returns
+    -------
+    segment : ndarray, shape (n_samples,)
+        Index of the nearest segment (``graph.edges`` order).
+    lateral : ndarray, shape (n_samples,)
+        Signed distance across the segment's line, positive to the left of
+        its direction from its first node to its second.
+    along : ndarray, shape (n_samples,)
+        Position of the projection along the segment as a fraction of its
+        length, unclipped: outside [0, 1] beyond an end.
+    """
+    _, nodes, edges = graph_arrays(graph)
+    samples = tracked(positions)
+    a = nodes[edges[:, 0]]
+    ab = nodes[edges[:, 1]] - a
+    length2 = np.maximum(np.einsum("ij,ij->i", ab, ab), 1e-12)
+    best = np.full(len(samples), np.inf)
+    segment = np.zeros(len(samples), dtype=np.intp)
+    lateral = np.zeros(len(samples))
+    along = np.zeros(len(samples))
+    for k in range(len(a)):
+        rel = samples - a[k]
+        t = rel @ ab[k] / length2[k]
+        dist = np.linalg.norm(rel - np.clip(t, 0, 1)[:, None] * ab[k], axis=1)
+        closer = dist < best
+        best[closer] = dist[closer]
+        segment[closer] = k
+        along[closer] = t[closer]
+        if samples.shape[1] == 2:
+            cross = ab[k, 0] * rel[:, 1] - ab[k, 1] * rel[:, 0]
+            lateral[closer] = cross[closer] / np.sqrt(length2[k])
+        else:
+            lateral[closer] = 0.0
+    return segment, lateral, along
+
+
+def edge_fit(
+    graph: Any, positions: NDArray[np.float64], *, tolerance: float
+) -> dict[str, float]:
+    """Misfit evidence for a layout on its samples, independent of any width.
+
+    ``tolerance`` is one bin along the track.
+
+    - ``median_abs_lateral``: median distance of samples from the track's line,
+      over samples that project inside a segment.
+    - ``max_edge_bias``: the largest absolute per-segment median of the
+      signed lateral offset, over samples within ``BIAS_WINDOW_BINS`` bins of
+      the segment (so tracking jumps between arms do not count): a segment
+      drawn beside its samples. A layout moved, scaled or rotated off its
+      samples shifts most of its segments sideways; a bend or a rounded
+      corner the straight segments cut is local and does not move a
+      segment's median.
+    - ``max_unsupported``: the largest per-segment share of points along it
+      with no sample within ``tolerance``: a segment where the animal never
+      was.
+    """
+    from scipy.spatial import cKDTree
+
+    _, nodes, edges = graph_arrays(graph)
+    segment, lateral, along = edge_offsets(graph, positions)
+    inside = (along > 0) & (along < 1)
+    near = inside & (np.abs(lateral) <= BIAS_WINDOW_BINS * tolerance)
+    biases = [
+        float(np.median(lateral[near & (segment == k)]))
+        for k in range(len(edges))
+        if np.sum(near & (segment == k)) >= 10
+    ]
+    tree = cKDTree(tracked(positions))
+    steps = np.linspace(0.0, 1.0, EDGE_POINTS)
+    unsupported = []
+    for u, v in edges:
+        points = nodes[u] + steps[:, None] * (nodes[v] - nodes[u])
+        unsupported.append(float(np.mean(tree.query(points)[0] > tolerance)))
+    return {
+        "median_abs_lateral": float(np.median(np.abs(lateral[inside])))
+        if inside.any()
+        else float("nan"),
+        "max_edge_bias": float(np.max(np.abs(biases))) if biases else float("nan"),
+        "max_unsupported": float(np.max(unsupported)),
+    }
 
 
 def with_positions(graph: Any, positions: Mapping[Any, Sequence[float]]) -> Any:
@@ -244,8 +338,11 @@ def parallel_arm_candidates(
 ) -> list[Any]:
     """Starting layouts for ``n_arms`` parallel arms joined by a base (a W or E).
 
-    The base runs along one side of the samples' minimum rotated rectangle and
-    the arms leave it at equal spacing; each of the four sides is a candidate.
+    The base runs along one side of the samples' minimum rotated rectangle, at
+    each of ``BASE_OFFSETS`` (shares of the rectangle's depth) inside it, and
+    the arms leave it at equal spacing; each side and offset is a candidate
+    (a base that curves into the arms, as on a 3-arm maze, fits a deeper
+    start).
     Nodes: ``base_0`` … ``base_{n-1}`` and ``arm_0`` … ``arm_{n-1}``.
     """
     from shapely.geometry import MultiPoint
@@ -258,14 +355,15 @@ def parallel_arm_candidates(
         b0, b1 = corners[k], corners[(k + 1) % 4]
         far = corners[(k + 2) % 4]
         out = far - b1
-        points: dict[str, NDArray[np.float64]] = {}
-        for i, f in enumerate(np.linspace(0.1, 0.9, n_arms)):
-            base = b0 + f * (b1 - b0) + 0.05 * out
-            points[f"base_{i}"] = base
-            points[f"arm_{i}"] = base + 0.9 * out
-        edges = [(f"base_{i}", f"base_{i + 1}") for i in range(n_arms - 1)]
-        edges += [(f"base_{i}", f"arm_{i}") for i in range(n_arms)]
-        candidates.append(graph_from_points(points, edges))
+        for offset in BASE_OFFSETS:
+            points: dict[str, NDArray[np.float64]] = {}
+            for i, f in enumerate(np.linspace(0.1, 0.9, n_arms)):
+                start = b0 + f * (b1 - b0)
+                points[f"base_{i}"] = start + offset * out
+                points[f"arm_{i}"] = start + 0.95 * out
+            edges = [(f"base_{i}", f"base_{i + 1}") for i in range(n_arms - 1)]
+            edges += [(f"base_{i}", f"arm_{i}") for i in range(n_arms)]
+            candidates.append(graph_from_points(points, edges))
     return candidates
 
 
@@ -364,6 +462,38 @@ def z_track_candidates(positions: NDArray[np.float64]) -> list[Any]:
     return candidates
 
 
+def radial_arms(
+    star: Any, positions: NDArray[np.float64], *, min_radius: float, window: float
+) -> Any:
+    """A radial maze's arms as lines through their own samples, joined at the centre.
+
+    Each arm of the fitted ``star`` is refitted as the principal axis of the
+    samples nearest it that lie more than ``min_radius`` from the centre and
+    within ``window`` of the arm: its end is their 99th percentile along the
+    axis and its base the point of the axis nearest the centre, so an arm
+    need not point exactly at the centre (the arms leave the edge of a
+    platform). Nodes ``centre``, ``base_k`` and ``arm_k``.
+    """
+    samples = tracked(positions)
+    centre = np.asarray(star.nodes["centre"]["pos"], dtype=float)
+    segment, lateral, _ = edge_offsets(star, samples)
+    radius = np.linalg.norm(samples - centre, axis=1)
+    points: dict[str, NDArray[np.float64]] = {"centre": centre}
+    edges = []
+    for k in range(star.number_of_edges()):
+        mine = (segment == k) & (radius > min_radius) & (np.abs(lateral) < window)
+        arm_samples = samples[mine]
+        mean = arm_samples.mean(axis=0)
+        axis = np.linalg.svd(arm_samples - mean, full_matrices=False)[2][0]
+        if axis @ (mean - centre) < 0:
+            axis = -axis
+        along = (arm_samples - mean) @ axis
+        points[f"base_{k}"] = mean + ((centre - mean) @ axis) * axis
+        points[f"arm_{k}"] = mean + np.quantile(along, 0.99) * axis
+        edges += [("centre", f"base_{k}"), (f"base_{k}", f"arm_{k}")]
+    return graph_from_points(points, edges)
+
+
 def x_maze_candidates(positions: NDArray[np.float64]) -> list[Any]:
     """Starting layouts for an X maze: two junctions joined by a centre bar, two arms each.
 
@@ -450,25 +580,16 @@ def edge_lengths(graph: Any, digits: int = 1) -> str:
 
 def declare(
     graph: Any,
-    positions: NDArray[np.float64],
     *,
     bin_size: float,
-    track_width: float | None,
+    track_width: float,
     units: str | None,
     name: str,
-    max_median_offset: float,
     regions: Mapping[str, Any] | None = None,
-) -> tuple[Callable[[], Any] | None, dict[str, float]]:
-    """The declared environment's builder and the fit residual, or None if refused.
-
-    The fit is refused when the samples' median distance to the graph is above
-    ``max_median_offset``. The builder caches the environment it returns.
-    """
+) -> Callable[[], Any]:
+    """A zero-argument builder of the track environment; it caches what it builds."""
     from _geometry import graph_environment
 
-    residual = graph_residual(graph, positions, track_width)
-    if residual["median_offset"] > max_median_offset:
-        return None, residual
     built: list[Any] = []
 
     def environment() -> Any:
@@ -483,25 +604,44 @@ def declare(
             built.append(env.with_regions(regions) if regions else env)
         return built[0]
 
-    return environment, residual
-
-
-def residual_text(residual: Mapping[str, float], units: str) -> str:
-    """The fit residual for ``conversions``."""
-    text = (
-        f"samples a median {residual['median_offset']:.2f} {units} from the track"
-        f" (95th percentile {residual['p95_offset']:.2f}), track length"
-        f" {residual['track_length']:.1f} {units}"
-    )
-    if "share_within_half_width" in residual:
-        text += (
-            f", {residual['share_within_half_width']:.1%} of samples within half"
-            " the track width"
-        )
-    return text
+    return environment
 
 
 MEASURED_WIDTH_QUANTILE = 0.99
+# Where a declared track's placement comes from; only FITTED ones are refused.
+PLACED_BY = (
+    "fitted to the samples",
+    "samples' principal axis",
+    "authors' graph",
+    "authors' centrelines",
+    "file's linearized coordinate",
+    "file's coordinates",
+)
+FITTED = ("fitted to the samples", "samples' principal axis")
+
+
+def misfit_reasons(fit: Mapping[str, float], bin_size: float) -> list[str]:
+    """Evidence that a fitted layout does not match its samples (``edge_fit``)."""
+    from _geometry import MAX_SIZE_RESIDUAL
+
+    reasons = []
+    if fit["max_edge_bias"] > MAX_EDGE_BIAS_BINS * bin_size:
+        reasons.append(
+            f"a segment's samples lie {fit['max_edge_bias']:.3g} to one side of it"
+            f" (limit {MAX_EDGE_BIAS_BINS:g} bin, {MAX_EDGE_BIAS_BINS * bin_size:.3g})"
+        )
+    if fit["max_unsupported"] > MAX_UNSUPPORTED:
+        reasons.append(
+            f"{fit['max_unsupported']:.0%} of a segment has no sample within a bin"
+            f" (limit {MAX_UNSUPPORTED:.0%})"
+        )
+    for key, value in fit.items():
+        if key.startswith("size_residual") and abs(value) > MAX_SIZE_RESIDUAL:
+            reasons.append(
+                f"{key.removeprefix('size_residual_')} {value:+.0%} of the stated"
+                f" length (limit {MAX_SIZE_RESIDUAL:.0%})"
+            )
+    return reasons
 
 
 def declared_geometry(
@@ -515,68 +655,105 @@ def declared_geometry(
     units: str | None,
     name: str,
     placement: str,
-    max_median_offset: float | None = None,
+    placed_by: str,
+    width_kind: str = "stated",
+    width_note: str = "",
+    stated_lengths: Mapping[str, tuple[float, float]] | None = None,
     regions: Mapping[str, Any] | None = None,
     width_quantile: float = MEASURED_WIDTH_QUANTILE,
 ) -> tuple[dict[str, Any], str]:
     """Geometry entries declaring the track, and its ``conversions`` line.
 
-    ``track_width`` is the stated full width. When no source states one, the
-    width is measured: twice the samples' ``width_quantile`` (default
-    ``MEASURED_WIDTH_QUANTILE``) distance from the graph, so that share of samples lies on the track
-    (neurospatial refuses to place positions on a track without a width),
-    and at least one bin (positions on a 1-D track lie on it exactly).
+    The width is one of three kinds:
 
-    Returns ``{"environment": builder, "declared_graph": graph}`` and a line
-    naming the layout, its source, how it was placed and the fit residual; or,
-    when the fit is refused (median sample distance above
-    ``max_median_offset``, default half the stated width or else two bins),
-    no entries and a line saying why the recording stays inferred.
+    - ``"stated"``: ``track_width`` from a source read;
+    - ``"chosen"``: ``track_width`` picked by the loader where a stated value
+      is not used (``width_note`` says why);
+    - ``"measured"`` (``track_width`` None): not a physical width but a
+      placement tolerance, twice the samples' ``width_quantile`` distance from
+      the graph (at least one bin), so that about ``1 - width_quantile`` of
+      the samples are dropped by construction. neurospatial will not place
+      positions on a track without a width (G-150), and ``track_width`` is
+      both the apparatus's width and that tolerance (G-152).
+
+    ``placed_by`` (one of ``PLACED_BY``) says where the placement comes from.
+    Only a layout ``FITTED`` to the samples is refused, on misfit evidence
+    (``misfit_reasons``): a segment drawn beside its samples, a segment with
+    no samples near it, or a length beyond ``_geometry.MAX_SIZE_RESIDUAL`` of
+    a stated one (``stated_lengths``: label -> (fitted, stated)). Scatter
+    across the track is not misfit. The authors' geometry and the file's own
+    coordinates are not fitted, so they are not refused here; the fidelity
+    study judges them.
+
+    Returns the entries (``environment``, ``declared_graph``,
+    ``declared_track_width``, ``declared_track_width_kind``,
+    ``declared_from``, ``environment_fit``) and a line naming the layout, its
+    source, the width, the placement and the fit; or, when the fit is
+    refused, no entries and a line saying why the recording stays inferred.
     """
+    if placed_by not in PLACED_BY:
+        msg = f"placed_by must be one of {PLACED_BY}, not {placed_by!r}"
+        raise ValueError(msg)
     label = units or "units"
     if track_width is None:
         _, nodes, edges = graph_arrays(graph)
         offsets = segment_distance(tracked(positions), nodes, edges)
         measured = 2 * float(np.quantile(offsets, width_quantile))
         width = max(measured, bin_size)
+        width_kind = "measured"
         width_text = (
-            f"track width not stated; measured {width:.3g} {label}, twice the"
-            f" samples' {width_quantile:.0%} quantile distance from the track"
+            f"placement tolerance {width:.3g} {label} (measured, not a physical"
+            f" width: twice the samples' {width_quantile:.0%} quantile distance"
+            " from the track"
             + ("" if measured >= bin_size else ", raised to one bin")
+            + ")"
         )
     else:
         width = track_width
-        width_text = f"track width {track_width:g} {label} (stated)"
-    bound = (
-        max_median_offset
-        if max_median_offset is not None
-        else (track_width / 2 if track_width is not None else 2 * bin_size)
-    )
-    builder, residual = declare(
-        graph,
-        positions,
-        bin_size=bin_size,
-        track_width=width,
-        units=units,
-        name=name,
-        max_median_offset=bound,
-        regions=regions,
-    )
-    if builder is None:
+        width_text = f"track width {track_width:g} {label} ({width_kind}"
+        width_text += f": {width_note})" if width_note else ")"
+    fit = edge_fit(graph, positions, tolerance=bin_size)
+    fit["max_edge_bias_limit"] = MAX_EDGE_BIAS_BINS * bin_size
+    for key, (fitted, stated) in (stated_lengths or {}).items():
+        fit[f"size_residual_{key}"] = fitted / stated - 1
+    residual = graph_residual(graph, positions, width)
+    fit["share_within_half_width"] = residual["share_within_half_width"]
+    reasons = misfit_reasons(fit, bin_size) if placed_by in FITTED else []
+    if reasons:
         return {}, (
-            f"environment: inferred; the {kind} fit ({source}) was refused: samples a"
-            f" median {residual['median_offset']:.2f} {label} from it, above the"
-            f" {bound:g} allowed"
+            f"environment: inferred; the {kind} fit ({source}; {placement}) was"
+            f" refused: {'; '.join(reasons)}"
         )
     entries = {
-        "environment": builder,
+        "environment": declare(
+            graph,
+            bin_size=bin_size,
+            track_width=width,
+            units=units,
+            name=name,
+            regions=regions,
+        ),
         "declared_graph": graph,
         "declared_track_width": width,
-        "declared_track_width_stated": track_width is not None,
+        "declared_track_width_kind": width_kind,
+        "declared_from": placed_by,
+        "environment_fit": fit,
     }
+    lengths = "".join(
+        f", {key.removeprefix('size_residual_')} {value:+.0%} of the stated"
+        for key, value in fit.items()
+        if key.startswith("size_residual")
+    )
+    within = f"{fit['share_within_half_width']:.1%} of samples within half the width"
+    if width_kind == "measured":
+        within += " (by construction: the tolerance is set from that share)"
     return entries, (
         f"environment: declared {kind} ({source}); {width_text}; placement:"
-        f" {placement}; fit: {residual_text(residual, label)}"
+        f" {placement} ({placed_by}); fit: median |lateral offset|"
+        f" {fit['median_abs_lateral']:.2f} {label}, worst segment bias"
+        f" {fit['max_edge_bias']:.2f} {label} (limit {fit['max_edge_bias_limit']:.3g}),"
+        f" worst unsupported share of a segment {fit['max_unsupported']:.0%}{lengths};"
+        f" track length {residual['track_length']:.1f} {label}; {within}"
     )
 
 
@@ -695,3 +872,12 @@ def densest_point(
     counts, xe, ye = np.histogram2d(samples[:, 0], samples[:, 1], bins=bins)
     i, j = np.unravel_index(np.argmax(counts), counts.shape)
     return np.array([(xe[i] + xe[i + 1]) / 2, (ye[j] + ye[j + 1]) / 2])
+
+
+def parallel_arm_lengths(graph: Any) -> tuple[float, float]:
+    """A parallel-arm (W or E) graph's base length and mean arm length."""
+    base = sum(
+        d for u, v, d in graph.edges(data="distance") if u[:4] == v[:4] == "base"
+    )
+    arms = [d for u, v, d in graph.edges(data="distance") if "arm" in u + v]
+    return float(base), float(np.mean(arms))

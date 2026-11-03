@@ -151,6 +151,8 @@ def load(cache: Path | None = None) -> Recording:
         units="cm",
         name=DATASET["key"],
         placement="the file's track coordinate, from its smallest to its largest value",
+        placed_by="file's coordinates",
+        stated_lengths={"length": (float(ends[1] - ends[0]), 4800.0)},
     )
     return Recording(
         dataset=DATASET["key"],

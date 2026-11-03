@@ -271,6 +271,8 @@ def declare_circle(rec: Recording) -> Recording:
         track_width=None,
         units="cm",
         name=DATASET["key"],
+        placed_by="fitted to the samples",
+        stated_lengths={"diameter": (2 * radius, DIAMETER_CM)},
         placement=f"centre ({centre[0]:.1f}, {centre[1]:.1f}) cm from a robust"
         f" circle fit to the on-track samples (their own radius {radius:.1f} cm);"
         f" lap start region across the track at the file's linearized zero,"

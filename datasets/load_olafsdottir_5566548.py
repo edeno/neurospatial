@@ -318,6 +318,15 @@ def load(cache: Path | None = None) -> Recording:
         track_width=_RUNWAY_WIDTH_CM,
         units="cm",
         name=DATASET["key"],
+        placed_by="fitted to the samples",
+        stated_lengths={
+            name: (graph.edges[u, v]["distance"], stated)
+            for name, (u, v), stated in (
+                ("first section", ("end_0", "turn_0"), 190.0),
+                ("diagonal", ("turn_0", "turn_1"), 220.0),
+                ("last section", ("turn_1", "end_1"), 190.0),
+            )
+        },
         placement="node positions fitted to the samples; sections (cm):"
         f" {edge_lengths(graph)} (stated 190, 220, 190)",
     )

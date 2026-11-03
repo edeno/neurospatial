@@ -276,6 +276,8 @@ def load(cache: Path | None = None) -> Recording:
         units="cm",
         name=DATASET["key"],
         placement=straight_placement(fit, "cm"),
+        placed_by="samples' principal axis",
+        stated_lengths={"length": (fit["samples_span"], TRACK_CM)},
     )
     return with_declared(rec, entries, line)
 

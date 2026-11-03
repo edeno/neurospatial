@@ -255,11 +255,14 @@ def load(cache: Path | None = None) -> Recording:
         " on a 1.5 inch grid",
         bin_size=rec.params["graph_bin_size"],
         track_width=rec.geometry["track_width"],
+        width_kind="chosen",
+        width_note="the corridor pitch, so a corridor's footprint ends at the wall"
+        " it shares with its neighbour; the paper's corridors are 1-1/8 in on a"
+        " 1.5 in grid, 0.75 cell, at which 18% of nose samples fall outside",
         units=None,
         name=DATASET["key"],
-        placement="the maze cells of the repository's own alignment (not fitted)",
-        # The authors' graph is not a fitted placement, so it is not refused.
-        max_median_offset=np.inf,
+        placement="the maze cells of the repository's own alignment",
+        placed_by="authors' graph",
     )
     return with_declared(rec, entries, line)
 

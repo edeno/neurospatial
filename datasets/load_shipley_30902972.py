@@ -38,8 +38,10 @@ train and test the decoder at ``dt`` 0.25 s.
 Declared environment (``geometry["environment"]``): the radial maze (Shipley
 et al. 2026, Methods: eight 80 x 10 cm arms on an octagonal centre platform
 24.7 cm across) as a star of eight arms from one centre node, fitted to the
-maze trials' samples, with the stated 10 cm arm width; the platform is
-represented by the arms' shared centre. The fit is in ``conversions``.
+maze trials' samples and each arm then refitted to its own samples (an arm
+leaves the platform's edge, so it need not point exactly at the centre),
+with the stated 10 cm arm width; the platform is represented by the short
+segments joining the arms to one centre node. The fit is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -62,6 +64,7 @@ from _tracks import (
     declared_geometry,
     densest_point,
     fitted_maze,
+    radial_arms,
     star_candidates,
     with_declared,
 )
@@ -102,6 +105,9 @@ _FILES = {
 _SAMPLING_HZ = 30000.0
 _SPAN_CM = (140.0, 220.0)
 _ARM_WIDTH_CM = 10.0
+# Centre to arm end: an 80 cm arm from the edge of a 24.7 cm platform.
+_ARM_REACH_CM = 80.0 + 24.7 / 2
+_PLATFORM_CM = 20.0
 _FIT_CAP_CM = 10.0
 _MAX_RESIDUAL_S = 0.05
 
@@ -230,23 +236,34 @@ def load(cache: Path | None = None) -> Recording:
     for start, stop in maze_trials:
         in_maze |= (times >= start) & (times <= stop)
     maze_xy = np.where(in_maze[:, None], positions, np.nan)
-    graph = fitted_maze(
+    star = fitted_maze(
         star_candidates(maze_xy, 8, densest_point(maze_xy)), maze_xy, cap=_FIT_CAP_CM
     )
-    arms = [d for _, _, d in graph.edges(data="distance")]
+    graph = radial_arms(star, maze_xy, min_radius=_PLATFORM_CM, window=_FIT_CAP_CM)
+    centre = np.asarray(graph.nodes["centre"]["pos"])
+    reach = {
+        f"arm {k}": float(
+            np.linalg.norm(np.asarray(graph.nodes[f"arm_{k}"]["pos"]) - centre)
+        )
+        for k in range(8)
+    }
     entries, line = declared_geometry(
         graph,
         maze_xy,
-        kind="8-arm radial maze: eight arms from a centre",
+        kind="8-arm radial maze: eight arms joined at a centre",
         source="Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an"
         " octagonal centre platform (24.7cm diameter, 10cm sides)'",
         bin_size=3.0,
         track_width=_ARM_WIDTH_CM,
         units="cm",
         name=DATASET["key"],
-        placement="node positions fitted to the maze trials' samples; centre to arm"
-        f" end {min(arms):.1f}-{max(arms):.1f} cm (stated 80 cm arms from a 24.7 cm"
-        " platform: 92.35 cm); the platform is the arms' shared centre node",
+        placed_by="fitted to the samples",
+        stated_lengths={k: (v, _ARM_REACH_CM) for k, v in reach.items()},
+        placement="a star fitted to the maze trials' samples, then each arm the"
+        " principal axis of its own samples beyond the platform, joined to the"
+        f" centre; centre to arm end {min(reach.values()):.1f}-"
+        f"{max(reach.values()):.1f} cm (stated 80 cm arms from a 24.7 cm platform:"
+        f" {_ARM_REACH_CM:g} cm)",
     )
     return with_declared(rec, entries, line)
 

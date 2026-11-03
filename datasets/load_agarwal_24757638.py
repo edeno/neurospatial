@@ -193,6 +193,7 @@ def load(cache: Path | None = None) -> Recording:
         track_width=None,
         units="cm",
         name=DATASET["key"],
+        placed_by="fitted to the samples",
         placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')});"
         f" edges (cm): {edge_lengths(graph)}",
     )

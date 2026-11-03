@@ -227,6 +227,7 @@ def load(cache: Path | None = None) -> Recording:
         track_width=None,
         units="pixel",
         name=DATASET["key"],
+        placed_by="fitted to the samples",
         placement="the travel samples' median radius in each of"
         f" {_LOOP_POINTS} equal angular sectors around their centre; lap cut"
         " (geometry['lap_start_region']) at the loop's westmost point, a stated"

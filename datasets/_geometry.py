@@ -19,6 +19,10 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+# A stated size more than this share away from the samples' own fitted size
+# is refused: the stated apparatus, the unit or the session is then wrong.
+MAX_SIZE_RESIDUAL = 0.15
+
 
 def graph_edge_order(graph: Any, root: Any = None) -> list[tuple[Any, Any]]:
     """Every edge of ``graph``: a depth-first walk from ``root``, then the rest.

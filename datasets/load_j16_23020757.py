@@ -187,9 +187,8 @@ def load(cache: Path | None = None) -> Recording:
         track_width=_HALLWAY_CM,
         units="cm",
         name=DATASET["key"],
-        placement="the file's node positions (not fitted)",
-        # The authors' graph is not a fitted placement, so it is not refused.
-        max_median_offset=np.inf,
+        placement="the file's node positions",
+        placed_by="authors' graph",
     )
     return with_declared(rec, entries, line)
 

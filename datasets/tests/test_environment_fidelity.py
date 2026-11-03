@@ -278,6 +278,7 @@ def test_declared_track_is_measured_against_the_independent_reference():
         units="cm",
         name="track",
         placement="p",
+        placed_by="samples' principal axis",
     )
     rec = Recording(
         dataset="track",
@@ -296,7 +297,7 @@ def test_declared_track_is_measured_against_the_independent_reference():
     # Samples beyond 3 cm of the axis: 2 x P(N(0, 2) > 3) = 13.4 %.
     assert out["frac_samples_outside"] == pytest.approx(0.134, abs=0.02)
     assert out["track_width"] == 6.0
-    assert out["track_width_stated"] is True
+    assert out["track_width_kind"] == "stated"
     assert out["env"]["components"] == 1
     assert out["reference"]["env_over_track_median"] == pytest.approx(1.0, abs=0.05)
     assert out["verdict"] == "matches"

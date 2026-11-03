@@ -350,6 +350,8 @@ def load(cache: Path | None = None) -> Recording:
         units="pixel",
         name=DATASET["key"],
         placement=straight_placement(fit, "pixel"),
+        # The pixel scale comes from the same 250 cm, so no length is compared.
+        placed_by="samples' principal axis",
     )
     return with_declared(rec, entries, line)
 

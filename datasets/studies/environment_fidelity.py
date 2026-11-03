@@ -1705,7 +1705,7 @@ def measure_declared(
         "layout": env.layout_type,
         "frac_samples_outside": float(np.mean(np.asarray(env.bin_at(samples)) < 0)),
         "track_width": rec.geometry.get("declared_track_width"),
-        "track_width_stated": rec.geometry.get("declared_track_width_stated"),
+        "track_width_kind": rec.geometry.get("declared_track_width_kind"),
         "env": measures,
     }
     view: dict[str, Any] = {"env": measures}
@@ -1794,7 +1794,7 @@ def render(rows: list[dict[str, Any]]) -> str:
                 "–"
                 if dec["track_width"] is None
                 else f"{dec['track_width']:.3g}"
-                + (" stated" if dec["track_width_stated"] else " measured")
+                 f" {dec['track_width_kind']}"
             )
             track = (
                 f"{_fmt(ref.get('env_over_track_median'), '.2f')}, {_fmt(ref.get('env_over_track_p05'), '.2f')}"

@@ -223,10 +223,9 @@ def load(cache: Path | None = None) -> Recording:
         track_width=None,
         units="cm",
         name=DATASET["key"],
-        placement=f"the centrelines in cm (not fitted), simplified to within"
+        placement=f"the centrelines in cm, simplified to within"
         f" {_SIMPLIFY_CM:g} cm ({graph.number_of_edges()} segments)",
-        # The authors' centrelines are not a fitted placement, so they are not refused.
-        max_median_offset=np.inf,
+        placed_by="authors' centrelines",
     )
     return with_declared(rec, entries, line)
 

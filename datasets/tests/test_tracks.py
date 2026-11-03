@@ -21,6 +21,7 @@ from _tracks import (
     segment_distance,
     star_candidates,
     straight_track,
+    with_positions,
     x_maze_candidates,
     z_track_candidates,
 )
@@ -37,14 +38,15 @@ def rotate(
     return points @ rot.T + np.asarray(shift)
 
 
-def samples_along(graph: nx.Graph, n: int, noise: float) -> np.ndarray:
-    """Points spread along every edge in proportion to its length, plus noise."""
+def samples_along(graph: nx.Graph, n: int, noise: float, seed: int = 0) -> np.ndarray:
+    """Points spread along every edge in proportion to its length, plus noise (seeded)."""
+    rng = np.random.default_rng(seed)
     _, nodes, edges = graph_arrays(graph)
     lengths = np.linalg.norm(nodes[edges[:, 1]] - nodes[edges[:, 0]], axis=1)
-    which = RNG.choice(len(edges), n, p=lengths / lengths.sum())
-    t = RNG.uniform(0, 1, n)[:, None]
+    which = rng.choice(len(edges), n, p=lengths / lengths.sum())
+    t = rng.uniform(0, 1, n)[:, None]
     a, b = nodes[edges[which, 0]], nodes[edges[which, 1]]
-    return a + t * (b - a) + RNG.normal(0, noise, (n, 2))
+    return a + t * (b - a) + rng.normal(0, noise, (n, 2))
 
 
 def node_error(fitted: nx.Graph, truth: nx.Graph) -> float:
@@ -176,51 +178,99 @@ def test_loop_centreline_and_circle_fit_recover_a_ring():
     assert fitted == pytest.approx(50.0, abs=0.5)
 
 
-def test_declared_geometry_states_measures_or_refuses_the_width():
+def _declare(graph, points, **kwargs):
+    options = {
+        "kind": "track",
+        "source": "s",
+        "bin_size": 2.5,
+        "track_width": 7.0,
+        "units": "cm",
+        "name": "t",
+        "placement": "p",
+        "placed_by": "fitted to the samples",
+    }
+    return declared_geometry(graph, points, **(options | kwargs))
+
+
+def test_declared_geometry_has_three_kinds_of_width():
     graph, _ = straight_track(np.array([[0.0, 0.0], [100.0, 0.0]]), 100.0)
     points = np.column_stack([RNG.uniform(0, 100, 5000), RNG.normal(0, 2.0, 5000)])
-    stated, line = declared_geometry(
-        graph,
-        points,
-        kind="track",
-        source="s",
-        bin_size=2.0,
-        track_width=6.0,
-        units="cm",
-        name="t",
-        placement="p",
-    )
+    stated, line = _declare(graph, points, bin_size=2.0, track_width=6.0)
     assert stated["declared_track_width"] == 6.0
+    assert stated["declared_track_width_kind"] == "stated"
     assert "(stated)" in line
     assert stated["environment"]().n_bins == 50
-    measured, line = declared_geometry(
-        graph,
-        points,
-        kind="track",
-        source="s",
-        bin_size=2.0,
-        track_width=None,
-        units="cm",
-        name="t",
-        placement="p",
+    chosen, line = _declare(
+        graph, points, track_width=8.0, width_kind="chosen", width_note="why"
     )
+    assert chosen["declared_track_width_kind"] == "chosen"
+    assert "(chosen: why)" in line
+    measured, line = _declare(graph, points, bin_size=2.0, track_width=None)
     # Twice the 99th percentile of |N(0, 2)|: 2 * 2.576 * 2.
     assert measured["declared_track_width"] == pytest.approx(10.3, abs=0.5)
-    assert "measured" in line
-    off = points + np.array([0.0, 8.0])
-    refused, line = declared_geometry(
-        graph,
-        off,
-        kind="track",
-        source="s",
-        bin_size=2.0,
-        track_width=6.0,
-        units="cm",
-        name="t",
-        placement="p",
+    assert measured["declared_track_width_kind"] == "measured"
+    assert "placement tolerance" in line
+    assert "by construction" in line
+    # The width-independent fit: |N(0, 2)| has a median of 0.674 x 2.
+    fit = measured["environment_fit"]
+    assert fit["median_abs_lateral"] == pytest.approx(1.35, abs=0.1)
+    assert fit["max_edge_bias"] < 0.2
+
+
+@pytest.fixture(scope="module")
+def scattered_w():
+    """A W-track sampled with 3 cm of lateral scatter: about a quarter of the
+    samples lie beyond the 7 cm width, yet the track is where they are."""
+    truth = w_track(0.0, (0.0, 0.0))
+    points = samples_along(truth, 8000, noise=3.0)
+    return truth, points
+
+
+def test_lateral_scatter_is_not_refused(scattered_w):
+    truth, points = scattered_w
+    entries, line = _declare(truth, points)
+    assert entries, line
+    assert entries["environment_fit"]["share_within_half_width"] < 0.8
+
+
+@pytest.mark.parametrize(
+    ("change", "why"),
+    [
+        (
+            lambda p: 0.88 * (p - np.array([40.0, 40.0])) + np.array([40.0, 40.0]),
+            "side",
+        ),
+        (
+            # About the corner node base_0: the far arms move sideways.
+            lambda p: rotate(p[None], 6.0, (0.0, 0.0))[0],
+            "side",
+        ),
+    ],
+    ids=["scaled_by_0.88", "rotated_6_degrees"],
+)
+def test_a_subtly_misplaced_layout_is_refused(scattered_w, change, why):
+    truth, points = scattered_w
+    moved = with_positions(
+        truth, {n: change(np.asarray(p, float)) for n, p in truth.nodes(data="pos")}
     )
-    assert refused == {}
+    entries, line = _declare(moved, points)
+    assert entries == {}
     assert line.startswith("environment: inferred")
+    assert why in line
+
+
+def test_a_wrong_stated_length_is_refused_but_the_authors_geometry_is_not(scattered_w):
+    truth, points = scattered_w
+    entries, line = _declare(truth, points, stated_lengths={"arms": (80.0, 95.0)})
+    assert entries == {}
+    assert "arms -16% of the stated length" in line
+    entries, _ = _declare(
+        truth, points, stated_lengths={"arms": (80.0, 95.0)}, placed_by="authors' graph"
+    )
+    assert entries["declared_from"] == "authors' graph"
+    assert entries["environment_fit"]["size_residual_arms"] == pytest.approx(
+        -0.158, abs=0.001
+    )
 
 
 @pytest.fixture
@@ -244,6 +294,7 @@ def loop_recording(simulated_recording):
         units="cm",
         name="loop",
         placement="p",
+        placed_by="fitted to the samples",
     )
     return replace(
         simulated_recording,

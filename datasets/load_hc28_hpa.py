@@ -72,6 +72,7 @@ from _tracks import (
     edge_lengths,
     fitted_maze,
     parallel_arm_candidates,
+    parallel_arm_lengths,
 )
 
 TRACK_WIDTH_CM = 7.0
@@ -200,6 +201,14 @@ def load(cache: Path | None = None) -> Recording:
         track_width=TRACK_WIDTH_CM,
         units="cm",
         name=DATASET["key"],
+        placed_by="fitted to the samples",
+        stated_lengths=dict(
+            zip(
+                ("base", "arms"),
+                ((x, 80.0) for x in parallel_arm_lengths(graph)),
+                strict=True,
+            )
+        ),
         placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')};"
         f" stated about 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
     )

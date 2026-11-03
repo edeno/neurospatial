@@ -55,6 +55,7 @@ from _tracks import (
     edge_lengths,
     fitted_maze,
     parallel_arm_candidates,
+    parallel_arm_lengths,
 )
 
 DATASET = {
@@ -147,6 +148,14 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
         track_width=TRACK_WIDTH_CM,
         units="cm",
         name=dataset["key"],
+        placed_by="fitted to the samples",
+        stated_lengths=dict(
+            zip(
+                ("base", "arms"),
+                ((x, 80.0) for x in parallel_arm_lengths(graph)),
+                strict=True,
+            )
+        ),
         placement=f"node positions fitted to this maze's samples ({arms_text(graph, 'cm')};"
         f" stated about 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
     )
