@@ -11,38 +11,42 @@ environment from the samples, as before this batch). The fidelity study
 and, beside it, the samples-built one against the same outline, bars or room
 ([results/studies/environment_fidelity.md](results/studies/environment_fidelity.md),
 section "Declared against samples-built environments"). New gaps: G-130 to
-G-134 in [GAPS.md](GAPS.md); added evidence on G-005, G-015, G-025, G-082,
+G-135 in [GAPS.md](GAPS.md); added evidence on G-005, G-015, G-025, G-082,
 G-111 and G-114 (resolved in the harness).
 
 ## How a stated arena is placed
 
 `_geometry.declared_rectangle` and `declared_circle` take the stated size
 from the source and fit only the placement to the tracked samples: centre
-and rotation from the samples' minimum rotated rectangle (after trimming
-0.1 % of each tail per axis), or the centre of a least-squares circle fit to
-their convex hull, unless the source states the centre. The environment is
+and rotation from the samples' minimum rotated rectangle, or the centre of
+their minimum bounding circle (both after trimming 0.1 % of each tail per
+axis), unless the source states the centre. The environment is
 `Environment.from_polygon` on the placed shape at the loader's `bin_size`,
-so its outline is a declared wall. The residual is the samples' own fitted
-size over the stated one, minus 1; it is negative when the tracked point
-stays off the walls. A residual beyond 15 % is refused
-(`_geometry.MAX_SIZE_RESIDUAL`): the stated size, the unit or the session's
-apparatus is then wrong. Each loader writes the placement and residuals as
-its last `conversions` line.
+so its outline is a declared wall (a drop edge for hc-2's elevated
+platform). The residual is the samples' own fitted size over the stated
+one, minus 1; it is negative when the tracked point stays off the walls.
+The loader refuses the stated size when the samples fall more than 15 %
+short of it (`_geometry.MAX_SIZE_RESIDUAL`; animals often keep off walls)
+or reach past it by more than one bin over the side (half a bin at each
+wall, which the grid cannot resolve), and a stated centre more than 15 % of
+the radius from the samples' centre (`MAX_CENTRE_OFFSET`, a frame or unit
+error). Each loader writes the placement and residuals as its last
+`conversions` line and keeps them in `geometry["environment_fit"]`.
 
 ## Per recording
 
 | Recording | Environment | Source (read) | Placement | Residual (samples' fit vs stated) | Samples outside |
 | --- | --- | --- | --- | --- | --- |
 | sargolini_000582 | declared: 100 x 100 cm square | NWB `session_description`: "a 1 x 1 meter enclosure" | fitted: centre (0.0, 0.1), rotation 90 deg | 99.5 x 97.1 cm: -0.5 %, -2.9 % | 0.02 % |
-| miniscope_002030 | declared: 96 cm circle | DANDI 002030 description: "circular open-field arena (96 cm in diameter)" | fitted centre (57.6, 56.5) | 94.6 cm: -1.5 % | 0.73 % |
+| miniscope_002030 | declared: 96 cm circle | DANDI 002030 description: "circular open-field arena (96 cm in diameter)" | fitted centre (57.8, 56.2) | 95.9 cm: -0.1 % | 0.03 % |
 | giocomo_000405 | declared: 150 x 130 cm rectangle | Gonzalez & Giocomo 2024, eLife 13:RP85646, Methods "Open-Field" (open-access PDF): "The dimensions of field are 1.3m x 1.5m" | fitted: centre (-2.1, 64.5); the 1.5 m side matched to the samples' longer side | 138 x 120 cm: -8.2 %, -8.0 % | 0 % |
 | gardner_2022_grid | declared: 150 x 150 cm square | Gardner et al. 2022, Nature 602:123, Methods "Open-field foraging task" (open-access PDF): "square open-field (OF) arena of size 1.5 x 1.5 m", 50 cm walls | fitted: centre (1.0, -0.1) | 146 x 145 cm: -2.9 %, -3.3 % | 0 % |
-| vollan_of | declared: 150 cm circle | Vollan et al. 2025 Methods (Zotero PDF): the one exception to the 150 cm box, "a circular arena 150 cm in diameter", for a dark-room session and the lit session after it in the same arena; the file's session type `open_field_light` | stated centre (0, 0) (`mat_files.md`: "relative to arena center"); fitted centre 0.9 cm off | 140 cm: -6.6 % | 0 % |
+| vollan_of | declared: 150 cm circle | Vollan et al. 2025 Methods (Zotero PDF): the one exception to the 150 cm box, "a circular arena 150 cm in diameter", for a dark-room session and the lit session after it in the same arena; the file's session type `open_field_light` | stated centre (0, 0) (`mat_files.md`: "relative to arena center"); fitted centre 1.65 cm off | 144 cm: -4.3 % | 0 % |
 | kanter_2025 | declared: 100 x 100 cm square | NWB epochs table: `arena_dimensions` [100, 100, 50] cm | fitted: centre (8.7, -24.8) (the stated frame, "Bottom left of the arena", does not hold) | 97.4 x 96.6 cm: -2.6 %, -3.4 % | 0 % |
-| watermaze_10248158 | declared: circle of radius 95 units | `Experiment.json` `arena.bounds` (centre and radius) | stated centre (133.7, 103.5); fitted centre 1.9 units off | 187 units: -1.6 % | 0.34 % |
-| hc2_ec013_527 | declared: 180 cm square, 180.8 px at the inferred scale | hc-2 description: ec013.527 180 cm square (Mizuseki et al. 2012 Methods list the lab's 180 x 180 cm open field) | fitted: centre (170, 117) px | 177 x 175 px: -2.1 %, -3.0 % (the longer side is the scale's source, so only the shorter side is a check) | 0.01 % |
+| watermaze_10248158 | declared: circle of radius 95 units | `Experiment.json` `arena.bounds` (centre and radius) | stated centre (133.7, 103.5); fitted centre 2.6 units off | 192 units: +1.0 % (within one 5-unit bin) | 0.34 % |
+| hc2_ec013_527 | declared: 180 cm square with a drop edge, 180.8 px at the inferred scale | `crcns-hc2-data-description.pdf` (read): "an elevated square platform (180 cm x 180 cm, or 120 cm x 120 cm)", ec013.527 180 cm in its session table | fitted: centre (170, 117) px | 177 x 175 px: -2.1 %, -3.0 % (the longer side is the scale's source, so only the shorter side is a check) | 0.01 % |
 | grieves_2020_lattice | declared: the 147 bars as a graph, 343 crossings, 882 segments, all kept | Grieves et al. 2020 Supplementary Methods (open access): 6 x 6 x 6 cubic lattice, 0.97 m a side, tubes 150 mm long and 10 mm across; the file's `lattice_3d` bars and `lattice_type` "diagonal" | the file's bars, in the positions' frame (not fitted) | head a median 6.0 cm from the nearest bar (99th percentile 15.4); `track_width` 30.8 cm = 2 x that 99th percentile | 1.0 % |
-| yartsev_bat_demo | declared: the room, every 0.2 m voxel inside `r_lim` (5.8 x 5.2 x 2.3 m) | `NP_Bat_Demo.m` (`r_lim`, "boundaries of the room"); Forli et al. 2025 Methods (Zotero full text): "an indoor flight room (n = 4 bats, 5.6 m x 5.2 m x 2.5 m)" | the file's frame (not fitted) | samples span 5.69 x 6.72 x 1.88 m; outside `r_lim` 3.66 %, outside the paper's size centred on `r_lim` 3.77 % | 3.66 % |
+| yartsev_bat_demo | declared: the room, every voxel of a grid tiling `r_lim` (5.8 x 5.2 x 2.3 m) exactly, 29 x 26 x 11 cells of 0.2 x 0.2 x 0.209 m | `NP_Bat_Demo.m` (`r_lim`, "boundaries of the room"); Forli et al. 2025 Methods (Zotero full text): "an indoor flight room (n = 4 bats, 5.6 m x 5.2 m x 2.5 m)" | the file's frame (not fitted) | samples span 5.69 x 6.72 x 1.88 m; outside `r_lim` 3.66 %, outside the paper's size centred on `r_lim` 3.77 % | 3.66 % |
 | rsc_000987 | inferred | NWB: "square arena"; Mehrotra, Levenstein et al. 2023 bioRxiv Methods (open-access PDF): square of "removable walls (width: 80 cm, height: 50 cm)" | – | 52.6 x 52.1 cm against 80 cm: -34 %, refused (G-130) | – |
 | ca1ca3_001880 | inferred | no size in the file or the DANDI description; the paper (Neuron 2026) could not be read | – | – | – |
 | hafting_2008_nird | inferred | archive readme (read): "a linear track (mostly 320 cm)", no width | – | `Environment.bin_at` refuses a track without `track_width`, and no source gives one | – |
@@ -78,7 +82,7 @@ Each cell: declared / inferred (`results/` / `results/inferred_env/`).
 | Recording | Bins | Visited bins | Spatial information (median bits/spike) | Border score (median) | Egocentric boundary: peak in last ring, preferred distance (median) | Decoding error (median / chance) | Laps |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | sargolini_000582 | 1601 / 1399 | 87 % / 100 % | 0.95 / 1.01 | -0.43 / refused (G-005) | – (one LED) | 64.3 / 56.2 cm; 66.0 / 56.6 cm | refused / 1 |
-| miniscope_002030 | 1153 / 455 | 36 % / 100 % | – (imaging) | – | – | – | refused / 1 |
+| miniscope_002030 | 1153 / 455 | 37 % / 100 % | – (imaging) | – | – | – | refused / 1 |
 | giocomo_000405 | 3121 / 2076 | 67 % / 100 % | – (binned rates) | – | – | – | refused / 0 |
 | gardner_2022_grid | 3601 / 3463 | 97 % / 100 % | 0.479 / 0.479 | -0.23 / refused | 13 %, 12.5 cm / 10 %, 12.5 cm | 7.07 / 78.1 cm; 7.07 / 78.2 cm | refused / refused |
 | vollan_of | 2828 / 2041 | 72 % / 100 % | 0.38 / 0.44 | -1 / refused (G-131) | 5 %, 7.5 cm / 48 %, 42.5 cm | 8.54 / 64.9 cm; 8.54 / 66.0 cm | refused / 0 |
@@ -86,11 +90,11 @@ Each cell: declared / inferred (`results/` / `results/inferred_env/`).
 | watermaze_10248158 | 1124 / 1144 | 99 % / 100 % | – (behaviour only) | – | – | – | refused / refused |
 | hc2_ec013_527 | 5329 / 3210 | 60 % / 100 % | 1.44 / 1.66 | -1 / refused (G-131) | refused (pixels, G-133) | 74.1 / 105 px; 83.4 / 110 px | refused / 1 |
 | grieves_2020_lattice | 4410 / 8193 | 57 % / 100 % | 0.86 / 0.78 | refused (3-D) | – | 97.0 / 97.0 cm; 82.7 / 76.8 cm | 1 (G-134) / refused |
-| yartsev_bat_demo | 9048 / 1352 | 13 % / 89 % | 3.50 / 3.47 | refused (3-D) | – | 2.12 / 2.55 m; 2.18 / 2.64 m | refused / refused |
+| yartsev_bat_demo | 8294 / 1352 | 14 % / 89 % | 3.52 / 3.47 | refused (3-D) | – | 2.36 / 2.56 m; 2.18 / 2.64 m | refused / refused |
 
 **Occupancy and rate maps.** A declared arena keeps the bins the animal never
 visited, as NaN: 3 % of Gardner's (143 min, walls reached), 13 % of
-000582's, 28 % of Vollan's, 35 % of Kanter's, 40 % of hc-2's, 87 % of the
+000582's, 28 % of Vollan's, 35 % of Kanter's, 40 % of hc-2's, 86 % of the
 bat's room in flight. Occupancy totals change by under 1 % (a few samples
 outside the outline are dropped: 0.2 s of 600 s on 000582). The maps no
 longer stop at the edge of the visited bins, so a map now shows where the
@@ -109,8 +113,11 @@ units of 644 (Vollan 250 -> 237).
 correlation. Units that are not grid cells lose a score more often: Kanter
 235 -> 144 finite (the lost ones scored a median -0.37 and at most 0.38 on
 the samples-built environment), Vollan 611 -> 593 (at most -0.02), 000582 6
--> 5 (the lost unit scored 0.006). Why the autocorrelogram leaves these
-scores NaN on the declared grid was not traced.
+-> 5 (the lost unit scored 0.006). On Kanter the drop is not the grid's
+alignment (the samples-built environment on the declared grid keeps 262)
+and disappears with unsmoothed rates (361 against 364): it comes with the
+default smoothed maps on an environment that holds unvisited bins. Why the
+score is then NaN was not traced (G-135).
 
 **Border scores** now run on every declared 2-D arena (refused before,
 G-005). They are sensible where the tracked point reaches the walls (Gardner
@@ -134,7 +141,10 @@ Kanter: identical median errors; chance within 1 cm) and better on hc-2
 geodesic errors are larger than the voxels' and equal to chance (97.0 cm
 against 97.0; the 10th-90th percentiles of decoded and chance errors are
 45-162 cm both); the 24 CA1 units decode at chance on both (voxels: 82.7
-against 76.8 cm).
+against 76.8 cm). In the bat's room the declared grid decodes worse than the
+visited voxels (2.36 m against 2.18 m; chance 2.56 and 2.64 m): the
+uniform prior now spreads over the 86 % of the room the bat never entered
+in flight.
 
 **Laps.** `detect_laps` now refuses every declared open arena ("no loop"),
 where the samples-built environments gave 0-1 spurious laps (G-015); the
@@ -154,15 +164,23 @@ are dropped, so those hazards no longer move the results. Verdicts are in
 
 ## Fidelity of the declared environments
 
-Every declared environment matches its source in the fidelity study: the
-stated outline is fully covered (100 % against 37-98 % for the samples-built
-environments), its outermost bins sit within 0.4-0.8 cm of the wall (against
-0.3-6.3 cm, median 1.9), and no interior holes remain (000582 had 72, Vollan 131, hc-2
-216). On the lattice, the path through the declared bins is a median 0.95 x
+A declared environment covers its own outline by construction, so the
+study judges its placement instead (`placement_reasons`): at most 2 % of
+the tracked samples outside it, the samples' fitted size no more than 15 %
+short of the stated one, and a stated centre within 15 % of the radius of
+the samples' centre. Nine of the ten pass: the share of samples outside is
+0-0.34 % on the arenas and 1.0 % on the lattice. The bat's room is a
+mismatch: 3.7 % of the samples lie outside `r_lim`, the resting positions
+beyond the -y wall (G-025). The evidence that the stated outlines fit is
+the samples, not the coverage: the samples-built environments reach
+37-98 % of the placed outline, their outermost bins lie 0.3-6.3 cm (median
+1.9) inside its wall, and the placement residuals are in the table above.
+The declared environments have no interior holes (the samples-built ones
+had 72 on 000582, 131 on Vollan, 216 on hc-2). On the lattice, the path through the declared bins is a median 0.95 x
 the distance along the bars (voxels 0.77); for pairs on parallel bars of one
 face it is 30.4 cm against 31.1 cm along the bars (voxels 18.2 cm). The
-bat's room has no voxel outside `r_lim` (4.4 % before) and both feeders in
-the environment. The study's "far links" and "sparse bins" are now large for
+bat's room has no voxel outside `r_lim` (4.4 % of the samples-built voxels)
+and both feeders in the environment. The study's "far links" and "sparse bins" are now large for
 declared environments (for example 53 % and 68 % on 002030): they count
 declared bins the animal never visited, which is the point of declaring
 them, not air or a wall.
