@@ -7880,6 +7880,8 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         """
         import pandas as pd
 
+        # Refuse None before the percentile and the correction use alpha.
+        refuse_none_thresholds(alpha=alpha, min_spatial_info=min_spatial_info)
         level = alpha
         percentile = 100.0 * (1.0 - level)
         with warnings.catch_warnings():
