@@ -1867,7 +1867,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-113: The driver builds one environment from every sample, merging apparatus that share a camera frame
 
-- Datasets: jadhav_000447, neurolab_001754, senzai_000003, grosmark_000044_linear
+- Datasets: jadhav_000447, neurolab_001754, senzai_000003, grosmark_000044_linear,
+  ca1ca3_001880
 - Operation / step: env.from_samples and every operation that uses it
 - Kind: wrong-result
 - Evidence: `operations._env` bins every tracked sample; `analysis_epochs`
@@ -1882,7 +1883,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   image: all sessions give 2,174 bins, the staircase session alone 1,233.
   000003 pools an open field and a maze (stated by the loader). On 000044's
   linear track the first 110 s, before the rat reached the track, add a path
-  up to y = 161 cm (3.5 % of samples).
+  up to y = 161 cm (3.5 % of samples). 001880's start box between the
+  cheeseboard sub-sessions is outside `analysis_epochs` (`onMaze`) but in
+  the bins: about 62,000 off-maze samples before the loader set held
+  tracking to NaN, 3,010 after (5 bins of 1,080; most box samples were the
+  tracker's held last fix).
 - Harness workaround: none
 - Proposed change: in the harness, build one environment per apparatus from
   the samples of its epochs (a loader parameter such as

@@ -16,7 +16,10 @@ series, ``PositionSeries`` (x, y in cm) and ``VelocitySeries`` (vx, vy, speed
 in cm/s); the loader reads the first with ``read_position(position_name=...)``
 because the default call refuses to choose between them. Ripples are read with
 pynwb from ``processing/ecephys/Ripples``; ``onMaze`` intervals are the maze
-epochs.
+epochs. Lost tracking is set to NaN (``_record.mask_lost_tracking``): 29 % of
+the frames repeat the one before in runs of 10 or more (up to 82 s held),
+which the tracker filled with its last fix, and samples reached faster than
+100 cm/s, which a mouse does not run. The counts are in ``conversions``.
 
 Analysis choices (``params``):
 
@@ -40,7 +43,13 @@ from typing import Any
 
 import numpy as np
 from _fetch import dandi_asset_url, fetch, open_nwb
-from _record import Range, Recording, check_expectations, validate_recording
+from _record import (
+    Range,
+    Recording,
+    check_expectations,
+    mask_lost_tracking,
+    validate_recording,
+)
 
 DATASET = {
     "key": "ca1ca3_001880",
@@ -58,7 +67,8 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": 49,
     "n_dims": 2,
     "sampling_rate_hz": Range(29.0, 31.0),
-    "position_nan_fraction": Range(0.03, 0.08),
+    # The file's own NaN share (5.3 %, pre-registered 3-8 %) is checked in
+    # ``load`` before the held tracking is masked.
     "maze_extent_cm": lambda rec: Range(80, 120).contains(
         float(
             np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
@@ -76,6 +86,8 @@ _PATH = (
 _ASSET_ID = "67a90fac-4acd-40f6-9199-9a7668686121"
 _SHA256 = "293741812fba73117dc02f590a7182b1a2c7eaa4f1bebdb09ab0ad92770582cb"
 _SERIES = "processing/behavior/SubjectPosition/PositionSeries"
+# The share of NaN samples in the file (pre-registered from its 5.3 %).
+_FILE_NAN = (0.03, 0.08)
 # A mouse cheeseboard maze, in cm: the longest span must lie here.
 _MAZE_CM = (60.0, 150.0)
 
@@ -112,6 +124,13 @@ def load(cache: Path | None = None) -> Recording:
         raise ValueError(msg)
     on = (ripples[:, :1] >= on_maze[:, 0]) & (ripples[:, 1:] <= on_maze[:, 1])
     times = np.asarray(position.times, dtype=float)
+    file_nan = float(np.mean(~np.isfinite(positions).all(axis=1)))
+    if not _FILE_NAN[0] <= file_nan <= _FILE_NAN[1]:
+        msg = f"{_SERIES}: {file_nan:.1%} NaN, expected {_FILE_NAN}; recheck"
+        raise ValueError(msg)
+    positions, tracking_line = mask_lost_tracking(
+        times, positions, min_frozen=10, max_speed=100.0
+    )
     return Recording(
         dataset=DATASET["key"],
         session="iuvE14_cagCre_ef1aDIOchr2_3_221208",
@@ -149,6 +168,7 @@ def load(cache: Path | None = None) -> Recording:
             f"positions: read_position(position_name={_SERIES!r}), cm; range checked:"
             f" {np.nanmin(positions[:, 0]):.1f}-{np.nanmax(positions[:, 0]):.1f} by"
             f" {np.nanmin(positions[:, 1]):.1f}-{np.nanmax(positions[:, 1]):.1f} cm",
+            f"positions: {file_nan:.1%} NaN in the file; " + tracking_line,
             "epochs: onMaze intervals as on_maze; subSessions rows by label",
             f"events['ripples']: the {int(on.any(axis=1).sum())} Ripples rows inside"
             f" an onMaze interval, of {len(ripples)}",
