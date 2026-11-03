@@ -36,9 +36,12 @@ def _origin(filename: str) -> str:
     # neurospatial warns with a stacklevel that points at the caller (the
     # harness), or at its own modules; anything else raised from an installed
     # package is third-party.
+    # A survey loader's own warning (``load_*.py``) is the loader's.
     parts = Path(filename).parts
     if "site-packages" in parts and "neurospatial" not in parts:
         return "third-party"
+    if Path(filename).name.startswith("load_"):
+        return "loader"
     return "neurospatial"
 
 

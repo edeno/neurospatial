@@ -171,85 +171,73 @@ def _still(n: int = 60) -> tuple[np.ndarray, np.ndarray]:
     return times, np.column_stack([np.arange(n, dtype=float), np.zeros(n)]) + jitter
 
 
-def _lost(masked: np.ndarray) -> list[int]:
-    return np.flatnonzero(~np.isfinite(masked).all(axis=1)).tolist()
+def _found(times, positions, **kw):
+    from _record import find_suspect_tracking
+
+    before = positions.copy()
+    summary, message = find_suspect_tracking(
+        times, positions, min_frozen=10, max_speed=100.0, **kw
+    )
+    np.testing.assert_array_equal(positions, before)  # nothing is changed
+    return (
+        np.flatnonzero(summary["held"]).tolist(),
+        np.flatnonzero(summary["fast"]).tolist(),
+        summary,
+        message,
+    )
 
 
-def test_mask_lost_tracking_removes_held_runs():
-    from _record import mask_lost_tracking
-
+def test_suspect_tracking_finds_held_runs():
     times, positions = _still()
     # Held for 12 frames after frame 19 (the animal walks on meanwhile, so
-    # the next fix is where it would be); a 3-frame repeat is kept.
+    # the next fix is where it would be); a 3-frame repeat is not a run.
     positions[20:32] = positions[19]
     positions[45:48] = positions[44]
     positions[48:] -= 3.0
-    masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
-    assert _lost(masked) == list(range(20, 32))
-    assert np.isfinite(positions).all()  # the input is not changed
-    assert "12 samples" in line
-    assert "1 runs" in line
+    held, fast, summary, message = _found(times, positions)
+    assert held == list(range(20, 32))
+    assert fast == []
+    assert summary["held_runs"] == 1
+    assert summary["longest_held_seconds"] == pytest.approx(1.2)
+    assert "1 runs of 10+ identical samples (12 samples" in message
 
 
-def test_mask_lost_tracking_refuses_quantized_positions():
-    from _record import mask_lost_tracking, position_grid
-
-    times, positions = _still()
-    assert not position_grid(positions)[0]
-    pixels = np.round(positions * 3.0) / 3.0  # a 1/3 cm grid
-    quantized, line = position_grid(pixels)
-    assert quantized
-    assert "positions quantized" in line
-    with pytest.raises(ValueError, match="assumes sub-pixel positions"):
-        mask_lost_tracking(times, pixels, min_frozen=10, max_speed=100.0)
-
-
-def test_mask_lost_tracking_checks_the_step_after_a_held_run():
-    from _record import mask_lost_tracking
-
+def test_suspect_tracking_checks_the_step_after_a_held_run():
     times, positions = _still()
     # Held frames 20-31, then frame 32 jumps 200 cm: from the held run's
-    # kept first sample (frame 19, 1.3 s earlier) that is 13 + 200 cm in
-    # 1.3 s, about 164 cm/s > 100. Frame 33 is 14 cm from frame 19 in 1.4 s.
+    # first sample (frame 19, 1.3 s earlier) that is 13 + 200 cm in 1.3 s,
+    # about 164 cm/s > 100. Frame 33 is 14 cm from frame 19 in 1.4 s.
     positions[20:32] = positions[19]
     positions[32, 1] += 200.0
-    masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
-    assert _lost(masked) == [*range(20, 32), 32]
-    assert "1 samples reached faster than 100 cm/s" in line
+    held, fast, _, message = _found(times, positions)
+    assert held == list(range(20, 32))
+    assert fast == [32]
+    assert "1 samples farther than 100 cm/s" in message
 
 
-def test_mask_lost_tracking_removes_only_a_one_frame_glitch():
-    from _record import mask_lost_tracking
-
+def test_suspect_tracking_counts_a_one_frame_glitch_once():
     times, positions = _still()
     positions[30, 1] += 50.0  # 50 cm in 0.1 s; frame 31 is 2 cm from 29 in 0.2 s
-    masked, _ = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
-    assert _lost(masked) == [30]
+    assert _found(times, positions)[1] == [30]
 
 
-def test_mask_lost_tracking_removes_a_whole_excursion_and_keeps_the_return():
-    from _record import mask_lost_tracking
-
+def test_suspect_tracking_counts_a_whole_excursion_and_not_the_return():
     times, positions = _still()
     # Frames 30-34 sit 80 cm off the path; from frame 29 the farthest
     # (frame 34) is within 80.3 cm of it after 0.5 s, 161 cm/s > 100.
     positions[30:35, 1] += 80.0
-    masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
-    assert _lost(masked) == [30, 31, 32, 33, 34]
-    assert "5 samples reached faster" in line
+    assert _found(times, positions)[1] == [30, 31, 32, 33, 34]
 
 
-def test_mask_lost_tracking_skips_input_nan_without_moving_the_anchor():
-    from _record import mask_lost_tracking
-
+def test_suspect_tracking_skips_input_nan_without_moving_the_anchor():
     times, positions = _still()
     positions[30] = np.nan
     # Frame 31 jumps 50 cm: from frame 29 (the anchor; frame 30 is NaN) that
     # is 50 cm in 0.2 s, 250 cm/s. Frame 32 is 3 cm from frame 29 in 0.3 s.
     positions[31, 1] += 50.0
-    masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
-    assert _lost(masked) == [30, 31]
-    assert "1 samples reached faster" in line
+    held, fast, _, _ = _found(times, positions)
+    assert held == []
+    assert fast == [31]
 
 
 @pytest.mark.parametrize(

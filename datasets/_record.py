@@ -391,77 +391,35 @@ def intersect_intervals(
     return np.column_stack([start[keep], stop[keep]])
 
 
-def position_grid(
-    positions: NDArray[np.float64], *, units: str = "cm"
-) -> tuple[bool, str]:
-    """Whether tracked positions are quantized, and the line saying so.
-
-    Per axis, the gaps between consecutive distinct values: positions are
-    quantized (pixels or another grid) when on some axis the median gap
-    equals the smallest one (to a relative 1e-6), that is the values fill a
-    grid and the grid, not the animal, sets the resolution. Positions from a
-    sub-pixel estimate have distinct values scattered far more finely than
-    their typical spacing. Also reports the share of samples whose
-    coordinates are all integers.
-
-    Returns
-    -------
-    quantized : bool
-    line : str
-        The measure, for ``conversions``.
-    """
-    tracked = positions[np.isfinite(positions).all(axis=1)]
-    quantized = False
-    parts = []
-    for axis in tracked.T:
-        gaps = np.diff(np.unique(axis))
-        if not len(gaps):
-            continue
-        smallest, median = float(gaps.min()), float(np.median(gaps))
-        quantized |= bool(np.isclose(median, smallest, rtol=1e-6, atol=0.0))
-        parts.append(
-            f"{len(gaps) + 1} distinct values, gaps median {median:.3g} and smallest"
-            f" {smallest:.3g} {units}"
-        )
-    integer = float(np.mean(np.all(tracked == np.round(tracked), axis=1)))
-    state = "quantized" if quantized else "not quantized"
-    return quantized, (
-        f"positions {state} ({'; '.join(parts)}; {integer:.2%} of samples on"
-        " integer coordinates)"
-    )
-
-
-def mask_lost_tracking(
+def find_suspect_tracking(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     *,
     min_frozen: int,
     max_speed: float,
     units: str = "cm",
-) -> tuple[NDArray[np.float64], str]:
-    """Set held and bridged tracking to NaN, by a stated rule.
+) -> tuple[dict[str, Any], str]:
+    """Find held and fast samples that may be lost tracking; change nothing.
 
     A tracker that loses the animal often keeps reporting the last fix
-    (identical samples) and then joins it to the next fix with a straight
-    line or a jump. On positions with sub-pixel values, an animal at rest
-    still moves the estimate, so identical samples are a held value. The
-    positions are first checked for a grid (``position_grid``) and refused
-    when quantized, since on a grid a still animal repeats one value:
+    (identical samples) and then joins it to the next fix with a jump; an
+    animal still at a well can also give identical samples when positions
+    are coarse. So the samples are reported for the reader to judge, not
+    removed:
 
-    - frozen: a sample identical in every coordinate to the one before it,
-      in a run of at least ``min_frozen`` such repeats; the run's first
-      sample (the last real fix) is kept;
-    - fast: one sequential pass over the remaining finite samples. The
-      anchor is the last kept sample; each later sample is kept, and becomes
-      the anchor, when its distance from the anchor over the time since it
-      is at most ``max_speed`` (``units`` per second, a speed the animal
-      cannot exceed), and is set to NaN otherwise. Samples already NaN (in
-      the input or held) are skipped and do not move the anchor. A one-frame
-      glitch removes only the glitch; an excursion removes all its samples
-      and keeps the return; the step from a held run to the next fix is
-      checked against the run's kept first sample. After a real jump of
-      distance ``d`` the pass re-anchors on its own once ``d / max_speed``
-      seconds have passed.
+    - held: a sample identical in every coordinate to the one before it, in
+      a run of at least ``min_frozen`` such repeats (the run's first sample,
+      the last fix before it, is not counted);
+    - fast: one sequential pass over the finite samples that are not held.
+      The anchor is the last sample passed; a later sample is passed, and
+      becomes the anchor, when its distance from the anchor over the time
+      since it is at most ``max_speed`` (``units`` per second), and is
+      counted as fast otherwise. NaN and held samples are skipped and do not
+      move the anchor, so the step after a held run is measured from the
+      run's first sample, a one-frame glitch counts once (not its return
+      too), and every sample of an excursion counts. After a real jump of
+      distance ``d`` the pass re-anchors once ``d / max_speed`` seconds have
+      passed.
 
     Parameters
     ----------
@@ -470,43 +428,33 @@ def mask_lost_tracking(
     min_frozen : int
         Repeats of one value, in frames, from which a run counts as held.
     max_speed : float
-        Fastest believable step, ``units`` per second.
+        Fastest step counted as believable, ``units`` per second.
     units : str
-        Length unit of ``positions``, for the ``conversions`` line.
+        Length unit of ``positions``, for the message.
 
     Returns
     -------
-    positions : ndarray, shape (n_time, n_dims)
-        A copy with the frozen and fast samples set to NaN.
-    line : str
-        The rule and its counts, for ``conversions``.
+    summary : dict
+        ``held_runs``, ``held_samples``, ``held_share`` (of all samples),
+        ``held_seconds`` (total), ``longest_held_seconds``, ``fast_samples``
+        and the index arrays ``held`` and ``fast`` (boolean, shape
+        (n_time,)).
+    message : str
+        One sentence for a warning (``load_warnings``).
     """
-    positions = np.array(positions, dtype=float)
-    quantized, grid_line = position_grid(positions, units=units)
-    if quantized:
-        msg = (
-            f"{grid_line}: on a grid a still animal repeats one value, so"
-            " identical samples are not held tracking; mask_lost_tracking"
-            " assumes sub-pixel positions. Leave the held-run rule out for this"
-            " recording or state another rule for lost tracking"
-        )
-        raise ValueError(msg)
+    positions = np.asarray(positions, dtype=float)
+    times = np.asarray(times, dtype=float)
     repeat = np.r_[False, np.all(np.diff(positions, axis=0) == 0, axis=1)]
     edges = np.diff(np.r_[0, repeat.astype(np.int8), 0])
     starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
     long_runs = stops - starts >= min_frozen
-    frozen = np.zeros(len(positions), dtype=bool)
+    held = np.zeros(len(positions), dtype=bool)
     for start, stop in zip(starts[long_runs], stops[long_runs], strict=True):
-        frozen[start:stop] = True
-    longest = (
-        float(np.max(times[stops[long_runs] - 1] - times[starts[long_runs] - 1]))
-        if long_runs.any()
-        else 0.0
-    )
-    positions[frozen] = np.nan
+        held[start:stop] = True
+    durations = times[stops[long_runs] - 1] - times[starts[long_runs] - 1]
     fast = np.zeros(len(positions), dtype=bool)
-    finite = np.flatnonzero(np.isfinite(positions).all(axis=1))
-    points, clock = positions.tolist(), np.asarray(times, dtype=float).tolist()
+    finite = np.flatnonzero(np.isfinite(positions).all(axis=1) & ~held)
+    points, clock = positions.tolist(), times.tolist()
     if len(finite):
         anchor = int(finite[0])
         for k in finite[1:].tolist():  # sequential: each test needs the last kept
@@ -516,12 +464,24 @@ def mask_lost_tracking(
                 anchor = k
             else:
                 fast[k] = True
-    positions[fast] = np.nan
-    line = (
-        f"tracking: {grid_line}; {int(frozen.sum())} samples repeating the one before in runs of"
-        f" {min_frozen}+ frames ({int(long_runs.sum())} runs, longest held"
-        f" {longest:.1f} s) and {int(fast.sum())} samples reached faster than"
-        f" {max_speed:g} {units}/s from the last kept sample set to NaN (held, then"
-        " bridged, tracking)"
+    summary = {
+        "held_runs": int(long_runs.sum()),
+        "held_samples": int(held.sum()),
+        "held_share": float(held.mean()) if len(held) else 0.0,
+        "held_seconds": float(durations.sum()),
+        "longest_held_seconds": float(durations.max()) if len(durations) else 0.0,
+        "fast_samples": int(fast.sum()),
+        "held": held,
+        "fast": fast,
+    }
+    message = (
+        f"suspect tracking, positions kept as stored: {summary['held_runs']} runs of"
+        f" {min_frozen}+ identical samples ({summary['held_samples']} samples,"
+        f" {summary['held_share']:.1%}; {summary['held_seconds']:.1f} s in all,"
+        f" longest {summary['longest_held_seconds']:.1f} s) and"
+        f" {summary['fast_samples']} samples farther than {max_speed:g} {units}/s"
+        " from the last sample before them. A held run is lost tracking if the"
+        " tracker repeated its last fix, or stillness; check before analysing"
+        " stops (wells, ripples)"
     )
-    return positions, line
+    return summary, message

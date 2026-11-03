@@ -17,14 +17,12 @@ of the 35 units peaks at that alignment (1.09 bits/spike) and drops to 0.81
 with the video timestamps and to at most 0.85 at any shift of 5-40 s in either
 direction (checked once while writing this loader). The track runs along y
 (0.5-116.5 cm); x spans 4-21 cm, wider than the 6.35 cm track, as the LED
-moves with the head. Lost tracking is set to NaN
-(``_record.mask_lost_tracking``): 46 runs of 10 or more identical frames
-(the longest held 6 s), which the tracker filled with its last fix, and
-samples reached faster than 100 cm/s (a mouse does not run that fast; the
-fast steps are the straight-line bridges after a held run). The held-run
-rule needs sub-pixel positions, and these are: about 64,000 distinct values
-per axis, none on integer coordinates (``_record.position_grid``). The counts
-are in ``conversions``.
+moves with the head. Positions are kept as stored. Suspect tracking is
+reported as a load warning (``_record.find_suspect_tracking``): 46 runs of 10
+or more identical frames (the longest held 6 s), which may be a tracker
+repeating its last fix or a still mouse, and samples farther than 100 cm/s
+from the sample before them (the 99.9th percentile of this file's steps is
+218 cm/s, from jumps after held frames).
 
 Analysis choices (``params``):
 
@@ -40,6 +38,7 @@ Analysis choices (``params``):
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -51,7 +50,7 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
-    mask_lost_tracking,
+    find_suspect_tracking,
     validate_recording,
 )
 from _tracks import declared_geometry, straight_placement, straight_track
@@ -132,11 +131,8 @@ def load(cache: Path | None = None) -> Recording:
             f" video timestamps {offset.min():.3f}-{offset.max():.3f} s; recheck"
         )
         raise ValueError(msg)
-    # A mouse does not run 100 cm/s on a 110 cm track (99.9th percentile of
-    # its steps in this file: 218 cm/s, from held-then-bridged frames).
-    positions, tracking_line = mask_lost_tracking(
-        times, positions, min_frozen=10, max_speed=100.0
-    )
+    _, suspect = find_suspect_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    warnings.warn(suspect, UserWarning, stacklevel=1)
     windows = epochs[["start_time", "stop_time"]].to_numpy(dtype=float)
     track = windows[(windows[:, 0] <= times[0]) & (windows[:, 1] >= times[-1])]
     on_track = (ripples[:, 0] >= times[0]) & (ripples[:, 1] <= times[-1])
@@ -197,7 +193,6 @@ def load(cache: Path | None = None) -> Recording:
             f"positions: read_position, cm; range checked: {np.nanmin(positions[:, 0]):.1f}-"
             f"{np.nanmax(positions[:, 0]):.1f} by {np.nanmin(positions[:, 1]):.1f}-"
             f"{np.nanmax(positions[:, 1]):.1f} cm (track 110 cm along y)",
-            tracking_line,
             "times: position timestamps, not the video timestamps"
             f" ({offset.min():.2f}-{offset.max():.2f} s earlier for the same"
             " frames); spatial information peaks at the position timestamps",

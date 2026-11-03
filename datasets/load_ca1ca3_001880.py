@@ -16,13 +16,11 @@ series, ``PositionSeries`` (x, y in cm) and ``VelocitySeries`` (vx, vy, speed
 in cm/s); the loader reads the first with ``read_position(position_name=...)``
 because the default call refuses to choose between them. Ripples are read with
 pynwb from ``processing/ecephys/Ripples``; ``onMaze`` intervals are the maze
-epochs. Lost tracking is set to NaN (``_record.mask_lost_tracking``): 29 % of
-the frames repeat the one before in runs of 10 or more (up to 82 s held),
-which the tracker filled with its last fix, and samples reached faster than
-100 cm/s, which a mouse does not run. The held-run rule needs sub-pixel
-positions, and these are: about 154,000 distinct values per axis, none on
-integer coordinates (``_record.position_grid``). The counts are in
-``conversions``.
+epochs. Positions are kept as stored. Suspect tracking is reported as a load
+warning (``_record.find_suspect_tracking``): 29 % of the frames repeat the
+one before in runs of 10 or more (up to 82 s held), which may be a tracker
+repeating its last fix or a mouse still at a well or in the start box, and a
+few samples lie farther than 100 cm/s from the sample before them.
 
 Analysis choices (``params``):
 
@@ -41,6 +39,7 @@ DANDI description gives the cheeseboard's size; the paper (Neuron 2026,
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +49,7 @@ from _record import (
     Range,
     Recording,
     check_expectations,
-    mask_lost_tracking,
+    find_suspect_tracking,
     validate_recording,
 )
 
@@ -131,9 +130,8 @@ def load(cache: Path | None = None) -> Recording:
     if not _FILE_NAN[0] <= file_nan <= _FILE_NAN[1]:
         msg = f"{_SERIES}: {file_nan:.1%} NaN, expected {_FILE_NAN}; recheck"
         raise ValueError(msg)
-    positions, tracking_line = mask_lost_tracking(
-        times, positions, min_frozen=10, max_speed=100.0
-    )
+    _, suspect = find_suspect_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    warnings.warn(suspect, UserWarning, stacklevel=1)
     return Recording(
         dataset=DATASET["key"],
         session="iuvE14_cagCre_ef1aDIOchr2_3_221208",
@@ -171,7 +169,7 @@ def load(cache: Path | None = None) -> Recording:
             f"positions: read_position(position_name={_SERIES!r}), cm; range checked:"
             f" {np.nanmin(positions[:, 0]):.1f}-{np.nanmax(positions[:, 0]):.1f} by"
             f" {np.nanmin(positions[:, 1]):.1f}-{np.nanmax(positions[:, 1]):.1f} cm",
-            f"positions: {file_nan:.1%} NaN in the file; " + tracking_line,
+            f"positions: {file_nan:.1%} NaN in the file, kept as stored",
             "epochs: onMaze intervals as on_maze; subSessions rows by label",
             f"events['ripples']: the {int(on.any(axis=1).sum())} Ripples rows inside"
             f" an onMaze interval, of {len(ripples)}",
