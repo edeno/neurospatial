@@ -235,6 +235,7 @@ def heading_vs_movement(
     headings: NDArray[np.float64],
     *,
     min_speed: float,
+    lag: int = 1,
 ) -> tuple[float, float]:
     """Compare a heading series with the direction of movement while running.
 
@@ -253,6 +254,12 @@ def heading_vs_movement(
         Radians.
     min_speed : float
         Steps faster than this (length per second) count as running.
+    lag : int, default 1
+        The direction of movement at sample i is that of the step to sample
+        i + ``lag``. On positions in whole pixels, one-sample steps of a few
+        pixels take only a few directions (multiples of 45° for one-pixel
+        steps), which widens the spread and biases the mean; a longer lag
+        averages that out.
 
     Returns
     -------
@@ -260,12 +267,16 @@ def heading_vs_movement(
         Circular mean of heading minus movement direction, and the median
         absolute deviation from that mean, in radians.
     """
-    step = np.diff(positions, axis=0)
+    if lag < 1:
+        msg = f"lag must be a positive number of samples, got {lag}"
+        raise ValueError(msg)
+    step = positions[lag:] - positions[:-lag]
     with np.errstate(divide="ignore", invalid="ignore"):
-        speed = np.linalg.norm(step, axis=1) / np.diff(times)
+        speed = np.linalg.norm(step, axis=1) / (times[lag:] - times[:-lag])
     moving = np.arctan2(step[:, 1], step[:, 0])
-    running = (speed > min_speed) & np.isfinite(headings[:-1])
-    diff = np.angle(np.exp(1j * (headings[:-1][running] - moving[running])))
+    start = headings[:-lag]
+    running = (speed > min_speed) & np.isfinite(start)
+    diff = np.angle(np.exp(1j * (start[running] - moving[running])))
     mean = float(np.angle(np.mean(np.exp(1j * diff))))
     spread = float(np.median(np.abs(np.angle(np.exp(1j * (diff - mean))))))
     return mean, spread
