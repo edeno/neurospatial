@@ -31,12 +31,27 @@ measured and probed, and the documented path is tried as written.
   source (`file: trials table`, `paper: Mizuseki 2012 Table 1`, `naive numpy`,
   `invariant: split-half > shuffle`). An operation added without a check is
   smoke-only and is listed as such in the matrix.
-- **Truth comes from outside the code under test,** in this order: the file
-  (the authors' linearization, trials, labels, events, speed); the paper (a
-  number read in the text, cited under the cite-only-verified rule); an
-  independent naive computation (plain numpy written in the check, not
-  calling the function under test); a scientific invariant (a shuffle or
-  split-half baseline).
+- **Truth comes from outside the code under test.** In order of preference:
+  - **the file:** the authors' linearization, trials, labels, events, speed,
+    ripples;
+  - **planted cells:** known fields put on the real path and the declared
+    environment (6b);
+  - **the paper:** a number read in the text, cited under the
+    cite-only-verified rule;
+  - **an independent naive computation:** plain numpy written from the
+    definition in the paper or the docstring. It must not call the function
+    under test or copy its code, because a copy repeats the same mistake;
+  - **a scientific invariant:** a shuffle or split-half baseline.
+- **Tolerances are written before the run,** next to each check, with the
+  reason (bin size, frame interval, the authors' stated criterion). A check
+  is never loosened after seeing the result. When the authors used a
+  different definition (speed threshold, bin size, cell criterion), the check
+  uses theirs where it is stated, and otherwise reports the difference
+  instead of `disagrees`.
+- **No tuning to agree.** A parameter changed so that a number matches is a
+  finding, not a fix.
+- **Every result records the `main` commit it ran on,** so a result can be
+  traced while the API changes under the survey.
 - **Decoding is one metric among several.** Decoding error is a good summary
   of how much spatial information a population carries across many brain
   areas. It stays, with its check against the true position. It must not be
@@ -65,10 +80,37 @@ shared names, and declares it in `EXPECTATIONS` first:
 | `file_speed` | the file's speed | J16, 000447, Vollan |
 | `lfp` | one theta-bearing channel and its sampling rate (CA1 pyramidal layer when stated), streamed slice only | hc-3, 000044, Vollan, J16 where present |
 | `published` | numbers read in the paper, each with its citation: place-cell fraction, field size, HD-cell count, grid spacing | per paper |
+| `ripples` | the authors' ripple or candidate-event times | the 4 recordings with `has_ripples` (already partly) |
+| `epochs` | named run, sleep and rest epochs with their times | figure-8, hc-18, hc-11, Peyrache, Shipley (already partly) |
 
 A loader that cannot find one says so in its docstring. No guessed values.
 
 ### 6b. Encoding checks (one agent)
+
+**Planted cells on real behavior.** For every recording, plant units with
+known tuning on the animal's real path, real time base and declared
+environment, with `generate_population_spikes(models, times, positions,
+headings=...)`. Use the cell models in `neurospatial.simulation`: place,
+grid, border, head direction, boundary vector, object vector and spatial
+view. Plant only the cell types that make sense for the apparatus.
+
+- **Seeds and ground truth.** Planted spikes use a fixed seed. Each planted
+  unit's model parameters are saved with the results as the ground truth.
+- **Every encoding operation runs on the planted units,** alongside the
+  recorded ones:
+  - field centre error and field size against the model;
+  - detection rates (planted positives, and planted untuned units as
+    negatives);
+  - grid spacing and orientation;
+  - preferred direction;
+  - object distance and angle;
+  - phase precession, where a theta phase is planted with `add_modulation`.
+- **Two jobs.** This is the truth for operations no file can check. It is
+  also the fair comparison of declared and samples-built environments: the
+  same planted cells, scored on both.
+- **Head tracking.** Planted cells use the tracked head position as the
+  animal's position. That is exactly what a real analysis does, so the
+  tracking spread found in phase 5 shows up here as it would in real work.
 
 | Operation | Check |
 | --- | --- |
@@ -81,6 +123,19 @@ A loader that cannot find one says so in its docstring. No guessed values.
 | `theta.phase_precession` | `compute_phase_precession` on track place cells with `lfp`: share of negative slopes against a spike-time shuffle |
 | `cells.object_vector` | `object_vector_score` / `is_object_vector_cell` on Kanter with its objects |
 | `rates.tuning_curves` | `compute_tuning_curves` over `path_progress` per trial against per-trial numpy histograms |
+| `cells.planted` | every encoding operation above on the planted units, against the planted models (declared and samples-built environments) |
+
+**One published result per paper.** For each paper with a readable
+Methods section, reproduce one result end to end with the paper's stated
+parameters. Candidates:
+
+- Gardner 2022 module spacings;
+- the place-cell fraction in Mizuseki 2012 or Grosmark 2016;
+- the HD tuning width in Peyrache 2015;
+- the border-cell share in Solstad-style data.
+
+Report our number, theirs, and every parameter we could not match. This is
+the end-to-end test a scientist would use to judge the package.
 
 ### 6c. Behavior and events checks (one agent)
 
@@ -95,6 +150,13 @@ A loader that cannot find one says so in its docstring. No guessed values.
 | `events.psth` | `peri_event_histogram` and `align_spikes_to_events` at `events`: counts against numpy counts; the population response at real events above shuffled event times |
 | `regions.visits` | `regions_containing_points` / region entries at `regions` against `events` (well entries) |
 | `behavior.decision` | VTE and pre-decision metrics at W-track and bandit choice points: smoke-only unless a file truth is found (say so) |
+| `replay.candidates` | candidate events against the authors' `ripples` (match rate, onset error); replay detection on events planted with `simulate_replay_event` in the real recording's quiet periods (detection rate and false positives on unplanted periods). Stationary decoded events are not false positives |
+| `time.support` | results keep the time support of their inputs: an analysis restricted to run `epochs` uses no spike or sample from sleep or rest, and a result's stated support equals the epochs passed |
+
+**Round trips.** Extend `io.nwb_roundtrip` beyond spikes and positions:
+declared environments, regions, trials and events are written to NWB, read
+back, and compared field by field. Do the same through pynapple where the
+reader supports it.
 
 ### 6d. Real-data messiness (one agent)
 
@@ -121,6 +183,16 @@ A loader that cannot find one says so in its docstring. No guessed values.
   names the cause), silent, or no effect.
 - **No caught by accident.** A raise whose message does not name the cause is
   `caught (incidental)`, not `caught`.
+- **Reproducibility.**
+  - Every seeded operation is run twice, and the outputs must be identical.
+  - Each result is checked for what it records about how it was made: input
+    selections, exclusions, parameters, seed and versions. Anything a result
+    needs to be reproduced but does not carry is a finding.
+- **Cost.** Record runtime and peak memory for every operation, as the
+  driver already does, on the largest recordings: Vollan (about 600 units),
+  J16 (500 Hz), the 1000-shuffle cell verdicts on every unit, and the
+  animation exports. Time each new domain on one recording before its full
+  run, and extrapolate before launching.
 
 ### 6e. UX: the documented path on real data (one agent)
 
@@ -168,9 +240,18 @@ back the artists, not by trusting the call:
 **Visual review.** For each recording, a contact sheet (one PNG grid of its
 figures) is written to `results/figures/`. The agent reads each sheet as an
 image and writes what a scientist would see wrong: unreadable defaults,
-clipped fields, misleading colour scales, empty panels. The sheets are
-published to the maintainer for an eye check. Automated checks don't replace
-this.
+clipped fields, misleading colour scales, empty panels.
+
+The maintainer's time is the limit, so the agent sends a short set ordered
+by risk:
+
+- each figure type once;
+- every sheet where an automated check failed;
+- the 3-D, pixel-unit and track recordings.
+
+The rest stay in `results/figures/` to look at on request. An agent reading
+an image misses subtle problems, so the automated checks and the
+maintainer's look are both needed.
 
 **Animation.**
 
@@ -198,6 +279,69 @@ colour range, NaN colour).
 - **Matrix coverage:** a column for check coverage: share of operations with
   a check, by domain.
 
+## How it ships
+
+One PR per task, in this order:
+
+1. 6a (loaders), which every later task depends on.
+2. 6b, 6c, 6d, 6e and 6f, in parallel worktrees.
+3. 6g (findings).
+
+Before the parallel tasks start:
+
+- **Split the operations by domain.** `datasets/operations.py` keeps the
+  shared helpers and the registry; each domain adds its operations in its
+  own module (`operations_encoding.py`, `operations_behavior.py`,
+  `operations_figures.py`, …).
+- **Assign gap ids per domain.**
+- **Render once.** `results/matrix.md`, `warnings.md` and `verdicts.json`
+  are rendered once, at merge (`run.py --render-only`), never edited by hand.
+
+Each domain brief lists its required checks, so an agent cannot fill its
+time with whatever is easiest to score.
+
+## Risks
+
+- **The authors' truth uses other definitions.** Speed thresholds, bin
+  sizes, cell criteria and session pooling differ from ours, so "disagrees"
+  often means "defined differently". Mitigation: pre-registered tolerances,
+  the authors' parameters where stated, and distributions instead of
+  pass/fail where the definitions differ.
+- **Self-consistency checks.** This happened twice in phase 5 (arena
+  outlines, track references). Mitigation: the review question "does this
+  truth depend on the code it checks?" for every `agrees`.
+- **Head tracking.** The tracked point's offset and spread widen fields,
+  shift direction-specific fields and add speed noise at rest. Mitigation:
+  report checks split by speed where it matters, and compare against planted
+  cells on the same path before calling a real-data difference a library
+  bug.
+- **Access.**
+  - LFP is large, so stream slices only; DANDI may throttle.
+  - CRCNS needs its login.
+  - Several papers could not be read (Current Biology for 000987, Neuron
+    2026 for 001880, the Drieu 2018 supplement). Their numbers stay out
+    under the cite-only-verified rule.
+- **Headless rendering on macOS.**
+  - napari can return black frames.
+  - fastplotlib needs a GPU context.
+  - ffmpeg must be present.
+  - Reading figures back depends on the matplotlib version.
+
+  Mitigation: blank-frame checks, "ran only" marking where a viewer can't
+  render, and recording the matplotlib version with the results.
+- **The API changes during the phase** (two PRs landed the day this was
+  written). Mitigation: record the `main` commit per result. A library bug
+  found mid-phase is logged as a gap; a harness workaround for it is a UX
+  finding, not a silent fix.
+- **Compute.** Many more operations × about 37 recordings × two environment
+  kinds × probes × shuffles. Mitigation: the one-recording timing first;
+  sample units for the 1000-shuffle verdicts where the full set would not
+  fit, and say so.
+- **Triage time.** Deciding whether the library, the data or the authors'
+  convention is at fault takes the maintainer's time. Mitigation: every
+  `disagrees` comes with its evidence, its likely cause, and what was ruled
+  out.
+
 ## Deliberately not in this phase
 
 - **Source changes.** Each disagreement becomes a gap and goes to the source
@@ -218,6 +362,10 @@ colour range, NaN colour).
 | `test_checks.py::test_psth_counts_match_numpy` | PSTH counts equal numpy counts; shuffled events give a flat population response |
 | `datasets/tests/test_figures.py::test_plotted_array_is_the_data` | on a simulated recording, the rate-map figure's image array equals the rates and NaN bins are masked; a figure with a flipped y axis fails the orientation check |
 | `test_figures.py::test_export_frames_follow_position` | a short simulated export has duration × fps frames and the position marker maps back to the recorded position within one bin |
+| `test_checks.py::test_planted_place_cell_recovered` | a place cell planted on a simulated path is found with its centre within one bin, and an untuned planted unit is not |
+| `test_checks.py::test_naive_reference_is_independent` | the numpy references in the checks import nothing from `neurospatial` beyond the inputs they are given |
+| `test_checks.py::test_seeded_rerun_is_identical` | a seeded operation run twice gives identical outputs |
+| `test_checks.py::test_nwb_roundtrip_regions_trials` | regions, trials and events survive a write and read unchanged |
 | `test_calibration.py::test_incidental_catch` | a raise whose message does not name the hazard records `caught (incidental)` |
 | ruff check and format on `datasets` | clean |
 | Real run (manual) | every operation has `check` set; the matrix shows check coverage by domain |
