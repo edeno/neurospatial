@@ -496,9 +496,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Evidence: 3-D rate maps of 289 units over 1352 bins of 0.2 m, restricted to
   37 flights during the neural recording (121 s of occupancy; median 0.067 s
   per visited bin, 70 % of the 1201 visited bins under 0.1 s). Median spatial
-  information is 3.38 bits/spike; with each unit's spikes circularly shifted
-  (4 seeded shifts, `rates.information_vs_shifts`) it is 3.55, and only 34 %
-  of units beat every shift (all 6 on 000582, 94 % on the figure-8).
+  information is 3.47 bits/spike; with each unit's spikes circularly shifted
+  within the counted flight time (4 seeded shifts,
+  `rates.information_vs_shifts`) it is 3.18, and 57 % of units beat every
+  shift (all 6 on 000582, 96 % on the figure-8). Before the shift was
+  confined to counted time (G-043) the shifts gave 3.55 and 34 %.
   `spatial_information_bias`, the "expected untuned information" that
   `classify()` compares with, has a median of 0.37 bits/spike. The 101 units
   firing above 2 Hz during flight (which the record's script sets aside as
@@ -515,7 +517,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   close to the 5 px bin: 341 of 2487 visited bins hold a single frame, and
   the median unit's peak rate is exactly 1 spike / 1 frame = 39.06 Hz.
   `min_occupancy` defaults to 0 s.
-- More evidence (archive batch): the Grieves lattice (3-D, 4 cm bins, 8182 visited bins, 24 % of them under 0.1 s, median 0.23 s) gives the information-bias study's second sparse 3-D case. Untuned Poisson cells: mean information / mean bias 0.94, 1.00, 1.00 at 0.5, 2, 8 Hz (200 cells each); bursty cells 3.0, 4.1, 4.7. Real units (17 with a defined bias, 100 shifts each): median information 0.579, bias 0.169, shift-null mean 0.392, null / bias 2.51; 6 % pass the bias rule but not the shifts' 95th percentile (bat, rerun: 0.92 and 2.24 at 8 Hz, null / bias 2.19, 44 %). The estimate holds for Poisson cells on sparse 3-D occupancy; the gap to the shift null is temporal structure, as on the bat.
+- More evidence (archive batch, rerun with shifts within counted time, G-043): the Grieves lattice (its declared bar graph, 4 cm bins, 2506 visited bins, 13 % of them under 0.1 s, median 0.62 s) gives the information-bias study's second sparse 3-D case. Untuned Poisson cells: mean information / mean bias 1.00, 1.01, 1.00 at 0.5, 2, 8 Hz (200 cells each); bursty cells 3.3, 4.3, 4.7. Real units (16 with a defined bias, 100 shifts each): median information 0.602, bias 0.182, shift-null mean 0.438, null / bias 2.56; 6 % pass the bias rule but not the shifts' 95th percentile. Bat: 0.92 (Poisson) and 2.22 (bursty) at 8 Hz; real units' null / bias 1.23 and 15 % pass the bias rule but not the shifts (2.19 and 44 % with the old whole-span shifts). The estimate holds for Poisson cells on sparse 3-D occupancy; the gap to the shift null is temporal structure the shifts keep (bursts), not firing locked to flights, which shifts within counted time do not keep.
 
 ## G-023: 3-D position decoding is near chance on the bat session
 
@@ -937,25 +939,28 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   nothing on raw arrays can tell speed from a third spatial axis
 - Status: open
 
-## G-043: On Vollan's speed-filtered data, real units carry less spatial information than their circular shifts
+## G-043: On Vollan's speed-filtered data, real units carried less spatial information than their circular shifts
 
 - Datasets: vollan_lt, vollan_of
 - Operation / step: rates.information_vs_shifts
-- Kind: wrong-result (candidate; cause not found)
-- Evidence: open field (rat 26018, 644 units, 233 in grid modules): median
-  information 0.436 bits/spike, median over 4 shifts 0.596; 22 % of units
-  beat every shift. Linear track: 0.289 vs 0.424, 12 %. On every other
-  recording real units are far above their shifts (000044: 0.83 vs 0.08).
-  The grid scores of the same units match the authors' module medians on
-  modules 1–2, so spikes and positions are aligned. Not the cause: bridging
-  of the speed-filter gaps (with `max_gap=0.025` s, 2.5 sampling intervals,
-  0.431 vs 0.589, 24 %). Untested: whether the shift rule, which shifts over
-  the whole span including the removed stretches, moves spikes into a few
-  tracked samples; and whether firing locked to slow periods matters.
-- Harness workaround: none
-- Proposed change: undecided; find the cause before trusting shuffle verdicts
-  on speed-filtered data
-- Status: open
+- Kind: harness-bug (fixed)
+- Evidence: open field (rat 26018, 644 units, samples-built environment):
+  median information 0.436 bits/spike, median over 4 shifts 0.596; 22 % of
+  units beat every shift. Linear track: 0.289 vs 0.424, 12 %. The cause
+  was the harness's shift rule: `operations.shifted_trains` shifted spikes
+  circularly over the whole span `[times[0], times[-1]]`, while the maps
+  count only the analysis epochs, the speed gate and tracking gaps (the
+  recordings are speed-filtered, so most of the span is gaps). On the first
+  150 open-field units 39 % of shifted spikes stayed inside counted time
+  against 99.9 % of real ones; fewer spikes give higher bits per spike, so
+  the null was inflated. Spikes are now shifted within the counted
+  intervals (`analysis_settings["observed_intervals"]`, joined end to
+  end). Rerun: open field 0.436 vs 0.238, 84 % beat every shift; linear
+  track 0.289 vs 0.109, 86 % (declared environments: 0.380 vs 0.188, 84 %;
+  0.152 vs 0.048, 79 %).
+- Harness workaround: none needed after the fix
+- Proposed change: none in neurospatial
+- Status: resolved (harness fix)
 
 ## G-050: Position and head orientation stored one axis per series cannot be read
 

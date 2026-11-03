@@ -137,22 +137,29 @@ track), above the threshold of 5.
 ## Information-bias study with Grieves
 
 Grieves' lattice is sparse 3-D occupancy like the bat's, though less so
-(8182 visited bins, 24 % under 0.1 s, median 0.23 s, against the bat's 70 %
-and 0.07 s).
+(on the voxel grid 8182 visited bins, 24 % under 0.1 s, median 0.23 s; on
+the declared bar graph 2506, 13 % and 0.62 s; against the bat's 71 % and
+0.07 s).
 
-| | Grieves | Bat (rerun, unchanged) |
+| | Grieves | Bat |
 | --- | --- | --- |
-| Poisson: information / bias at 0.5, 2, 8 Hz | 0.94, 1.00, 1.00 | NaN, NaN, 0.92 |
-| Bursty: information / bias at 0.5, 2, 8 Hz | 3.02, 4.11, 4.65 | NaN, NaN, 2.24 |
-| Real units with a defined bias | 17 of 24 | 39 |
-| Median information / bias / shift-null mean (bits/spike) | 0.579 / 0.169 / 0.392 | 0.486 / 0.370 / 0.672 |
-| Median shift null / bias | 2.51 | 2.19 |
-| Pass the bias rule but not the shifts' 95th percentile | 6 % | 44 % |
+| Poisson: information / bias at 0.5, 2, 8 Hz | 1.00, 1.01, 1.00 | NaN, NaN, 0.92 |
+| Bursty: information / bias at 0.5, 2, 8 Hz | 3.28, 4.33, 4.68 | NaN, NaN, 2.22 |
+| Real units with a defined bias | 16 of 24 | 41 |
+| Median information / bias / shift-null mean (bits/spike) | 0.602 / 0.182 / 0.438 | 0.534 / 0.371 / 0.460 |
+| Median shift null / bias | 2.56 | 1.23 |
+| Pass the bias rule but not the shifts' 95th percentile | 6 % | 15 % |
 
-The second 3-D dataset supports the conclusion in proposal 4: the bias
-estimate is right for an untuned Poisson cell on sparse occupancy, and the
-gap to the shift null is temporal structure. Grieves' cells carry enough
-information that the difference changes only one verdict.
+Rerun on the merged branch (`results/studies/information_bias_null.md`)
+after the shift null was confined to the time the maps count (G-043):
+Grieves is now measured on its declared bar graph (2506 visited bins, 13 %
+under 0.1 s, median 0.62 s), and the bat's shift null fell from 2.19 to
+1.23 times the bias (44 % to 15 % passing the bias rule but not the
+shifts). The second 3-D dataset supports the conclusion in proposal 4: the
+bias estimate is right for an untuned Poisson cell on sparse occupancy,
+and the gap to the shift null is temporal structure the shifts keep
+(bursts). Grieves' cells carry enough information that the difference
+changes only one verdict.
 
 ## What this changes in FINDINGS.md
 
