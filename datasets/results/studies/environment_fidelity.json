@@ -182,7 +182,21 @@
         "max_short_unsupported": 0.0,
         "max_end_unsupported": NaN,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 2.0
+        "max_edge_bias_limit": 2.0,
+        "frame_offset": [
+          -0.08347411770264303,
+          -0.2132670691379389
+        ],
+        "frame_offset_judged": 0.08306040188093369,
+        "frame_offset_vertical": null,
+        "frame_pieces": 7,
+        "frame_min_eigenvalue": 3.0068789145591546,
+        "frame_max_eigenvalue": 3.9931210854408454,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 4,
+        "frame_converged": true,
+        "frame_offset_limit": 2.0
       },
       "misfit": [],
       "reference_independent": false,
@@ -332,7 +346,21 @@
         "max_short_unsupported": 0.0,
         "max_end_unsupported": 0.14285714285714285,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 0.5
+        "max_edge_bias_limit": 0.5,
+        "frame_offset": [
+          -0.10696999753406507,
+          0.025580600486779695
+        ],
+        "frame_offset_judged": 0.10507915542209202,
+        "frame_offset_vertical": null,
+        "frame_pieces": 127,
+        "frame_min_eigenvalue": 42.0,
+        "frame_max_eigenvalue": 85.0,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 16,
+        "frame_converged": true,
+        "frame_offset_limit": 0.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -857,7 +885,21 @@
         "max_short_unsupported": 0.0,
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 2.5
+        "max_edge_bias_limit": 2.5,
+        "frame_offset": [
+          -0.17434211382596523,
+          -0.020738566763655993
+        ],
+        "frame_offset_judged": 0.12378964824131286,
+        "frame_offset_vertical": null,
+        "frame_pieces": 5,
+        "frame_min_eigenvalue": 1.9958539191918658,
+        "frame_max_eigenvalue": 3.004146080808134,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 3,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -1085,7 +1127,30 @@
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 2.5,
-        "size_residual_length": 0.05457841038183964
+        "size_residual_length": 0.05457841038183964,
+        "frame_offset": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged": 0.0,
+        "frame_offset_vertical": null,
+        "frame_pieces": 1,
+        "frame_min_eigenvalue": -2.002899249259156e-17,
+        "frame_max_eigenvalue": 1.0,
+        "frame_unconstrained": [
+          [
+            -0.04603200037534574,
+            -0.9989399656342939
+          ],
+          [
+            -0.9989399656342939,
+            0.04603200037534574
+          ]
+        ],
+        "frame_judged_unconstrained": 2,
+        "frame_iterations": 1,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -1331,7 +1396,21 @@
         "max_end_unsupported": NaN,
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 2.5,
-        "size_residual_diameter": -0.002166991205351798
+        "size_residual_diameter": -0.002166991205351798,
+        "frame_offset": [
+          0.7603196829169102,
+          -0.76761385027317
+        ],
+        "frame_offset_judged": 1.0423445661997952,
+        "frame_offset_vertical": null,
+        "frame_pieces": 72,
+        "frame_min_eigenvalue": 36.0,
+        "frame_max_eigenvalue": 36.0,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 6,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -1493,9 +1572,30 @@
         "max_short_unsupported": NaN,
         "max_end_unsupported": 0.8571428571428571,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 2.5
+        "max_edge_bias_limit": 2.5,
+        "frame_offset": [
+          0.04794153048461778,
+          3.220385666343478
+        ],
+        "frame_offset_judged": 2.9484887584690638,
+        "frame_offset_vertical": null,
+        "frame_pieces": 3,
+        "frame_min_eigenvalue": -2.959929494504145e-16,
+        "frame_max_eigenvalue": 3.0,
+        "frame_unconstrained": [
+          [
+            -0.9998892086525569,
+            0.014885241689789636
+          ]
+        ],
+        "frame_judged_unconstrained": 1,
+        "frame_iterations": 13,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
-      "misfit": [],
+      "misfit": [
+        "the samples lie 2.95 off the track as a whole (one translation fitted to 3 pieces; limit 1 bin, 2.5)"
+      ],
       "reference_independent": false,
       "env": {
         "n_bins": 78,
@@ -1535,8 +1635,8 @@
       "facts": [
         "the file's linearized coordinate as stated"
       ],
-      "verdict": "matches",
-      "verdict_reason": "on the file's linearized coordinate as stated"
+      "verdict": "mismatch",
+      "verdict_reason": "the samples lie 2.95 off the track as a whole (one translation fitted to 3 pieces; limit 1 bin, 2.5)"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grosmark_000044_linear.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grosmark_000044_linear_declared.png"
@@ -1675,7 +1775,21 @@
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 2.5,
         "size_residual_base": -0.012075739832941523,
-        "size_residual_arms": 0.06469310469967815
+        "size_residual_arms": 0.06469310469967815,
+        "frame_offset": [
+          0.05522388979620488,
+          0.37639289233776635
+        ],
+        "frame_offset_judged": 0.12024167688828676,
+        "frame_offset_vertical": null,
+        "frame_pieces": 5,
+        "frame_min_eigenvalue": 1.9696550152090886,
+        "frame_max_eigenvalue": 3.0303449847909114,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 5,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -1860,7 +1974,30 @@
         "max_short_unsupported": NaN,
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 2.87
+        "max_edge_bias_limit": 2.87,
+        "frame_offset": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged": 0.0,
+        "frame_offset_vertical": null,
+        "frame_pieces": 1,
+        "frame_min_eigenvalue": -1.4444860597215438e-16,
+        "frame_max_eigenvalue": 1.0,
+        "frame_unconstrained": [
+          [
+            -0.7995658350947926,
+            -0.6005784506200392
+          ],
+          [
+            -0.6005784506200392,
+            0.7995658350947926
+          ]
+        ],
+        "frame_judged_unconstrained": 2,
+        "frame_iterations": 1,
+        "frame_converged": true,
+        "frame_offset_limit": 2.87
       },
       "misfit": [],
       "reference_independent": false,
@@ -2078,7 +2215,21 @@
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 2.5,
         "size_residual_base": -0.1051373454937401,
-        "size_residual_arms": -0.11088057589401701
+        "size_residual_arms": -0.11088057589401701,
+        "frame_offset": [
+          -0.9083207543603876,
+          -0.2616377495818024
+        ],
+        "frame_offset_judged": 0.8962442434056931,
+        "frame_offset_vertical": null,
+        "frame_pieces": 5,
+        "frame_min_eigenvalue": 2.0015809223280736,
+        "frame_max_eigenvalue": 2.9984190776719255,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 4,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -2173,7 +2324,24 @@
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 2.5,
-        "size_residual_length": 0.0032523982504970572
+        "size_residual_length": 0.0032523982504970572,
+        "frame_offset": [
+          0.0
+        ],
+        "frame_offset_judged": 0.0,
+        "frame_offset_vertical": null,
+        "frame_pieces": 1,
+        "frame_min_eigenvalue": 0.0,
+        "frame_max_eigenvalue": 0.0,
+        "frame_unconstrained": [
+          [
+            1.0
+          ]
+        ],
+        "frame_judged_unconstrained": 1,
+        "frame_iterations": 1,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -2264,7 +2432,21 @@
         "max_short_unsupported": NaN,
         "max_end_unsupported": NaN,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 5.0
+        "max_edge_bias_limit": 5.0,
+        "frame_offset": [
+          -0.00552999748212596,
+          0.16377330316672398
+        ],
+        "frame_offset_judged": 0.14106018321328054,
+        "frame_offset_vertical": null,
+        "frame_pieces": 72,
+        "frame_min_eigenvalue": 27.817963972081646,
+        "frame_max_eigenvalue": 44.18203602791836,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 3,
+        "frame_converged": true,
+        "frame_offset_limit": 5.0
       },
       "misfit": [],
       "reference_independent": false,
@@ -2406,9 +2588,26 @@
         "max_end_unsupported": NaN,
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 4.0,
-        "size_residual_lattice_side": 0.0
+        "size_residual_lattice_side": 0.0,
+        "frame_offset": [
+          -8.169703575553951,
+          4.639210895118046,
+          2.228704637407118
+        ],
+        "frame_offset_judged": 9.38247467601516,
+        "frame_offset_vertical": 2.228704637407118,
+        "frame_pieces": 738,
+        "frame_min_eigenvalue": 481.99999999999994,
+        "frame_max_eigenvalue": 497.0,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 22,
+        "frame_converged": true,
+        "frame_offset_limit": 4.0
       },
-      "misfit": [],
+      "misfit": [
+        "the samples lie 9.38 horizontally off the track as a whole (one translation fitted to 738 pieces; limit 1 bin, 4)"
+      ],
       "reference_independent": false,
       "env": {
         "n_bins": 4410,
@@ -2456,8 +2655,8 @@
         "lattice_side +0% of the stated",
         "the authors' bars (file) as stated"
       ],
-      "verdict": "matches",
-      "verdict_reason": "on lattice_side +0% of the stated; the authors' bars (file) as stated"
+      "verdict": "mismatch",
+      "verdict_reason": "the samples lie 9.38 horizontally off the track as a whole (one translation fitted to 738 pieces; limit 1 bin, 4)"
     },
     "figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grieves_2020_lattice.png",
     "declared_figure": "/Users/edeno/Documents/GitHub/neurospatial-envs/data/datasets/figures/environment_fidelity/grieves_2020_lattice_declared.png"
@@ -2698,7 +2897,21 @@
         "max_short_unsupported": 0.0,
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 4.0
+        "max_edge_bias_limit": 4.0,
+        "frame_offset": [
+          0.9425522777677333,
+          -2.0703003247355842
+        ],
+        "frame_offset_judged": 1.585677772904415,
+        "frame_offset_vertical": null,
+        "frame_pieces": 8,
+        "frame_min_eigenvalue": 3.775352185390097,
+        "frame_max_eigenvalue": 4.224647814609903,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 7,
+        "frame_converged": true,
+        "frame_offset_limit": 4.0
       },
       "misfit": [],
       "reference_independent": false,
@@ -2823,7 +3036,30 @@
         "max_short_unsupported": NaN,
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 4.0
+        "max_edge_bias_limit": 4.0,
+        "frame_offset": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged": 0.0,
+        "frame_offset_vertical": null,
+        "frame_pieces": 1,
+        "frame_min_eigenvalue": 0.0,
+        "frame_max_eigenvalue": 1.0,
+        "frame_unconstrained": [
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ]
+        ],
+        "frame_judged_unconstrained": 2,
+        "frame_iterations": 1,
+        "frame_converged": true,
+        "frame_offset_limit": 4.0
       },
       "misfit": [],
       "reference_independent": false,
@@ -2950,7 +3186,21 @@
         "max_short_unsupported": NaN,
         "max_end_unsupported": 0.5714285714285714,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 2.0
+        "max_edge_bias_limit": 2.0,
+        "frame_offset": [
+          -0.5662159639813285,
+          -0.5439571411303517
+        ],
+        "frame_offset_judged": 0.5669161496851914,
+        "frame_offset_vertical": null,
+        "frame_pieces": 9,
+        "frame_min_eigenvalue": 4.388767049999681,
+        "frame_max_eigenvalue": 4.611232950000319,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 4,
+        "frame_converged": true,
+        "frame_offset_limit": 2.0
       },
       "misfit": [],
       "reference_independent": false,
@@ -3096,7 +3346,26 @@
         "max_short_unsupported": 0.0,
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 4.0
+        "max_edge_bias_limit": 4.0,
+        "frame_offset": [
+          -0.0004207672889326654,
+          -0.08826361856976568
+        ],
+        "frame_offset_judged": 0.0050432803520628205,
+        "frame_offset_vertical": null,
+        "frame_pieces": 5,
+        "frame_min_eigenvalue": 1.0927282046811764,
+        "frame_max_eigenvalue": 3.907271795318824,
+        "frame_unconstrained": [
+          [
+            -0.999988637259593,
+            0.0047671114631518165
+          ]
+        ],
+        "frame_judged_unconstrained": 1,
+        "frame_iterations": 4,
+        "frame_converged": true,
+        "frame_offset_limit": 4.0
       },
       "misfit": [],
       "reference_independent": false,
@@ -3193,7 +3462,21 @@
         "size_residual_arm 4": 0.03011468204529888,
         "size_residual_arm 5": -0.015239350805376861,
         "size_residual_arm 6": -0.045346676224057525,
-        "size_residual_arm 7": -0.05913797337840454
+        "size_residual_arm 7": -0.05913797337840454,
+        "frame_offset": [
+          0.17270890209351378,
+          -0.06799115772170995
+        ],
+        "frame_offset_judged": 0.05312715873968803,
+        "frame_offset_vertical": null,
+        "frame_pieces": 9,
+        "frame_min_eigenvalue": 4.043483045075705,
+        "frame_max_eigenvalue": 4.956516954924295,
+        "frame_unconstrained": [],
+        "frame_judged_unconstrained": 0,
+        "frame_iterations": 4,
+        "frame_converged": true,
+        "frame_offset_limit": 3.0
       },
       "misfit": [],
       "reference_independent": false,
@@ -3373,7 +3656,30 @@
         "max_short_unsupported": NaN,
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
-        "max_edge_bias_limit": 2.5
+        "max_edge_bias_limit": 2.5,
+        "frame_offset": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged": 0.0,
+        "frame_offset_vertical": null,
+        "frame_pieces": 1,
+        "frame_min_eigenvalue": -1.408410159756091e-16,
+        "frame_max_eigenvalue": 1.0,
+        "frame_unconstrained": [
+          [
+            -0.9998379712854597,
+            0.01800086597294645
+          ],
+          [
+            0.01800086597294645,
+            0.9998379712854597
+          ]
+        ],
+        "frame_judged_unconstrained": 2,
+        "frame_iterations": 1,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -3553,7 +3859,30 @@
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 2.5,
-        "size_residual_length": 0.05087007838501201
+        "size_residual_length": 0.05087007838501201,
+        "frame_offset": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged": 0.0,
+        "frame_offset_vertical": null,
+        "frame_pieces": 1,
+        "frame_min_eigenvalue": -4.1303738531558517e-17,
+        "frame_max_eigenvalue": 1.0,
+        "frame_unconstrained": [
+          [
+            0.04182285173757035,
+            -0.9991250417603081
+          ],
+          [
+            -0.9991250417603081,
+            -0.04182285173757035
+          ]
+        ],
+        "frame_judged_unconstrained": 2,
+        "frame_iterations": 1,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
@@ -3672,7 +4001,30 @@
         "max_end_unsupported": 0.0,
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 1.0,
-        "size_residual_length": -0.015645135212830952
+        "size_residual_length": -0.015645135212830952,
+        "frame_offset": [
+          0.0,
+          0.0
+        ],
+        "frame_offset_judged": 0.0,
+        "frame_offset_vertical": null,
+        "frame_pieces": 1,
+        "frame_min_eigenvalue": -1.4874893486258777e-16,
+        "frame_max_eigenvalue": 1.0,
+        "frame_unconstrained": [
+          [
+            -0.9973022484641824,
+            -0.07340453125173015
+          ],
+          [
+            -0.07340453125173015,
+            0.9973022484641824
+          ]
+        ],
+        "frame_judged_unconstrained": 2,
+        "frame_iterations": 1,
+        "frame_converged": true,
+        "frame_offset_limit": 1.0
       },
       "misfit": [],
       "reference_independent": false,
@@ -3784,7 +4136,26 @@
         "share_unsupported_segments": 0.0,
         "max_edge_bias_limit": 2.5,
         "size_residual_base": 0.14457025250115185,
-        "size_residual_arms": 0.07448371154632438
+        "size_residual_arms": 0.07448371154632438,
+        "frame_offset": [
+          -0.00024311185629035233,
+          0.003173926716943914
+        ],
+        "frame_offset_judged": 8.635087148983255e-05,
+        "frame_offset_vertical": null,
+        "frame_pieces": 5,
+        "frame_min_eigenvalue": 1.9503430286063463,
+        "frame_max_eigenvalue": 3.049656971393654,
+        "frame_unconstrained": [
+          [
+            -0.9970793292730366,
+            -0.07637284292490197
+          ]
+        ],
+        "frame_judged_unconstrained": 1,
+        "frame_iterations": 2,
+        "frame_converged": true,
+        "frame_offset_limit": 2.5
       },
       "misfit": [],
       "reference_independent": false,
