@@ -1,4 +1,4 @@
-# Phase 6 — Does it give the right answer: encoding, behavior, events, messiness, UX
+# Phase 6 — Does it give the right answer: encoding, behavior, events, visualization, messiness, UX
 
 [← back to PLAN.md](PLAN.md) · [overview](overview.md) · [appendix](appendix.md)
 
@@ -20,7 +20,8 @@ labels, the file's own speed, reward and well events, LFP.
 
 Goal: every operation the survey runs is checked against something that does
 not come from the code under test, the survey covers the encoding and
-behavior workflows a spatial neuroscientist runs, real-data messiness is
+behavior workflows a spatial neuroscientist runs, the figures and animations
+show the data they claim to, real-data messiness is
 measured and probed, and the documented path is tried as written.
 
 ## Rules for this phase
@@ -135,7 +136,62 @@ A loader that cannot find one says so in its docstring. No guessed values.
   `operations.py` needs beyond the public call (glue, conversions, private
   imports). Anything above a few lines is a UX finding.
 
-### 6f. Findings
+### 6f. Visualization: does the figure show the data (one agent)
+
+The survey calls no plotting or animation code today. Public surface:
+
+- 35 `plot` / `plot_field` / `animate_fields` methods on the environment and
+  result classes (rates, directional, egocentric, boundary-vector, view,
+  tuning, comparison, decoding, events, replay, shuffle, layout
+  `plot_linear_layout`);
+- the free plotting functions (`plot_head_direction_tuning`,
+  `plot_object_vector_tuning`, `plot_phase_precession`,
+  `plot_population_coverage`, `plot_peri_event_histogram`,
+  `plot_peri_event_response`, `plot_regions`, `plot_circular_basis_tuning`);
+- `neurospatial.animation` (`Animation`, its overlays and `export`).
+
+**Static figures.** For every recording, every plot that applies is
+rendered headless with `MPLBACKEND=Agg`. Each figure is checked by reading
+back the artists, not by trusting the call:
+
+| Check | How |
+| --- | --- |
+| The image is the data | the plotted array (`AxesImage.get_array()`, mesh or collection values) equals the result's values bin for bin |
+| Missing is not zero | NaN bins are masked or drawn in a distinct "no data" colour, never the colour of 0 Hz |
+| Orientation and extent | the axes limits contain the environment's extent in its units; 2-D is equal-aspect; a sample at the top of the arena (max y) is drawn at the top; pixel-unit recordings say so |
+| Peak in the right place | the brightest bin's position in data coordinates equals the rate argmax position |
+| Angles | a polar or heading plot puts 0 at East (allocentric) or ahead (egocentric) per the conventions; a unit with a known preferred direction peaks there |
+| Units and labels | axis and colorbar labels carry the physical units (cm, Hz, s, rad) |
+| Track layouts | `plot_linear_layout` order and gaps match the linearization used |
+| 3-D | the bat room and the lattice render with the declared extent |
+
+**Visual review.** For each recording, a contact sheet (one PNG grid of its
+figures) is written to `results/figures/`. The agent reads each sheet as an
+image and writes what a scientist would see wrong: unreadable defaults,
+clipped fields, misleading colour scales, empty panels. The sheets are
+published to the maintainer for an eye check. Automated checks don't replace
+this.
+
+**Animation.**
+
+- **Export a short slice.** For each recording, export a 10 s slice with
+  `Animation.export` (`.mp4` and `.gif`) and the `widget` backend, with a
+  position overlay, a spike raster and events where the recording has them.
+- **Check the frames against the data:**
+  - the frame count equals duration × fps;
+  - at sampled frames, the position marker's pixel maps back to the recorded
+    position at that frame's time (within one bin);
+  - spikes and events appear on the frame for their time.
+- **Interactive viewers.** `napari` and `fastplotlib` are tried off-screen
+  where they can render headless. Where they can't, they are smoke-only and
+  marked so. Earlier work found that napari can return black screenshots off
+  screen, so check a captured frame is not blank before trusting it.
+
+**UX.** For each figure type, count the lines needed from result to readable
+figure, and log the defaults a scientist would have to change (titles, units,
+colour range, NaN colour).
+
+### 6g. Findings
 
 - **A FINDINGS section per domain:** what agrees with the truth, what
   disagrees (each a gap with evidence), and what stays smoke-only.
@@ -160,6 +216,8 @@ A loader that cannot find one says so in its docstring. No guessed values.
 | `test_checks.py::test_check_without_truth_is_no_truth` | an operation with no truth available records `check="no truth"`, never `agrees` |
 | `test_checks.py::test_trials_match_rate` | `behavior.trials` on a simulated recording with a known trials table reports full agreement, and a shifted table reports start error equal to the shift |
 | `test_checks.py::test_psth_counts_match_numpy` | PSTH counts equal numpy counts; shuffled events give a flat population response |
+| `datasets/tests/test_figures.py::test_plotted_array_is_the_data` | on a simulated recording, the rate-map figure's image array equals the rates and NaN bins are masked; a figure with a flipped y axis fails the orientation check |
+| `test_figures.py::test_export_frames_follow_position` | a short simulated export has duration × fps frames and the position marker maps back to the recorded position within one bin |
 | `test_calibration.py::test_incidental_catch` | a raise whose message does not name the hazard records `caught (incidental)` |
 | ruff check and format on `datasets` | clean |
 | Real run (manual) | every operation has `check` set; the matrix shows check coverage by domain |
