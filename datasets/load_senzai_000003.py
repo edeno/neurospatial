@@ -11,8 +11,8 @@ file of the set is 4.66 GB, almost all LFP and per-spike waveforms, so it is
 read by HTTP byte range (``_fetch.open_nwb``) after checking DANDI's
 published SHA-256: the loader reads the position series with pynwb
 (``read_position`` searches only ``Position`` containers, and these are bare
-``SpatialSeries`` in ``acquisition``),, the spike times and
-the sleep-state table (about 30 MB).
+``SpatialSeries`` in ``acquisition``), the spike times and the sleep-state
+table, about 30 MB in all.
 
 What the loader converts: ``acquisition/position_sensor0`` and ``1`` are
 labelled ``unit="meters"`` with reference frame "unknown", but their values
@@ -22,7 +22,11 @@ pixel-to-cm calibration, so positions stay in pixels. The loader uses sensor 0
 (0.04 % NaN; sensor 1 has 0.75 %). The two sensors sit about 14 px apart,
 but the direction from one to the other does not follow the direction of
 movement (``_record.heading_vs_movement`` spread 66-83 degrees), so no head
-direction is derived from them. The file has no epochs table and does not
+direction is derived from them. The series store a sampling rate, not
+timestamps; the loader trusts the rate only because the duration it implies
+(666,029 / 39.0625 Hz = 17,050.3 s) matches the LFP's (21,312,875 samples at
+1,250 Hz) within 1 s and the last spike (17,050.2 s) falls within its last
+10 s. The file has no epochs table and does not
 say when the mouse was in the open field or on the maze; the sleep-state
 table labels "awake" periods.
 
@@ -31,6 +35,9 @@ Analysis choices (``params``):
 - ``bin_size`` 4 px (about 40 by 28 bins over the tracked area).
 - ``analysis_epochs``: the "awake" rows of the sleep-state table
   (3,309 s); the rest is sleep, unlabelled stimulation blocks or transitions.
+  The file does not separate the open field from the theta maze, so the
+  awake periods of both are pooled into one environment and one set of rate
+  maps; place maps here mix two apparatus seen in the same camera image.
 - ``dt`` 0.25 s, alternating 60 s ``train_epochs``/``test_epochs`` inside the
   awake periods.
 """
@@ -82,6 +89,9 @@ _SENSOR = "acquisition/position_sensor0"
 # Pixel coordinates of a camera image; a mouse arena in metres would span
 # under 3 m.
 _PIXEL_SPAN = (50.0, 1000.0)
+# The duration implied by the sensor's rate must match the LFP's within this,
+# and the last spike must fall in the last this-many seconds of it.
+_DURATION_TOLERANCE_S = (1.0, 10.0)
 
 
 def load(cache: Path | None = None) -> Recording:
@@ -95,6 +105,8 @@ def load(cache: Path | None = None) -> Recording:
         positions = np.asarray(series.data[:], dtype=float)
         label, rate = series.unit, float(series.rate)
         start = float(series.starting_time)
+        lfp = nwbfile.processing["ecephys"]["LFP"]["LFP"]
+        lfp_duration = lfp.data.shape[0] / float(lfp.rate)
         units = read_units(nwbfile)
         states = nwbfile.processing["behavior"]["states"].to_dataframe()
 
@@ -103,6 +115,18 @@ def load(cache: Path | None = None) -> Recording:
         _PIXEL_SPAN[0] <= v <= _PIXEL_SPAN[1] for v in span
     ):
         msg = f"{_SENSOR}: unit {label!r}, span {span.round(1)}; recheck"
+        raise ValueError(msg)
+    duration = len(positions) / rate
+    last_spike = max(float(np.max(t)) for t in units.spike_times if len(t))
+    if (
+        abs(duration - lfp_duration) > _DURATION_TOLERANCE_S[0]
+        or not duration - _DURATION_TOLERANCE_S[1] <= last_spike - start <= duration
+    ):
+        msg = (
+            f"{_SENSOR}: {len(positions)} samples at {rate} Hz last {duration:.1f} s,"
+            f" but the LFP lasts {lfp_duration:.1f} s and the last spike is at"
+            f" {last_spike:.1f} s; the stored rate cannot be trusted"
+        )
         raise ValueError(msg)
     times = start + np.arange(len(positions)) / rate
     labels = states["label"].to_numpy().astype(str)
@@ -135,7 +159,9 @@ def load(cache: Path | None = None) -> Recording:
             f" range checked: {np.nanmin(positions[:, 0]):.0f}-"
             f"{np.nanmax(positions[:, 0]):.0f} by {np.nanmin(positions[:, 1]):.0f}-"
             f"{np.nanmax(positions[:, 1]):.0f}: pixels, kept as pixels (no calibration)",
-            f"times: starting_time {start} s + index / {rate} Hz",
+            f"times: starting_time {start} s + index / {rate} Hz; the implied"
+            f" {duration:.1f} s matches the LFP's {lfp_duration:.1f} s and the last"
+            f" spike at {last_spike:.1f} s",
             "headings: none; the direction between the two sensors does not follow"
             " movement",
             "epochs: sleep-state rows by label; params['analysis_epochs'] the awake rows",
