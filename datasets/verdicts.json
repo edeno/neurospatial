@@ -33,7 +33,7 @@
     "neurospatial UserWarning: Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).": {
       "verdict": "false alarm",
       "gap": "G-058",
-      "reason": "Pixel units spelled 'pixel' (001754, 000003): the singular is not registered, only 'pixels' and 'px'; the data are correct pixels."
+      "reason": "Pixel units spelled 'pixel' (001754, 000003): the singular is not registered, only 'pixels' and 'px'; the data are correct pixels. The registry and neurospatial's own unit table disagree (G-095 has the source references)."
     },
     "neurospatial UserWarning: decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.": {
       "verdict": "correct",
@@ -641,6 +641,371 @@
       "verdict": "silent",
       "gap": "G-015",
       "reason": "0 -> 1 lap in an open arena once the gaps are closed (laps in open arenas, decision 5)."
+    },
+    "hc11_achilles/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Untracked samples become (0, 0): 1096 -> 1097 bins. Check 1 would fire. Identical to grosmark_000044_linear."
+    },
+    "hc11_achilles/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Total occupancy up 97 s; the origin bin holds 101 s, the most of any bin (clean max 27.7 s). Check 1 would fire."
+    },
+    "hc11_achilles/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Spikes during untracked time binned at the origin; median peak 15.9 -> 16.5 Hz. Check 1 would fire."
+    },
+    "hc11_achilles/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to and from the origin read as running: 522 -> 574 segments. Check 1 would fire."
+    },
+    "hc11_achilles/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Spike-drop warning: 100 % of spikes outside the position window, with the units hint."
+    },
+    "hc11_achilles/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "bin_size is at least the data extent (1.98 x 2.20): 3 bins."
+    },
+    "hc11_achilles/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: every interval excluded by min_speed=4.0 in the shrunken units."
+    },
+    "hc11_achilles/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: every interval excluded by min_speed=4.0 in the shrunken units."
+    },
+    "hc11_achilles/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "0 segments; no environment built, so check 2 cannot see it."
+    },
+    "hc11_achilles/epochs_left_transposed/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "The environment does not read epochs."
+    },
+    "hc11_achilles/epochs_left_transposed/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: epochs of shape (2, 1) refused, with np.column_stack as the fix."
+    },
+    "hc11_achilles/epochs_left_transposed/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: epochs of shape (2, 1) refused, with np.column_stack as the fix."
+    },
+    "hc11_achilles/epochs_left_transposed/behavior.segment_by_velocity": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "segment_by_velocity is not given epochs: 522 segments either way."
+    },
+    "hc3_ec013_669/headings_in_degrees/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warned: headings look like degrees (max 180), with np.radians as the fix."
+    },
+    "hc3_ec013_669/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "6.1 % untracked frames become (0, 0) px, outside the tracked area: extent 238 -> 299 px. Check 1 would fire."
+    },
+    "hc3_ec013_669/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Total occupancy 535 -> 544 s. Check 1 would fire."
+    },
+    "hc3_ec013_669/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median peak 2.99 -> 3.21 Hz. Check 1 would fire."
+    },
+    "hc3_ec013_669/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "208 -> 211 segments. Check 1 would fire."
+    },
+    "hc3_ec013_669/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Spike-drop warning with the 'about 1000 times' hint (the probe builds its own environment, so the pixel-units warning (G-095) is new there)."
+    },
+    "hc3_ec013_669/spike_times_in_ms/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Spike-drop warning with the 'about 1000 times' hint."
+    },
+    "hc3_ec013_669/coincident_leds_as_east/hd.tuning": {
+      "verdict": "silent",
+      "gap": "G-094",
+      "reason": "5.1 % of tracked frames get heading exactly 0; median mean vector length 0.223 -> 0.238, nothing warns. A share of headings at exactly 0 would show it."
+    },
+    "hc3_ec013_669/leds_swapped/hd.tuning": {
+      "verdict": "undetectable",
+      "gap": "G-094",
+      "reason": "Every heading turned by pi: mean vector lengths unchanged (0.223), only preferred directions rotate. Only the movement check in the loader tells the orders apart (6 deg against -174 deg)."
+    },
+    "hc3_ec013_669/whl_minus_one_kept/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Untracked frames become (-1, -1) px, outside the video image: 540 -> 553 bins, extent 238 -> 299 px. Check 1 would not fire (not 0)."
+    },
+    "hc3_ec013_669/whl_minus_one_kept/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Total occupancy up 8.0 s, 6.1 s of it in the (-1, -1) bin. Check 1 would not fire."
+    },
+    "hc3_ec013_669/whl_minus_one_kept/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Median peak 2.99 -> 3.47 Hz; NaN bins 0.37 -> 0.72 %."
+    },
+    "hc3_ec013_669/whl_minus_one_kept/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Jumps to (-1, -1) read as running: 208 -> 211 segments."
+    },
+    "hc2_ec013_527/headings_in_degrees/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warned: headings look like degrees (max 180), with np.radians as the fix."
+    },
+    "hc2_ec013_527/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "2.1 % untracked frames become (0, 0) px: extent 183 -> 261 px. Check 1 would fire."
+    },
+    "hc2_ec013_527/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Total occupancy 823.7 -> 827.4 s. Check 1 would fire."
+    },
+    "hc2_ec013_527/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median peak 4.74 -> 4.69 Hz. Check 1 would fire."
+    },
+    "hc2_ec013_527/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "289 -> 294 segments. Check 1 would fire."
+    },
+    "hc2_ec013_527/missing_positions_as_zero/behavior.laps": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "The one open-arena 'lap' flips from clockwise to counter-clockwise (G-015 already counts a lap where there is no loop)."
+    },
+    "hc2_ec013_527/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Spike-drop warning with the 'about 1000 times' hint, and the all-units-silent warning (the probe builds its own environment, so the pixel-units warning (G-095) is new there)."
+    },
+    "hc2_ec013_527/spike_times_in_ms/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Spike-drop warning with the 'about 1000 times' hint."
+    },
+    "hc2_ec013_527/coincident_leds_as_east/hd.tuning": {
+      "verdict": "silent",
+      "gap": "G-094",
+      "reason": "2.3 % of tracked frames get heading exactly 0; median mean vector length 0.199 -> 0.210, nothing warns."
+    },
+    "hc2_ec013_527/leds_swapped/hd.tuning": {
+      "verdict": "undetectable",
+      "gap": "G-094",
+      "reason": "Every heading turned by pi: mean vector lengths unchanged (0.199); only the loader's movement check tells the orders apart (0.4 deg against -179.6 deg)."
+    },
+    "hc2_ec013_527/whl_minus_one_kept/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Untracked frames become (-1, -1) px: 3210 -> 3224 bins, extent 183 -> 261 px. Check 1 would not fire."
+    },
+    "hc2_ec013_527/whl_minus_one_kept/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Total occupancy 823.7 -> 827.4 s; frac visited 0.9988 -> 0.9984."
+    },
+    "hc2_ec013_527/whl_minus_one_kept/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Median peak 4.74 -> 4.47 Hz."
+    },
+    "hc2_ec013_527/whl_minus_one_kept/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "289 -> 294 segments."
+    },
+    "hc2_ec013_527/whl_minus_one_kept/behavior.laps": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "The one open-arena 'lap' flips direction (G-015)."
+    },
+    "hc28_hpa/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "rawpos's own defect: 15.5 % of frames at (0, 0), outside the W-track: extent 92.5 -> 145 cm. Check 1 would fire (15.5 % >= 0.1 %)."
+    },
+    "hc28_hpa/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Total occupancy up 158 s; the origin bin holds 175.3 s, the most of any bin (clean max 12.5 s). Check 1 would fire."
+    },
+    "hc28_hpa/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Spikes during untracked frames binned at the origin; median peak 8.47 -> 8.19 Hz, NaN bins 1 % -> 0. Check 1 would fire."
+    },
+    "hc28_hpa/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "487 -> 455 segments, running 835 -> 959 s. Check 1 would fire."
+    },
+    "hc28_hpa/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Spike-drop warning with the 'about 1000 times' hint, and the all-units-silent warning."
+    },
+    "hc28_hpa/length_unit_off_by_100/env.from_samples": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "bin_size is at least the data extent (0.90 x 0.87): 4 bins."
+    },
+    "hc28_hpa/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: every interval excluded by min_speed=4.0, with the units hint."
+    },
+    "hc28_hpa/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: every interval excluded by min_speed=4.0, with the units hint."
+    },
+    "hc28_hpa/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "0 segments; no environment built, so check 2 cannot see it."
+    },
+    "hc31_anm190422/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Spike-drop warning with the 'about 1000 times' hint, and the all-units-silent warning."
+    },
+    "hc31_anm190422/length_unit_off_by_100/env.from_samples": {
+      "verdict": "undetectable",
+      "gap": "G-014",
+      "reason": "A 48 m track shrunk to 48 cm is a plausible short track: 21 bins along it, above check 2's 5. Occupancy and rates in the same workflow refuse it (min_speed)."
+    },
+    "hc31_anm190422/length_unit_off_by_100/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: every interval excluded by min_speed=4.0, with the units hint."
+    },
+    "hc31_anm190422/length_unit_off_by_100/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: every interval excluded by min_speed=4.0, with the units hint."
+    },
+    "hc31_anm190422/length_unit_off_by_100/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "0 segments; no environment built, so check 2 cannot see it."
+    },
+    "hc31_anm190422/inches_as_cm/env.from_samples": {
+      "verdict": "undetectable",
+      "gap": "G-093",
+      "reason": "Inches read as cm: a 19 m track instead of 48 m, 760 bins instead of 1928; nothing in the values says inches."
+    },
+    "hc31_anm190422/inches_as_cm/env.occupancy": {
+      "verdict": "undetectable",
+      "gap": "G-093",
+      "reason": "Speeds shrink by 2.54 so min_speed drops more samples: occupancy 909 -> 810 s; plausible."
+    },
+    "hc31_anm190422/inches_as_cm/rates.spatial": {
+      "verdict": "undetectable",
+      "gap": "G-093",
+      "reason": "Median peak 9.5 -> 7.2 Hz on a shorter track; plausible."
+    },
+    "hc31_anm190422/inches_as_cm/behavior.segment_by_velocity": {
+      "verdict": "undetectable",
+      "gap": "G-093",
+      "reason": "237 -> 231 segments; plausible."
+    },
+    "hc31_anm190422/times_in_microseconds/env.from_samples": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "The environment does not read times."
+    },
+    "hc31_anm190422/times_in_microseconds/env.occupancy": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: median sampling interval 3.3e4 s, 'times are probably not in seconds'."
+    },
+    "hc31_anm190422/times_in_microseconds/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: median sampling interval 3.3e4 s, 'times are probably not in seconds'."
+    },
+    "hc31_anm190422/times_in_microseconds/behavior.segment_by_velocity": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Raised: median sampling interval 3.3e4 s, 'times are probably not in seconds'."
+    },
+    "hc18_train261/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "0.44 % untracked frames become (0, 0) px at the image corner: 2723 -> 2718 bins. Check 1 would fire."
+    },
+    "hc18_train261/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Total occupancy up 69 s; the corner (origin) bin holds 68.8 s, the most of any bin (clean max 5.2 s). Check 1 would fire."
+    },
+    "hc18_train261/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median mean rate 0.783 -> 0.776 Hz. Check 1 would fire."
+    },
+    "hc18_train261/missing_positions_as_zero/behavior.laps": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "1 -> 0 laps (the true count is about 107; G-037)."
+    },
+    "hc18_train261/spike_times_in_ms/rates.spatial": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Spike-drop warning with the 'about 1000 times' hint, and the all-units-silent warning (the probe builds its own environment, so the pixel-units warning (G-095) is new there)."
+    },
+    "hc18_train261/clock_assumed_20khz/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-097",
+      "reason": "Spike times stretched by 1.63: median mean rate 0.78 -> 0.27 Hz, median peak 39 -> 2.0 Hz. The only new warning is the pixel-units one, new because the probe builds its own environment (G-095); the stretched spikes that leave tracking fall outside the travel epochs, so the epochs-aware drop count ignores them."
+    },
+    "hc18_train261/pos_minus_one_kept/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Untracked frames become (-1, -1) px: 2723 -> 2731 bins. Check 1 would not fire."
+    },
+    "hc18_train261/pos_minus_one_kept/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Total occupancy up 69 s; the (-1, -1) bin holds 68.8 s, the most of any bin (clean max 5.2 s). Check 1 would not fire."
+    },
+    "hc18_train261/pos_minus_one_kept/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "Median mean rate 0.783 -> 0.762 Hz."
+    },
+    "hc18_train261/pos_minus_one_kept/behavior.laps": {
+      "verdict": "silent",
+      "gap": "G-096",
+      "reason": "1 -> 0 laps (the true count is about 107; G-037)."
     },
     "watermaze_10248158/missing_positions_as_zero/env.from_samples": {
       "verdict": "silent",
@@ -1449,6 +1814,33 @@
       "gap": "G-015"
     },
     "vollan_of/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc11_achilles/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc11_achilles/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hc3_ec013_669/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc3_ec013_669/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hc2_ec013_527/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc28_hpa/cells.border_score": {
+      "gap": "G-005"
+    },
+    "hc28_hpa/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hc31_anm190422/behavior.laps": {
+      "gap": "G-015"
+    },
+    "hc18_train261/cells.border_score": {
       "gap": "G-005"
     },
     "watermaze_10248158/behavior.laps": {

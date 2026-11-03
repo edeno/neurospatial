@@ -7,6 +7,7 @@
     "positions: lattice_3d pox, poy, poz / 10 (mm -> cm; unit inferred: position speed / pov median 10.03)",
     "range checked: -15.8 to 138.8 by -66.9 to 104.0 by -20.2 to 127.6 cm (largest span 170.8, expected 120-200)",
     "times: lattice_3d pot as stored (s)",
+    "geometry['lattice_bars_cm']: lattice_3d lx, ly, lz / 10, 147 bars; config3.lattice_type 'diagonal'",
     "units: 24 tetrode/cluster fields; cluster 0 of each tetrode (5712584 spikes, unsorted) left out",
     "headings: none; lattice.poh minus the direction of movement above 10 cm/s: in the camera's 2-D frame (lattice.pox, poy) mean -0.8 deg, spread 42.3 deg; in the 3-D frame's x, y mean -112.6 deg, spread 87.8 deg: not a heading in the positions' frame"
   ],
@@ -44,7 +45,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "1456e63118c0c3f79efeeaebd589be1ab83fdd98"
+    "git_commit": "c38e12c508400a71a62d69807016a1ef279d9ae3"
   },
   "load_warnings": [],
   "operations": {
@@ -58,8 +59,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.456,
-      "peak_mb": 58.2
+      "seconds": 2.424,
+      "peak_mb": 91.6
     },
     "env.occupancy": {
       "status": "ok",
@@ -72,7 +73,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.168,
+      "seconds": 0.141,
       "peak_mb": 64.7
     },
     "rates.spatial": {
@@ -86,8 +87,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 47.453,
-      "peak_mb": 1640.0
+      "seconds": 53.443,
+      "peak_mb": 1644.0
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -99,7 +100,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.005,
       "peak_mb": 13.2
     },
     "rates.information_vs_shifts": {
@@ -114,7 +115,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.139,
+      "seconds": 1.149,
       "peak_mb": 68.0
     },
     "cells.place_screen": {
@@ -126,7 +127,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.071,
+      "seconds": 10.197,
       "peak_mb": 205.9
     },
     "cells.grid_score": {
@@ -144,8 +145,8 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 6.7
+      "seconds": 0.007,
+      "peak_mb": 6.8
     },
     "hd.tuning": {
       "status": "n/a",
@@ -169,8 +170,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 7.021,
-      "peak_mb": 950.9
+      "seconds": 6.435,
+      "peak_mb": 951.5
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -180,8 +181,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.53,
-      "peak_mb": 118.5
+      "seconds": 6.892,
+      "peak_mb": 127.6
     },
     "env.from_graph": {
       "status": "n/a",
@@ -201,8 +202,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.109,
-      "peak_mb": 66.7
+      "seconds": 0.91,
+      "peak_mb": 87.9
     },
     "behavior.laps": {
       "status": "error",
@@ -228,8 +229,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.121,
+      "peak_mb": 3.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -237,7 +238,16 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.008,
+      "peak_mb": 0.3
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
       "peak_mb": 0.0
     },
     "imaging.rates": {

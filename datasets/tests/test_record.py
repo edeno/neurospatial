@@ -4,7 +4,12 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
-from _record import Range, check_expectations, validate_recording
+from _record import (
+    Range,
+    check_expectations,
+    heading_vs_movement,
+    validate_recording,
+)
 
 
 def test_valid_simulated_recording_passes(simulated_recording):
@@ -97,3 +102,59 @@ def test_three_dimensional_recording_validates(simulated_recording):
     validate_recording(rec)
     rows = check_expectations(rec, {"n_dims": 3})
     assert rows[0]["passed"]
+
+
+def _one_step_offset(times, positions, headings, min_speed):
+    # The lag-1 rule written out: direction of the step to the next sample.
+    step = np.diff(positions, axis=0)
+    speed = np.linalg.norm(step, axis=1) / np.diff(times)
+    running = (speed > min_speed) & np.isfinite(headings[:-1])
+    diff = np.angle(
+        np.exp(1j * (headings[:-1] - np.arctan2(step[:, 1], step[:, 0])))[running]
+    )
+    mean = np.angle(np.mean(np.exp(1j * diff)))
+    return mean, np.median(np.abs(np.angle(np.exp(1j * (diff - mean)))))
+
+
+@pytest.fixture
+def pixel_circle():
+    """A head running a 60 px circle at 30 Hz, tracked in whole pixels; heading along the path."""
+    times = np.arange(0.0, 60.0, 1 / 30)
+    angle = 0.8 * times  # 48 px/s, about 1.6 px per frame
+    exact = 60.0 * np.column_stack([np.cos(angle), np.sin(angle)])
+    headings = np.angle(np.exp(1j * (angle + np.pi / 2)))
+    return times, np.round(exact), headings
+
+
+def test_heading_vs_movement_default_is_the_one_step_rule(pixel_circle):
+    times, positions, headings = pixel_circle
+    rng = np.random.default_rng(0)
+    noisy = np.angle(np.exp(1j * (headings + rng.normal(0, 0.3, headings.size))))
+    noisy[::17] = np.nan
+    expected = _one_step_offset(times, positions, noisy, min_speed=10.0)
+    np.testing.assert_allclose(
+        heading_vs_movement(times, positions, noisy, min_speed=10.0), expected
+    )
+    np.testing.assert_allclose(
+        heading_vs_movement(times, positions, noisy, min_speed=10.0, lag=1),
+        expected,
+    )
+
+
+def test_heading_vs_movement_lag_removes_pixel_quantisation(pixel_circle):
+    times, positions, headings = pixel_circle
+    _, one_step = heading_vs_movement(times, positions, headings, min_speed=10.0)
+    mean, longer = heading_vs_movement(
+        times, positions, headings, min_speed=10.0, lag=10
+    )
+    # One-pixel steps snap the direction to multiples of 45 deg.
+    assert one_step > np.radians(10)
+    # Over 10 samples the chord lags the tangent by half the turn (0.13 rad).
+    assert abs(mean + 0.8 * 10 / 30 / 2) < 0.03
+    assert longer < np.radians(3)
+
+
+def test_heading_vs_movement_refuses_a_lag_below_one(pixel_circle):
+    times, positions, headings = pixel_circle
+    with pytest.raises(ValueError, match="positive number of samples"):
+        heading_vs_movement(times, positions, headings, min_speed=10.0, lag=0)
