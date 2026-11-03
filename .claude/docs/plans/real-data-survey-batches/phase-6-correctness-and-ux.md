@@ -99,6 +99,19 @@ cause.
 
   The real-data fidelity study answers the same question without a known
   answer.
+- **Measure how sensitive the environment verdict is.** On rungs 2–3, plant
+  misfits of known size in each apparatus kind:
+  - a shift of 2–10 cm;
+  - a scale of ±5–30%;
+  - a rotation of 3–10° about the centre;
+  - a wrong width;
+  - a missing or extra arm.
+
+  Run the declared-environment checks (`judge_declared`, the misfit
+  refusal, `jump_links`) on each. Report the smallest misfit each check
+  catches. Two thresholds were set after seeing real data (the 20-bin
+  bias window, the bias limit in bins), and this is where they get
+  measured.
 - **Figures** (6f) are checked on rung 1–2 sessions first, where every field
   is known, before they are checked on real data.
 - **Seeds.** Every simulated session is seeded, and its parameters are
