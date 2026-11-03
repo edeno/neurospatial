@@ -124,6 +124,28 @@ defaults, renamed arguments) are listed as **Breaking**.
    (analysed vs recorded seconds, and the gate that removed the rest), since
    today it is only in `analysis_settings`.
 
+## Follow-ups recorded during execution
+
+- **Per-interval path measures include the final step** (maintainer,
+  2026-11-02). A trial `[start, stop)` excludes the step into the `stop`
+  sample, so per-trial paths end one sample short of the goal edge and path
+  efficiency can exceed 1 by at most one sample step. Apply "include the
+  step to the interval's stop sample" to every per-interval path measure at
+  once (path efficiency, goal-directed metrics, `path_progress`, and
+  similar) through one shared helper, then tighten
+  `test_path_efficiency_not_above_one` to `<= 1`.
+- **Show the time selection in results** (min_speed decision): result
+  `repr`/`summary()` report analysed vs recorded seconds and the gate that
+  removed the rest.
+- **Real-data survey findings not taken here:** G-030 (the NWB heading
+  reader trusts a "degrees" label on radian data) and G-031 (headings
+  squeezed into a small arc look like sharp head-direction cells; needs a
+  calibrated spread threshold). See `datasets/GAPS.md`.
+- **The other `*_significance` functions** still return dicts; give them
+  population results like `PlaceCellSignificanceResult`.
+- **`keyword_hint` has no hook for unexpected keywords**, so a result screen
+  called with `criterion=` gives a plain `TypeError`.
+
 ## Estimated Effort
 
 | Phase | Approx. diff |
