@@ -76,7 +76,6 @@ _ASSET_ID = "48f2daa0-752b-4de5-932a-6e4682478493"
 _SHA256 = "17bc28bed791fad03b3a87702a77f2f8c74ca5daac0a8e8dbc742df3506b1790"
 # The track is 110 cm; the tracked span along it must lie here (cm).
 _TRACK_CM = (100.0, 130.0)
-_VIDEO_OFFSET_S = 22.55
 
 
 def _windows(table: object) -> np.ndarray:
@@ -171,8 +170,12 @@ def load(cache: Path | None = None) -> Recording:
 
 def _video_timestamps(rec: Recording) -> Recording:
     # A user taking the frame times from the video ImageSeries instead.
-    assert rec.times is not None
-    return replace(rec, times=rec.times - _VIDEO_OFFSET_S)
+    with open_nwb(rec.params["nwb_source"]) as nwbfile:
+        video_times = np.asarray(
+            nwbfile.acquisition["ImageSeriesTrackingVideo1"].timestamps[:],
+            dtype=float,
+        )
+    return replace(rec, times=video_times)
 
 
 HAZARDS = {"video_timestamps": _video_timestamps}
