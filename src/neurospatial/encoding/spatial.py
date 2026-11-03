@@ -54,6 +54,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, TimeWindows, resolve_time_windows
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import (
@@ -4033,6 +4034,7 @@ def _spatial_rates_result(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_spatial_rate(
     env: Environment,
@@ -4430,6 +4432,7 @@ default="diffusion_kde"
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_spatial_rates(
     env: Environment,
@@ -5419,6 +5422,7 @@ def _check_directional_recording(
     warn_discarded([drop_message, window_message], suppress_hint=_WARN_ON_DROP_HINT)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compute_directional_place_fields(
     env: Environment,
@@ -6149,6 +6153,7 @@ def _keep_place_fields(
     return results
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def has_place_field(
     env: Environment,
@@ -6417,6 +6422,7 @@ def has_place_field(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def is_place_cell(
     env: Environment,
@@ -6889,6 +6895,7 @@ def _smoothed_bin_measures(
     return smallest
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def place_cell_significance(
     env: Environment,
@@ -8073,6 +8080,7 @@ class PlaceCellSignificanceResult(UnitSelectionMixin, ResultMixin):
         return self[idx].plot(ax=ax, **kwargs)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def spatial_cell_type_significance(
     env: Environment,

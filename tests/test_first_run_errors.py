@@ -502,3 +502,24 @@ def test_invalid_peri_event_window_names_the_call(window):
     assert "align_spikes_to_events" in str(caught.value)
     assert "window" in str(caught.value)
     assert "Fix:" in str(caught.value)
+
+
+def test_animate_fields_without_frame_times_names_the_argument(recording):
+    env = recording.env
+    with pytest.raises(TypeError) as caught:
+        env.animate_fields(np.ones((2, env.n_bins)))
+    message = str(caught.value)
+    assert message.startswith("Environment.animate_fields() needs frame_times=.")
+    assert "one time in seconds for each frame" in message
+    assert message.splitlines()[-1] == (
+        "Fix: pass frame_times= with one time per frame, as in "
+        "env.animate_fields(fields, frame_times=np.arange(n_frames) / fps)"
+    )
+
+
+def test_animate_fields_frame_times_by_position_names_the_keyword(recording):
+    env = recording.env
+    fields = np.ones((2, env.n_bins))
+    with pytest.raises(TypeError, match="pass frame_times=") as caught:
+        env.animate_fields(fields, np.array([0.0, 0.1]))
+    assert "backend=" not in str(caught.value)

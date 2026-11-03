@@ -42,6 +42,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _entropy, _name_key, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
@@ -1658,6 +1659,7 @@ def _check_decoded_environment(
         )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def detect_replay(
     env: Environment | Mapping[str, Environment],
@@ -3200,6 +3202,7 @@ def _quantity_test(
     return _QuantityTest(values, p_values, min(used) if used else None)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def detect_rank_order_replay(
     env: Environment | Mapping[str, Environment],
@@ -3642,6 +3645,7 @@ def _spike_window(times: NDArray[np.float64], dt: float) -> tuple[float, float]:
     return float(times[0]) - dt / 2, float(times[-1]) + dt / 2
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def compare_replay_methods(
     env: Environment | Mapping[str, Environment],

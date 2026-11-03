@@ -31,6 +31,7 @@ import numpy as np
 
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.replay._inputs import _FIT_WHY, _posterior_times, _probability_rows
@@ -138,6 +139,7 @@ class CircularSequenceResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def fit_circular_sequence(
     env: Environment,

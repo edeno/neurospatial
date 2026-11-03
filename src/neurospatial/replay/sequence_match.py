@@ -29,6 +29,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import times_in_intervals
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_integer_at_least
@@ -430,6 +431,7 @@ class SequenceMatchResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def best_sequence_match(
     env: Environment,
@@ -679,6 +681,7 @@ class MatchingIndexResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def sequence_matching_index(
     env: Environment,

@@ -21,6 +21,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import (
@@ -341,6 +342,7 @@ def _check_best_match_options(method: TemplateMatchMethod, prefix: str) -> None:
         raise ValueError(msg)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def detect_template_match_replay(
     env: Environment | Mapping[str, Environment],
@@ -731,6 +733,7 @@ class TemplateMatchDatasetResult(ReadOnlyArraysMixin, ResultMixin):
         }
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def template_match_dataset_test(
     env: Environment | Mapping[str, Environment],
