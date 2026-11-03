@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from neurospatial._keyword_hint import keyword_hint
@@ -114,10 +116,21 @@ def env_first(monkeypatch):
     return rate, joint
 
 
-def test_none_env_with_a_typo_keeps_pythons_did_you_mean(env_first):
+def _python_message(function, *args, **kwargs):
+    """Python's own TypeError text for the undecorated function.
+
+    It includes a "Did you mean" hint only from Python 3.13 on.
+    """
+    with pytest.raises(TypeError) as expected:
+        inspect.unwrap(function)(*args, **kwargs)
+    return str(expected.value)
+
+
+def test_none_env_with_a_typo_keeps_pythons_message(env_first):
     rate, _ = env_first
-    with pytest.raises(TypeError, match="Did you mean 'dt'") as caught:
+    with pytest.raises(TypeError) as caught:
         rate(None, [1.0], [0.0], "p", d=1)
+    assert str(caught.value) == _python_message(rate, None, [1.0], [0.0], "p", d=1)
     assert "environment" not in str(caught.value)
 
 
@@ -149,5 +162,6 @@ def test_env_in_second_position_says_env_goes_first(env_first):
 
 def test_env_first_with_typo_is_not_blamed_on_the_environment(env_first):
     rate, _ = env_first
-    with pytest.raises(TypeError, match="Did you mean 'dt'"):
+    with pytest.raises(TypeError) as caught:
         rate(_Env(), [1.0], [0.0], "p", d=1)
+    assert str(caught.value) == _python_message(rate, _Env(), [1.0], [0.0], "p", d=1)
