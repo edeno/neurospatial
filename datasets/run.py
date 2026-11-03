@@ -53,6 +53,15 @@ LOADERS = {
     "j16_23020757": "load_j16_23020757",
     "agarwal_24757638": "load_agarwal_24757638",
     "shipley_30902972": "load_shipley_30902972",
+    "rsc_000987": "load_rsc_000987",
+    "ca1ca3_001880": "load_ca1ca3_001880",
+    "gonzalez_001695": "load_gonzalez_001695",
+    "neurolab_001754": "load_neurolab_001754",
+    "valero_000568": "load_valero_000568",
+    "aeryjones_000165": "load_aeryjones_000165",
+    "dyads_001845": "load_dyads_001845",
+    "senzai_000003": "load_senzai_000003",
+    "kanter_2025": "load_kanter_2025",
 }
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"

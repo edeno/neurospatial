@@ -38,6 +38,7 @@ def test_driver_statuses_on_simulated_recording(simulated_record):
         "behavior.turn_sequence",
         "replay.compare_methods",
         "io.nwb_readers",
+        "io.read_pose",
         "imaging.rates",
         "imaging.rates_workaround",
     ):

@@ -44,7 +44,7 @@ their loaders read them with restricted unpicklers that resolve only the
 globals and dtypes those files hold, and refuse every other one (Gardner's
 loader also lists a pickle's imports from its opcodes before unpickling).
 
-Multi-GB DANDI files (000044, 000447) are not downloaded: the loader checks the
+Multi-GB DANDI files (000044, 000447, 000003) are not downloaded: the loader checks the
 SHA-256 DANDI publishes for the asset, then reads the few datasets it needs by
 HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 
@@ -72,12 +72,23 @@ HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 | `j16_23020757` | Rat hippocampus in a spatial bandit maze with its track graph, `.npz` without pickles (Zenodo 23020757) | 75.1 MB | CC-BY-4.0 |
 | `agarwal_24757638` | Rat CA1 and mPFC on a 3-arm maze with a wheel delay (Figshare 24757638) | 226 MB | CC-BY-4.0 |
 | `shipley_30902972` | Mouse CA1 tetrodes on an 8-arm radial maze and sleep, Kilosort NPY + MATLAB (UCL RDR 30902972; 4 members of a 4.4 GB zip by byte range) | 67 MB | CC-BY-4.0 |
+| `rsc_000987` | Mouse retrosplenial units in a square arena, motion-capture head direction (DANDI 000987) | 20.2 MB | CC-BY-4.0 |
+| `ca1ca3_001880` | Mouse CA1 and CA3 units on a cheeseboard maze, ripples (DANDI 001880) | 65.7 MB | CC0-1.0 |
+| `gonzalez_001695` | Mouse CA1/CA3/RSC units on a novel linear maze with sleep, ripples (DANDI 001695) | 61.3 MB | CC-BY-4.0 |
+| `neurolab_001754` | Rat CA1 units in spaceflight, Escher staircase; pixels sampled at spike times (DANDI 001754) | 3.2 MB | CC-BY-4.0 |
+| `valero_000568` | Mouse CA1 units on a 110 cm linear track, ripples (DANDI 000568) | 5.8 MB | CC-BY-4.0 |
+| `aeryjones_000165` | Mouse hippocampal multi-unit activity per channel on a linear track (DANDI 000165) | 23.3 MB | CC-BY-4.0 |
+| `dyads_001845` | Rat on a cooperative W-maze, DeepLabCut pose, behavior only (DANDI 001845) | 1.4 MB | CC0-1.0 |
+| `senzai_000003` | Mouse dentate gyrus and CA3 units, open exploration and maze; pixels labelled metres (DANDI 000003) | streamed from 4.7 GB | CC-BY-4.0 |
+| `kanter_2025` | Rat LEC and CA1 Neuropixels units, 1 m open field with novel objects (EBRAINS 10.25493/GTVB-FQR) | 29.6 MB | CC-BY-SA-4.0 |
 
 NWB loaders set `params["nwb_source"]` to the cached file, or to the URL of a
 file read by byte range. The `io.nwb_readers`
 operation then runs neurospatial's position, head-direction and unit readers
 on it with default arguments and compares what they return with the loader's
-range-checked arrays.
+range-checked arrays. `io.read_pose` runs `read_pose` the same way, reports each
+keypoint's share of NaN samples, and feeds one keypoint to the rate maps (or
+occupancy, for a behavior-only file).
 
 ## Studies
 

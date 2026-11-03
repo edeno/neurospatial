@@ -1,8 +1,8 @@
 # Real-data survey: findings
 
-Fourteen public recordings were loaded into plain arrays and run through 19
-operations (18 calls into neurospatial and one harness workaround), each
-recording was re-run with known defects put back (112 probes), and results
+Twenty-three public recordings were loaded into plain arrays and run through
+20 operations (19 calls into neurospatial and one harness workaround), each
+recording was re-run with known defects put back (184 probes), and results
 were compared with pynapple, opexebo and the authors' own grid scores. This
 document ranks what that showed into proposed changes to neurospatial. The
 evidence lives in [GAPS.md](GAPS.md) (gap entries `G-###`) and
@@ -26,6 +26,13 @@ modules and the authors' grid scores), DANDI 000044 (rat CA1 on a 1 m circular
 track and a 1.6 m linear track, with hours of sleep; read by HTTP byte range
 from 9 GB files) and DANDI 000447 (rat CA1/PFC on a W-track, also streamed).
 
+Third batch, for breadth (details in [BATCH_NWB_BREADTH.md](BATCH_NWB_BREADTH.md)):
+nine small NWB recordings from DANDI 000987, 001880, 001695, 001754, 000568,
+000165, 001845, 000003 (streamed) and EBRAINS (Kanter 2025), chosen for the
+ways real files store position, time and units: per-axis series, blank units,
+`conversion` factors, pixels, position sampled at spike times, pose, two
+probes in one units table.
+
 ## At a glance
 
 - **The common path holds up.** Environments, occupancy, rate maps, spatial
@@ -36,10 +43,16 @@ from 9 GB files) and DANDI 000447 (rat CA1/PFC on a W-track, also streamed).
 - **Warnings are not too aggressive.** Across the fourteen clean recordings no
   neurospatial warning fires that should not. The masked-data warning fires on
   Vollan, whose authors did remove slow samples; it is right there.
-- **Warnings are not aggressive enough.** Of 112 probes, 34 defects passed
+- **Warnings are not aggressive enough.** Of 184 probes, 59 defects passed
   silently and changed the result. The checks calibrated below (exact-origin
-  samples on 2-D/3-D positions, too few bins, squeezed headings) fire on none
-  of the clean recordings and would catch 23 of the 34.
+  samples on 2-D/3-D positions, too few bins along every axis, squeezed
+  headings, a speed gate that removes every sample, and a spike clock checked
+  against the analysed span) fire on none of the clean recordings and would
+  catch 46 of the 59.
+- **Labels lie often.** Four of the nine third-batch files mislabel position
+  in four different ways (blank unit, a `conversion` that contradicts the
+  values, pixels labelled metres, pixels labelled cm); in every case a
+  magnitude check against the apparatus decided, never the label.
 - **Three wrong results need fixing first**: `read_head_direction` turns
   radians labelled "degrees" into a 6° arc (G-030/G-031); `detect_laps` finds
   laps where there is no loop (G-015) and misses them where there is one: 1
@@ -210,61 +223,81 @@ other warning is hdmf's deprecation notice while reading a 2022 file.
 
 | Defect put back | Probes | Caught (incl. upstream) | Silent | No effect | Undetectable |
 | --- | --- | --- | --- | --- | --- |
-| Length unit off by 100 | 45 | 37 | 8 | 0 | 0 |
-| Missing positions stored as 0 | 24 | 0 | 18 | 3 | 3 |
-| Spike times in ms | 15 | 15 | 0 | 0 | 0 |
-| Headings in degrees | 5 | 5 | 0 | 0 | 0 |
-| Headings read as degrees (radians shrunk) | 1 | 0 | 1 | 0 | 0 |
-| Headings stored in [0, 2π) | 1 | 0 | 0 | 1 | 0 |
-| Positions read as mm (÷10) | 3 | 0 | 0 | 1 | 2 |
-| Mirrored frame (image y down) | 4 | 0 | 0 | 3 | 1 |
-| Speed column read as a third position axis (000447) | 5 | 1 | 4 | 0 | 0 |
+| Length unit off by 100 | 67 | 55 | 12 | 0 | 0 |
+| Missing positions stored as 0 | 37 | 0 | 31 | 3 | 3 |
+| Spike times in ms | 25 | 23 | 2 | 0 | 0 |
 | Times rebuilt from `dt` over speed-filter gaps (Vollan) | 9 | 4 | 3 | 2 | 0 |
-| **Total** | **112** | **62** | **34** | **10** | **6** |
+| Headings in degrees | 7 | 7 | 0 | 0 | 0 |
+| Speed column read as a third position axis (000447) | 5 | 1 | 4 | 0 | 0 |
+| `conversion` applied to values already in cm (001695) | 4 | 3 | 1 | 0 | 0 |
+| Mirrored frame (image y down) | 4 | 0 | 0 | 3 | 1 |
+| Video clock instead of position clock (000568) | 4 | 0 | 0 | 3 | 1 |
+| Duplicate timestamps kept (000165) | 3 | 2 | 0 | 1 | 0 |
+| Tracking kept beyond the spike recording (000165) | 3 | 1 | 0 | 1 | 1 |
+| Pixel keypoint labelled cm (001845) | 3 | 0 | 3 | 0 | 0 |
+| Positions read as mm (÷10) | 3 | 0 | 0 | 1 | 2 |
+| Lost-LED code (0, 255) kept (001754) | 3 | 0 | 2 | 1 | 0 |
+| Vertical axis taken as floor (000987) | 3 | 0 | 0 | 0 | 3 |
+| Units merged by repeated id (Kanter) | 2 | 0 | 0 | 0 | 2 |
+| Headings stored in [0, 2π) | 1 | 0 | 0 | 1 | 0 |
+| Headings read as degrees (radians shrunk) | 1 | 0 | 1 | 0 | 0 |
+| **Total** | **184** | **96** | **59** | **16** | **13** |
 
-Counts are for the current `main`. Probes are skipped when the operation
-already fails on the clean recording. Spike times in ms (G-010) are caught
-on all 15 probes.
+Counts are for the `main` of the run. Probes are skipped when the operation
+already fails on the clean recording.
 
 Proposed checks, each with its hits on the clean recordings (a new warning
 must fire on none of them) and on the hazards. Clean-recording numbers are in
-`results/studies/warning_calibration.md`.
+`results/studies/warning_calibration.md` and the batch notes.
 
 1. **Missing positions stored as 0 (G-017).** Warn when at least 0.1 % of
    tracked samples of a **2-D or 3-D** position sit exactly at the origin.
-   Clean: none of the 13 recordings with positions has a single 2-D/3-D sample
-   at the origin. Hazards: catches all 18 silent probes (labyrinth 4.9 %,
-   001701 2.6 %, bat 0.24 %, 000044 18.5 %). The start-of-track case rules
-   out 1-D input: on the 000044 circular track, 0.23 % of the file's
-   linearized samples are exactly 0, a real place, above the threshold (the
-   linear track: 0.01 %). A broader rule ("many samples at one exact
-   coordinate") would misfire: the clean bat recording has 15 % of samples at
-   one perch position. Module: the shared position checks behind
-   `Environment.from_samples`, the rate functions and `segment_by_velocity`.
-2. **Length unit off by 100 (G-014).** Warn when the environment has fewer than
-   5 bins along a dimension (`env.grid_shape`). Clean: the fewest is 11 (bat
-   height); the Vollan linear track's width gives 16. Hazards: every ÷100
-   case has 2–3 bins along each dimension. It covers the figure-8's 4 silent
-   probes. The other 4 silent probes are `segment_by_velocity`, which builds
-   no environment: positions ÷100 make every speed fall under `min_speed`
-   (0 segments on 000044 and 000447), ×100 inflates them (the bat, 668
-   segments instead of 69). Module: `environment`.
+   Clean: none of the 22 recordings with positions has a single 2-D/3-D
+   sample at the origin. Hazards: catches all 31 silent probes. The
+   start-of-track case rules out 1-D input: on the 000044 circular track,
+   0.23 % of the file's linearized samples are exactly 0, a real place. A
+   lost-tracking code at another corner (001754's (0, 255)) is not seen. A
+   broader rule ("many samples at one exact coordinate") would misfire: the
+   clean bat recording has 15 % of samples at one perch position. Module: the
+   shared position checks behind `Environment.from_samples`, the rate
+   functions and `segment_by_velocity`.
+2. **Length unit off by 100 (G-014).** Warn when the environment has fewer
+   than 5 bins along **every** dimension (`env.grid_shape`). The accepted
+   per-dimension rule misfires: 001695's 6 cm-wide linear track, recorded in
+   2-D, has 4 bins across (the fewest along any axis of any clean recording;
+   its long axis has dozens). With "every dimension", no clean recording
+   fires; every ÷100 hazard has 2–3 bins along every axis (the 1-D
+   figure-8: 3). Covers the figure-8's 4 silent
+   probes. Module: `environment`.
 3. **Headings squeezed into a small arc (G-031).** Warn when headings fill
    fewer than half of 36 direction bins (a bin counts at 0.5 % of samples).
-   Clean: every recording with head direction fills 36 of 36, over all
-   samples and over running samples, the Vollan linear track included (the
-   case that was uncalibrated). Hazard: the misread 001701 headings fill 2.
-   Covers the one silent probe of that defect.
+   Clean: every recording with head direction fills 36 of 36 over all and over
+   running samples (Vollan linear track, 000987, Kanter, J16's unused
+   orientation included). Hazard: the misread 001701 headings fill 2.
+4. **A speed gate that removes every sample (G-014).** `segment_by_velocity`
+   builds no environment, so positions ÷100 give 0 running segments without a
+   word (000044 ×2, 000447, 001880, 001695 ×2, 000568, 001845). Warn when no
+   sample exceeds `min_speed` while positions move. Catches 8 probes; misses
+   the bat's ×100 (too many segments, not none).
+5. **Spike clock against the analysed span (G-010).** Since #265 the
+   spike-drop count is limited to the requested epochs, so ms spike times
+   pass silently when `epochs` are given (000165) or when the clean run
+   already warns the same way (001695). Comparing the spike span with the
+   analysed span would catch 000165, but a span-and-magnitude rule also
+   fires on correct seconds data: 10 min of tracking at the start of a 6 h
+   sorted recording is a 36× ratio, and magnitudes alone cannot tell that
+   from 000165 in ms. **Needs a maintainer decision**; until then 000165
+   stays silent. 001695 warns in ms with the same text as the clean run
+   because its 5,800× span ratio is outside the hint's 300–3,200× band (a
+   message follow-up in the UX-fixes work).
 
-Together the three checks would catch 23 of the 34 silent probes. Of the rest,
-four are the `segment_by_velocity` cases above, four are the speed column read
-as a position axis (G-042: only a memory warning; the reader refuses the
-file's 3-column series, so the fix is reader column choice), and three are
-times rebuilt over the speed filter (the occupancy rows change by 6 %; the
-spike rows catch the misalignment with the spike-drop warning). Undetectable
-by values, so the answer is documentation: a mirrored frame flips every left
-and right turn while the share of left turns stays near 0.5 (G-020); positions
-read as mm look like a plausible small arena (000405 ÷10).
+Together these would catch 46 of the 59 silent probes. The rest: the bat's
+`segment_by_velocity` ×100, the speed column read as a position axis (4,
+G-042), times rebuilt over the speed filter (3, G-040), the lost-LED code (2,
+G-053) and a pixel keypoint labelled cm (3, G-056). Undetectable by values, so
+the answer is documentation: a mirrored frame (G-020), positions read as mm, a
+video clock 23 s off the position clock (G-054), a vertical axis taken as
+floor, units merged by repeated id (G-057).
 
 The rule for replay events too short to score (G-018) is dropped (maintainer
 decision 4).
@@ -298,7 +331,13 @@ decision 4).
   linearized series as a second Position candidate, and the container name is
   refused again (G-012); 000447 stores x, y and speed in one series under
   "centimeters; centimeters/second", which the reader rightly refuses but
-  cannot select columns from (G-042). Five datasets.
+  cannot select columns from (G-042). Third batch: position and head
+  orientation as one series per axis with a blank unit (G-050); a
+  `conversion` of 0.01 on values already in cm, which the reader applies as
+  the NWB spec says, giving a 1.1 cm track (G-052); bare `SpatialSeries`
+  labelled metres that hold pixels (G-062); a units table whose ids repeat
+  across two probes, which `read_units` refuses (G-057); pose with repeated
+  first timestamps, which `read_pose` rightly refuses (G-056). Ten datasets.
 - **Change.** Search processing modules in `read_intervals`; accept a container
   name when it holds one series; accept an explicit path to any `SpatialSeries`
   or `TimeSeries` (with column choice) in the position and head-direction
@@ -365,7 +404,10 @@ Nothing to fix at these sizes. Gardner's 483 units: rate maps 4.4 s, decoding
 about a minute per loader. The slowest operation is the replay comparison on
 200 candidate events with published shuffle counts (511 s on the circular
 track, 387 s on the linear). The full driver on fourteen recordings with all
-112 probes takes 35 min and peaks at 8.5 GB resident.
+112 probes takes 35 min and peaks at 8.5 GB resident. One real problem: with
+the default `diffusion_kde`, a rate map on a 98,000-bin grid (pixels taken
+as metres) passed 7 GB for one unit, while `binned` took 1 s; the only signal
+is the environment's memory warning (G-061).
 
 ## Reference-check verdicts
 
@@ -388,7 +430,11 @@ track, 387 s on the linear). The full driver on fourteen recordings with all
 | G-009, G-034, G-035 | One LED; ΔF/F scale; inverted LFP conversion | Nothing |
 | G-040 | Speed-filtered time series; sessions table shorter than the data | Leave to the loader; the masked-data warning already flags it |
 | G-041 | No ripple table (000044) | Leave to the loader (population-burst candidates) |
-| G-019, G-036, G-039 | Pre-registered expectations that were wrong | Nothing (kept as registered) |
+| G-053 | Lost-LED code (0, 255); position sampled only at spike times | Leave to the loader; a corner code other than the origin is not detectable by check 1 |
+| G-054 | Video clock 23 s off the position clock | Leave to the loader; undetectable from the arrays |
+| G-055 | Repeated timestamps; spikes cover 270 of 1,504 s tracked; spike-clock alignment assumed | Refused / warned already; leave the alignment to the loader |
+| G-051 | Motion-capture heading 0.3–0.5 rad off the direction of movement, varying between windows | Leave to the loader; the frame check needs a decision (below) |
+| G-019, G-036, G-039, G-059 | Pre-registered expectations that were wrong | Nothing (kept as registered) |
 
 ## Should loader code move into neurospatial?
 
@@ -424,7 +470,8 @@ and hc-13, whose untracked frames are stored as 0).
 
 | Gap | Where it is addressed |
 | --- | --- |
-| G-001, G-010 | Warning calibration; both fixed (#265) |
+| G-001 | Fixed (#265) |
+| G-010 | Warning calibration, check 5 (regressed for `epochs`; fix pending) |
 | G-002 | Fixed (#262) |
 | G-003 | Docs |
 | G-004 | Proposal 7 |
@@ -433,9 +480,12 @@ and hc-13, whose untracked frames are stored as 0).
 | G-043 | Open: Vollan real units below their shifts |
 | G-007, G-023 | Docs |
 | G-008, G-009, G-019, G-025, G-028, G-033–G-036, G-039–G-041 | Data quirks |
-| G-011, G-012, G-032, G-042 | Proposal 6 |
+| G-011, G-012, G-032, G-042, G-050, G-052, G-056, G-057, G-062 | Proposal 6 |
 | G-013 | Fixed (#262) |
-| G-014 | Warning calibration, check 2 |
+| G-014 | Warning calibration, checks 2 and 4 |
+| G-058 | Friction: `units="pixel"` warns; only "pixels"/"px" are registered |
+| G-060 | Missing: no 2-D replay score for an open maze |
+| G-061 | Performance |
 | G-015, G-037 | Proposal 2; G-015 partly fixed (#265), open arenas remain |
 | G-017 | Warning calibration, check 1 |
 | G-018 | Dropped (decision 4) |
@@ -500,4 +550,19 @@ Answered 2026-11-02.
   refused, Vollan's box gives 0 (1 when its gaps are closed), the 000447
   W-track gives 1. The bigger problem is G-037: on a real loop the defaults
   find 1 of about 100 laps.
+
+### New questions from the third batch
+
+- **Spike clock check (check 5).** Whether and how to flag ms spike times
+  when the tracking is a small part of the recording (see check 5).
+- **Check 2 needs a revised rule.** The accepted "fewer than 5 bins along a
+  dimension" fires on a clean narrow track (001695, 4 bins across);
+  "fewer than 5 along every dimension" keeps every ÷100 catch.
+- **Heading-frame check for motion capture (G-051).** Both motion-capture
+  recordings sit 0.3–0.5 rad off the direction of movement on average, and
+  the offset varies between 60 s windows (Kanter: −0.62 to +2.33 rad), so it
+  is not one constant to subtract. The loaders keep the headings marked
+  "frame not verified" and refuse only when the spread exceeds 45–70°
+  (negating the heading raises the spread to 81–87°). Keep, or drop such
+  headings?
 
