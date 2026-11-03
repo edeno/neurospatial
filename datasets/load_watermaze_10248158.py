@@ -22,7 +22,9 @@ What the loader converts:
   raw coordinates are EthoVision's tracking units. Neither the file, the
   Figshare record nor the Rtrack export states their unit or a pixels-per-cm
   calibration, so ``position_units`` is ``"arbitrary"`` (one unit = 1/95 of
-  the pool radius). The values are range checked against the stated pool.
+  the pool radius). The values are range checked against the stated pool:
+  no sample beyond 1.1 radii from its centre, and a span within 10 % of its
+  diameter.
 - Empty strings in ``raw.x``/``raw.y`` (untracked samples) become NaN.
 - Each trial's clock starts at 0. The file has no time between trials, so
   trials are laid on one clock 200 s apart, in day and trial order, and a
@@ -43,7 +45,13 @@ from typing import Any
 
 import numpy as np
 from _fetch import fetch
-from _record import Range, Recording, check_expectations, validate_recording
+from _record import (
+    Range,
+    Recording,
+    check_expectations,
+    checked_span,
+    validate_recording,
+)
 
 DATASET = {
     "key": "watermaze_10248158",
@@ -122,6 +130,8 @@ def load(cache: Path | None = None) -> Recording:
             f" beyond 1.1 x the stated radius {radius:g}"
         )
         raise ValueError(msg)
+    # A swim path covers the pool: its span is close to the stated diameter.
+    span = checked_span(xy, 0.9 * 2 * radius, 1.1 * 2 * radius, units="units")
     n_missing = int(np.isnan(xy).any(axis=1).sum()) - len(trials)
     return Recording(
         dataset=DATASET["key"],
@@ -146,6 +156,7 @@ def load(cache: Path | None = None) -> Recording:
             "positions: raw.x, raw.y as stored; unit not stated (arbitrary)",
             f"positions: range checked: farthest sample {np.nanmax(distance):.1f} units"
             f" from the pool centre (stated radius {radius:g}, limit 1.1 x radius)",
+            span,
             f"positions: {n_missing} empty-string samples -> NaN",
             f"times: each trial's raw.t (from 0) + {_TRIAL_SPACING_S:g} s x trial"
             " index, trials in day/trial order",
