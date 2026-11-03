@@ -92,7 +92,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _fetch import cache_root  # noqa: E402
-from _geometry import judge_declared  # noqa: E402
+from _geometry import MAX_SIZE_RESIDUAL, judge_declared  # noqa: E402
 from _record import Recording  # noqa: E402
 from operations import _graph_env, _samples_env, env_kind  # noqa: E402
 from run import LOADERS  # noqa: E402
@@ -111,6 +111,14 @@ ALIGN_STEP_SAMPLES = 10
 LOOP_CLOSURE_SHARE = 0.1
 ALIGN_MIN_SPEED = 10.0
 ALIGN_DEGREES = 20.0
+# Declared from the authors' geometry or the file's own coordinates, used as
+# stated: a fact a verdict can rest on.
+AUTHORS_GEOMETRY = (
+    "authors' graph",
+    "authors' centrelines",
+    "file's linearized coordinate",
+    "file's coordinates",
+)
 # The reference each kind of declared placement would compare with itself:
 # a declared track is not judged against its own geometry.
 REFERENCE_SOURCE = {
@@ -1396,26 +1404,39 @@ def bar_alignment(rec: Recording, ref: Reference) -> dict[str, Any]:
     }
 
 
+# References built from the recording's own samples. A track's shape judged
+# against one of them is not judged against anything the source states.
+SAMPLE_DERIVED_REFERENCES = (
+    "centreline from the file's linearized position",
+    "principal axis of the samples (straight track)",
+)
+
+
 def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     """Verdict against the stated apparatus, and the reasons for a mismatch.
 
-    Checked when stated: the number of separate apparatus (components of at
-    least ``MAJOR_COMPONENT_SHARE`` of the bins), a track's loops (holes of
-    that share or more; a tree or a straight track has none), a square or
-    circle's coverage, a track's length, a circular track's circumference
-    (pi x its diameter) and a lattice's side (each within 10 %), links that
-    join places far apart along the track (``jump_links``), the share of
-    bins on a track of the stated width (90 %, ``on_track_shares``), the
-    environment's geodesic against the distance along the track (median 0.9
-    or more), the room bounds, and for a 1-D loop that its ends meet in the camera (within
-    ``LOOP_CLOSURE_SHARE`` of its length) and that the bins join them (their
-    path no longer than the camera distance plus that share). An assumed
-    track width is reported but not judged. A declared environment is judged
-    by ``measure_declared``.
+    "matches" or "mismatch" rests only on facts a source states
+    independently of the samples; with none, the verdict is "not verified"
+    and the measurements are reported. Facts judged, each within
+    ``_geometry.MAX_SIZE_RESIDUAL`` where it is a size: a track's stated
+    loops (holes of ``MAJOR_COMPONENT_SHARE`` of the bins or more), a
+    square's or circle's coverage, a track's stated length and a circular
+    track's circumference (pi x its diameter) against the length the samples
+    give, a lattice's side, the room's bounds, a 1-D loop whose ends meet,
+    and, against an independent reference (the authors' graph, centrelines
+    or bars, not a reference built from the samples:
+    ``SAMPLE_DERIVED_REFERENCES``), links that join places far apart along
+    it (``jump_links``) and the environment's geodesic over the distance
+    along it (median 0.9 or more). The number of separate parts and, on a
+    tree or straight track, loop-sized holes can make a mismatch but are not
+    enough for a match. The share of bins beyond a stated width is a
+    tracking measure (the tracked head swings past an unwalled track), not
+    judged. A declared environment is judged by ``measure_declared``.
     """
     if app is None or not app.verified:
         return "not verified", "no source read here states the geometry"
-    reasons = []
+    reasons: list[str] = []
+    facts: list[str] = []
     env = row["env"]
     if env["major_components"] != app.n_parts:
         n = env["major_components"]
@@ -1425,6 +1446,7 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
         )
     outline = row.get("outline")
     if outline:
+        facts.append("stated outline")
         if outline["stated_area_covered"] < 0.9:
             filled = row["open_field_preset"]["stated_area_covered"]
             reasons.append(
@@ -1435,66 +1457,66 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
             reasons.append(
                 f"{outline['bin_centres_outside_stated']:.0%} of bins outside it"
             )
-    if (
-        app.kind == "track"
-        and "major_holes" in env
-        and env["major_holes"] != app.n_loops
-    ):
-        reasons.append(
-            f"{env['major_holes']} loop-sized hole{'s' if env['major_holes'] != 1 else ''}"
-            f" (1% of the bins or more), apparatus has {app.n_loops}"
-            f" loop{'s' if app.n_loops != 1 else ''}"
-        )
+    if app.kind == "track" and "major_holes" in env:
+        if app.n_loops > 0:
+            facts.append("stated loops")
+        if env["major_holes"] != app.n_loops:
+            reasons.append(
+                f"{env['major_holes']} loop-sized hole{'s' if env['major_holes'] != 1 else ''}"
+                f" (1% of the bins or more), apparatus has {app.n_loops}"
+                f" loop{'s' if app.n_loops != 1 else ''}"
+            )
     track = row.get("reference")
     if track:
-        if track.get("jump_links"):
-            reasons.append(
-                f"{track['jump_links']} links join places far apart along the track"
-                " (through a wall or gap)"
-            )
         if app.size is not None and "loop" in app.notes and app.kind == "track":
+            facts.append("stated diameter")
             stated = np.pi * app.size
-            if abs(track["reference_length"] / stated - 1) > 0.1:
+            if abs(track["reference_length"] / stated - 1) > MAX_SIZE_RESIDUAL:
                 reasons.append(
                     f"loop {track['reference_length']:.0f} round, stated diameter"
                     f" {app.size:g} ({stated:.0f} round)"
                 )
         if app.track_length is not None:
+            facts.append("stated length")
             stated = app.track_length * app.n_parts
-            if abs(track["reference_length"] / stated - 1) > 0.1:
+            if abs(track["reference_length"] / stated - 1) > MAX_SIZE_RESIDUAL:
                 reasons.append(
                     f"track {track['reference_length']:.0f} long, stated {stated:g}"
                 )
-        if track.get("track_width_stated") and track["bins_on_track"] < 0.9:
-            reasons.append(
-                f"{track['bins_on_track']:.0%} of bins within the stated track width"
-            )
-        if track["env_over_track_median"] < 0.9:
-            reasons.append(
-                f"geodesic {track['env_over_track_median']:.2f} x the distance along the"
-                f" {'bars' if app.kind == '3d' else 'track'}"
-            )
+        if track.get("reference") not in SAMPLE_DERIVED_REFERENCES:
+            facts.append(track.get("reference") or "an independent reference")
+            if track.get("jump_links"):
+                reasons.append(
+                    f"{track['jump_links']} links join places far apart along the"
+                    " track (through a wall or gap)"
+                )
+            if track["env_over_track_median"] < 0.9:
+                reasons.append(
+                    f"geodesic {track['env_over_track_median']:.2f} x the distance"
+                    f" along the {'bars' if app.kind == '3d' else 'track'}"
+                )
     room = row.get("room")
-    if room and room["bins_outside_room"] > 0.0:
-        reasons.append(
-            f"{room['bins_outside_room']:.1%} of bins outside the room bounds"
-        )
+    if room:
+        facts.append("stated room")
+        if room["bins_outside_room"] > 0.0:
+            reasons.append(
+                f"{room['bins_outside_room']:.1%} of bins outside the room bounds"
+            )
     one_d = row.get("one_d")
     if one_d and app.track_length is not None:
+        facts.append("stated length")
         span = one_d["range"][1] - one_d["range"][0]
-        if abs(span / app.track_length - 1) > 0.1:
+        if abs(span / app.track_length - 1) > MAX_SIZE_RESIDUAL:
             reasons.append(f"track {span:.0f} long, stated {app.track_length:g}")
     lattice = row.get("lattice")
-    if (
-        lattice
-        and app.size is not None
-        and "lattice_side" in lattice
-        and abs(lattice["lattice_side"] / app.size - 1) > 0.1
-    ):
-        reasons.append(
-            f"lattice {lattice['lattice_side']:.0f} a side, stated {app.size:g}"
-        )
+    if lattice and app.size is not None and "lattice_side" in lattice:
+        facts.append("stated lattice")
+        if abs(lattice["lattice_side"] / app.size - 1) > MAX_SIZE_RESIDUAL:
+            reasons.append(
+                f"lattice {lattice['lattice_side']:.0f} a side, stated {app.size:g}"
+            )
     if one_d and "loop" in app.notes and "camera_distance_between_ends" in one_d:
+        facts.append("the file's loop")
         camera = one_d["camera_distance_between_ends"]
         length = one_d["range"][1] - one_d["range"][0]
         if camera > LOOP_CLOSURE_SHARE * length:
@@ -1507,7 +1529,11 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
                 f"loop ends {one_d['end_to_end_geodesic']:.0f} apart along the bins,"
                 f" {camera:.0f} in the camera"
             )
-    return ("mismatch", "; ".join(reasons)) if reasons else ("matches", "")
+    if reasons:
+        return "mismatch", "; ".join(reasons)
+    if facts:
+        return "matches", ""
+    return "not verified", "no stated fact independent of the samples checks it"
 
 
 # --- Figures ---------------------------------------------------------------------
@@ -1791,19 +1817,21 @@ def measure_declared(
 ) -> dict[str, Any]:
     """The declared environment, measured as the samples-built one is, and judged.
 
-    The verdict is ``_geometry.judge_declared``'s misfit evidence, on the
-    samples in ``params["analysis_epochs"]`` where the loader sets them (a stretch
-    of track beside its samples, a segment with no samples near it, a stated
-    length off), the stated number of parts and, where there is one, an
-    independent reference. The share of samples beyond the physical width
+    A "mismatch" is misfit evidence (``_geometry.judge_declared``, on the
+    samples in ``params["analysis_epochs"]`` where the loader sets them: a
+    stretch of track beside its samples, a segment with no samples near it,
+    samples reaching past a track's free end or falling short of a wall, a
+    stated length off by more than ``MAX_SIZE_RESIDUAL``) or a stated fact
+    that fails (the parts, an independent reference). A "matches" needs a
+    stated fact independent of the samples: a stated length, diameter or
+    arm length compared with the samples' own, the authors' graph,
+    centreline or linearization used as stated (``AUTHORS_GEOMETRY``), or a
+    reference that is neither built from the samples
+    (``SAMPLE_DERIVED_REFERENCES``) nor the geometry the track was declared
+    from (``REFERENCE_SOURCE``). Otherwise the verdict is "not verified" and
+    the measurements stand. The share of samples beyond the physical width
     is a tracking measure, reported with its split by speed, not judged: a
-    head-mounted LED above an unwalled track swings past its edge. A
-    reference is independent only when it is not the geometry the track was
-    declared from (``REFERENCE_SOURCE`` against ``geometry["declared_from"]``):
-    the authors' graph or centreline, or the samples' axis a straight track
-    is placed on, compared with the environment built from it measures only
-    that environment's binning. Without an independent reference, a
-    placement with no misfit is "not verified".
+    head-mounted LED above an unwalled track swings past its edge.
     """
     env = rec.geometry["environment"]()
     measures = measure_env(env, samples, np.random.default_rng(SEED))
@@ -1830,9 +1858,12 @@ def measure_declared(
         },
         bin_size=rec.params.get("graph_bin_size", rec.params["bin_size"]),
     )
-    independent = ref is not None and REFERENCE_SOURCE.get(
-        ref.label
-    ) != rec.geometry.get("declared_from")
+    declared_from = rec.geometry.get("declared_from")
+    independent = (
+        ref is not None
+        and ref.label not in SAMPLE_DERIVED_REFERENCES
+        and REFERENCE_SOURCE.get(ref.label) != declared_from
+    )
     out: dict[str, Any] = {
         "layout": env.layout_type,
         "tracked_point": rec.geometry.get("tracked_point", "not stated"),
@@ -1856,13 +1887,33 @@ def measure_declared(
     if independent:
         view["reference"] = out["reference"]
     status, reason = verdict(view, app)
-    if status != "not verified" and judged["misfit"]:
-        reasons = ([reason] if reason else []) + judged["misfit"]
+    # Stated facts the declared track can be checked against, independent of
+    # the samples it was placed on.
+    facts = [
+        f"{key.removeprefix('size_residual_')} {value:+.0%} of the stated"
+        for key, value in judged["fit"].items()
+        if key.startswith("size_residual")
+    ]
+    if declared_from in AUTHORS_GEOMETRY:
+        facts.append(f"the {declared_from} as stated")
+    out["facts"] = facts
+    if status == "not verified" and (app is None or not app.verified):
+        pass
+    elif status == "mismatch" or judged["misfit"]:
+        reasons = ([reason] if status == "mismatch" else []) + judged["misfit"]
         status, reason = "mismatch", "; ".join(reasons)
-    elif status == "matches" and not independent:
+    elif facts or (status == "matches" and independent):
+        # The declared environment's own loops and outline are what was
+        # declared, so they confirm nothing; only the facts above and an
+        # independent reference do.
+        status = "matches"
+        reason = "on " + "; ".join(facts + ([ref.label] if independent else []))
+    else:
         status = "not verified"
-        reason = "no misfit, but no independent reference checks the layout" + (
-            f" ({ref.label} is what it was declared from)" if ref else ""
+        reason = "no stated fact independent of the samples checks the layout" + (
+            f" ({ref.label} is built from the samples or is what it was declared from)"
+            if ref
+            else ""
         )
     out["verdict"], out["verdict_reason"] = status, reason
     return out

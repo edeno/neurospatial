@@ -212,11 +212,19 @@ def test_on_track_shares_use_half_the_full_width():
     assert on_bins == pytest.approx(2 / 3)  # within 3 + 1
 
 
-def _row(major=1, bins_on_track=0.95, ratio=1.0, stated=True):
+def _row(
+    major=1,
+    bins_on_track=0.95,
+    ratio=1.0,
+    stated=True,
+    label="authors' track graph",
+    length=100.0,
+):
     return {
         "env": {"major_components": major},
         "reference": {
-            "reference_length": 100.0,
+            "reference": label,
+            "reference_length": length,
             "track_width_stated": stated,
             "bins_on_track": bins_on_track,
             "env_over_track_median": ratio,
@@ -231,9 +239,15 @@ def test_verdict_judges_only_stated_facts():
     assert status == "mismatch"
     assert "2 parts" in reason
     assert "0.70" in reason
-    # An assumed width is reported, not judged.
-    assert verdict(_row(bins_on_track=0.5, stated=False), track)[0] == "matches"
-    assert verdict(_row(bins_on_track=0.5), track)[0] == "mismatch"
+    # Bins beyond a stated width are head scatter: reported, not judged.
+    assert verdict(_row(bins_on_track=0.5), track)[0] == "matches"
+    # A reference built from the samples cannot judge the shape...
+    axis = "principal axis of the samples (straight track)"
+    assert verdict(_row(ratio=0.7, label=axis), track)[0] == "matches"
+    # ...but the stated length still can, and without one nothing is verified.
+    assert verdict(_row(label=axis, length=130.0), track)[0] == "mismatch"
+    no_length = Apparatus("track", "test", True)
+    assert verdict(_row(label=axis), no_length)[0] == "not verified"
     assert verdict(_row(), Apparatus("track", "test", False))[0] == "not verified"
 
 
@@ -255,7 +269,15 @@ def test_verdict_tests_loop_closure():
     assert verdict(row(10.0, 3.0), loop)[0] == "matches"
 
 
-def _declared_track(positions, *, placed_by, geometry=None, width=6.0, graph=None):
+def _declared_track(
+    positions,
+    *,
+    placed_by,
+    geometry=None,
+    width=6.0,
+    graph=None,
+    stated_lengths=None,
+):
     from _tracks import declared_geometry, straight_track
 
     if graph is None:
@@ -273,6 +295,7 @@ def _declared_track(positions, *, placed_by, geometry=None, width=6.0, graph=Non
         name="track",
         placement="p",
         placed_by=placed_by,
+        stated_lengths=stated_lengths,
     )
     return Recording(
         dataset="track",
@@ -330,7 +353,7 @@ def test_declared_track_without_an_independent_reference_is_not_verified(
     )
     assert out["reference_independent"] is False
     assert out["verdict"] == "not verified"
-    assert "no independent reference" in out["verdict_reason"]
+    assert "no stated fact independent of the samples" in out["verdict_reason"]
     # No reference at all (no stated length): not verified either.
     no_length = Apparatus("track", "test", True, track_width=6.0)
     out = _measure(
@@ -371,6 +394,68 @@ def test_authors_track_beside_its_samples_is_a_mismatch(track_samples):
     )
     assert out["verdict"] == "mismatch"
     assert "to one side" in out["verdict_reason"]
+
+
+RING = Apparatus("track", "test", True, size=100.0, notes="loop", n_loops=1)
+
+
+@pytest.fixture(scope="module")
+def ring_samples():
+    """A 100 cm diameter circle sampled 2 cm (SD) about its centreline."""
+    rng = np.random.default_rng(9)
+    angle = rng.uniform(0, 2 * np.pi, 8000)
+    radius = 50 + rng.normal(0, 2.0, angle.size)
+    return np.column_stack([radius * np.cos(angle), radius * np.sin(angle)])
+
+
+@pytest.mark.parametrize(
+    ("centre", "diameter", "why"),
+    [
+        ((8.0, 0.0), 100.0, "to one side"),
+        ((0.0, 0.0), 80.0, "to one side"),
+        ((0.0, 0.0), 125.0, "to one side"),
+    ],
+    ids=["shifted_8_cm", "diameter_80", "diameter_125"],
+)
+def test_a_misplaced_or_missized_circle_does_not_match(
+    ring_samples, centre, diameter, why
+):
+    # Placed by the file's coordinates, so the loader keeps it; the study's
+    # placement check must refuse it. Its loop is by construction, so the
+    # stated loop count cannot make it match.
+    from _tracks import circle_points, polyline_graph
+
+    ring = polyline_graph(
+        circle_points(np.array(centre), diameter / 2, 72), closed=True
+    )
+    rec = _declared_track(
+        ring_samples, placed_by="file's coordinates", graph=ring, width=None
+    )
+    out = _measure(rec, RING)
+    assert out["verdict"] == "mismatch"
+    assert why in out["verdict_reason"]
+
+
+def test_a_circle_of_the_stated_size_matches_on_it(ring_samples):
+    from _tracks import circle_points, polyline_graph
+
+    ring = polyline_graph(circle_points(np.zeros(2), 50.0, 72), closed=True)
+    own = np.median(np.linalg.norm(ring_samples, axis=1)) * 2
+    rec = _declared_track(
+        ring_samples,
+        placed_by="fitted to the samples",
+        graph=ring,
+        width=None,
+        stated_lengths={"diameter": (own, 100.0)},
+    )
+    out = _measure(rec, RING)
+    assert out["verdict"] == "matches"
+    assert "diameter" in out["verdict_reason"]
+    # Without the stated diameter nothing independent checks it.
+    rec = _declared_track(
+        ring_samples, placed_by="fitted to the samples", graph=ring, width=None
+    )
+    assert _measure(rec, RING)["verdict"] == "not verified"
 
 
 def test_merged_replaces_only_the_rerun_datasets_and_their_views():
