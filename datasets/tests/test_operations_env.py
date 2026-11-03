@@ -446,3 +446,19 @@ def test_a_room_is_judged_by_its_faces(shift, misfit):
         wrong = judge_declared(room, times, samples, stated_residuals={"room_y": 0.4})
         assert any("room_y +40% of the stated" in r for r in wrong["misfit"])
 
+
+def test_two_diagonal_glitches_do_not_move_the_fitted_circle():
+    # 50,000 samples filling a 100 cm circle and two glitches off its
+    # diagonal, inside each axis's range but 64 cm from the centre: the
+    # bounding circle must not follow them.
+    from _geometry import declared_circle, fit_circle
+
+    rng = np.random.default_rng(14)
+    r = 50 * np.sqrt(rng.uniform(0, 1, 50000))
+    theta = rng.uniform(0, 2 * np.pi, 50000)
+    disc = np.column_stack([r * np.cos(theta), r * np.sin(theta)])
+    glitched = np.vstack([disc, [[45.0, 45.0], [44.0, 46.0]]])
+    _, fit = fit_circle(glitched, 100.0)
+    assert np.hypot(fit["centre_x"], fit["centre_y"]) < 1.0
+    assert fit["samples_diameter"] == pytest.approx(100.0, rel=0.01)
+    declared_circle(glitched, 100.0, bin_size=2.5, units="cm", name="c", source="t")

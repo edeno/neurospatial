@@ -75,12 +75,19 @@ def graph_environment(
 
 
 def _tracked(positions: NDArray[np.float64], trim: float) -> NDArray[np.float64]:
+    """Tracked samples less the ``2 * n_dims * trim`` share farthest from their median.
+
+    That is the share a trim of ``trim`` from each tail of each axis drops
+    when the tails do not overlap, taken by distance from the per-axis
+    median instead: a few far glitches off a diagonal are dropped whole,
+    where a per-axis trim keeps a glitch inside one axis's range.
+    """
     tracked = positions[np.isfinite(positions).all(axis=1)]
     if trim <= 0:
         return tracked
-    lo, hi = np.percentile(tracked, [100 * trim, 100 * (1 - trim)], axis=0)
-    keep = ((tracked >= lo) & (tracked <= hi)).all(axis=1)
-    return tracked[keep]
+    radius = np.linalg.norm(tracked - np.median(tracked, axis=0), axis=1)
+    share = 2 * tracked.shape[1] * trim
+    return tracked[radius <= np.quantile(radius, 1 - share)]
 
 
 def fit_rectangle(
@@ -93,7 +100,7 @@ def fit_rectangle(
     """Place a ``width`` × ``height`` rectangle on the samples.
 
     Centre and rotation come from the minimum rotated rectangle around the
-    samples (after trimming ``trim`` of each tail per axis); the size is the
+    samples (after trimming the farthest samples, ``_tracked``); the size is the
     stated one. Returns the polygon and the fit: centre, rotation (rad, of the
     side matched to ``width``), and the samples' own rectangle sides.
 
@@ -103,7 +110,8 @@ def fit_rectangle(
     width, height : float
         Stated sides, in the positions' units.
     trim : float
-        Fraction of each tail dropped per axis before fitting.
+        Per tail and axis; ``2 * n_dims * trim`` of the samples, the farthest
+        from their median, are dropped before fitting (``_tracked``).
     """
     from shapely import affinity
     from shapely.geometry import MultiPoint, box
@@ -144,7 +152,7 @@ def fit_circle(
     """Place a circle of the stated ``diameter`` on the samples.
 
     The centre is that of the samples' minimum bounding circle (after
-    trimming ``trim`` of each tail per axis), as ``fit_rectangle`` places a
+    trimming the farthest samples, ``_tracked``), as ``fit_rectangle`` places a
     rectangle by the samples' minimum rotated rectangle; the radius is the
     stated one. A least-squares circle through the convex hull's vertices
     would weight the hull's unevenly spaced vertices and leave more samples
