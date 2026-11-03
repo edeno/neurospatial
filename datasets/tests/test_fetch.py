@@ -4,6 +4,7 @@ import datetime
 import email.message
 import functools
 import hashlib
+import http.client
 import http.server
 import io
 import json
@@ -253,6 +254,11 @@ def _fetch_member(cache, member=_MEMBER):
         ),
         (_echoing_http_error, OSError),
         (lambda: urllib.error.URLError(OSError(f"refused {_USER}")), OSError),
+        # http.client errors are not URLError: the server hangs up, or
+        # reading the headers times out.
+        (lambda: http.client.RemoteDisconnected(f"closed for {_USER}"), OSError),
+        (lambda: http.client.BadStatusLine(f"{_USER}:{_PASSWORD}"), OSError),
+        (lambda: TimeoutError(f"timed out for {_USER}"), OSError),
         (
             lambda: _PortalResponse(
                 _tar_gz({_MEMBER: b"file bytes"}), "application/octet-stream"
@@ -260,7 +266,15 @@ def _fetch_member(cache, member=_MEMBER):
             ValueError,
         ),
     ],
-    ids=["login-page", "http-error", "network-error", "checksum-mismatch"],
+    ids=[
+        "login-page",
+        "http-error",
+        "network-error",
+        "remote-disconnected",
+        "bad-status-line",
+        "header-timeout",
+        "checksum-mismatch",
+    ],
 )
 def test_crcns_fetch_never_logs_credentials(
     portal, fetch, reply, error, tmp_path, capfd, caplog

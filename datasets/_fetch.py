@@ -187,13 +187,8 @@ def fetch_zip_member(
 CRCNS_PORTAL = "https://portal.nersc.gov/project/crcns/download/index.php"
 
 
-def _crcns_login_form(path: str) -> bytes:
-    """The portal's login form for ``path``, from the environment's account.
-
-    The account is read and encoded in one expression, so no frame that can
-    raise holds it in a variable (a traceback that shows local variables,
-    such as ``pytest --showlocals``, would print it).
-    """
+def _crcns_require_account() -> None:
+    """Raise ``KeyError`` naming the account variables missing from the environment."""
     if missing := [
         name for name in ("CRCNS_USERNAME", "CRCNS_PASSWORD") if name not in os.environ
     ]:
@@ -202,6 +197,16 @@ def _crcns_login_form(path: str) -> bytes:
             " not set in the environment (set CRCNS_USERNAME and CRCNS_PASSWORD)"
         )
         raise KeyError(msg)
+
+
+def _crcns_login_form(path: str) -> bytes:
+    """The portal's login form for ``path``, from the environment's account.
+
+    The account is read and encoded in one expression, so no frame that can
+    raise holds it in a variable (a traceback that shows local variables,
+    such as ``pytest --showlocals``, would print it).
+    """
+    _crcns_require_account()
     return urllib.parse.urlencode(
         {
             "fn": path,
@@ -215,11 +220,14 @@ def _crcns_login_form(path: str) -> bytes:
 def _crcns_open(path: str) -> Any:
     """Open the CRCNS file ``path`` (e.g. ``"hc-31/data/resSave.mat"``) for reading.
 
-    Posts the portal's login form with the account from the environment. A
-    failure names only ``path`` and an HTTP status, and is raised outside the
-    handler so that it carries no chained exception: the request holds the
-    password and the portal's pages can echo the account name.
+    Posts the portal's login form with the account from the environment. Any
+    failure of the request (an HTTP status, a refused connection, a server
+    that hangs up or times out) names only ``path`` and the status or the
+    error's type, and is raised outside the handler so that it carries no
+    chained exception: the request's frames hold the password and the
+    portal's pages can echo the account name.
     """
+    _crcns_require_account()
     opener = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
     )
@@ -231,6 +239,8 @@ def _crcns_open(path: str) -> Any:
         failure = f"failed with HTTP {exc.code}"
     except urllib.error.URLError as exc:
         failure = f"failed: {type(exc.reason).__name__}"
+    except Exception as exc:  # any error's frames hold the form
+        failure = f"failed: {type(exc).__name__}"
     if failure is not None:
         msg = f"CRCNS download of {path} {failure}"
         raise OSError(msg)
