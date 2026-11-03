@@ -70,141 +70,141 @@
   },
   "sargolini_000582": {
     "occupancy": {
-      "visited_bins": 1387,
-      "share_under_0p1_s": 0.1780821917808219,
+      "visited_bins": 1373,
+      "share_under_0p1_s": 0.16241806263656228,
       "median_s_per_visited_bin": 0.2800000000002001,
-      "median_rate_x_occupancy_per_visited_bin": 0.16459048720247077
+      "median_rate_x_occupancy_per_visited_bin": 0.16805979987365133
     },
     "simulated": [
       {
         "kind": "poisson",
         "rate_hz": 0.5,
         "n_units": 200,
-        "mean_info": 0.08816031808166706,
-        "mean_bias": 0.08814938236893298,
-        "ratio": 1.0001240588696165
+        "mean_info": 0.08811229391213483,
+        "mean_bias": 0.08806158850456836,
+        "ratio": 1.000575794832089
       },
       {
         "kind": "poisson",
         "rate_hz": 2.0,
         "n_units": 200,
-        "mean_info": 0.022204967477347026,
-        "mean_bias": 0.021792153287365154,
-        "ratio": 1.0189432491841555
+        "mean_info": 0.02219853182654532,
+        "mean_bias": 0.02176829421060013,
+        "ratio": 1.0197644157039958
       },
       {
         "kind": "poisson",
         "rate_hz": 8.0,
         "n_units": 200,
-        "mean_info": 0.0053945254783838836,
-        "mean_bias": 0.005439933527248846,
-        "ratio": 0.9916528301977383
+        "mean_info": 0.005394201832498034,
+        "mean_bias": 0.0054339039005545245,
+        "ratio": 0.9926936381682351
       },
       {
         "kind": "bursty",
         "rate_hz": 0.5,
         "n_units": 200,
-        "mean_info": 0.3853331387576944,
-        "mean_bias": 0.08932938344536373,
-        "ratio": 4.313621385211671
+        "mean_info": 0.38519471414145956,
+        "mean_bias": 0.08923192382759215,
+        "ratio": 4.316781456888754
       },
       {
         "kind": "bursty",
         "rate_hz": 2.0,
         "n_units": 200,
-        "mean_info": 0.10654377306163314,
-        "mean_bias": 0.02194578878958668,
-        "ratio": 4.85486186362043
+        "mean_info": 0.10631864413398957,
+        "mean_bias": 0.021922896841600953,
+        "ratio": 4.849662200309177
       },
       {
         "kind": "bursty",
         "rate_hz": 8.0,
         "n_units": 200,
-        "mean_info": 0.026519794029894572,
-        "mean_bias": 0.005433966587163914,
-        "ratio": 4.880374879841824
+        "mean_info": 0.026506452874663224,
+        "mean_bias": 0.0054284280340976,
+        "ratio": 4.882896615404712
       }
     ],
     "shift_null": {
       "n_units": 6,
-      "median_info": 0.9486592266665166,
-      "median_bias": 0.049039535931815856,
-      "median_null_mean": 0.36690051428608295,
-      "median_null_over_bias": 7.290548675764445,
+      "median_info": 0.9449936447265366,
+      "median_bias": 0.04903584154452806,
+      "median_null_mean": 0.3667697925357486,
+      "median_null_over_bias": 7.292213400338228,
       "share_pass_bias_fail_shifts": 0.0,
       "share_pass_bias": 1.0,
       "share_above_p95": 1.0
     },
-    "seconds": 5.1
+    "seconds": 4.2
   },
   "gardner_2022_grid": {
     "occupancy": {
-      "visited_bins": 3479,
-      "share_under_0p1_s": 0.004599022707674619,
-      "median_s_per_visited_bin": 2.110000000002401,
-      "median_rate_x_occupancy_per_visited_bin": 3.469933227550574
+      "visited_bins": 3474,
+      "share_under_0p1_s": 0.0025906735751295338,
+      "median_s_per_visited_bin": 2.109999999996944,
+      "median_rate_x_occupancy_per_visited_bin": 3.4766229049787225
     },
     "simulated": [
       {
         "kind": "poisson",
         "rate_hz": 0.5,
         "n_units": 200,
-        "mean_info": 0.013058234140044825,
-        "mean_bias": 0.013067009301778317,
-        "ratio": 0.9993284491094456
+        "mean_info": 0.013045991756680798,
+        "mean_bias": 0.01306364217483929,
+        "ratio": 0.9986488899556292
       },
       {
         "kind": "poisson",
         "rate_hz": 2.0,
         "n_units": 200,
-        "mean_info": 0.0032470335418314867,
-        "mean_bias": 0.0032652212751860922,
-        "ratio": 0.9944298619230426
+        "mean_info": 0.003249402484183985,
+        "mean_bias": 0.0032643521757802873,
+        "ratio": 0.9954203190123846
       },
       {
         "kind": "poisson",
         "rate_hz": 8.0,
         "n_units": 200,
-        "mean_info": 0.0008204101461282128,
-        "mean_bias": 0.0008161091039722893,
-        "ratio": 1.0052701803410706
+        "mean_info": 0.0008196644600007649,
+        "mean_bias": 0.0008158920949208021,
+        "ratio": 1.0046236078317794
       },
       {
         "kind": "bursty",
         "rate_hz": 0.5,
         "n_units": 200,
-        "mean_info": 0.0634433325104144,
-        "mean_bias": 0.013083995692961061,
-        "ratio": 4.84892642883899
+        "mean_info": 0.06347878824034543,
+        "mean_bias": 0.013080345235475912,
+        "ratio": 4.85299027644784
       },
       {
         "kind": "bursty",
         "rate_hz": 2.0,
         "n_units": 200,
-        "mean_info": 0.016362423256997424,
-        "mean_bias": 0.0032622452428166474,
-        "ratio": 5.015693805677829
+        "mean_info": 0.01635566431505975,
+        "mean_bias": 0.0032613603411655746,
+        "ratio": 5.014982278595568
       },
       {
         "kind": "bursty",
         "rate_hz": 8.0,
         "n_units": 200,
-        "mean_info": 0.004067908775330984,
-        "mean_bias": 0.0008150215937200656,
-        "ratio": 4.991166868062373
+        "mean_info": 0.00406248862668786,
+        "mean_bias": 0.0008147970867633933,
+        "ratio": 4.985889975165749
       }
     ],
     "shift_null": {
       "n_units": 483,
-      "median_info": 0.47938557141302396,
-      "median_bias": 0.0025202930806861906,
-      "median_null_mean": 0.01869705417963545,
-      "median_null_over_bias": 6.474021866388114,
+      "median_info": 0.47947156119292583,
+      "median_bias": 0.0025194144377131958,
+      "median_null_mean": 0.018684479779336106,
+      "median_null_over_bias": 6.469546694824153,
       "share_pass_bias_fail_shifts": 0.002070393374741201,
-      "share_pass_bias": 0.9109730848861284,
+      "share_pass_bias": 0.9089026915113871,
       "share_above_p95": 0.9958592132505176
     },
-    "seconds": 454.0
+    "seconds": 292.7
   },
   "grosmark_000044_circular": {
     "occupancy": {
