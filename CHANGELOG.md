@@ -6,10 +6,21 @@
 
 **Breaking**
 
-- `PlaceFieldsResult.to_dataframe()` is one row per field bin with a
-  `unit_id` column, as for every rate result; the per-field table is the new
-  `fields_table()`. Field centroids on a track are field bins (geodesic), so
-  a field round a corner no longer gets a centroid off the track.
+- `PlaceFieldsResult.to_dataframe()` is one row per bin, as for every rate
+  result: `unit_id`, `bin`, `bin_center_*`, `field` (the field holding the
+  bin, `<NA>` outside fields) and `firing_rate`. The per-field table is the
+  new `fields_table()`. Fields never share a bin, and `PlaceFieldsResult`
+  refuses fields that do. A field centroid on a track is the rate-weighted
+  mean along the track, mapped back onto it, so a field round a corner no
+  longer gets a centroid off the track; a field across a junction gets its
+  geodesic medoid.
+- Every public function that takes `rng` gives the same result for `rng=0`
+  and `rng=np.random.default_rng(0)`, and successive calls with one
+  generator differ. The shuffle tests (`*_significance`, `run_shuffle_test`),
+  the replay and reactivation recipes, `shuffle_events` and
+  `detect_assemblies` derived a generator's streams differently from an
+  int's. Their seeded outputs change, and `rng_entropy` is None for a
+  generator, which no int seed repeats.
 - `DirectionalRateResult.preferred_direction_deg` and `.tuning_width_deg`
   are removed; use `np.degrees(result.preferred_direction)`. The
   head-direction simulator's ground truth drops its `preferred_direction_deg`
@@ -64,12 +75,18 @@
   `arrival_tested`.
 - A count matrix passed as a list of rows, such as `[[0, 1], [1, 3]]`, is
   read as counts; it was refused as spike trains when its rows increased.
+  Equal-length rows of three or more whole numbers that rise in every row,
+  over two or more rows, are still read as spike trains (sample indices),
+  and the refusal says to pass `np.asarray(...)` for counts.
 - The boolean-masking warning catches fragmented masks (kept runs of a few
   frames between long removed runs), which inflated occupancy several-fold
-  with no warning. It reads regular sampling as steps near whole multiples
-  of one interval, with a chance check so irregular sampling stays silent.
-  The message names both causes, a boolean mask or dropped tracking frames,
-  and the fix for each.
+  with no warning. It reads regular sampling as steps that cluster at whole
+  multiples of one sampling interval, estimated from the short steps so
+  camera jitter does not shorten it, with a chance check so irregular
+  sampling stays silent, also when its timestamps are rounded to a clock
+  tick. The percentage it reports is the bridged time. The message names
+  both causes, a boolean mask or dropped tracking frames, and the fix for
+  each.
 - An `Environment` passed in another positional slot is caught, also when
   the call still binds (`decode_position(counts, env, rates, dt=0.1)`), and
   the error says to move it first. The advice to build an environment
@@ -80,11 +97,19 @@
 - A unit with no spikes inside `epochs` no longer gets the "check that
   spike_times and times share units" warning; spikes on another clock still
   warn.
-- The millisecond-`dt` refusal of `decode_position` applies only to
-  `dt > 1` s, so overlapping windows (600 ms windows every 5 ms) decode.
+- The millisecond-`dt` refusal of `decode_position` applies when reading
+  `dt` as milliseconds gives a window of 0.5 to 20 steps of `times`, so
+  `dt=1.0` with 1 ms steps is refused, and overlapping windows (600 ms every
+  5 ms, 2 s every 10 ms) decode.
 - `compute_vte_session(..., head_sweep_weight=0.0)` classifies trials on
-  speed alone instead of leaving `is_vte` empty and warning about head
-  sweeps.
+  speed alone, also trials with no headings, instead of leaving `is_vte`
+  empty and warning about head sweeps; `head_sweep_weight=1.0` uses the head
+  sweep alone.
+- `detect_place_fields` refusing a bandwidth for a `method="glm"` map says
+  the map has no kernel and names a kernel method to use instead.
+- `CellTypeSignificanceResult.summary_table(alpha=None)` refuses `None` with
+  an `InputError`, and the small-bandwidth warning also fires for a
+  population with no units.
 - The all-intervals-excluded refusal states what, why and how to fix.
 
 ### The units-free default bandwidth warns
