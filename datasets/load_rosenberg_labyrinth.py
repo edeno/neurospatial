@@ -39,10 +39,11 @@ Analysis choices (``params``):
 
 Declared environment (``geometry["environment"]``): the track graph rebuilt
 from the repository's ``NewMaze`` (every edge, 0.5-cell bins along it) with a
-track width of one cell, the corridor pitch, so a corridor's footprint ends
-at the wall it shares with its neighbour. The paper's corridors are 1-1/8
-inches wide on a 1.5 inch grid (0.75 of a cell); at that width 18 % of nose
-samples would fall outside the track, at one cell 4.6 %.
+physical width chosen as one cell, the corridor pitch, so a corridor ends at
+the wall it shares with its neighbour; the paper's corridors are 1-1/8
+inches wide on a 1.5 inch grid (0.75 of a cell). 4.6 % of nose samples lie
+beyond half a cell (17.9 % beyond half the paper's corridor); the track is
+built with a placement tolerance measured from the samples.
 """
 
 from __future__ import annotations

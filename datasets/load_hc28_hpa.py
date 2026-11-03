@@ -46,7 +46,10 @@ Declared environment (``geometry["environment"]``): the W-track (Jadhav et
 al. 2016, Supplemental Experimental Procedures: about 80 x 80 cm, 7 cm wide
 sections) as a graph of three parallel arms joined by a base, its six node
 positions fitted to the samples (``_tracks.parallel_arm_candidates``,
-``fit_nodes``) with the stated 7 cm width; the fit is in ``conversions``.
+``fit_nodes``). The stated 7 cm is recorded as the physical width, with the
+share of the head samples beyond it; the track is built with a placement
+tolerance measured from the samples, because the LEDs on the headstage swing
+past the edge of an unwalled track. The fit is in ``conversions``.
 """
 
 from __future__ import annotations

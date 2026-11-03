@@ -40,10 +40,11 @@ file's ``linear_position`` (cm along the authors' edge order, with 15 cm
 gaps between edges).
 
 Declared environment (``geometry["environment"]``): the authors' track graph
-from the file, every edge kept, with the 6.5 cm hallway width Comrie et al.
-2026 (STAR Methods) state. The graph ends at the reward-port patches, which
-it does not include; head samples there lie beyond the hallway width and
-outside the environment (the share is in ``conversions``).
+from the file, every edge kept. The 6.5 cm hallway width Comrie et al. 2026
+(STAR Methods) state is recorded as the physical width; about 64 % of head
+samples lie beyond half of it, spread a few centimetres off every corridor
+and most when the rat is stopped or turning (G-152), so the track is built
+with a placement tolerance measured from the samples (``conversions``).
 """
 
 from __future__ import annotations

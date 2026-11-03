@@ -38,8 +38,9 @@ train/test blocks for decoding.
 
 Declared environment (``geometry["environment"]``): the 200 cm linear track
 of Vollan et al. 2025 (Methods) as a one-edge graph along the samples'
-principal axis, centred on them; the paper states no width, so every sample
-is placed on the track. The fit is in ``conversions``.
+principal axis, centred on them; the paper states no width, so the track is
+built with a placement tolerance measured from the samples. The fit is in
+``conversions``.
 """
 
 from __future__ import annotations

@@ -48,9 +48,11 @@ Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s;
 Declared environment (``geometry["environment"]``): the Z-track (Olafsdottir
 et al. 2016, Online Methods: 10 cm wide runways, two parallel 190 cm
 sections joined by a 220 cm diagonal) as a path of three segments whose four
-nodes are fitted to the samples, with the stated 10 cm width. The fitted
-sections are shorter than stated (``conversions``), so lengths come from the
-samples, not the paper.
+nodes are fitted to the samples; the stated 10 cm is the physical width,
+and the track is built with a placement tolerance measured from the
+samples. The fitted
+last section is 16 % shorter than stated, so the fit is refused and the
+recording stays inferred (``conversions``, G-153).
 """
 
 from __future__ import annotations

@@ -29,9 +29,12 @@ the maze's own, and ``analysis_epochs`` are its runs.
 
 Declared environment (``geometry["environment"]``): the W-track as a graph
 of three parallel arms joined by a base, its node positions fitted to the
-maze's samples, with the 7 cm track width Tang, Shin & Jadhav 2023 (the
+maze's samples, with the 7 cm physical width Tang, Shin & Jadhav 2023 (the
 paper the dandiset is described by, STAR Methods) state for both mazes
-("~80 x 80 cm with ~7-cm wide tracks").
+("~80 x 80 cm with ~7-cm wide tracks"), recorded apart from the placement
+tolerance the track is built with (measured from the samples). The novel
+W-track's fitted lengths are 17-19 % above the stated ones, so its fit is
+refused and that recording stays inferred (G-153).
 """
 
 from __future__ import annotations

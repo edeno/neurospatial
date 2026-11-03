@@ -31,8 +31,12 @@ Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s.
 Declared environment (``geometry["environment"]``): the left rat's W-maze
 (Shukla et al. 2026, the paper the dandiset names: 80 x 80 cm with about
 7 cm wide sections) as three parallel arms joined by a base, its node
-positions fitted to the head samples with the stated 7 cm width. With 123 s
-of pose the base is thinly sampled; the fit is in ``conversions``.
+positions fitted to the head samples; the stated 7 cm is recorded as the
+physical width, and the track is built with a placement tolerance measured
+from the samples. With 123 s
+of pose the base is thinly sampled (80 % of a base segment has no sample
+within a bin), so the fit is refused and the recording stays inferred
+(``conversions``, G-153).
 """
 
 from __future__ import annotations

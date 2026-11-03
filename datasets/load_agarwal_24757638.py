@@ -38,7 +38,8 @@ parallel arms joined by a base, the layout the samples show, its node
 positions fitted to them; the wheel beside the base is not part of the
 graph. Agarwal et al. 2026 (Methods) call it "the 2.13m-long maze" without
 saying what that spans, and no source read here states a width, so the
-width is measured from the samples (``_tracks.declared_geometry``).
+track is built with a placement tolerance measured from the samples
+(``_tracks.declared_geometry``).
 """
 
 from __future__ import annotations

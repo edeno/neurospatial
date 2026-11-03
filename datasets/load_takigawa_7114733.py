@@ -43,7 +43,8 @@ Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s;
 Declared environment (``geometry["environment"]``): the two tracks as one
 graph of two components, each the authors' centreline (simplified to within
 0.5 cm, which keeps its length) as a path of segments, every edge kept.
-Tirole et al. 2022 state no track width, so it is measured from the samples.
+Tirole et al. 2022 state no track width, so the track is built with a
+placement tolerance measured from the samples.
 """
 
 from __future__ import annotations

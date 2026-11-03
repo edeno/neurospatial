@@ -44,7 +44,8 @@ Analysis choices (``params``):
   that span.
 - Declared environment (``geometry["environment"]``): the stated 36 cm
   track as a one-edge graph along the samples' principal axis, centred on
-  them; the paper states no width, so every sample is placed on the track.
+  them; the paper states no width, so the track is built with a placement
+  tolerance measured from the samples.
 """
 
 from __future__ import annotations

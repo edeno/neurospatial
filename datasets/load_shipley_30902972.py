@@ -40,7 +40,9 @@ et al. 2026, Methods: eight 80 x 10 cm arms on an octagonal centre platform
 24.7 cm across) as a star of eight arms from one centre node, fitted to the
 maze trials' samples and each arm then refitted to its own samples (an arm
 leaves the platform's edge, so it need not point exactly at the centre),
-with the stated 10 cm arm width; the platform is represented by the short
+with the stated 10 cm arm width as the physical width (the track is built
+with a placement tolerance measured from the samples); the platform is
+represented by the short
 segments joining the arms to one centre node. The fit is in ``conversions``.
 """
 
