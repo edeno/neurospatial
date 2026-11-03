@@ -69,7 +69,7 @@ def _write(path, *, heading_unit: str, generic_position: bool = False) -> Record
         headings=headings,
         spike_times=tuple(spikes),
         unit_ids=np.arange(2),
-        params={"bin_size": 2.0, "dt": 0.25, "nwb_path": str(path)},
+        params={"bin_size": 2.0, "dt": 0.25, "nwb_source": str(path)},
     )
 
 

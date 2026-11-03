@@ -3,20 +3,24 @@
 Every file is pinned by SHA-256. A file is written to a temporary name in its
 destination directory and renamed only after its digest matches, so an
 interrupted or corrupted download never leaves a file the loaders would trust.
-An existing file with a different digest is never overwritten.
+An existing file with a different digest is never overwritten. Files too
+large to download (multi-GB DANDI assets) are read by HTTP byte range instead,
+pinned by the SHA-256 DANDI publishes for them.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import json
 import os
 import shutil
 import tempfile
 import urllib.request
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import IO
+from typing import IO, Any
 
 DEFAULT_CACHE = Path(__file__).resolve().parent.parent / "data" / "datasets"
 
@@ -111,3 +115,43 @@ def fetch_zip_member(
 def dandi_asset_url(asset_id: str) -> str:
     """Return the download URL of a DANDI asset."""
     return f"https://api.dandiarchive.org/api/assets/{asset_id}/download/"
+
+
+def dandi_stream_url(asset_id: str, *, sha256: str) -> str:
+    """Return the asset's download URL after checking DANDI's published SHA-256.
+
+    For files read by byte range, where hashing the whole file would mean
+    downloading it.
+    """
+    url = f"https://api.dandiarchive.org/api/assets/{asset_id}/"
+    with urllib.request.urlopen(url) as response:
+        published = json.load(response)["digest"]["dandi:sha2-256"]
+    if published != sha256:
+        msg = (
+            f"DANDI asset {asset_id} now has SHA-256 {published}, not the pinned"
+            f" {sha256}; the file changed, so recheck the loader before updating the pin"
+        )
+        raise ValueError(msg)
+    return dandi_asset_url(asset_id)
+
+
+@contextlib.contextmanager
+def open_nwb(source: str) -> Iterator[Any]:
+    """Yield the NWBFile at a local path, or at an http(s) URL read by byte range."""
+    import pynwb
+
+    if not source.startswith(("https://", "http://")):
+        with pynwb.NWBHDF5IO(source, "r", load_namespaces=True) as io:
+            yield io.read()
+        return
+    import fsspec
+    import h5py
+
+    with (
+        fsspec.open(
+            source, "rb", block_size=4 << 20, cache_type="blockcache"
+        ) as remote,
+        h5py.File(remote, "r") as h5,
+        pynwb.NWBHDF5IO(file=h5, mode="r", load_namespaces=True) as io,
+    ):
+        yield io.read()

@@ -96,7 +96,7 @@ def load(cache: Path | None = None) -> Recording:
         params={
             "analysis_epochs": epochs["wake"],
             "dt": 0.1,
-            "nwb_path": str(path),
+            "nwb_source": str(path),
             "readers_used": ("head_direction", "units"),
         },
         conversions=(

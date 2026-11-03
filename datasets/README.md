@@ -52,7 +52,8 @@ float64 NumPy arrays, and refuses every other global or dtype.
 | `giocomo_000405` | Rat open field with binned firing rates and mislabelled tracking (DANDI 000405, draft) | 27.1 MB | unstated (draft) |
 | `giocomo_001701` | Mouse MEC and CA1 units on an X maze, head direction labelled degrees (DANDI 001701) | 13.0 MB | CC-BY-4.0 |
 
-NWB loaders set `params["nwb_path"]` to the cached file. The `io.nwb_readers`
+NWB loaders set `params["nwb_source"]` to the cached file, or to the URL of a
+file read by byte range. The `io.nwb_readers`
 operation then runs neurospatial's position, head-direction and unit readers
 on it with default arguments and compares what they return with the loader's
 range-checked arrays.

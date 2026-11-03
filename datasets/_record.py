@@ -49,7 +49,7 @@ class Recording:
     params : mapping
         Analysis choices the driver uses (``bin_size`` in ``position_units``,
         ``dt`` in s, and optional ``min_speed``, ``analysis_epochs``,
-        ``train_epochs``, ``test_epochs``, ``replay_dt``, ``nwb_path``).
+        ``train_epochs``, ``test_epochs``, ``replay_dt``, ``nwb_source``).
     conversions : tuple of str
         Every transformation the loader applied, one line each.
     """

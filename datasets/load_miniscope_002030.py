@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_asset_url, fetch
+from _fetch import dandi_asset_url, fetch, open_nwb
 from _record import Range, Recording, check_expectations, validate_recording
 
 DATASET = {
@@ -94,7 +94,11 @@ def load(cache: Path | None = None) -> Recording:
         activity_times=np.asarray(dff_times, dtype=float),
         activity_kind="dff",
         geometry={"shape": "circle", "diameter_cm": 96.0},
-        params={"bin_size": 2.5, "nwb_path": str(path), "readers_used": ("position",)},
+        params={
+            "bin_size": 2.5,
+            "nwb_source": str(path),
+            "readers_used": ("position",),
+        },
         conversions=(
             "positions: read_position, cm; range checked: 10-105 by 9-103 cm in the 96 cm arena",
             "times: rate 30 Hz; 21,427 frames = 714 s, the stated ~12 min session",
@@ -107,11 +111,8 @@ def load(cache: Path | None = None) -> Recording:
 
 def _headings_as_stored(rec: Recording) -> Recording:
     # Undoes the wrap: the stored head direction, partly outside [-pi, pi].
-    path = rec.params["nwb_path"]
-    import pynwb
-
-    with pynwb.NWBHDF5IO(path, "r", load_namespaces=True) as io:
-        stored = np.asarray(io.read().processing["behavior"]["headdirection"].data[:])
+    with open_nwb(rec.params["nwb_source"]) as nwbfile:
+        stored = np.asarray(nwbfile.processing["behavior"]["headdirection"].data[:])
     return replace(rec, headings=stored)
 
 

@@ -103,7 +103,7 @@ def load(cache: Path | None = None) -> Recording:
         activity=rates,
         activity_times=times.copy(),
         activity_kind="binned_rate",
-        params={"bin_size": 2.5, "nwb_path": str(path)},
+        params={"bin_size": 2.5, "nwb_source": str(path)},
         conversions=(
             "positions: track_data columns x, y by the description's column names;"
             " labelled mm, read as cm (ranges -62..60, -5..134)",

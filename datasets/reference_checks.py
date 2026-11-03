@@ -293,10 +293,10 @@ def _circular_error(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def head_direction_check(rec: Recording) -> list[str]:
     import pynapple as nap
-    import pynwb
+    from _fetch import open_nwb
 
-    with pynwb.NWBHDF5IO(rec.params["nwb_path"], "r", load_namespaces=True) as io:
-        locations = io.read().units["location"][:]
+    with open_nwb(rec.params["nwb_source"]) as nwbfile:
+        locations = nwbfile.units["location"][:]
     adn = np.asarray(locations) == "adn"
     spikes = nap.TsGroup(
         {

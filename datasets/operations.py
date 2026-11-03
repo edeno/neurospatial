@@ -495,14 +495,14 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     agreement is reported as "ok (loader used this reader)": it shows the
     reader is consistent, not that it read the file correctly.
     """
-    import pynwb
+    from _fetch import open_nwb
 
     from neurospatial.io.nwb import read_head_direction, read_position, read_units
     from neurospatial.stats import wrap_angle
 
-    path = rec.params.get("nwb_path")
-    if path is None:
-        return Outcome("n/a", note="params has no nwb_path (not an NWB dataset)")
+    source = rec.params.get("nwb_source")
+    if source is None:
+        return Outcome("n/a", note="params has no nwb_source (not an NWB dataset)")
     used = set(rec.params.get("readers_used", ()))
 
     def labelled(name: str, verdict: str) -> str:
@@ -561,8 +561,7 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     }
     found: dict[str, str] = {}
     errors: list[str] = []
-    with pynwb.NWBHDF5IO(path, "r", load_namespaces=True) as io:
-        nwbfile = io.read()
+    with open_nwb(source) as nwbfile:
         for name, (read, compare, have) in readers.items():
             try:
                 found[name] = _reader_result(
