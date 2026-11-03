@@ -1702,7 +1702,8 @@ def measure_declared(
 ) -> dict[str, Any]:
     """The declared environment, measured as the samples-built one is, and judged.
 
-    The verdict is ``_geometry.judge_declared``'s misfit evidence (a stretch
+    The verdict is ``_geometry.judge_declared``'s misfit evidence, on the
+    samples in ``params["analysis_epochs"]`` where the loader sets them (a stretch
     of track beside its samples, a segment with no samples near it, a stated
     length off), the stated number of parts and, where there is one, an
     independent reference. The share of samples beyond the physical width
@@ -1718,10 +1719,19 @@ def measure_declared(
     env = rec.geometry["environment"]()
     measures = measure_env(env, samples, np.random.default_rng(SEED))
     fit = dict(rec.geometry.get("environment_fit", {}))
+    # Judged on the samples the analyses use (``analysis_epochs``, else all):
+    # hc-18's sleep-box sessions are off the circuit by design.
+    positions = np.asarray(rec.positions, dtype=float)
+    epochs = rec.params.get("analysis_epochs")
+    if epochs is not None:
+        analysed = np.zeros(len(rec.times), dtype=bool)
+        for start, stop in np.asarray(epochs, dtype=float).reshape(-1, 2):
+            analysed |= (rec.times >= start) & (rec.times < stop)
+        positions = np.where(analysed[:, None], positions, np.nan)
     judged = judge_declared(
         env,
         rec.times,
-        rec.positions,
+        positions,
         physical_width=rec.geometry.get("declared_physical_width"),
         speed_thresholds=rec.geometry.get("declared_speed_thresholds", ()),
         stated_residuals={
