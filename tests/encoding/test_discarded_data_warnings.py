@@ -224,9 +224,11 @@ def test_dropped_frames_are_silent():
 def test_irregular_sampling_is_not_called_masked():
     """Steps spread over 0.001-0.45 s have no sampling interval to be a multiple of.
 
-    By chance 3 of these 15 steps are within 10% of three times the median
-    step, about 10% of the analysed time, which reads as removed samples
-    unless most steps are the median step.
+    Read against their shortest steps (0.02 s), these 15 steps lean toward
+    whole multiples by chance (mean phase cosine 0.15, above
+    ``MASKED_REGULAR_COHERENCE``), and six of them would count as removed
+    runs, 69% of the analysed time. Irregular steps reach that cosine with
+    probability 0.21, so the chance check keeps it silent.
     """
     rng = np.random.default_rng(491)
     positions = rng.uniform((-3.0, 11.0), (-1.0, 13.0), size=(16, 2))
@@ -240,47 +242,62 @@ def test_irregular_sampling_is_not_called_masked():
     np.testing.assert_allclose(occupancy.sum(), times[-1] - times[0], rtol=1e-12)
 
 
-def test_masked_samples_warn_with_camera_jitter():
-    """A 30 Hz camera with 4 ms timestamp jitter, 0.4 s removed every 2 s.
-
-    Fewer than half the steps are within 10% of the median step, but the
-    sampling is regular and the removed runs still warn.
-    """
-    rng = np.random.default_rng(0)
-    times = np.sort(np.arange(0.0, 600.0, 1 / 30) + rng.normal(0.0, 0.004, 18000))
-    steps = np.diff(times) / np.median(np.diff(times))
-    assert np.mean(np.abs(steps - 1.0) < 0.1) < 0.5
-    positions = np.c_[50 + 40 * np.sin(times / 7.0), 50 + 40 * np.cos(times / 11.0)]
-    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
-    kept = times % 2.0 >= 0.4
-    with pytest.warns(UserWarning, match="boolean-masked"):
-        env.occupancy(times[kept], positions[kept])
-
-
 _FS = 30.0
 
 
-def _speed_masked(rng, jitter):
-    """30 Hz for 600 s with jittered timestamps, 0.4 s removed every 2 s."""
-    times = np.arange(0.0, 600.0, 1 / _FS)
-    times = np.sort(times + jitter(rng, times.size))
-    return times[times % 2.0 >= 0.4]
+def _removed_share(sampled, fs, max_gap=1.0):
+    """The share of the analysed time a removed-runs check should report.
+
+    Counted from which samples of a regular ``fs`` clock were kept
+    (``sampled``), independently of the timestamps: a step across ``g - 1``
+    removed samples spans ``g / fs`` seconds and is bridged when that is at
+    most ``max_gap``; its removed samples count when they last at least
+    ``MASKED_RUN_MIN_DURATION``.
+    """
+    from neurospatial._intervals import MASKED_RUN_MIN_DURATION
+
+    spanned = np.diff(np.flatnonzero(sampled))
+    bridged = spanned / fs <= max_gap
+    removed = (spanned - 1) / fs
+    counted = bridged & (removed >= MASKED_RUN_MIN_DURATION)
+    return removed[counted].sum() / (spanned[bridged].sum() / fs)
+
+
+def _speed_masked(rng, fs, jitter_sd, *, uniform=False, tick=None):
+    """A camera at ``fs`` for 600 s, 0.4 s of samples removed every 2 s.
+
+    Timestamps jitter with SD ``jitter_sd`` (or uniformly within
+    ``±jitter_sd``) and are rounded to ``tick`` seconds when given. Returns
+    the sorted timestamps of the kept samples and which samples of the
+    camera's clock were kept.
+    """
+    nominal = np.arange(0.0, 600.0, 1 / fs)
+    sampled = nominal % 2.0 >= 0.4
+    if uniform:
+        jitter = rng.uniform(-jitter_sd, jitter_sd, nominal.size)
+    else:
+        jitter = rng.normal(0.0, jitter_sd, nominal.size)
+    times = np.sort((nominal + jitter)[sampled])
+    if tick is not None:
+        times = np.round(times / tick) * tick
+    return times, sampled
 
 
 def _fragmented(rng):
     """``times[speed > thr]`` for a mostly resting animal at 30 Hz.
 
-    Kept runs of 1-4 frames between removed runs of 10-40 frames.
+    Kept runs of 1-4 frames between removed runs of 10-40 frames. Returns the
+    kept times and which frames were kept.
     """
     keep = rng.integers(1, 5, 3000)
     drop = rng.integers(10, 41, 3000)
-    mask = np.concatenate(
+    sampled = np.concatenate(
         [
             np.r_[np.ones(k, bool), np.zeros(m, bool)]
             for k, m in zip(keep, drop, strict=True)
         ]
     )
-    return (np.arange(mask.size) / _FS)[mask]
+    return (np.arange(sampled.size) / _FS)[sampled], sampled
 
 
 def _spike_timed(rng):
@@ -290,79 +307,146 @@ def _spike_timed(rng):
     return np.unique(np.round(np.cumsum(steps) * 30000) / 30000)
 
 
-# name: (simulate(rng) -> times, whether the sampling is regular)
-_GATE_CASES = {
-    "speed mask": (lambda rng: _speed_masked(rng, lambda r, n: np.zeros(n)), True),
-    "speed mask, 10 ms jitter window": (
-        lambda rng: _speed_masked(rng, lambda r, n: r.uniform(-0.005, 0.005, n)),
-        True,
+def _pooled_spike_times(rng, rate, tick):
+    """Positions read at pooled spike times, rounded to ``tick`` seconds.
+
+    Bursts of activity at ``rate`` Hz for 0.5-2 s, between silences of
+    0.3-0.8 s, for 600 s.
+    """
+    bursts, start = [], 0.0
+    while start < 600.0:
+        duration = rng.uniform(0.5, 2.0)
+        bursts.append(start + rng.uniform(0.0, duration, rng.poisson(rate * duration)))
+        start += duration + rng.uniform(0.3, 0.8)
+    return np.unique(np.round(np.concatenate(bursts) / tick) * tick)
+
+
+def _occupancy_warnings(times):
+    positions = np.c_[50 + 40 * np.sin(times / 7.0), 50 + 40 * np.cos(times / 11.0)]
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        env.occupancy(times, positions)
+    return [str(w.message) for w in record]
+
+
+@pytest.mark.parametrize(
+    ("fs", "jitter_sd"),
+    [(30.0, 0.004), (30.0, 0.006), (60.0, 0.003), (120.0, 0.002)],
+    ids=["30Hz-4ms", "30Hz-6ms", "60Hz-3ms", "120Hz-2ms"],
+)
+def test_masked_samples_warn_with_camera_jitter(fs, jitter_sd):
+    """A camera with Gaussian timestamp jitter, 0.4 s removed every 2 s.
+
+    Fewer than half the steps are within 10% of the median step, but the
+    sampling is regular, so the removed runs warn, with their share of the
+    analysed time.
+    """
+    times, sampled = _speed_masked(np.random.default_rng(0), fs, jitter_sd)
+    steps = np.diff(times) / np.median(np.diff(times))
+    assert np.mean(np.abs(steps - 1.0) < 0.1) < 0.5
+    messages = _occupancy_warnings(times)
+    assert len(messages) == 1
+    assert "boolean-masked" in messages[0]
+    reported = float(messages[0].split("About ")[1].split("%")[0]) / 100
+    np.testing.assert_allclose(reported, _removed_share(sampled, fs), rtol=0.05)
+
+
+@pytest.mark.parametrize("tick", [1e-3, 1e-4], ids=["1ms", "0.1ms"])
+def test_rounded_irregular_times_are_not_called_masked(tick):
+    """Pooled spike times rounded to a clock tick are still irregular.
+
+    At 1 ms, 14% of the steps are exactly one tick, and every step is a whole
+    number of ticks; the silences between bursts are not removed samples.
+    """
+    times = _pooled_spike_times(np.random.default_rng(0), 150.0, tick)
+    if tick == 1e-3:
+        assert 0.1 < np.mean(np.isclose(np.diff(times), tick)) < 0.2
+    assert _occupancy_warnings(times) == []
+
+
+# name: simulate(rng) -> (kept times, which samples of the 30 Hz clock were kept)
+_REGULAR_CASES = {
+    "speed mask": lambda rng: _speed_masked(rng, _FS, 0.0),
+    "speed mask, 10 ms jitter window": lambda rng: _speed_masked(
+        rng, _FS, 0.005, uniform=True
     ),
-    "speed mask, 4 ms SD jitter": (
-        lambda rng: _speed_masked(rng, lambda r, n: r.normal(0.0, 0.004, n)),
-        True,
+    "speed mask, 4 ms SD jitter": lambda rng: _speed_masked(rng, _FS, 0.004),
+    "speed mask, 6 ms SD jitter": lambda rng: _speed_masked(rng, _FS, 0.006),
+    "speed mask, 6 ms SD jitter, 1 ms clock": lambda rng: _speed_masked(
+        rng, _FS, 0.006, tick=1e-3
     ),
-    "fragmented mask": (_fragmented, True),
-    "uniform steps": (lambda rng: np.cumsum(rng.uniform(0.001, 0.45, 5000)), False),
-    "exponential steps": (
-        lambda rng: np.cumsum(rng.exponential(1 / _FS, 5000)),
-        False,
-    ),
-    "spike-timed": (_spike_timed, False),
+    "fragmented mask": _fragmented,
 }
 
-_GATE_SHARES = {
-    "speed mask": (0.99, 1.0),
-    "speed mask, 10 ms jitter window": (0.95, 0.99),
-    "speed mask, 4 ms SD jitter": (0.8, 0.9),
-    "fragmented mask": (0.99, 1.0),
-    "uniform steps": (0.45, 0.55),
-    "exponential steps": (0.45, 0.55),
-    "spike-timed": (0.45, 0.55),
+# name: simulate(rng) -> times
+_IRREGULAR_CASES = {
+    "uniform steps": lambda rng: np.cumsum(rng.uniform(0.001, 0.45, 5000)),
+    "exponential steps": lambda rng: np.cumsum(rng.exponential(1 / _FS, 5000)),
+    "spike-timed": _spike_timed,
+    "pooled spikes, 1 ms clock": lambda rng: _pooled_spike_times(rng, 150.0, 1e-3),
+    "pooled spikes, 0.1 ms clock": lambda rng: _pooled_spike_times(rng, 150.0, 1e-4),
+    "slower pooled spikes, 1 ms clock": lambda rng: _pooled_spike_times(
+        rng, 50.0, 1e-3
+    ),
 }
 
 
-@pytest.mark.parametrize("case", list(_GATE_CASES))
-def test_masking_gate_calibration(case):
-    """Masked regular sampling warns; irregular sampling is silent.
+def _bridged_fraction(times, max_gap=1.0):
+    from neurospatial._intervals import _masked_sample_fraction
 
-    The gate asks whether the steps are near whole multiples of one sampling
-    interval. The shares measured here are the ones the comment on
-    ``MASKED_REGULAR_SHARE`` cites.
+    return _masked_sample_fraction(times, np.diff(times) <= max_gap, max_gap)
+
+
+@pytest.mark.parametrize("case", list(_REGULAR_CASES))
+def test_masking_check_reports_the_removed_share(case):
+    """Masked regular sampling warns, reporting the share it removed.
+
+    The share is counted from which camera frames were kept, not from the
+    timestamps. Five seeds per case.
     """
     from neurospatial._constants import DISCARD_WARN_FRACTION
-    from neurospatial._intervals import (
-        MASKED_MULTIPLE_TOLERANCE,
-        MASKED_REGULAR_SHARE,
-        _masked_sample_fraction,
-        _sampling_interval,
-    )
 
-    simulate, regular = _GATE_CASES[case]
-    times = simulate(np.random.default_rng(3))
-    dt = np.diff(times)
-    interval = _sampling_interval(dt)
-    ratio = dt / interval
-    share = np.mean(
-        (ratio >= 0.5) & (np.abs(ratio - np.round(ratio)) < MASKED_MULTIPLE_TOLERANCE)
-    )
-    low, high = _GATE_SHARES[case]
-    assert low <= share <= high
-    fraction = _masked_sample_fraction(times, np.ones(dt.size, bool), 1.0)
-    if regular:
-        # The interval is the camera's, even where the median step is a gap.
-        np.testing.assert_allclose(interval, 1 / _FS, rtol=0.01)
-        assert share >= MASKED_REGULAR_SHARE
-        assert fraction > DISCARD_WARN_FRACTION
-    else:
-        assert fraction == 0.0
-    if case == "fragmented mask":
-        # Only 0.6 of its steps are one sample, so the median-step gate missed it.
-        median_share = np.mean(np.abs(dt / np.median(dt) - 1.0) < 0.5)
-        assert 0.55 < median_share < 0.65
-    if case == "spike-timed":
-        # Like DANDI 001754: few steps are near the median step.
-        median_share = np.mean(np.abs(dt / np.median(dt) - 1.0) < 0.5)
-        assert 0.15 < median_share < 0.2
+    for seed in range(5):
+        times, sampled = _REGULAR_CASES[case](np.random.default_rng(seed))
+        truth = _removed_share(sampled, _FS)
+        assert truth > 2 * DISCARD_WARN_FRACTION
+        np.testing.assert_allclose(_bridged_fraction(times), truth, rtol=0.05)
+
+
+@pytest.mark.parametrize("case", list(_IRREGULAR_CASES))
+def test_masking_check_is_silent_on_irregular_sampling(case):
+    """Irregular sampling has no removed samples to report. Five seeds per case."""
+    for seed in range(5):
+        times = _IRREGULAR_CASES[case](np.random.default_rng(100 + seed))
+        assert _bridged_fraction(times) == 0.0
+
+
+@pytest.mark.parametrize(
+    "draw",
+    [
+        lambda rng, n: rng.uniform(0.001, 0.45, n),
+        lambda rng, n: rng.exponential(0.15, n),
+        lambda rng, n: np.exp(rng.uniform(np.log(0.001), np.log(0.65), n)),
+    ],
+    ids=["uniform", "exponential", "log-uniform"],
+)
+def test_masking_check_rarely_calls_short_irregular_runs_masked(draw):
+    """2000 short runs (11-60 steps) of irregular steps rarely warn.
+
+    A few random steps can look locked to an interval by chance; the
+    chance check (``MASKED_REGULAR_CHANCE``) keeps that below 0.5% of runs
+    (at most 1 of 2000 measured). Without it, 889-997 of the 2000 runs of
+    each kind warn.
+    """
+    from neurospatial._constants import DISCARD_WARN_FRACTION
+
+    rng = np.random.default_rng(7)
+    n_warned = 0
+    for _ in range(2000):
+        times = 10.0 + np.cumsum(np.r_[0.0, draw(rng, rng.integers(11, 61))])
+        n_warned += _bridged_fraction(times) > DISCARD_WARN_FRACTION
+    assert n_warned <= 10
 
 
 def test_fragmented_mask_warns_and_inflates_occupancy():
@@ -371,8 +455,7 @@ def test_fragmented_mask_warns_and_inflates_occupancy():
     Most of the bridged time is in removed runs, so occupancy is several
     times the time of the kept frames.
     """
-    rng = np.random.default_rng(7)
-    times = _fragmented(rng)
+    times, _ = _fragmented(np.random.default_rng(7))
     positions = np.c_[50 + 40 * np.sin(times / 7.0), 50 + 40 * np.cos(times / 11.0)]
     env = Environment.from_samples(positions, bin_size=4.0, units="cm")
     with pytest.warns(UserWarning, match="boolean-masked"):
