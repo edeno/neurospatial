@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, NoReturn
 
 import numpy as np
@@ -107,6 +108,12 @@ class CircularSequenceResult(ReadOnlyArraysMixin, ResultMixin):
     >>> result = fit_circular_sequence(env, posterior, times)  # doctest: +SKIP
     >>> print(f"{result.slope:.0f} cm/s, R² = {result.r_squared:.2f}")  # doctest: +SKIP
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "angular_slope": "rad/s",
+        }
+    )
 
     slope: float
     angular_slope: float

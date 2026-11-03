@@ -12,6 +12,7 @@ or scattered event should not.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -66,6 +67,12 @@ class ReplayEventSimulation(ReadOnlyArraysMixin, ResultMixin):
     --------
     simulate_replay_event : Function that produces this result.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "duration": "s",
+        }
+    )
 
     spike_times: tuple[NDArray[np.float64], ...]
     times: NDArray[np.float64]

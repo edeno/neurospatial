@@ -271,6 +271,13 @@ class RecurringSequencesResult(ReadOnlyArraysMixin, ResultMixin):
     recurring_spike_sequences : Function that produces this result.
     """
 
+    _repr_units = MappingProxyType(
+        {
+            "window": "s",
+            "tolerance": "s",
+        }
+    )
+
     reference_unit: int
     reference_times: NDArray[np.float64]
     complexity: NDArray[np.intp]

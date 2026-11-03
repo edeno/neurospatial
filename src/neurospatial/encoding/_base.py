@@ -168,6 +168,18 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
 
     spike_window: NDArray[np.float64] | None = None
     analysis_settings: dict[str, Any] | None = None
+    # The rate families' summary keys; each result shows the ones it has.
+    _repr_units: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {
+            "peak_firing_rate": "Hz",
+            "max_peak_firing_rate": "Hz",
+            "spatial_information": "bits/spike",
+            "total_occupancy": "s",
+            "preferred_direction": "rad",
+            "preferred_distance": "{units}",
+            "peak_location()[0]": "{units}",
+        }
+    )
 
     if TYPE_CHECKING:
         # Members every rate result provides, as fields or properties.
@@ -619,6 +631,10 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
     def _coordinate_units(self) -> str | None:
         """Unit of the bin coordinates: the environment's, when there is one."""
         return getattr(getattr(self, "env", None), "units", None)
+
+    def _repr_coordinate_units(self) -> str | None:
+        """The bin coordinates' unit, as the tables' ``attrs["units"]``."""
+        return self._coordinate_units() or None
 
     def _xarray_attrs(self) -> dict[str, Any]:
         """Family metadata; concrete rate results override this hook."""

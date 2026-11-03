@@ -6,10 +6,11 @@ distributions from neural decoding and computes derived properties lazily.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import numpy as np
 import pandas as pd
@@ -305,6 +306,11 @@ def _align_true_positions(
 
 class _DecodeRecordMixin:
     """Recording windows, decoded time support and xarray metadata of a decode."""
+
+    # Units of the summary keys shared by the decode results.
+    _repr_units: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {"mean_entropy": "bits", "max_entropy": "bits", "decoded_duration": "s"}
+    )
 
     env: Environment
     times: NDArray[np.float64] | None

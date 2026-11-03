@@ -116,6 +116,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -386,6 +387,15 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         Length unit of ``traveled_length`` and ``shortest_length`` (the
         environment's ``units``).
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "traveled_length": "{units}",
+            "shortest_length": "{units}",
+            "mean_traveled_length": "{units}",
+            "mean_shortest_length": "{units}",
+        }
+    )
 
     traveled_length: float | NDArray[np.float64]
     shortest_length: float | NDArray[np.float64]
@@ -701,6 +711,16 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     >>> metrics.goal_distance_at_start, metrics.goal_distance_at_end
     (95.0, 0.0)
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "mean_approach_rate": "{units}/s",
+            "goal_distance_at_start": "{units}",
+            "goal_distance_at_end": "{units}",
+            "min_distance_to_goal": "{units}",
+            "time_to_reach_goal": "s",
+        }
+    )
 
     goal_bias: float | NDArray[np.float64]
     mean_approach_rate: float | NDArray[np.float64]

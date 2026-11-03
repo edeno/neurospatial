@@ -59,6 +59,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -150,6 +151,13 @@ class GridProperties(ReadOnlyArraysMixin, ResultMixin):
     >>> props.n_peaks
     3
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "orientation": "rad",
+            "orientation_std": "rad",
+        }
+    )
 
     score: float
     scale: float

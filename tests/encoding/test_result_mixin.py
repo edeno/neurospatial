@@ -7,6 +7,8 @@ guarantee that pre-existing spatial-result accessors keep working.
 
 from __future__ import annotations
 
+from types import MappingProxyType
+
 import matplotlib as mpl
 
 mpl.use("Agg")  # non-interactive backend for headless test runs
@@ -270,6 +272,88 @@ class TestResultRepr:
         assert "<table" in html_repr
         assert type(spatial_result).__name__ in html_repr
         assert "peak_firing_rate" in html_repr
+
+    def test_repr_shows_physical_units(self, spatial_result) -> None:
+        summary = spatial_result.summary()
+        peak = f"{summary['peak_firing_rate']:.4g}"
+        info = f"{summary['spatial_information']:.4g}"
+        occupancy = f"{summary['total_occupancy']:.4g}"
+        sparsity = f"{summary['sparsity']:.4g}"
+        r = repr(spatial_result)
+        assert f"peak_firing_rate()={peak} Hz, " in r
+        assert f"spatial_information()={info} bits/spike, " in r
+        assert f"sparsity()={sparsity}, " in r  # dimensionless: no unit
+        assert f"total_occupancy={occupancy} s, " in r
+        assert "method=diffusion_kde)" in r  # labels take no unit
+
+    def test_summary_values_stay_plain_numbers(self, spatial_result) -> None:
+        summary = spatial_result.summary()
+        for key in ("peak_firing_rate", "spatial_information", "total_occupancy"):
+            assert type(summary[key]) is float
+        assert summary["peak_firing_rate"] == spatial_result.peak_firing_rate()
+        assert summary["total_occupancy"] == spatial_result.total_occupancy
+
+    def test_repr_html_shows_units(self, spatial_result) -> None:
+        summary = spatial_result.summary()
+        html_repr = spatial_result._repr_html_()
+        cell = "<td style='text-align:left'>{}</td>"
+        assert cell.format(f"{summary['peak_firing_rate']:.4g} Hz") in html_repr
+        assert cell.format(f"{summary['total_occupancy']:.4g} s") in html_repr
+        info = f"{summary['spatial_information']:.4g} bits/spike"
+        assert cell.format(info) in html_repr
+
+    @pytest.mark.parametrize(("units", "shown"), [("cm", " cm"), (None, "")])
+    def test_coordinate_unit_shows_only_when_known(self, units, shown) -> None:
+        class Path(ResultMixin):
+            _repr_units = MappingProxyType(
+                {"length": "{units}", "speed": "{units}/s", "duration": "s"}
+            )
+
+            def __init__(self, units: str | None) -> None:
+                self.units = units
+
+            def summary(self) -> dict:
+                return {"length": 12.5, "speed": 2.0, "duration": 3}
+
+        speed = f" {units}/s" if units else ""
+        assert repr(Path(units)) == (
+            f"Path(length=12.5{shown}, speed=2{speed}, duration=3 s)"
+        )
+
+    def test_tuning_peak_location_takes_the_variable_unit(self) -> None:
+        from neurospatial.encoding import compute_tuning_curve
+
+        rng = np.random.default_rng(0)
+        times = np.linspace(0, 100, 1000)
+        speed = np.abs(np.sin(times)) * 30
+        spikes = np.sort(rng.uniform(0, 100, 100))
+        edges = np.linspace(0, 30, 7)
+        with_units = compute_tuning_curve(
+            spikes, times, speed, bin_edges=edges, variable="speed", units="cm/s"
+        )
+        location = f"{with_units.summary()['peak_location()[0]']:.4g}"
+        assert f"peak_location()[0]={location} cm/s, " in repr(with_units)
+        unknown = compute_tuning_curve(spikes, times, speed, bin_edges=edges)
+        assert f"peak_location()[0]={location}, " in repr(unknown)
+
+    def test_non_numbers_take_no_unit(self) -> None:
+        class Flags(ResultMixin):
+            _repr_units = MappingProxyType({"done": "s", "label": "s", "gap": "s"})
+
+            def summary(self) -> dict:
+                return {"done": True, "label": "ok", "gap": None}
+
+        assert repr(Flags()) == "Flags(done=True, label=ok, gap=None)"
+
+    def test_missing_values_take_no_unit(self) -> None:
+        class Timing(ResultMixin):
+            _repr_units = MappingProxyType({"duration": "s", "rate": "Hz"})
+
+            def summary(self) -> dict:
+                return {"duration": np.nan, "rate": np.inf}
+
+        assert repr(Timing()) == "Timing(duration=nan, rate=inf)"
+        assert "<td style='text-align:left'>nan</td>" in Timing()._repr_html_()
 
     def test_repr_never_raises_on_summary_failure(self) -> None:
         """__repr__/_repr_html_ degrade safely if summary() is unavailable."""

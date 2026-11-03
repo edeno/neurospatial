@@ -13,6 +13,7 @@ the animal ran.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -74,6 +75,14 @@ class PeriEventDistanceResult(ResultMixin, ReadOnlyArraysMixin):
         Spikes over seconds in each bin, pooled over events, in Hz (derived).
         NaN where no event's path reached the bin: no time, no rate.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "peak_rate": "Hz",
+            "baseline_rate": "Hz",
+            "total_occupancy": "s",
+        }
+    )
 
     spike_counts: NDArray[np.float64]
     occupancy: NDArray[np.float64]
