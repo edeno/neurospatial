@@ -425,9 +425,15 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
     # The rate maps and spike counts use every unit; GROSMARK_2016's active-cell
     # rule counts place cells in the paper, and both papers decoded each running
     # direction with its own maps. Both are simplifications here.
-    ripples = rec.events.get("ripples")
+    # Ripples when the source has them, else candidate events the loader found
+    # by a stated rule (population bursts).
+    kind = "ripples" if "ripples" in rec.events else "candidate_events"
+    ripples = rec.events.get(kind)
     if ripples is None or rec.params.get("replay_dt") is None:
-        return Outcome("n/a", note="needs events['ripples'] and params['replay_dt']")
+        return Outcome(
+            "n/a",
+            note="needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
+        )
     env, dt = _env(rec, cache), rec.params["replay_dt"]
     spikes = list(rec.spike_times or ())
     rates = compute_spatial_rates(
@@ -453,7 +459,7 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
         dt=dt,
         rng=0,
     )
-    summary: dict[str, float | int | str] = {"n_events": len(events)}
+    summary: dict[str, float | int | str] = {"n_events": len(events), "events": kind}
     for row in detection_rates(table).itertuples():
         summary[f"{row.method}_rate"] = float(row.rate)
         summary[f"{row.method}_ci"] = f"{row.ci_low:.3f}-{row.ci_high:.3f}"
