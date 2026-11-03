@@ -124,37 +124,53 @@ def fetch_zip_member(
 CRCNS_PORTAL = "https://portal.nersc.gov/project/crcns/download/index.php"
 
 
+def _crcns_login_form(path: str) -> bytes:
+    """The portal's login form for ``path``, from the environment's account.
+
+    The account is read and encoded in one expression, so no frame that can
+    raise holds it in a variable (a traceback that shows local variables,
+    such as ``pytest --showlocals``, would print it).
+    """
+    if missing := [
+        name for name in ("CRCNS_USERNAME", "CRCNS_PASSWORD") if name not in os.environ
+    ]:
+        msg = (
+            f"CRCNS files need a free crcns.org account: {' and '.join(missing)}"
+            " not set in the environment (set CRCNS_USERNAME and CRCNS_PASSWORD)"
+        )
+        raise KeyError(msg)
+    return urllib.parse.urlencode(
+        {
+            "fn": path,
+            "username": os.environ["CRCNS_USERNAME"],
+            "password": os.environ["CRCNS_PASSWORD"],
+            "submit": "Login",
+        }
+    ).encode()
+
+
 def _crcns_open(path: str) -> Any:
     """Open the CRCNS file ``path`` (e.g. ``"hc-31/data/resSave.mat"``) for reading.
 
     Posts the portal's login form with the account from the environment. A
-    failure names only ``path`` and an HTTP status: the request carries the
+    failure names only ``path`` and an HTTP status, and is raised outside the
+    handler so that it carries no chained exception: the request holds the
     password and the portal's pages can echo the account name.
     """
-    try:
-        user = os.environ["CRCNS_USERNAME"]
-        password = os.environ["CRCNS_PASSWORD"]
-    except KeyError:
-        msg = (
-            "CRCNS files need a free crcns.org account: set CRCNS_USERNAME and"
-            " CRCNS_PASSWORD in the environment"
-        )
-        raise KeyError(msg) from None
-    form = urllib.parse.urlencode(
-        {"fn": path, "username": user, "password": password, "submit": "Login"}
-    ).encode()
     opener = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
     )
+    failure = None
     try:
-        response = opener.open(CRCNS_PORTAL, data=form, timeout=300)
+        response = opener.open(CRCNS_PORTAL, data=_crcns_login_form(path), timeout=300)
     except urllib.error.HTTPError as exc:
         exc.close()
-        msg = f"CRCNS download of {path} failed with HTTP {exc.code}"
-        raise OSError(msg) from None
+        failure = f"failed with HTTP {exc.code}"
     except urllib.error.URLError as exc:
-        msg = f"CRCNS download of {path} failed: {type(exc.reason).__name__}"
-        raise OSError(msg) from None
+        failure = f"failed: {type(exc.reason).__name__}"
+    if failure is not None:
+        msg = f"CRCNS download of {path} {failure}"
+        raise OSError(msg)
     if response.headers.get_content_type() == "text/html":
         response.close()
         msg = (
@@ -196,6 +212,10 @@ def fetch_crcns_tar_members(
     range, so the archive is read from its start and the download stops once
     every missing member is written; the archive itself is not kept.
     """
+    names = [Path(member).name for member in members]
+    if len(set(names)) != len(names):
+        msg = f"members of {path} share a base name, which is how they are stored: {sorted(members)}"
+        raise ValueError(msg)
     root = cache_root(cache) / subdir
     found: dict[str, Path] = {}
     missing: dict[str, tuple[Path, str]] = {}

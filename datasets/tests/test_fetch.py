@@ -195,6 +195,52 @@ def _echoing_http_error():
     )
 
 
+def _everything_shown(exc: BaseException) -> str:
+    """Every exception in the chain as a traceback that also shows local variables."""
+    text, seen = [], set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        text.append(
+            "".join(
+                traceback.TracebackException.from_exception(
+                    exc, capture_locals=True
+                ).format()
+            )
+        )
+        exc = exc.__cause__ or exc.__context__
+    return "".join(text)
+
+
+_MEMBER = "s/resSave.mat"
+
+
+def _raised(fetch, *args):
+    """The exception ``fetch(*args)`` raises, caught in a frame holding no secret.
+
+    Its traceback starts here, so the frames shown are this one and the
+    library's, not the test's (whose fixtures hold the dummy values).
+    """
+    try:
+        fetch(*args)
+    except Exception as exc:  # the test checks the type
+        return exc
+    msg = "expected an error"
+    raise AssertionError(msg)
+
+
+def _fetch_file(cache):
+    return _fetch.fetch_crcns(
+        "hc-31/data/resSave.mat", sha256="0" * 64, subdir="crcns", cache=cache
+    )
+
+
+def _fetch_member(cache, member=_MEMBER):
+    return _fetch.fetch_crcns_tar_members(
+        "hc-31/data/resSave.mat", {member: "0" * 64}, subdir="crcns", cache=cache
+    )
+
+
+@pytest.mark.parametrize("fetch", [_fetch_file, _fetch_member], ids=["file", "member"])
 @pytest.mark.parametrize(
     ("reply", "error"),
     [
@@ -208,41 +254,79 @@ def _echoing_http_error():
         (_echoing_http_error, OSError),
         (lambda: urllib.error.URLError(OSError(f"refused {_USER}")), OSError),
         (
-            lambda: _PortalResponse(b"file bytes", "application/octet-stream"),
+            lambda: _PortalResponse(
+                _tar_gz({_MEMBER: b"file bytes"}), "application/octet-stream"
+            ),
             ValueError,
         ),
     ],
     ids=["login-page", "http-error", "network-error", "checksum-mismatch"],
 )
 def test_crcns_fetch_never_logs_credentials(
-    portal, reply, error, tmp_path, capfd, caplog
+    portal, fetch, reply, error, tmp_path, capfd, caplog
 ):
     caplog.set_level(logging.DEBUG)
     portal.reply = reply()
-    with pytest.raises(error) as raised:
-        _fetch.fetch_crcns(
-            "hc-31/data/resSave.mat", sha256="0" * 64, subdir="crcns", cache=tmp_path
-        )
+    raised = _raised(fetch, tmp_path)
+    assert isinstance(raised, error)
     # The credentials were sent, by name from the environment ...
     assert portal.forms[0]["username"] == [_USER]
     assert portal.forms[0]["password"] == [_PASSWORD]
     assert portal.forms[0]["fn"] == ["hc-31/data/resSave.mat"]
-    # ... and appear nowhere a user or a log would see them.
+    # ... and appear nowhere a user or a log would see them, not even in a
+    # traceback that shows local variables (pytest --showlocals, IPython).
     out, err = capfd.readouterr()
-    shown = "".join(traceback.format_exception(raised.value)) + out + err + caplog.text
+    shown = _everything_shown(raised) + out + err + caplog.text
     assert "hc-31/data/resSave.mat" in shown
     for secret in (_USER, _PASSWORD):
         assert secret not in shown
-    assert raised.value.__cause__ is None
-    assert raised.value.__suppress_context__ or raised.value.__context__ is None
-    assert list((tmp_path / "crcns").iterdir()) == []
+    assert [f for f in tmp_path.rglob("*") if f.is_file()] == []
 
 
-def test_crcns_fetch_requires_the_account_variables(monkeypatch, tmp_path):
+def test_crcns_missing_member_error_shows_no_credentials(portal, tmp_path):
+    portal.reply = _PortalResponse(
+        _tar_gz({_MEMBER: b"file bytes"}), "application/octet-stream"
+    )
+    raised = _raised(_fetch_member, tmp_path, "s/absent")
+    assert isinstance(raised, FileNotFoundError)
+    assert "no member" in str(raised)
+    for secret in (_USER, _PASSWORD):
+        assert secret not in _everything_shown(raised)
+
+
+@pytest.mark.parametrize(
+    ("present", "absent"),
+    [
+        ({"CRCNS_USERNAME": _USER}, "CRCNS_PASSWORD"),
+        ({"CRCNS_PASSWORD": _PASSWORD}, "CRCNS_USERNAME"),
+        ({}, "CRCNS_USERNAME and CRCNS_PASSWORD"),
+    ],
+    ids=["no-password", "no-username", "neither"],
+)
+def test_crcns_fetch_requires_the_account_variables(
+    monkeypatch, tmp_path, present, absent
+):
     monkeypatch.delenv("CRCNS_USERNAME", raising=False)
     monkeypatch.delenv("CRCNS_PASSWORD", raising=False)
-    with pytest.raises(KeyError, match="CRCNS_USERNAME and CRCNS_PASSWORD"):
-        _fetch.fetch_crcns("hc-11/x.mat", sha256="0" * 64, subdir="c", cache=tmp_path)
+    for name, value in present.items():
+        monkeypatch.setenv(name, value)
+    raised = _raised(_fetch_file, tmp_path)
+    assert isinstance(raised, KeyError)
+    assert f"{absent} not set" in str(raised)
+    shown = _everything_shown(raised)
+    for secret in present.values():
+        assert secret not in shown
+
+
+def test_crcns_tar_members_refuses_members_sharing_a_base_name(portal, tmp_path):
+    with pytest.raises(ValueError, match="share a base name"):
+        _fetch.fetch_crcns_tar_members(
+            "hc-3/top/s.tar.gz",
+            {"a/s.whl": "0" * 64, "b/s.whl": "1" * 64},
+            subdir="crcns",
+            cache=tmp_path,
+        )
+    assert portal.forms == []
 
 
 def test_crcns_tar_members_extracts_only_the_pinned_members(portal, tmp_path):
