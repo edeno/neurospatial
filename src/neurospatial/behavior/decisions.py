@@ -1222,6 +1222,13 @@ def geodesic_voronoi_labels(
     of the first goal keeps the labels independent of goal order and
     mirror-symmetric on a symmetric maze.
 
+    A list that mixes region goals and point goals measures them differently:
+    a region from its nearest edge, a point from the center of its bin. The
+    boundary between a region and a point therefore lies halfway between the
+    region's edge and the point, not between their centers, so a large region
+    claims more bins than a point at its center would. When the goals should
+    compete from their centers, give them all as points (or point regions).
+
     The shortest-path field of each goal is grown once and kept on the
     environment, so later calls with the same goals are lookups.
 
