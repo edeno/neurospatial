@@ -264,9 +264,10 @@ must fire on none of them) and on the hazards. Clean-recording numbers are in
 2. **Length unit off by 100 (G-014).** Warn when the environment has fewer
    than 5 bins along **every** dimension (`env.grid_shape`). The accepted
    per-dimension rule misfires: 001695's 6 cm-wide linear track, recorded in
-   2-D, has 4 bins across. With "every dimension": clean, the smallest
-   largest-axis count is far above 5; hazards, every ÷100 case has 2–3 bins
-   along every axis (the 1-D figure-8: 3). Covers the figure-8's 4 silent
+   2-D, has 4 bins across (the fewest along any axis of any clean recording;
+   its long axis has dozens). With "every dimension", no clean recording
+   fires; every ÷100 hazard has 2–3 bins along every axis (the 1-D
+   figure-8: 3). Covers the figure-8's 4 silent
    probes. Module: `environment`.
 3. **Headings squeezed into a small arc (G-031).** Warn when headings fill
    fewer than half of 36 direction bins (a bin counts at 0.5 % of samples).
