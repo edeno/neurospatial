@@ -327,6 +327,7 @@ def load(cache: Path | None = None) -> Recording:
             name=DATASET["key"],
             source="Gardner et al. 2022 Methods: 'square open-field (OF) arena of size 1.5 x 1.5 m', 50 cm walls",
         ),
+        tracked_point="the head (the data's head position and azimuth at 100 Hz); the marker is not stated",
     )
 
 

@@ -244,7 +244,20 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=tuple(units.values()),
         unit_ids=np.asarray(list(units)),
         epochs={"flight": flight_windows, "neural_recording": np.array([recorded])},
-        geometry={"room_bounds_m": room, "environment": environment},
+        geometry={
+            "tracked_point": "not stated (the room's tracking system)",
+            "room_bounds_m": room,
+            "environment": environment,
+            "declared_from": "file's coordinates",
+            # r_lim's sides against the paper's room: stated facts, both
+            # independent of the samples.
+            "environment_fit": {
+                f"size_residual_room_{axis}": float(side / stated - 1)
+                for axis, side, stated in zip(
+                    "xyz", np.ptp(room, axis=1), _PAPER_ROOM_M, strict=True
+                )
+            },
+        },
         params={
             "bin_size": _BIN_SIZE,
             "dt": 0.25,

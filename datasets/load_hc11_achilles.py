@@ -162,6 +162,9 @@ def load(cache: Path | None = None) -> Recording:
     train, test = alternating_blocks(maze[0, 0], maze[0, 1], 60.0)
     finite = np.isfinite(linearized)
     return Recording(
+        geometry={
+            "tracked_point": "one LED (per the loader: one LED tracked at about 39 Hz)"
+        },
         dataset=DATASET["key"],
         session="Achilles_10252013",
         source=f"{DATASET['source']} {ARCHIVE}:{MEMBER}",

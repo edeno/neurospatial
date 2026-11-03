@@ -169,6 +169,9 @@ def load(cache: Path | None = None) -> Recording:
     windows = epochs[["start_time", "stop_time"]].to_numpy(dtype=float)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
     return Recording(
+        geometry={
+            "tracked_point": "a motion-capture rigid body on the head (per the loader)"
+        },
         dataset=DATASET["key"],
         session="A7803-210726",
         source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",

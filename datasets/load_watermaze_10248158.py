@@ -181,6 +181,7 @@ def load(cache: Path | None = None) -> Recording:
             source="Experiment.json arena.bounds: circle, radius 95 tracking units",
             centre=tuple(rec.geometry["pool_centre"]),
         ),
+        tracked_point="not stated (EthoVision 3 swim paths)",
     )
 
 

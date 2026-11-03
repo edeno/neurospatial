@@ -213,6 +213,7 @@ def load(cache: Path | None = None) -> Recording:
             name=DATASET["key"],
             source="NWB epochs table: arena_dimensions [100, 100, 50] cm, square",
         ),
+        tracked_point="the head, OptiTrack motion capture projected onto the floor (per the loader, from the data descriptor)",
     )
 
 

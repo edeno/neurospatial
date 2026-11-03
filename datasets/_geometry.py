@@ -326,9 +326,20 @@ def with_environment(
     environment: Callable[[], Any],
     conversion: str,
     fit: dict[str, float] | None = None,
+    *,
+    tracked_point: str,
 ) -> Recording:
-    """``rec`` with its declared environment, its placement fit and the conversion line."""
-    geometry = {**rec.geometry, "environment": environment}
+    """``rec`` with its declared environment, its placement fit and the conversion line.
+
+    ``tracked_point`` is what the positions track, as a source states it (a
+    head LED, a body part), or "not stated": a head LED on a headstage falls
+    short of walls a body point would reach.
+    """
+    geometry = {
+        **rec.geometry,
+        "environment": environment,
+        "tracked_point": tracked_point,
+    }
     if fit is not None:
         geometry["environment_fit"] = fit
     return replace(rec, geometry=geometry, conversions=(*rec.conversions, conversion))

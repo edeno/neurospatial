@@ -113,6 +113,8 @@ _MM_PER_CM = 10.0
 # bars along each of the three axes.
 _N_BARS = 147
 _LATTICE_SIDE_CM = 97.0
+# Grieves et al. 2020 Supplementary Methods: tubes 10 mm across.
+_TUBE_CM = 1.0
 _N_CUBES = 6
 _BIN_SIZE = 4.0
 RUNNING_CM_S = 10.0
@@ -206,9 +208,25 @@ def load(cache: Path | None = None) -> Recording:
         unit_ids=np.asarray(ids),
         epochs={"lattice": lattice},
         geometry={
+            "tracked_point": "the head, per the loader (lattice_3d positions with the head azimuth poh); how it was tracked is not stated here",
             "lattice_bars_cm": bars_cm,
             "lattice_type": lattice_type,
             "environment": environment,
+            "declared_from": "authors' bars (file)",
+            # A placement tolerance chosen from the samples, not a stated
+            # width: the tubes are 10 mm across (Supplementary Methods).
+            "declared_track_width": width,
+            "declared_track_width_kind": "placement tolerance (2 x the head's 99th"
+            " percentile distance from a bar)",
+            "declared_physical_width": _TUBE_CM,
+            "declared_physical_width_kind": "stated",
+            "declared_speed_thresholds": (3.0, 30.0),
+            # The file's bars against the paper's 0.97 m side.
+            "environment_fit": {
+                "size_residual_lattice_side": float(
+                    np.median(bar_lengths) / _LATTICE_SIDE_CM - 1
+                )
+            },
         },
         params={
             "bin_size": _BIN_SIZE,

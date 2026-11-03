@@ -115,6 +115,7 @@ def load(cache: Path | None = None) -> Recording:
             " file session type 'open_field_light'",
             centre=(0.0, 0.0),
         ),
+        tracked_point="the head, OptiTrack motion capture (per the loader, from the dataset's documentation)",
     )
 
 

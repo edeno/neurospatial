@@ -130,7 +130,10 @@ def load(cache: Path | None = None) -> Recording:
             },
         },
         events={"ripples": ripples[on.any(axis=1)], "all_ripples": ripples},
-        geometry={"reward_locations_cm": rewards.to_numpy(dtype=float)},
+        geometry={
+            "tracked_point": "one LED (per the loader, from the NWB position)",
+            "reward_locations_cm": rewards.to_numpy(dtype=float),
+        },
         params={
             "bin_size": 2.5,
             "min_speed": 4.0,

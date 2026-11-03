@@ -130,6 +130,7 @@ def load(cache: Path | None = None) -> Recording:
             " inferred scale",
             outline="drop",
         ),
+        tracked_point="the midpoint of two head-mounted LEDs (hc-2 .whl: two LEDs per frame)",
     )
 
 

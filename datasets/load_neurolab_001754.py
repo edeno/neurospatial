@@ -130,7 +130,11 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=tuple(np.asarray(s, dtype=float) for s in units.spike_times),
         unit_ids=np.asarray(units.unit_ids),
         epochs={kind: windows[kinds == kind] for kind in dict.fromkeys(kinds)},
-        geometry={"image_pixels": 256, "sampled_at_spike_times": True},
+        geometry={
+            "tracked_point": "one LED, overhead video tracker pixels (per the loader)",
+            "image_pixels": 256,
+            "sampled_at_spike_times": True,
+        },
         params={
             "bin_size": 4.0,
             "dt": 0.25,

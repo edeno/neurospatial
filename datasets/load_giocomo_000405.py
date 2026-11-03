@@ -133,6 +133,7 @@ def load(cache: Path | None = None) -> Recording:
             name=DATASET["key"],
             source="Gonzalez & Giocomo 2024 eLife Methods: 'The dimensions of field are 1.3m x 1.5m'",
         ),
+        tracked_point="not stated (the file's track_data columns x, y)",
     )
 
 

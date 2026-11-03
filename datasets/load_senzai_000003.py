@@ -138,6 +138,7 @@ def load(cache: Path | None = None) -> Recording:
     awake = windows[labels == "awake"]
     blocks = [alternating_blocks(a, b, 60.0) for a, b in awake]
     return Recording(
+        geometry={"tracked_point": "not stated (video pixels)"},
         dataset=DATASET["key"],
         session="YutaMouse41-150829",
         source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",

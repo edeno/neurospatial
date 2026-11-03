@@ -124,6 +124,7 @@ def load(cache: Path | None = None) -> Recording:
             name=DATASET["key"],
             source="DANDI 002030 description: 'circular open-field arena (96 cm in diameter)'",
         ),
+        tracked_point="the body centre, DeepLabCut (DANDI 002030's body-centre position)",
     )
 
 

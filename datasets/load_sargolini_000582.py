@@ -130,7 +130,11 @@ def load(cache: Path | None = None) -> Recording:
             "headings: none; the file has one LED (SpatialSeriesLED1)",
         ),
     )
-    return with_environment(rec, *environment)
+    return with_environment(
+        rec,
+        *environment,
+        tracked_point="one tracking LED (the file's single LED series, SpatialSeriesLED1)",
+    )
 
 
 if __name__ == "__main__":
