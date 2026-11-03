@@ -73,9 +73,30 @@ def test_positions_outside_a_declared_track_are_not_a_part():
     assert np.all(np.isfinite(errors))
 
 
+def _left_half_median(rec, env, *, warns):
+    """Decode with `env` and take the median error over true x < 50 cm."""
+    from neurospatial.decoding import BayesianDecoder
+
+    p, spikes = rec.params, list(rec.spike_times)
+    decoder = BayesianDecoder(env, dt=p["dt"]).fit(
+        spikes, rec.times, rec.positions, epochs=p["train_epochs"]
+    )
+    result = decoder.predict(spikes, rec.times, epochs=p["test_epochs"])
+    if warns:
+        with pytest.warns(UserWarning, match="outside the environment"):
+            error = result.error_against(rec.times, rec.positions)
+    else:
+        error = result.error_against(rec.times, rec.positions)
+    true_x = np.interp(result.times, rec.times, np.asarray(rec.positions)[:, 0])
+    left = true_x < 50.0
+    return np.nanmedian(np.asarray(error, dtype=float)[left]), int(left.sum())
+
+
 def test_decoding_error_over_the_declared_samples_in_both_runs(simulated_recording):
-    # Declare the left half of the 100 cm box: both runs report the error over
-    # the same time bins, those whose true position the declared half places.
+    # Declare the left half of the 100 cm box. Both runs must report the
+    # error over the time bins whose true position lies in that half; the
+    # count and both medians are recomputed here from the geometry (x < 50 cm)
+    # and an independent decode, not from the operation's mask.
     from dataclasses import replace
 
     import shapely
@@ -89,11 +110,18 @@ def test_decoding_error_over_the_declared_samples_in_both_runs(simulated_recordi
     rec = replace(simulated_recording, geometry={"environment": lambda: half})
     with pytest.warns(UserWarning, match="outside the environment"):
         declared = decode_position(rec, {}).summary
-    inferred = decode_position(rec, {"inferred_env": True}).summary
-    assert declared["n_on_declared"] == inferred["n_on_declared"]
-    assert 0.3 < declared["n_on_declared"] / declared["n_time_bins"] < 0.7
-    assert declared["frac_actual_outside"] == pytest.approx(
-        1 - declared["n_on_declared"] / declared["n_time_bins"], abs=0.02
+    cache = {"inferred_env": True}
+    inferred = decode_position(rec, cache).summary
+
+    declared_median, expected = _left_half_median(rec, half, warns=True)
+    inferred_median, _ = _left_half_median(rec, cache["env"], warns=False)
+    assert 0.3 < expected / declared["n_time_bins"] < 0.7
+    for run in (declared, inferred):
+        assert run["n_on_declared"] == pytest.approx(expected, rel=0.01)
+    assert declared["median_error_on_declared"] == pytest.approx(
+        declared_median, rel=0.02
+    )
+    assert inferred["median_error_on_declared"] == pytest.approx(
+        inferred_median, rel=0.02
     )
     assert inferred["frac_actual_outside"] == 0.0
-    assert np.isfinite(inferred["median_error_on_declared"])

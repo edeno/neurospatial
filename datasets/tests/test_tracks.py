@@ -260,30 +260,71 @@ def test_lateral_scatter_is_not_refused(scattered_w):
     assert entries["environment_fit"]["outside_physical_width"] > 0.2
 
 
-@pytest.mark.parametrize(
-    ("change", "why"),
-    [
-        (
-            lambda p: 0.88 * (p - np.array([40.0, 40.0])) + np.array([40.0, 40.0]),
-            "side",
-        ),
-        (
-            # About the corner node base_0: the far arms move sideways.
-            lambda p: rotate(p[None], 6.0, (0.0, 0.0))[0],
-            "side",
-        ),
-    ],
-    ids=["scaled_by_0.88", "rotated_6_degrees"],
-)
-def test_a_subtly_misplaced_layout_is_refused(scattered_w, change, why):
-    truth, points = scattered_w
-    moved = with_positions(
-        truth, {n: change(np.asarray(p, float)) for n, p in truth.nodes(data="pos")}
+def _scaled(graph, factor, degrees=0.0):
+    """The graph scaled and rotated about its own centre."""
+    _, nodes, _ = graph_arrays(graph)
+    centre = nodes.mean(axis=0)
+    moved = {
+        name: rotate(
+            (np.asarray(pos, float) - centre)[None] * factor, degrees, tuple(centre)
+        )[0]
+        for name, pos in graph.nodes(data="pos")
+    }
+    return with_positions(graph, moved)
+
+
+@pytest.mark.parametrize("factor", [0.88, 0.80])
+def test_a_scale_error_is_absorbed_by_the_fit_and_caught_only_by_the_stated_size(
+    factor,
+):
+    # The file's scale is off: a stated 80 cm W-track's samples come out
+    # `factor` x as large. The pipeline fits the layout to the samples, so
+    # the fit follows them (no lateral bias); only the stated size can tell.
+    truth = w_track(0.0, (0.0, 0.0))
+    points = samples_along(_scaled(truth, factor), 8000, noise=3.0)
+    fitted, _ = best_fit(parallel_arm_candidates(points), points, cap=10.0)
+    from _tracks import edge_fit, parallel_arm_lengths
+
+    assert edge_fit(fitted, points, tolerance=2.5)["max_edge_bias"] < 1.0
+    base, arms = parallel_arm_lengths(fitted)
+    entries, line = _declare(
+        fitted, points, stated_lengths={"base": (base, 80.0), "arms": (arms, 80.0)}
     )
-    entries, line = _declare(moved, points)
-    assert "environment" not in entries
-    assert line.startswith("environment: inferred")
-    assert why in line
+    if factor == 0.80:  # 20 % off: beyond the 15 % size tolerance
+        assert "environment" not in entries
+        assert "of the stated length" in line
+    else:  # 12 % off: within it, so no check here catches this scale error
+        assert "environment" in entries
+
+
+def test_a_rotated_layout_is_absorbed_by_the_fit():
+    # Samples of a W rotated 6 degrees about its centre: the fit starts from
+    # the samples and rotates with them, so nothing is misfit (the
+    # orientation is not stated).
+    truth = w_track(0.0, (0.0, 0.0))
+    points = samples_along(_scaled(truth, 1.0, 6.0), 8000, noise=3.0)
+    fitted, _ = best_fit(parallel_arm_candidates(points), points, cap=10.0)
+    entries, line = _declare(fitted, points)
+    assert "environment" in entries, line
+    assert entries["environment_fit"]["max_edge_bias"] < 1.0
+
+
+@pytest.mark.parametrize("length", [85.0, 70.0])
+def test_a_track_shorter_than_its_samples_is_misfit(length):
+    # Samples along 100 cm; the declared track is shorter. The lateral and
+    # support measures see nothing; the reach past the free ends does.
+    from _geometry import graph_environment, judge_declared
+
+    rng = np.random.default_rng(4)
+    on = np.column_stack([rng.uniform(0, 100, 5000), rng.normal(0, 3.0, 5000)])
+    track = polyline_graph(
+        np.array([[50 - length / 2, 0.0], [50 + length / 2, 0.0]]), closed=False
+    )
+    env = graph_environment(track, bin_size=2.5, track_width=60.0, units="cm", name="t")
+    judged = judge_declared(env, np.arange(len(on)) / 30.0, on, bin_size=2.5)
+    assert judged["fit"]["max_edge_bias"] < 1.0
+    assert judged["fit"]["max_unsupported"] == 0.0
+    assert any("past its free ends" in reason for reason in judged["misfit"])
 
 
 def test_a_wrong_stated_length_is_refused_but_the_authors_geometry_is_not(scattered_w):
