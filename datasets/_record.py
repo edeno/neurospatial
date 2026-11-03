@@ -219,12 +219,17 @@ def alternating_blocks(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Split [start, stop) into alternating train and test blocks of ``length`` s.
 
+    The last block ends at ``stop`` and is shorter than ``length`` unless the
+    span is a whole number of blocks; an edge within a millionth of a block
+    of ``stop`` (float rounding) is not a block of its own.
+
     Returns
     -------
     train, test : ndarray, shape (n, 2)
         Even-numbered and odd-numbered blocks as [start, stop) rows.
     """
-    edges = np.append(np.arange(start, stop, length), stop)
+    n_blocks = max(int(np.ceil((stop - start) / length - 1e-6)), 1)
+    edges = np.append(start + length * np.arange(n_blocks), stop)
     blocks = np.column_stack([edges[:-1], edges[1:]])
     return blocks[::2], blocks[1::2]
 

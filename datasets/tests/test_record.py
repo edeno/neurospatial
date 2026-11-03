@@ -183,3 +183,24 @@ def test_mask_lost_tracking_removes_held_runs_and_bridges():
     masked, line = mask_lost_tracking(times, jumped, min_frozen=10, max_speed=100.0)
     assert np.flatnonzero(~np.isfinite(masked).all(axis=1)).tolist() == [150]
     assert "1 samples reached faster than 100 cm/s" in line
+
+
+@pytest.mark.parametrize(
+    ("start", "stop", "length"),
+    [(1.0, 1.3, 0.1), (0.0, 0.7, 0.1), (7674.0, 9941.0, 60.0), (0.0, 1.0, 0.5)],
+)
+def test_alternating_blocks_tile_the_span_without_slivers(start, stop, length):
+    from _record import alternating_blocks
+
+    train, test = alternating_blocks(start, stop, length)
+    blocks = np.vstack([train, test])
+    blocks = blocks[np.argsort(blocks[:, 0])]
+    widths = np.diff(blocks, axis=1).ravel()
+    assert blocks[0, 0] == start
+    assert blocks[-1, 1] == stop
+    np.testing.assert_array_equal(blocks[1:, 0], blocks[:-1, 1])
+    # Every block is a full one but the last, which is above half a block
+    # or longer than a block by less than one.
+    assert np.all(widths > 0)
+    np.testing.assert_allclose(widths[:-1], length, rtol=1e-9)
+    assert widths[-1] > 1e-6 * length
