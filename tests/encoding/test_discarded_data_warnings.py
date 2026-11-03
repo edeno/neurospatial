@@ -77,6 +77,60 @@ def test_tiny_spatial_bandwidth_warns(open_field_120s):
     assert change(default.firing_rate) > 0.5
 
 
+def test_tiny_bandwidth_cutoff_is_a_quarter_bin(open_field_120s):
+    """The cutoff is 0.25 of the 2 cm bin length (0.5 cm), inclusive."""
+    session = open_field_120s
+    env, spikes = session.env, session.spike_times[0]
+    assert np.allclose(env.bin_sizes, 4.0)  # 2 cm x 2 cm bins: length 2 cm
+    for bandwidth in (0.5, 0.501):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            compute_spatial_rate(
+                env, spikes, session.times, session.positions, bandwidth=bandwidth
+            )
+    with pytest.warns(UserWarning, match=r"bandwidth=0.499 is far below the 2 cm"):
+        compute_spatial_rate(
+            env, spikes, session.times, session.positions, bandwidth=0.499
+        )
+
+
+@pytest.mark.parametrize("single", [True, False], ids=["single", "population"])
+def test_input_errors_come_before_the_tiny_bandwidth_warning(open_field_120s, single):
+    """With warnings as errors, an input error is still the error raised."""
+    from neurospatial import InputError
+
+    session = open_field_120s
+    env, times, positions = session.env, session.times, session.positions
+    compute = compute_spatial_rate if single else compute_spatial_rates
+    spikes = session.spike_times[0] if single else session.spike_times
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(InputError, match="times and positions must have"):
+            compute(env, spikes, times[:-1], positions, bandwidth=0.05)
+        with pytest.raises(InputError, match=r"bandwidth='5' is not a finite number"):
+            compute(env, spikes, times, positions, bandwidth="5")
+
+
+def test_view_input_error_comes_before_the_tiny_bandwidth_warning(open_field_120s):
+    from neurospatial import InputError
+    from neurospatial.encoding import compute_view_rate
+
+    session = open_field_120s
+    env, times, positions = session.env, session.times, session.positions
+    headings = np.zeros(times.size)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with pytest.raises(InputError, match="times and positions must have"):
+            compute_view_rate(
+                env,
+                session.spike_times[0],
+                times[:-1],
+                positions,
+                headings,
+                bandwidth=0.05,
+            )
+
+
 def test_brief_tracking_dropout_is_silent(open_field_120s):
     session = open_field_120s
     env, times, spikes = session.env, session.times, session.spike_times[0]

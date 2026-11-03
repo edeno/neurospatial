@@ -1004,6 +1004,7 @@ def _boundary_vector_rates(
         _warn_if_fully_masked,
         resolve_spatial_bandwidth,
         smooth_rate_maps_batch,
+        warn_about_bandwidth,
     )
     from neurospatial.encoding._spatial_counts import (
         _warn_if_population_silent,
@@ -1095,6 +1096,7 @@ def _boundary_vector_rates(
         resolved_bandwidth = 0.0
     else:
         resolved_bandwidth = resolve_spatial_bandwidth(polar_env, bandwidth)
+        warn_about_bandwidth(polar_env, bandwidth, resolved_bandwidth, method)
         firing_rates = np.asarray(
             smooth_rate_maps_batch(
                 polar_env,

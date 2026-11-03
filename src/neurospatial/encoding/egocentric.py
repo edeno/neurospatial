@@ -2405,7 +2405,10 @@ def _count_object_vectors(
         rate_analysis_settings,
         spikes_outside_intervals,
     )
-    from neurospatial.encoding._smoothing import resolve_spatial_bandwidth
+    from neurospatial.encoding._smoothing import (
+        resolve_spatial_bandwidth,
+        warn_about_bandwidth,
+    )
 
     # Keep the prepared polar geometry separate from the allocentric env.
     prepared, polar_env, time_beyond = prepare_egocentric_binning(
@@ -2431,14 +2434,15 @@ def _count_object_vectors(
 
     # Polar graph distances are physical lengths; angles remain radians.
     polar_env = polar_env.with_metadata(units=env.units if env is not None else None)
-    bandwidth = (
+    resolved_bandwidth = (
         0.0 if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth)
     )
+    warn_about_bandwidth(polar_env, bandwidth, resolved_bandwidth, method)
     settings = rate_analysis_settings(
         prepared.support,
         epoch_interval_ids=epoch_interval_ids,
         method=method,
-        bandwidth=bandwidth,
+        bandwidth=resolved_bandwidth,
         min_occupancy=min_occupancy,
         backend=backend,
         direction_frame="allocentric" if headings is None else "egocentric",
@@ -2456,7 +2460,7 @@ def _count_object_vectors(
         spike_counts,
         occupancy,
         polar_env,
-        bandwidth,
+        resolved_bandwidth,
         settings,
         spikes_outside_intervals(spike_trains, prepared.support),
         time_beyond,
@@ -4479,6 +4483,7 @@ def _object_vector_null_maps(
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         resolve_spatial_bandwidth,
+        warn_about_bandwidth,
     )
 
     resolved_backend = validate_and_resolve_backend(backend)
@@ -4510,11 +4515,15 @@ def _object_vector_null_maps(
         break_before=break_before,
     )
     _, occupancy = binning.count(spike_trains, n_jobs=n_jobs, warn_on_drop=warn_on_drop)
+    resolved_bandwidth = (
+        0.0 if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth)
+    )
+    warn_about_bandwidth(polar_env, bandwidth, resolved_bandwidth, method)
     return _ObjectVectorNullMaps(
         binning,
         occupancy,
         method,
-        0.0 if method == "binned" else resolve_spatial_bandwidth(polar_env, bandwidth),
+        resolved_bandwidth,
         min_occupancy,
         resolved_backend,
         n_jobs,

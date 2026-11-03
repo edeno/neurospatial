@@ -3813,7 +3813,7 @@ def _spatial_rate_maps(
     )
     from neurospatial.encoding._smoothing import (
         smooth_rate_maps_batch,
-        warn_if_default_bandwidth_fallback,
+        warn_about_bandwidth,
     )
     from neurospatial.encoding._spatial_counts import (
         _warn_if_population_silent,
@@ -3958,9 +3958,9 @@ def _spatial_rate_maps(
         )
         return maps(empty, occupancy, None)
 
-    # The inputs are valid, so a units-free default bandwidth is announced
-    # here rather than ahead of an input error.
-    warn_if_default_bandwidth_fallback(env, bandwidth, resolved_bandwidth, method)
+    # The inputs are valid, so a bandwidth below a bin or a units-free
+    # default is announced here rather than ahead of an input error.
+    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
     # Apply batch smoothing to compute firing rates
     # When backend="jax", uses JAX for the core rate computation
     firing_rates = smooth_rate_maps_batch(
@@ -5603,7 +5603,7 @@ def compute_directional_place_fields(
     from neurospatial._intervals import intersect_intervals
     from neurospatial.encoding._smoothing import (
         resolve_spatial_bandwidth,
-        warn_if_default_bandwidth_fallback,
+        warn_about_bandwidth,
     )
     from neurospatial.encoding._spatial_counts import require_allocentric
 
@@ -5671,7 +5671,7 @@ def compute_directional_place_fields(
         # A units-free default warns here, once per call; the per-label maps
         # then get the resolved value, so they do not warn once per label.
         resolved = resolve_spatial_bandwidth(env, None)
-        if warn_if_default_bandwidth_fallback(env, None, resolved, method):
+        if warn_about_bandwidth(env, None, resolved, method):
             bandwidth = resolved
     for code in order:
         label = values[code]
