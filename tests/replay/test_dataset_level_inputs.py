@@ -119,8 +119,8 @@ def test_compare_table_reports_values_and_z_scores(track, session):
             rng=stream,
         )
         row = table.loc[index]
-        assert row["z_score[column_cycle]"] == result.z_scores["column_cycle"]
-        assert row["value[|score| > 0.6]"] == result.score
+        assert row["z_scores[column_cycle]"] == result.z_scores["column_cycle"]
+        assert row["values[|score| > 0.6]"] == result.score
     tested = replay_significance(
         track,
         events[1].posterior,
@@ -177,7 +177,7 @@ def test_matched_alpha_takes_a_pairwise_order_method(track):
     row = matched.iloc[0]
     assert row["n_events"] == 20
     assert row["rate"] <= 0.1
-    passing = null_table["passes[n_active_cells >= 3]"].to_numpy(dtype=bool)
+    passing = null_table["criteria[n_active_cells >= 3]"].to_numpy(dtype=bool)
     assert row["rate"] == np.mean(passing & (null_table["p_value"] < row["alpha"]))
     # Rethresholding the table equals running the method at the new alpha.
     alpha = 0.3

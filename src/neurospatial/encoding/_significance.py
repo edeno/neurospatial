@@ -210,6 +210,9 @@ def to_shuffle_results(
     observed: NDArray[np.float64],
     null: NDArray[np.float64],
     unit_ids: NDArray[Any],
+    *,
+    statistic: str,
+    statistic_units: str,
 ) -> dict[Hashable, ShuffleTestResult]:
     """Return independent per-unit score arrays in caller label order.
 
@@ -222,7 +225,11 @@ def to_shuffle_results(
     p = shuffle_pvalues(observed, null)
     result = {
         plain_value(label): shuffle_test_result(
-            float(observed[i, 0]), null[:, i, 0], float(p[i, 0])
+            float(observed[i, 0]),
+            null[:, i, 0],
+            float(p[i, 0]),
+            statistic=statistic,
+            statistic_units=statistic_units,
         )
         for i, label in enumerate(unit_ids)
     }
@@ -231,7 +238,12 @@ def to_shuffle_results(
 
 
 def shuffle_test_result(
-    observed: float, null_scores: NDArray[np.float64], p_value: float
+    observed: float,
+    null_scores: NDArray[np.float64],
+    p_value: float,
+    *,
+    statistic: str,
+    statistic_units: str,
 ) -> ShuffleTestResult:
     """One unit's upper-tail circular-shift test from its precomputed p-value."""
     return ShuffleTestResult(
@@ -239,6 +251,8 @@ def shuffle_test_result(
         null_scores=null_scores,
         p_value=p_value,
         shuffle_type="circular_time_shift",
+        statistic=statistic,
+        statistic_units=statistic_units,
     )
 
 

@@ -94,8 +94,7 @@ def test_null_maps_match_rate_maps_of_shifted_trains(
             r.env, trains, r.times, r.positions, **settings
         ).spatial_information()
         got = [
-            res.observed_score if k == 0 else res.null_scores[k - 1]
-            for res in result.values()
+            res.observed_score if k == 0 else res.null_scores[k - 1] for res in result
         ]
         np.testing.assert_array_equal(got, expected)
 
@@ -354,7 +353,8 @@ def test_shuffle_noise_false_positives(name, ou_env, ou_10min, noise_trains, obj
     if name.startswith("spatial_view"):
         kwargs = {"boundary_source": "analysis"}
     result = getattr(encoding, name)(*args, n_shuffles=200, rng=0, **kwargs)
-    assert sum(r.p_value < 0.05 for r in result.values()) <= 3
+    tests = result.values() if isinstance(result, dict) else result
+    assert sum(r.p_value < 0.05 for r in tests) <= 3
 
 
 @pytest.mark.slow
@@ -375,7 +375,8 @@ def test_shuffle_pooled_false_positive_rate(name, ou_env, ou_10min, noise_trains
     if name.startswith("spatial_view"):
         kwargs = {"boundary_source": "analysis"}
     result = getattr(encoding, name)(*args, n_shuffles=200, rng=0, **kwargs)
-    assert sum(r.p_value < 0.05 for r in result.values()) <= 10
+    tests = result.values() if isinstance(result, dict) else result
+    assert sum(r.p_value < 0.05 for r in tests) <= 10
 
 
 @pytest.mark.slow

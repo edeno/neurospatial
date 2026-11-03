@@ -920,7 +920,7 @@ def test_false_positives_on_null_copies(track, kind):
 
 
 KF = KARLSSON_FRANK_2009
-KF_CRITERION = "passes[n_active_cells >= 5]"
+KF_CRITERION = "criteria[n_active_cells >= 5]"
 
 
 def _p_table(p_values, criteria=None, errors=None, method=KF):
@@ -939,7 +939,7 @@ def _p_table(p_values, criteria=None, errors=None, method=KF):
         }
     )
     for criterion in method.criteria:
-        table[f"passes[{criterion.label}]"] = criteria
+        table[f"criteria[{criterion.label}]"] = criteria
     return table
 
 

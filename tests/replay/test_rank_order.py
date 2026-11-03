@@ -429,9 +429,9 @@ class TestSignificance:
             env, _in_field_order(8), INTERVAL, rates, n_shuffles=49, rng=0
         )
         summary = result.summary()
-        assert summary["score"] == pytest.approx(1.0)
+        assert summary["observed.score"] == pytest.approx(1.0)
         assert summary["p_value"] == result.p_value
-        assert "z_score" in summary
+        assert "shuffle.z_score" in summary
 
     def test_undefined_correlation_is_refused(self, track):
         env, rates, _ = track

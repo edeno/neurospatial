@@ -52,6 +52,7 @@ from neurospatial.encoding.spatial import (
     SpatialRatesResult,
     _check_place_field_arguments,
     _keep_place_fields,
+    _owned_field_bins,
     _search_place_fields,
     detect_place_fields,
 )
@@ -82,7 +83,7 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
     place_fields : sequence of PlaceFieldsResult, length n_neurons
         Detected place fields for each neuron (output of
         :func:`detect_place_fields`). A plain list of bin-index arrays is
-        converted to a ``PlaceFieldsResult``.
+        kept as a tuple of read-only arrays.
     is_observed : NDArray[np.bool_], shape (n_bins,)
         Bins with a finite rate for at least one neuron. Unobserved bins are
         neither covered nor gaps.
@@ -121,17 +122,19 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         Average field_count over the covered area, length or volume.
     """
 
-    place_fields: Sequence[PlaceFieldsResult]
+    place_fields: Sequence[PlaceFieldsResult | Sequence[NDArray[np.int64]]]
     is_observed: NDArray[np.bool_]
     bin_centers: NDArray[np.floating]
     bin_sizes: NDArray[np.float64]
 
     def __post_init__(self) -> None:
         """Validate, own the arrays and prevent replacing per-unit fields."""
+        # A hand-built sequence of bin-index arrays is validated and owned
+        # like the fields of a detection result.
         place_fields = tuple(
             fields
-            if isinstance(fields, PlaceFieldsResult)  # type: ignore[redundant-expr]  # accepts bare bin-index sequences, which are wrapped, not rejected
-            else PlaceFieldsResult(fields=list(fields))
+            if isinstance(fields, PlaceFieldsResult)
+            else _owned_field_bins(list(fields), owner="PopulationCoverageResult")
             for fields in self.place_fields
         )
         is_observed = np.asarray(self.is_observed, dtype=bool)
@@ -235,12 +238,22 @@ class PopulationCoverageResult(ReadOnlyArraysMixin, ResultMixin):
         covered = self.is_covered & self.is_observed
         return float(np.sum(measures[covered]) / np.sum(measures[self.is_observed]))
 
+    @property
+    def n_covered(self) -> int:
+        """Number of covered bins."""
+        return int(self.covered_bins.size)
+
+    @property
+    def n_uncovered(self) -> int:
+        """Number of observed bins outside every field."""
+        return int(self.uncovered_bins.size)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
             "coverage_fraction": self.coverage_fraction,
-            "n_covered": int(self.covered_bins.size),
-            "n_uncovered": int(self.uncovered_bins.size),
+            "n_covered": self.n_covered,
+            "n_uncovered": self.n_uncovered,
             "n_neurons": self.n_neurons,
             "n_place_cells": self.n_place_cells,
             "n_fields": self.n_fields,

@@ -239,10 +239,12 @@ class ReplaySignificanceResult(ResultMixin):
         """Flat dict of scalar headline metrics for this result.
 
         Starts with the observed result's ``summary()``, or only its
-        ``score`` for a custom score whose result has no ``summary()``. Each
-        null adds its p-value, ``{null}_p_value``, and the shuffles it counts,
-        ``{null}_n_shuffles_used``. Separately decoded templates add the
-        ``template`` with the largest score.
+        ``score`` for a custom score whose result has no ``summary()``, each
+        key prefixed ``observed.`` (``observed.score``). Each null adds its
+        p-value, ``shuffles[{null}].p_value``, and the shuffles it counts,
+        ``n_shuffles_used[{null}]``. Separately decoded templates add the
+        ``template`` with the largest score. Every key reads back from the
+        result as written.
         """
         summarize = getattr(self.observed, "summary", None)
         observed = (
@@ -250,10 +252,13 @@ class ReplaySignificanceResult(ResultMixin):
         )
         used = self.n_shuffles_used
         values = {
-            **observed,
+            **{f"observed.{key}": value for key, value in observed.items()},
             "p_value": self.p_value,
-            **{f"{name}_p_value": test.p_value for name, test in self.shuffles.items()},
-            **{f"{name}_n_shuffles_used": used[name] for name in self.shuffles},
+            **{
+                f"shuffles[{name}].p_value": test.p_value
+                for name, test in self.shuffles.items()
+            },
+            **{f"n_shuffles_used[{name}]": used[name] for name in self.shuffles},
             "alternative": self.alternative,
             "use_absolute": self.use_absolute,
         }

@@ -188,7 +188,7 @@ def test_shuffle_predicates_forward_time_windows(
 ):
     """Dropping a window from a shuffle branch would test the whole session."""
     f, r = significance_family, significance_recording
-    significance = f.function
+    significance = getattr(f.module, f.function.__name__)
     seen = []
 
     def track(*args, **kwargs):

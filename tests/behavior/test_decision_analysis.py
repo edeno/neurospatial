@@ -912,13 +912,14 @@ def test_pre_decision_heading_stats_all_stationary():
     ).all()
 
 
-def test_goal_regions_are_measured_to_their_nearest_bin():
-    """compute_decision_analysis measures each goal region to its nearest bin.
+def test_goal_regions_are_measured_to_their_edge():
+    """compute_decision_analysis measures each goal region to its edge.
 
     The strip is convex, so the geodesic distance from a position to a goal
-    region is the straight line to the nearest center of the region's bins,
-    whatever the bins' numbering; the boundary is (d2 - d1) / 2.
+    region is the straight line to the region's polygon, whatever the bins'
+    numbering; the boundary is (d2 - d1) / 2.
     """
+    import shapely
     from shapely.geometry import box
 
     from neurospatial.behavior import compute_decision_analysis
@@ -943,13 +944,7 @@ def test_goal_regions_are_measured_to_their_nearest_bin():
     )
 
     nearest = [
-        np.min(
-            np.linalg.norm(
-                positions[:, None, :] - env.bin_centers[env.bins_in_region(name)][None],
-                axis=2,
-            ),
-            axis=1,
-        )
+        shapely.distance(env.regions[name].data, shapely.points(positions))
         for name in ["west", "east"]
     ]
     d1, d2 = np.sort(np.vstack(nearest), axis=0)

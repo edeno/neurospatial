@@ -361,7 +361,7 @@ class TestDatasetValues:
         assert (real["dataset"] == 0).all()
         np.testing.assert_array_equal(real["score"], table["score"])
         np.testing.assert_array_equal(
-            real["max_map_jump"], table["value[max_map_jump < 0.4 x track_length]"]
+            real["max_map_jump"], table["values[max_map_jump < 0.4 x track_length]"]
         )
         assert (real["track_length"] == 100.0).all()
         assert (real["n_active_cells"] > 0).all()
@@ -851,7 +851,7 @@ class TestRankOrderValues:
             mine = real[real["template"] == name]
             np.testing.assert_allclose(mine["score"], table["score"], atol=1e-12)
             np.testing.assert_array_equal(
-                mine["n_active_cells"], table["value[n_active_cells >= 3]"]
+                mine["n_active_cells"], table["values[n_active_cells >= 3]"]
             )
 
     def test_cell_order_shuffles_are_rank_order_significance_draws(

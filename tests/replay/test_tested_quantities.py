@@ -112,8 +112,10 @@ class TestShuffleTest:
         metrics = trajectory_metrics(place_code[0], sweep[0], sweep[1])
         assert result.tested_values["mean_spread"] == pytest.approx(metrics.mean_spread)
         summary = result.summary()
-        assert summary["p_value[mean_mean_jump]"] == pytest.approx(1 / 101)
-        assert summary["mean_mean_jump"] == pytest.approx(metrics.mean_mean_jump)
+        assert summary["tested_p_values[mean_mean_jump]"] == pytest.approx(1 / 101)
+        assert summary["tested_values[mean_mean_jump]"] == pytest.approx(
+            metrics.mean_mean_jump
+        )
 
     def test_events_decoded_from_shuffled_cells_are_rarely_replay(
         self, place_code, sweep
@@ -223,11 +225,11 @@ class TestShuffleTest:
         )
         table = compare_replay_methods(env, [event], replay_methods=[method], rng=0)
         row = table.iloc[0]
-        assert row["p_value[mean_mean_jump]"] == pytest.approx(1 / 100)
-        assert row["mean_mean_jump"] == pytest.approx(4.0)
+        assert row["tested_p_values[mean_mean_jump]"] == pytest.approx(1 / 100)
+        assert row["tested_values[mean_mean_jump]"] == pytest.approx(4.0)
         # A point posterior stays one in every permutation: no evidence.
-        assert row["mean_spread"] == pytest.approx(0.0, abs=1e-9)
-        assert row["p_value[mean_spread]"] == 1.0
+        assert row["tested_values[mean_spread]"] == pytest.approx(0.0, abs=1e-9)
+        assert row["tested_p_values[mean_spread]"] == 1.0
         assert row["p_value"] == 1.0
         assert row["error"] == ""
         assert not row["is_replay"]

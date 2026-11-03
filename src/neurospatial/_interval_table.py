@@ -1073,7 +1073,8 @@ class Intervals(Generic[R]):
         -------
         pandas.DataFrame
             Columns ``start_time``, ``stop_time``, then :attr:`fields`, in row
-            order; ``df.attrs["analysis_settings"]`` holds the settings. An
+            order; ``df.attrs["analysis_settings"]`` holds the settings and
+            ``df.attrs["units"]`` the unit of the time columns (seconds). An
             empty selection gives an empty frame with the same columns.
         """
         import pandas as pd
@@ -1088,6 +1089,7 @@ class Intervals(Generic[R]):
         table = pd.DataFrame(data)
         table.index = pd.Index(np.array(self._ids), name="interval_id")
         table.attrs["analysis_settings"] = self.analysis_settings
+        table.attrs["units"] = {"start_time": "s", "stop_time": "s"}
         return table
 
     def with_fields(self, **columns: Any) -> Intervals[R] | Intervals[Interval]:

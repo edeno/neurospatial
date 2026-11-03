@@ -60,7 +60,11 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._results import (
+    _copy_analysis_settings,
+    _copy_unit_table,
+    unit_index_required,
+)
 from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
     PopulationRateMixin,
@@ -304,18 +308,19 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         -------
         pandas.DataFrame
             One row indexed by ``unit_id``: ``peak_firing_rate``,
-            ``preferred_distance``, ``preferred_direction_deg``,
-            ``preferred_direction`` and ``distance_information``. The frame
+            ``preferred_distance``, ``preferred_direction`` (radians) and
+            ``distance_information``. The frame
             and wall source are in ``df.attrs``.
         """
         return _boundary_summary(self, index=self._row_unit_ids().tolist())
 
     def _headline_metrics(self) -> dict[str, float]:
         return {
-            "preferred_distance": self.preferred_distance(),
-            "preferred_direction": self.preferred_direction(),
+            "preferred_distance": self.preferred_distance,
+            "preferred_direction": self.preferred_direction,
         }
 
+    @property
     def preferred_distance(self) -> float:
         """Distance to the wall at the peak rate, in the environment's units.
 
@@ -326,6 +331,7 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         """
         return float(self._peak_coordinates(0)[0])
 
+    @property
     def preferred_direction(self) -> float:
         """Direction from the animal to the wall at the peak rate, in radians.
 
@@ -524,13 +530,17 @@ class BoundaryVectorRatesResult(
             )
         return _boundary_summary(self, index=index)
 
-    def plot(self, idx: int, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(
+        self, idx: int | None = None, *, ax: Axes | None = None, **kwargs: Any
+    ) -> Axes:
         """Plot unit ``idx``'s rate by distance and direction.
 
         Parameters
         ----------
         idx : int
-            Unit position.
+            Unit position. Required: each unit's map is 2-D (distance by
+            direction), so ``None`` raises a ``ValueError`` that says how to
+            pick a unit.
         ax : matplotlib.axes.Axes, optional
             Axes to draw on; a new figure when omitted.
         **kwargs
@@ -540,6 +550,8 @@ class BoundaryVectorRatesResult(
         -------
         matplotlib.axes.Axes
         """
+        if idx is None:
+            raise unit_index_required(len(self), what="boundary-vector rate map")
         return self[idx].plot(ax=ax, **kwargs)
 
 
@@ -848,7 +860,7 @@ def compute_boundary_vector_rates(
     ...     env, spikes, times, positions, headings, direction_frame="egocentric"
     ... )
     >>> list(rates.summary_table().columns)
-    ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'distance_information', 'n_spikes_outside_intervals']
+    ['peak_firing_rate', 'preferred_distance', 'preferred_direction', 'distance_information', 'n_spikes_outside_intervals']
     """
     return _boundary_vector_rates(
         env,

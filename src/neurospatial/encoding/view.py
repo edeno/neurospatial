@@ -97,7 +97,11 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._results import (
+    _copy_analysis_settings,
+    _copy_unit_table,
+    unit_index_required,
+)
 from neurospatial._spikes import spike_unit_table
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
@@ -869,7 +873,9 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
             bandwidth=self.bandwidth,
         )
 
-    def plot(self, idx: int, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(
+        self, idx: int | None = None, *, ax: Axes | None = None, **kwargs: Any
+    ) -> Axes:
         """Plot the view field for a specific neuron.
 
         Delegates to the environment's plot_field method for consistent
@@ -878,7 +884,9 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         Parameters
         ----------
         idx : int
-            Index of the neuron to plot (0-indexed).
+            Position of the neuron to plot (0-indexed). Required: each
+            unit's view field is a 2-D map, so ``None`` raises a
+            ``ValueError`` that says how to pick a unit.
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, creates a new figure and axes.
         **kwargs
@@ -915,6 +923,8 @@ class ViewRatesResult(PopulationRateMixin[ViewRateResult]):
         peak_locations : Get locations of peak view responses
         ViewRateResult.plot : Plot for single-neuron result
         """
+        if idx is None:
+            raise unit_index_required(len(self), what="view field")
         kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(
             _to_numpy(self.firing_rates[idx]),  # type: ignore[index]
@@ -2826,4 +2836,10 @@ def spatial_view_cell_significance(
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, ids)
+    return to_shuffle_results(
+        observed,
+        null,
+        ids,
+        statistic="spatial_information",
+        statistic_units="bits/spike",
+    )

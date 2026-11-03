@@ -346,7 +346,7 @@ def test_polar_plots_accept_the_cartesian_alternative(head_direction_result):
 
 
 def test_head_direction_polar_plots_label_the_radial_axis(head_direction_result):
-    preferred = np.rad2deg(head_direction_result.preferred_direction()) % 360.0
+    preferred = np.rad2deg(head_direction_result.preferred_direction) % 360.0
     for ax in (
         head_direction_result.plot(),
         plot_head_direction_tuning(head_direction_result),

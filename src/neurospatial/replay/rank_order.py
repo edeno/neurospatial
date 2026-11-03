@@ -106,6 +106,11 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
         """Own read-only copies of ``active_units`` and ``excluded_units``."""
         self._own_arrays()
 
+    @property
+    def n_excluded_cells(self) -> int:
+        """Cells left out of the rank order."""
+        return int(self.excluded_units.size)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
@@ -115,7 +120,7 @@ class RankOrderResult(ReadOnlyArraysMixin, ResultMixin):
             "spike_statistic": self.spike_statistic,
             "field_order": self.field_order,
             "multi_field_cells": self.multi_field_cells,
-            "n_excluded_cells": int(self.excluded_units.size),
+            "n_excluded_cells": self.n_excluded_cells,
         }
 
 
@@ -150,11 +155,18 @@ class RankOrderSignificanceResult(ResultMixin):
         return self.shuffle.p_value
 
     def summary(self) -> dict[str, Any]:
-        """Flat dict of scalar headline metrics for this result."""
+        """Flat dict of scalar headline metrics for this result.
+
+        The observed result's ``summary()`` with each key prefixed
+        ``observed.``, the ``p_value`` and the shuffle's ``shuffle.z_score``.
+        """
         return {
-            **self.observed.summary(),
+            **{
+                f"observed.{key}": value
+                for key, value in self.observed.summary().items()
+            },
             "p_value": self.p_value,
-            "z_score": self.shuffle.z_score,
+            "shuffle.z_score": self.shuffle.z_score,
         }
 
 

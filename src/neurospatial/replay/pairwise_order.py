@@ -116,6 +116,11 @@ class PairwiseOrderResult(ReadOnlyArraysMixin, ResultMixin):
         """Own read-only copies of the arrays."""
         self._own_arrays()
 
+    @property
+    def n_scored_cells(self) -> int:
+        """Cells with a score (in at least one scored pair)."""
+        return int(self.scored_units.size)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
@@ -123,7 +128,7 @@ class PairwiseOrderResult(ReadOnlyArraysMixin, ResultMixin):
             "direction": self.direction,
             "n_pairs": self.n_pairs,
             "n_active_cells": self.n_active_cells,
-            "n_scored_cells": int(self.scored_units.size),
+            "n_scored_cells": self.n_scored_cells,
         }
 
 
@@ -165,11 +170,22 @@ class PairwiseOrderSignificanceResult(ResultMixin):
         return reduce_through_constructor(self)
 
     def summary(self) -> dict[str, Any]:
-        """Flat dict of scalar headline metrics for this result."""
+        """Flat dict of scalar headline metrics for this result.
+
+        The observed result's ``summary()`` with each key prefixed
+        ``observed.``, the combined ``p_value`` and each null's
+        ``shuffles[{null}].p_value``.
+        """
         return {
-            **self.observed.summary(),
+            **{
+                f"observed.{key}": value
+                for key, value in self.observed.summary().items()
+            },
             "p_value": self.p_value,
-            **{f"{name}_p_value": test.p_value for name, test in self.shuffles.items()},
+            **{
+                f"shuffles[{name}].p_value": test.p_value
+                for name, test in self.shuffles.items()
+            },
         }
 
 

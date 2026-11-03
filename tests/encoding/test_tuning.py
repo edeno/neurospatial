@@ -394,7 +394,7 @@ def test_variable_and_units_travel_with_the_result(distance_curves):
     plt.close(ax.figure)
 
     summary = distance_curves[0].summary()
-    assert summary["peak_location"] == pytest.approx(
+    assert summary["peak_location()[0]"] == pytest.approx(
         distance_curves[0].peak_location()[0]
     )
 

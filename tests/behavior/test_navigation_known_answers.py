@@ -634,9 +634,12 @@ class TestDistanceToGoal:
         # The first trial starts outside the environment; the rest is defined.
         assert np.isnan(geodesic[0])
         assert np.isnan(geodesic[5])  # outside every trial
+        import shapely
+
         goal_centers = env.bin_centers[env.bins_in_region("reward")]
-        straight = np.min(
-            np.linalg.norm(positions[:, None, :] - goal_centers[None], axis=2), axis=1
+        # The goal region is reached at its edge: the straight line to it.
+        straight = shapely.distance(
+            env.regions["reward"].data, shapely.points(positions)
         )
         # A convex box: the shortest path inside is the straight line.
         np.testing.assert_allclose(geodesic[1:5], straight[1:5], rtol=1e-9)

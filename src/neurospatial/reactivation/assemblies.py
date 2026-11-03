@@ -496,10 +496,15 @@ class AssemblyDetectionResult(ReadOnlyArraysMixin, ResultMixin):
         object.__setattr__(self, "activations", activations)
         self._own_arrays()
 
+    @property
+    def n_assemblies(self) -> int:
+        """Number of detected assemblies."""
+        return len(self.patterns)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
-            "n_assemblies": len(self.patterns),
+            "n_assemblies": self.n_assemblies,
             "n_significant": self.n_significant,
             "method": self.method,
             "component_threshold": self.component_threshold,

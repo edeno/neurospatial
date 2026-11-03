@@ -183,7 +183,7 @@ class TestPickling:
             rng=0,
         )
         summary = result.summary()
-        assert summary["score"] == 1.0
+        assert summary["observed.score"] == 1.0
         assert summary["p_value"] == result.p_value
         assert "summary() failed" not in repr(result)
 

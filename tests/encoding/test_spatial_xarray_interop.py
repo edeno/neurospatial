@@ -227,7 +227,9 @@ def test_directional_rates_to_xarray():
     assert ds["firing_rate"].dims == ("unit_id", "bin")
     assert "bin_center_angle" in ds.coords
     np.testing.assert_array_equal(ds.coords["bin_center_angle"].values, bin_centers)
-    assert ds.attrs["units"] == "radians"
+    assert ds.attrs["units"] == "rad"
+    assert ds["firing_rate"].attrs["units"] == "Hz"
+    assert ds["bin_center_angle"].attrs["units"] == "rad"
     assert "occupancy" in ds.data_vars
 
 

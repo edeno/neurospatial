@@ -180,6 +180,7 @@ def significance_recording():
     ]
 )
 def significance_family(request):
+    import functools
     import importlib
     from types import SimpleNamespace
 
@@ -217,10 +218,21 @@ def significance_family(request):
         return result
 
     defaults = {"bandwidth": None} if name == "head_direction" else {"method": "binned"}
+    significance = getattr(module, significance_name)
+
+    @functools.wraps(significance)
+    def tests_by_label(*arguments, **keywords):
+        # The place test returns a population result and the other families a
+        # dict; both give each unit's ShuffleTestResult under its label.
+        result = significance(*arguments, **keywords)
+        if isinstance(result, dict):
+            return result
+        return dict(zip(result.unit_ids.tolist(), result, strict=True))
+
     return SimpleNamespace(
         name=name,
         module=module,
-        function=getattr(module, significance_name),
+        function=tests_by_label,
         compute=getattr(module, compute_name),
         compute_name=compute_name,
         # The function each significance null calls; every family reuses its

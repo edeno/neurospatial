@@ -317,8 +317,9 @@ def test_summary_scalars_and_repr():
     assert summary["window_coverage"] == "complete"
     assert summary["n_overlapping_events"] == 2
     assert summary["min_count"] == 2
-    assert summary["n_dropped_outside_recording"] == 2
-    assert "n_dropped_no_support" not in summary
+    assert summary["n_dropped[outside_recording]"] == 2
+    assert result.n_dropped == {"outside_recording": 2}
+    assert "n_dropped[no_support]" not in summary
     for key, value in summary.items():
         assert type(value) in (int, float, str), key
     assert "n_events=" in repr(result)

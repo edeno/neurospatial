@@ -2,6 +2,135 @@
 
 ## [Unreleased]
 
+### Every result class meets the result contract
+
+**Breaking**
+
+- `place_cell_significance` returns a `PlaceCellSignificanceResult` instead of
+  a `dict` of `ShuffleTestResult` keyed by unit label. It holds each unit's
+  observed spatial information, null scores, `p_value`, `null_mean`,
+  `null_std`, `z_score` and `spatial_information_bias`, with
+  `statistic="spatial_information"` and `statistic_units="bits/spike"`.
+  `summary_table()` gives one row per unit indexed by `unit_id`, `classify()`
+  the place screen (`p_value < alpha` and bias-corrected information
+  `>= min_info`, the rule of `is_place_cell(..., criterion="shuffle")`), and
+  `plot(i)` one unit's null distribution. Replace `results[label]` with
+  `result.sel(unit_id=label)` and `results.values()` with iteration over the
+  result. The p-values are unchanged.
+- `detect_place_fields` segments one rate map per call and refuses a
+  population `SpatialRatesResult` (`TypeError`): loop over its units,
+  `[detect_place_fields(env, unit) for unit in rates]`.
+- `detect_place_fields` returns a `PlaceFieldsResult` that keeps its map:
+  `env`, `firing_rate`, `bandwidth` and `unit_id` are required fields.
+  `to_dataframe()` is now one row per field (`unit_id`, `field`, `n_bins`,
+  `area`, `peak_rate`, `mean_rate`, `centroid_*`) instead of one row per
+  `(field, bin)`; the bins stay in `result.fields`.
+- No-argument scalars on single-unit results are properties, not methods:
+  `DirectionalRateResult.mean_vector_length`, `.preferred_direction`,
+  `.preferred_direction_deg`, `.tuning_width`, `.tuning_width_deg`,
+  `.tuning_pvalue` and `.largest_unvisited_arc` (also on
+  `DirectionalRatesResult`); `ObjectVectorRateResult.preferred_direction`
+  and `.preferred_distance`; `BoundaryVectorRateResult.preferred_direction`
+  and `.preferred_distance`. Drop the `()`.
+- Directional, object-vector and boundary-vector `summary_table()`s give
+  angles in radians only: the `preferred_direction_deg` and
+  `tuning_width_deg` columns are removed (`np.degrees` converts).
+- `PopulationPeriEventResult.plot()` draws a units-by-time heatmap; the
+  population mean is `plot(kind="mean")`, titled "Population mean of N
+  units".
+- Directional xarray exports spell their angle unit `"rad"`, as the tables
+  do, not `"radians"`.
+- Region goals are measured to the region's edge, not to its nearest bin
+  centre. The distance is 0 inside the region; `metric="euclidean"` is the
+  distance to the region's polygon; `metric="geodesic"` is the shortest path
+  inside the environment to the region's edge (on a track, to where the
+  centerline crosses it; round walls, through bin centres and then straight
+  to the edge, at most about one bin longer than the exact path). Distances,
+  efficiencies and directions to a region goal shift by up to about one bin
+  (a bin diagonal in 2-D), and arrival is the first sample inside the
+  region's polygon instead of the first in one of its bins. This changes
+  `distance_to_goal`, `compute_path_efficiency`,
+  `compute_goal_directed_metrics`, `approach_rate`, `goal_bias`,
+  `angular_efficiency`, `instantaneous_goal_alignment`,
+  `compute_subgoal_efficiency`, `compute_decision_analysis`,
+  `distance_to_decision_boundary` and, for region goals,
+  `geodesic_voronoi_labels`. Unchanged: point goals everywhere (a point goal
+  of `geodesic_voronoi_labels` is still measured from its bin's centre);
+  `distance_to_goal(cost_map=...)` and `terrain_difficulty=`, whose cost is
+  measured between bin centres (now 0 inside the region); and
+  `path_progress`, whose start and goal are regions' bins, the ends of a
+  harmonic coordinate over bins. A per-trial path still ends at the last
+  sample before the trial's `stop`, so a trial that ends on entering the
+  goal region has an efficiency above 1 by at most that last step over its
+  traveled length.
+- Every name in a result's repr reads back from the result as written:
+  methods show as `name()=` (`SpatialRateResult(..., spatial_information()=2.807, ...)`),
+  and results gained properties for their summary values (`n_units`,
+  `n_bins`, `total_occupancy`, `max_peak_firing_rate` on rate results;
+  `peak_rate`, `peak_latency`, `baseline_rate` on PSTHs; and the counts and
+  headline values of the decoding, behavior, replay, reactivation,
+  simulation and feature-sampling results). Summary keys that name a nested
+  value are now spelled as its path: replay significance results use
+  `observed.score`, `shuffles[<null>].p_value` and
+  `n_shuffles_used[<null>]` (were `score`, `<null>_p_value`,
+  `<null>_n_shuffles_used`); `RankOrderSignificanceResult` uses
+  `shuffle.z_score`; `RecurringSequencesSignificanceResult` uses
+  `observed.n_recurring` and `p_values[<kind>]`;
+  `TemplateMatchDatasetResult` uses `shuffle_group` (was `group`);
+  `ContinuousEventResult` uses `n_dropped[<reason>]` (was
+  `n_dropped_<reason>`); `ReplayDetectionResult` and the
+  `compare_replay_methods` table use `criteria[<label>]`, `values[<label>]`,
+  `z_scores[<null>]`, `tested_values[<name>]` and
+  `tested_p_values[<name>]` (were `passes[...]`, `value[...]`,
+  `z_score[...]`, the bare quantity name and `p_value[...]`), and its
+  `summary()["n_shuffles_used"]` is None, as the attribute is, when no
+  shuffle was scored; `TemplateMatchDatasetResult` keys its pooled row as
+  `n_trials[<row>]`, `n_matches[<row>]`, ...; a single
+  `TuningCurveResult` shows its peak as `peak_location()[0]`.
+- `compute_vte_session` leaves every trial unclassified (`is_vte` is `<NA>`)
+  when the trials' head sweeps do not vary (session standard deviation below
+  1e-10 rad, as on straight runs), and says so in its warning. It used to
+  classify such trials on speed alone. `trials_table()["is_vte"]` is a
+  nullable boolean column.
+
+**Added**
+
+- `detect_place_fields(env, rates[i])` accepts a `SpatialRateResult` and
+  uses the bandwidth the result records; with an array, `bandwidth=` is still
+  required and the error says where to find it. `PlaceFieldsResult` gains
+  `summary_table()`, `plot()`, `peak_location()`, `n_fields` and
+  `total_bins`, and `attrs["units"]` on its tables.
+- Population `plot(idx=None)`: PSTH, tuning-curve and directional populations
+  draw a heatmap of units by time, value or direction, sorted by peak, with a
+  colorbar in Hz. Spatial, view, object-vector and boundary-vector
+  populations raise one actionable error naming how to pick a unit.
+- `ShuffleTestResult` has `statistic` and `statistic_units`, shown in its
+  repr and on its plot's x-axis; the significance tests fill them in.
+- `attrs["units"]` on `DecodingResult.to_dataframe()`,
+  `DecodingSummary.to_dataframe()`, the PSTH and peri-event distance tables,
+  `Intervals.intervals_table()`, `VTESessionResult.trials_table()`,
+  `ResampledPathResult.samples_table()`, the continuous-event tables,
+  `SpikeWordsResult.words_table()` and `TemplateMatchDatasetResult.groups_table()`.
+  Rate-result xarray exports carry `units` on each variable and coordinate.
+- `VTESessionResult.units` records the positions' length unit, so
+  `trials_table()` gives speeds in `units/s`.
+- `detect_laps(method="reference")` on an environment without a loop (a
+  linear track) reports each lap's direction as `"increasing"` or
+  `"decreasing"` along the track instead of `"unknown"`, and
+  `direction=` filters on them.
+- `Environment` repr shows the typical bin size and units:
+  `Environment(name='', 2D, 2601 bins @ 2 cm, RegularGrid)`.
+
+**Fixed**
+
+- A standalone `PeriEventResult` or `PeriEventDistanceResult` shows its
+  missing `unit_id` as `<NA>` in its tables, as the rate results do, not
+  `None`.
+- `CellTypeSignificanceResult`'s repr shows only `n_units` and `n_shuffles`;
+  the label counts, which depend on `alpha`, stay in `summary()`.
+- The directional result docstrings explain why `peak_location()` (the peak
+  bin) and `preferred_direction` (the rate-weighted circular mean) differ.
+
 ### Errors name the call to make
 
 **Breaking**

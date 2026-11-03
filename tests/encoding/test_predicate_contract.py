@@ -81,8 +81,10 @@ def test_default_predicate_matches_explicit_shuffle(
             ou_2min_env, train, t, p, criterion="shuffle", unit_id=uid, rng=0
         )
         assert default is explicit
-        assert significance[uid].null_scores.shape == (1000,)
-        assert default == bool(significance[uid].p_value < 0.05 and beyond_bias)
+        assert significance.sel(unit_id=uid).null_scores.shape == (1000,)
+        assert default == bool(
+            significance.sel(unit_id=uid).p_value < 0.05 and beyond_bias
+        )
         verdicts.append(default)
     assert verdicts == [False, False, True]
 
@@ -105,7 +107,7 @@ def test_threshold_free_method_classify_agree(
         )(**method_kw)
         assert getattr(result, method_name)(**method_kw) == rates.classify()[i]
         metric = (
-            result.mean_vector_length()
+            result.mean_vector_length
             if f.name == "head_direction"
             else result.spatial_information() - result.spatial_information_bias()
         )

@@ -72,7 +72,7 @@ def test_population_plot_band_is_mean_sem(population):
 
     trains, event_times = population
     result = population_peri_event_histogram(trains, event_times, WINDOW, dt=BIN_SIZE)
-    ax = result.plot()
+    ax = result.plot(kind="mean")
     band = ax.collections[0].get_paths()[0].vertices[:, 1]
     rate, rate_sem = result.mean_firing_rate, result.mean_sem / BIN_SIZE
 

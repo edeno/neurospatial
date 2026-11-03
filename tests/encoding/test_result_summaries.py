@@ -51,7 +51,6 @@ TABLE_COLUMNS = {
     "allocentric": [
         "peak_firing_rate",
         "preferred_distance",
-        "preferred_direction_deg",
         "preferred_direction",
         "spatial_information",
         "spatial_information_bias",
@@ -61,7 +60,6 @@ TABLE_COLUMNS = {
     "egocentric": [
         "peak_firing_rate",
         "preferred_distance",
-        "preferred_direction_deg",
         "preferred_direction",
         "spatial_information",
         "spatial_information_bias",
@@ -71,8 +69,6 @@ TABLE_COLUMNS = {
     "directional": [
         "peak_firing_rate",
         "mean_vector_length",
-        "preferred_direction_deg",
-        "tuning_width_deg",
         "preferred_direction",
         "tuning_width",
         "tuning_pvalue",
@@ -99,7 +95,8 @@ def test_summary_table_column_order_and_attrs(rate_family_results, family):
     if family in ("allocentric", "egocentric"):
         assert frame.attrs["direction_frame"] == family
         assert frame.attrs["units"]["preferred_direction"] == "rad"
-        assert frame.attrs["units"]["preferred_direction_deg"] == "deg"
+    # One angle unit: no degree duplicates of the radian columns.
+    assert not any(column.endswith("_deg") for column in frame.columns)
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -169,10 +166,13 @@ def test_singular_summary_headline_metrics(rate_family_results, family):
     assert "peak_firing_rate" in summary
     assert "max_peak_firing_rate" not in summary
     for key, method in HEADLINES[family].items():
+        value = getattr(result, method)
         assert summary[key] == pytest.approx(
-            float(getattr(result, method)()), nan_ok=True
+            float(value() if callable(value) else value), nan_ok=True
         )
-        assert f"{key}=" in repr(result)
+        # A method shows as ``key()=`` in the repr: it is called, not read.
+        shown = f"{key}()=" if callable(getattr(result, key)) else f"{key}="
+        assert shown in repr(result)
     dead = replace(result, firing_rate=np.full_like(result.firing_rate, np.nan))
     for key in ("peak_firing_rate", *HEADLINES[family]):
         assert np.isnan(dead.summary()[key])

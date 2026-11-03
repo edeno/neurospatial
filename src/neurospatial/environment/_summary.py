@@ -64,7 +64,14 @@ def _html_table_header(title: str) -> str:
 
 
 def _repr(
-    *, class_name: str, name: str, n_dims: int, n_bins: int, layout_type: str
+    *,
+    class_name: str,
+    name: str,
+    n_dims: int,
+    n_bins: int,
+    layout_type: str,
+    bin_spacing: float,
+    units: str | None,
 ) -> str:
     """Return the single-line diagnostic representation."""
     # Use ``repr(name)`` so the empty-string case ``name=""`` is visibly
@@ -73,8 +80,12 @@ def _repr(
         name = name[:37] + "..."
 
     layout_type = layout_type.removesuffix("Layout")  # Remove 'Layout' suffix
+    spacing = f"{bin_spacing:.3g} {units}" if units else f"{bin_spacing:.3g} (no units)"
 
-    return f"{class_name}(name={name!r}, {n_dims}D, {n_bins} bins, {layout_type})"
+    return (
+        f"{class_name}(name={name!r}, {n_dims}D, {n_bins} bins @ {spacing}, "
+        f"{layout_type})"
+    )
 
 
 def _repr_html(

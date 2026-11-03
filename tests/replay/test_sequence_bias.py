@@ -323,7 +323,7 @@ def test_compare_matches_detecting_each_event(session):
         bias_sequence_method=LIU_2023_BIAS,
     )
     assert table.loc[1, "score"] == direct.score
-    assert table.loc[1, "passes[n_active_cells >= 2]"]
+    assert table.loc[1, "criteria[n_active_cells >= 2]"]
 
 
 def test_compare_needs_the_template(session):

@@ -173,7 +173,7 @@ class TestReplaySignificanceAnyScore:
         )
         assert isinstance(result.observed, WeightedCorrelationResult)
         assert result.p_value == pytest.approx(1 / 200)
-        assert result.summary()["score"] == pytest.approx(1.0)
+        assert result.summary()["observed.score"] == pytest.approx(1.0)
 
     def test_reverse_sweep_counts_by_default(self):
         """The weighted correlation is tested as |r| unless told otherwise."""
@@ -720,7 +720,8 @@ class TestReplaySignificance:
             assert np.all(test.null_scores < result.observed.score)
         summary = result.summary()
         assert (
-            summary["unit_identity_p_value"] == result.shuffles["unit_identity"].p_value
+            summary["shuffles[unit_identity].p_value"]
+            == result.shuffles["unit_identity"].p_value
         )
 
     def test_column_cycle_p_values_are_uniform_without_replay(self):

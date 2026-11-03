@@ -186,6 +186,36 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
         start, stop = self.segments[index]
         return slice(int(start), int(stop))
 
+    @property
+    def longest_start_time(self) -> float | int:
+        """Start time of the longest segment (s); NaN without one."""
+        return self._longest_value(self.start_times)
+
+    @property
+    def longest_duration(self) -> float | int:
+        """Duration of the longest segment (s); NaN without one."""
+        return self._longest_value(self.durations)
+
+    @property
+    def longest_time_bin_count(self) -> float | int:
+        """Time bins in the longest segment; NaN without one."""
+        return self._longest_value(self.time_bin_counts)
+
+    @property
+    def longest_dispersion(self) -> float | int:
+        """Dispersion of the longest segment; NaN without one."""
+        return self._longest_value(self.dispersions)
+
+    @property
+    def longest_start_to_end_distance(self) -> float | int:
+        """Start-to-end distance of the longest segment; NaN without one."""
+        return self._longest_value(self.start_to_end_distances)
+
+    @property
+    def longest_path_length(self) -> float | int:
+        """Path length of the longest segment; NaN without one."""
+        return self._longest_value(self.path_lengths)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict: the number of segments and the longest segment's values.
 
@@ -200,19 +230,23 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
             "n_segments": self.n_segments,
             "longest": self.longest,
         }
-        per_segment = {
-            "start_time": self.start_times,
-            "duration": self.durations,
-            "time_bin_count": self.time_bin_counts,
-            "dispersion": self.dispersions,
-            "start_to_end_distance": self.start_to_end_distances,
-            "path_length": self.path_lengths,
-        }
-        for name, array in per_segment.items():
-            values[f"longest_{name}"] = (
-                np.nan if self.longest is None else array[self.longest].item()
-            )
+        for name in (
+            "start_time",
+            "duration",
+            "time_bin_count",
+            "dispersion",
+            "start_to_end_distance",
+            "path_length",
+        ):
+            values[f"longest_{name}"] = getattr(self, f"longest_{name}")
         return values
+
+    def _longest_value(self, values: NDArray[Any]) -> float | int:
+        """The longest segment's entry of a per-segment array; NaN without one."""
+        if self.longest is None:
+            return float("nan")
+        value: float | int = values[self.longest].item()
+        return value
 
 
 @reads_pynapple_samples

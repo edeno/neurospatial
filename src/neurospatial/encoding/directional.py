@@ -570,7 +570,7 @@ def _warn_if_headings_incomplete(occupancy: ArrayLike) -> None:
         return
     warnings.warn(
         f"The animal never faced a {np.degrees(arc):.0f}° arc of headings "
-        f"(largest_unvisited_arc() = {arc:.2f} rad). Mean vector length uses "
+        f"(largest_unvisited_arc = {arc:.2f} rad). Mean vector length uses "
         "only visited headings, so it is inflated for untuned cells (about "
         "0.3 when 270° are visited, 0.4 when 240° are) and the MVL screen is "
         "unreliable. For a verdict, use is_head_direction_cell(..., "
@@ -617,8 +617,6 @@ def _directional_summary_frame(
     columns = {
         "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
         "mean_vector_length": mvls,
-        "preferred_direction_deg": np.degrees(directions),
-        "tuning_width_deg": np.degrees(widths),
         "preferred_direction": directions,
         "tuning_width": widths,
         "tuning_pvalue": _tuning_pvalues(**inputs),
@@ -635,9 +633,7 @@ def _directional_summary_frame(
         "peak_firing_rate": "Hz",
         "mean_vector_length": "",
         "preferred_direction": "rad",
-        "preferred_direction_deg": "deg",
         "tuning_width": "rad",
-        "tuning_width_deg": "deg",
         "tuning_pvalue": "",
         "spike_count_dispersion": "",
         "largest_unvisited_arc": "rad",
@@ -671,7 +667,7 @@ class _DirectionalRateMixin:
         def _refuse_negative(self, name: str, values: Any) -> None: ...
 
     def _xarray_attrs(self) -> dict[str, Any]:
-        return {"units": "radians", "bin_size": self.bin_size}
+        return {"units": "rad", "bin_size": self.bin_size}
 
     def _n_bins(self) -> int:
         return _check_angular_bins(self)
@@ -717,7 +713,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         Gaussian smoothing bandwidth in radians, or None if unsmoothed.
     spike_counts : ArrayLike or None, optional
         Raw (unsmoothed) spike count per angular bin, shape (n_bins,), used by
-        :meth:`tuning_pvalue`. None for results constructed without counts
+        :attr:`tuning_pvalue`. None for results constructed without counts
         (e.g. from external tuning curves), in which case counts are rebuilt
         as ``firing_rate * occupancy``, which is exact only for unsmoothed
         rates.
@@ -725,7 +721,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         Keyword-only. How much more the spike counts vary than Poisson
         counts, beyond what heading explains (variance / mean of counts in
         time windows; 1 for Poisson spiking, larger for bursting or drifting
-        cells). :meth:`tuning_pvalue` divides its statistic by it.
+        cells). :attr:`tuning_pvalue` divides its statistic by it.
         :func:`compute_directional_rate` estimates it. None (a result built
         without spike times) leaves the tuning test undefined (NaN); pass
         1.0 to assume Poisson spiking explicitly.
@@ -795,6 +791,16 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
     do not store an Environment. Head direction is a 1D circular variable that
     does not depend on spatial position. The bin_centers field provides the
     angular coordinates needed for analysis and plotting.
+
+    **Peak vs preferred direction**: ``peak_location()`` is the center of
+    the bin with the highest rate, and ``preferred_direction`` is the
+    rate-weighted circular mean of the bin centers. They agree for a
+    symmetric, unimodal tuning curve; a skewed, noisy or multi-peaked curve
+    pulls the circular mean away from the peak bin, by tens of degrees for
+    a broad or two-peaked curve. The circular mean uses the whole curve and
+    pairs with ``mean_vector_length``, which says how concentrated the
+    tuning is; the peak bin depends on one bin and its noise. Both are in radians (0 = East, +pi/2 =
+    North); tables give radians only, and ``np.degrees`` converts.
 
     Examples
     --------
@@ -902,8 +908,8 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
                 "mean_vector_length": float("nan"),
             }
         return {
-            "preferred_direction": float(self.preferred_direction()),
-            "mean_vector_length": float(self.mean_vector_length()),
+            "preferred_direction": float(self.preferred_direction),
+            "mean_vector_length": float(self.mean_vector_length),
         }
 
     def plot(
@@ -990,6 +996,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
         return ax
 
+    @property
     def preferred_direction(self) -> float:
         """Compute the preferred direction (circular mean weighted by firing rate).
 
@@ -1031,7 +1038,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> pref = result.preferred_direction()
+        >>> pref = result.preferred_direction
         >>> bool(np.abs(pref - np.pi / 2) < 0.1)  # Close to 90 degrees
         True
 
@@ -1043,6 +1050,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         """
         return float(_preferred_directions(self.firing_rate, self.bin_centers))
 
+    @property
     def preferred_direction_deg(self) -> float:
         """Compute the preferred direction in degrees.
 
@@ -1072,11 +1080,11 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> pref_deg = result.preferred_direction_deg()
+        >>> pref_deg = result.preferred_direction_deg
         >>> bool(np.abs(pref_deg - 90) < 6)  # Close to 90 degrees
         True
         """
-        return float(np.degrees(self.preferred_direction()))
+        return float(np.degrees(self.preferred_direction))
 
     def peak_firing_rate(self) -> float:
         """Get the maximum firing rate.
@@ -1116,6 +1124,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
             warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN -> NaN
             return float(np.nanmax(rates))
 
+    @property
     def mean_vector_length(self) -> float:
         """Compute the mean vector length (MVL) of the tuning curve.
 
@@ -1144,13 +1153,13 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         Only visited bins enter the sum, so an untuned cell recorded while
         the animal faced a limited range of headings has an inflated MVL
         (about 0.3 when 270° are visited, 0.4 when 240° are). Check
-        :meth:`largest_unvisited_arc`. The cutoff of 0.4 used by
+        :attr:`largest_unvisited_arc`. The cutoff of 0.4 used by
         :meth:`is_head_direction_cell` is a common screening convention, not
         a calibrated threshold. A von Mises tuning curve
         ``exp(κ cos(θ - θ₀))`` without baseline firing reaches it at
         ``κ ≈ 0.87`` (half-width at half-maximum ≈ 78°); baseline firing
         lowers MVL, so broadly tuned cells with baseline firing fail the
-        cutoff even when :meth:`tuning_pvalue` and the shuffle test detect
+        cutoff even when :attr:`tuning_pvalue` and the shuffle test detect
         them. Check it against the MVL distribution of your own recordings.
 
         Examples
@@ -1168,7 +1177,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> mvl = result.mean_vector_length()
+        >>> mvl = result.mean_vector_length
         >>> mvl > 0.5  # Sharply tuned neuron has high MVL
         True
 
@@ -1180,6 +1189,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         """
         return float(_mean_vector_lengths(self.firing_rate, self.bin_centers))
 
+    @property
     def tuning_width(self) -> float:
         """Compute the tuning width (half-width at half-maximum) in radians.
 
@@ -1226,7 +1236,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> width = result.tuning_width()
+        >>> width = result.tuning_width
         >>> width < np.pi / 3  # Sharp tuning < 60 degrees
         True
 
@@ -1239,6 +1249,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
             np.asarray(self.firing_rate, dtype=np.float64), self.bin_size
         )
 
+    @property
     def tuning_width_deg(self) -> float:
         """Compute the tuning width (half-width at half-maximum) in degrees.
 
@@ -1269,12 +1280,13 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> width_deg = result.tuning_width_deg()
+        >>> width_deg = result.tuning_width_deg
         >>> width_deg < 60  # Sharp tuning < 60 degrees
         True
         """
-        return float(np.degrees(self.tuning_width()))
+        return float(np.degrees(self.tuning_width))
 
+    @property
     def largest_unvisited_arc(self) -> float:
         """Widest arc of headings the animal never faced, in radians.
 
@@ -1304,11 +1316,12 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         ...     bin_size=np.pi / 30,
         ...     bandwidth=None,
         ... )
-        >>> round(float(np.degrees(result.largest_unvisited_arc())))
+        >>> round(float(np.degrees(result.largest_unvisited_arc)))
         90
         """
         return _largest_unvisited_arc(self.occupancy)
 
+    @property
     def tuning_pvalue(self) -> float:
         """Test for one preferred direction, given where the animal faced.
 
@@ -1376,7 +1389,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
         **Remaining assumptions.** The test targets one preferred direction
         and has little power for bimodal tuning. With many spikes even weak
-        tuning is significant; check :meth:`mean_vector_length` as well.
+        tuning is significant; check :attr:`mean_vector_length` as well.
         Heading is confounded with position on tracks and mazes: a place
         cell active on one running direction passes this test and the
         shuffle. For a verdict on freely moving data, use
@@ -1405,7 +1418,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         ...     spike_counts=np.round(firing_rate * occupancy),
         ...     spike_count_dispersion=1.0,  # assume Poisson spiking
         ... )
-        >>> bool(result.tuning_pvalue() < 0.05)
+        >>> bool(result.tuning_pvalue < 0.05)
         True
 
         See Also
@@ -1424,7 +1437,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         A neuron passes the screen if it meets both criteria:
 
         1. Mean vector length (MVL) >= min_mvl (default 0.4)
-        2. :meth:`tuning_pvalue` < alpha (default 0.05)
+        2. :attr:`tuning_pvalue` < alpha (default 0.05)
 
         Parameters
         ----------
@@ -1433,7 +1446,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
             than a calibrated threshold; check it against the MVL
             distribution of your own recordings and brain region.
         alpha : float, default=0.05
-            Level for :meth:`tuning_pvalue`.
+            Level for :attr:`tuning_pvalue`.
 
         Returns
         -------
@@ -1444,7 +1457,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         -----
         UserWarning
             When the animal never faced a heading arc wider than 90°
-            (:meth:`largest_unvisited_arc`), because MVL is then inflated.
+            (:attr:`largest_unvisited_arc`), because MVL is then inflated.
 
         Examples
         --------
@@ -1473,7 +1486,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
 
         Notes
         -----
-        This is a threshold screen, not a verdict. :meth:`tuning_pvalue`
+        This is a threshold screen, not a verdict. :attr:`tuning_pvalue`
         tests one preferred direction given heading occupancy, corrected for
         bursting and slow rate drift by the estimated spike-count dispersion.
         For a verdict, call the free function is_head_direction_cell(...)
@@ -1497,7 +1510,7 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
             Minimum mean vector length threshold for HD cell classification.
             Same parameter as in :meth:`is_head_direction_cell`.
         alpha : float, default=0.05
-            Level for :meth:`tuning_pvalue`, as in
+            Level for :attr:`tuning_pvalue`, as in
             :meth:`is_head_direction_cell`.
 
         Returns
@@ -1548,18 +1561,16 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         """
         lines = []
 
-        mvl = self.mean_vector_length()
-        pval = self.tuning_pvalue()
+        mvl = self.mean_vector_length
+        pval = self.tuning_pvalue
         is_hd = self.is_head_direction_cell(min_mvl=min_mvl, alpha=alpha)
 
         if is_hd:
             lines.append("*** HEAD DIRECTION CELL ***")
-            lines.append(
-                f"Preferred direction: {self.preferred_direction_deg():.1f} deg"
-            )
+            lines.append(f"Preferred direction: {self.preferred_direction_deg:.1f} deg")
             lines.append(f"Mean vector length: {mvl:.3f} (threshold = {min_mvl})")
             lines.append(f"Peak firing rate: {self.peak_firing_rate():.1f} Hz")
-            lines.append(f"Tuning width (HWHM): {self.tuning_width_deg():.1f} deg")
+            lines.append(f"Tuning width (HWHM): {self.tuning_width_deg:.1f} deg")
             lines.append(f"Tuning test: p = {pval:.4f}")
         else:
             lines.append("Not classified as HD cell")
@@ -1702,6 +1713,16 @@ class DirectionalRatesResult(
     - `result[i]`: Returns `DirectionalRateResult` for neuron i
     - `for r in result`: Iterates over single-neuron results
 
+    **Peak vs preferred direction**: ``peak_location()`` is the center of
+    the bin with the highest rate, and ``preferred_directions()`` is the
+    rate-weighted circular mean of the bin centers. They agree for a
+    symmetric, unimodal tuning curve; a skewed, noisy or multi-peaked curve
+    pulls the circular mean away from the peak bin, by tens of degrees for
+    a broad or two-peaked curve. The circular mean uses the whole curve and
+    pairs with ``mean_vector_lengths()``, which says how concentrated the
+    tuning is; the peak bin depends on one bin and its noise. Both are in radians (0 = East, +pi/2 =
+    North); tables give radians only, and ``np.degrees`` converts.
+
     Examples
     --------
     >>> import numpy as np
@@ -1829,21 +1850,24 @@ class DirectionalRatesResult(
 
     def plot(
         self,
-        idx: int,
+        idx: int | None = None,
         *,
         ax: Axes | PolarAxes | None = None,
         polar: bool = True,
         **kwargs: Any,
     ) -> Axes | PolarAxes:
-        """Plot the directional tuning curve for a specific neuron.
+        """Plot one neuron's directional tuning curve, or every neuron as a heatmap.
 
-        Creates a visualization of the firing rate as a function of direction
-        for the specified neuron. By default, creates a polar plot.
+        With ``idx``, creates a visualization of the firing rate as a function
+        of direction for that neuron, by default a polar plot. Without it,
+        draws one row per neuron, direction (rad) on the x-axis, rows sorted
+        by the bin of each neuron's peak, and a colorbar in Hz.
 
         Parameters
         ----------
-        idx : int
-            Index of the neuron to plot (0-indexed).
+        idx : int or None, default=None
+            Index of the neuron to plot (0-indexed). ``None`` draws the
+            heatmap of every neuron; ``polar`` does not apply to it.
         ax : matplotlib.axes.Axes or matplotlib.projections.polar.PolarAxes, optional
             Axes to plot on. If None, creates a new figure with appropriate
             projection (polar or Cartesian based on the ``polar`` parameter).
@@ -1867,6 +1891,21 @@ class DirectionalRatesResult(
         --------
         DirectionalRateResult.plot : Plot method for single neuron
         """
+        if idx is None:
+            from neurospatial._results import plot_population_heatmap
+
+            centers = np.asarray(self.bin_centers, dtype=np.float64)
+            edges = np.append(
+                centers - self.bin_size / 2, centers[-1] + self.bin_size / 2
+            )
+            return plot_population_heatmap(
+                np.asarray(_to_numpy(self._supported_rates()), dtype=np.float64),
+                edges,
+                self.unit_ids,
+                ax=ax,
+                xlabel="Direction (rad)",
+                **kwargs,
+            )
         return self[idx].plot(ax=ax, polar=polar, **kwargs)
 
     def preferred_directions(self) -> NDArray[np.float64]:
@@ -1880,7 +1919,7 @@ class DirectionalRatesResult(
         numpy.ndarray
             Array of shape (n_neurons,) with preferred directions in radians,
             range [-π, π]; NaN for a neuron without a mean direction, as
-            :meth:`DirectionalRateResult.preferred_direction`.
+            :attr:`DirectionalRateResult.preferred_direction`.
 
         Examples
         --------
@@ -1981,15 +2020,16 @@ class DirectionalRatesResult(
         widths = np.empty(n_neurons, dtype=np.float64)
 
         for i in range(n_neurons):
-            widths[i] = self[i].tuning_width()
+            widths[i] = self[i].tuning_width
 
         return widths
 
+    @property
     def largest_unvisited_arc(self) -> float:
         """Widest arc of headings the animal never faced, in radians.
 
         Shared by all units, because they share occupancy. See
-        :meth:`DirectionalRateResult.largest_unvisited_arc`.
+        :attr:`DirectionalRateResult.largest_unvisited_arc`.
 
         Returns
         -------
@@ -2005,7 +2045,7 @@ class DirectionalRatesResult(
         -------
         numpy.ndarray
             Array of shape (n_neurons,) with p-values in [0, 1], NaN where the
-            test is undefined. See :meth:`DirectionalRateResult.tuning_pvalue`
+            test is undefined. See :attr:`DirectionalRateResult.tuning_pvalue`
             for the test and its assumptions.
 
         Examples
@@ -2062,7 +2102,7 @@ class DirectionalRatesResult(
         -----
         UserWarning
             When the animal never faced a heading arc wider than 90°
-            (:meth:`largest_unvisited_arc`), because MVL is then inflated.
+            (:attr:`largest_unvisited_arc`), because MVL is then inflated.
 
         Examples
         --------
@@ -2122,8 +2162,6 @@ class DirectionalRatesResult(
 
             - peak_firing_rate: maximum firing rate (Hz)
             - mean_vector_length: mean vector length [0, 1]
-            - preferred_direction_deg: preferred direction in degrees [-180, 180]
-            - tuning_width_deg: tuning width (HWHM) in degrees (0, 180]
             - preferred_direction: preferred direction in radians [-π, π]
             - tuning_width: tuning width (HWHM) in radians (0, π]
             - tuning_pvalue: occupancy-corrected tuning-test p-value
@@ -3180,7 +3218,7 @@ def is_head_direction_cell(
     Notes
     -----
     The threshold screen requires MVL >= min_mvl and
-    ``DirectionalRateResult.tuning_pvalue() < alpha``. The MVL cutoff of 0.4
+    ``DirectionalRateResult.tuning_pvalue < alpha``. The MVL cutoff of 0.4
     is a common screening convention; check it against your own recordings.
     The tuning test checks one preferred direction given heading occupancy,
     corrected for bursting and slow rate drift by the estimated spike-count
@@ -3281,7 +3319,7 @@ def is_head_direction_cell(
 
 def _label_radius_away_from_peak(ax: PolarAxes, result: DirectionalRateResult) -> None:
     """Label the radial axis in Hz, its tick labels opposite the preferred direction."""
-    pfd = result.preferred_direction()
+    pfd = result.preferred_direction
     angle = np.degrees(pfd) + 180.0 if np.isfinite(pfd) else 135.0
     ax.set_rlabel_position(angle % 360.0)
     ax.set_ylabel("Firing rate (Hz)", labelpad=30)
@@ -3397,7 +3435,7 @@ def plot_head_direction_tuning(
 
         # Mark preferred direction
         if show_preferred_direction:
-            pfd = result.preferred_direction()
+            pfd = result.preferred_direction
             peak_rate = result.peak_firing_rate()
             polar_ax.plot(
                 [pfd, pfd],
@@ -3424,14 +3462,14 @@ def plot_head_direction_tuning(
 
         # Mark preferred direction
         if show_preferred_direction:
-            pfd_deg = result.preferred_direction_deg()
+            pfd_deg = result.preferred_direction_deg
             ax.axvline(pfd_deg, color="red", linewidth=2, linestyle="--", zorder=3)
 
     # Show metrics text box if requested
     if show_metrics:
         metrics_text = (
-            f"PFD: {result.preferred_direction_deg():.1f}°\n"
-            f"MVL: {result.mean_vector_length():.3f}\n"
+            f"PFD: {result.preferred_direction_deg:.1f}°\n"
+            f"MVL: {result.mean_vector_length:.3f}\n"
             f"Peak: {result.peak_firing_rate():.1f} Hz"
         )
         ax.text(
@@ -3751,4 +3789,6 @@ def head_direction_cell_significance(
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, ids)
+    return to_shuffle_results(
+        observed, null, ids, statistic="mean_vector_length", statistic_units=""
+    )

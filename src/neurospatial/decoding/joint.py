@@ -177,15 +177,29 @@ class JointDecodingResult(ReadOnlyArraysMixin, ResultMixin):
         joint.flags.writeable = False
         return joint
 
+    @property
+    def n_templates(self) -> int:
+        """Number of templates decoded jointly."""
+        return len(self.template_names)
+
+    @property
+    def mean_probability(self) -> dict[str, float]:
+        """Mean probability of each template over time bins, by name."""
+        return {
+            name: float(value)
+            for name, value in zip(
+                self.template_names, self.template_probability.mean(axis=0), strict=True
+            )
+        }
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        mean = self.template_probability.mean(axis=0)
         return {
             "n_time_bins": self.n_time_bins,
-            "n_templates": len(self.template_names),
+            "n_templates": self.n_templates,
             **{
-                f"mean_probability[{name}]": float(value)
-                for name, value in zip(self.template_names, mean, strict=True)
+                f"mean_probability[{name}]": value
+                for name, value in self.mean_probability.items()
             },
         }
 

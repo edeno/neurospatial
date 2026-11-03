@@ -57,7 +57,9 @@ def test_finite_upper_tail_ranks_and_undefined_observation():
 def test_results_preserve_labels_and_finite_null_zscore():
     observed = np.array([[3.0], [1.0]])
     null = np.array([[[1.0], [1.0]], [[2.0], [1.0]], [[np.nan], [1.0]]])
-    results = to_shuffle_results(observed, null, np.array([11, 37]))
+    results = to_shuffle_results(
+        observed, null, np.array([11, 37]), statistic="score", statistic_units=""
+    )
     assert list(results) == [11, 37]
     assert results[11].z_score == 3
     assert np.isnan(results[37].z_score)
@@ -72,7 +74,9 @@ def test_all_undefined_null_gives_nan_p_value():
     """A null with no defined score cannot rank the observation."""
     observed = np.array([[0.5], [0.2]])
     null = np.array([[[np.nan], [0.1]], [[np.nan], [0.3]]])
-    results = to_shuffle_results(observed, null, np.array(["a", "b"]))
+    results = to_shuffle_results(
+        observed, null, np.array(["a", "b"]), statistic="score", statistic_units=""
+    )
     assert results["a"].n_shuffles_used == 0
     assert np.isnan(results["a"].p_value)
     assert not results["a"].is_significant()
@@ -84,7 +88,9 @@ def test_undefined_observation_does_not_warn_about_its_null():
     null = np.full((3, 1, 1), np.nan)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        results = to_shuffle_results(observed, null, np.array([0]))
+        results = to_shuffle_results(
+            observed, null, np.array([0]), statistic="score", statistic_units=""
+        )
     assert np.isnan(results[0].p_value)
 
 
@@ -110,7 +116,9 @@ def test_observed_warning_once_null_warnings_suppressed():
 def test_shuffle_result_owns_a_read_only_null():
     observed = np.array([[3.0]])
     null = np.array([[[1.0]], [[2.0]]])
-    result = to_shuffle_results(observed, null, np.array([5]))[5]
+    result = to_shuffle_results(
+        observed, null, np.array([5]), statistic="score", statistic_units=""
+    )[5]
     with pytest.raises(ValueError, match="read-only"):
         result.null_scores[0] = 99.0
     null[0, 0, 0] = 99.0

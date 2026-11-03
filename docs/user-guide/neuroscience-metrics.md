@@ -32,9 +32,9 @@ from neurospatial.encoding import compute_spatial_rate, detect_place_fields
 env = Environment.from_samples(positions, bin_size=2.5)
 rates = compute_spatial_rate(env, spike_times, times, positions)
 
-# Detect place fields
-fields = detect_place_fields(env, rates.firing_rate,
-    bandwidth=rates.bandwidth,  # smoothing of the map: sets the smallest field
+# Detect place fields on the rate result: it supplies its bandwidth, the
+# smoothing that sets the smallest field, and the unit's id.
+fields = detect_place_fields(env, rates,
     threshold=0.2,              # 20% of each field's peak rate
     max_mean_rate=np.inf,       # Default: no rate-based exclusion
     detect_subfields=True       # Discriminate coalescent fields
@@ -43,7 +43,15 @@ fields = detect_place_fields(env, rates.firing_rate,
 # Result: iterable PlaceFieldsResult with bin arrays and optional exclusion metadata
 # fields[0] = np.array([10, 11, 12, 23, 24, 25])  # Bin indices for field 1
 # fields[1] = np.array([45, 46, 56, 57])          # Bin indices for field 2
+fields.to_dataframe()  # one row per field: area, peak_rate, mean_rate, centroid
+fields.plot()          # the rate map with each field's bins marked
 ```
+
+For a population from `compute_spatial_rates(...)`, segment one unit at a
+time: `[detect_place_fields(env, unit) for unit in rates]` (each result keeps
+its unit's `unit_id`). With a bare rate array, pass the bandwidth the
+map was smoothed with: `detect_place_fields(env, rate_array,
+bandwidth=rates.bandwidth)`.
 
 **Algorithm details:**
 
@@ -569,9 +577,9 @@ result = compute_boundary_vector_rate(
     env, spike_times, times, positions, headings,
     direction_frame="egocentric", direction_bin_size=np.deg2rad(20),
 )
-print(f"Preferred direction: {np.degrees(result.preferred_direction()):.0f} deg")
-print(f"Preferred distance: {result.preferred_distance():.1f} cm")
-assert np.isclose(result.preferred_direction(), np.pi / 2)
+print(f"Preferred direction: {np.degrees(result.preferred_direction):.0f} deg")
+print(f"Preferred distance: {result.preferred_distance:.1f} cm")
+assert np.isclose(result.preferred_direction, np.pi / 2)
 ```
 
 The peak is at +90° (left) in a distance bin near 15 cm, as simulated.
@@ -685,11 +693,11 @@ hd = compute_directional_rate(
     spike_window=(float(times[0]), float(times[-1])),
 )
 hd.plot()
-print("Rate-weighted mean vector length:", hd.mean_vector_length())
+print("Rate-weighted mean vector length:", hd.mean_vector_length)
 ```
 
 Inspect angular occupancy as well as rates. Mean vector length describes the
-estimated tuning curve. A fixed cutoff is a screen. `hd.tuning_pvalue()` tests
+estimated tuning curve. A fixed cutoff is a screen. `hd.tuning_pvalue` tests
 for one preferred direction given how long the animal faced each heading, so
 uneven heading dwell time alone does not make a cell look tuned. Real cells
 fire in bursts and drift in rate, so their spike counts vary more than
@@ -699,7 +707,7 @@ about 2b - 1 for bursts of b spikes) and divides its statistic by it. It needs
 at least 50 spikes and returns NaN below that. A result you build yourself
 from tuning curves has no dispersion, so its test is NaN until you pass
 `spike_count_dispersion` (1.0 assumes independent spikes). Mean vector length uses only visited headings, so check
-`hd.largest_unvisited_arc()`: when the animal never faced an arc wider than
+`hd.largest_unvisited_arc`: when the animal never faced an arc wider than
 90°, untuned cells get inflated MVLs and the screen warns. A circular-shift
 test on the raw recording is the verdict when its stationarity assumptions fit
 the experiment:
@@ -1166,8 +1174,6 @@ import numpy as np
 from neurospatial import Environment
 from neurospatial.encoding import (
     detect_place_fields,
-    field_size,
-    rate_map_centroid,
     spatial_information,
     sparsity,
 )
@@ -1179,16 +1185,11 @@ rates = compute_spatial_rate(env, spike_times, times, positions, min_occupancy=0
 firing_rate = rates.firing_rate
 
 # 2. Detect place fields
-fields = detect_place_fields(
-    env, firing_rate, bandwidth=rates.bandwidth, detect_subfields=True
-)
+fields = detect_place_fields(env, rates, detect_subfields=True)
 print(f"Detected {len(fields)} place fields")
 
-# 3. Compute field properties
-for i, field in enumerate(fields):
-    area = field_size(env, field)
-    center = rate_map_centroid(env, firing_rate, field)
-    print(f"Field {i+1}: area={area:.1f} cm², center={center}")
+# 3. Field properties: field_size and rate_map_centroid of each field
+print(fields.to_dataframe()[["field", "area", "peak_rate", "centroid_x", "centroid_y"]])
 
 # 4. Compute single-cell metrics
 occupancy = env.occupancy(times, positions, return_seconds=True)

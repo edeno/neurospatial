@@ -34,7 +34,7 @@ def test_allocentric_recovers_east_field(
     ego = encoding.compute_egocentric_rate(
         ou_env, allocentric_field_spikes, times, positions, headings, obj
     )
-    angle_error = np.angle(np.exp(1j * (allo.preferred_direction() - np.pi)))
+    angle_error = np.angle(np.exp(1j * (allo.preferred_direction - np.pi)))
     assert abs(angle_error) <= np.pi / 6
     assert allo.spatial_information() >= 1.3 * ego.spatial_information()
 
@@ -59,7 +59,7 @@ def test_allocentric_direction_follows_the_room_axes(
     )
     spikes = generate_poisson_spikes(model.firing_rate(times, positions), times, rng=3)
     result = encoding.compute_object_vector_rate(ou_env, spikes, times, positions, obj)
-    error = np.angle(np.exp(1j * (result.preferred_direction() - expected)))
+    error = np.angle(np.exp(1j * (result.preferred_direction - expected)))
     assert abs(error) <= np.pi / 6
 
 
@@ -70,7 +70,7 @@ def test_egocentric_recovers_ahead_ovc(ou_env, ou_10min, obj, egocentric_ovc_spi
     ego = encoding.compute_egocentric_rate(
         ou_env, spikes, times, positions, headings, obj
     )
-    assert abs(ego.preferred_direction()) <= np.pi / 6
+    assert abs(ego.preferred_direction) <= np.pi / 6
     assert ego.spatial_information() >= 1.3 * allo.spatial_information()
 
 
@@ -251,7 +251,7 @@ def test_zero_heading_equivalence_at_direction_bin_edge():
     )
     np.testing.assert_array_equal(allo.occupancy, ego.occupancy)
     np.testing.assert_array_equal(allo.firing_rate, ego.firing_rate)
-    assert allo.preferred_direction() == ego.preferred_direction()
+    assert allo.preferred_direction == ego.preferred_direction
 
 
 @pytest.mark.parametrize("plural", [False, True])
@@ -487,8 +487,8 @@ def test_preferred_vector_of_an_unmeasured_map_is_nan():
         polar,
         direction_frame="allocentric",
     )
-    assert np.isnan(result.preferred_distance())
-    assert np.isnan(result.preferred_direction())
+    assert np.isnan(result.preferred_distance)
+    assert np.isnan(result.preferred_direction)
     rates = np.ones((2, polar.n_bins))
     rates[1] = np.nan
     population = encoding.ObjectVectorRatesResult(

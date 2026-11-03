@@ -1052,7 +1052,7 @@ class TestPolarSerializationRoundTrip:
         ):
             assert restored.layout_type == "Polar"
             assert restored._binning.kind == "Polar"
-            assert repr(restored).endswith("20 bins, Polar)")
+            assert repr(restored).endswith("20 bins @ 10 (no units), Polar)")
 
 
 class TestPolarBoundaryGuardsExtended:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from result_instances import RESULT_FACTORIES, public_result_classes
 
 from neurospatial import Environment
 from neurospatial.encoding.directional import DirectionalRatesResult
@@ -216,3 +217,251 @@ def test_single_unit_to_dataframe_uses_unit_id_when_set(spatial_batch):
     single = spatial_batch[1]
     df = single.to_dataframe()
     assert (df["unit_id"] == spatial_batch.unit_ids[1]).all()
+
+
+# ---------------------------------------------------------------------------
+# Every public result class
+# ---------------------------------------------------------------------------
+
+_VERBS = (
+    "summary",
+    "to_dataframe",
+    "summary_table",
+    "to_xarray",
+    "plot",
+    "samples_table",
+    "aligned_table",
+    "trials_table",
+    "events_table",
+    "time_course_table",
+    "category_counts_table",
+    "words_table",
+    "groups_table",
+)
+_TABLE_VERBS = tuple(verb for verb in _VERBS if verb.endswith(("table", "dataframe")))
+RATE_VERBS = ("summary", "to_dataframe", "summary_table", "to_xarray", "plot")
+PSTH_VERBS = ("summary", "to_dataframe", "summary_table", "plot")
+
+# The terminal verbs of each public result class. A verb a class does not
+# define is absent from its row, so an intentional exception (a domain table
+# such as ``samples_table()`` instead of ``to_dataframe()``) is visible here.
+EXPECTED_VERBS: dict[str, frozenset[str]] = {
+    name: frozenset(verbs)
+    for name, verbs in {
+        "AnnotationResult": (),
+        "AssemblyDetectionResult": ("summary",),
+        "AssemblyEventResponseResult": ("summary",),
+        "AssemblyMemberCofiringResult": ("summary",),
+        "AssemblyReactivationResult": ("summary",),
+        "AssemblySimilarityResult": ("summary",),
+        "BiasSimilarityResult": ("summary",),
+        "BoundaryVectorRateResult": RATE_VERBS,
+        "BoundaryVectorRatesResult": RATE_VERBS,
+        "CellTypeSignificanceResult": ("summary", "summary_table"),
+        "CircularBasisResult": (),
+        "CircularSequenceResult": ("summary",),
+        "ContinuousEventResult": (
+            "summary",
+            "plot",
+            "aligned_table",
+            "events_table",
+            "time_course_table",
+            "category_counts_table",
+        ),
+        "CumulativeDistanceResult": ("summary",),
+        "DatasetTestResult": ("summary", "plot"),
+        "DecisionAnalysisResult": ("summary",),
+        "DecodingResult": ("summary", "to_dataframe", "to_xarray", "plot"),
+        "DirectionalRateResult": RATE_VERBS,
+        "DirectionalRatesResult": RATE_VERBS,
+        "DistributionTestResult": ("summary",),
+        "ExplainedVarianceContributionResult": ("summary",),
+        "ExplainedVarianceResult": ("summary",),
+        "IsotonicFitResult": ("summary",),
+        "JointDecodingResult": ("summary",),
+        "LinearFitResult": ("summary",),
+        "MSDResult": ("summary",),
+        "MatchingIndexResult": ("summary",),
+        "ObjectVectorRateResult": RATE_VERBS,
+        "ObjectVectorRatesResult": RATE_VERBS,
+        "PairwiseBiasResult": ("summary",),
+        "PairwiseOrderResult": ("summary",),
+        "PairwiseOrderSignificanceResult": ("summary",),
+        "PathEfficiencyResult": ("summary", "summary_table"),
+        "PeriEventDistanceResult": PSTH_VERBS,
+        "PeriEventResult": PSTH_VERBS,
+        "PhasePrecessionResult": ("summary",),
+        "PlaceCellSignificanceResult": ("summary", "summary_table", "plot"),
+        "PlaceFieldsResult": ("summary", "to_dataframe", "summary_table", "plot"),
+        "PopulationCoverageResult": ("summary",),
+        "PopulationPeriEventResult": PSTH_VERBS,
+        "RadonDetectionResult": ("summary",),
+        "RankOrderResult": ("summary",),
+        "RankOrderSignificanceResult": ("summary",),
+        "RateComparisonResult": RATE_VERBS,
+        "RecurringSequencesResult": ("summary",),
+        "RecurringSequencesSignificanceResult": ("summary",),
+        "RegressionLineScoreResult": ("summary",),
+        "ReplayDetectionResult": ("summary",),
+        "ReplaySegmentsResult": ("summary",),
+        "ReplaySignificanceResult": ("summary",),
+        "ResampledPathResult": ("summary", "samples_table"),
+        "SequenceMatchResult": ("summary",),
+        "ShuffleTestResult": ("summary", "plot"),
+        "SimulationValidationResult": ("summary", "summary_table", "plot"),
+        "SpatialFeatureResult": ("summary", "samples_table"),
+        "SpatialRateResult": RATE_VERBS,
+        "SpatialRatesResult": RATE_VERBS,
+        "SpikeWordsResult": ("summary", "words_table"),
+        "SubgoalEfficiencyResult": ("summary",),
+        "TemplateMatchDatasetResult": ("summary", "groups_table"),
+        "TrackGraphResult": (),
+        "TuningCurveResult": RATE_VERBS,
+        "TuningCurvesResult": RATE_VERBS,
+        "VTESessionResult": ("summary", "trials_table"),
+        "VTETrialResult": ("summary",),
+        "ViewRateResult": RATE_VERBS,
+        "ViewRatesResult": RATE_VERBS,
+        "ViewshedResult": (),
+        "WeightedCorrelationResult": ("summary",),
+    }.items()
+}
+
+_PUBLIC_RESULTS = public_result_classes()
+# Population results whose units are 2-D maps (or own nulls): plot() needs a unit.
+_PLOT_NEEDS_UNIT = {
+    "SpatialRatesResult",
+    "ViewRatesResult",
+    "ObjectVectorRatesResult",
+    "BoundaryVectorRatesResult",
+    "PlaceCellSignificanceResult",
+}
+_SCALARS = (bool, int, float, str, type(None), np.generic)
+
+
+@pytest.fixture(scope="module")
+def result_instances():
+    """One instance per public result class, built once for the module."""
+    cache: dict[str, object] = {}
+
+    def build(name: str) -> object:
+        if name not in cache:
+            cache[name] = RESULT_FACTORIES[name]()
+        return cache[name]
+
+    return build
+
+
+def test_every_public_result_class_has_an_expected_verb_row():
+    assert set(EXPECTED_VERBS) == set(_PUBLIC_RESULTS)
+
+
+@pytest.mark.parametrize("name", sorted(_PUBLIC_RESULTS))
+def test_result_class_matches_its_expected_verb_row(name, result_instances):
+    """The class defines exactly the verbs of its row, with their contracts."""
+    import matplotlib.pyplot as plt
+    from matplotlib.axes import Axes
+
+    cls, result = _PUBLIC_RESULTS[name], result_instances(name)
+    present = {verb for verb in _VERBS if callable(getattr(cls, verb, None))}
+    if "summary" in present:
+        try:
+            summary = result.summary()
+        except NotImplementedError:  # ResultMixin's unspecialized summary()
+            present.discard("summary")
+        else:
+            assert isinstance(summary, dict)
+            assert all(isinstance(value, _SCALARS) for value in summary.values())
+    assert present == EXPECTED_VERBS[name]
+
+    for verb in sorted(present & set(_TABLE_VERBS)):
+        table = getattr(result, verb)()
+        assert "units" in table.attrs, f"{name}.{verb}() has no attrs['units']"
+    per_unit = hasattr(result, "unit_id") or hasattr(result, "unit_ids")
+    if per_unit and "to_dataframe" in present:
+        assert "unit_id" in result.to_dataframe().columns
+    if "plot" in present:
+        if name in _PLOT_NEEDS_UNIT:
+            with pytest.raises(ValueError, match="requires a unit index"):
+                result.plot()
+            ax = result.plot(0)
+        else:
+            ax = result.plot()
+        # A 2-D decode draws its x and y marginals on a pair of axes.
+        axes = ax if name == "DecodingResult" and isinstance(ax, tuple) else (ax,)
+        assert all(isinstance(each, Axes) for each in axes)
+        plt.close("all")
+
+
+def _resolve(result: object, path: str) -> object:
+    """Follow a summary key from ``result``: ``a.b``, ``a[key]`` and ``a()``.
+
+    A bracket key that is all digits indexes an array; any other indexes a
+    mapping.
+    """
+    import re
+
+    value = result
+    for attribute, call, key in re.findall(r"\.?(\w+)(\(\))?|\[([^\]]+)\]", path):
+        if attribute:
+            value = getattr(value, attribute)
+            if call:
+                value = value()
+        else:
+            value = value[int(key)] if key.isdigit() else value[key]
+    return value
+
+
+def _same(read: object, shown: object) -> bool:
+    """Whether a value read back equals the summary's (NaN equals NaN)."""
+    if isinstance(shown, float) and np.isnan(shown):
+        return isinstance(read, float | np.floating) and bool(np.isnan(read))
+    if isinstance(read, np.ndarray):
+        # An array reads back only as the list the summary shows of it, not
+        # as a scalar.
+        return isinstance(shown, tuple) and read.tolist() == list(shown)
+    return bool(read == shown)
+
+
+@pytest.mark.parametrize("name", sorted(_PUBLIC_RESULTS))
+def test_repr_names_are_accessible(name, result_instances):
+    """Every ``summary()`` key reads back from the result as the repr shows it.
+
+    The repr shows ``name=`` for an attribute and ``name()=`` for a method
+    that needs no argument; a key may be a path, ``a.b``, ``a[key]`` or
+    ``a()[0]``. Following the key from the result gives the summary's value.
+    """
+    import inspect
+
+    from neurospatial._results import ResultMixin
+
+    result = result_instances(name)
+    if not isinstance(result, ResultMixin):
+        pytest.skip(f"{name} has no summary-based repr")
+    # The keys the repr is built from: summary(), less any a class keeps out
+    # of its repr (counts that depend on a method's options).
+    summary = result._summary_for_repr()
+    assert isinstance(summary, dict), f"{name} repr has no names"
+    assert summary, f"{name} repr has no names"
+    text = repr(result)
+    for key, shown in summary.items():
+        member = getattr(type(result), key, None)
+        if callable(member):
+            required = [
+                p
+                for p in list(inspect.signature(member).parameters.values())[1:]
+                if p.default is p.empty
+                and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+            ]
+            assert not required, f"{name}.{key}() needs {required}"
+            assert f"{key}()=" in text, f"{name} repr does not show {key}()"
+            read = getattr(result, key)()
+        else:
+            assert f"{key}=" in text, f"{name} repr does not show {key}"
+            read = _resolve(result, key)
+            assert not callable(read), f"{name}: {key} is a method"
+        if isinstance(read, list):
+            read = tuple(read)
+        if isinstance(shown, list):
+            shown = tuple(shown)
+        assert _same(read, shown), f"{name}: {key} reads {read!r}, summary {shown!r}"

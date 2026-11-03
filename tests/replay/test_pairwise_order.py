@@ -810,7 +810,7 @@ class TestCompare:
         )
         assert table["is_replay"].tolist() == [True, False]
         assert table["error"].tolist() == ["", ""]
-        assert table["passes[n_active_cells >= 3]"].tolist() == [True, True]
+        assert table["criteria[n_active_cells >= 3]"].tolist() == [True, True]
         # Each row is detect_pairwise_order_replay over the event's decoding
         # windows, with the (event, method) stream.
         for index, event in enumerate(events):
@@ -836,7 +836,7 @@ class TestCompare:
             )
             # One z-score column per null.
             for null in GUPTA_2010.nulls:
-                assert row[f"z_score[{null}]"] == expected.z_scores[null]
+                assert row[f"z_scores[{null}]"] == expected.z_scores[null]
 
     def test_a_search_too_large_is_an_error_row(self, track):
         rates = _rates(track, [[2 * k, 2 * k + 10] for k in range(5)] * 4)
@@ -856,7 +856,7 @@ class TestCompare:
         )
         assert table.loc[0, "error"].startswith("too many combinations")
         assert not table.loc[0, "is_replay"]
-        assert not table.loc[0, "passes[n_active_cells >= 3]"]  # False, not NaN
+        assert not table.loc[0, "criteria[n_active_cells >= 3]"]  # False, not NaN
 
     def test_spike_inputs_are_required(self, track):
         event = DecodingResult(
@@ -909,6 +909,6 @@ class TestMethod:
         assert clone.observed.score == result.observed.score
         assert not clone.observed.assigned_positions.flags.writeable
         assert (
-            clone.summary()["cell_identity_p_value"]
+            clone.summary()["shuffles[cell_identity].p_value"]
             == result.shuffles["cell_identity"].p_value
         )

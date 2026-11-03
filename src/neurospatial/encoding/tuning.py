@@ -349,9 +349,12 @@ class _TuningCurveMixin:
             "bin_edges": np.asarray(self.bin_edges).tolist(),
         }
 
+    def _coordinate_units(self) -> str | None:
+        """The bins are values of the variable, in its units."""
+        return self.units
+
     def _tuning_dataframe(self, frame: pd.DataFrame) -> pd.DataFrame:
-        """Name the variable and the bin centers' units on a dense frame."""
-        frame.attrs["units"]["bin_center"] = self.units or ""
+        """Name the variable on a dense frame."""
         frame.attrs["variable"] = self.variable
         return frame
 
@@ -487,7 +490,8 @@ class TuningCurveResult(_TuningCurveMixin, SingleUnitRateMixin):
     )
 
     def _headline_metrics(self) -> dict[str, float]:
-        return {"peak_location": float(np.asarray(self.peak_location())[0])}
+        # peak_location() is a one-coordinate array: the key is its path.
+        return {"peak_location()[0]": float(np.asarray(self.peak_location())[0])}
 
     def to_dataframe(self) -> pd.DataFrame:
         """Dense table: one row per bin, with ``unit_id`` and ``bin_center``.
@@ -674,22 +678,43 @@ class TuningCurvesResult(_TuningCurveMixin, PopulationRateMixin[TuningCurveResul
         labels = resolve_unit_ids(index, len(self), context="summary_table")
         return self._tuning_summary_frame(list(labels))
 
-    def plot(self, idx: int, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """Plot one unit's firing rate against the variable.
+    def plot(
+        self, idx: int | None = None, *, ax: Axes | None = None, **kwargs: Any
+    ) -> Axes:
+        """Plot one unit's tuning curve, or every unit as a heatmap.
 
         Parameters
         ----------
-        idx : int
-            Unit position.
+        idx : int or None, default=None
+            Unit position. ``None`` draws every unit: one row per unit, the
+            variable on the x-axis, rows sorted by the bin of each unit's
+            peak, and a colorbar in Hz. Unsupported bins (NaN) are blank.
         ax : matplotlib.axes.Axes, optional
             Axes to draw on; a new figure when None.
         **kwargs
-            Passed to ``Axes.plot``.
+            Passed to ``Axes.plot`` for one unit, or ``Axes.pcolormesh`` for
+            the heatmap.
 
         Returns
         -------
         matplotlib.axes.Axes
         """
+        if idx is None:
+            from neurospatial._results import plot_population_heatmap
+
+            label = (
+                self.variable
+                if self.units is None
+                else f"{self.variable} ({self.units})"
+            )
+            return plot_population_heatmap(
+                np.asarray(_to_numpy(self._supported_rates()), dtype=np.float64),
+                np.asarray(self.bin_edges, dtype=np.float64),
+                self.unit_ids,
+                ax=ax,
+                xlabel=label,
+                **kwargs,
+            )
         return self[idx].plot(ax=ax, **kwargs)
 
 

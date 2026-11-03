@@ -452,6 +452,9 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             "feature_units": dict(
                 zip(self.feature_ids.tolist(), self.feature_units, strict=True)
             ),
+            # The value column's unit depends on the row's feature: see
+            # ``feature_units``.
+            "units": {"relative_time": "s"},
         }
 
     def _frame(self, data: dict[str, Any]) -> pd.DataFrame:
@@ -479,7 +482,8 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             ``event_ids`` was given), ``status`` (``"retained"`` or the
             exclusion reason) and ``overlapping``. ``df.attrs`` holds
             ``window``, ``dt``, ``window_coverage``, ``max_gap``,
-            ``resultant_threshold`` and ``feature_units``.
+            ``resultant_threshold``, ``feature_units`` (the unit of each
+            feature's values) and ``units`` (seconds for ``relative_time``).
 
         Examples
         --------
@@ -642,6 +646,44 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             }
         )
 
+    @property
+    def n_features(self) -> int:
+        """Number of features aligned."""
+        return int(self.feature_ids.size)
+
+    @property
+    def n_relative_times(self) -> int:
+        """Number of time points relative to the event."""
+        return int(self.relative_times.size)
+
+    @property
+    def window_start(self) -> float:
+        """Start of the window relative to each event (s)."""
+        return float(self.window[0])
+
+    @property
+    def window_stop(self) -> float:
+        """Stop of the window relative to each event (s)."""
+        return float(self.window[1])
+
+    @property
+    def n_overlapping_events(self) -> int:
+        """Retained events whose window overlaps another's."""
+        return int(np.count_nonzero(self.overlapping))
+
+    @property
+    def min_count(self) -> int:
+        """Fewest supported events at any time point and feature."""
+        return int(self.counts.min())
+
+    @property
+    def n_dropped(self) -> dict[str, int]:
+        """Dropped events by reason (the ``event_status`` other than retained)."""
+        reasons, counts = np.unique(
+            self.event_status[self.event_status != "retained"], return_counts=True
+        )
+        return dict(zip(reasons.tolist(), counts.tolist(), strict=True))
+
     def summary(self) -> dict[str, Any]:
         """Scalar description of the alignment and its coverage decisions.
 
@@ -652,8 +694,9 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
             ``n_relative_times``, ``window_start``, ``window_stop`` (s),
             ``dt`` (s), ``window_coverage``, ``n_overlapping_events``,
             ``min_count`` (smallest supported-event count over cells) and
-            ``n_dropped_<reason>`` for each exclusion reason present. All
-            values are Python ``int``, ``float`` or ``str``.
+            ``n_dropped[<reason>]`` for each exclusion reason present (the
+            entries of :attr:`n_dropped`). All values are Python ``int``,
+            ``float`` or ``str``.
 
         Examples
         --------
@@ -669,20 +712,17 @@ class ContinuousEventResult(ReadOnlyArraysMixin, ResultMixin):
         out: dict[str, Any] = {
             "n_events": self.n_events,
             "n_events_dropped": self.n_events_dropped,
-            "n_features": int(self.feature_ids.size),
-            "n_relative_times": int(self.relative_times.size),
-            "window_start": float(self.window[0]),
-            "window_stop": float(self.window[1]),
+            "n_features": self.n_features,
+            "n_relative_times": self.n_relative_times,
+            "window_start": self.window_start,
+            "window_stop": self.window_stop,
             "dt": float(self.dt),
             "window_coverage": str(self.window_coverage),
-            "n_overlapping_events": int(np.count_nonzero(self.overlapping)),
-            "min_count": int(self.counts.min()),
+            "n_overlapping_events": self.n_overlapping_events,
+            "min_count": self.min_count,
         }
-        reasons, reason_counts = np.unique(
-            self.event_status[self.event_status != "retained"], return_counts=True
-        )
-        for reason, n in zip(reasons.tolist(), reason_counts.tolist(), strict=True):
-            out[f"n_dropped_{reason}"] = int(n)
+        for reason, n in self.n_dropped.items():
+            out[f"n_dropped[{reason}]"] = n
         return out
 
     def plot(self, *, ax: Axes | None = None, feature_id: Any = None) -> Axes:
