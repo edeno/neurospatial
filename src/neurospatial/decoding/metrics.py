@@ -25,6 +25,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import refuse_infinite, validate_choice
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
     from neurospatial.ops._types import DistanceMetric
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decoding_error(
     env: Environment,
@@ -286,6 +288,7 @@ def _bins_or_nearest(
     return bins
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def median_decoding_error(
     env: Environment,
@@ -540,6 +543,7 @@ def confusion_matrix(
     return np.asarray(rows_of_bin @ posterior, dtype=np.float64)
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decoding_correlation(
     env: Environment,

@@ -50,6 +50,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _entropy, _stream
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
@@ -591,6 +592,7 @@ class ShuffledDataset(ReadOnlyArraysMixin, ResultMixin):
 # --------------------------------------------------------------------------
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def dataset_values(
     env: Environment | Mapping[str, Environment],

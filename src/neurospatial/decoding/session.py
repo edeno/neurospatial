@@ -18,6 +18,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP, TimeWindows, resolve_time_windows
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._stacklevel import _external_stacklevel
@@ -168,6 +169,7 @@ def _warn_if_bins_drop_observed_time(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decode_session(
     env: Environment,
@@ -864,6 +866,7 @@ def _decode_with_models(
     )
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def decode_session_summary(
     env: Environment,

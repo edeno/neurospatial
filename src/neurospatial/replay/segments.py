@@ -19,6 +19,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import _format_error
+from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_choice
@@ -249,6 +250,7 @@ class ReplaySegmentsResult(ReadOnlyArraysMixin, ResultMixin):
         return value
 
 
+@keyword_hint()
 @reads_pynapple_samples
 def replay_segments(
     env: Environment,
