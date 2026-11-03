@@ -8,7 +8,9 @@ Where it lives: DANDI 000044 version 0.261005.2101, CC-BY-4.0, an 8.7 GB file
 read by HTTP byte range. Reading, conversions, candidate events and analysis
 choices are those of ``load_grosmark_000044_circular`` (shared code there).
 On a linear track the linearized coordinate's 0 is a real place, the start of
-the track.
+the track. Only 16 % of the tracked maze-epoch samples are on the track (the
+linearized coordinate is defined); the rest lie off it, so the 2-D positions
+span about 2 m in each direction while the track is 1.6 m long.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ DATASET = {
     "download_size": "8.74 GB (streamed)",
 }
 
-# Pre-registered from the survey appendix (137 units, 39.06 Hz, 1.6 m linear track, PRE/MAZE/POST epochs) before the first run of this loader.
+# Pre-registered from the dataset catalog (137 units, 39.06 Hz, 1.6 m linear track, PRE/MAZE/POST epochs) before the first run of this loader.
 EXPECTATIONS: dict[str, Any] = {
     "n_units": 137,
     "n_dims": 2,
@@ -56,6 +58,8 @@ def load(cache: Path | None = None) -> Recording:
         sha256=_SHA256,
         path=_PATH,
         track="1.6mLinearMaze",
+        span_cm=(150.0, 260.0),
+        track_cm=(150.0, 170.0),
     )
 
 

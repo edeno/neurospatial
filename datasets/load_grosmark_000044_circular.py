@@ -42,6 +42,7 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
+    checked_span,
     validate_recording,
 )
 
@@ -53,7 +54,7 @@ DATASET = {
     "download_size": "9.19 GB (streamed)",
 }
 
-# Pre-registered from the survey appendix (104 units, 39.06 Hz, 1 m circular track, PRE/MAZE/POST epochs) before the first run of this loader.
+# Pre-registered from the dataset catalog (104 units, 39.06 Hz, 1 m circular track, PRE/MAZE/POST epochs) before the first run of this loader.
 EXPECTATIONS: dict[str, Any] = {
     "n_units": 104,
     "n_dims": 2,
@@ -118,7 +119,14 @@ def population_bursts(
 
 
 def load_session(
-    *, dataset: dict[str, str], asset_id: str, sha256: str, path: str, track: str
+    *,
+    dataset: dict[str, str],
+    asset_id: str,
+    sha256: str,
+    path: str,
+    track: str,
+    span_cm: tuple[float, float],
+    track_cm: tuple[float, float],
 ) -> Recording:
     """One 000044 session read by byte range; positions in cm."""
     from neurospatial.io.nwb import read_intervals, read_position, read_units
@@ -142,6 +150,15 @@ def load_session(
         msg = f"expected metres, got {position.units!r} and {linear_unit!r}"
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=float)
+    positions = np.asarray(position.positions, dtype=float) * 100.0
+    span = checked_span(positions, *span_cm)
+    on_track = np.isfinite(linearized) & np.isfinite(positions).all(axis=1)
+    track_length = float(np.nanmax(linearized) * 100.0)
+    if not track_cm[0] <= track_length <= track_cm[1]:
+        msg = (
+            f"linearized track length {track_length:.0f} cm outside {track_cm}; recheck"
+        )
+        raise ValueError(msg)
     windows = np.column_stack(
         [np.asarray(session_epochs.start), np.asarray(session_epochs.stop)]
     )
@@ -169,7 +186,7 @@ def load_session(
         source=f"{dataset['source']} {path} (asset {asset_id})",
         license=dataset["license"],
         times=times,
-        positions=np.asarray(position.positions, dtype=float) * 100.0,
+        positions=positions,
         position_units="cm",
         spike_times=spike_times,
         unit_ids=np.asarray(units.unit_ids),
@@ -188,8 +205,11 @@ def load_session(
             "readers_used": ("position", "units"),
         },
         conversions=(
-            f"positions: read_position {track}Position/{track}SpatialSeries, m times 100 -> cm",
-            f"params['linearized']: {track}LinearizedPosition, m times 100 -> cm;"
+            f"positions: read_position {track}Position/{track}SpatialSeries, m times 100"
+            f" -> cm; {span}; {on_track.mean() / np.isfinite(positions).all(axis=1).mean():.0%}"
+            " of tracked samples are on the track (linearized coordinate defined)",
+            f"params['linearized']: {track}LinearizedPosition, m times 100 -> cm,"
+            f" 0 to {track_length:.0f} cm;"
             f" {np.mean(linearized[finite] == 0):.2%} of finite samples are exactly 0",
             "epochs: intervals/epochs labels without 'Epoch', lower case; sleep"
             " states from processing/behavior/states",
@@ -209,6 +229,8 @@ def load(cache: Path | None = None) -> Recording:
         sha256=_SHA256,
         path=_PATH,
         track="CircularMaze",
+        span_cm=(100.0, 160.0),
+        track_cm=(250.0, 330.0),
     )
 
 

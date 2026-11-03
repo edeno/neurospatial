@@ -302,7 +302,8 @@ def nan_aware_autocorrelation(rate_map: np.ndarray, min_overlap: int) -> np.ndar
     """Pearson autocorrelation at every lag over the bins visited at both ends.
 
     Unvisited bins (NaN) are left out, never treated as 0 Hz; a lag is NaN when
-    fewer than ``min_overlap`` visited bins overlap. Sums over each lag's
+    fewer than ``min_overlap`` visited bins overlap, or when either side of the
+    overlap is constant. Sums over each lag's
     overlap come from FFT correlations of the masked map and its mask.
 
     Parameters
@@ -331,9 +332,14 @@ def nan_aware_autocorrelation(rate_map: np.ndarray, min_overlap: int) -> np.ndar
     sxx = overlap_sum(values**2, visited)
     syy = overlap_sum(visited, values**2)
     sxy = overlap_sum(values, values)
+    var_x = n * sxx - sx**2
+    var_y = n * syy - sy**2
+    # A side with no variance over the overlap has no correlation; FFT
+    # round-off would otherwise leave a tiny denominator and a value of ±1.
+    flat = (var_x <= 1e-10 * np.abs(n * sxx)) | (var_y <= 1e-10 * np.abs(n * syy))
     with np.errstate(invalid="ignore", divide="ignore"):
-        r = (n * sxy - sx * sy) / np.sqrt((n * sxx - sx**2) * (n * syy - sy**2))
-    r[n < min_overlap] = np.nan
+        r = (n * sxy - sx * sy) / np.sqrt(var_x * var_y)
+    r[(n < min_overlap) | flat] = np.nan
     return np.clip(r, -1.0, 1.0)
 
 

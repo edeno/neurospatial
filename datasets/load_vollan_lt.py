@@ -50,6 +50,7 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
+    checked_span,
     heading_vs_movement,
     validate_recording,
 )
@@ -162,11 +163,17 @@ def read_session(path: Path) -> dict[str, Any]:
 
 
 def to_recording(
-    raw: dict[str, Any], *, dataset: dict[str, str], file: str, session: str
+    raw: dict[str, Any],
+    *,
+    dataset: dict[str, str],
+    file: str,
+    session: str,
+    span_cm: tuple[float, float],
 ) -> Recording:
     """Recording in cm and radians, with a frame check of the head direction."""
     times = raw["t"]
     positions = np.column_stack([raw["x"], raw["y"]]) * 100.0
+    span = checked_span(positions, *span_cm)
     headings = raw["hd"]
     finite = headings[np.isfinite(headings)]
     if finite.min() < -np.pi - 1e-6 or finite.max() > np.pi + 1e-6:
@@ -175,8 +182,11 @@ def to_recording(
     offset, spread = heading_vs_movement(
         times, positions, headings, min_speed=RUNNING_CM_S
     )
-    if abs(offset) > 0.2:
-        msg = f"hd differs from the direction of movement by {offset:.2f} rad; recheck its frame"
+    if abs(offset) > 0.2 or spread > np.radians(45):
+        msg = (
+            f"hd minus the direction of movement: mean {offset:.2f} rad, spread"
+            f" {spread:.2f} rad; recheck its frame"
+        )
         raise ValueError(msg)
     gaps = np.diff(times)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
@@ -208,7 +218,7 @@ def to_recording(
             "module_grid_score": raw["module_grid_score"],
         },
         conversions=(
-            "positions: x, y in m relative to the arena centre, times 100 -> cm",
+            f"positions: x, y in m relative to the arena centre, times 100 -> cm; {span}",
             "headings: hd in [-pi, pi] rad, kept; minus the direction of movement"
             f" above {RUNNING_CM_S:g} cm/s: circular mean {np.degrees(offset):.1f} deg,"
             f" median spread {np.degrees(spread):.1f} deg",
@@ -233,7 +243,11 @@ def load(cache: Path | None = None) -> Recording:
         cache=cache,
     )
     return to_recording(
-        read_session(path), dataset=DATASET, file=_FILE, session="27764_1 linear_track"
+        read_session(path),
+        dataset=DATASET,
+        file=_FILE,
+        session="27764_1 linear_track",
+        span_cm=(190.0, 240.0),
     )
 
 

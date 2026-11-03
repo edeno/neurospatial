@@ -77,7 +77,11 @@ def load(cache: Path | None = None) -> Recording:
         cache=cache,
     )
     return to_recording(
-        read_session(path), dataset=DATASET, file=_FILE, session="26018_2 open_field"
+        read_session(path),
+        dataset=DATASET,
+        file=_FILE,
+        session="26018_2 open_field",
+        span_cm=(130.0, 160.0),
     )
 
 

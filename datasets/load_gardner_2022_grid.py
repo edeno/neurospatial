@@ -32,7 +32,7 @@ What the loader converts:
   [−π, π].
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``dt`` 0.25 s and
-alternating 60 s train/test blocks for decoding; each unit's grid module in
+alternating 60 s train/test blocks, inside the valid times, for decoding; each unit's grid module in
 ``params["module"]``.
 """
 
@@ -54,7 +54,9 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
+    checked_span,
     heading_vs_movement,
+    intersect_intervals,
     validate_recording,
 )
 
@@ -250,16 +252,17 @@ def load(cache: Path | None = None) -> Recording:
     times = t[keep]
     positions = np.column_stack([arrays["x"], arrays["y"]]).astype(float)[keep] * 100.0
     azimuth = np.asarray(arrays["azimuth"], dtype=float)[keep]
+    span = checked_span(positions, 140.0, 160.0)
     if azimuth.min() < 0.0 or azimuth.max() > 2 * np.pi + 1e-6:
         msg = "azimuth is no longer in [0, 2pi); recheck its unit"
         raise ValueError(msg)
     offset, spread = heading_vs_movement(
         times, positions, azimuth, min_speed=_RUNNING_CM_S
     )
-    if abs(offset) > 0.2:
+    if abs(offset) > 0.2 or spread > np.radians(45):
         msg = (
-            f"azimuth differs from the direction of movement by {offset:.2f} rad;"
-            " recheck its frame"
+            f"azimuth minus the direction of movement: mean {offset:.2f} rad, spread"
+            f" {spread:.2f} rad; recheck its frame"
         )
         raise ValueError(msg)
 
@@ -270,7 +273,8 @@ def load(cache: Path | None = None) -> Recording:
             trains.append(np.sort(np.asarray(spikes[index], dtype=float)))
             unit_ids.append(f"mod{module}_{index}")
             modules.append(module)
-    train, test = alternating_blocks(times[0], times[-1], 60.0)
+    blocks = alternating_blocks(times[0], times[-1], 60.0)
+    train, test = (intersect_intervals(b, valid) for b in blocks)
     return Recording(
         dataset=DATASET["key"],
         session="rat_r_day1 open_field_1",
@@ -296,7 +300,7 @@ def load(cache: Path | None = None) -> Recording:
             "spikes: spikes_mod1..3 read with a restricted unpickler (numpy"
             " _reconstruct, ndarray and the O8/f8 dtypes only); dict of unit index"
             " to spike times in s",
-            "positions: x, y in m (open field spans about 1.5 m) times 100 -> cm;"
+            f"positions: x, y in m times 100 -> cm; {span};"
             f" kept {valid[0, 0]:.0f}-{valid[-1, 1]:.0f} s ({_SESSION})",
             "headings: azimuth in [0, 2pi) rad, wrapped to [-pi, pi]; minus the"
             f" direction of movement above {_RUNNING_CM_S:g} cm/s: circular mean"
