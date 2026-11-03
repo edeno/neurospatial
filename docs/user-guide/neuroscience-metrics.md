@@ -29,7 +29,7 @@ from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rate, detect_place_fields
 
 # Create environment and compute firing rate map
-env = Environment.from_samples(positions, bin_size=2.5)
+env = Environment.from_samples(positions, bin_size=2.5, units="cm")
 rates = compute_spatial_rate(env, spike_times, times, positions)
 
 # Detect place fields on the rate result: it supplies its bandwidth, the
@@ -1215,7 +1215,7 @@ from neurospatial.encoding import (
 from neurospatial.encoding import compute_spatial_rate
 
 # 1. Create environment and compute firing rate
-env = Environment.from_samples(positions, bin_size=2.5)
+env = Environment.from_samples(positions, bin_size=2.5, units="cm")
 rates = compute_spatial_rate(env, spike_times, times, positions, min_occupancy=0.5)
 firing_rate = rates.firing_rate
 

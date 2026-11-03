@@ -54,7 +54,7 @@ def directional_batch():
 @pytest.fixture
 def view_batch():
     rng = np.random.default_rng(0)
-    env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0)
+    env = Environment.from_samples(rng.random((200, 2)) * 50, bin_size=5.0, units="cm")
     times = np.linspace(0, 10, 200)
     trajectory = rng.random((200, 2)) * 50
     headings = rng.uniform(-np.pi, np.pi, 200)

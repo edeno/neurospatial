@@ -409,6 +409,7 @@ def open_field_env() -> Environment:
         active_mask=np.ones((8, 8), dtype=bool),
         grid_edges=(edges, edges),
         connect_diagonal_neighbors=True,
+        units="cm",
     )
 
 

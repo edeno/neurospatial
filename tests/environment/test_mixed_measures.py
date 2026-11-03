@@ -183,9 +183,10 @@ def test_default_bandwidth_uses_each_bins_own_length():
     np.testing.assert_allclose(lengths, [2.0, 2.0])  # 2 cm of track, a 2 cm square
     times = np.arange(0.0, 10.0, 0.1)
     positions = np.tile([1.0, 1.0], (times.size, 1))
-    result = compute_spatial_rate(
-        lone, np.array([1.0]), times, positions, method="diffusion_kde"
-    )
+    with pytest.warns(UserWarning, match="resolved to 5 environment units"):
+        result = compute_spatial_rate(
+            lone, np.array([1.0]), times, positions, method="diffusion_kde"
+        )
     assert result.bandwidth == pytest.approx(5.0)  # 2.5 bin lengths
 
 

@@ -1,6 +1,7 @@
 """Rate families preserve coverage, physical units and analysis provenance."""
 
 import json
+from contextlib import nullcontext
 
 import numpy as np
 import pytest
@@ -250,7 +251,13 @@ def test_physical_bandwidth_default_is_invariant_under_unit_conversion(
             )
             assert explicit.analysis_settings["bandwidth"] == pytest.approx(2.0 * scale)
             continue
-        result = getattr(encoding, f"compute_{family}_rates")(*args, **kwargs)
+        unitless = (
+            nullcontext()
+            if declared_units
+            else pytest.warns(UserWarning, match="bandwidth=None resolved")
+        )
+        with unitless:
+            result = getattr(encoding, f"compute_{family}_rates")(*args, **kwargs)
         if declared_units:
             assert result.analysis_settings["bandwidth"] == pytest.approx(5.0 * scale)
         assert result.env.units == (units if declared_units else None)

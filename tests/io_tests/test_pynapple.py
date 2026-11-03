@@ -391,7 +391,7 @@ def test_raw_tsgroup_into_decode_session_matches_arrays() -> None:
 
     rng = np.random.default_rng(4)
     positions = np.column_stack([np.linspace(0.0, 100.0, 400), rng.uniform(0, 40, 400)])
-    env = Environment.from_samples(positions, bin_size=10.0)
+    env = Environment.from_samples(positions, bin_size=10.0, units="cm")
     times = np.linspace(0.0, 40.0, 400)
     spikes = [
         np.sort(rng.uniform(0.0, 40.0, 60)),
@@ -487,7 +487,7 @@ def test_to_pynapple_decode_result_support_excludes_unrecorded_spike_time() -> N
     positions = np.column_stack(
         [np.linspace(0.0, 100.0, 401), rng.uniform(0.0, 40.0, 401)]
     )
-    env = Environment.from_samples(positions, bin_size=10.0)
+    env = Environment.from_samples(positions, bin_size=10.0, units="cm")
     spikes = [np.sort(rng.uniform(0.0, 40.0, 80)) for _ in range(3)]
     windows = np.array([[0.0, 10.0], [25.0, 35.0]])
     result = decode_session(env, spikes, times, positions, dt=0.5, spike_window=windows)

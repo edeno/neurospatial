@@ -143,7 +143,9 @@ def test_track_cell_is_place_and_unavailable_scores_are_recorded():
     """On a 1-D track grid and border do not apply; the test still runs."""
     from neurospatial.simulation import generate_poisson_spikes
 
-    env = Environment.from_samples(np.arange(0.0, 201.0)[:, None], bin_size=2.0)
+    env = Environment.from_samples(
+        np.arange(0.0, 201.0)[:, None], bin_size=2.0, units="cm"
+    )
     rng = np.random.default_rng(4)
     times = np.arange(0.0, 600.0, 1 / 30)
     # Irregular laps, so no circular shift realigns the trajectory with itself.

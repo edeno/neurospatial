@@ -465,23 +465,26 @@ class TestDecodeSessionSummary:
         ]
         return spike_times, times, positions
 
-    def test_session_summary_matches_session_map(self, small_2d_env):
+    @pytest.fixture
+    def env(self, small_2d_env):
+        """The shared grid in cm, so encoding uses the 5 cm default bandwidth."""
+        return small_2d_env.with_metadata(units="cm")
+
+    def test_session_summary_matches_session_map(self, env):
         from neurospatial.decoding import decode_session, decode_session_summary
 
-        spike_times, times, positions = self._session_inputs(small_2d_env)
-        full = decode_session(small_2d_env, spike_times, times, positions, dt=0.1)
-        summ = decode_session_summary(
-            small_2d_env, spike_times, times, positions, dt=0.1
-        )
+        spike_times, times, positions = self._session_inputs(env)
+        full = decode_session(env, spike_times, times, positions, dt=0.1)
+        summ = decode_session_summary(env, spike_times, times, positions, dt=0.1)
         np.testing.assert_array_equal(summ.map_position, full.map_position)
         np.testing.assert_array_equal(summ.map_bin, full.map_bin)
 
-    def test_session_unchanged(self, small_2d_env):
+    def test_session_unchanged(self, env):
         """decode_session must still return a DecodingResult with a real posterior."""
         from neurospatial.decoding import DecodingResult, decode_session
 
-        spike_times, times, positions = self._session_inputs(small_2d_env)
-        full = decode_session(small_2d_env, spike_times, times, positions, dt=0.1)
+        spike_times, times, positions = self._session_inputs(env)
+        full = decode_session(env, spike_times, times, positions, dt=0.1)
         assert isinstance(full, DecodingResult)
         assert isinstance(full.posterior, np.ndarray)
 
@@ -536,7 +539,7 @@ class TestDecodePositionSummaryPriorValidation:
         """No entry point truncates or broadcasts a prior of the wrong shape."""
         import neurospatial.decoding as decoding
 
-        env = small_2d_env
+        env = small_2d_env.with_metadata(units="cm")
         if entry == "decode_session_summary":
             rng = np.random.default_rng(0)
             times = np.linspace(0.0, 10.0, 400)
@@ -719,12 +722,11 @@ class TestSummaryDecodeStreamingThroughput:
         expected_blocks = math.ceil(n_time / time_chunk)  # 4
         assert expected_blocks == 4
 
-        spike_times, times, positions = self._session_inputs(
-            small_2d_env, n_neurons=n_neurons
-        )
+        env = small_2d_env.with_metadata(units="cm")
+        spike_times, times, positions = self._session_inputs(env, n_neurons=n_neurons)
         with patch.object(posterior_mod, "_normalize_block", wraps=real) as spy:
             result = decode_session_summary(
-                small_2d_env,
+                env,
                 spike_times,
                 times,
                 positions,

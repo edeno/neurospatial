@@ -623,7 +623,7 @@ class TestWarnOnDrop:
     def _make_env_and_traj() -> tuple:
         """Return (env, times, positions) for a simple 1D environment."""
         sample_pos = np.linspace(0.0, 100.0, 200).reshape(-1, 1)
-        env = Environment.from_samples(sample_pos, bin_size=5.0)
+        env = Environment.from_samples(sample_pos, bin_size=5.0, units="cm")
         times = np.linspace(0.0, 10.0, 1000)  # 0–10 s
         positions = np.linspace(0.0, 100.0, 1000).reshape(-1, 1)
         return env, times, positions

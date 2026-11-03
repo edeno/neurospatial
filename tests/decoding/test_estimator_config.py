@@ -19,7 +19,7 @@ def recording():
     rng = np.random.default_rng(17)
     times = np.arange(100) / 10
     positions = rng.uniform(0, 10, (100, 2))
-    env = Environment.from_samples(positions, bin_size=5)
+    env = Environment.from_samples(positions, bin_size=5, units="cm")
     return env, [times[::5], times[::7]], times, positions
 
 

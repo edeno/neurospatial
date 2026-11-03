@@ -63,7 +63,7 @@ def simple_env() -> Environment:
     y = np.linspace(0, 100, 11)
     xx, yy = np.meshgrid(x, y)
     positions = np.column_stack([xx.ravel(), yy.ravel()])
-    return Environment.from_samples(positions, bin_size=10.0)
+    return Environment.from_samples(positions, bin_size=10.0, units="cm")
 
 
 @pytest.fixture

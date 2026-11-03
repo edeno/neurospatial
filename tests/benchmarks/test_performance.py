@@ -50,7 +50,7 @@ def frame_population_recording():
         positions=positions,
         headings=headings,
         spikes=spikes,
-        env=Environment.from_samples(positions, bin_size=5.0),
+        env=Environment.from_samples(positions, bin_size=5.0, units="cm"),
     )
 
 

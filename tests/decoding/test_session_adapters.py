@@ -67,7 +67,7 @@ class _FakeTsGroupMapping(UserDict):
 def session():
     rng = np.random.default_rng(2)
     positions = np.column_stack([np.linspace(0.0, 100.0, 400), rng.uniform(0, 40, 400)])
-    env = Environment.from_samples(positions, bin_size=10.0)
+    env = Environment.from_samples(positions, bin_size=10.0, units="cm")
     times = np.linspace(0.0, 40.0, 400)
     spikes = [
         np.sort(rng.uniform(0.0, 40.0, 60)),

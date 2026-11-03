@@ -76,7 +76,9 @@ def test_track_place_cell_is_place():
     """Grid and border cells need a 2-D map; a tuned track cell is a place cell."""
     from neurospatial.simulation import generate_poisson_spikes
 
-    env = Environment.from_samples(np.arange(0.0, 201.0)[:, None], bin_size=2.0)
+    env = Environment.from_samples(
+        np.arange(0.0, 201.0)[:, None], bin_size=2.0, units="cm"
+    )
     times = np.arange(0.0, 600.0, 1 / 30)
     x = 200 * np.abs((times / 20 + 0.37) % 2 - 1)
     field = 0.1 + 12 * np.exp(-0.5 * ((x - 70) / 8) ** 2)

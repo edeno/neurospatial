@@ -731,7 +731,7 @@ from neurospatial.encoding import SpikeTrains
 times = np.r_[np.arange(300) / 30, 20 + np.arange(300) / 30]
 phase = np.arange(600) / 30
 positions = 10 + 5 * np.c_[np.sin(phase), np.cos(phase)]
-env = Environment.from_samples(positions, bin_size=2.0)
+env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 spike_times = [times[::10], times[::15]]
 recording_windows = np.array([[0.0, 10.0], [20.0, 30.0]])
 train, test = (0.0, 10.0), (20.0, 30.0)
@@ -792,7 +792,7 @@ times = np.arange(600) / 30
 recording_id = np.repeat([0, 1], 300)
 positions = 10 + 5 * np.c_[np.sin(times), np.cos(times)]
 positions[300:] = positions[300:][::-1]  # the animal is put back elsewhere
-env = Environment.from_samples(positions, bin_size=2.0)
+env = Environment.from_samples(positions, bin_size=2.0, units="cm")
 spike_times = [times[::10], times[::15]]
 new_recording = np.r_[False, recording_id[1:] != recording_id[:-1]]
 

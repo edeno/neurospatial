@@ -1411,6 +1411,7 @@ bandwidth, min_occupancy, backend, boundary_source
     from neurospatial.encoding._smoothing import (
         _validate_smoothing_parameters,
         resolve_spatial_bandwidth,
+        warn_if_default_bandwidth_fallback,
     )
     from neurospatial.encoding._validation import validate_trajectory
     from neurospatial.encoding._view_counts import prepare_view_binning
@@ -1490,6 +1491,9 @@ bandwidth, min_occupancy, backend, boundary_source
         boundary_source=boundary_source,
         break_before=breaks,
     )
+    # The inputs are valid, so a units-free default bandwidth is announced
+    # here rather than ahead of an input error.
+    warn_if_default_bandwidth_fallback(env, bandwidth, resolved_bandwidth, method)
     return _ViewSetup(
         trains,
         resolved_unit_ids,
@@ -1777,7 +1781,8 @@ def compute_view_rate(
         Physical smoothing length in environment units; None is 0 (no
         smoothing) for ``method="binned"``, and 5 cm converted to declared
         metric units, or 2.5 median graph-edge lengths for unspecified or
-        custom units, for the kernel methods.
+        custom units, for the kernel methods; the units-free default warns
+        with its resolved value.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
@@ -2051,7 +2056,8 @@ def compute_view_rates(
         Physical smoothing length in environment units; None is 0 (no
         smoothing) for ``method="binned"``, and 5 cm converted to declared
         metric units, or 2.5 median graph-edge lengths for unspecified or
-        custom units, for the kernel methods.
+        custom units, for the kernel methods; the units-free default warns
+        with its resolved value.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included.
     n_jobs : int, default=1
@@ -2385,7 +2391,8 @@ def is_spatial_view_cell(
         Physical smoothing length in environment units; None is 0 (no
         smoothing) for ``method="binned"``, and 5 cm converted to declared
         metric units, or 2.5 median graph-edge lengths for unspecified or
-        custom units, for the kernel methods.
+        custom units, for the kernel methods; the units-free default warns
+        with its resolved value.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
@@ -2706,7 +2713,8 @@ def spatial_view_cell_significance(
         Physical smoothing length in environment units; None is 0 (no
         smoothing) for ``method="binned"``, and 5 cm converted to declared
         metric units, or 2.5 median graph-edge lengths for unspecified or
-        custom units, for the kernel methods.
+        custom units, for the kernel methods; the units-free default warns
+        with its resolved value.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included.
     n_jobs : int, default=1

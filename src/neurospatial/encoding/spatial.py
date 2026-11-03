@@ -3811,7 +3811,10 @@ def _spatial_rate_maps(
         _to_backend,
         validate_and_resolve_backend,
     )
-    from neurospatial.encoding._smoothing import smooth_rate_maps_batch
+    from neurospatial.encoding._smoothing import (
+        smooth_rate_maps_batch,
+        warn_if_default_bandwidth_fallback,
+    )
     from neurospatial.encoding._spatial_counts import (
         _warn_if_population_silent,
         bin_spike_trains,
@@ -3955,6 +3958,9 @@ def _spatial_rate_maps(
         )
         return maps(empty, occupancy, None)
 
+    # The inputs are valid, so a units-free default bandwidth is announced
+    # here rather than ahead of an input error.
+    warn_if_default_bandwidth_fallback(env, bandwidth, resolved_bandwidth, method)
     # Apply batch smoothing to compute firing rates
     # When backend="jax", uses JAX for the core rate computation
     firing_rates = smooth_rate_maps_batch(
@@ -4129,8 +4135,9 @@ default="diffusion_kde"
         Smoothing bandwidth in environment units; ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
-        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
-        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``; the
+        units-free default warns with its resolved value. Larger values smooth
+        more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; bins below the
@@ -4512,8 +4519,9 @@ default="diffusion_kde"
         Smoothing bandwidth in environment units; ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
-        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
-        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``; the
+        units-free default warns with its resolved value. Larger values smooth
+        more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; ``0.0`` masks
@@ -4730,7 +4738,7 @@ default="diffusion_kde"
     >>> # Create environment from a seeded trajectory
     >>> rng = np.random.default_rng(0)
     >>> positions = rng.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
 
     >>> # Create trajectory timestamps
     >>> times = np.linspace(0, 10, 1000)
@@ -5474,7 +5482,8 @@ def compute_directional_place_fields(
         Smoothing bandwidth in environment units (e.g., cm); ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         or 2.5 median graph-edge lengths for unspecified or custom units for
-        the kernel methods.
+        the kernel methods; the units-free default warns with its resolved
+        value.
     min_occupancy : float, default=0.0
         Minimum occupancy threshold in seconds. Bins below this threshold are
         set to NaN.
@@ -5592,6 +5601,10 @@ def compute_directional_place_fields(
     """
     # Validate direction_labels length matches times
     from neurospatial._intervals import intersect_intervals
+    from neurospatial.encoding._smoothing import (
+        resolve_spatial_bandwidth,
+        warn_if_default_bandwidth_fallback,
+    )
     from neurospatial.encoding._spatial_counts import require_allocentric
 
     require_allocentric(env, "compute_directional_place_fields()")
@@ -5654,6 +5667,12 @@ def compute_directional_place_fields(
         break_before=breaks,
         warn_on_drop=warn_on_drop,
     )
+    if bandwidth is None and method in ("diffusion_kde", "gaussian_kde"):
+        # A units-free default warns here, once per call; the per-label maps
+        # then get the resolved value, so they do not warn once per label.
+        resolved = resolve_spatial_bandwidth(env, None)
+        if warn_if_default_bandwidth_fallback(env, None, resolved, method):
+            bandwidth = resolved
     for code in order:
         label = values[code]
         label_windows = run_windows[run_codes == code]
@@ -5883,7 +5902,9 @@ def detect_place_fields(
     >>> from neurospatial import Environment
     >>> from neurospatial.encoding.spatial import detect_place_fields
     >>> xx, yy = np.meshgrid(np.arange(-20.0, 21.0, 2.0), np.arange(-20.0, 21.0, 2.0))
-    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=2.0)
+    >>> env = Environment.from_samples(
+    ...     np.c_[xx.ravel(), yy.ravel()], bin_size=2.0, units="cm"
+    ... )
     >>> # An 8 Hz Gaussian place field (3 cm width) at the center
     >>> distance = np.linalg.norm(env.bin_centers, axis=1)
     >>> firing_rate = 8.0 * np.exp(-(distance**2) / (2 * 3.0**2))
@@ -6210,7 +6231,7 @@ def has_place_field(
         Smoothing bandwidth in environment units; None is 0 (no smoothing)
         for ``method="binned"``, and 5 cm in declared metric units or 2.5
         median graph-edge lengths for unspecified or custom units for the
-        kernel methods.
+        kernel methods; the units-free default warns with its resolved value.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -6377,7 +6398,7 @@ def has_place_field(
     >>> from neurospatial.encoding.spatial import has_place_field
     >>> rng = np.random.default_rng(0)
     >>> positions = rng.uniform(0, 100, (1000, 2))
-    >>> env = Environment.from_samples(positions, bin_size=5.0)
+    >>> env = Environment.from_samples(positions, bin_size=5.0, units="cm")
     >>> times = np.linspace(0, 40, 1000)
     >>> spike_times = np.sort(rng.uniform(0, 40, 50))
     >>> result = has_place_field(env, spike_times, times, positions)
@@ -6550,8 +6571,9 @@ def is_place_cell(
         Smoothing bandwidth in environment units; ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
-        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
-        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``; the
+        units-free default warns with its resolved value. Larger values smooth
+        more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; bins below the
@@ -6971,8 +6993,9 @@ def place_cell_significance(
         Smoothing bandwidth in environment units; ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
-        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
-        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``; the
+        units-free default warns with its resolved value. Larger values smooth
+        more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; ``0.0`` masks
@@ -7094,7 +7117,9 @@ def place_cell_significance(
     >>> rng = np.random.default_rng(7)
     >>> times = np.arange(0.0, 60.0, 0.1)
     >>> xx, yy = np.meshgrid(np.arange(0, 101, 5), np.arange(0, 101, 5))
-    >>> env = Environment.from_samples(np.c_[xx.ravel(), yy.ravel()], bin_size=5.0)
+    >>> env = Environment.from_samples(
+    ...     np.c_[xx.ravel(), yy.ravel()], bin_size=5.0, units="cm"
+    ... )
     >>> positions = np.c_[50 + 20 * np.sin(times / 3), 50 + 20 * np.cos(times / 4)]
     >>> headings = np.sin(times / 5)
     >>> objects = np.array([[50.0, 50.0]])
@@ -8141,7 +8166,8 @@ def spatial_cell_type_significance(
     bandwidth : float or None, default=None
         Smoothing bandwidth in environment units; None is 0 (no smoothing)
         for ``method="binned"``, and 5 cm in metric units or 2.5 median
-        graph-edge lengths otherwise for the kernel methods.
+        graph-edge lengths otherwise for the kernel methods; the units-free
+        default warns with its resolved value.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to count; ``0.0`` masks nothing.
     speed : ndarray, shape (n_samples,), optional
