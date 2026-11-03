@@ -135,24 +135,25 @@ def fit_circle(
 ) -> tuple[Any, dict[str, float]]:
     """Place a circle of the stated ``diameter`` on the samples.
 
-    The centre is a least-squares circle fit to the convex hull of the samples
-    (after trimming ``trim`` of each tail per axis); the radius is the stated
-    one. Returns the polygon and the fit: centre and the samples' own fitted
-    diameter.
+    The centre is that of the samples' minimum bounding circle (after
+    trimming ``trim`` of each tail per axis), as ``fit_rectangle`` places a
+    rectangle by the samples' minimum rotated rectangle; the radius is the
+    stated one. A least-squares circle through the convex hull's vertices
+    would weight the hull's unevenly spaced vertices and leave more samples
+    outside. Returns the polygon and the fit: centre and the samples' own
+    diameter (their bounding circle's).
     """
+    import shapely
     from shapely.geometry import MultiPoint, Point
 
     points = _tracked(positions, trim)
-    hull = np.asarray(MultiPoint(points).convex_hull.exterior.coords)[:-1]
-    # Kasa fit: x² + y² = 2 a x + 2 b y + c.
-    design = np.column_stack([2 * hull, np.ones(len(hull))])
-    target = (hull**2).sum(axis=1)
-    (a, b, c), *_ = np.linalg.lstsq(design, target, rcond=None)
-    radius = float(np.sqrt(c + a**2 + b**2))
-    circle = Point(a, b).buffer(diameter / 2, quad_segs=resolution // 4)
+    bounding = shapely.minimum_bounding_circle(MultiPoint(points))
+    centre = np.asarray(bounding.centroid.coords[0])
+    radius = float(shapely.minimum_bounding_radius(MultiPoint(points)))
+    circle = Point(*centre).buffer(diameter / 2, quad_segs=resolution // 4)
     return circle, {
-        "centre_x": float(a),
-        "centre_y": float(b),
+        "centre_x": float(centre[0]),
+        "centre_y": float(centre[1]),
         "samples_diameter": 2 * radius,
     }
 
