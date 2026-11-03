@@ -300,9 +300,23 @@ neighbours), so the fit is repeated on the samples less the shift found
 until a step is below 0.001 bin. No single piece decides: a direction is
 read only where, with any one piece left out, the others still add up to
 one piece lying across it, and the judged norm is the smallest over the
-fits with one piece left out. More than one bin is a mismatch, over both
-axes in 2-D and the horizontal ones on the lattice, where a head above the
-bars raises the vertical, which is reported. A track whose pieces all run
+fits with one piece left out. The judged norm is read over both axes in
+2-D and the horizontal ones on the lattice, where a head above the bars
+raises the vertical, which is reported. It is read by two estimators, the
+single least-squares step and the refitted shift, and neither is right
+everywhere: on short corridors and bars the single step reads only half
+to two thirds of a planted shift, and on a lateral scatter wider than the
+window the refitted window follows the heavier side (G-160). Both more
+than one bin is a mismatch; both under it passes this check; when they
+straddle it the verdict is "not verified: the frame offset depends on the
+estimator", unless another check gives a mismatch. On the test cases a
+single step exceeds one bin only for a shift of about 2 bins on a grid of
+15 cm corridors and about 3 bins on a tilted lattice of 16 cm bars, so a
+layout moved by 1 to 2-3 bins there is not verified, not a mismatch. A shift found by
+searching for the one that brings the samples closest to the track (the
+median distance) is not used: it moves the track onto the densest band of
+samples (+10 cm across 000044's linear track) and has several near-equal
+minima on the lattice's repeating bars. A track whose pieces all run
 one way (a straight track) cannot have its along-track offset read this
 way; the reach past its free ends covers that direction. An outline
 is also judged by how far its samples fall short of its side (at most
@@ -330,7 +344,7 @@ is to misfits of known size is not measured here: that is the survey's
 simulation ladder (phase 6, rungs 2-3, planted misfits). Of the 20
 declared tracks:
 
-- 12 match. On a stated size against the samples' own: Vollan's linear
+- 12 match, and the frame offset passes on each. On a stated size against the samples' own: Vollan's linear
   track +5.5 %, 000568 +5.1 %, 000165 -1.6 %, the 000044 circle's diameter
   -0.2 % (its worst stretch 2.38 cm to one side, against a 2.5 cm limit:
   close to it), 000447's familiar W-track (base -1.2 %, arms +6.5 %),
@@ -339,18 +353,18 @@ declared tracks:
   arms (-5.9 to +3.4 %). On the authors' geometry or the file's coordinate
   as stated: J16's graph, hc-31's track coordinate (length +0.3 %),
   Takigawa's centrelines and the labyrinth's graph. Their frame offsets are
-  0.42 bin or less (the 000044 circle 1.04 cm, hc-28 0.90 cm, Takigawa
-  1.59 cm of a 4 cm bin, the labyrinth 0.105 of a cell, 0.21 bin, over 127
-  pieces); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
+  0.42 bin or less by either estimator (refitted: the 000044 circle
+  1.04 cm, hc-28 0.90 cm, Takigawa 1.59 cm of a 4 cm bin, the labyrinth
+  0.105 of a cell, 0.21 bin, over 127 pieces); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
   one piece reads nothing, and the stated length, the stretch bias and the
   reach past the ends judge them.
-- 000044's linear track is a mismatch on its frame offset: 3.22 cm across
-  the track (2.95 cm with any one of its 3 pieces left out, 1.18 bins).
-  Its samples scatter from -12 to +25 cm across it (5th-95th percentile),
-  far wider than the 7.5 cm window the offset is read in; the stretch's
-  median in the window is 1.53 cm, and the refitted window follows the
-  heavier side (G-160). It matched on the file's linearized coordinate
-  before. The
+- 000044's linear track is not verified: its frame offset depends on the
+  estimator. Refitted, it is 3.22 cm across the track (2.95 cm with any
+  one of its 3 pieces left out, 1.18 bins); in one step 1.35 cm (0.50
+  bin). Its samples scatter from -12 to +25 cm across it (5th-95th
+  percentile), far wider than the 7.5 cm window the offset is read in, and
+  the refitted window follows the heavier side (G-160). It matched on the
+  file's linearized coordinate before. The
   labyrinth was a mismatch in the tracks round: its graph ended at the
   centre of each dead-end cell, and the samples reached 15.6 % of its
   length past its ends; the loader now moves each of the 64 dead ends half
@@ -455,12 +469,12 @@ stated sizes. In 3-D a side of a bar is not defined, so no lattice
 stretch has a bias; the lattice is judged as a whole as the tracks are
 (`_tracks.frame_offset`): each bar segment's median head offset
 perpendicular to it, one translation fitted to all of them, its horizontal
-part judged at one bin. Its bars are tilted about 35 degrees, in three
-directions, so every direction is read; the vertical part, raised by a
-head held above the bars, is reported.
+part judged at one bin by both estimators, as on the tracks. Its bars are
+tilted about 35 degrees, in three directions, so every direction is read;
+the vertical part, raised by a head held above the bars, is reported.
 
 Eight of the ten declared arenas and 3-D environments match; the bat's
-room and the lattice are mismatches:
+room is a mismatch and the lattice is not verified:
 
 - On the stated size against the samples' own: 000582 (sides -0.1 % and
   -2.6 %), 002030 (diameter +0.0 %), 000405 (-6.9 %, -6.3 %), Gardner
@@ -472,12 +486,14 @@ room and the lattice are mismatches:
   samples (`_geometry._tracked`), which moved these residuals by up to 2
   points. 0-0.34 % of their judged samples lie outside the outline.
 - The lattice's side matches (+0.0 % of the stated 97 cm, the authors'
-  bars), but its head samples sit (-8.2, +4.6) cm horizontally off the
-  bars, 9.4 cm or 2.35 bins, and +2.2 cm vertically (reported), from 738
-  bar segments (G-159). A grid search for the shift bringing the samples
-  closest to the bars agrees ((-8, +4 to +6, +2) cm; median distance 6.0 ->
-  3.4 cm). Until this round its placement was not judged and it matched on
-  its side alone.
+  bars), but its frame offset depends on the estimator, so it is not
+  verified (G-159). Refitted, its head samples sit (-8.2, +4.6) cm
+  horizontally off the bars, 9.4 cm or 2.35 bins, and +2.2 cm vertically
+  (reported), over 738 bar segments; in one step (-1.4, +0.6) cm, 0.38 bin,
+  over 792. On a synthetic tilted lattice moved 1.5 bins, a single step
+  reads under a bin too (0.78), so a single step cannot tell this lattice
+  from one moved by a few cm. Until this round its placement was not
+  judged and it matched on its side alone.
 - The bat's room is a mismatch on its faces: `r_lim`'s sizes match the
   paper's room (x +3.6 %, y +0.0 %, z -8.0 %), but of the 57 flight samples
   nearest the y-low face, 17 lie 1.4 m past it (the perch beyond `r_lim`,

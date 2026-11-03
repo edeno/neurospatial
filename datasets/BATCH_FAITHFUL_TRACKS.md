@@ -70,8 +70,13 @@ the environment, built in `load()` from the clean samples
   median of their offsets across it, each piece weighted once, and the
   least-squares translation is refitted on the samples less the shift found
   until it settles (one step recovered only half to two thirds of a planted
-  shift on short corridors). More than one bin (the stretch bias's limit)
-  is a mismatch. No single piece decides: a direction is read only where,
+  shift on short corridors). Both the single step and the refitted shift
+  are read, since on a scatter wider than the window the refitted window
+  follows the heavier side (G-160): both more than one bin (the stretch
+  bias's limit) is a mismatch, and when they straddle it the verdict is
+  not verified. A search for the shift that brings the samples closest
+  to the track is not used: it moves onto the densest band of samples.
+  No single piece decides: a direction is read only where,
   with any one piece left out, the others still add up to one piece across
   it, and the judged norm is the smallest with any one piece left out, so a
   lean on one short reward arm stays a reported local feature. A track
@@ -141,7 +146,7 @@ run, not estimates to compare.
 | j16_23020757 | declared | the authors' graph, 10 nodes, 9 corridors (file) | 6.5 cm stated | 63.8 % (87 / 64 / 35) | 36.9 (1.0%) | 2.73, 1.81 | 792 / 802 | 2.05 / 2.58 | 2.0 / 5.7 | – | – / – | matches |
 | takigawa_7114733 | declared | two tracks, the authors' centrelines (file); Tirole et al. 2022: 2 m | not stated | – | 41.4 (1.0%) | 4.57, 4.12 | 1069 / 1093 | 1.66 / 2.22 | 7.6 / 11.3 | – | – / – | matches |
 | hafting_2008_nird | declared | straight 320 cm (archive readme), the file's frame | not stated | – | 31 (1.0%) | 3.21, 1.24 | 650 / 656 | 0.98 / 1.05 | 104.0 / 157.0 | – | – / – | not verified |
-| grosmark_000044_linear | declared | 15 cm reward area + 1.6 m stem + 15 cm reward area (Grosmark & Buzsaki 2016), on the file's linearization | not stated | – | 55 (5.0%) | 9.04, 1.53 | 981 / 1052 | 0.38 / 0.81 | 2.5 / 8.5 | – | 0.250 / 0.150 (wk) | mismatch (frame offset 1.18 bins across, G-160) |
+| grosmark_000044_linear | declared | 15 cm reward area + 1.6 m stem + 15 cm reward area (Grosmark & Buzsaki 2016), on the file's linearization | not stated | – | 55 (5.0%) | 9.04, 1.53 | 981 / 1052 | 0.38 / 0.81 | 2.5 / 8.5 | – | 0.250 / 0.150 (wk) | not verified (frame offset 0.50 bin in one step, 1.18 refitted, G-160) |
 | vollan_lt | declared | straight 200 cm (Vollan et al. 2025) | not stated | – | 31.3 (1.0%) | 3.19, 0.21 | 316 / 319 | 0.15 / 0.29 | 5.0 / 8.5 | – | – / – | matches |
 | valero_000568 | declared | straight 110 cm (NWB description) | 6.35 cm stated | 12.4 % (12 / 14 / 9) | 12.9 (1.0%) | 1.22, 0.07 | 944 / 950 | 0.28 / 0.29 | 34.2 / 32.1 | – | 0.000 / error | matches |
 | aeryjones_000165 | declared | straight 36 cm (Aery Jones et al. 2021) | not stated | – | 5.42 (0.9%) | 0.39, 0.15 | 270 / 270 | 0.01 / 0.01 | 16.0 / 17.0 | – | – / – | matches |
@@ -321,11 +326,12 @@ a tolerance).
   that could not be read.
 - hc-3's length is not an independent check: its pixel scale comes from the
   same 250 cm.
-- Fidelity verdicts of the 20 declared tracks: 12 match, 1 mismatch,
-  7 not verified (ENVIRONMENT_FIDELITY.md). 000044's linear track matched
-  until the whole-track frame offset (3.22 cm across it, 2.95 cm with any
-  one piece left out, against a 2.5 cm bin), on a lateral scatter far wider
-  than the 3-bin window the offset is read in (G-160). Before it, under the
+- Fidelity verdicts of the 20 declared tracks: 12 match, 8 not verified
+  (ENVIRONMENT_FIDELITY.md). 000044's linear track matched until the
+  whole-track frame offset, which depends on the estimator there (1.35 cm
+  in one step, 3.22 cm refitted, 2.95 cm with any one piece left out,
+  against a 2.5 cm bin), on a lateral scatter far wider than the 3-bin
+  window the offset is read in (G-160). Before it, under the
   per-stretch rule 000044's linear
   track and Takigawa's tracks went from mismatch to matches (their misfit
   was on stretches shorter than 20 bins, now reported), and 001845 is

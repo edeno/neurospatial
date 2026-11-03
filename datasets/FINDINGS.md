@@ -102,21 +102,24 @@ from the first five batches; the full rerun after this batch refreshes them.
   within 15 %), against 2 of 10 built from the samples; the bat's room is
   a mismatch, now that a room is judged by its faces: 17 of the 57 flight
   samples nearest one wall lie 1.4 m past it, at the perch beyond `r_lim`
-  (G-025). The lattice's side matches (+0.0 % of 97 cm), but judged as a
-  whole its head samples sit 9.4 cm horizontally off the authors' bars
-  (2.35 bins; a direct search for the shift that brings the samples
-  closest to the bars agrees), so it is a mismatch (G-159). Of 20 declared
-  tracks, 12 match, 1 is a mismatch and 7 cannot be checked against
-  a fact independent of the samples, against 4 matches, 7 mismatches and
+  (G-025). The lattice is not verified: its side matches (+0.0 % of
+  97 cm), but judged as a whole its head samples sit 9.4 cm horizontally
+  off the authors' bars by the refitted shift (2.35 bins) and 0.38 bin by
+  a single step, which on a synthetic lattice reads under a bin for shifts
+  up to about 2.5 bins (G-159). Of 20 declared tracks, 12 match and 8 are
+  not verified (no fact independent of the samples, or a frame offset that
+  depends on the estimator), against 4 matches, 7 mismatches and
   9 not verified built from the samples. Every declared track and the
   lattice is now also judged as a whole: one translation fitted to every
-  straight piece's median offset, any length, one bin at most. The
+  straight piece's median offset, any length, read by a single
+  least-squares step and refitted until it settles; both over one bin is a
+  mismatch, straddling it not verified. The
   labyrinth (0.21 bin over 127 pieces) and Takigawa's tracks (0.40 bin),
   which have no stretch of the 20 bins a stretch's bias needs, now have a
-  check that can fail them, and pass it. 000044's linear track fails it
-  at 1.18 bins across the track, on a lateral scatter far wider than the
-  3-bin window the offset is read in (G-160); its reward-area stretches
-  are reported, as before. Samples cannot show walls thinner than a bin (the
+  check that can fail them, and pass it. On 000044's linear track the two
+  straddle the limit (0.50 and 1.18 bins across the track), on a lateral
+  scatter far wider than the 3-bin window the offset is read in, so it is
+  not verified (G-160). Samples cannot show walls thinner than a bin (the
   labyrinth's corridors join, G-110) or tell apart two apparatus in one
   camera frame (G-113). Head samples beyond a track's width or short of a
   wall are expected (headstage LEDs, swings, camera projection), so they
@@ -659,8 +662,8 @@ also covers messiness, usability and visualization, and public
 | G-133 | Friction: egocentric boundary maps in pixels need `distance_range` |
 | G-156, G-157 | Harness: fidelity study limits (`jump_links` at a hub; support reported, not judged) |
 | G-158 | Data quirk: runs of identical positions (lost tracking or stillness) are warned about, not masked |
-| G-159 | Data quirk (unconfirmed): the lattice's head samples sit 9 cm horizontally off the authors' bars |
-| G-160 | Harness: a track's offset is read in a window narrower than 000044 linear's lateral scatter |
+| G-159 | Data quirk (unconfirmed): the lattice's head samples may sit 9 cm horizontally off the authors' bars; not verified |
+| G-160 | Harness: a track's offset is read in a window narrower than 000044 linear's lateral scatter; both estimators read, not verified when they straddle |
 
 ## Decisions for the maintainer
 
