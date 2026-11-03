@@ -151,8 +151,8 @@ def test_detect_place_fields_accepts_rate_result(open_field, open_field_rates):
     plt.close(ax.figure)
 
 
-def test_place_fields_dataframe_has_one_row_per_field_bin(open_field, open_field_rates):
-    """to_dataframe() is the tidy (unit, field, bin) table of the contract."""
+def test_place_fields_dataframe_has_one_row_per_bin(open_field, open_field_rates):
+    """to_dataframe() is the dense (unit, bin) table, each bin labeled by field."""
     s, rates = open_field, open_field_rates
     fields = next(
         f
@@ -162,21 +162,28 @@ def test_place_fields_dataframe_has_one_row_per_field_bin(open_field, open_field
     table = fields.to_dataframe()
     assert list(table.columns) == [
         "unit_id",
-        "field",
         "bin",
         "bin_center_x",
         "bin_center_y",
+        "field",
         "firing_rate",
     ]
-    assert len(table) == fields.total_bins
+    assert len(table) == s.env.n_bins
+    np.testing.assert_array_equal(table["bin"], np.arange(s.env.n_bins))
     assert (table["unit_id"] == fields.unit_id).all()
+    np.testing.assert_array_equal(
+        table[["bin_center_x", "bin_center_y"]], s.env.bin_centers
+    )
+    np.testing.assert_array_equal(table["firing_rate"], fields.firing_rate)
+    # Each field's bins carry its index; every other bin is outside a field.
+    expected = np.full(s.env.n_bins, -1)
     for k, bins in enumerate(fields):
-        rows = table[table["field"] == k]
-        np.testing.assert_array_equal(rows["bin"], bins)
-        np.testing.assert_array_equal(
-            rows[["bin_center_x", "bin_center_y"]], s.env.bin_centers[bins]
-        )
-        np.testing.assert_array_equal(rows["firing_rate"], fields.firing_rate[bins])
+        expected[bins] = k
+    assert table["field"].dtype == "Int64"
+    np.testing.assert_array_equal(table["field"].isna(), expected < 0)
+    np.testing.assert_array_equal(
+        table["field"].dropna().to_numpy(int), expected[expected >= 0]
+    )
     assert table.attrs["units"]["firing_rate"] == "Hz"
     assert table.attrs["units"]["bin_center_x"] == s.env.units
     # One row per field in the field table, whose bin counts match.
@@ -186,7 +193,8 @@ def test_place_fields_dataframe_has_one_row_per_field_bin(open_field, open_field
     empty = encoding.detect_place_fields(
         s.env, np.zeros(s.env.n_bins), bandwidth=0.0
     ).to_dataframe()
-    assert empty.empty
+    assert len(empty) == s.env.n_bins
+    assert empty["field"].isna().all()
     assert list(empty.columns) == list(table.columns)
 
 

@@ -184,13 +184,13 @@ def test_place_fields_result_surface() -> None:
     assert s["n_fields"] == 2
     assert s["total_bins"] == 3
 
-    # One row per field bin: the tidy (unit, bin) table.
+    # One row per bin: the dense (unit, bin) table, with each bin's field.
     bins = result.to_dataframe()
-    assert bins["unit_id"].tolist() == [4, 4, 4]
-    assert bins["field"].tolist() == [0, 0, 1]
-    assert bins["bin"].tolist() == [0, 1, 5]
-    np.testing.assert_array_equal(bins["bin_center_x"], env.bin_centers[[0, 1, 5], 0])
-    np.testing.assert_allclose(bins["firing_rate"], [0.0, 1.0, 5.0])
+    assert bins["unit_id"].tolist() == [4] * 10
+    assert bins["bin"].tolist() == list(range(10))
+    assert bins["field"].tolist() == [0, 0, *[pd.NA] * 3, 1, *[pd.NA] * 4]
+    np.testing.assert_array_equal(bins["bin_center_x"], env.bin_centers[:, 0])
+    np.testing.assert_allclose(bins["firing_rate"], rate)
 
     # One row per field, computed from the field's own bins.
     df = result.fields_table()
@@ -214,8 +214,10 @@ def test_place_fields_result_surface() -> None:
     empty_df = excluded.fields_table()
     assert list(empty_df.columns[:3]) == ["unit_id", "field", "n_bins"]
     assert len(empty_df) == 0
-    assert list(excluded.to_dataframe().columns[:3]) == ["unit_id", "field", "bin"]
-    assert len(excluded.to_dataframe()) == 0
+    excluded_bins = excluded.to_dataframe()
+    assert list(excluded_bins.columns) == list(bins.columns)
+    assert len(excluded_bins) == env.n_bins
+    assert excluded_bins["field"].isna().all()
     assert excluded.summary_table().index.isna().all()
 
 
