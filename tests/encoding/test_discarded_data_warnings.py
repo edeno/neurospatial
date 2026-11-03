@@ -116,6 +116,45 @@ def test_boolean_masked_samples_warn(open_field_120s):
     assert masked.occupancy.sum() > 1.05 * gated.occupancy.sum()
 
 
+def test_occlusion_dropped_frames_warn_with_both_causes():
+    """Occlusions of 0.3-0.8 s dropped as low-likelihood frames, 8% of the time.
+
+    Deleted rows and NaN rows give the same occupancy, but only deleted rows
+    can come from ``times[mask]``, so only they warn. The warning cannot tell
+    a mask from dropped tracking frames, so it names both, each with its fix.
+    """
+    rng = np.random.default_rng(1)
+    times = np.arange(0.0, 600.0, 1 / 30)
+    positions = np.c_[50 + 40 * np.sin(times / 7.0), 50 + 40 * np.cos(times / 11.0)]
+    env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+    dropped = np.zeros(times.size, dtype=bool)
+    starts = np.flatnonzero(rng.random(times.size) < 0.006)
+    for start in starts:
+        dropped[start : start + int(rng.uniform(0.3, 0.8) * 30)] = True
+    assert 0.05 < dropped.mean() < 0.15
+    with pytest.warns(UserWarning, match="dropped tracking frames") as record:
+        deleted = env.occupancy(times[~dropped], positions[~dropped])
+    message = str(record[0].message)
+    assert "boolean-masked samples" in message
+    assert "min_speed=" in message
+    assert "bridging them is intended up to max_gap" in message
+    assert "pass a max_gap below the shortest removed run" in message
+    with_nan = positions.copy()
+    with_nan[dropped] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        marked = env.occupancy(times, with_nan)
+    np.testing.assert_allclose(deleted, marked, atol=1e-9)
+    # The fix for dropped frames: a max_gap below the shortest occlusion
+    # (9 frames, 0.3 s) excludes them, and nothing warns.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        excluded = env.occupancy(times[~dropped], positions[~dropped], max_gap=0.25)
+    np.testing.assert_allclose(
+        excluded.sum(), np.count_nonzero(~dropped[:-1] & ~dropped[1:]) / 30, rtol=1e-6
+    )
+
+
 def test_dropped_frames_are_silent():
     rng = np.random.default_rng(11)
     times = np.arange(0.0, 300.0, 1 / 30)

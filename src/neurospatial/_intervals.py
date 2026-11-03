@@ -134,8 +134,9 @@ DEFAULT_MAX_GAP = 1.0
 #: boolean masking. A speed mask (speed > 5 cm/s) on a simulated 100 Hz open
 #: field removes pauses with a median of 24 samples (0.24 s); its runs of at
 #: least this length make up about 9% of the analysed time.
-#: DeepLabCut-style deletions of 1-6 frames last at most 0.2 s at 30 Hz and
-#: stay below it.
+#: Dropped tracking frames can last longer: low-likelihood frames removed
+#: during an occlusion (``df[df.likelihood > 0.9]``) span 0.3-0.8 s, so the
+#: warning names them as the other cause of such runs.
 MASKED_RUN_MIN_DURATION = 0.25
 
 #: Largest distance, as a fraction of the sampling interval, from a sampling
@@ -1805,8 +1806,9 @@ def excluded_intervals_message(
     - Otherwise, when the kept intervals bridge runs of removed samples
       lasting from ``MASKED_RUN_MIN_DURATION`` to ``max_gap`` that add up to
       more than ``DISCARD_WARN_FRACTION`` of the analysed time, ``times``
-      were probably boolean-masked (for example ``times[speed > 5]``), and
-      the time and spikes inside the removed runs still count. With
+      were boolean-masked (for example ``times[speed > 5]``) or tracking
+      frames were dropped, and the time and spikes inside the removed runs
+      still count. With
       ``max_gap=None`` every gap is bridged on purpose, so this check is
       skipped.
     - Otherwise, when most sampling intervals exceed ``max_gap``, they count
@@ -2051,7 +2053,7 @@ def _masked_sample_fraction(
 def _masked_samples_message(
     times: NDArray[np.float64], kept: NDArray[np.bool_], max_gap: float | None
 ) -> str | None:
-    """The warning for boolean-masked ``times``, or None."""
+    """The warning for masked samples or dropped tracking frames, or None."""
     if max_gap is None:
         return None
     fraction = _masked_sample_fraction(times, kept, max_gap)
@@ -2060,13 +2062,15 @@ def _masked_samples_message(
     return _format_error(
         f"About {100 * fraction:.0f}% of the analysed time is in runs of "
         f"removed samples lasting {MASKED_RUN_MIN_DURATION:g} s to "
-        f"max_gap={max_gap} s, which looks like times were boolean-masked "
-        "(for example times[speed > 5]).",
+        f"max_gap={max_gap} s. They are either boolean-masked samples (for "
+        "example times[speed > 5]) or dropped tracking frames (for example "
+        "df[df.likelihood > 0.9] during occlusions).",
         why="runs shorter than max_gap are bridged as continuous occupancy, so "
         "the time and spikes inside the removed runs still count.",
-        fix="pass the full arrays and select with the function's min_speed= or "
-        "epochs= where it has them, or set max_gap below the shortest removed "
-        "run.",
+        fix="for boolean-masked samples, pass the full arrays and select with "
+        "the function's min_speed= or epochs= where it has them. For dropped "
+        "tracking frames, bridging them is intended up to max_gap; to exclude "
+        "them instead, pass a max_gap below the shortest removed run.",
     )
 
 
