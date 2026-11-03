@@ -1,48 +1,57 @@
 # Real-data survey: findings
 
-Eight public recordings were loaded into plain arrays and run through 19
+Fourteen public recordings were loaded into plain arrays and run through 19
 operations (18 calls into neurospatial and one harness workaround), each
-recording was re-run with known defects put back (52 probes), and three results
-were compared with pynapple and opexebo. This document ranks what that showed
-into proposed changes to neurospatial. The evidence lives in
-[GAPS.md](GAPS.md) (gap entries `G-###`) and [results/](results/)
-(`matrix.md`, `warnings.md`, `reference_checks.md`, one JSON per dataset).
-A few calibration numbers were computed directly from the loaders instead
-(marked *loader-computed*); each says how, so it can be recomputed with
-`load()` and the hazard functions in `_calibration.py`.
+recording was re-run with known defects put back (112 probes), and results
+were compared with pynapple, opexebo and the authors' own grid scores. This
+document ranks what that showed into proposed changes to neurospatial. The
+evidence lives in [GAPS.md](GAPS.md) (gap entries `G-###`) and
+[results/](results/) (`matrix.md`, `warnings.md`, `reference_checks.md`, one
+JSON per dataset, and `studies/` for the calibration and information-bias
+studies). A few early calibration numbers were computed directly from the
+loaders (marked *loader-computed*); the warning numbers are now produced by
+`studies/warning_calibration.py`.
 
-Datasets: DANDI 000582 (rat MEC open field), OSF Mouse32 (mouse ADn head
+First batch: DANDI 000582 (rat MEC open field), OSF Mouse32 (mouse ADn head
 direction), DANDI 000552 (mouse CA1 figure-8, ripples, sleep), the Rosenberg
 2021 labyrinth (behavior only, binary-tree maze), the Yartsev 2025 bat demo
 (3-D flight), DANDI 002030 (mouse CA1 miniscope ΔF/F), DANDI 000405 (rat open
 field, binned rates, mislabelled tracking) and DANDI 001701 (mouse MEC/CA1 on an
 X maze, mislabelled head direction).
 
+Second batch, chosen for the decisions below: Gardner 2022 (rat MEC, three grid
+modules, 483 units), Vollan 2025 (rat MEC Neuropixels: rat 27764 on a linear
+track with tracked head direction, rat 26018 in an open field with three grid
+modules and the authors' grid scores), DANDI 000044 (rat CA1 on a 1 m circular
+track and a 1.6 m linear track, with hours of sleep; read by HTTP byte range
+from 9 GB files) and DANDI 000447 (rat CA1/PFC on a W-track, also streamed).
+
 ## At a glance
 
 - **The common path holds up.** Environments, occupancy, rate maps, spatial
   information, decoding, NWB round trips and behavior segmentation ran on every
-  recording that had the inputs, in 1-D, 2-D and 3-D, in seconds and under
-  300 MB (traced). Decoding is accurate where the data allow it (figure-8
-  8.0 cm, 001701 3.5 cm median error).
-- **Warnings are not too aggressive.** Across the eight clean recordings no
-  neurospatial warning fires that should not. The one false alarm the survey
-  found (the spike-drop warning when tracking covers part of the session,
-  G-001) is fixed on `main` (#265).
-- **Warnings are not aggressive enough.** Of 52 probes, 16 defects passed
-  silently and changed the result. Three checks calibrated below (exact-origin
-  samples, too few bins, squeezed headings) fire on none of the clean
-  recordings and would catch 15 of the 16.
-- **Two wrong results need fixing first**: `read_head_direction` turns radians
-  labelled "degrees" into a 6° arc, after which every unit looks like a sharp
-  head-direction cell (G-030/G-031); and `detect_laps` finds laps where there is
-  no loop (G-015, partly fixed on `main`: open arenas still give laps).
-- **Two candidate wrong results need a decision**: grid scores differ from
-  opexebo by up to 0.38 on the same map (G-006), and spatial information on
-  sparse 3-D occupancy is at the shuffle level while its bias estimate is small
-  (G-022).
+  recording that had the inputs, in 1-D, 2-D and 3-D, including 483 units and
+  9 GB files read by byte range. Decoding is accurate where the data allow it
+  (figure-8 8.0 cm, 001701 3.5 cm median error).
+- **Warnings are not too aggressive.** Across the fourteen clean recordings no
+  neurospatial warning fires that should not. The masked-data warning fires on
+  Vollan, whose authors did remove slow samples; it is right there.
+- **Warnings are not aggressive enough.** Of 112 probes, 34 defects passed
+  silently and changed the result. The checks calibrated below (exact-origin
+  samples on 2-D/3-D positions, too few bins, squeezed headings) fire on none
+  of the clean recordings and would catch 23 of the 34.
+- **Three wrong results need fixing first**: `read_head_direction` turns
+  radians labelled "degrees" into a 6° arc (G-030/G-031); `detect_laps` finds
+  laps where there is no loop (G-015) and misses them where there is one: 1
+  lap where a rat ran about 100 laps of a circular track (G-037); and grid
+  scores collapse for large-spacing grid modules (G-006; the data point to a
+  fix, below).
+- **The spatial-information bias estimate is right for what it states.** On
+  every recording, sparse 3-D occupancy included, it matches simulated untuned
+  Poisson cells; bursty cells and real units sit 2–7× above it. A
+  sparse-occupancy warning would be the wrong fix (proposal 4).
 - **Biggest missing capability**: spatial maps from calcium imaging or binned
-  rates (G-029); every rate function takes spike times.
+  rates (G-029), deferred; loop tracks (G-021), now on the plan.
 
 Each proposal below states the problem, the evidence, the change, the module,
 and whether results change for existing users. Proposals are ordered by
@@ -51,7 +60,7 @@ dataset is the evidence, the section says why that is enough.
 
 ## Wrong results
 
-### 1. Refuse a "degrees" label on head direction that is radians (G-030, G-031)
+### 1. Warn on a "degrees" label on head direction that is radians (G-030, G-031)
 
 - **Problem.** `read_head_direction` trusts a series' unit label, so radians
   labelled "degrees" come back as a 6° arc, and downstream nothing notices.
@@ -62,23 +71,23 @@ dataset is the evidence, the section says why that is enough.
   conversion is deterministic, so every file with this mislabel is wrong in the
   same way (001701 has 218 files; only one was checked).
 - **Change.**
-  1. `read_head_direction` raises (or warns, naming both readings) when a
+  1. `read_head_direction` warns, naming both readings, when a
      degrees-labelled series has every finite value within ±π and uses most of
-     the circle.
+     the circle (maintainer decision 1: warn, not refuse).
   2. The directional entry points warn when headings cover little of the
      circle. Calibration on the clean recordings (*loader-computed*: 36
      direction bins, a bin counts if it holds ≥ 0.5 % of samples): Mouse32,
      002030 and 001701 use 36/36 bins; the misread 001701 headings use 2/36. A
-     threshold of fewer than half the bins separates them. Not yet calibrated
-     on a linear track, where head direction clusters in two opposite
-     directions; none of the eight recordings has one, so a linear-track
-     session with verified head direction must be found and checked before
-     this check lands.
+     threshold of fewer than half the bins separates them. On a linear track
+     (Vollan rat 27764, OptiTrack head direction), where running clusters in
+     two opposite directions, it is still 36/36 over all samples and over
+     running samples, as are Gardner and Vollan's open field
+     (`results/studies/warning_calibration.md`).
 - **Module.** `io/nwb` (reader), `encoding/directional` (check).
 - **Changes results.** Only for files that are mislabelled today, which are
   currently wrong.
 
-### 2. `detect_laps` counts laps where there is no loop (G-015)
+### 2. `detect_laps` counts laps where there is no loop, and misses them on one (G-015, G-037)
 
 - **Problem.** Before #265 the loop test treated any cycle in the bin graph as
   a loop. #265 tests the track graph's cycles or holes in a 2-D area instead.
@@ -93,51 +102,91 @@ dataset is the evidence, the section says why that is enough.
   around (*loader-computed*, approximate: 72 enclosed patches in 000582, 105
   in 000405, 19 in 002030 including a 412-bin unvisited centre, where the
   mouse kept to the wall).
+- **Second batch.** Gardner's 1.5 m box is refused, Vollan's box gives 0 laps,
+  and the 000447 W-track (no loop) gives 1. On a real loop the opposite
+  fails: on the 000044 circular track the rat's angle around the centre turns
+  97 times net and the linearized coordinate wraps 123 times, but
+  `detect_laps` returns 1 lap with its defaults, 34 with `min_overlap=0.5`,
+  and 0 with `max_gap=None` (G-037). 18.5 % of samples are untracked.
 - **Needs a decision.** Whether running around an unvisited part of an open
   arena counts as a lap. If not, holes should come from the declared arena
   (walls, obstacles), not from where the animal happened not to go.
 - **Module.** `behavior`. **Changes results.** Yes: spurious laps disappear.
 
-### 3. Grid scores disagree with opexebo because of the autocorrelogram (G-006)
+### 3. Grid scores collapse for large-spacing modules (G-006)
 
-- **Problem.** On the same unsmoothed rate map, neurospatial's grid score can be
-  far below the Moser-lab tool's, enough to change which cells pass a cutoff.
-- **Evidence.** Reference check 2 (000582): unit 2 scores 0.179 vs 0.560; max
-  difference 0.381, r = 0.737. Scoring agrees (neurospatial's scorer on
-  opexebo's autocorrelogram: max difference 0.012); the autocorrelograms differ
-  in two conventions: opexebo zero-fills unvisited bins (zero-filling moves
-  unit 2 to 0.307), and neurospatial leaves undefined the lags where fewer than
-  a quarter of visited bins overlap (2822 of 5041 lags). A disagreement with
-  an independent implementation on the same inputs is enough evidence by
-  itself; how widespread it is needs more grid cells.
-- **Needs a design decision.** Zero-filling treats unvisited bins as 0 Hz,
-  which the project's rule that missing is not zero rules out as a default.
-  (a) Compute opexebo's full lag extent without zero-filling (a NaN-aware
-  correlation at every lag with any overlap); (b) keep today's
-  autocorrelogram but relax the quarter-overlap rule; (c) offer zero-filling
-  only as an explicit opt-in for matching opexebo, and document the
-  difference with this comparison. Only opexebo was run; whether BNT itself
-  behaves the same is not checked. Before choosing, repeat the check on a
-  dataset with many grid cells (Gardner 2022, next batch).
-- **Module.** `encoding/grid`. **Changes results.** Yes under (a) or (b);
-  not under (c).
+- **Problem.** neurospatial's autocorrelogram leaves undefined every lag where
+  fewer than a quarter of the visited bins overlap. For a module with large
+  grid spacing, the outer ring of peaks that the grid score reads lies at
+  those lags, so the score collapses, enough to change which cells pass a
+  cutoff.
+- **Evidence.** 000582 (6 units): up to 0.38 below opexebo on the same map.
+  Populations (`reference_checks.md` 2b–2c; 5 cm smoothed maps on a full
+  2.5 cm grid; every convention scored with neurospatial's `grid_score`
+  except opexebo's own; verdicts at a conventional 0.3 cutoff, with an
+  undefined score counted as a different verdict):
+
+  | Convention | Gardner, 483 units: r vs opexebo / verdicts differing | Vollan, 233 units: r vs opexebo / verdicts differing | Vollan module 1 / 2 / 3 median (spacing 46 / 65 / 93 cm; authors 1.11 / 0.99 / 0.68) |
+  | --- | --- | --- | --- |
+  | today (quarter overlap) | 0.886 / 56 | 0.775 / 42 | 1.19 / 0.98 / **0.16** |
+  | (a) every lag with ≥ 20 overlapping bins | **0.966 / 22** | 0.828 / 41 | 1.19 / 1.01 / **0.77** |
+  | (c) zero-fill unvisited bins | 0.933 / 34 | **0.994 / 2** | 1.03 / 0.63 / 0.44 |
+  | opexebo (zero-fills) | 1 / 0 | 1 / 0 | 1.03 / 0.63 / 0.48 |
+
+  Against the authors' own scores (their maps and scorer, module medians
+  only): module 1 all conventions are 0.08 off; module 2 today's rule is
+  closest (0.01 off; (a) 0.02; zero-filling 0.36); module 3, the largest
+  spacing, today's rule collapses to 0.16 and (a) is closest (0.77 vs 0.68).
+  Against opexebo, (a) agrees best on Gardner, but on Vollan zero-filling
+  agrees almost exactly because opexebo zero-fills, and (a) is barely closer
+  than today's rule. The quarter-overlap rule over the full lag range
+  reproduces today's scores exactly, which checks the harness version. (b), a
+  relaxed overlap rule, is (a) with another threshold.
+- **Recommendation.** (a): a NaN-aware Pearson correlation at every lag with
+  at least about 20 overlapping visited bins (`nan_aware_autocorrelation` in
+  `reference_checks.py`, tested against a direct per-lag computation,
+  including constant overlaps). It keeps "missing is not zero", removes
+  today's collapse on the large-spacing module, and stays within 0.02 of the
+  authors on the other two. Matching opexebo exactly would need zero-filling,
+  which moves module 2 from the authors' 0.99 to 0.63. Limits: three module
+  medians, not per-unit author scores, and one cutoff not taken from either
+  paper.
+- **Module.** `encoding/grid`. **Changes results.** Yes: large-spacing scores
+  rise; 22 of 483 Gardner verdicts still differ from opexebo.
 
 ### 4. Spatial information on sparse occupancy (G-022)
 
-- **Problem.** With little time per bin, spatial information is dominated by
-  sampling noise, and the bias estimate `classify()` uses does not reflect it.
-- **Evidence.** Bat, 3-D flight: median 3.38 bits/spike; with spikes circularly
-  shifted (4 seeded shifts) 3.55; only 34 % of units beat every shift (000582:
-  all 6, figure-8: 94 %, 001701: 92 %). `spatial_information_bias` has a
-  median of 0.37. 70 % of visited bins hold under 0.1 s. One dataset, because
-  it is the only one with sparse occupancy; the shift operation on the other
-  three gives the contrast.
-- **Needs a design decision.** First test `spatial_information_bias` against a
-  shuffle null on sparse occupancy (simulated and the bat). Then either correct
-  the estimate, or warn when most visited bins hold very little time and point
-  to `min_occupancy` or larger bins.
-- **Module.** `encoding` (`_metrics`, `SpatialRatesResult.classify`).
-  **Changes results.** Classification changes if the estimate changes.
+- **Problem.** On the bat's sparse 3-D occupancy, 44 % of units pass the bias
+  screen (information minus `spatial_information_bias()` above 0.1 bits/spike)
+  while their information is below the 95th percentile of their own circular
+  shifts. The question was whether sparse occupancy breaks the bias estimate.
+- **Evidence** (`results/studies/information_bias_null.md`; 200 simulated
+  units per row, 100 shifts per real unit, seeded):
+  - Untuned Poisson cells on each recording's own occupancy: mean information
+    / mean bias is 0.92–1.02 on every recording, the bat (70 % of visited bins
+    under 0.1 s) included. Where a unit has too few spikes for the bias (the
+    bat at 0.5 and 2 Hz), it is NaN, not wrong.
+  - Untuned bursty cells (bursts of mean 3 spikes) at the same rates: 2.2–5.0×
+    the bias, close to the factor of 5 a geometric burst size of mean 3
+    predicts (E[k²]/E[k]).
+  - Real units: the shift null's mean is 2.2× the bias on the bat and 5.6–6.6×
+    on the dense recordings (000582, Gardner, 000044). Only on the bat does it
+    change a verdict: everywhere else every unit that passes the bias screen
+    also beats its shifts. One recording does not fit and is open: on
+    Vollan's speed-filtered data real units sit below their own shifts
+    (G-043), so shuffle verdicts there are not trusted yet.
+- **Conclusion.** The estimate is right for what it states, the information
+  of an untuned Poisson cell. The gap is temporal structure (bursts, firing
+  locked to flights or runs), which circular shifts keep and a Poisson null
+  does not. It matters only when real information is close to that null, as
+  on the bat. A sparse-occupancy warning would be the wrong fix (the agreed
+  warning plan does not apply).
+- **Recommendation.** Say in `spatial_information_bias` and in
+  `classify()`/`is_*_cell()` (threshold screens) that the bias is a Poisson
+  null that bursty firing exceeds, and point to the shuffle verdicts
+  (`criterion="shuffle"`, already the default of the free predicates) when
+  information is low. No change to the estimate.
+- **Module.** `encoding` docs. **Changes results.** No.
 
 ## Warning calibration
 
@@ -149,72 +198,76 @@ both the spike-drop warning when tracking covers part of a long recording
 ("check that spike_times and times share units") was wrong there, and a second
 copy of it inside the same `decode.position` call (G-001). #265 counts only
 spikes inside the requested epochs and warns once per call; on the current
-`main` no neurospatial warning fires on any of the eight clean recordings. No
-threshold needs loosening. The only warning left is hdmf's own deprecation
-notice while reading a 2022 file.
+`main` no neurospatial warning fires that should not on any of the fourteen
+clean recordings. No threshold needs loosening. One warning fires on clean data
+and is right: the masked-data warning on both Vollan recordings ("about 6 % of
+the analysed time is in runs of removed samples … looks like times were
+boolean-masked"); the authors did remove every sample under 5 cm/s, and the
+message's own fix (max_gap below the shortest removed run) applies. The only
+other warning is hdmf's deprecation notice while reading a 2022 file.
 
 ### Not aggressive enough
 
 | Defect put back | Probes | Caught (incl. upstream) | Silent | No effect | Undetectable |
 | --- | --- | --- | --- | --- | --- |
-| Length unit off by 100 | 21 | 16 | 5 | 0 | 0 |
-| Missing positions stored as 0 | 15 | 0 | 10 | 2 | 3 |
-| Spike times in ms | 6 | 6 | 0 | 0 | 0 |
-| Headings in degrees | 2 | 2 | 0 | 0 | 0 |
+| Length unit off by 100 | 45 | 37 | 8 | 0 | 0 |
+| Missing positions stored as 0 | 24 | 0 | 18 | 3 | 3 |
+| Spike times in ms | 15 | 15 | 0 | 0 | 0 |
+| Headings in degrees | 5 | 5 | 0 | 0 | 0 |
 | Headings read as degrees (radians shrunk) | 1 | 0 | 1 | 0 | 0 |
+| Headings stored in [0, 2π) | 1 | 0 | 0 | 1 | 0 |
 | Positions read as mm (÷10) | 3 | 0 | 0 | 1 | 2 |
 | Mirrored frame (image y down) | 4 | 0 | 0 | 3 | 1 |
-| **Total** | **52** | **24** | **16** | **6** | **6** |
+| Speed column read as a third position axis (000447) | 5 | 1 | 4 | 0 | 0 |
+| Times rebuilt from `dt` over speed-filter gaps (Vollan) | 9 | 4 | 3 | 2 | 0 |
+| **Total** | **112** | **62** | **34** | **10** | **6** |
 
 Counts are for the current `main`. Probes are skipped when the operation
-already fails on the clean recording, so the six `behavior.laps` probes on
-mazes that `detect_laps` now refuses are no longer counted. Spike times in ms
-(G-010) are now caught everywhere: with the clean-run false alarm gone (#265),
-the spike-drop warning flags 100 % of spikes outside tracking on Mouse32 and
-the figure-8 too.
+already fails on the clean recording. Spike times in ms (G-010) are caught
+on all 15 probes.
 
 Proposed checks, each with its hits on the clean recordings (a new warning
-must fire on none of them) and on the hazards. The calibration numbers are
-*loader-computed*.
+must fire on none of them) and on the hazards. Clean-recording numbers are in
+`results/studies/warning_calibration.md`.
 
 1. **Missing positions stored as 0 (G-017).** Warn when at least 0.1 % of
-   tracked samples sit exactly at the origin. Clean: none of the 7 recordings
-   with positions has a single sample exactly at the origin. Hazards: catches
-   the labyrinth (4.9 %), 001701 (2.6 %) and the bat (0.24 %), which covers all
-   10 silent probes of this defect; misses 000582 (one sample, harmless). A
-   broader rule ("many samples at one exact coordinate") would misfire: the
-   clean bat recording has 15 % of samples at one perch position. Untested
-   case: tracking in integer pixels, or a clipped linearization where 0 is a
-   real place (an animal waiting at the start of a track); the next batch's
-   000044 and 000447 runs must cover it before the check lands. Module: the
-   shared position checks behind `Environment.from_samples`, the rate
-   functions and `segment_by_velocity`.
+   tracked samples of a **2-D or 3-D** position sit exactly at the origin.
+   Clean: none of the 13 recordings with positions has a single 2-D/3-D sample
+   at the origin. Hazards: catches all 18 silent probes (labyrinth 4.9 %,
+   001701 2.6 %, bat 0.24 %, 000044 18.5 %). The start-of-track case rules
+   out 1-D input: on the 000044 circular track, 0.23 % of the file's
+   linearized samples are exactly 0, a real place, above the threshold (the
+   linear track: 0.01 %). A broader rule ("many samples at one exact
+   coordinate") would misfire: the clean bat recording has 15 % of samples at
+   one perch position. Module: the shared position checks behind
+   `Environment.from_samples`, the rate functions and `segment_by_velocity`.
 2. **Length unit off by 100 (G-014).** Warn when the environment has fewer than
-   5 bins along a dimension (counted from `env.grid_shape`). Clean: the fewest
-   is 11 (bat height). Hazards: every ÷100 case has 2–3 bins along each
-   dimension (figure-8: 3; the 2-D arenas: 2 × 2). Today's check fires only
-   when the bin size is at least the data extent in every dimension, so it
-   missed the figure-8. This covers the figure-8's 4 silent probes (the
-   environment would warn in the same workflow). The ×100 case is already
-   refused (bat, 9 × 10⁹ bins), but a speed threshold alone still hides it:
-   `segment_by_velocity` on the bat finds 668 segments instead of 69 without
-   building an environment. Module: `environment`.
-3. **Headings squeezed into a small arc (G-031)** — see Wrong results 1; covers
-   the one silent probe of that defect.
+   5 bins along a dimension (`env.grid_shape`). Clean: the fewest is 11 (bat
+   height); the Vollan linear track's width gives 16. Hazards: every ÷100
+   case has 2–3 bins along each dimension. It covers the figure-8's 4 silent
+   probes. The other 4 silent probes are `segment_by_velocity`, which builds
+   no environment: positions ÷100 make every speed fall under `min_speed`
+   (0 segments on 000044 and 000447), ×100 inflates them (the bat, 668
+   segments instead of 69). Module: `environment`.
+3. **Headings squeezed into a small arc (G-031).** Warn when headings fill
+   fewer than half of 36 direction bins (a bin counts at 0.5 % of samples).
+   Clean: every recording with head direction fills 36 of 36, over all
+   samples and over running samples, the Vollan linear track included (the
+   case that was uncalibrated). Hazard: the misread 001701 headings fill 2.
+   Covers the one silent probe of that defect.
 
-The remaining silent probe is the bat's `segment_by_velocity` with positions
-×100: no environment is built, so check 2 does not see it. Undetectable by
-values, so
-the answer is documentation: a mirrored frame flips every left and right turn
-while the share of left turns stays near 0.5 (G-020); positions read as mm look
-like a plausible small arena (000405 ÷10).
+Together the three checks would catch 23 of the 34 silent probes. Of the rest,
+four are the `segment_by_velocity` cases above, four are the speed column read
+as a position axis (G-042: only a memory warning; the reader refuses the
+file's 3-column series, so the fix is reader column choice), and three are
+times rebuilt over the speed filter (the occupancy rows change by 6 %; the
+spike rows catch the misalignment with the spike-drop warning). Undetectable
+by values, so the answer is documentation: a mirrored frame flips every left
+and right turn while the share of left turns stays near 0.5 (G-020); positions
+read as mm look like a plausible small arena (000405 ÷10).
 
-A separate rule, not calibrated against hazards because it should fire on
-clean data: **warn when a replay event has fewer time bins than a recipe's
-score needs (G-018)**, naming the recipe's event rule (both `DAVIDSON_2009` and
-`GROSMARK_2016` say ≥ 100 ms). On the figure-8, 48 of the 71 awake ripples are
-one 20 ms bin (*loader-computed*: ripple durations from the file's Ripples
-table). Module: `replay`.
+The rule for replay events too short to score (G-018) is dropped (maintainer
+decision 4).
 
 ## Missing capabilities
 
@@ -241,7 +294,11 @@ table). Module: `replay`.
   `Position` container's name is rejected as `position_name` (G-012). 002030:
   head direction is a bare `SpatialSeries` (G-032). 000405: position and head
   direction live in one generic `TimeSeries` with columns named in its
-  description (G-032). Three datasets.
+  description (G-032). Second batch: 000044's default call lists its
+  linearized series as a second Position candidate, and the container name is
+  refused again (G-012); 000447 stores x, y and speed in one series under
+  "centimeters; centimeters/second", which the reader rightly refuses but
+  cannot select columns from (G-042). Five datasets.
 - **Change.** Search processing modules in `read_intervals`; accept a container
   name when it holds one series; accept an explicit path to any `SpatialSeries`
   or `TimeSeries` (with column choice) in the position and head-direction
@@ -268,8 +325,9 @@ table). Module: `replay`.
   spikes of about 6,500 cm/s; laps cannot be counted; decoding and replay
   treat the ends as 222 cm apart. One dataset, but loop and circular tracks
   are common (000044 includes a 1 m circular track).
-- **Change.** A periodic 1-D track (a length and a flag that the ends meet), or
-  a recipe that embeds the loop as a circle for `from_graph`.
+- **Second batch.** 000044's 1 m circular track: its linearized coordinate
+  (0–290 cm) wraps 123 times; replay can only decode it as a line (G-038).
+- **Change.** Decided: `Environment.from_loop` (decision 6).
 - **Module.** `environment`, `behavior`. **Changes results.** No.
 
 ## Friction and error messages
@@ -302,18 +360,19 @@ table). Module: `replay`.
 
 ## Performance
 
-Nothing to fix at these sizes. The slowest operation was the replay comparison
-on 71 events with published shuffle counts (14 s); the largest traced peak was
-265 MB (bat, four extra rate maps).
-Long recordings with thousands of replay events (the 4,226 figure-8 sleep
-ripples) are the next scale to measure.
+Nothing to fix at these sizes. Gardner's 483 units: rate maps 4.4 s, decoding
+2.9 s, 1.1 GB traced peak. 000044 is read by HTTP byte range from 9 GB files in
+about a minute per loader. The slowest operation is the replay comparison on
+200 candidate events with published shuffle counts (511 s on the circular
+track, 387 s on the linear). The full driver on fourteen recordings with all
+112 probes takes 35 min and peaks at 8.5 GB resident.
 
 ## Reference-check verdicts
 
 | Check | Verdict |
 | --- | --- |
 | 1. Spatial information vs pynapple (000582) | Agree by convention: within 2.1 %, all from the spike-to-sample rule (G-003). The default `binned` map is now unsmoothed (G-002, fixed) |
-| 2. Grid score vs opexebo (000582) | Disagree, needs a decision (proposal 3) |
+| 2. Grid score vs opexebo (000582); 2b–2c on Gardner and Vollan populations, with the authors' scores | Disagree because of the overlap rule; option (a) agrees best with opexebo and the authors (proposal 3) |
 | 3. Head-direction decoding vs pynapple (Mouse32) | neurospatial cannot do it (proposal 7); pynapple's 8.9° is the target |
 
 ## Data quirks: detect, or leave to the loader
@@ -327,12 +386,14 @@ ripples) are the next scale to measure.
 | G-008 | Head-direction frame not stated | Keep it visible: `read_head_direction` returns `frame=None` for the file's empty `reference_frame`; say in its docs that None means the file does not state where 0 points |
 | G-033 | Labels disagree with values (mm, period as rate, "uv") | Leave to the loader: these are generic `TimeSeries` the readers do not read |
 | G-009, G-034, G-035 | One LED; ΔF/F scale; inverted LFP conversion | Nothing |
-| G-019, G-036 | Pre-registered expectations that were wrong | Nothing (kept as registered) |
+| G-040 | Speed-filtered time series; sessions table shorter than the data | Leave to the loader; the masked-data warning already flags it |
+| G-041 | No ripple table (000044) | Leave to the loader (population-burst candidates) |
+| G-019, G-036, G-039 | Pre-registered expectations that were wrong | Nothing (kept as registered) |
 
 ## Should loader code move into neurospatial?
 
-No, except through the readers. The eight loaders total about 870 lines of
-code; of that, roughly 15–20 lines each are the pinned download and the
+No, except through the readers. The fourteen loaders total about 2,400 lines
+(the first eight about 870); of that, roughly 15–20 lines each are the pinned download and the
 standalone summary, and the rest is specific to one file: column names, unit
 fixes, epoch selection, a restricted unpickler for one pickled dataset, a
 MATLAB-table reader for one zip. The generic parts that matter to users are
@@ -343,17 +404,12 @@ harness's `_fetch.py` (77 lines) would be the starting point.
 
 ## Next batch
 
-Chosen to fill the weakest cells of the matrix: operations exercised on only
-one recording, or never.
-
-| Dataset | Fills (operation ids from `results/matrix.md`) |
-| --- | --- |
-| Gardner 2022 grid modules (Figshare 16764508, CC0) | `cells.grid_score` and the reference grid check on a grid-module population (the catalog lists modules Q, R, S; unit counts unverified) instead of six units. Needs a decision: its `.npz` files require `allow_pickle`; a restricted unpickler like the labyrinth's may apply |
-| Shin & Jadhav W-track (DANDI 000447, already used in the project) | `env.from_graph`, `behavior.laps` and `behavior.turn_sequence` on a real track graph with spikes; `io.nwb_readers` on its velocity-as-third-position-column quirk; check 1's untested start-of-track case. Head direction is not listed (position is x, y, velocity) |
-| Plitt & Giocomo VR imaging (DANDI 000054) | `imaging.rates` and `imaging.rates_workaround` on deconvolved activity (never run); the −500 position sentinel as a new hazard; 1-D VR tracks |
-| Grieves 2020 climbing lattice (UCL RDR, CC0, 11.2 GB zip) | `rates.information_vs_shifts` and `decode.position` on a second 3-D dataset (tests G-022 and G-023 off the bat); `env.from_graph` on a lattice-shaped 3-D space. Needs `inflate64` for its Deflate64 zip |
-| Zhang 2022 egocentric boundary cells (Figshare 21647423, CC BY) | Egocentric boundary operations, not yet in the matrix (a new column). The record says "summarized datasets" in MATLAB `sdata` structs; whether raw positions and spikes are included is unverified, so open it before committing to it |
-| Grosmark & Buzsáki (DANDI 000044, already used) | `replay.compare_methods` on sleep ripples with PRE and POST sleep around the maze (about 4 h each), the 1 m circular track for proposal 8, check 1's start-of-track case, and the long-recording runtime |
+Planned in `.claude/docs/plans/real-data-survey-batches/` phases 2–4: nine
+small DANDI and EBRAINS NWB recordings (head direction in arenas, pixels,
+`conversion`, pose, objects, linear tracks), non-NWB archives (egocentric
+boundary cells, the Grieves 3-D lattice, water maze, Axona, MATLAB, NPY, J16)
+and CRCNS sets (including hc-11, the same session as 000044's linear track,
+and hc-13, whose untracked frames are stored as 0).
 
 ## Tutorial candidates
 
@@ -374,16 +430,17 @@ one recording, or never.
 | G-004 | Proposal 7 |
 | G-005, G-016 | Friction |
 | G-006 | Proposal 3 |
+| G-043 | Open: Vollan real units below their shifts |
 | G-007, G-023 | Docs |
-| G-008, G-009, G-019, G-025, G-028, G-033–G-036 | Data quirks |
-| G-011, G-012, G-032 | Proposal 6 |
+| G-008, G-009, G-019, G-025, G-028, G-033–G-036, G-039–G-041 | Data quirks |
+| G-011, G-012, G-032, G-042 | Proposal 6 |
 | G-013 | Fixed (#262) |
 | G-014 | Warning calibration, check 2 |
-| G-015 | Proposal 2; partly fixed (#265), open arenas remain |
+| G-015, G-037 | Proposal 2; G-015 partly fixed (#265), open arenas remain |
 | G-017 | Warning calibration, check 1 |
-| G-018 | Warning calibration, separate rule |
+| G-018 | Dropped (decision 4) |
 | G-020 | Docs; undetectable |
-| G-021, G-026 | Proposal 8 |
+| G-021, G-026, G-038 | Proposal 8 |
 | G-022 | Proposal 4 |
 | G-024 | Won't fix (behaves as documented) |
 | G-027 | Docs |
@@ -420,3 +477,27 @@ Answered 2026-11-02.
    aim of loading most of the catalog. The restricted unpickler approach
    applies to pickled formats such as Gardner 2022.
 8. **Tutorial.** Deferred.
+
+### Evidence for the decisions that waited on data (second batch)
+
+- **Decision 1, heading coverage.** Calibrated on a linear track: 36/36 bins
+  (proposal 1). The check can land with the reader warning.
+- **Decision 2, grid score.** Recommend option (a), a NaN-aware Pearson at
+  every lag with at least about 20 overlapping visited bins (proposal 3): it
+  fixes the large-spacing collapse (Vollan module 3, 93 cm spacing: 0.16
+  today, 0.77 with (a), 0.68 by the authors), stays within 0.02 of the
+  authors on modules 1–2, and agrees best with opexebo on 483 Gardner units.
+  On Vollan, only zero-filling matches opexebo closely.
+- **Decision 3, information bias.** The estimate holds on sparse occupancy;
+  the gap is burstiness, not sparseness (proposal 4). Recommend docs that call
+  it a Poisson null and point to shuffle verdicts; no sparse-occupancy
+  warning.
+- **Decision 4, check 1.** Restrict it to 2-D/3-D positions: the start of a
+  linearized track is a real place, and the circular track's file puts 0.23 %
+  of samples exactly there. With that restriction it fires on no clean
+  recording and catches all 18 silent missing-as-zero probes.
+- **Decision 5, laps in open arenas.** Still open. New rows: Gardner's box is
+  refused, Vollan's box gives 0 (1 when its gaps are closed), the 000447
+  W-track gives 1. The bigger problem is G-037: on a real loop the defaults
+  find 1 of about 100 laps.
+

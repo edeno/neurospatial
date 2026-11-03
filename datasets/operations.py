@@ -147,7 +147,28 @@ def spatial_information(rec: Recording, cache: dict[str, Any]) -> Outcome:
 
 
 N_SHIFTS = 4
+REPLAY_ON_LINEARIZED_GAP = "G-038"
 MIN_SHIFT_S = 20.0
+
+
+def shifted_trains(rec: Recording, seed: int) -> list[np.ndarray]:
+    """Each unit's spikes inside the tracking span, circularly shifted (seeded).
+
+    The shift is uniform between ``MIN_SHIFT_S`` and the span minus
+    ``MIN_SHIFT_S``, one per unit, wrapping around; spikes outside the span
+    stay put.
+    """
+    start, stop = float(rec.times[0]), float(rec.times[-1])
+    span = stop - start
+    rng = np.random.default_rng(seed)
+    trains = []
+    for train in rec.spike_times or ():
+        inside = (train >= start) & (train <= stop)
+        moved = train.copy()
+        shift = rng.uniform(MIN_SHIFT_S, span - MIN_SHIFT_S)
+        moved[inside] = (train[inside] - start + shift) % span + start
+        trains.append(np.sort(moved))
+    return trains
 
 
 def information_vs_shifts(rec: Recording, cache: dict[str, Any]) -> Outcome:
@@ -161,18 +182,9 @@ def information_vs_shifts(rec: Recording, cache: dict[str, Any]) -> Outcome:
     from neurospatial.encoding import compute_spatial_rates
 
     real = np.asarray(_rates(rec, cache).spatial_information(), dtype=float)
-    start, stop = float(rec.times[0]), float(rec.times[-1])
-    span = stop - start
     shifted_info = []
     for seed in range(N_SHIFTS):
-        rng = np.random.default_rng(seed)
-        trains = []
-        for train in rec.spike_times or ():
-            inside = (train >= start) & (train <= stop)
-            moved = train.copy()
-            shift = rng.uniform(MIN_SHIFT_S, span - MIN_SHIFT_S)
-            moved[inside] = (train[inside] - start + shift) % span + start
-            trains.append(np.sort(moved))
+        trains = shifted_trains(rec, seed)
         rates = compute_spatial_rates(
             _env(rec, cache),
             trains,
@@ -425,16 +437,39 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
     # The rate maps and spike counts use every unit; GROSMARK_2016's active-cell
     # rule counts place cells in the paper, and both papers decoded each running
     # direction with its own maps. Both are simplifications here.
-    ripples = rec.events.get("ripples")
+    # Ripples when the source has them, else candidate events the loader found
+    # by a stated rule (population bursts).
+    kind = "ripples" if "ripples" in rec.events else "candidate_events"
+    ripples = rec.events.get(kind)
     if ripples is None or rec.params.get("replay_dt") is None:
-        return Outcome("n/a", note="needs events['ripples'] and params['replay_dt']")
-    env, dt = _env(rec, cache), rec.params["replay_dt"]
+        return Outcome(
+            "n/a",
+            note="needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
+        )
+    dt = rec.params["replay_dt"]
+    positions, status, gap, note = rec.positions, "ok", None, ""
+    if positions.shape[1] > 1 and "linearized" in rec.params:
+        # Replay scores need a position along a track; a track recorded in 2-D
+        # is decoded on the file's own linearized coordinate instead.
+        from neurospatial import Environment
+
+        positions = np.asarray(rec.params["linearized"], dtype=float).reshape(-1, 1)
+        env = Environment.from_samples(
+            positions,
+            bin_size=rec.params["bin_size"],
+            units=_units(rec),
+            name=f"{rec.dataset}-linearized",
+        )
+        status, gap = "workaround", REPLAY_ON_LINEARIZED_GAP
+        note = "decoded on params['linearized'], the file's track coordinate"
+    else:
+        env = _env(rec, cache)
     spikes = list(rec.spike_times or ())
     rates = compute_spatial_rates(
         env,
         spikes,
         rec.times,
-        rec.positions,
+        positions,
         min_speed=rec.params.get("min_speed"),
         epochs=rec.params.get("train_epochs"),
     )
@@ -453,11 +488,11 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
         dt=dt,
         rng=0,
     )
-    summary: dict[str, float | int | str] = {"n_events": len(events)}
+    summary: dict[str, float | int | str] = {"n_events": len(events), "events": kind}
     for row in detection_rates(table).itertuples():
         summary[f"{row.method}_rate"] = float(row.rate)
         summary[f"{row.method}_ci"] = f"{row.ci_low:.3f}-{row.ci_high:.3f}"
-    return Outcome("ok", summary)
+    return Outcome(status, summary, note=note, gap=gap)
 
 
 _TO_CM = {"m": 100.0, "cm": 1.0, "mm": 0.1}
@@ -495,14 +530,14 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     agreement is reported as "ok (loader used this reader)": it shows the
     reader is consistent, not that it read the file correctly.
     """
-    import pynwb
+    from _fetch import open_nwb
 
     from neurospatial.io.nwb import read_head_direction, read_position, read_units
     from neurospatial.stats import wrap_angle
 
-    path = rec.params.get("nwb_path")
-    if path is None:
-        return Outcome("n/a", note="params has no nwb_path (not an NWB dataset)")
+    source = rec.params.get("nwb_source")
+    if source is None:
+        return Outcome("n/a", note="params has no nwb_source (not an NWB dataset)")
     used = set(rec.params.get("readers_used", ()))
 
     def labelled(name: str, verdict: str) -> str:
@@ -561,8 +596,7 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     }
     found: dict[str, str] = {}
     errors: list[str] = []
-    with pynwb.NWBHDF5IO(path, "r", load_namespaces=True) as io:
-        nwbfile = io.read()
+    with open_nwb(source) as nwbfile:
         for name, (read, compare, have) in readers.items():
             try:
                 found[name] = _reader_result(

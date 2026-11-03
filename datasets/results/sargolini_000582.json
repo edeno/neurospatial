@@ -41,7 +41,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
+    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
   },
   "load_warnings": [],
   "operations": {
@@ -55,7 +55,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.744,
+      "seconds": 0.799,
       "peak_mb": 30.1
     },
     "env.occupancy": {
@@ -83,7 +83,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.525,
+      "seconds": 0.546,
       "peak_mb": 54.0
     },
     "rates.spatial_information": {
@@ -111,7 +111,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.049,
+      "seconds": 0.048,
       "peak_mb": 3.9
     },
     "cells.place_screen": {
@@ -123,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
+      "seconds": 0.028,
       "peak_mb": 80.4
     },
     "cells.grid_score": {
@@ -136,7 +136,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.032,
+      "seconds": 0.034,
       "peak_mb": 8.5
     },
     "cells.border_score": {
@@ -145,7 +145,7 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.003,
+      "seconds": 0.004,
       "peak_mb": 0.6
     },
     "hd.tuning": {
@@ -164,7 +164,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.054,
+      "seconds": 0.063,
       "peak_mb": 31.0
     },
     "io.nwb_roundtrip": {
@@ -175,7 +175,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.429,
+      "seconds": 2.409,
       "peak_mb": 12.1
     },
     "env.from_graph": {
@@ -193,7 +193,7 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.53,
+      "seconds": 0.562,
       "peak_mb": 21.4
     },
     "behavior.laps": {
@@ -205,8 +205,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.026,
-      "peak_mb": 4.2
+      "seconds": 0.029,
+      "peak_mb": 5.0
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -220,10 +220,10 @@
     "replay.compare_methods": {
       "status": "n/a",
       "summary": {},
-      "note": "needs events['ripples'] and params['replay_dt']",
+      "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.103,
+      "seconds": 0.095,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -236,7 +236,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.223,
+      "seconds": 0.211,
       "peak_mb": 2.7
     },
     "imaging.rates": {
@@ -426,7 +426,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
       "response": "raised",
-      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=.",
+      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_laps": 1,

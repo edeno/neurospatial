@@ -49,7 +49,7 @@ class Recording:
     params : mapping
         Analysis choices the driver uses (``bin_size`` in ``position_units``,
         ``dt`` in s, and optional ``min_speed``, ``analysis_epochs``,
-        ``train_epochs``, ``test_epochs``, ``replay_dt``, ``nwb_path``).
+        ``train_epochs``, ``test_epochs``, ``replay_dt``, ``nwb_source``).
     conversions : tuple of str
         Every transformation the loader applied, one line each.
     """
@@ -227,3 +227,77 @@ def alternating_blocks(
     edges = np.append(np.arange(start, stop, length), stop)
     blocks = np.column_stack([edges[:-1], edges[1:]])
     return blocks[::2], blocks[1::2]
+
+
+def heading_vs_movement(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    min_speed: float,
+) -> tuple[float, float]:
+    """Compare a heading series with the direction of movement while running.
+
+    A heading in the same allocentric frame as the positions points along the
+    path while the animal runs, so the circular mean of heading minus movement
+    direction is near 0 and the spread is tens of degrees. A mean near ±π/2 or
+    π says the frame is rotated or mirrored; a spread near 90° says the
+    series is not a heading of this path.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+    positions : ndarray, shape (n_time, 2)
+        Same length unit as ``min_speed``.
+    headings : ndarray, shape (n_time,)
+        Radians.
+    min_speed : float
+        Steps faster than this (length per second) count as running.
+
+    Returns
+    -------
+    mean, spread : float
+        Circular mean of heading minus movement direction, and the median
+        absolute deviation from that mean, in radians.
+    """
+    step = np.diff(positions, axis=0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        speed = np.linalg.norm(step, axis=1) / np.diff(times)
+    moving = np.arctan2(step[:, 1], step[:, 0])
+    running = (speed > min_speed) & np.isfinite(headings[:-1])
+    diff = np.angle(np.exp(1j * (headings[:-1][running] - moving[running])))
+    mean = float(np.angle(np.mean(np.exp(1j * diff))))
+    spread = float(np.median(np.abs(np.angle(np.exp(1j * (diff - mean))))))
+    return mean, spread
+
+
+def checked_span(
+    positions: NDArray[np.float64], low: float, high: float, *, units: str = "cm"
+) -> str:
+    """Refuse positions whose largest per-axis span is outside ``[low, high]``.
+
+    A loader states the span it expects of the apparatus in ``units``; a span
+    outside it means a unit or scale error. Returns the line for
+    ``conversions``.
+    """
+    tracked = positions[np.isfinite(positions).all(axis=1)]
+    lo, hi = tracked.min(axis=0), tracked.max(axis=0)
+    span = hi - lo
+    if not low <= span.max() <= high:
+        msg = (
+            f"largest position span {span.max():.1f} {units} is outside the expected"
+            f" {low:g}-{high:g} {units}; recheck the unit and scale"
+        )
+        raise ValueError(msg)
+    axes = " by ".join(f"{a:.1f} to {b:.1f}" for a, b in zip(lo, hi, strict=True))
+    return f"range checked: {axes} {units} (largest span {span.max():.1f}, expected {low:g}-{high:g})"
+
+
+def intersect_intervals(
+    a: NDArray[np.float64], b: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Pairwise intersections of two sets of [start, stop) rows, shape (n, 2)."""
+    start = np.maximum(a[:, None, 0], b[None, :, 0])
+    stop = np.minimum(a[:, None, 1], b[None, :, 1])
+    keep = stop > start
+    return np.column_stack([start[keep], stop[keep]])

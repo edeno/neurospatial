@@ -23,8 +23,10 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+import load_gardner_2022_grid
 import load_peyrache_mouse32
 import load_sargolini_000582
+import load_vollan_of
 import numpy as np
 from _record import Recording
 from run import _versions
@@ -46,6 +48,15 @@ PYNAPPLE_TUTORIAL_SI = np.array(
 RANGE_CM = (-50.0, 50.0)
 MAX_TRACKING_GAP_S = 0.2  # about 8 frames at Mouse32's 39 Hz tracking
 BIN_CM = 2.5
+POPULATION_BANDWIDTH_CM = 5.0
+GRID_CUTOFF = 0.3
+CONVENTIONS = (
+    "neurospatial",
+    "full lags, overlap 20 (a)",
+    "full lags, overlap 1/4 (b)",
+    "zero-filled (c)",
+    "opexebo",
+)
 
 
 def _relative(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -287,16 +298,190 @@ def grid_score_check(rec: Recording, env: Any, rates: Any) -> list[str]:
     return lines
 
 
+def nan_aware_autocorrelation(rate_map: np.ndarray, min_overlap: int) -> np.ndarray:
+    """Pearson autocorrelation at every lag over the bins visited at both ends.
+
+    Unvisited bins (NaN) are left out, never treated as 0 Hz; a lag is NaN when
+    fewer than ``min_overlap`` visited bins overlap, or when either side of the
+    overlap is constant. Sums over each lag's
+    overlap come from FFT correlations of the masked map and its mask.
+
+    Parameters
+    ----------
+    rate_map : ndarray, shape (n_x, n_y)
+        Rate map with NaN for unvisited bins.
+    min_overlap : int
+        Fewest overlapping visited bins for a lag to be defined.
+
+    Returns
+    -------
+    ndarray, shape (2 n_x - 1, 2 n_y - 1)
+        Zero lag at the centre.
+    """
+    from scipy.signal import correlate
+
+    visited = np.isfinite(rate_map).astype(float)
+    values = np.where(visited > 0, rate_map, 0.0)
+
+    def overlap_sum(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+        return correlate(a, b, mode="full", method="fft")
+
+    n = np.rint(overlap_sum(visited, visited))
+    sx = overlap_sum(values, visited)
+    sy = overlap_sum(visited, values)
+    sxx = overlap_sum(values**2, visited)
+    syy = overlap_sum(visited, values**2)
+    sxy = overlap_sum(values, values)
+    var_x = n * sxx - sx**2
+    var_y = n * syy - sy**2
+    # A side with no variance over the overlap has no correlation; FFT
+    # round-off would otherwise leave a tiny denominator and a value of ±1.
+    flat = (var_x <= 1e-10 * np.abs(n * sxx)) | (var_y <= 1e-10 * np.abs(n * syy))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r = (n * sxy - sx * sy) / np.sqrt(var_x * var_y)
+    r[(n < min_overlap) | flat] = np.nan
+    return np.clip(r, -1.0, 1.0)
+
+
+def _population_maps(rec: Recording) -> tuple[Any, np.ndarray, np.ndarray]:
+    """Smoothed binned rates on a full rectangular grid, per bin and as 2-D maps."""
+    from neurospatial import Environment
+    from neurospatial.encoding import compute_spatial_rates
+
+    low = np.floor(np.nanmin(rec.positions, axis=0) / BIN_CM) * BIN_CM
+    high = np.ceil(np.nanmax(rec.positions, axis=0) / BIN_CM) * BIN_CM
+    env = Environment.from_samples(
+        rec.positions,
+        bin_size=BIN_CM,
+        dimension_ranges=list(zip(low, high, strict=True)),
+        infer_active_bins=False,
+        units="cm",
+    )
+    rates = compute_spatial_rates(
+        env,
+        list(rec.spike_times or ()),
+        rec.times,
+        rec.positions,
+        method="binned",
+        bandwidth=POPULATION_BANDWIDTH_CM,
+        min_speed=rec.params.get("min_speed"),
+        epochs=rec.params.get("analysis_epochs"),
+    )
+    shape = tuple(int(k) for k in np.rint((high - low) / BIN_CM))
+    index = np.rint((np.asarray(env.bin_centers) - low) / BIN_CM - 0.5).astype(int)
+    firing = np.asarray(rates.firing_rates, dtype=float)
+    maps = np.full((len(firing), *shape), np.nan)
+    maps[:, index[:, 0], index[:, 1]] = firing
+    return env, firing, maps
+
+
+def grid_population_check(
+    rec: Recording,
+    title: str,
+    units: np.ndarray,
+    author_medians: dict[int, float] | None = None,
+    author_spacing_cm: dict[int, float] | None = None,
+) -> list[str]:
+    """Grid-score conventions compared on a population of grid-module units.
+
+    ``units`` selects the units; ``author_medians`` maps a module id in
+    ``rec.params["module"]`` to the authors' median unit grid score.
+    """
+    from opexebo.analysis import autocorrelation
+    from opexebo.analysis import grid_score as opexebo_grid_score
+
+    from neurospatial.encoding import grid_score, spatial_autocorrelation
+
+    env, firing, maps = _population_maps(rec)
+    visited = int(np.isfinite(maps[0]).sum())
+    scores: dict[str, list[float]] = {name: [] for name in CONVENTIONS}
+    for i in np.flatnonzero(units):
+        rate, grid_map = firing[i], maps[i]
+        scores["neurospatial"].append(grid_score(spatial_autocorrelation(env, rate)))
+        scores["full lags, overlap 20 (a)"].append(
+            grid_score(nan_aware_autocorrelation(grid_map, 20))
+        )
+        scores["full lags, overlap 1/4 (b)"].append(
+            grid_score(nan_aware_autocorrelation(grid_map, visited // 4))
+        )
+        scores["zero-filled (c)"].append(
+            grid_score(spatial_autocorrelation(env, np.nan_to_num(rate)))
+        )
+        scores["opexebo"].append(opexebo_grid_score(autocorrelation(grid_map))[0])
+    arrays = {k: np.asarray(v, dtype=float) for k, v in scores.items()}
+    reference = arrays["opexebo"]
+    lines = [
+        f"## {title}",
+        "",
+        f"{int(units.sum())} grid-module units; binned maps smoothed with a"
+        f" {POPULATION_BANDWIDTH_CM:g} cm kernel on a full {BIN_CM:g} cm grid"
+        f" ({visited} visited bins); every convention scores the same map with"
+        " neurospatial's `grid_score`, except opexebo, which uses its own."
+        " (a) and (b) correlate visited bins only at every lag with at least 20"
+        " or a quarter of the visited bins overlapping; (c) zero-fills unvisited"
+        f" bins as opexebo does. Verdicts use the conventional cutoff {GRID_CUTOFF}"
+        " (not a cutoff from either paper); a score that is undefined where"
+        " opexebo's is defined counts as a different verdict.",
+        "",
+        "| Convention | Median score | r vs opexebo | Max abs. difference | Verdicts that differ from opexebo |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for name, values in arrays.items():
+        both = np.isfinite(values) & np.isfinite(reference)
+        r = (
+            float(np.corrcoef(values[both], reference[both])[0, 1])
+            if both.sum() > 2
+            else float("nan")
+        )
+        # An undefined score is a different verdict from a defined one.
+        scored = np.isfinite(reference)
+        differ = int(
+            np.sum((values[both] > GRID_CUTOFF) != (reference[both] > GRID_CUTOFF))
+            + np.sum(~np.isfinite(values) & scored)
+        )
+        lines.append(
+            f"| {name} | {np.nanmedian(values):.3f} | {r:.3f} |"
+            f" {np.nanmax(np.abs(values[both] - reference[both])):.3f} |"
+            f" {differ} of {int(scored.sum())} |"
+        )
+    lines.append("")
+    if author_medians:
+        modules = np.asarray(rec.params["module"])[units]
+        lines += [
+            "Per module, median score against the authors' median unit grid score"
+            " (their own maps and scorer):",
+            "",
+            "| Module | Units | Spacing (cm, authors) | Authors | "
+            + " | ".join(CONVENTIONS)
+            + " |",
+            "| --- | --- | --- | --- | "
+            + " | ".join("---" for _ in CONVENTIONS)
+            + " |",
+        ]
+        for module, median in sorted(author_medians.items()):
+            member = modules == module
+            lines.append(
+                f"| {module} | {int(member.sum())} |"
+                f" {(author_spacing_cm or {}).get(module, float('nan')):.0f} | {median:.2f} | "
+                + " | ".join(
+                    f"{np.nanmedian(arrays[c][member]):.2f}" for c in CONVENTIONS
+                )
+                + " |"
+            )
+        lines.append("")
+    return lines
+
+
 def _circular_error(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.abs(np.angle(np.exp(1j * (a - b))))
 
 
 def head_direction_check(rec: Recording) -> list[str]:
     import pynapple as nap
-    import pynwb
+    from _fetch import open_nwb
 
-    with pynwb.NWBHDF5IO(rec.params["nwb_path"], "r", load_namespaces=True) as io:
-        locations = io.read().units["location"][:]
+    with open_nwb(rec.params["nwb_source"]) as nwbfile:
+        locations = nwbfile.units["location"][:]
     adn = np.asarray(locations) == "adn"
     spikes = nap.TsGroup(
         {
@@ -350,6 +535,38 @@ def head_direction_check(rec: Recording) -> list[str]:
     ]
 
 
+def _population_sections() -> list[str]:
+    gardner = load_gardner_2022_grid.load()
+    vollan = load_vollan_of.load()
+    params = vollan.params
+    return [
+        *grid_population_check(
+            gardner,
+            "2b. Grid score conventions, Gardner 2022 rat R day 1 open field",
+            np.ones(len(gardner.unit_ids), dtype=bool),
+        ),
+        *grid_population_check(
+            vollan,
+            "2c. Grid score conventions, Vollan 2025 rat 26018 open field",
+            np.asarray(params["is_grid"]),
+            author_medians=dict(
+                zip(
+                    params["module_ids"].tolist(),
+                    params["module_median_grid_score"].tolist(),
+                    strict=True,
+                )
+            ),
+            author_spacing_cm=dict(
+                zip(
+                    params["module_ids"].tolist(),
+                    params["module_spacing_cm"].tolist(),
+                    strict=True,
+                )
+            ),
+        ),
+    ]
+
+
 def main() -> None:
     warnings.simplefilter("ignore", DeprecationWarning)
     sargolini = load_sargolini_000582.load()
@@ -364,6 +581,7 @@ def main() -> None:
         "",
         *spatial_information_check(sargolini, env, rates),
         *grid_score_check(sargolini, env, rates),
+        *_population_sections(),
         *head_direction_check(load_peyrache_mouse32.load()),
     ]
     RESULTS.mkdir(exist_ok=True)

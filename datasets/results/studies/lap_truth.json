@@ -1,0 +1,13 @@
+[
+  {
+    "dataset": "grosmark_000044_circular",
+    "net_turns": -96.9623324119486,
+    "total_turns": 221.5992768982064,
+    "linearized_wraps": 123,
+    "untracked_share": 0.1851192356663508,
+    "tracked_gaps_over_1s": 23,
+    "detect_laps defaults": 1,
+    "detect_laps min_overlap=0.5": 34,
+    "detect_laps max_gap=None": 0
+  }
+]

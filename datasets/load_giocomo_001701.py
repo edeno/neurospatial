@@ -110,7 +110,7 @@ def load(cache: Path | None = None) -> Recording:
             "dt": 0.25,
             "train_epochs": train,
             "test_epochs": test,
-            "nwb_path": str(path),
+            "nwb_source": str(path),
             "readers_used": ("position", "units"),
         },
         conversions=(

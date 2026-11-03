@@ -32,7 +32,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "df9a985e141ef8905c3d165f56a7ee8c4eea008b"
+    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
   },
   "load_warnings": [
     {
@@ -95,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.158,
+      "seconds": 0.163,
       "peak_mb": 154.8
     },
     "decode.position": {
@@ -151,7 +151,7 @@
           "count": 9
         }
       ],
-      "seconds": 0.524,
+      "seconds": 0.514,
       "peak_mb": 106.0
     },
     "imaging.rates": {

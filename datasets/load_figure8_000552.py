@@ -144,7 +144,7 @@ def load(cache: Path | None = None) -> Recording:
             "analysis_epochs": maze,
             "train_epochs": trial_windows[::2],
             "test_epochs": trial_windows[1::2],
-            "nwb_path": str(path),
+            "nwb_source": str(path),
             "readers_used": ("units",),
         },
         conversions=(
