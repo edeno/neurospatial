@@ -59,7 +59,7 @@ def read_res_clu(
 
 
 def neuroscope_rates(xml_path: Path) -> dict[str, float]:
-    """Wideband and LFP sampling rates (Hz) stated in a Neuroscope ``.xml``."""
+    """Wideband, LFP and video sampling rates (Hz) stated in a Neuroscope ``.xml``."""
     root = ET.parse(xml_path).getroot()
     acquisition = root.find("acquisitionSystem")
     lfp = root.find("fieldPotentials/lfpSamplingRate")
@@ -69,6 +69,9 @@ def neuroscope_rates(xml_path: Path) -> dict[str, float]:
     rates = {"wideband_hz": float(acquisition.findtext("samplingRate", "nan"))}
     if lfp is not None and lfp.text:
         rates["lfp_hz"] = float(lfp.text)
+    video = root.findtext("video/samplingRate")
+    if video:
+        rates["video_hz"] = float(video)
     return rates
 
 
