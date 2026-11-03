@@ -272,7 +272,10 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
     result = decoder.predict(spikes, rec.times, epochs=test)
     error = result.error_against(rec.times, rec.positions)
     # Chance: distance between each decoded bin's true position and the true
-    # position of a random other decoded bin (seeded permutation).
+    # position of a random other decoded bin (seeded permutation), in the
+    # metric error_against uses by default (geodesic, along the bin graph).
+    from neurospatial.decoding.metrics import decoding_error
+
     actual = np.column_stack(
         [
             np.interp(result.times, rec.times, column)
@@ -281,13 +284,12 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
     actual = actual[np.isfinite(actual).all(axis=1)]
     shuffled = actual[np.random.default_rng(0).permutation(len(actual))]
+    chance = decoding_error(result.env, shuffled, actual, metric="geodesic")
     return Outcome(
         "ok",
         {
             "median_error": float(np.nanmedian(error)),
-            "chance_median_error": float(
-                np.median(np.linalg.norm(actual - shuffled, axis=1))
-            ),
+            "chance_median_error": float(np.nanmedian(chance)),
             "units": str(rec.position_units),
             "n_time_bins": int(result.n_time_bins),
         },
