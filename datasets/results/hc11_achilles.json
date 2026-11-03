@@ -27,11 +27,6 @@
       "detail": "expected Range(low=38.0, high=40.0), got 39.06263603480421"
     },
     {
-      "key": "position_extent_cm",
-      "passed": true,
-      "detail": "predicate"
-    },
-    {
       "key": "has_pre_maze_post",
       "passed": true,
       "detail": "predicate"
@@ -130,16 +125,25 @@
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.8060132854074074,
-        "median_shifted_bits_per_spike": 0.12272490215459367,
-        "frac_above_every_shift": 0.9781021897810219,
+        "median_shifted_bits_per_spike": 0.10773023911862648,
+        "frac_above_every_shift": 0.9927007299270073,
         "n_units": 137,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.086,
-      "peak_mb": 367.3
+      "seconds": 4.291,
+      "peak_mb": 431.1,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

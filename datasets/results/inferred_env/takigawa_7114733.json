@@ -4,7 +4,7 @@
   "source": "https://doi.org/10.5281/zenodo.7114733 RAT5_SESS1_extracted_*.mat",
   "license": "CC0",
   "conversions": [
-    "positions: clean.x, clean.y (pixels) x each track's own cm_per_pixel (0.3881, 0.4425; session average 0.4260 not used)",
+    "positions: clean.x, clean.y (pixels) x each track's own cm_per_pixel (0.3881, 0.4425; session average 0.4260 not used); the source does not say whether pixel y runs up or down the image, so y is kept as stored",
     "range checked: principal-axis extent per track 186.3, 194.2 cm (expected 170-205)",
     "positions: NaN outside each track's cropped_indices (15.1% of samples on a track)",
     "positions: 0.0% of on-track samples were interpolated by the authors (interpolated_indices), kept",
@@ -119,16 +119,25 @@
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 2.2157301234359057,
-        "median_shifted_bits_per_spike": 0.6532129301342895,
-        "frac_above_every_shift": 0.9444444444444444,
+        "median_shifted_bits_per_spike": 0.7188615252931654,
+        "frac_above_every_shift": 0.9351851851851852,
         "n_units": 108,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.358,
-      "peak_mb": 59.2
+      "seconds": 2.613,
+      "peak_mb": 105.1,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

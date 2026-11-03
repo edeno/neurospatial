@@ -27,11 +27,6 @@
       "detail": "expected Range(low=119.0, high=121.0), got 120.00774483658455"
     },
     {
-      "key": "arena_extent_cm",
-      "passed": true,
-      "detail": "predicate"
-    },
-    {
       "key": "epoch_names",
       "passed": true,
       "detail": "expected ['empty', 'object_1', 'object_2', 'object_3'], got ['empty', 'object_1', 'object_2', 'object_3']"
@@ -124,17 +119,26 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.15852888283806568,
-        "median_shifted_bits_per_spike": 0.12470666044882232,
-        "frac_above_every_shift": 0.49206349206349204,
-        "n_units": 378,
+        "median_bits_per_spike": 0.1607123288634169,
+        "median_shifted_bits_per_spike": 0.12192933174895432,
+        "frac_above_every_shift": 0.5145118733509235,
+        "n_units": 379,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.197,
-      "peak_mb": 65.7
+      "seconds": 2.361,
+      "peak_mb": 86.0,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

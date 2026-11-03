@@ -121,10 +121,10 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.19425941940578678,
-        "median_shifted_bits_per_spike": 0.03912890829116902,
-        "frac_above_every_shift": 0.5833333333333334,
-        "n_units": 96,
+        "median_bits_per_spike": 0.21895008124478268,
+        "median_shifted_bits_per_spike": 0.06199872297091799,
+        "frac_above_every_shift": 0.64,
+        "n_units": 100,
         "n_shifts": 4
       },
       "note": "",
@@ -135,11 +135,20 @@
           "origin": "neurospatial",
           "template": "#/# spike_times (#%) across all neurons fell outside the position time window [#, #]; spike_times.min()=# spike_times.max()=#. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
           "example": "2906816/3891350 spike_times (75%) across all neurons fell outside the position time window [4583.49, 6474.36]; spike_times.min()=0.0027 spike_times.max()=11037.7. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
-          "count": 4
+          "count": 5
         }
       ],
-      "seconds": 0.985,
-      "peak_mb": 125.3
+      "seconds": 2.838,
+      "peak_mb": 138.8,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

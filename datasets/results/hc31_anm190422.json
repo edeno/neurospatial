@@ -120,17 +120,26 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 3.2253492239761594,
-        "median_shifted_bits_per_spike": 2.023373078231187,
-        "frac_above_every_shift": 0.9152542372881356,
-        "n_units": 59,
+        "median_bits_per_spike": 3.2570223652087726,
+        "median_shifted_bits_per_spike": 2.025938018743955,
+        "frac_above_every_shift": 0.9508196721311475,
+        "n_units": 61,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.123,
-      "peak_mb": 9.2
+      "seconds": 1.785,
+      "peak_mb": 110.7,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

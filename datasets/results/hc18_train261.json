@@ -144,8 +144,8 @@
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.1828331450975706,
-        "median_shifted_bits_per_spike": 0.10196798478838423,
-        "frac_above_every_shift": 0.43478260869565216,
+        "median_shifted_bits_per_spike": 0.058622477809091626,
+        "frac_above_every_shift": 0.782608695652174,
         "n_units": 46,
         "n_shifts": 4
       },
@@ -155,13 +155,29 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        },
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
           "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
           "example": "bandwidth=None resolved to 11.32 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
-          "count": 4
+          "count": 5
         }
       ],
-      "seconds": 34.421,
-      "peak_mb": 132.6
+      "seconds": 32.676,
+      "peak_mb": 165.9,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

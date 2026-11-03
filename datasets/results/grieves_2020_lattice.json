@@ -10,7 +10,7 @@
     "geometry['lattice_bars_cm']: lattice_3d lx, ly, lz / 10, 147 bars; config3.lattice_type 'diagonal'",
     "units: 24 tetrode/cluster fields; cluster 0 of each tetrode (5712584 spikes, unsorted) left out",
     "environment: declared lattice, its 147 bars (Grieves et al. 2020 Supplementary Methods: 6 x 6 x 6 cubes, 0.97 m a side) as a graph of 343 crossings and 882 segments, every segment kept (_geometry.graph_environment); placement: the file's bars, in the positions' frame (not fitted); track_width 30.8 cm = 2 x the 99th percentile of the head's distance from the nearest bar (median 6.0, 95th percentile 10.4 cm), not the stated 10 mm tube diameter",
-    "headings: none; lattice.poh minus the direction of movement above 10 cm/s: in the camera's 2-D frame (lattice.pox, poy) mean -0.8 deg, spread 42.3 deg; in the 3-D frame's x, y mean -112.6 deg, spread 87.8 deg: not a heading in the positions' frame"
+    "headings: -lattice.poh (deg -> rad, wrapped): the 3-D frame's x, y are the camera's (lattice.pox, poy) mirrored in y plus a shift (RMS 3e-05 mm), so the camera azimuth turns the other way; heading minus the direction of movement above 10 cm/s: mean 0.8 deg, spread 42.3 deg (poh in the camera frame: mean -0.8, spread 42.3)"
   ],
   "expectations": [
     {
@@ -46,7 +46,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "dead66a41d28b2f0bcabb772cbd7f77efe3e8bc4"
   },
   "load_warnings": [],
   "operations": {
@@ -60,7 +60,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.399,
+      "seconds": 1.464,
       "peak_mb": 67.5
     },
     "env.occupancy": {
@@ -74,7 +74,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 59.636,
+      "seconds": 50.414,
       "peak_mb": 73.7
     },
     "env.declared": {
@@ -88,7 +88,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.03,
+      "seconds": 4.155,
       "peak_mb": 33.6
     },
     "rates.spatial": {
@@ -102,7 +102,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 19.403,
+      "seconds": 22.129,
       "peak_mb": 483.7
     },
     "rates.spatial_information": {
@@ -115,14 +115,14 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.003,
       "peak_mb": 7.1
     },
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.8620572325440465,
-        "median_shifted_bits_per_spike": 0.5645177198247537,
+        "median_shifted_bits_per_spike": 0.604572371768239,
         "frac_above_every_shift": 0.75,
         "n_units": 24,
         "n_shifts": 4
@@ -130,8 +130,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 38.715,
-      "peak_mb": 67.2
+      "seconds": 56.635,
+      "peak_mb": 67.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -142,7 +142,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.811,
+      "seconds": 1.116,
       "peak_mb": 191.4
     },
     "cells.grid_score": {
@@ -164,14 +164,27 @@
       "peak_mb": 0.0
     },
     "hd.tuning": {
-      "status": "n/a",
-      "note": "needs headings",
-      "warnings": []
+      "status": "ok",
+      "summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.091,
+      "peak_mb": 30.5
     },
     "rates.egocentric_boundary": {
       "status": "n/a",
-      "note": "needs headings",
-      "warnings": []
+      "summary": {},
+      "note": "egocentric boundary maps need 2-D positions",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "decode.position": {
       "status": "ok",
@@ -196,7 +209,7 @@
           "count": 1
         }
       ],
-      "seconds": 67.991,
+      "seconds": 138.106,
       "peak_mb": 513.5
     },
     "io.nwb_roundtrip": {
@@ -207,7 +220,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.04,
+      "seconds": 7.353,
       "peak_mb": 35.8
     },
     "env.from_graph": {
@@ -219,7 +232,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 0.0
     },
     "behavior.segment_by_velocity": {
@@ -231,7 +244,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.85,
+      "seconds": 1.343,
       "peak_mb": 87.8
     },
     "behavior.laps": {
@@ -243,7 +256,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.35,
+      "seconds": 8.189,
       "peak_mb": 29.2
     },
     "behavior.turn_sequence": {
@@ -255,7 +268,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.389,
+      "seconds": 9.124,
       "peak_mb": 29.2
     },
     "replay.compare_methods": {
@@ -264,7 +277,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.123,
+      "seconds": 0.18,
       "peak_mb": 3.0
     },
     "io.nwb_readers": {
@@ -273,7 +286,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.009,
       "peak_mb": 0.3
     },
     "io.read_pose": {
@@ -299,6 +312,25 @@
   "env_kind": "declared",
   "hazards": [
     {
+      "hazard": "headings_in_degrees",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 360, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "hazard_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.03038577710401364,
+        "mean_vector_length_max": 0.4373300442951528,
+        "mean_vector_length_n_finite": 24
+      }
+    },
+    {
       "hazard": "spike_times_in_ms",
       "op": "rates.spatial",
       "response": "warned",
@@ -315,6 +347,25 @@
         "frac_nan_bins": 0.43174603174603177,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "All 24 units are silent from 2120.4 s to 2486.5 s (366 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n162689/162743 spike_times (100%) across all neurons fell outside the position time window [1816.02, 5457.98]; spike_times.min()=7.54167 spike_times.max()=6.6972e+06. The spike times span 6.6972e+06 and reach 6.6972e+06, about 1000 times the 3641.96 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "hazard_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.7364191392799683,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 11
       }
     },
     {

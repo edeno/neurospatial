@@ -28,11 +28,6 @@
       "detail": "expected Range(low=99.0, high=101.0), got 99.99999999781721"
     },
     {
-      "key": "position_extent_cm",
-      "passed": true,
-      "detail": "predicate"
-    },
-    {
       "key": "headings_span_the_circle",
       "passed": true,
       "detail": "predicate"
@@ -142,8 +137,8 @@
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.15212335117924086,
-        "median_shifted_bits_per_spike": 0.22674480823938636,
-        "frac_above_every_shift": 0.15167095115681234,
+        "median_shifted_bits_per_spike": 0.047746136436811845,
+        "frac_above_every_shift": 0.794344473007712,
         "n_units": 389,
         "n_shifts": 4
       },
@@ -155,11 +150,20 @@
           "origin": "neurospatial",
           "template": "About #% of the analysed time is in runs of removed samples lasting # s to max_gap=# s, which looks like times were boolean-masked (for example times[speed > #]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
           "example": "About 6% of the analysed time is in runs of removed samples lasting 0.25 s to max_gap=1.0 s, which looks like times were boolean-masked (for example times[speed > 5]).\nWhy: runs shorter than max_gap are bridged as continuous occupancy, so the time and spikes inside the removed runs still count.\nFix: pass the full arrays and select with the function's min_speed= or epochs= where it has them, or set max_gap below the shortest removed run. Set warn_on_drop=False to suppress this warning.",
-          "count": 4
+          "count": 5
         }
       ],
-      "seconds": 0.241,
-      "peak_mb": 7.3
+      "seconds": 0.819,
+      "peak_mb": 21.4,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

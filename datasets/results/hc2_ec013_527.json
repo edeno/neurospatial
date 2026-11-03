@@ -8,14 +8,14 @@
     "positions: midpoint of the two LEDs where both are tracked (97.9% of frames), -1 -> NaN; video pixels as stored; range checked: 79.3 to 259.2 by 25.9 to 206.7 pixel (largest span 180.8, expected 120-300)",
     "scale: 0.995 cm per pixel inferred from the stated 180 cm apparatus; used only for bin_size 2.51 px and min_speed 4.02 px/s",
     "headings: first LED in front (back-to-front angle minus movement direction above 10 cm/s: circular mean 0.4 deg, median spread 42.5 deg; the other order gives -179.6 deg); 2.3% of tracked frames have both LEDs at one point -> NaN; frame of the stored pixel axes (y direction unstated)",
-    "spikes: .res samples / 20000 Hz; 37 units kept of 37 clusters >= 2",
+    "spikes: .res samples / 20000 Hz; 36 units kept of 37 clusters >= 2 (the cell table's units; 5 listed units have no spikes in this session)",
     "environment: declared square (180.837 x 180.837, drop edge, crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the inferred scale); placement fitted: centre_x 170, centre_y 117, rotation_rad 3.14, samples_side_a 177, samples_side_b 175, size_residual_a -0.0211, size_residual_b -0.03"
   ],
   "expectations": [
     {
       "key": "n_units",
       "passed": true,
-      "detail": "expected Range(low=30, high=80), got 37"
+      "detail": "expected Range(low=30, high=80), got 36"
     },
     {
       "key": "n_dims",
@@ -50,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "deadcc6c1f585acca3a8c28dcbad20d1123c04ba"
   },
   "load_warnings": [],
   "operations": {
@@ -72,8 +72,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.276,
-      "peak_mb": 11.6
+      "seconds": 0.334,
+      "peak_mb": 11.7
     },
     "env.occupancy": {
       "status": "ok",
@@ -94,7 +94,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.634,
+      "seconds": 0.749,
       "peak_mb": 25.6
     },
     "env.declared": {
@@ -108,16 +108,16 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.028,
+      "seconds": 0.03,
       "peak_mb": 5.7
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
-        "n_units": 37,
+        "n_units": 36,
         "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 3.9910061197348816,
-        "median_mean_hz": 0.2456966909102536
+        "median_peak_hz": 4.915433069308723,
+        "median_mean_hz": 0.2532725283312198
       },
       "note": "",
       "gap": null,
@@ -130,27 +130,27 @@
           "count": 1
         }
       ],
-      "seconds": 116.124,
-      "peak_mb": 696.0
+      "seconds": 124.299,
+      "peak_mb": 700.2
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 1.4371056065064933,
+        "bits_per_spike_median": 1.3912005436916328,
         "bits_per_spike_max": 7.83896001013845,
-        "bits_per_spike_n_finite": 36
+        "bits_per_spike_n_finite": 35
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
-      "peak_mb": 13.2
+      "seconds": 0.005,
+      "peak_mb": 12.9
     },
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 1.3912005436916328,
-        "median_shifted_bits_per_spike": 0.8322399280917879,
+        "median_shifted_bits_per_spike": 0.7781250920948948,
         "frac_above_every_shift": 0.7428571428571429,
         "n_units": 35,
         "n_shifts": 4
@@ -166,59 +166,59 @@
           "count": 4
         }
       ],
-      "seconds": 0.685,
-      "peak_mb": 15.7
+      "seconds": 0.754,
+      "peak_mb": 15.4
     },
     "cells.place_screen": {
       "status": "ok",
       "summary": {
         "n_place_screen": 14,
-        "n_units": 37
+        "n_units": 36
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.803,
+      "seconds": 1.619,
       "peak_mb": 192.5
     },
     "cells.grid_score": {
       "status": "ok",
       "summary": {
-        "median": -0.15914785962097847,
+        "median": -0.1582121476961851,
         "max": 0.3959276675944752,
-        "n_finite": 36
+        "n_finite": 35
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.479,
-      "peak_mb": 28.7
+      "seconds": 0.491,
+      "peak_mb": 28.6
     },
     "cells.border_score": {
       "status": "ok",
       "summary": {
         "median": -1.0,
         "max": -0.5292008105065441,
-        "n_finite": 36
+        "n_finite": 35
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.396,
+      "seconds": 0.487,
       "peak_mb": 9.7
     },
     "hd.tuning": {
       "status": "ok",
       "summary": {
-        "n_units": 37,
-        "mean_vector_length_median": 0.1993829197354528,
+        "n_units": 36,
+        "mean_vector_length_median": 0.19914919639062167,
         "mean_vector_length_max": 1.0,
-        "mean_vector_length_n_finite": 37
+        "mean_vector_length_n_finite": 36
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.067,
+      "seconds": 0.071,
       "peak_mb": 8.5
     },
     "rates.egocentric_boundary": {
@@ -260,8 +260,8 @@
           "count": 1
         }
       ],
-      "seconds": 2.382,
-      "peak_mb": 182.4
+      "seconds": 2.565,
+      "peak_mb": 183.0
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -279,8 +279,8 @@
           "count": 2
         }
       ],
-      "seconds": 5.177,
-      "peak_mb": 46.2
+      "seconds": 7.471,
+      "peak_mb": 56.7
     },
     "env.from_graph": {
       "status": "n/a",
@@ -300,8 +300,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.028,
-      "peak_mb": 11.1
+      "seconds": 1.238,
+      "peak_mb": 32.3
     },
     "behavior.laps": {
       "status": "error",
@@ -309,7 +309,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.038,
+      "seconds": 0.048,
       "peak_mb": 5.1
     },
     "behavior.turn_sequence": {
@@ -327,8 +327,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.211,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -336,8 +336,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.013,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",
@@ -345,7 +345,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 0.0
     },
     "imaging.rates": {
@@ -368,16 +368,16 @@
       "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 359.8, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_units": 37,
-        "mean_vector_length_median": 0.1993829197354528,
+        "n_units": 36,
+        "mean_vector_length_median": 0.19914919639062167,
         "mean_vector_length_max": 1.0,
-        "mean_vector_length_n_finite": 37
+        "mean_vector_length_n_finite": 36
       },
       "hazard_summary": {
-        "n_units": 37,
-        "mean_vector_length_median": 0.05150234030146944,
+        "n_units": 36,
+        "mean_vector_length_median": 0.0473244117217846,
         "mean_vector_length_max": 1.0,
-        "mean_vector_length_n_finite": 37
+        "mean_vector_length_n_finite": 36
       }
     },
     {
@@ -423,16 +423,16 @@
       "message": "",
       "repeated_clean_warnings": 1,
       "clean_summary": {
-        "n_units": 37,
+        "n_units": 36,
         "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 3.9910061197348816,
-        "median_mean_hz": 0.2456966909102536
+        "median_peak_hz": 4.915433069308723,
+        "median_mean_hz": 0.2532725283312198
       },
       "hazard_summary": {
-        "n_units": 37,
+        "n_units": 36,
         "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 3.991006119734876,
-        "median_mean_hz": 0.24567470569442346
+        "median_peak_hz": 4.915433069308728,
+        "median_mean_hz": 0.2532333234138597
       }
     },
     {
@@ -472,16 +472,16 @@
       "hazard": "spike_times_in_ms",
       "op": "rates.spatial",
       "response": "warned",
-      "message": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).\nAll 37 units are silent from 309.2 s to 410.3 s (101 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n95353/95403 spike_times (100%) across all neurons fell outside the position time window [0, 1060.1]; spike_times.min()=2.05 spike_times.max()=1.06009e+06. The spike times span 1.06009e+06 and reach 1.06009e+06, about 1000 times the 1060.1 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "message": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).\nAll 36 units are silent from 309.2 s to 410.3 s (101 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n95346/95396 spike_times (100%) across all neurons fell outside the position time window [0, 1060.1]; spike_times.min()=2.05 spike_times.max()=1.06009e+06. The spike times span 1.06009e+06 and reach 1.06009e+06, about 1000 times the 1060.1 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
       "repeated_clean_warnings": 1,
       "clean_summary": {
-        "n_units": 37,
+        "n_units": 36,
         "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 3.9910061197348816,
-        "median_mean_hz": 0.2456966909102536
+        "median_peak_hz": 4.915433069308723,
+        "median_mean_hz": 0.2532725283312198
       },
       "hazard_summary": {
-        "n_units": 37,
+        "n_units": 36,
         "frac_nan_bins": 0.40101332332520173,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
@@ -491,16 +491,16 @@
       "hazard": "spike_times_in_ms",
       "op": "hd.tuning",
       "response": "warned",
-      "message": "All 37 units are silent from 309.2 s to 410.3 s (101 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n95353/95403 spike_times (100%) across all neurons fell outside the position time window [0, 1060.1]; spike_times.min()=2.05 spike_times.max()=1.06009e+06. The spike times span 1.06009e+06 and reach 1.06009e+06, about 1000 times the 1060.1 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "message": "All 36 units are silent from 309.2 s to 410.3 s (101 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n95346/95396 spike_times (100%) across all neurons fell outside the position time window [0, 1060.1]; spike_times.min()=2.05 spike_times.max()=1.06009e+06. The spike times span 1.06009e+06 and reach 1.06009e+06, about 1000 times the 1060.1 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_units": 37,
-        "mean_vector_length_median": 0.1993829197354528,
+        "n_units": 36,
+        "mean_vector_length_median": 0.19914919639062167,
         "mean_vector_length_max": 1.0,
-        "mean_vector_length_n_finite": 37
+        "mean_vector_length_n_finite": 36
       },
       "hazard_summary": {
-        "n_units": 37,
+        "n_units": 36,
         "mean_vector_length_median": 0.21183553208312192,
         "mean_vector_length_max": 1.0,
         "mean_vector_length_n_finite": 4
@@ -513,16 +513,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_units": 37,
-        "mean_vector_length_median": 0.1993829197354528,
+        "n_units": 36,
+        "mean_vector_length_median": 0.19914919639062167,
         "mean_vector_length_max": 1.0,
-        "mean_vector_length_n_finite": 37
+        "mean_vector_length_n_finite": 36
       },
       "hazard_summary": {
-        "n_units": 37,
-        "mean_vector_length_median": 0.21004677800763957,
+        "n_units": 36,
+        "mean_vector_length_median": 0.2072350062950549,
         "mean_vector_length_max": 1.0,
-        "mean_vector_length_n_finite": 37
+        "mean_vector_length_n_finite": 36
       }
     },
     {
@@ -532,16 +532,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_units": 37,
-        "mean_vector_length_median": 0.1993829197354528,
+        "n_units": 36,
+        "mean_vector_length_median": 0.19914919639062167,
         "mean_vector_length_max": 1.0,
-        "mean_vector_length_n_finite": 37
+        "mean_vector_length_n_finite": 36
       },
       "hazard_summary": {
-        "n_units": 37,
-        "mean_vector_length_median": 0.19938291973545266,
+        "n_units": 36,
+        "mean_vector_length_median": 0.19915750424010448,
         "mean_vector_length_max": 1.0,
-        "mean_vector_length_n_finite": 37
+        "mean_vector_length_n_finite": 36
       }
     },
     {
@@ -556,7 +556,7 @@
         "max_extent": 183.23
       },
       "hazard_summary": {
-        "n_bins": 3224,
+        "n_bins": 3235,
         "n_dims": 2,
         "max_extent": 261.03999999999996
       }
@@ -587,16 +587,16 @@
       "message": "",
       "repeated_clean_warnings": 1,
       "clean_summary": {
-        "n_units": 37,
+        "n_units": 36,
         "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 3.9910061197348816,
-        "median_mean_hz": 0.2456966909102536
+        "median_peak_hz": 4.915433069308723,
+        "median_mean_hz": 0.2532725283312198
       },
       "hazard_summary": {
-        "n_units": 37,
+        "n_units": 36,
         "frac_nan_bins": 0.40101332332520173,
-        "median_peak_hz": 3.991006119734876,
-        "median_mean_hz": 0.24567470569442346
+        "median_peak_hz": 4.915433069308728,
+        "median_mean_hz": 0.2532333234138597
       }
     },
     {
@@ -611,7 +611,7 @@
       },
       "hazard_summary": {
         "n_segments": 294,
-        "running_s": 835.8399999999997
+        "running_s": 837.0431999999997
       }
     },
     {

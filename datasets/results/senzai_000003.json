@@ -4,7 +4,7 @@
   "source": "https://dandiarchive.org/dandiset/000003/0.260218.2052 sub-YutaMouse41/sub-YutaMouse41_ses-YutaMouse41-150829_behavior+ecephys.nwb (asset 70aaf3be-9f95-40af-8abc-a8316cbe50ca)",
   "license": "CC-BY-4.0",
   "conversions": [
-    "positions: acquisition/position_sensor0 (a bare SpatialSeries, read with pynwb), labelled metres; range checked: 331-498 by 120-220: pixels, kept as pixels (no calibration)",
+    "positions: acquisition/position_sensor0 (a bare SpatialSeries, read with pynwb), labelled metres; range checked: 331-498 by 120-220: pixels, kept as pixels (no calibration); reference frame 'unknown', so whether pixel y runs up or down the image is not stated and y is kept as stored",
     "times: starting_time 0.0 s + index / 39.0625 Hz; the implied 17050.3 s matches the LFP's 17050.3 s and the last spike at 17050.2 s",
     "headings: none; the direction between the two sensors does not follow movement",
     "epochs: sleep-state rows by label; params['analysis_epochs'] the awake rows"
@@ -130,8 +130,8 @@
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.07459592741270356,
-        "median_shifted_bits_per_spike": 0.013973415743979981,
-        "frac_above_every_shift": 0.782608695652174,
+        "median_shifted_bits_per_spike": 0.01835595269238999,
+        "frac_above_every_shift": 0.8695652173913043,
         "n_units": 23,
         "n_shifts": 4
       },
@@ -141,13 +141,29 @@
         {
           "category": "UserWarning",
           "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        },
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
           "template": "bandwidth=None resolved to # pixel, # times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the # cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the # cm default, or pass bandwidth= in pixel.",
           "example": "bandwidth=None resolved to 10 pixel, 2.5 times the median bin spacing, because env.units='pixel' is not a metric unit.\nWhy: the 5 cm default needs metric units, so the smoothing length follows the bin size instead.\nFix: convert positions and the environment to a metric unit (cm, m or mm) for the 5 cm default, or pass bandwidth= in pixel.",
-          "count": 4
+          "count": 5
         }
       ],
-      "seconds": 1.255,
-      "peak_mb": 92.4
+      "seconds": 2.621,
+      "peak_mb": 134.1,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

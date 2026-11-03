@@ -127,16 +127,25 @@
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.2430996490728254,
-        "median_shifted_bits_per_spike": 0.058866948473220354,
-        "frac_above_every_shift": 0.8450704225352113,
+        "median_shifted_bits_per_spike": 0.05994861234581712,
+        "frac_above_every_shift": 0.9154929577464789,
         "n_units": 71,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.029,
-      "peak_mb": 54.8
+      "seconds": 2.435,
+      "peak_mb": 90.6,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

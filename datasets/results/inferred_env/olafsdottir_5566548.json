@@ -35,11 +35,6 @@
       "detail": "expected Range(low=2270.0, high=2280.0), got 2275.98"
     },
     {
-      "key": "inside_the_tracking_window_cm",
-      "passed": true,
-      "detail": "predicate"
-    },
-    {
       "key": "one_led_no_heading",
       "passed": true,
       "detail": "predicate"
@@ -131,16 +126,25 @@
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.8433519763686307,
-        "median_shifted_bits_per_spike": 0.21061578322616137,
-        "frac_above_every_shift": 0.9649122807017544,
+        "median_shifted_bits_per_spike": 0.19368307117523959,
+        "frac_above_every_shift": 0.9473684210526315,
         "n_units": 57,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.17,
-      "peak_mb": 13.9
+      "seconds": 3.168,
+      "peak_mb": 51.9,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

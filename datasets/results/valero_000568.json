@@ -5,10 +5,11 @@
   "license": "CC-BY-4.0",
   "conversions": [
     "positions: read_position, cm; range checked: 4.2-20.7 by 0.5-116.5 cm (track 110 cm along y)",
+    "tracking: 2630 samples repeating the one before in runs of 10+ frames (46 runs, longest held 6.0 s) and 671 samples reached faster than 100 cm/s set to NaN (held, then bridged, tracking)",
     "times: position timestamps, not the video timestamps (22.55-23.12 s earlier for the same frames); spatial information peaks at the position timestamps",
     "events['ripples']: the 24 of 49 RippleTimeIntervals rows inside the track tracking",
     "epochs: the epoch holding the tracking as track; SleepStates by label",
-    "environment: declared straight track 110 cm (NWB series description '110 cm long, 6.35 cm wide'); tracked point: not stated; physical width 6.35 cm (stated), 12.4% of samples beyond half of it (12% at 0-4 cm/s, 14% at 4-30 cm/s, 9% at 30-inf cm/s); placement tolerance 12.9 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: along the samples' principal axis at -87.6 deg, centred between their 0.5th and 99.5th percentiles along it (span 115.6 cm); 26.2% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 1.22 cm, worst stretch bias 0.07 cm (limit 2.5), worst unsupported share of a segment 0%, length +5% of the stated; track length 110.0 cm"
+    "environment: declared straight track 110 cm (NWB series description '110 cm long, 6.35 cm wide'); tracked point: not stated; physical width 6.35 cm (stated), 12.6% of samples beyond half of it (12% at 0-4 cm/s, 14% at 4-30 cm/s, 14% at 30-inf cm/s); placement tolerance 13 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: along the samples' principal axis at -87.6 deg, centred between their 0.5th and 99.5th percentiles along it (span 115.6 cm); 27.5% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 1.27 cm, worst stretch bias 0.17 cm (limit 2.5), worst unsupported share of a segment 0%, length +5% of the stated; track length 110.0 cm"
   ],
   "expectations": [
     {
@@ -44,7 +45,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "89e33de8a9a24311448941ce1641ee78dfb27298"
+    "git_commit": "227fa727b89f0ab18d40986f9119aac0efbf99c8"
   },
   "load_warnings": [
     {
@@ -59,51 +60,51 @@
     "env.from_samples": {
       "status": "ok",
       "summary": {
-        "n_bins": 190,
+        "n_bins": 186,
         "n_dims": 2,
         "max_extent": 117.5
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.025,
-      "peak_mb": 3.9
+      "seconds": 0.306,
+      "peak_mb": 13.5
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 944.4091666666836,
+        "total_s": 932.1060000000234,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 15.170466666663742,
-        "max_s": 78.42023333333327
+        "median_s_per_visited_bin": 14.6037166666556,
+        "max_s": 80.18739999999616
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.04,
-      "peak_mb": 18.1
+      "seconds": 0.093,
+      "peak_mb": 9.4
     },
     "env.declared": {
       "status": "ok",
       "summary": {
-        "n_bins": 45,
+        "n_bins": 44,
         "n_dims": 2,
-        "max_extent": 107.4614489359976,
-        "frac_samples_outside": 0.010010278410868302
+        "max_extent": 107.40381003350767,
+        "frac_samples_outside": 0.010010966630111234
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
-      "peak_mb": 10.3
+      "seconds": 0.009,
+      "peak_mb": 9.8
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.249368502463638,
-        "median_mean_hz": 0.5490151793420898
+        "median_peak_hz": 1.251464886703217,
+        "median_mean_hz": 0.5432340917941356
       },
       "note": "",
       "gap": null,
@@ -116,14 +117,14 @@
           "count": 1
         }
       ],
-      "seconds": 0.071,
-      "peak_mb": 18.0
+      "seconds": 0.174,
+      "peak_mb": 15.3
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.28288772918929583,
-        "bits_per_spike_max": 1.6439420655492238,
+        "bits_per_spike_median": 0.2682061522310112,
+        "bits_per_spike_max": 1.6581057056689104,
         "bits_per_spike_n_finite": 35
       },
       "note": "",
@@ -135,10 +136,10 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.27621409230282,
-        "median_shifted_bits_per_spike": 0.013189754956962788,
-        "frac_above_every_shift": 0.9117647058823529,
-        "n_units": 34,
+        "median_bits_per_spike": 0.2682061522310112,
+        "median_shifted_bits_per_spike": 0.02014389676627984,
+        "frac_above_every_shift": 0.8285714285714286,
+        "n_units": 35,
         "n_shifts": 4
       },
       "note": "",
@@ -152,8 +153,8 @@
           "count": 4
         }
       ],
-      "seconds": 0.288,
-      "peak_mb": 21.6
+      "seconds": 0.361,
+      "peak_mb": 14.7
     },
     "cells.place_screen": {
       "status": "ok",
@@ -198,37 +199,37 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 34.22222222222223,
-        "chance_median_error": 39.11111111111111,
+        "median_error": 34.999999999999986,
+        "chance_median_error": 42.50000000000002,
         "chance_frac_disconnected": 0.0,
-        "frac_actual_outside": 0.007087334247828075,
+        "frac_actual_outside": 0.00724112961622013,
         "units": "cm",
         "n_time_bins": 4374,
-        "median_error_on_declared": 34.22222222222223,
-        "n_on_declared": 4343
+        "median_error_on_declared": 35.0,
+        "n_on_declared": 4113
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.104,
-      "peak_mb": 18.0
+      "seconds": 0.144,
+      "peak_mb": 16.9
     },
     "io.nwb_roundtrip": {
       "status": "ok",
       "summary": {
-        "n_bins": 45
+        "n_bins": 44
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.883,
-      "peak_mb": 2.0
+      "seconds": 1.734,
+      "peak_mb": 2.5
     },
     "env.from_graph": {
       "status": "ok",
       "summary": {
-        "n_bins": 45,
-        "n_bin_edges": 44
+        "n_bins": 44,
+        "n_bin_edges": 43
       },
       "note": "",
       "gap": null,
@@ -239,14 +240,14 @@
     "behavior.segment_by_velocity": {
       "status": "ok",
       "summary": {
-        "n_segments": 458,
-        "running_s": 1001.6241000000155
+        "n_segments": 445,
+        "running_s": 985.1862666666711
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.029,
-      "peak_mb": 18.7
+      "seconds": 0.566,
+      "peak_mb": 27.9
     },
     "behavior.laps": {
       "status": "error",
@@ -254,8 +255,8 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
-      "peak_mb": 9.2
+      "seconds": 0.011,
+      "peak_mb": 8.8
     },
     "behavior.turn_sequence": {
       "status": "ok",
@@ -266,8 +267,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
-      "peak_mb": 9.2
+      "seconds": 0.009,
+      "peak_mb": 8.8
     },
     "replay.compare_methods": {
       "status": "ok",
@@ -284,8 +285,8 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 1.162,
-      "peak_mb": 36.1
+      "seconds": 1.178,
+      "peak_mb": 39.0
     },
     "io.nwb_readers": {
       "status": "ok",
@@ -305,8 +306,17 @@
           "count": 1
         }
       ],
-      "seconds": 1.101,
-      "peak_mb": 13.4
+      "seconds": 1.769,
+      "peak_mb": 13.8,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
+      }
     },
     "io.read_pose": {
       "status": "n/a",
@@ -322,8 +332,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.107,
-      "peak_mb": 3.0
+      "seconds": 1.706,
+      "peak_mb": 14.8
     },
     "imaging.rates": {
       "status": "n/a",
@@ -339,16 +349,110 @@
   "env_kind": "declared",
   "hazards": [
     {
-      "hazard": "spike_times_in_ms",
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 186,
+        "n_dims": 2,
+        "max_extent": 117.5
+      },
+      "hazard_summary": {
+        "n_bins": 188,
+        "n_dims": 2,
+        "max_extent": 117.5
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 932.1060000000234,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 14.6037166666556,
+        "max_s": 80.18739999999616
+      },
+      "hazard_summary": {
+        "total_s": 919.102666666683,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 14.437033333330874,
+        "max_s": 80.48753333333661
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
       "op": "rates.spatial",
-      "response": "warned",
-      "message": "All 35 units are silent from 9777.5 s to 9912.2 s (135 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 1,
       "clean_summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.249368502463638,
-        "median_mean_hz": 0.5490151793420898
+        "median_peak_hz": 1.251464886703217,
+        "median_mean_hz": 0.5432340917941356
+      },
+      "hazard_summary": {
+        "n_units": 35,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 1.3075933217746407,
+        "median_mean_hz": 0.5653060413703044
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 445,
+        "running_s": 985.1862666666711
+      },
+      "hazard_summary": {
+        "n_segments": 485,
+        "running_s": 1030.164833333337
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_turns": 0,
+        "frac_left": NaN
+      },
+      "hazard_summary": {
+        "n_turns": 0,
+        "frac_left": NaN
+      }
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "All 35 units are silent from 9301.0 s to 9392.3 s (91 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_units": 35,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 1.251464886703217,
+        "median_mean_hz": 0.5432340917941356
       },
       "hazard_summary": {
         "n_units": 35,
@@ -364,7 +468,7 @@
       "message": "bin_size=2.5 is at least the per-axis data extent [0.1651, 1.159] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_bins": 190,
+        "n_bins": 186,
         "n_dims": 2,
         "max_extent": 117.5
       },
@@ -378,13 +482,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: 2398 of 67130 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 6.068 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 944.4091666666836,
+        "total_s": 932.1060000000234,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 15.170466666663742,
-        "max_s": 78.42023333333327
+        "median_s_per_visited_bin": 14.6037166666556,
+        "max_s": 80.18739999999616
       },
       "hazard_summary": null
     },
@@ -392,13 +496,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: 2398 of 67130 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 6.068 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.249368502463638,
-        "median_mean_hz": 0.5490151793420898
+        "median_peak_hz": 1.251464886703217,
+        "median_mean_hz": 0.5432340917941356
       },
       "hazard_summary": null
     },
@@ -409,8 +513,8 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_segments": 458,
-        "running_s": 1001.6241000000155
+        "n_segments": 445,
+        "running_s": 985.1862666666711
       },
       "hazard_summary": {
         "n_segments": 0,
@@ -448,12 +552,12 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_bins": 190,
+        "n_bins": 186,
         "n_dims": 2,
         "max_extent": 117.5
       },
       "hazard_summary": {
-        "n_bins": 190,
+        "n_bins": 186,
         "n_dims": 2,
         "max_extent": 117.5
       }
@@ -465,16 +569,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 944.4091666666836,
+        "total_s": 932.1060000000234,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 15.170466666663742,
-        "max_s": 78.42023333333327
+        "median_s_per_visited_bin": 14.6037166666556,
+        "max_s": 80.18739999999616
       },
       "hazard_summary": {
-        "total_s": 944.2333333333163,
+        "total_s": 933.0333333333092,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 15.166666666668789,
-        "max_s": 78.33333333333303
+        "median_s_per_visited_bin": 14.59999999999718,
+        "max_s": 80.09999999999854
       }
     },
     {
@@ -486,14 +590,14 @@
       "clean_summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.249368502463638,
-        "median_mean_hz": 0.5490151793420898
+        "median_peak_hz": 1.251464886703217,
+        "median_mean_hz": 0.5432340917941356
       },
       "hazard_summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 0.8915014589138103,
-        "median_mean_hz": 0.6243801018925683
+        "median_peak_hz": 0.9033948442223175,
+        "median_mean_hz": 0.6067795049351504
       }
     },
     {
@@ -503,12 +607,12 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_segments": 458,
-        "running_s": 1001.6241000000155
+        "n_segments": 445,
+        "running_s": 985.1862666666711
       },
       "hazard_summary": {
-        "n_segments": 458,
-        "running_s": 1002.6333333333332
+        "n_segments": 445,
+        "running_s": 987.3333333333312
       }
     },
     {

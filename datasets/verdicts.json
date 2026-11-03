@@ -770,22 +770,22 @@
     "hc3_ec013_669/whl_minus_one_kept/env.from_samples": {
       "verdict": "silent",
       "gap": "G-096",
-      "reason": "Untracked frames become (-1, -1) px, outside the video image: 540 -> 553 bins, extent 238 -> 299 px. Check 1 would not fire (not 0)."
+      "reason": "Frames with an LED lost, averaged with its -1 marker, land between the other LED and (-1, -1) px: 540 -> 572 bins, extent 238 -> 298 px. Check 1 would not fire (not 0)."
     },
     "hc3_ec013_669/whl_minus_one_kept/env.occupancy": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "Barely changes on the declared track"
+      "reason": "Barely changes on the declared track: 530.4 -> 536.2 s, most of the averaged frames fall off it."
     },
     "hc3_ec013_669/whl_minus_one_kept/rates.spatial": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "Barely changes on the declared track"
+      "reason": "Barely changes on the declared track: median peak 1.513 -> 1.512 Hz, mean 0.476 -> 0.483 Hz."
     },
     "hc3_ec013_669/whl_minus_one_kept/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-096",
-      "reason": "Jumps to (-1, -1) read as running: 208 -> 211 segments."
+      "reason": "Jumps toward (-1, -1) read as running: 208 -> 214 segments, running 525 -> 539 s."
     },
     "hc2_ec013_527/headings_in_degrees/hd.tuning": {
       "verdict": "caught",
@@ -805,7 +805,7 @@
     "hc2_ec013_527/missing_positions_as_zero/rates.spatial": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "Same frames dropped by the declared square: median peak and mean rate unchanged (3.99, 0.246 Hz)."
+      "reason": "Same frames dropped by the declared square: median peak and mean rate unchanged (4.92, 0.253 Hz)."
     },
     "hc2_ec013_527/missing_positions_as_zero/behavior.segment_by_velocity": {
       "verdict": "silent",
@@ -830,7 +830,7 @@
     "hc2_ec013_527/coincident_leds_as_east/hd.tuning": {
       "verdict": "silent",
       "gap": "G-094",
-      "reason": "2.3 % of tracked frames get heading exactly 0; median mean vector length 0.199 -> 0.210, nothing warns."
+      "reason": "2.3 % of tracked frames get heading exactly 0; median mean vector length 0.199 -> 0.207, nothing warns."
     },
     "hc2_ec013_527/leds_swapped/hd.tuning": {
       "verdict": "undetectable",
@@ -840,17 +840,17 @@
     "hc2_ec013_527/whl_minus_one_kept/env.from_samples": {
       "verdict": "silent",
       "gap": "G-096",
-      "reason": "Untracked frames become (-1, -1) px: 3210 -> 3224 bins, extent 183 -> 261 px. Check 1 would not fire."
+      "reason": "Frames with an LED lost, averaged with its -1 marker, land between the other LED and (-1, -1) px: 3210 -> 3235 bins, extent 183 -> 261 px. Check 1 would not fire."
     },
     "hc2_ec013_527/whl_minus_one_kept/env.occupancy": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "The untracked frames land outside the declared 180 cm square and are dropped: total occupancy 823.5 -> 824.0 s, per-bin values unchanged."
+      "reason": "The marker frames land outside the declared 180 cm square and are dropped: total occupancy 823.5 -> 824.0 s, per-bin values unchanged."
     },
     "hc2_ec013_527/whl_minus_one_kept/rates.spatial": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "Same frames dropped by the declared square: median peak and mean rate unchanged (3.99, 0.246 Hz)."
+      "reason": "Those frames fall outside the declared square and are dropped: median peak and mean rate unchanged (4.92, 0.253 Hz)."
     },
     "hc2_ec013_527/whl_minus_one_kept/behavior.segment_by_velocity": {
       "verdict": "silent",
@@ -1055,12 +1055,12 @@
     "hafting_2008_nird/length_unit_off_by_100/env.occupancy": {
       "verdict": "silent",
       "gap": "G-155",
-      "reason": "No warning on the declared track: share of bins visited 1 -> 0.025; most occupied bin 56.1 s -> 0.12 s; median occupancy per visited bin 4.76 s -> 0.12 s; occupancy 650 s -> 0.24 s (clean -> hazard)"
+      "reason": "No warning on the declared track: share of bins visited 1 -> 0.025; most occupied bin 56.1 s -> 0.12 s; median occupancy per visited bin 4.76 s -> 0.11 s; occupancy 650 s -> 0.22 s (clean -> hazard)"
     },
     "hafting_2008_nird/length_unit_off_by_100/rates.spatial": {
       "verdict": "silent",
       "gap": "G-155",
-      "reason": "No warning on the declared track: frac nan bins 0 -> 0.975; median mean hz 3.55 Hz -> 4.17 Hz; median peak rate 12.6 Hz -> 5.17 Hz (clean -> hazard)"
+      "reason": "No warning on the declared track: frac nan bins 0 -> 0.975; median mean hz 3.55 Hz -> 4.52 Hz; median peak rate 12.6 Hz -> 5.52 Hz (clean -> hazard)"
     },
     "hafting_2008_nird/length_unit_off_by_100/behavior.segment_by_velocity": {
       "verdict": "silent",
@@ -1445,27 +1445,27 @@
     "ca1ca3_001880/missing_positions_as_zero/env.from_samples": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "5.3 % NaN samples become (0, 0), a corner just outside the tracked 0.2-91.5 cm maze: 1,080 -> 1,085 bins, no warning. Check 1 would fire."
+      "reason": "34.4 % NaN samples (5.3 % in the file, the rest held tracking the loader set to NaN) become (0, 0), a corner just outside the tracked 0.2-91.5 cm maze: 1,080 -> 1,085 bins, no warning. Check 1 would fire."
     },
     "ca1ca3_001880/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Off-maze NaN samples are mostly outside the onMaze epochs, so occupancy changes little (2,694 -> 2,697 s); no warning."
+      "reason": "Held tracking on the maze returns as (0, 0): occupancy 2,699.8 -> 2,739.2 s, the most-occupied bin 15.9 -> 34.5 s; no warning."
     },
     "ca1ca3_001880/missing_positions_as_zero/rates.spatial": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Median peak 9.31 -> 9.82 Hz, no warning."
+      "reason": "Median peak 9.42 -> 9.62 Hz, no warning."
     },
     "ca1ca3_001880/missing_positions_as_zero/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Jumps to and from (0, 0) read as running: 1,030 -> 1,035 segments. Check 1 would fire."
+      "reason": "Jumps to and from (0, 0) read as running: 1,014 -> 1,086 segments, running 2,879 -> 2,944 s. Check 1 would fire."
     },
     "ca1ca3_001880/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "New warning: 100% of spikes outside the tracking window, with the span ratio; median peak 9.31 -> 0.02 Hz."
+      "reason": "New warning: 100% of spikes outside the tracking window, with the span ratio; median peak 9.42 -> 0.02 Hz."
     },
     "ca1ca3_001880/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
@@ -1485,7 +1485,7 @@
     "ca1ca3_001880/length_unit_off_by_100/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-014",
-      "reason": "0 segments instead of 1,030; no environment built, so check 2 cannot see it."
+      "reason": "0 segments instead of 1,014; no environment built, so check 2 cannot see it."
     },
     "gonzalez_001695/spike_times_in_ms/rates.spatial": {
       "verdict": "silent",
@@ -1570,12 +1570,12 @@
     "valero_000568/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Warned on the declared track: All 35 units are silent from 9777.5 s to 9912.2 s (135 s) while position is tracked; median mean hz 0.549 Hz -> 0 Hz; median peak rate 1.25 Hz -> 0 Hz (clean -> hazard)"
+      "reason": "Warned on the declared track: All 35 units are silent from 9301.0 s to 9392.3 s (91 s) while position is tracked; median mean hz 0.543 Hz -> 0 Hz; median peak rate 1.25 Hz -> 0 Hz (clean -> hazard)"
     },
     "valero_000568/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Warns that bin_size=2.5 is at least the 0.17 x 1.16 extent: 4 bins instead of 190."
+      "reason": "Warns that bin_size=2.5 is at least the 0.17 x 1.16 extent: 4 bins instead of 186."
     },
     "valero_000568/length_unit_off_by_100/env.occupancy": {
       "verdict": "caught",
@@ -1590,7 +1590,7 @@
     "valero_000568/length_unit_off_by_100/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-014",
-      "reason": "0 segments instead of 458; no environment built, so check 2 cannot see it."
+      "reason": "0 segments instead of 445; no environment built, so check 2 cannot see it."
     },
     "valero_000568/video_timestamps/env.from_samples": {
       "verdict": "no effect",
@@ -1605,12 +1605,12 @@
     "valero_000568/video_timestamps/rates.spatial": {
       "verdict": "undetectable",
       "gap": "G-054",
-      "reason": "No warning on the declared track: median mean hz 0.549 Hz -> 0.624 Hz; median peak rate 1.25 Hz -> 0.892 Hz (clean -> hazard)"
+      "reason": "No warning on the declared track: median mean hz 0.543 Hz -> 0.607 Hz; median peak rate 1.25 Hz -> 0.903 Hz (clean -> hazard)"
     },
     "valero_000568/video_timestamps/behavior.segment_by_velocity": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "Speeds barely depend on the shift: 458 segments both ways, running 1001.6 -> 1002.6 s."
+      "reason": "Speeds barely depend on the shift: 445 segments both ways, running 985.2 -> 987.3 s."
     },
     "aeryjones_000165/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
@@ -1650,7 +1650,7 @@
     "dyads_001845/missing_positions_as_zero/env.from_samples": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "38 % NaN samples become (0, 0), outside the 3-151 cm maze: 245 -> 248 bins, extent 125 -> 152.5 cm, no warning. Check 1 would fire."
+      "reason": "38 % NaN samples become (0, 0), outside the 3.0-94.6 by -151.5 to -26.8 cm maze (y up): 245 -> 248 bins, extent 125 -> 152.5 cm, no warning. Check 1 would fire."
     },
     "dyads_001845/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
@@ -2121,6 +2121,56 @@
       "verdict": "silent",
       "gap": "G-132",
       "reason": "2975 turns (frac_left 0.50) -> 0 with metres labelled cm: the head positions collapse into a 1.5-1.7 cm box, and turn_sequence reports no turns without a warning."
+    },
+    "valero_000568/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "4.9 % NaN samples (held tracking the loader set to NaN) become (0, 0), a corner left of the tracked 4.2-20.7 by 0.5-116.5 cm: 186 -> 188 bins, no warning. Check 1 would fire."
+    },
+    "valero_000568/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Occupancy on the declared track 932.1 -> 919.1 s (max bin 80.2 -> 80.5 s); no warning."
+    },
+    "valero_000568/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median peak 1.25 -> 1.31 Hz, median mean 0.543 -> 0.565 Hz, no warning."
+    },
+    "valero_000568/missing_positions_as_zero/behavior.segment_by_velocity": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Jumps to and from (0, 0) read as running: 445 -> 485 segments, running 985 -> 1030 s. Check 1 would fire."
+    },
+    "valero_000568/missing_positions_as_zero/behavior.turn_sequence": {
+      "verdict": "no effect",
+      "gap": null,
+      "reason": "A straight track has no junction, so no turns either way"
+    },
+    "rsc_000987/missing_positions_as_zero/env.from_samples": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "0.45 % NaN samples (held motion capture the loader set to NaN) become (0, 0), which lies inside the tracked -24.2-28.5 by -42.1-11.0 cm arena: 453 bins both ways, no warning. Check 1 would fire (a repeated coordinate at the origin)."
+    },
+    "rsc_000987/missing_positions_as_zero/env.occupancy": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "1.0 s more occupancy (1,201.8 -> 1,202.8 s), piled at the origin inside the arena; no warning."
+    },
+    "rsc_000987/missing_positions_as_zero/rates.spatial": {
+      "verdict": "silent",
+      "gap": "G-017",
+      "reason": "Median peak 5.565 -> 5.574 Hz; too few samples to move the maps, no warning."
+    },
+    "grieves_2020_lattice/headings_in_degrees/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Warns that headings look like degrees (largest magnitude 180, steps up to 360); median mean vector length 0.070 -> 0.030."
+    },
+    "grieves_2020_lattice/spike_times_in_ms/hd.tuning": {
+      "verdict": "caught",
+      "gap": null,
+      "reason": "Same silence warning as rates.spatial (all 24 units silent 2120.4-2486.5 s); 13 of 24 units lose a finite mean vector length."
     }
   },
   "cells": {

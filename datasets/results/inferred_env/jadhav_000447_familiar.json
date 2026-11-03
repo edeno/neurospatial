@@ -5,7 +5,7 @@
   "license": "CC-BY-4.0",
   "conversions": [
     "positions: Position/SpatialSeries columns 0, 1 (cm); range checked: 14.8 to 130.9 by 0.1 to 106.2 cm (largest span 116.1, expected 80-200); column 2 is speed in cm/s (median ratio 0.57 to the speed from x, y while moving, r = 0.71), dropped",
-    "epochs: trials table rows as trials, split by trajectory_type (1 inbound, 0 outbound); 'epoch intervals' as run",
+    "epochs: trials table rows as trials, split by trajectory_type (1 inbound, 0 outbound; checked: the centre well is 1, between the others, all 24 outbound rows start there, 25 of 25 inbound rows start at a side well and the 24 correct ones end at the centre); 'epoch intervals' as run; params trial_start_well, trial_end_well, trial_correct per trial",
     "maze: the familiar W-track, run epochs [2]; positions outside them -> NaN (32.2% of samples kept); 49 of 104 trajectories inside them",
     "environment: declared W-track: three parallel arms joined by a base (Tang, Shin & Jadhav 2023 STAR Methods: 'the W-maze (~80 x 80 cm with ~7-cm wide tracks)'); tracked point: not stated; physical width 7 cm (stated), 13.0% of samples beyond half of it (2% at 0-4 cm/s, 32% at 4-30 cm/s, 26% at 30-inf cm/s); placement tolerance 29.7 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: node positions fitted to this maze's samples (fitted base 79.0 cm, arms 80.7-89.4 cm; stated about 80 x 80 cm); edges (cm): base_0-base_1 40.6; base_0-arm_0 89.4; base_1-base_2 38.5; base_1-arm_1 85.4; base_2-arm_2 80.7 (fitted to the samples); fit: median |lateral offset| 0.79 cm, worst stretch bias 0.78 cm (limit 2.5), worst unsupported share of a segment 0%, base -1% of the stated, arms +6% of the stated; track length 334.6 cm"
   ],
@@ -33,7 +33,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
   },
   "load_warnings": [
     {
@@ -62,8 +62,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.073,
-      "peak_mb": 4.2
+      "seconds": 0.255,
+      "peak_mb": 15.0
     },
     "env.occupancy": {
       "status": "ok",
@@ -76,7 +76,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.022,
+      "seconds": 0.017,
       "peak_mb": 7.9
     },
     "env.declared": {
@@ -99,8 +99,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.257,
-      "peak_mb": 17.8
+      "seconds": 0.291,
+      "peak_mb": 21.6
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -118,16 +118,16 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.1658424449962426,
-        "median_shifted_bits_per_spike": 0.18467906838633225,
-        "frac_above_every_shift": 0.5,
-        "n_units": 2,
+        "median_bits_per_spike": 1.0831688247769669,
+        "median_shifted_bits_per_spike": 0.2821599573934837,
+        "frac_above_every_shift": 0.9285714285714286,
+        "n_units": 56,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.258,
+      "seconds": 0.238,
       "peak_mb": 16.4
     },
     "cells.place_screen": {
@@ -139,7 +139,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.011,
       "peak_mb": 25.5
     },
     "cells.grid_score": {
@@ -150,7 +150,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.305,
+      "seconds": 0.262,
       "peak_mb": 10.3
     },
     "cells.border_score": {
@@ -159,8 +159,8 @@
       "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 0.6
+      "seconds": 0.003,
+      "peak_mb": 0.7
     },
     "hd.tuning": {
       "status": "n/a",
@@ -187,8 +187,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.228,
-      "peak_mb": 22.7
+      "seconds": 0.223,
+      "peak_mb": 23.4
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -198,8 +198,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.762,
-      "peak_mb": 7.0
+      "seconds": 2.395,
+      "peak_mb": 7.2
     },
     "env.from_graph": {
       "status": "n/a",
@@ -219,8 +219,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.015,
-      "peak_mb": 8.8
+      "seconds": 0.472,
+      "peak_mb": 22.6
     },
     "behavior.laps": {
       "status": "ok",
@@ -230,7 +230,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.034,
+      "seconds": 0.03,
       "peak_mb": 5.2
     },
     "behavior.turn_sequence": {
@@ -248,8 +248,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.102,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "error",
@@ -269,8 +269,8 @@
           "count": 1
         }
       ],
-      "seconds": 9.648,
-      "peak_mb": 31.3
+      "seconds": 12.035,
+      "peak_mb": 31.5
     },
     "io.read_pose": {
       "status": "n/a",
@@ -286,8 +286,8 @@
           "count": 1
         }
       ],
-      "seconds": 12.766,
-      "peak_mb": 35.0
+      "seconds": 12.057,
+      "peak_mb": 35.2
     },
     "imaging.rates": {
       "status": "n/a",

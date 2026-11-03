@@ -7,6 +7,7 @@
     "positions: posx, posy as stored; cm inferred (posx spans exactly -160 to 160 on the 320 cm track)",
     "range checked: -160.0 to 160.0 by -18.1 to 18.1 cm (largest span 320.0, expected 300-340)",
     "times, spike_times: post and ts as stored (s)",
+    "epochs: session_11 0.00-599.98 s and session_12 600.00-1199.98 s, split at the 282 cm step between them (no gap on the clock); the analysis epochs leave the joining interval out",
     "unit_ids: tetrode and cluster from the file names",
     "environment: declared straight track 320 cm (readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; width not stated); tracked point: one tracking LED (readme_hafting2008.txt: 'the tracking LED'); physical width not stated; placement tolerance 31 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the file's own frame (posx spans -160 to 160, posy is centred on 0) (file's coordinates); fit: median |lateral offset| 3.21 cm, worst stretch bias 1.24 cm (limit 4), worst unsupported share of a segment 0%; track length 320.0 cm"
   ],
@@ -30,11 +31,6 @@
       "key": "duration_s",
       "passed": true,
       "detail": "expected Range(low=1190.0, high=1210.0), got 1199.9799999999918"
-    },
-    {
-      "key": "track_length_cm",
-      "passed": true,
-      "detail": "predicate"
     }
   ],
   "versions": {
@@ -44,7 +40,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "9721b156bbd39613712c5f6b3da037d1afdabfbf"
+    "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
   },
   "load_warnings": [],
   "operations": {
@@ -58,13 +54,13 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.285,
+      "seconds": 0.274,
       "peak_mb": 12.8
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 655.5799999999831,
+        "total_s": 655.5599999999831,
         "frac_bins_visited": 0.9940828402366864,
         "median_s_per_visited_bin": 0.7400000000197906,
         "max_s": 19.020000000076834
@@ -72,7 +68,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.032,
+      "seconds": 0.03,
       "peak_mb": 16.1
     },
     "env.declared": {
@@ -89,20 +85,20 @@
       "summary": {
         "n_units": 3,
         "frac_nan_bins": 0.005917159763313609,
-        "median_peak_hz": 26.51657410686407,
-        "median_mean_hz": 3.418991373735811
+        "median_peak_hz": 26.516574106864123,
+        "median_mean_hz": 3.4189929817203617
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.665,
+      "seconds": 0.67,
       "peak_mb": 29.6
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 1.0490955766187293,
-        "bits_per_spike_max": 1.3360918146071827,
+        "bits_per_spike_median": 1.0490549961022477,
+        "bits_per_spike_max": 1.3360508268780071,
         "bits_per_spike_n_finite": 3
       },
       "note": "",
@@ -114,8 +110,8 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 1.0490955766187293,
-        "median_shifted_bits_per_spike": 0.09183827409755713,
+        "median_bits_per_spike": 1.0490549961022477,
+        "median_shifted_bits_per_spike": 0.09067181185991803,
         "frac_above_every_shift": 1.0,
         "n_units": 3,
         "n_shifts": 4
@@ -123,7 +119,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.164,
+      "seconds": 0.172,
       "peak_mb": 16.3
     },
     "cells.place_screen": {
@@ -135,7 +131,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.004,
       "peak_mb": 10.6
     },
     "cells.grid_score": {
@@ -183,7 +179,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.103,
+      "seconds": 0.102,
       "peak_mb": 22.8
     },
     "io.nwb_roundtrip": {
@@ -194,7 +190,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.746,
+      "seconds": 2.826,
       "peak_mb": 16.2
     },
     "env.from_graph": {
@@ -218,7 +214,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.576,
+      "seconds": 0.603,
       "peak_mb": 38.0
     },
     "behavior.laps": {
@@ -245,7 +241,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.1,
+      "seconds": 0.109,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -288,8 +284,8 @@
       "clean_summary": {
         "n_units": 3,
         "frac_nan_bins": 0.005917159763313609,
-        "median_peak_hz": 26.51657410686407,
-        "median_mean_hz": 3.418991373735811
+        "median_peak_hz": 26.516574106864123,
+        "median_mean_hz": 3.4189929817203617
       },
       "hazard_summary": {
         "n_units": 3,
@@ -322,16 +318,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 655.5799999999831,
+        "total_s": 655.5599999999831,
         "frac_bins_visited": 0.9940828402366864,
         "median_s_per_visited_bin": 0.7400000000197906,
         "max_s": 19.020000000076834
       },
       "hazard_summary": {
-        "total_s": 0.24000000000114596,
+        "total_s": 0.22000000000116415,
         "frac_bins_visited": 0.75,
         "median_s_per_visited_bin": 0.08000000000174623,
-        "max_s": 0.12000000000580258
+        "max_s": 0.10000000000582077
       }
     },
     {
@@ -343,14 +339,14 @@
       "clean_summary": {
         "n_units": 3,
         "frac_nan_bins": 0.005917159763313609,
-        "median_peak_hz": 26.51657410686407,
-        "median_mean_hz": 3.418991373735811
+        "median_peak_hz": 26.516574106864123,
+        "median_mean_hz": 3.4189929817203617
       },
       "hazard_summary": {
         "n_units": 3,
         "frac_nan_bins": 0.25,
-        "median_peak_hz": 5.858755335005993,
-        "median_mean_hz": 4.18358275315113
+        "median_peak_hz": 6.344523653119851,
+        "median_mean_hz": 4.509404936056849
       }
     },
     {

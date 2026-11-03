@@ -7,6 +7,7 @@
     "positions: posx, posy as stored; cm inferred (posx spans exactly -160 to 160 on the 320 cm track)",
     "range checked: -160.0 to 160.0 by -18.1 to 18.1 cm (largest span 320.0, expected 300-340)",
     "times, spike_times: post and ts as stored (s)",
+    "epochs: session_11 0.00-599.98 s and session_12 600.00-1199.98 s, split at the 282 cm step between them (no gap on the clock); the analysis epochs leave the joining interval out",
     "unit_ids: tetrode and cluster from the file names",
     "environment: declared straight track 320 cm (readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; width not stated); tracked point: one tracking LED (readme_hafting2008.txt: 'the tracking LED'); physical width not stated; placement tolerance 31 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the file's own frame (posx spans -160 to 160, posy is centred on 0) (file's coordinates); fit: median |lateral offset| 3.21 cm, worst stretch bias 1.24 cm (limit 4), worst unsupported share of a segment 0%; track length 320.0 cm"
   ],
@@ -30,11 +31,6 @@
       "key": "duration_s",
       "passed": true,
       "detail": "expected Range(low=1190.0, high=1210.0), got 1199.9799999999918"
-    },
-    {
-      "key": "track_length_cm",
-      "passed": true,
-      "detail": "predicate"
     }
   ],
   "versions": {
@@ -44,7 +40,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "c3d7d1f228a649ff2afd629ce5828bc7aa7b7be1"
+    "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
   },
   "load_warnings": [],
   "operations": {
@@ -58,13 +54,13 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.051,
-      "peak_mb": 3.5
+      "seconds": 0.329,
+      "peak_mb": 12.8
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 649.8000000000134,
+        "total_s": 649.7800000000134,
         "frac_bins_visited": 1.0,
         "median_s_per_visited_bin": 4.760000000002037,
         "max_s": 56.120000000039
@@ -72,7 +68,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.041,
+      "seconds": 0.036,
       "peak_mb": 16.2
     },
     "env.declared": {
@@ -94,20 +90,20 @@
       "summary": {
         "n_units": 3,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 12.552008424918707,
-        "median_mean_hz": 3.5458121320069296
+        "median_peak_hz": 12.552008424918712,
+        "median_mean_hz": 3.5458145731477635
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.053,
-      "peak_mb": 16.1
+      "seconds": 0.628,
+      "peak_mb": 27.5
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.9760749300584218,
-        "bits_per_spike_max": 1.1741740883437284,
+        "bits_per_spike_median": 0.9760373052498149,
+        "bits_per_spike_max": 1.1741391390152744,
         "bits_per_spike_n_finite": 3
       },
       "note": "",
@@ -119,8 +115,8 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.9760749300584218,
-        "median_shifted_bits_per_spike": 0.05926767098633112,
+        "median_bits_per_spike": 0.9760373052498149,
+        "median_shifted_bits_per_spike": 0.04034743448578871,
         "frac_above_every_shift": 1.0,
         "n_units": 3,
         "n_shifts": 4
@@ -128,8 +124,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.182,
-      "peak_mb": 16.2
+      "seconds": 0.17,
+      "peak_mb": 16.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -186,8 +182,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.064,
-      "peak_mb": 16.1
+      "seconds": 0.082,
+      "peak_mb": 16.8
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -197,8 +193,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.748,
-      "peak_mb": 1.9
+      "seconds": 2.224,
+      "peak_mb": 12.4
     },
     "env.from_graph": {
       "status": "ok",
@@ -221,8 +217,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.025,
-      "peak_mb": 16.8
+      "seconds": 0.652,
+      "peak_mb": 38.1
     },
     "behavior.laps": {
       "status": "error",
@@ -242,7 +238,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.011,
       "peak_mb": 8.2
     },
     "replay.compare_methods": {
@@ -251,8 +247,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.113,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -260,8 +256,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.007,
+      "peak_mb": 0.3
     },
     "io.read_pose": {
       "status": "n/a",
@@ -269,7 +265,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 0.0
     },
     "imaging.rates": {
@@ -294,8 +290,8 @@
       "clean_summary": {
         "n_units": 3,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 12.552008424918707,
-        "median_mean_hz": 3.5458121320069296
+        "median_peak_hz": 12.552008424918712,
+        "median_mean_hz": 3.5458145731477635
       },
       "hazard_summary": {
         "n_units": 3,
@@ -328,16 +324,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 649.8000000000134,
+        "total_s": 649.7800000000134,
         "frac_bins_visited": 1.0,
         "median_s_per_visited_bin": 4.760000000002037,
         "max_s": 56.120000000039
       },
       "hazard_summary": {
-        "total_s": 0.24000000000114596,
+        "total_s": 0.22000000000116415,
         "frac_bins_visited": 0.025,
-        "median_s_per_visited_bin": 0.12000000000057298,
-        "max_s": 0.12000000000580258
+        "median_s_per_visited_bin": 0.11000000000058208,
+        "max_s": 0.11999999999534339
       }
     },
     {
@@ -349,14 +345,14 @@
       "clean_summary": {
         "n_units": 3,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 12.552008424918707,
-        "median_mean_hz": 3.5458121320069296
+        "median_peak_hz": 12.552008424918712,
+        "median_mean_hz": 3.5458145731477635
       },
       "hazard_summary": {
         "n_units": 3,
         "frac_nan_bins": 0.975,
-        "median_peak_hz": 5.172103562950281,
-        "median_mean_hz": 4.166666666657346
+        "median_peak_hz": 5.521177795232589,
+        "median_mean_hz": 4.523570222646576
       }
     },
     {

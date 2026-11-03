@@ -10,7 +10,7 @@
     "geometry['lattice_bars_cm']: lattice_3d lx, ly, lz / 10, 147 bars; config3.lattice_type 'diagonal'",
     "units: 24 tetrode/cluster fields; cluster 0 of each tetrode (5712584 spikes, unsorted) left out",
     "environment: declared lattice, its 147 bars (Grieves et al. 2020 Supplementary Methods: 6 x 6 x 6 cubes, 0.97 m a side) as a graph of 343 crossings and 882 segments, every segment kept (_geometry.graph_environment); placement: the file's bars, in the positions' frame (not fitted); track_width 30.8 cm = 2 x the 99th percentile of the head's distance from the nearest bar (median 6.0, 95th percentile 10.4 cm), not the stated 10 mm tube diameter",
-    "headings: none; lattice.poh minus the direction of movement above 10 cm/s: in the camera's 2-D frame (lattice.pox, poy) mean -0.8 deg, spread 42.3 deg; in the 3-D frame's x, y mean -112.6 deg, spread 87.8 deg: not a heading in the positions' frame"
+    "headings: -lattice.poh (deg -> rad, wrapped): the 3-D frame's x, y are the camera's (lattice.pox, poy) mirrored in y plus a shift (RMS 3e-05 mm), so the camera azimuth turns the other way; heading minus the direction of movement above 10 cm/s: mean 0.8 deg, spread 42.3 deg (poh in the camera frame: mean -0.8, spread 42.3)"
   ],
   "expectations": [
     {
@@ -46,7 +46,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
   },
   "load_warnings": [],
   "operations": {
@@ -60,7 +60,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.4,
+      "seconds": 1.389,
       "peak_mb": 67.5
     },
     "env.occupancy": {
@@ -74,7 +74,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.126,
+      "seconds": 0.127,
       "peak_mb": 64.7
     },
     "env.declared": {
@@ -97,7 +97,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 47.683,
+      "seconds": 40.353,
       "peak_mb": 1644.1
     },
     "rates.spatial_information": {
@@ -110,22 +110,22 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.003,
       "peak_mb": 13.2
     },
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.7779412195833665,
-        "median_shifted_bits_per_spike": 0.5225277940162929,
-        "frac_above_every_shift": 0.75,
+        "median_shifted_bits_per_spike": 0.5565764218349148,
+        "frac_above_every_shift": 0.7083333333333334,
         "n_units": 24,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.104,
+      "seconds": 0.917,
       "peak_mb": 68.0
     },
     "cells.place_screen": {
@@ -137,7 +137,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.94,
+      "seconds": 4.946,
       "peak_mb": 205.9
     },
     "cells.grid_score": {
@@ -155,18 +155,31 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.003,
       "peak_mb": 6.8
     },
     "hd.tuning": {
-      "status": "n/a",
-      "note": "needs headings",
-      "warnings": []
+      "status": "ok",
+      "summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.06,
+      "peak_mb": 30.5
     },
     "rates.egocentric_boundary": {
       "status": "n/a",
-      "note": "needs headings",
-      "warnings": []
+      "summary": {},
+      "note": "egocentric boundary maps need 2-D positions",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "decode.position": {
       "status": "ok",
@@ -183,7 +196,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 57.225,
+      "seconds": 49.9,
       "peak_mb": 951.6
     },
     "io.nwb_roundtrip": {
@@ -194,7 +207,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.706,
+      "seconds": 6.1,
       "peak_mb": 127.3
     },
     "env.from_graph": {
@@ -215,7 +228,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.8,
+      "seconds": 0.709,
       "peak_mb": 88.1
     },
     "behavior.laps": {
@@ -224,7 +237,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.035,
+      "seconds": 0.034,
       "peak_mb": 28.6
     },
     "behavior.turn_sequence": {
@@ -242,7 +255,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.123,
+      "seconds": 0.103,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -251,7 +264,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.006,
       "peak_mb": 0.3
     },
     "io.read_pose": {
@@ -277,6 +290,25 @@
   "env_kind": "inferred",
   "hazards": [
     {
+      "hazard": "headings_in_degrees",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 360, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "hazard_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.03038577710401364,
+        "mean_vector_length_max": 0.4373300442951528,
+        "mean_vector_length_n_finite": 24
+      }
+    },
+    {
       "hazard": "spike_times_in_ms",
       "op": "rates.spatial",
       "response": "warned",
@@ -293,6 +325,25 @@
         "frac_nan_bins": 0.0013426095447333088,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "All 24 units are silent from 2120.4 s to 2486.5 s (366 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n162689/162743 spike_times (100%) across all neurons fell outside the position time window [1816.02, 5457.98]; spike_times.min()=7.54167 spike_times.max()=6.6972e+06. The spike times span 6.6972e+06 and reach 6.6972e+06, about 1000 times the 3641.96 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "hazard_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.7364191392799683,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 11
       }
     },
     {

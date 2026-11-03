@@ -4,7 +4,7 @@
   "source": "https://dandiarchive.org/dandiset/002030/0.261016.1321 sub-F53/sub-F53_ses-FOF-F53-1D_behavior+ophys.nwb",
   "license": "CC-BY-4.0",
   "conversions": [
-    "positions: read_position, cm; range checked: 10-105 by 9-103 cm in the 96 cm arena",
+    "positions: read_position, cm; range checked: 10.2 to 105.1 by 9.1 to 103.2 cm (largest span 94.9, expected 86-106) (the 96 cm arena)",
     "times: rate 30 Hz; 21,427 frames = 714 s, the stated ~12 min session",
     "headings: processing/behavior/headdirection (radians), wrapped to [-pi, pi]; 0.7 % of stored samples lie outside it",
     "activity: processing/ophys/Fluorescence/Calcium (dF/F), frame times from rate",

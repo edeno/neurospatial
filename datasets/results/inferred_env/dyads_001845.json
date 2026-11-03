@@ -4,10 +4,11 @@
   "source": "https://dandiarchive.org/dandiset/001845/0.260526.1807 sub-FXM110/sub-FXM110_ses-15-rc100_behavior.nwb (asset 65a0aa61-cda8-4353-886c-ee950558d930)",
   "license": "CC0-1.0",
   "conversions": [
-    "positions: read_position(position_name='processing/behavior/processed_position/head'), cm; range checked: 3.0-94.6 by 26.8-151.5 cm; 37.9% NaN, kept",
+    "positions: read_position(position_name='processing/behavior/processed_position/head'), cm; range checked: 3.0-94.6 by -151.5--26.8 cm; 37.9% NaN, kept",
+    "positions: y negated (image y down): the processed head is 0.1581 x and 0.1599 x the DeepLabCut pixels (PoseEstimation_1-FXM110-1_left_wtrack/PoseEstimationSeriesHead) per axis",
     "processing/behavior/processed_position/tail_end labelled cm reaches [522. 908.]: pixels, not used",
     "events: behavioral_events timestamps by name; epochs: reward_well_visits",
-    "environment: inferred; the W-maze: three parallel arms joined by a base fit (Shukla et al. 2026 Methods: 'elevated W-shaped mazes (80 x 80 cm) with ~7-cm-wide track sections'; node positions fitted to the samples (fitted base 91.6 cm, arms 80.4-93.9 cm; stated 80 x 80 cm); edges (cm): base_0-base_1 44.9; base_0-arm_0 83.4; base_1-base_2 46.7; base_1-arm_1 80.4; base_2-arm_2 93.9) was refused: 80% of a segment has no sample within a bin (limit 25%); tracked point: the DeepLabCut 'head' keypoint as processed by the authors (processed_position/head); on the refused layout, physical width 7 cm (stated), 6.1% of samples beyond half of it (0% at 0-4 cm/s, 16% at 4-30 cm/s, 16% at 30-inf cm/s)"
+    "environment: inferred; the W-maze: three parallel arms joined by a base fit (Shukla et al. 2026 Methods: 'elevated W-shaped mazes (80 x 80 cm) with ~7-cm-wide track sections'; node positions fitted to the samples (fitted base 91.6 cm, arms 80.7-93.7 cm; stated 80 x 80 cm); edges (cm): base_0-base_1 46.6; base_0-arm_0 93.7; base_1-base_2 44.9; base_1-arm_1 80.7; base_2-arm_2 83.5) was refused: 80% of a segment has no sample within a bin (limit 25%); tracked point: the DeepLabCut 'head' keypoint as processed by the authors (processed_position/head); on the refused layout, physical width 7 cm (stated), 6.1% of samples beyond half of it (0% at 0-4 cm/s, 16% at 4-30 cm/s, 16% at 30-inf cm/s)"
   ],
   "expectations": [
     {
@@ -43,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "b12d2b9002b9a4ba86d3603d6bdc365f221a5c2f"
+    "git_commit": "29f40dce66d09b00f03a05f2b744e14eb7c083b0"
   },
   "load_warnings": [
     {
@@ -67,13 +68,13 @@
       "summary": {
         "n_bins": 245,
         "n_dims": 2,
-        "max_extent": 125.00000000000001
+        "max_extent": 125.0
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.022,
-      "peak_mb": 0.6
+      "seconds": 0.206,
+      "peak_mb": 7.3
     },
     "env.occupancy": {
       "status": "ok",
@@ -86,7 +87,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.004,
       "peak_mb": 0.5
     },
     "env.declared": {
@@ -166,8 +167,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
-      "peak_mb": 0.6
+      "seconds": 0.488,
+      "peak_mb": 19.0
     },
     "behavior.laps": {
       "status": "error",
@@ -175,7 +176,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
+      "seconds": 0.005,
       "peak_mb": 3.4
     },
     "behavior.turn_sequence": {
@@ -217,13 +218,13 @@
           "count": 1
         }
       ],
-      "seconds": 1.961,
-      "peak_mb": 4.1
+      "seconds": 1.887,
+      "peak_mb": 6.1
     },
     "io.read_pose": {
-      "status": "error",
+      "status": "n/a",
       "summary": {},
-      "note": "ValueError: Pose bodypart 'PoseEstimationSeriesBody' timestamps must be finite and strictly increasing.\nFix: correct the source time axis before reading.",
+      "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [
         {
@@ -241,8 +242,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.897,
-      "peak_mb": 4.3
+      "seconds": 2.698,
+      "peak_mb": 21.0
     },
     "imaging.rates": {
       "status": "n/a",
@@ -266,7 +267,7 @@
       "clean_summary": {
         "n_bins": 245,
         "n_dims": 2,
-        "max_extent": 125.00000000000001
+        "max_extent": 125.0
       },
       "hazard_summary": {
         "n_bins": 248,
@@ -335,7 +336,7 @@
       "clean_summary": {
         "n_bins": 245,
         "n_dims": 2,
-        "max_extent": 125.00000000000001
+        "max_extent": 125.0
       },
       "hazard_summary": {
         "n_bins": 4,
@@ -399,7 +400,7 @@
       "clean_summary": {
         "n_bins": 245,
         "n_dims": 2,
-        "max_extent": 125.00000000000001
+        "max_extent": 125.0
       },
       "hazard_summary": {
         "n_bins": 1062,

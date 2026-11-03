@@ -26,11 +26,6 @@
       "detail": "expected Range(low=29.0, high=31.0), got 30.030030029981475"
     },
     {
-      "key": "position_extent_cm",
-      "passed": true,
-      "detail": "predicate"
-    },
-    {
       "key": "run_lasts_10_to_30_min",
       "passed": true,
       "detail": "predicate"
@@ -127,16 +122,25 @@
       "status": "ok",
       "summary": {
         "median_bits_per_spike": 0.924612777294544,
-        "median_shifted_bits_per_spike": 0.18982384221494322,
-        "frac_above_every_shift": 0.9285714285714286,
+        "median_shifted_bits_per_spike": 0.175744624263506,
+        "frac_above_every_shift": 0.9642857142857143,
         "n_units": 28,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.136,
-      "peak_mb": 9.4
+      "seconds": 1.543,
+      "peak_mb": 49.3,
+      "versions": {
+        "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+        "numpy": "2.3.4",
+        "scipy": "1.16.3",
+        "pynwb": "3.1.2",
+        "pynapple": "0.11.3",
+        "opexebo": "0.7.2",
+        "git_commit": "85214759f512fafac5b5b554e4f11d841d0039d4"
+      }
     },
     "cells.place_screen": {
       "status": "ok",

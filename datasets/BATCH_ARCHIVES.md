@@ -70,9 +70,10 @@ regenerated once for every batch. The numbers below come from:
   within 12 cm; bins with the rat running faster than 15 cm/s have a median
   of 55 cm. Why the rest are far off was not resolved (no clock offset
   found: spatial information is flat for spike shifts of 0.05–0.4 s).
-- **Shuffle test** (`rates.information_vs_shifts`, 4 shifts): the share of
-  units beating every shift is 75 % (Grieves) to 100 % (Hafting); 86 % on
-  J16, 90 % on Agarwal, 94 % on Takigawa.
+- **Shuffle test** (`rates.information_vs_shifts`, 4 shifts within the
+  time the maps count, G-043): the share of units beating every shift is
+  75 % (Grieves) to 100 % (Hafting); 90 % on J16, 96 % on Agarwal, 90 % on
+  Takigawa, 95 % on the Z-track.
 - **Hazards**: every spike-times-in-ms probe is caught (the drop warning or
   the "all units silent" warning). Length off by 100 is caught at the
   environment but `segment_by_velocity` goes to 0 segments silently (G-014).
