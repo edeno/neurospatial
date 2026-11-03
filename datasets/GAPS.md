@@ -2433,8 +2433,10 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   mismatch (G-025), so nine of the ten match. Track support is judged per
   straight stretch of 20 bins, not per segment, with the 3 bins nearest a
   free end reported, as for walls; the lattice's segments (16 cm between
-  crossings, below 20 bins) have their support reported, and its placement
-  is not judged (tilted bars; a head above a bar biases any offset).
+  crossings, below 20 bins) have their support reported. Its placement is
+  now judged as a whole, horizontally (`_tracks.frame_offset`; the vertical,
+  raised by a head above the bars, is reported), and it is a mismatch at
+  9.4 cm (G-159), so eight of the ten match.
 - Proposed change: none in neurospatial; in the harness, measure the
   remaining checks' sensitivity on planted misfits (phase 6, rungs 2-3)
 - Status: resolved (harness rule)
@@ -2463,4 +2465,59 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   fast samples to NaN.
 - Proposed change: none in neurospatial; a reader of these recordings
   checks the runs before analysing stops (wells, ripples, replay)
+- Status: open
+
+## G-159: The lattice's head samples sit 9 cm horizontally off the authors' bars
+
+- Datasets: grieves_2020_lattice
+- Operation / step: `_geometry.judge_declared` (fidelity study, the whole
+  lattice's frame offset, `_tracks.frame_offset`)
+- Kind: data-quirk (unconfirmed)
+- Evidence: one translation fitted to the median offset, perpendicular to
+  each bar, of the head samples near each of 738 bar segments (each segment
+  weighted once, refitted until it settles: 22 steps) is
+  (-8.2, +4.6, +2.2) cm, 9.4 cm (2.35 bins of 4 cm) horizontally. The fit
+  is well posed (eigenvalues of the summed projections 482-497: the bars
+  run in three directions). Independently, the shift of the samples on a
+  2 cm grid that brings a seeded 20,000-sample subsample closest to the
+  bars is (-8, +4 to +6, +2) cm, and it lowers the median distance to the
+  nearest bar from 6.0 to 3.4 cm. The samples' 0.5-99.5 % extent is offset
+  the same way in y (centre +5.1 cm from the bars' centre; x -2.9 cm). A
+  head on a headstage above the bars raises z, which is reported, not
+  judged; a head held ahead of the body turns with the animal, so it would
+  not give one world-frame offset unless the animal faced one way. Whether
+  the bars (`lattice_3d lx/ly/lz`) and the positions (`pox/poy/poz`) share
+  a frame is not stated in the file or in Grieves et al. 2020's methods.
+- Harness workaround: none; the lattice's verdict is a mismatch on this
+  offset (its side, +0.0 % of the stated 97 cm, still matches), and the
+  loader keeps the bars as stored.
+- Proposed change: none in neurospatial; ask the authors whether the bars
+  were placed in the tracking frame, or how
+- Status: open
+
+## G-160: A track's offset is read in a window narrower than its samples' lateral scatter
+
+- Datasets: grosmark_000044_linear
+- Operation / step: `_tracks.frame_offset` and the per-stretch bias in
+  `_tracks.edge_fit` (fidelity study, declared tracks)
+- Kind: harness-limitation
+- Evidence: both read a median of the samples within 3 bins (7.5 cm) of
+  the track. On 000044's linear track the lateral offsets of samples
+  projecting inside it run from -12 to +25 cm (5th-95th percentile; median
+  +7.0 cm, quartiles -0.9 and +14.7), with a dip near 0. In the window the
+  median is 1.5-1.7 cm; one least-squares step of the frame fit gives
+  1.35 cm, and refitting on the samples less the shift found, until it
+  settles (as the fit does; needed on short corridors, where one step
+  recovers only half to two thirds of a planted shift), moves the window
+  with it and ends at 3.22 cm (2.95 cm with any one piece left out,
+  1.18 bins), a mismatch. On every other declared track the refitted
+  offset is 0.42 bin or less. The track's across-track placement comes from
+  the file's linearized coordinate; no source read states where the track
+  lies across it, and the reward-end samples spread up to 27 cm across the
+  axis.
+- Harness workaround: none; the verdict is a mismatch and the numbers are
+  reported. Whether the offset should be read over a window that follows
+  the fit, a fixed one, or a lateral scatter this wide should be "not
+  verified" is a maintainer decision.
+- Proposed change: none in neurospatial
 - Status: open
