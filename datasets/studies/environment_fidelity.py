@@ -124,14 +124,16 @@ AUTHORS_GEOMETRY = (
     "file's linearized coordinate",
     "authors' bars (file)",
 )
-# The reference each kind of declared placement would compare with itself:
-# a declared track is not judged against its own geometry.
+# The placements each reference is the same geometry as: a declared track is
+# not judged against its own geometry. The loader's ``geometry["graph"]`` is
+# the authors' graph or, where the loader draws the track in the file's
+# frame (Hafting's straight line), that line.
 REFERENCE_SOURCE = {
-    "authors' track graph": "authors' graph",
-    "authors' track centrelines (file)": "authors' centrelines",
-    "centreline from the file's linearized position": "file's linearized coordinate",
-    "principal axis of the samples (straight track)": "samples' principal axis",
-    "lattice bars (file lattice_3d lx/ly/lz)": "authors' bars (file)",
+    "authors' track graph": ("authors' graph", "file's coordinates"),
+    "authors' track centrelines (file)": ("authors' centrelines",),
+    "centreline from the file's linearized position": ("file's linearized coordinate",),
+    "principal axis of the samples (straight track)": ("samples' principal axis",),
+    "lattice bars (file lattice_3d lx/ly/lz)": ("authors' bars (file)",),
 }
 
 
@@ -1921,7 +1923,7 @@ def measure_declared(
     independent = (
         ref is not None
         and ref.label not in SAMPLE_DERIVED_REFERENCES
-        and REFERENCE_SOURCE.get(ref.label) != declared_from
+        and declared_from not in REFERENCE_SOURCE.get(ref.label, ())
     )
     out: dict[str, Any] = {
         "layout": env.layout_type,

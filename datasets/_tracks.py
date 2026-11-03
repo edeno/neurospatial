@@ -228,7 +228,8 @@ def edge_fit(
       stretch's median.
     - ``max_unsupported``: the largest per-segment share of points along it
       with no sample within ``tolerance``: a segment where the animal never
-      was.
+      was; ``share_unsupported_segments`` the share of segments beyond
+      ``MAX_UNSUPPORTED``.
     - ``end_overshoot``: how far the samples reach past the track's free ends
       (each end's ``REACH_QUANTILE`` reach, summed over the ends), as a share
       of the track's total length: a track drawn shorter than its samples,
@@ -279,6 +280,9 @@ def edge_fit(
         else float("nan"),
         "max_edge_bias": float(np.max(np.abs(biases))) if biases else float("nan"),
         "max_unsupported": float(np.max(unsupported)),
+        "share_unsupported_segments": float(
+            np.mean(np.asarray(unsupported) > MAX_UNSUPPORTED)
+        ),
     }
 
 

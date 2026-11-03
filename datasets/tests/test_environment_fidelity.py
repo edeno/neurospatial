@@ -685,3 +685,31 @@ def test_declared_box_without_a_stated_size_is_not_verified(
     declared = analyse(rec, figures=False)["declared"]
     assert declared["misfit"] == []
     assert declared["verdict"] == "not verified"
+
+
+def test_a_track_drawn_in_the_files_frame_needs_a_stated_length(track_samples):
+    # The loader's graph is the line it drew in the file's frame, so as the
+    # study's reference it is the declaration itself, not an independent fact.
+    graph = nx.Graph()
+    graph.add_node("a", pos=(0.0, 0.0))
+    graph.add_node("b", pos=(100.0, 0.0))
+    graph.add_edge("a", "b", distance=100.0)
+    rec = _declared_track(
+        track_samples,
+        placed_by="file's coordinates",
+        geometry={"graph": graph},
+        graph=graph,
+    )
+    out = _measure(rec, TRACK)
+    assert out["reference_independent"] is False
+    assert out["verdict"] == "not verified"
+    stated = _declared_track(
+        track_samples,
+        placed_by="file's coordinates",
+        geometry={"graph": graph},
+        graph=graph,
+        stated_lengths={"length": (100.0, 100.0)},
+    )
+    out = _measure(stated, TRACK)
+    assert out["verdict"] == "matches"
+    assert out["verdict_reason"] == "on length +0% of the stated"
