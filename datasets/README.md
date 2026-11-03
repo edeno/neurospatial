@@ -90,6 +90,9 @@ operation cells; each writes to `results/studies/`:
 - `information_bias_null.py`: `spatial_information_bias` against simulated
   untuned Poisson and bursty cells on each recording's own occupancy, and
   real units against 100 circular shifts.
+- `egocentric_boundary_survey.py`: the `rates.egocentric_boundary` operation
+  on every recording with head direction, without rewriting the driver's
+  results.
 
 ## Read the results
 
