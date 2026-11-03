@@ -9,13 +9,15 @@ neurospatial raised, warned or stayed silent.
 
 from __future__ import annotations
 
+import functools
 import re
+import sys
 import warnings
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import fields, replace
 from pathlib import Path
-from types import ModuleType
+from types import FrameType, ModuleType
 from typing import Any
 
 import numpy as np
@@ -32,36 +34,57 @@ def template(message: str) -> str:
     return _NUMBER.sub("#", message)
 
 
-def _origin(filename: str) -> str:
-    # neurospatial warns with a stacklevel that points at the caller (the
-    # harness), or at its own modules; anything else raised from an installed
-    # package is third-party.
-    # A survey loader's own warning (``load_*.py``) is the loader's.
-    parts = Path(filename).parts
-    if "site-packages" in parts and "neurospatial" not in parts:
+_HARNESS = Path(__file__).resolve().parent
+_WARNINGS_MODULES = frozenset({"warnings", "_py_warnings"})
+
+
+def _origin(frame: FrameType | None) -> str:
+    """Who issued a warning: the module of the frame that called ``warn``.
+
+    A warning's ``filename`` is the frame its ``stacklevel`` points at, which
+    for neurospatial is the caller (a loader or the harness), so it cannot
+    tell whose warning it is. The issuing frame can: a neurospatial module
+    gives ``"neurospatial"``, a file of the survey (a loader, its helpers or
+    the harness) ``"loader"``, anything else ``"third-party"``. A warning
+    from compiled code (a NumPy floating-point warning) is issued by the
+    Python frame that called it.
+    """
+    while frame is not None and frame.f_globals.get("__name__") in _WARNINGS_MODULES:
+        frame = frame.f_back
+    if frame is None:
         return "third-party"
-    if Path(filename).name.startswith("load_"):
-        return "loader"
-    return "neurospatial"
+    if str(frame.f_globals.get("__name__", "")).partition(".")[0] == "neurospatial":
+        return "neurospatial"
+    harness = _in(frame.f_code.co_filename, _HARNESS)
+    return "loader" if harness else "third-party"
+
+
+@functools.cache
+def _in(filename: str, directory: Path) -> bool:
+    return Path(filename).resolve().is_relative_to(directory)
 
 
 def captured(
     fn: Callable[..., Any], *args: Any
 ) -> tuple[Any, BaseException | None, list[dict[str, Any]]]:
     """Call ``fn(*args)``; return (value, exception or None, distinct warnings)."""
-    with warnings.catch_warnings(record=True) as caught:
+    caught: list[tuple[str, str, str]] = []
+
+    def record(message: Any, category: type[Warning], *_: Any, **__: Any) -> None:
+        # Called by ``warnings`` for each warning, so frame 1 leads to the issuer.
+        caught.append((category.__name__, _origin(sys._getframe(1)), str(message)))
+
+    with warnings.catch_warnings():
         warnings.simplefilter("always")
+        warnings.showwarning = record
         try:
             value, error = fn(*args), None
         except Exception as exc:  # the driver records every failure
             value, error = None, exc
-    keys = [
-        (w.category.__name__, _origin(w.filename), template(str(w.message)))
-        for w in caught
-    ]
+    keys = [(category, origin, template(text)) for category, origin, text in caught]
     example: dict[tuple[str, str, str], str] = {}
-    for key, w in zip(keys, caught, strict=True):
-        example.setdefault(key, str(w.message))
+    for key, (_, _, text) in zip(keys, caught, strict=True):
+        example.setdefault(key, text)
     rows = [
         {
             "category": category,
