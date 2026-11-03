@@ -3,8 +3,9 @@
 Scripts that load public spatial-neuroscience recordings into plain arrays, run
 a fixed set of neurospatial operations on each, and record what worked, what
 needed a workaround, what neurospatial's warnings said, and where neurospatial
-disagrees with another tool. The findings are in [GAPS.md](GAPS.md); the
-tables are in [results/](results/). This folder is not part of the installed
+disagrees with another tool. The ranked proposals are in
+[FINDINGS.md](FINDINGS.md), the evidence in [GAPS.md](GAPS.md), and the
+tables in [results/](results/). This folder is not part of the installed
 package and is not run by the test suite or CI.
 
 Each `load_<dataset>.py` also works on its own as an example of bringing a
