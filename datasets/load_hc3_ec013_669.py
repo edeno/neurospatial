@@ -74,7 +74,7 @@ DATASET = {
     "title": "Mizuseki et al., rat ec013 session ec013.669, CA1 and EC units on a 250 cm linear track (CRCNS hc-3)",
     "source": "https://crcns.org/data-sets/hc/hc-3",
     "license": "CRCNS terms of use (account required; cite the data set)",
-    "download_size": "about 5 MB (members of a 233.8 MB archive)",
+    "download_size": "5.5 MB of a 233.8 MB archive, plus the 1.1 MB cell table",
 }
 
 # Pre-registered from the hc-3 metadata tables (topdir ec013.38: 125 sorted

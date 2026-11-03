@@ -11,7 +11,7 @@ Where it lives: CRCNS hc-18 (doi:10.6080/K0Z899MM), which needs a free
 crcns.org account (``CRCNS_USERNAME``/``CRCNS_PASSWORD``). Each session is
 one ``data/<session>.tar.gz`` in Neuroscope format (this one 6.5 GB, almost
 all LFP and waveforms); the loader streams it once and keeps ``.res.N``,
-``.clu.N``, ``.pos``, ``.cat.evt`` and ``.xml`` (175 MB).
+``.clu.N``, ``.pos``, ``.cat.evt`` and ``.xml`` (134.8 MB).
 
 What the loader converts:
 
@@ -55,7 +55,7 @@ DATASET = {
     "title": "Drieu, Todorova & Zugaro (2018), rat 261, CA1 units on a treadmill carried by a model train (CRCNS hc-18)",
     "source": "https://doi.org/10.6080/K0Z899MM",
     "license": "CRCNS terms of use (account required; cite Drieu et al. 2018 and the data set)",
-    "download_size": "about 175 MB (members of a 6.5 GB archive)",
+    "download_size": "134.8 MB (members of a 6.5 GB archive)",
 }
 
 # Pre-registered from the hc-18 description (three travel sessions, passive,

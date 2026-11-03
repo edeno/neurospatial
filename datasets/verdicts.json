@@ -635,7 +635,7 @@
     "hc11_achilles/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "97 s of occupancy appear at the origin bin (max 27.7 -> 101 s). Check 1 would fire."
+      "reason": "Total occupancy up 97 s; the origin bin holds 101 s, the most of any bin (clean max 27.7 s). Check 1 would fire."
     },
     "hc11_achilles/missing_positions_as_zero/rates.spatial": {
       "verdict": "silent",
@@ -720,7 +720,7 @@
     "hc3_ec013_669/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Spike-drop warning with the 'about 1000 times' hint (the pixel-units warning in the same row is a cache artefact)."
+      "reason": "Spike-drop warning with the 'about 1000 times' hint (the probe builds its own environment, so the pixel-units warning (G-095) is new there)."
     },
     "hc3_ec013_669/spike_times_in_ms/hd.tuning": {
       "verdict": "caught",
@@ -745,7 +745,7 @@
     "hc3_ec013_669/whl_minus_one_kept/env.occupancy": {
       "verdict": "silent",
       "gap": "G-096",
-      "reason": "8 s of occupancy at (-1, -1); max per bin 17.4 -> 19.7 s."
+      "reason": "Total occupancy up 8.0 s, 6.1 s of it in the (-1, -1) bin. Check 1 would not fire."
     },
     "hc3_ec013_669/whl_minus_one_kept/rates.spatial": {
       "verdict": "silent",
@@ -790,7 +790,7 @@
     "hc2_ec013_527/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Spike-drop warning with the 'about 1000 times' hint (plus the pixel-units cache artefact)."
+      "reason": "Spike-drop warning with the 'about 1000 times' hint, and the all-units-silent warning (the probe builds its own environment, so the pixel-units warning (G-095) is new there)."
     },
     "hc2_ec013_527/spike_times_in_ms/hd.tuning": {
       "verdict": "caught",
@@ -840,7 +840,7 @@
     "hc28_hpa/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "158 s of occupancy appear at the origin (max per bin 12.5 -> 175 s)."
+      "reason": "Total occupancy up 158 s; the origin bin holds 175.3 s, the most of any bin (clean max 12.5 s). Check 1 would fire."
     },
     "hc28_hpa/missing_positions_as_zero/rates.spatial": {
       "verdict": "silent",
@@ -950,7 +950,7 @@
     "hc18_train261/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "69 s at the corner bin (max 5.2 -> 68.8 s). Check 1 would fire."
+      "reason": "Total occupancy up 69 s; the corner (origin) bin holds 68.8 s, the most of any bin (clean max 5.2 s). Check 1 would fire."
     },
     "hc18_train261/missing_positions_as_zero/rates.spatial": {
       "verdict": "silent",
@@ -965,12 +965,12 @@
     "hc18_train261/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Spike-drop warning with the 'about 1000 times' hint, and the all-units-silent warning (plus the pixel-units cache artefact)."
+      "reason": "Spike-drop warning with the 'about 1000 times' hint, and the all-units-silent warning (the probe builds its own environment, so the pixel-units warning (G-095) is new there)."
     },
     "hc18_train261/clock_assumed_20khz/rates.spatial": {
       "verdict": "silent",
       "gap": "G-097",
-      "reason": "Spike times stretched by 1.63: median mean rate 0.78 -> 0.27 Hz, median peak 39 -> 2.0 Hz. The only new warning is the pixel-units cache artefact; the stretched spikes that leave tracking fall outside the travel epochs, so the epochs-aware drop count ignores them."
+      "reason": "Spike times stretched by 1.63: median mean rate 0.78 -> 0.27 Hz, median peak 39 -> 2.0 Hz. The only new warning is the pixel-units one, new because the probe builds its own environment (G-095); the stretched spikes that leave tracking fall outside the travel epochs, so the epochs-aware drop count ignores them."
     },
     "hc18_train261/pos_minus_one_kept/env.from_samples": {
       "verdict": "silent",
@@ -980,7 +980,7 @@
     "hc18_train261/pos_minus_one_kept/env.occupancy": {
       "verdict": "silent",
       "gap": "G-096",
-      "reason": "69 s at (-1, -1); max per bin 5.2 -> 68.8 s."
+      "reason": "Total occupancy up 69 s; the (-1, -1) bin holds 68.8 s, the most of any bin (clean max 5.2 s). Check 1 would not fire."
     },
     "hc18_train261/pos_minus_one_kept/rates.spatial": {
       "verdict": "silent",

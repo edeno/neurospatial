@@ -25,11 +25,15 @@ What the loader converts:
   6e-5); converted, it is checked against the speed of the track coordinate.
 - Units are run 2's spike trains (``spEpochSep(:, 3)``, epoch ``run2``);
   units with no spike in run 2 are dropped. The readme says interneurons
-  and poor units have NaN in ``ID``; ``ID`` is stored as uint8, which has no
-  NaN, so they cannot be told apart and every unit is kept.
+  and poor units have NaN in ``ID`` and excludes them with
+  ``all(ID <= 2, 2)``; ``ID`` is uint8, where MATLAB stores NaN as 0, so
+  the marker, if it was set, is indistinguishable from "silent" (7 units are
+  0 in every column). ``width`` is empty and the stored ``rate`` is at most
+  1.29 Hz, so no unit looks like a fast-spiking interneuron; every unit is
+  kept.
 
 Analysis choices (``params``): the track coordinate is the 1-D position;
-``bin_size`` 2.5 cm (1926 bins); ``min_speed`` 4 cm/s; ``dt`` 0.25 s with
+``bin_size`` 2.5 cm (1928 bins); ``min_speed`` 4 cm/s; ``dt`` 0.25 s with
 alternating 60 s train/test blocks.
 """
 

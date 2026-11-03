@@ -66,7 +66,7 @@ DATASET = {
     "title": "Jadhav & Frank, rat HPa day 1 W-track run, CA1 and PFC units (CRCNS hc-28)",
     "source": "https://doi.org/10.6080/K02N50G9",
     "license": "CRCNS terms of use (account required; lab asks for authorship, cite the data set)",
-    "download_size": "about 25 MB (members of a 2.8 GB archive)",
+    "download_size": "21.3 MB (members of a 2.8 GB archive)",
 }
 
 # Pre-registered from the hc-28 data description (rawpos: non-interpolated

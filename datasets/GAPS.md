@@ -344,7 +344,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   coordinate of an untracked frame (the documentation says so): 15.5 % of HPa
   day 1 epoch 4. The loader makes them NaN; put back (the generic hazard, which
   here restores exactly the file's zeros) they sit at the pixel origin outside
-  the W-track: extent 92.5 → 145 cm, 158 s of occupancy at the origin,
+  the W-track: extent 92.5 → 145 cm, total occupancy up 158 s, of which the
+  origin bin holds 175.3 s (the most of any bin),
   running segments 487 → 455, all silent. Check 1 would fire (15.5 % at the
   origin against 0 % on every clean recording, now 19 of 19 with positions).
 
@@ -884,7 +885,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: none for neurospatial
 - Status: won't fix (data quirk)
 
-## G-093: hc-31 stores position in inches and time in microseconds; its interneuron marker cannot exist
+## G-093: hc-31 stores position in inches and time in microseconds; its interneuron marker is lost
 
 - Datasets: hc31_anm190422
 - Operation / step: loader
@@ -895,9 +896,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   (`unitsPerSecond` 1e6); the velocity column is inches per microsecond
   (at most 5.8e-5). Nothing but those two scalars says so. The readme says
   interneurons and poor units have NaN in `ID` and gives the rule
-  `all(ID <= 2, 2)` to exclude them, but `ID` is uint8 (values 0, 1, 2), which
-  has no NaN: all 63 units pass the rule, so interneurons cannot be told
-  apart from silent cells.
+  `all(ID <= 2, 2)` to exclude them, but `ID` is uint8 (entries: 154 zeros,
+  35 ones, 189 twos), which has no NaN; MATLAB's `uint8(NaN)` is 0, so a
+  marker that was set is now indistinguishable from "silent" (7 units are 0
+  in every column), and all 63 units pass the rule. The other routes are
+  thin: `spAll.width` is empty, the stored `rate` is at most 1.29 Hz for
+  every unit (median 0.19), so none looks fast-spiking, and
+  `clustInf.score` holds four quality strings per unit ('3+', '4-', …),
+  not a cell type.
 - Harness workaround: the loader divides by `unitsPerCm` and
   `unitsPerSecond`, checks 2-D steps against linear steps (ratio 1.000) and
   stored speed against step speed (0.90), and keeps every unit; hazards
@@ -934,7 +940,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   uses (`src/neurospatial/_units.py:40`) maps `px`, `pixel` and `pixels` to
   `px`; the alias table also accepts `centimeters`, `meters` and others the
   registry warns on. The warning also makes the hazard probes count a "new"
-  warning on `rates.spatial` whenever the probe rebuilds the environment
+  warning on `rates.spatial`: the clean run records it once, in
+  `env.from_samples`, and reuses that environment, while a probe builds its
+  own environment inside the probed operation, so the warning is new there
   (three `warned` rows whose real response was silent or a different
   warning).
 - Harness workaround: none (the harness's position unit is "pixel")
@@ -950,7 +958,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Evidence: Neuroscope `.whl` and `.pos` files mark untracked frames with
   `-1` (hc-2 description). Kept as a coordinate, every untracked frame sits
   at (-1, -1) px, outside the video image: hc-3 540 → 553 bins and 8 s of
-  occupancy there, median peak 2.99 → 3.47 Hz; hc-18 69 s at (-1, -1) and
+  occupancy more in all (6.1 s in the (-1, -1) bin), median peak 2.99 → 3.47
+  Hz; hc-18 69 s more in all, 68.8 s of it in the (-1, -1) bin, and
   1 → 0 laps; hc-2 3210 → 3224 bins. Nothing warns, and the proposed origin
   check (check 1) would not fire, since the marker is not 0. A rule for "many
   samples at one exact coordinate" was rejected earlier because the bat's
