@@ -406,10 +406,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             }
             print(f"  {statuses}")
     render()
-    if args.inferred_env:
-        inferred = RESULTS / "inferred_env"
+    inferred = RESULTS / "inferred_env"
+    if args.inferred_env or (args.render_only and inferred.is_dir()):
         records = [json.loads(p.read_text()) for p in sorted(inferred.glob("*.json"))]
-        (inferred / "matrix.md").write_text(render_matrix(records))
+        verdicts = json.loads(VERDICTS.read_text())
+        (inferred / "matrix.md").write_text(
+            render_matrix(records, verdicts.get("inferred_cells"))
+        )
 
 
 if __name__ == "__main__":
