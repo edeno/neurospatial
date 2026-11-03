@@ -585,10 +585,21 @@ def decode_position(
 
 
 #: A ``dt`` above 1 s that is at least this many steps of ``times`` is
-#: refused as milliseconds.
+#: refused as milliseconds, whatever its value.
 _MS_DT_MIN_STEPS = 1000.0
 
-#: Relative slack on :data:`_MS_DT_MIN_STEPS` for rounding in ``times``: bin
+#: A ``dt`` of at least this many seconds that is also at least
+#: :data:`_MS_DT_MIN_WINDOW_STEPS` steps of ``times`` is refused as
+#: milliseconds. Millisecond windows are typed as 5 to 250; decoding
+#: windows in seconds are rarely 5 s or longer.
+_MS_DT_MIN_VALUE = 5.0
+
+#: Fewest steps of ``times`` a ``dt`` of :data:`_MS_DT_MIN_VALUE` s or more
+#: must span to be refused: a 5 ms window over 25 ms frames reads as 200
+#: steps in seconds, while 10 s windows over 1 s steps stay accepted.
+_MS_DT_MIN_WINDOW_STEPS = 100.0
+
+#: Relative slack on the step thresholds for rounding in ``times``: bin
 #: centers on a clock far from zero have spacings that differ from the bin
 #: width in the last digits, so ``dt=25`` over 25 ms bins can come out as
 #: 999.99999 steps.
@@ -596,25 +607,30 @@ _MS_DT_STEPS_RTOL = 1e-3
 
 
 def _refuse_dt_in_milliseconds(times: Any, dt: float, *, context: str) -> None:
-    """Refuse a ``dt`` above 1 s that is 1000 or more steps of ``times``.
+    """Refuse a ``dt`` above 1 s that reads as milliseconds against ``times``.
 
     ``dt`` is part of the likelihood, so ``dt=25`` meant as 25 ms makes the
-    posterior about 1000 times overconfident. A ``dt`` typed in
-    milliseconds (10 to 250) over steps of 1 to 20 ms gives a window of at
-    least 500 steps when read as seconds, while valid windows longer than
-    1 s are rarely 1000 steps long: 2 s windows stepped by 10 ms are 200
-    steps. A ``dt`` of 1 s or less is never refused, however short the
-    step: a 1 ms decoding window is implausible, so ``dt=1.0`` is read as
-    seconds, and so are 600 ms windows stepped by 1 ms. The step is the
-    median spacing of ``times``, and a ratio within
-    :data:`_MS_DT_STEPS_RTOL` of 1000 counts as 1000. ``times`` that
-    cannot label bins are left to the result's own check.
+    posterior about 1000 times overconfident. A ``dt`` above 1 s is refused
+    when it spans at least 1000 steps of ``times``, or when it is 5 s or
+    more and spans at least 100 steps. A ``dt`` typed in milliseconds is 5
+    to 250, and over steps of 0.5 to 25 ms it spans at least 200 steps when
+    read as seconds, so the second rule catches the windows shorter than a
+    step (``dt=15`` over 60 Hz frames) that the first misses. Valid windows
+    above 1 s are short of 5 s and rarely 1000 steps long: 3 s windows
+    stepped by 5 ms are 600 steps, and 10 s windows over 1 s steps are 10.
+    A ``dt`` of 1 s or less is never refused, however short the step: a
+    1 ms decoding window is implausible, so ``dt=1.0`` is read as seconds,
+    and so are 600 ms windows stepped by 1 ms. The step is the median
+    spacing of ``times``, and a ratio within :data:`_MS_DT_STEPS_RTOL` of a
+    threshold counts as reaching it. ``times`` that cannot label bins are
+    left to the result's own check.
 
     Raises
     ------
     ValueError
-        If ``dt`` is above 1 s, the median spacing of ``times`` is positive
-        and ``dt`` is at least 1000 times it.
+        If ``dt`` is above 1 s, the median spacing of ``times`` is positive,
+        and ``dt`` is at least 1000 times it, or ``dt`` is at least 5 s and
+        at least 100 times it.
     """
     if times is None or dt <= 1.0:
         return
@@ -624,7 +640,11 @@ def _refuse_dt_in_milliseconds(times: Any, dt: float, *, context: str) -> None:
     spacing = float(np.median(np.diff(centers)))
     if not (np.isfinite(spacing) and spacing > 0):
         return
-    if dt / spacing < _MS_DT_MIN_STEPS * (1.0 - _MS_DT_STEPS_RTOL):
+    steps = dt / spacing * (1.0 + _MS_DT_STEPS_RTOL)
+    if not (
+        steps >= _MS_DT_MIN_STEPS
+        or (dt >= _MS_DT_MIN_VALUE and steps >= _MS_DT_MIN_WINDOW_STEPS)
+    ):
         return
     raise InputError(
         _format_error(
@@ -632,8 +652,8 @@ def _refuse_dt_in_milliseconds(times: Any, dt: float, *, context: str) -> None:
             "spacing of times.",
             why="dt is the decoding window in seconds and scales the "
             "likelihood; a window over 1 s that spans 1000 or more steps of "
-            "times is usually dt in milliseconds, which makes the posterior "
-            "far too confident.",
+            "times, or of 5 s or more over 100 or more steps, is usually dt in "
+            "milliseconds, which makes the posterior far too confident.",
             fix=f"pass dt in seconds: dt={dt / 1000.0:g} for {dt:g} ms.",
         )
     )

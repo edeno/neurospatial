@@ -145,8 +145,16 @@ def _decode_or_refuse(trained, dt, step, refused, *, start=0.0):
         # dt typed in milliseconds over fine steps: 25000 and 50000 steps.
         (25.0, 0.001, True),
         (100.0, 0.002, True),
-        # 2 s windows stepped by 10 ms: 200 steps.
+        # dt typed in milliseconds shorter than a frame: 15 ms over 60 Hz
+        # frames is 900 steps, 5 ms over 25 ms frames 200 steps, and both
+        # are 5 s or more when read as seconds.
+        (15.0, 1 / 60, True),
+        (5.0, 0.025, True),
+        # 2 s windows stepped by 10 ms: 200 steps; 3 s by 5 ms: 600 steps.
         (2.0, 0.01, False),
+        (3.0, 0.005, False),
+        # 10 s windows over 1 s steps: 10 steps.
+        (10.0, 1.0, False),
         # A dt of 1 s or less is seconds, however fine the step.
         (0.6, 0.001, False),
         (0.8, 0.001, False),
@@ -157,7 +165,11 @@ def _decode_or_refuse(trained, dt, step, refused, *, start=0.0):
     ids=[
         "25-by-1ms",
         "100-by-2ms",
+        "15ms-by-60Hz",
+        "5ms-by-25ms",
         "2s-by-10ms",
+        "3s-by-5ms",
+        "10s-by-1s",
         "600ms-by-1ms",
         "800ms-by-1ms",
         "300ms-by-0.5ms",
@@ -165,7 +177,7 @@ def _decode_or_refuse(trained, dt, step, refused, *, start=0.0):
         "1s-by-1ms",
     ],
 )
-def test_dt_refused_above_one_second_and_1000_steps(trained, dt, step, refused):
+def test_dt_refused_when_it_reads_as_milliseconds(trained, dt, step, refused):
     _decode_or_refuse(trained, dt, step, refused)
 
 
@@ -176,17 +188,30 @@ _STEP = 2.0**-7
 @pytest.mark.parametrize(
     ("dt", "step", "start", "refused"),
     [
-        # dt is exactly 1000 steps (7.8 s).
-        (1000 * _STEP, _STEP, 0.0, True),
+        # Below 5 s, dt is refused from exactly 1000 steps (1.95 s).
+        (1000 * _STEP / 4, _STEP / 4, 0.0, True),
+        (998 * _STEP / 4, _STEP / 4, 0.0, False),
         # 25 ms bins on a clock near 5e4 s: the median spacing rounds to
         # 0.02500000000145519, 999.99999994 steps, still refused.
         (25.0, 0.025, 5e4, True),
-        (998 * _STEP, _STEP, 0.0, False),
+        # From 5 s, dt is refused from 100 steps.
+        (5.0, 0.05, 0.0, True),
+        (5.0, 5.0 / 99, 0.0, False),
+        (float(np.nextafter(5.0, 0.0)), 0.025, 0.0, False),
         # dt = 1 s is seconds even at 1024 steps; just above 1 s it is not.
         (1.0, 2.0**-10, 0.0, False),
         (float(np.nextafter(1.0, 2.0)), 2.0**-10, 0.0, True),
     ],
-    ids=["1000-steps", "1000-steps-on-clock", "998-steps", "dt-1", "above-dt-1"],
+    ids=[
+        "1000-steps",
+        "998-steps",
+        "1000-steps-on-clock",
+        "5s-100-steps",
+        "5s-99-steps",
+        "below-5s-200-steps",
+        "dt-1",
+        "above-dt-1",
+    ],
 )
 def test_milliseconds_dt_boundaries(trained, dt, step, start, refused):
     _decode_or_refuse(trained, dt, step, refused, start=start)

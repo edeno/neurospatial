@@ -108,9 +108,10 @@
   spike_times and times share units" warning; spikes on another clock still
   warn.
 - The millisecond-`dt` refusal of `decode_position` applies when `dt` is
-  longer than 1 s and at least 1000 steps of `times`, so `dt=25` with 1 ms
-  steps is refused, and overlapping windows (600 ms every 1 ms, 2 s every
-  10 ms) decode. A `dt` of 1 s or less is never refused. The fix names the
+  longer than 1 s and at least 1000 steps of `times`, or 5 s or longer and
+  at least 100 steps, so `dt=25` with 1 ms steps and `dt=15` over 60 Hz
+  frames are refused, and overlapping windows (600 ms every 1 ms, 2 s every
+  10 ms, 3 s every 5 ms) decode. A `dt` of 1 s or less is never refused. The fix names the
   seconds value (`dt=0.025` for 25 ms).
 - `compute_vte_session(..., head_sweep_weight=0.0)` classifies trials on
   speed alone, also trials with no headings, instead of leaving `is_vte`
