@@ -15,9 +15,11 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import tempfile
 import urllib.request
 import zipfile
+import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import IO, Any
@@ -91,10 +93,48 @@ def fetch(
     return _install(_download_to_temp(dest, write), dest, sha256)
 
 
+_DEFLATE64 = 9
+
+
+def _copy_deflate64(
+    archive: zipfile.ZipFile, info: zipfile.ZipInfo, out: IO[bytes]
+) -> None:
+    """Inflate a Deflate64 member, which ``zipfile`` cannot read, and check its CRC-32."""
+    import inflate64
+
+    stream = archive.fp
+    assert stream is not None
+    stream.seek(info.header_offset)
+    header = stream.read(30)
+    if header[:4] != b"PK\x03\x04":
+        msg = f"{info.filename}: no local file header at offset {info.header_offset}"
+        raise zipfile.BadZipFile(msg)
+    name_length, extra_length = struct.unpack("<HH", header[26:30])
+    stream.seek(info.header_offset + 30 + name_length + extra_length)
+    inflater = inflate64.Inflater()
+    crc, left = 0, info.compress_size
+    while left:
+        chunk = stream.read(min(left, 4 << 20))
+        if not chunk:
+            msg = f"{info.filename}: archive ended {left} bytes early"
+            raise zipfile.BadZipFile(msg)
+        left -= len(chunk)
+        data = inflater.inflate(chunk)
+        crc = zlib.crc32(data, crc)
+        out.write(data)
+    if crc != info.CRC:
+        msg = f"{info.filename}: CRC-32 {crc:08x} does not match the archive's {info.CRC:08x}"
+        raise zipfile.BadZipFile(msg)
+
+
 def fetch_zip_member(
     url: str, member: str, *, sha256: str, subdir: str, cache: Path | None = None
 ) -> Path:
-    """Extract one member of a remote zip with HTTP range reads; zipfile checks its CRC-32."""
+    """Extract one member of a remote zip with HTTP range reads, checking its CRC-32.
+
+    Deflate64 members (compression method 9), which ``zipfile`` cannot read,
+    are inflated with ``inflate64``.
+    """
     import fsspec
 
     dest = cache_root(cache) / subdir / Path(member).name
@@ -105,9 +145,13 @@ def fetch_zip_member(
         with (
             fsspec.open(url, "rb", block_size=4 << 20) as remote,
             zipfile.ZipFile(remote) as archive,
-            archive.open(member) as source,
         ):
-            shutil.copyfileobj(source, tmp)
+            info = archive.getinfo(member)
+            if info.compress_type == _DEFLATE64:
+                _copy_deflate64(archive, info, tmp)
+                return
+            with archive.open(info) as source:
+                shutil.copyfileobj(source, tmp)
 
     return _install(_download_to_temp(dest, write), dest, sha256)
 
