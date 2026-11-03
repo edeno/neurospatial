@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Spike times in milliseconds warn with `epochs`
+
+**Fixed**
+
+- Spike times in milliseconds passed silently when `epochs` or
+  `spike_window` were given and the tracking outlasted the spike recording
+  (DANDI 000165: 270 s of spikes, 1504 s of tracking). The milliseconds
+  spikes of the recording's first 0.27 s landed inside the windows, so the
+  rest counted as excluded by the selection. Spike times that span more
+  than about 32 times the tracked time (10^1.5, halfway between the same
+  clock and milliseconds on a log scale) and reach more than that times
+  every time and window bound now count in full, so the spike-drop warning
+  fires.
+
+**Changed**
+
+- A spike recording in seconds more than about 32 times longer than
+  tracking that starts with it (10 min of tracking at the start of 6 h)
+  looks like milliseconds by the same measure and now gets the spike-drop
+  warning even with `epochs`. Pass `warn_on_drop=False` to silence it.
+
 ### The boolean-masking warning ignores irregular sampling
 
 **Fixed**

@@ -969,12 +969,18 @@ def _clock_ratio_hint(
     return ""
 
 
-#: Spike times whose median is beyond this many times the largest time and
-#: window bound are taken to be on another clock (milliseconds against
-#: seconds) by :func:`time_window_drops`. Spikes spread over a recording that
-#: long (more than a day around 10 min of tracking that starts at 0) are past
-#: any session this package expects; milliseconds give about 1000.
-_OTHER_CLOCK_FACTOR = 100.0
+#: Spike times that span more than this many times the tracked time, and
+#: reach more than this many times the largest time and window bound, are
+#: taken to be on another clock (milliseconds against seconds) by
+#: :func:`time_window_drops`. It is the geometric midpoint of the same clock
+#: (1) and milliseconds (1000). On the 21 recordings with spikes in the
+#: real-data survey (``datasets/``), spikes in seconds spanned at most 17
+#: times the tracked time and reached at most 2 times its bounds; in
+#: milliseconds both ratios were at least 300, also where the tracking
+#: outlasts the spike recording (DANDI 000165). Magnitudes cannot tell
+#: milliseconds from a spike recording over 32 times longer than tracking
+#: that starts with it (10 min at the start of 6 h); such a recording warns.
+_OTHER_CLOCK_FACTOR = 10**1.5
 
 
 def time_window_drops(
@@ -994,9 +1000,10 @@ def time_window_drops(
     no spike. When the spike times look like another clock than ``times``,
     the windows are on the clock of ``times`` and say nothing about the
     spikes, so every spike counts. Another clock is: spans and magnitudes
-    about 1000 times apart (:func:`_clock_ratio_hint`), a median spike time
-    beyond ``_OTHER_CLOCK_FACTOR`` times every time and window bound, no
-    spike inside the analysed windows, or no spike inside the tracked time.
+    about 1000 times apart (:func:`_clock_ratio_hint`), spike times that
+    span more than ``_OTHER_CLOCK_FACTOR`` times the tracked time and reach
+    more than that times every time and window bound, no spike inside the
+    analysed windows, or no spike inside the tracked time.
     A deliberately empty selection (a window set with no rows) counts no
     spike.
 
@@ -1025,16 +1032,16 @@ def time_window_drops(
     windows = [w for w in (epochs, spike_window) if w is not None]
     if not windows or not spikes.size:
         return int(np.count_nonzero(outside)), int(spikes.size), ""
-    # Windows are on the clock of ``times``. Spike times about 1000 times the
-    # span of ``times``, or whose median is beyond 100 times every time and
-    # window bound, are on another clock (milliseconds), and the windows say
-    # nothing about which of them were meant: count every one.
+    # Windows are on the clock of ``times``. Spike times far longer and larger
+    # than ``times`` are on another clock (milliseconds), and the windows say
+    # nothing about which of them were meant: the milliseconds spikes of the
+    # recording's first instants can still land inside them. Count every one.
     largest = max(
         abs(t_min), abs(t_max), *(float(np.abs(w).max()) for w in windows if w.size)
     )
-    if (
-        _clock_ratio_hint(spikes, t_min, t_max)
-        or float(np.median(np.abs(spikes))) > _OTHER_CLOCK_FACTOR * largest
+    if _clock_ratio_hint(spikes, t_min, t_max) or (
+        float(spikes.max() - spikes.min()) > _OTHER_CLOCK_FACTOR * (t_max - t_min)
+        and float(np.abs(spikes).max()) > _OTHER_CLOCK_FACTOR * largest
     ):
         return int(np.count_nonzero(outside)), int(spikes.size), ""
     if any(w.shape[0] == 0 for w in windows):
