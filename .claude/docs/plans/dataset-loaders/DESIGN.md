@@ -1,7 +1,7 @@
 # Dataset loaders: design
 
 Status: design approved by the maintainer 2026-11-03.
-The implementation plan comes after this is approved.
+The implementation plan is [PLAN.md](PLAN.md).
 
 ## Intent
 
