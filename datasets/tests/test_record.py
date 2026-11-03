@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 import numpy as np
@@ -204,3 +205,27 @@ def test_alternating_blocks_tile_the_span_without_slivers(start, stop, length):
     assert np.all(widths > 0)
     np.testing.assert_allclose(widths[:-1], length, rtol=1e-9)
     assert widths[-1] > 1e-6 * length
+
+
+@pytest.mark.parametrize(
+    ("change", "problem"),
+    [
+        ({"epochs": {"bad": np.array([[0.0, np.nan]])}}, "epochs['bad']"),
+        ({"events": {"pokes": np.array([1.0, np.nan])}}, "events['pokes']"),
+        ({"events": {"runs": np.array([[2.0, 1.0]])}}, "events['runs']"),
+        ({"events": {"cube": np.zeros((2, 2, 2))}}, "events['cube']"),
+    ],
+)
+def test_validation_checks_epochs_and_events(simulated_recording, change, problem):
+    with pytest.raises(ValueError, match=re.escape(problem)):
+        validate_recording(replace(simulated_recording, **change))
+
+
+@pytest.mark.parametrize("name", ["train_epochs", "test_epochs", "analysis_epochs"])
+@pytest.mark.parametrize(
+    "table", [np.array([[0.0, np.nan]]), np.array([[5.0, 1.0]]), np.zeros(3)]
+)
+def test_validation_checks_epoch_params(simulated_recording, name, table):
+    params = {**simulated_recording.params, name: table}
+    with pytest.raises(ValueError, match=re.escape(f"params[{name!r}]")):
+        validate_recording(replace(simulated_recording, params=params))

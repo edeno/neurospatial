@@ -74,6 +74,16 @@ class Recording:
     conversions: tuple[str, ...] = ()
 
 
+def _is_interval_table(table: NDArray[np.float64]) -> bool:
+    """Whether ``table`` is finite (n, 2) [start, stop) rows with stop >= start."""
+    return bool(
+        table.ndim == 2
+        and table.shape[1] == 2
+        and np.isfinite(table).all()
+        and np.all(table[:, 1] >= table[:, 0])
+    )
+
+
 def validate_recording(rec: Recording) -> None:
     """Raise ValueError listing every contract violation in ``rec``."""
     problems: list[str] = []
@@ -120,8 +130,25 @@ def validate_recording(rec: Recording) -> None:
     ):
         problems.append("activity must have one row per activity time")
     for name, table in rec.epochs.items():
-        if table.ndim != 2 or table.shape[1] != 2 or np.any(table[:, 1] < table[:, 0]):
-            problems.append(f"epochs[{name!r}] must be (n, 2) with stop >= start")
+        if not _is_interval_table(table):
+            problems.append(
+                f"epochs[{name!r}] must be finite (n, 2) rows with stop >= start"
+            )
+    problems.extend(
+        f"params[{name!r}] must be finite (n, 2) rows with stop >= start"
+        for name in ("train_epochs", "test_epochs", "analysis_epochs")
+        if name in rec.params
+        and not _is_interval_table(np.asarray(rec.params[name], dtype=float))
+    )
+    for name, table in rec.events.items():
+        table = np.asarray(table, dtype=float)
+        if not (
+            (table.ndim == 1 and np.isfinite(table).all()) or _is_interval_table(table)
+        ):
+            problems.append(
+                f"events[{name!r}] must be finite times (n,) or (n, 2) intervals"
+                " with stop >= start"
+            )
     if problems:
         msg = (
             f"{rec.dataset}/{rec.session} breaks the Recording contract:\n- "
