@@ -232,6 +232,15 @@ def test_suspect_tracking_counts_a_one_frame_glitch_once():
     assert _found(times, positions)[1] == [30]
 
 
+@pytest.mark.parametrize("n_bad", [1, 2])
+def test_suspect_tracking_a_bad_first_sample_does_not_anchor_the_pass(n_bad):
+    # The first one or two samples sit 500 cm off the path (two frames agree
+    # with each other); every later sample agrees with its neighbours.
+    times, positions = _still()
+    positions[:n_bad, 0] += 500.0
+    assert _found(times, positions)[1] == list(range(n_bad))
+
+
 def test_suspect_tracking_counts_a_whole_excursion_and_not_the_return():
     times, positions = _still()
     # Frames 30-34 sit 80 cm off the path; from frame 29 the farthest

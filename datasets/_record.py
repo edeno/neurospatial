@@ -412,9 +412,16 @@ def find_suspect_tracking(
       identical samples (the run's first sample, the last fix before it, is
       not counted);
     - fast: one sequential pass over the finite samples that are not held.
-      The anchor is the last sample passed; a later sample is passed, and
-      becomes the anchor, when its distance from the anchor over the time
-      since it is at most ``max_speed`` (``units`` per second), and is
+      Two samples agree when their distance over the time between them is
+      at most ``max_speed`` (``units`` per second). The pass starts at the
+      first sample that agrees with each of the next two (which agree with
+      each other): a bad first sample would otherwise anchor the pass and
+      count every later sample until the animal came back near it. Three
+      samples, because a glitch held for two frames agrees with itself.
+      Samples before the start are counted as fast when they do not agree
+      with it, and the pass starts at the first finite sample when no three
+      agree. The anchor is then the last sample passed; a later sample is
+      passed, and becomes the anchor, when it agrees with the anchor, and is
       counted as fast otherwise. NaN and held samples are skipped and do not
       move the anchor, so the step after a held run is measured from the
       run's first sample, a one-frame glitch counts once (not its return
@@ -456,12 +463,27 @@ def find_suspect_tracking(
     fast = np.zeros(len(positions), dtype=bool)
     finite = np.flatnonzero(np.isfinite(positions).all(axis=1) & ~held)
     points, clock = positions.tolist(), times.tolist()
-    if len(finite):
-        anchor = int(finite[0])
-        for k in finite[1:].tolist():  # sequential: each test needs the last kept
-            if math.dist(points[k], points[anchor]) <= max_speed * (
-                clock[k] - clock[anchor]
-            ):
+
+    def agree(a: int, b: int) -> bool:
+        return math.dist(points[a], points[b]) <= max_speed * abs(clock[b] - clock[a])
+
+    order = finite.tolist()
+    first = next(
+        (
+            i
+            for i in range(len(order) - 2)
+            if agree(order[i], order[i + 1])
+            and agree(order[i], order[i + 2])
+            and agree(order[i + 1], order[i + 2])
+        ),
+        0,
+    )
+    if order:
+        anchor = order[first]
+        for k in order[:first]:
+            fast[k] = not agree(k, anchor)
+        for k in order[first + 1 :]:  # sequential: each test needs the last kept
+            if agree(anchor, k):
                 anchor = k
             else:
                 fast[k] = True
