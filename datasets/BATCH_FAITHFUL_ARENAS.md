@@ -52,6 +52,14 @@ error). Each loader writes the placement and residuals as its last
 | hafting_2008_nird | inferred | archive readme (read): "a linear track (mostly 320 cm)", no width | – | `Environment.bin_at` refuses a track without `track_width`, and no source gives one | – |
 | senzai_000003 | inferred | pixels with no stated scale; the open field and the theta maze share one image with no epochs between them | – | – | – |
 
+Each loader also records what its positions track
+(`geometry["tracked_point"]`), from its own sources or "not stated": one
+LED (000582), the head (Gardner; Kanter's and Vollan's OptiTrack; the
+lattice's head positions), the midpoint of two head LEDs (hc-2), the DLC
+body centre (002030), and "not stated" for 000405, the water maze's
+EthoVision paths and the bat's room tracking. A head marker keeps off walls
+a body point would reach, which the fidelity verdicts below meet.
+
 Vollan's open field needed the most evidence. The paper states a 150 x 150
 cm box for its open-field rats and two exceptions: a 1 m square with a
 transparent floor, ruled out by the samples' 1.4 m span, and "a circular
@@ -164,26 +172,59 @@ are dropped, so those hazards no longer move the results. Verdicts are in
 
 ## Fidelity of the declared environments
 
-A declared environment covers its own outline by construction, so the
-study judges its placement instead (`placement_reasons`): at most 2 % of
-the tracked samples outside it, the samples' fitted size no more than 15 %
-short of the stated one, and a stated centre within 15 % of the radius of
-the samples' centre. Nine of the ten pass: the share of samples outside is
-0-0.34 % on the arenas and 1.0 % on the lattice. The bat's room is a
-mismatch: 3.7 % of the samples lie outside `r_lim`, the resting positions
-beyond the -y wall (G-025). The evidence that the stated outlines fit is
-the samples, not the coverage: the samples-built environments reach
-37-98 % of the placed outline, their outermost bins lie 0.3-6.3 cm (median
-1.9) inside its wall, and the placement residuals are in the table above.
-The declared environments have no interior holes (the samples-built ones
-had 72 on 000582, 131 on Vollan, 216 on hc-2). On the lattice, the path through the declared bins is a median 0.95 x
-the distance along the bars (voxels 0.77); for pairs on parallel bars of one
+The declared arenas, the lattice and the room are judged by the same
+function as the declared tracks (`_geometry.judge_declared`; the arenas'
+own `placement_reasons`, with its 2 % limit on samples outside, was folded
+into it). A declared outline covers itself by construction, so the
+evidence is the samples against it: samples reaching more than one bin
+past a wall, a side with no sample within 3 bins over more than 15 % of
+its length (a circle is one side), the samples' extent more than 15 % short
+of the outline, a stated size more than 15 % from the samples' fitted size,
+and a stated centre more than 15 % of the radius off. Samples outside the
+outline or room are a tracking measure, reported by speed, not judged. A
+verdict of "matches" needs a stated fact (a size, or the authors' bars).
+Six of the ten match and four are mismatches (G-157):
+
+| Recording | Verdict | Stated fact (fitted vs stated) | Samples outside | Worst side: no sample within 3 bins | Outermost samples inside the wall (95th percentile, worst side) |
+| --- | --- | --- | --- | --- | --- |
+| sargolini_000582 | matches | -0.5 %, -2.9 % | 0.02 % | 0 % | 0.9 cm |
+| miniscope_002030 | matches | diameter -0.1 % | 0.03 % | 0 % | 0.1 cm |
+| giocomo_000405 | mismatch | -8.2 %, -8.0 % | 0 % | 69 % | 7.3 cm |
+| gardner_2022_grid | matches | -2.9 %, -3.3 % | 0 % | 0 % | 3.6 cm |
+| vollan_of | mismatch | diameter -4.3 %, centre 2.2 % of the radius | 0 % | 31 % | 3.3 cm |
+| kanter_2025 | matches | -2.6 %, -3.4 % | 0 % | 0 % | 1.8 cm |
+| watermaze_10248158 | matches | diameter +1.0 %, centre 2.7 % of the radius | 0.34 % | 0 % | 0.2 units |
+| hc2_ec013_527 | mismatch | -2.1 %, -3.0 % | 0.01 % | 36 % | 4.1 px |
+| grieves_2020_lattice | mismatch | side +0.0 % of 97 cm (the file's bars) | 1.0 % (placement tolerance) | 90 % of segments over 25 % unsupported within 4 cm | – |
+| yartsev_bat_demo | matches | `r_lim` against the paper's room: +3.6 %, +0.0 %, -8.0 % | 3.66 % (0.11 % of flight samples) | – | – |
+
+The four mismatches rest only on support: the tracked head keeps 3-7 cm
+off the walls of 000405, Vollan's circle and hc-2's platform, and a median
+6.0 cm off the lattice's bars, so whole sides or segments have no sample
+within the limit while every stated size fits within 15 %. The limits (3
+bins, 15 % of a side, one bin along a segment) were not tuned to these
+recordings, and how sensitive they are is not measured here; the same
+numbers would follow from a wall drawn a few cm too far out (G-157). In
+the faithful-arenas round nine of the ten passed and the bat's room was a
+mismatch on its 3.7 % of samples outside `r_lim`; that share is now a room
+measure (G-025), and the room matches on its stated sides.
+
+The lattice's `track_width` is a placement tolerance chosen from the
+samples, 2 x the head's 99th percentile distance from a bar (30.8 cm), not
+a stated width: the stated tubes are 10 mm across, and 99.9 % of head
+samples lie beyond 5 mm of a bar. The samples-built environments, measured
+against the same outlines, cover 37-98 % of them (75 % of Vollan's
+circle, 67 % of 000405's rectangle) with their outermost bins 0.3-6.3 cm
+inside the wall; the declared environments have no interior holes (the
+samples-built ones had 72 on 000582, 131 on Vollan, 216 on hc-2). On the
+lattice, the path through the declared bins is a median 0.95 x the
+distance along the bars (voxels 0.77); for pairs on parallel bars of one
 face it is 30.4 cm against 31.1 cm along the bars (voxels 18.2 cm). The
 bat's room has no voxel outside `r_lim` (4.4 % of the samples-built voxels)
-and both feeders in the environment. The study's "far links" and "sparse bins" are now large for
-declared environments (for example 53 % and 68 % on 002030): they count
-declared bins the animal never visited, which is the point of declaring
-them, not air or a wall.
+and both feeders in the environment. The study's "far links" and "sparse
+bins" are large for declared environments (for example 53 % and 68 % on
+002030): they count declared bins the animal never visited, which is the
+point of declaring them, not air or a wall.
 
 ## What would make the declared path the easy one in neurospatial
 

@@ -20,9 +20,12 @@ the environment, built in `load()` from the clean samples
 
 - **Topology and stated sizes from a source; placement from the samples or
   the file.** Where the file holds the authors' graph or centreline
-  (labyrinth, J16, Takigawa, Hafting's normalised frame) or its own
-  coordinate (hc-31, and 000044's linear track placed along its linearized
-  coordinate), it is used as stored. A straight track of stated length lies
+  (labyrinth, J16, Takigawa) or its own coordinate (hc-31, and 000044's
+  linear track placed along its linearized coordinate), it is used as
+  stored; Hafting's line is drawn in the file's frame, which the authors
+  scaled to the stated 320 cm (labelled the file's coordinates, so nothing
+  independent checks it). The labyrinth's dead ends are moved half a cell
+  on, to the end walls the repository's `MazeWall` draws. A straight track of stated length lies
   along the samples' principal axis, centred between their 0.5th and 99.5th
   percentiles. A maze whose layout is stated (a W, a radial maze, a Z, an X,
   a figure-8, a 3-arm maze) starts from candidate layouts drawn on the
@@ -98,26 +101,29 @@ file's units, on the analysed samples. Decoding error: median over the same
 time bins in both runs (those the declared track places), along each run's
 own environment (the track graph, or the samples' grid); pixels for hc-3
 and hc-18. Laps: default, by region. Replay: the `GROSMARK_2016` detection
-rate (`wk`: the G-038 workaround on the linearized coordinate).
+rate (`wk`: the G-038 workaround on the linearized coordinate), now a smoke
+run on the first 20 candidate events with 50 shuffles (comparing published
+replay methods is not a survey goal), so the rates show that the methods
+run, not estimates to compare.
 
 | Recording | Status | Layout (source) | Physical width | Beyond | Tolerance (outside) | Lateral | Occupancy (s) | Info (bits/spike) | Decoding error | Laps | Replay | Fidelity verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| rosenberg_labyrinth | declared | binary-tree labyrinth, the repository's NewMaze graph | 1 cell chosen | 4.6 % (11 / 1) | 1.26 (1.0%) | 0.16, 0.34 | 4797 / 4808 | – / – | – / – | – | – / – | mismatch |
+| rosenberg_labyrinth | declared | binary-tree labyrinth, the repository's NewMaze graph, dead ends at their end walls (MazeWall) | 1 cell chosen | 2.0 % (5 / 1) | 1.06 (1.0%) | 0.14, 0.49 | 4790 / 4808 | – / – | – / – | – | – / – | matches |
 | j16_23020757 | declared | the authors' graph, 10 nodes, 9 corridors (file) | 6.5 cm stated | 63.8 % (87 / 64 / 35) | 36.9 (1.0%) | 2.73, 1.81 | 792 / 802 | 2.05 / 2.58 | 2.0 / 5.7 | – | – / – | matches |
 | takigawa_7114733 | declared | two tracks, the authors' centrelines (file); Tirole et al. 2022: 2 m | not stated | – | 41.4 (1.0%) | 4.57, 4.12 | 1069 / 1093 | 1.66 / 2.22 | 7.7 / 13.7 | – | – / – | mismatch |
-| hafting_2008_nird | declared | straight 320 cm (archive readme), the file's frame | not stated | – | 31 (1.0%) | 3.21, 1.24 | 650 / 656 | 0.98 / 1.05 | 104.0 / 157.0 | – | – / – | matches |
-| grosmark_000044_linear | declared | 15 cm reward area + 1.6 m stem + 15 cm reward area (Grosmark & Buzsaki 2016), on the file's linearization | not stated | – | 55 (5.0%) | 9.04, 1.53 | 981 / 1052 | 0.38 / 0.81 | 2.5 / 8.5 | – | 0.155 / 0.140 (wk) | mismatch |
+| hafting_2008_nird | declared | straight 320 cm (archive readme), the file's frame | not stated | – | 31 (1.0%) | 3.21, 1.24 | 650 / 656 | 0.98 / 1.05 | 104.0 / 157.0 | – | – / – | not verified |
+| grosmark_000044_linear | declared | 15 cm reward area + 1.6 m stem + 15 cm reward area (Grosmark & Buzsaki 2016), on the file's linearization | not stated | – | 55 (5.0%) | 9.04, 1.53 | 981 / 1052 | 0.38 / 0.81 | 2.5 / 8.5 | – | 0.250 / 0.150 (wk) | mismatch |
 | vollan_lt | declared | straight 200 cm (Vollan et al. 2025) | not stated | – | 31.3 (1.0%) | 3.19, 0.21 | 316 / 319 | 0.15 / 0.29 | 5.0 / 8.5 | – | – / – | matches |
 | valero_000568 | declared | straight 110 cm (NWB description) | 6.35 cm stated | 12.4 % (12 / 14 / 9) | 12.9 (1.0%) | 1.22, 0.07 | 944 / 950 | 0.28 / 0.29 | 34.2 / 32.1 | – | 0.000 / error | matches |
 | aeryjones_000165 | declared | straight 36 cm (Aery Jones et al. 2021) | not stated | – | 5.42 (0.9%) | 0.39, 0.15 | 270 / 270 | 0.01 / 0.01 | 16.0 / 17.0 | – | – / – | matches |
-| gonzalez_001695 | declared | straight, length fitted (Gonzalez et al. 2026: wells at either end) | not stated | – | 3.16 (1.0%) | 0.42, 0.02 | 545 / 549 | 0.22 / 0.22 | 17.2 / 18.5 | – | 0.040 / error | not verified |
+| gonzalez_001695 | declared | straight, length fitted (Gonzalez et al. 2026: wells at either end) | not stated | – | 3.16 (1.0%) | 0.42, 0.02 | 545 / 549 | 0.22 / 0.22 | 17.2 / 18.5 | – | 0.000 / error | not verified |
 | hc3_ec013_669 | declared | straight 250 cm (Mizuseki et al. 2012), pixels | 8.04 px stated (7 cm) | 26.3 % (19 / 34 / 15) | 29.3 (1.0%) | 2.13, 0.03 | 530 / 535 | 0.57 / 0.67 | 8.5 / 12.2 | – | – / – | not verified |
 | hc31_anm190422 | declared | 1-D, the authors' 48 m coordinate (hc-31) | not stated | – | 2.5 (0.0%) | 0.00, 0.00 | 909 / 909 | 3.26 / 3.25 | 574.8 / 572.5 | – | – / – | matches |
-| figure8_000552 | declared | figure-8, both loops closed (DANDI 000552), fitted | not stated | – | 12.5 (1.0%) | 0.99, 0.60 | 597 / 603 | 0.39 / 0.40 | 7.8 / 8.8 | 6, 14 / 0, 20 | 0.014 / 0.028 (wk) | not verified |
-| grosmark_000044_circular | declared | 1 m circle, 72-gon loop (Grosmark & Buzsaki 2016) | not stated | – | 33.9 (1.0%) | 3.05, 2.38 | 1709 / 1726 | 0.66 / 0.83 | 6.5 / 11.0 | 67, 65 / 1, 85 | 0.055 / 0.095 (wk) | matches |
+| figure8_000552 | declared | figure-8, both loops closed (DANDI 000552), fitted | not stated | – | 12.5 (1.0%) | 0.99, 0.60 | 597 / 603 | 0.39 / 0.40 | 7.8 / 8.8 | 6, 14 / 0, 20 | 0.000 / 0.000 (wk) | not verified |
+| grosmark_000044_circular | declared | 1 m circle, 72-gon loop (Grosmark & Buzsaki 2016) | not stated | – | 33.9 (1.0%) | 3.05, 2.38 | 1709 / 1726 | 0.66 / 0.83 | 6.5 / 11.0 | 67, 65 / 1, 85 | 0.100 / 0.150 (wk) | matches |
 | hc18_train261 | declared | closed circuit from the travel samples (no shape stated) | not stated | – | 35.2 (92.8%) | 2.84, 1.20 | 1423 / 1443 | 0.18 / 0.19 | 276.1 / 303.5 | 35, 31 / 1, 94 | – / – | not verified |
-| jadhav_000447 | inferred (refused: base +17% of the stated length; arms +19% of the stated length) | W-track (Tang et al. 2023: ~80 x 80 cm), fitted | 7 cm stated | 35.8 % (22 / 50 / 44) | – | – | 912 / 912 | 0.58 / 0.58 | 18.5 / 18.5 | – | – / – | – |
-| jadhav_000447_familiar | declared | W-track (Tang et al. 2023: ~80 x 80 cm), fitted | 7 cm stated | 13.0 % (2 / 32 / 26) | 29.7 (1.0%) | 0.79, 0.78 | 322 / 331 | 1.00 / 1.08 | 35.9 / 40.6 | – | – / – | matches |
+| jadhav_000447 | inferred (refused: base +17% of the stated length; arms +19% of the stated length) | W-track (Tang et al. 2023: ~80 x 80 cm), fitted | 7 cm stated | 35.8 % (22 / 50 / 44) | – | – | 912 / 912 | 0.58 / 0.58 | 18.5 / 18.5 | 1 / 1 | – / – | – |
+| jadhav_000447_familiar | declared | W-track (Tang et al. 2023: ~80 x 80 cm), fitted | 7 cm stated | 13.0 % (2 / 32 / 26) | 29.7 (1.0%) | 0.79, 0.78 | 322 / 331 | 1.00 / 1.08 | 35.9 / 40.6 | – / 0 | – / – | matches |
 | hc28_hpa | declared | W-track (Jadhav et al. 2016: ~80 x 80 cm), fitted | 7 cm stated | 37.3 % (24 / 38 / 57) | 20.8 (1.0%) | 2.68, 1.00 | 800 / 811 | 0.85 / 0.92 | 17.1 / 16.6 | – | – / – | matches |
 | agarwal_24757638 | declared | 3-arm maze (Figshare; Agarwal et al. 2026), fitted | not stated | – | 16.8 (1.0%) | 0.70, 0.80 | 1028 / 1053 | 0.18 / 0.19 | 3.9 / 5.7 | – | – / – | not verified |
 | shipley_30902972 | declared | 8-arm radial maze (Shipley et al. 2026: 80 cm arms, 24.7 cm platform), fitted | 10 cm stated | 0.7 % (1 / 0 / 1) | 10 (0.3%) | 1.06, 0.97 | 1344 / 1350 | 0.24 / 0.24 | 62.3 / 52.2 | – | – / – | matches |
@@ -156,8 +162,17 @@ rate (`wk`: the G-038 workaround on the linearized coordinate).
   width or shape for the reward areas to do better.
 - **The labyrinth at one chosen cell.** The paper's corridors are 1-1/8 in
   on a 1.5 in grid, 0.75 of a cell; one cell, the corridor pitch, is chosen
-  so a corridor ends at the wall it shares with its neighbour. 4.6 % of nose
-  samples lie beyond half a cell (17.9 % beyond half the paper's corridor).
+  so a corridor ends at the wall it shares with its neighbour. 2.0 % of nose
+  samples lie beyond half a cell (12.8 % beyond half the paper's corridor).
+- **The labyrinth's dead ends at their walls.** `NewMaze` ends each run at
+  the centre of its last cell, but `MazeWall` (the same file) draws the end
+  wall half a cell past it, and the samples reached 15.6 % of the track's
+  length past its free ends, which the study judged a mismatch. Each of
+  the 64 dead ends now ends at its wall (the entrance, open to the home
+  cage, is not moved): the samples reach 3.0 % of the length past the free
+  ends, 2.0 % of nose samples lie beyond half a cell (4.6 % before) and the
+  labyrinth matches on the authors' graph; its worst stretch is 0.49 cell
+  to one side, against a 0.5-cell limit.
 - **Shipley's centre.** The radial maze is centred on the middle of the
   samples' extent: the densest point is a reward well, and starting there
   put three fitted arms on one arm (the first run of this batch reported
@@ -168,7 +183,7 @@ rate (`wk`: the G-038 workaround on the linearized coordinate).
 
 - **Connectivity is the apparatus's.** Every declared track is one part
   (Takigawa two, as stated). Against its own geometry a declared track
-  measures only its binning (the labyrinth's path along its bins 0.95 x the
+  measures only its binning (the labyrinth's path along its bins 0.96 x the
   distance along the graph it was built from, Takigawa's 0.97), so these
   are not evidence of fit; what they replace is the samples' grid, whose
   path against the same references is 0.66 and 0.87 and which links
@@ -198,11 +213,13 @@ rate (`wk`: the G-038 workaround on the linearized coordinate).
   tolerance each split the recording (G-151): with no sample outside, the
   figure-8 gives 20 and hc-18 92-97.
 - **Replay runs on the track.** 000568 and 001695, which errored (G-038),
-  decode on the declared track (Grosmark rates 0 and 0.040); 000044 and the
-  figure-8 no longer need the file's coordinate (`ok` instead of a
-  workaround): 000044 linear 0.140 -> 0.155, the circle 0.095 -> 0.055,
-  the figure-8 0.028 -> 0.014. Davidson rates are 0 everywhere in both
-  runs.
+  decode on the declared track; 000044 and the figure-8 no longer need the
+  file's coordinate (`ok` instead of a workaround). Replay is now a smoke
+  run (first 20 candidate events, 50 shuffles): Grosmark rates on the
+  declared and inferred runs are 000044 linear 0.250 and 0.150, the circle
+  0.100 and 0.150, the figure-8, 000568 and 001695 0 (20 events each, so a
+  95 % interval of up to 0.17 around 0). Davidson rates are 0 everywhere in
+  both runs. These are not compared further.
 - **Spatial information is lower on most tracks** (000044 linear 0.81 ->
   0.38 bits/spike, Vollan 0.29 -> 0.15, Takigawa 2.22 -> 1.66, J16 2.58 ->
   2.05, the circle 0.83 -> 0.66) and about the same on the mazes. A track
@@ -271,14 +288,14 @@ a tolerance).
   that could not be read.
 - hc-3's length is not an independent check: its pixel scale comes from the
   same 250 cm.
-- Fidelity verdicts of the 19 declared tracks: 10 match, 3 mismatch, 6
-  not verified (ENVIRONMENT_FIDELITY.md). A match rests on a stated size
-  against the samples' own or on the authors' geometry as stated; the
-  references built from the samples (principal axis, linearized
-  centreline) judge nothing. The labyrinth's mismatch is its graph ending
-  at dead-end cell centres (samples reach 15.6 % of its length past its 65
-  ends), not a scale error. Hafting's and hc-31's lengths (+0.0 %, +0.3 %)
-  confirm the files' frames, not the tracks. The circle's worst stretch is
+- Fidelity verdicts of the 19 declared tracks: 10 match, 2 mismatch, 7
+  not verified (ENVIRONMENT_FIDELITY.md; the tracks round alone gave 10, 3
+  and 6: the labyrinth now matches with its dead ends at their walls, and
+  Hafting is not verified). A match rests on a stated size against the
+  samples' own or on the authors' geometry as stated; the references built
+  from the samples (principal axis, linearized centreline, Hafting's line
+  in a frame scaled to the samples) judge nothing. hc-31's length (+0.3 %)
+  confirms the file's frame, not the track. The circle's worst stretch is
   2.38 cm to one side against a 2.5 cm limit. How sensitive these limits
   are to misfits of known size is the survey's phase 6 (simulation ladder
   rungs 2-3), not measured here.
