@@ -971,7 +971,7 @@ class TestViewRatesResultPlot:
         batch_firing_rates: np.ndarray,
         single_occupancy: np.ndarray,
     ) -> None:
-        """plot() should require an explicit ``idx`` argument."""
+        """plot() without ``idx`` says how to choose a unit's 2-D map."""
         from neurospatial.encoding.view import ViewRatesResult
 
         result = ViewRatesResult(
@@ -984,8 +984,8 @@ class TestViewRatesResultPlot:
             bandwidth=5.0,
         )
 
-        with pytest.raises(TypeError):
-            result.plot()  # type: ignore[call-arg]
+        with pytest.raises(ValueError, match=r"requires a unit index(.|\n)*Fix:"):
+            result.plot()
 
     def test_plot_accepts_ax_argument(
         self,

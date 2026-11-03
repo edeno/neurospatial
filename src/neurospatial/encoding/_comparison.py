@@ -488,6 +488,45 @@ shape (n_units, n_bins)
         table.attrs["analysis_settings"] = self.analysis_settings
         return table
 
+    @property
+    def n_units(self) -> int:
+        """Number of units compared."""
+        return len(self)
+
+    @property
+    def n_units_scored(self) -> int:
+        """Units with a score."""
+        return int((self.status == "scored").sum())
+
+    @property
+    def median_correlation(self) -> float:
+        """Median correlation over scored units; NaN without any."""
+        return (
+            float(np.median(self.correlation[self.status == "scored"]))
+            if (self.status == "scored").any()
+            else float("nan")
+        )
+
+    @property
+    def n_units_only_a(self) -> int:
+        """Units recorded only in condition a."""
+        return len(self.unit_ids_only_a)
+
+    @property
+    def n_units_only_b(self) -> int:
+        """Units recorded only in condition b."""
+        return len(self.unit_ids_only_b)
+
+    @property
+    def n_compared_bins(self) -> int:
+        """Number of bins compared."""
+        return len(self.bins_a)
+
+    @property
+    def topology_differs(self) -> bool:
+        """Whether the two environments' bin connections differ."""
+        return bool((self.analysis_settings or {}).get("topology_differs", False))
+
     def summary(self) -> dict[str, Any]:
         """Headline numbers of the comparison as flat scalars.
 
@@ -527,19 +566,15 @@ shape (n_units, n_bins)
         >>> summary["method"], summary["topology_differs"]
         ('pearson', False)
         """
-        scored = self.status == "scored"
-        settings = self.analysis_settings or {}
         return {
-            "n_units": len(self),
-            "n_units_scored": int(scored.sum()),
-            "median_correlation": float(np.median(self.correlation[scored]))
-            if scored.any()
-            else float("nan"),
-            "n_units_only_a": len(self.unit_ids_only_a),
-            "n_units_only_b": len(self.unit_ids_only_b),
-            "n_compared_bins": len(self.bins_a),
+            "n_units": self.n_units,
+            "n_units_scored": self.n_units_scored,
+            "median_correlation": self.median_correlation,
+            "n_units_only_a": self.n_units_only_a,
+            "n_units_only_b": self.n_units_only_b,
+            "n_compared_bins": self.n_compared_bins,
             "method": self.method,
-            "topology_differs": bool(settings.get("topology_differs", False)),
+            "topology_differs": self.topology_differs,
         }
 
     def to_dataframe(self) -> pd.DataFrame:

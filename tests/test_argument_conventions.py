@@ -643,6 +643,8 @@ SIGNIFICANCE_ALPHA = {
     "has_phase_precession",
     "CellTypeSignificanceResult.label_cell_types",
     "CellTypeSignificanceResult.summary_table",
+    "PlaceCellSignificanceResult.classify",
+    "PlaceCellSignificanceResult.summary_table",
     "is_place_cell",
     "is_spatial_view_cell",
     "apply_alpha",

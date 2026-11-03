@@ -434,6 +434,12 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         Name of the shuffle method used (e.g., "time_bins", "cell_identity").
     alternative : {"greater", "less", "two-sided"}, default="greater"
         Direction of the test the p-value belongs to.
+    statistic : str or None, default=None
+        Name of the score, such as ``"spatial_information"``; None when
+        unnamed.
+    statistic_units : str or None, default=None
+        Unit of the score, such as ``"bits/spike"``; ``""`` for a
+        dimensionless score, None when unknown.
 
     Attributes
     ----------
@@ -480,6 +486,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     p_value: float
     shuffle_type: str
     alternative: Literal["greater", "less", "two-sided"] = "greater"
+    statistic: str | None = None
+    statistic_units: str | None = None
 
     def __post_init__(self) -> None:
         """Check the fields agree, then own the null as a read-only copy."""
@@ -513,6 +521,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         *,
         shuffle_type: str,
         alternative: Literal["greater", "less", "two-sided"] = "greater",
+        statistic: str | None = None,
+        statistic_units: str | None = None,
     ) -> ShuffleTestResult:
         """Test an observed score against the scores of its shuffles.
 
@@ -529,6 +539,10 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             Name of the shuffle method (e.g., "time_bins", "cell_identity").
         alternative : {"greater", "less", "two-sided"}, default="greater"
             Direction of the test, as for :func:`compute_shuffle_pvalue`.
+        statistic : str or None, default=None
+            Name of the score.
+        statistic_units : str or None, default=None
+            Unit of the score; ``""`` for a dimensionless score.
 
         Returns
         -------
@@ -564,6 +578,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             p_value=p_value,
             shuffle_type=shuffle_type,
             alternative=alternative,
+            statistic=statistic,
+            statistic_units=statistic_units,
         )
 
     @property
@@ -601,6 +617,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
+            "statistic": self.statistic,
+            "statistic_units": self.statistic_units,
             "observed_score": float(self.observed_score),
             "p_value": float(self.p_value),
             "z_score": float(self.z_score),
@@ -676,7 +694,10 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
             f"Shuffle Test ({self.shuffle_type}, {self.alternative})\n"
             f"p = {self.p_value:.4f}{sig_marker}, z = {self.z_score:.2f}{hidden}"
         )
-        ax.set_xlabel("Score")
+        label = "Score" if self.statistic is None else self.statistic
+        if self.statistic_units:
+            label = f"{label} ({self.statistic_units})"
+        ax.set_xlabel(label)
         ax.set_ylabel("Count")
         ax.legend()
 

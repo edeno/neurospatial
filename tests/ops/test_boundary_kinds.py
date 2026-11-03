@@ -151,8 +151,8 @@ def test_boundary_vector_map_on_an_elevated_platform_peaks_at_the_drop_edge():
     on_drop = rate_map(elevated)
     supported = np.isfinite(on_drop.firing_rate)
     assert supported.mean() > 0.9
-    assert on_drop.preferred_distance() == pytest.approx(10.0, abs=2.5)
-    assert np.cos(on_drop.preferred_direction()) > np.cos(np.pi / 6)
+    assert on_drop.preferred_distance == pytest.approx(10.0, abs=2.5)
+    assert np.cos(on_drop.preferred_direction) > np.cos(np.pi / 6)
     # Same geometry, same map: the drop edge is measured exactly like a wall.
     np.testing.assert_array_equal(
         on_drop.firing_rate, rate_map(walled).firing_rate, strict=True

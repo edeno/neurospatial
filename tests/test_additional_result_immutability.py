@@ -379,9 +379,14 @@ def test_directional_maps_are_owned_and_read_only(env, how):
 
 @pytest.mark.parametrize("how", ["original", "pickle", "deepcopy"])
 def test_place_field_bins_are_owned_and_read_only(how):
+    from neurospatial import Environment
+
     bins = np.array([0, 1, 2])
     given = [bins]
-    result = PlaceFieldsResult(fields=given)
+    env = Environment.from_samples(np.arange(3.0)[:, None], bin_size=1.0)
+    result = PlaceFieldsResult(
+        fields=given, env=env, firing_rate=np.ones(3), bandwidth=0.0
+    )
     coverage = PopulationCoverageResult(
         place_fields=[result],
         is_observed=np.ones(3, dtype=bool),

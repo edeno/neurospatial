@@ -965,7 +965,7 @@ visited get no mass), and decode the null events with the same prior.
   windows stepped by 5 ms as the event, `dt=0.08`, the rate maps as
   `encoding_models` and the animal's speed rule as `valid_time_bins`. The
   table reports each quantity and its p-value, such as `mean_spread` and
-  `p_value[mean_spread]`.
+  `tested_p_values[mean_spread]`.
 - **A narrow line band.** `MABOUDI_2018` fits the line within 3 cm, so it
   searches 35,000 random lines (`score_options["n_lines"]`) rather than the
   dense grid, which is slow at that band. Set `rng` in

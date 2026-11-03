@@ -53,9 +53,9 @@ def test_single_and_population_agree_by_unit_id(significance_recording):
         r.env, r.trains, r.times, r.positions, unit_ids=ids, n_shuffles=20, rng=0
     )
     for i, uid in enumerate(ids):
-        assert place[uid].p_value == population.p_values[i, 0]
+        assert place.sel(unit_id=uid).p_value == population.p_values[i, 0]
         np.testing.assert_array_equal(
-            place[uid].null_scores, population.null_scores[i, :, 0]
+            place.sel(unit_id=uid).null_scores, population.null_scores[i, :, 0]
         )
 
 

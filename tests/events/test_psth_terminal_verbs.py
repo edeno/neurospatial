@@ -124,6 +124,17 @@ def test_single_and_population_summary_tables_share_columns_and_attrs():
             "n_events_dropped": 0,
             "align": None,
             "event_ids": None,
+            "units": {
+                "bin_center": "s",
+                "firing_rate": "Hz",
+                "firing_rate_sem": "Hz",
+                "histogram": "spikes",
+                "sem": "spikes",
+                "events_per_bin": "events",
+                "peak_rate": "Hz",
+                "peak_latency": "s",
+                "baseline_rate": "Hz",
+            },
         }
     np.testing.assert_allclose(
         pop[1].summary_table().to_numpy(), pop_table.iloc[[1]].to_numpy()

@@ -267,8 +267,8 @@ def polar_summary_frame(
 ) -> pd.DataFrame:
     """One row per unit with the peak and its distance and direction.
 
-    The columns are ``peak_firing_rate``, ``preferred_distance``,
-    ``preferred_direction_deg`` and ``preferred_direction``, then ``extra``
+    The columns are ``peak_firing_rate``, ``preferred_distance`` and
+    ``preferred_direction`` (radians, the one angle unit of the tables), then ``extra``
     (a family's metrics), ``n_spikes_outside_intervals`` and any
     ``classification``. Singular and population results get identical
     columns.
@@ -279,7 +279,6 @@ def polar_summary_frame(
     columns = {
         "peak_firing_rate": np.atleast_1d(result.peak_firing_rate()),
         "preferred_distance": peaks[:, 0],
-        "preferred_direction_deg": np.degrees(peaks[:, 1]),
         "preferred_direction": peaks[:, 1],
         **extra,
         **result._accounting_columns(),
@@ -291,7 +290,6 @@ def polar_summary_frame(
         "peak_firing_rate": "Hz",
         "preferred_distance": result.env.units or "",
         "preferred_direction": "rad",
-        "preferred_direction_deg": "deg",
         **extra_units,
     }
     if thresholds is not None:

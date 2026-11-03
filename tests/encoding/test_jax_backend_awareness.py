@@ -444,7 +444,7 @@ class TestDirectionalRateResultWithJax:
         plt.close("all")
 
     def test_preferred_direction_with_jax(self) -> None:
-        """preferred_direction() should work with JAX arrays."""
+        """preferred_direction should work with JAX arrays."""
         import jax.numpy as jnp
 
         from neurospatial.encoding.directional import DirectionalRateResult
@@ -465,11 +465,11 @@ class TestDirectionalRateResultWithJax:
             bandwidth=None,
         )
 
-        pref_dir = result.preferred_direction()
+        pref_dir = result.preferred_direction
         assert isinstance(pref_dir, float)
 
     def test_mean_vector_length_with_jax(self) -> None:
-        """mean_vector_length() should work with JAX arrays."""
+        """mean_vector_length should work with JAX arrays."""
         import jax.numpy as jnp
 
         from neurospatial.encoding.directional import DirectionalRateResult
@@ -490,7 +490,7 @@ class TestDirectionalRateResultWithJax:
             bandwidth=None,
         )
 
-        mvl = result.mean_vector_length()
+        mvl = result.mean_vector_length
         assert isinstance(mvl, float)
         assert 0.0 <= mvl <= 1.0
 
@@ -575,7 +575,7 @@ class TestObjectVectorRateResultWithJax:
         plt.close("all")
 
     def test_preferred_distance_with_jax(self) -> None:
-        """preferred_distance() should work with JAX arrays."""
+        """preferred_distance should work with JAX arrays."""
         import jax.numpy as jnp
 
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
@@ -605,7 +605,7 @@ class TestObjectVectorRateResultWithJax:
             env=env,
         )
 
-        pref_dist = result.preferred_distance()
+        pref_dist = result.preferred_distance
         assert isinstance(pref_dist, float)
         assert pref_dist >= 0.0
 

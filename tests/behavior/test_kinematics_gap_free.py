@@ -90,6 +90,9 @@ def kinematic_goldens():
     goldens["compute_goal_directed_metrics"]["fields"].update(
         arrival_tested=True, interval_ids=None, units="cm"
     )
+    # The VTE session result later gained ``units`` (the environment's, "cm");
+    # its trial results are unchanged.
+    goldens["compute_vte_session"]["fields"]["units"] = "cm"
     return goldens
 
 

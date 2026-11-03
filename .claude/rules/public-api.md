@@ -65,6 +65,24 @@ Each terminal verb means the same thing on every result class:
   `backend="fastplotlib"`, which returns the fastplotlib figure; typing
   overloads keep the `Axes` return for the default.
 
+- Properties vs methods: a no-argument scalar that is cheap to compute is a
+  property (`hd.mean_vector_length`, `hd.preferred_direction`); anything that
+  takes options or does real work stays a method. A single-unit name that a
+  population result shares with the same meaning (`peak_firing_rate()`,
+  `spatial_information()`, `peak_location()`) stays a method on both, so the
+  two levels read alike. Every `summary()` key reads back from the result as
+  written, and the repr says how: `name=` is a non-callable attribute,
+  `name()=` a method that needs no argument (`spatial_information()=2.807`),
+  `name[key]=` an entry of a mapping attribute and `a.b=` an attribute of an
+  attribute (`observed.score`). Give a summary value its own property (`n_units`,
+  `n_bins`, `total_occupancy`) rather than a key nothing else exposes; counts
+  that depend on a method's options (`n_place` at a default `alpha`) stay out
+  of the repr. `test_repr_names_are_accessible` checks every public result.
+- Population `plot(idx=None, *, ax=None)`: with no unit, results with one
+  axis per unit (PSTH, tuning, directional) draw a units-by-bins heatmap
+  sorted by peak with a colorbar in Hz; 2-D map results raise
+  `unit_index_required` from `_results.py`.
+
 Non-neural results such as `ResampledPathResult` and `ContinuousEventResult`
 export domain tables named for their rows (`samples_table()`,
 `aligned_table()`) and do not implement `to_dataframe()`.

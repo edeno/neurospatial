@@ -107,12 +107,27 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
         object.__setattr__(self, "msd", msd)
         self._own_arrays()
 
+    @property
+    def n_lags(self) -> int:
+        """Number of lags."""
+        return int(self.lags.size)
+
+    @property
+    def max_lag(self) -> float:
+        """Longest lag (s); NaN without lags."""
+        return float(self.lags.max()) if self.lags.size else float("nan")
+
+    @property
+    def final_msd(self) -> float:
+        """Mean squared displacement at the longest lag; NaN without lags."""
+        return float(self.msd[-1]) if self.msd.size else float("nan")
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
-            "n_lags": int(self.lags.size),
-            "max_lag": float(self.lags.max()) if self.lags.size else float("nan"),
-            "final_msd": float(self.msd[-1]) if self.msd.size else float("nan"),
+            "n_lags": self.n_lags,
+            "max_lag": self.max_lag,
+            "final_msd": self.final_msd,
         }
 
 
@@ -266,20 +281,37 @@ class CumulativeDistanceResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
             return float("nan")
         return float(self.run_path_lengths.sum())
 
+    @property
+    def n_samples(self) -> int:
+        """Number of samples."""
+        return int(self.run_ids.size)
+
+    @property
+    def n_runs(self) -> int:
+        """Number of runs."""
+        return int(self.run_path_lengths.size)
+
+    @property
+    def n_isolated_samples(self) -> int:
+        """Valid samples that belong to no run."""
+        return int(np.count_nonzero(self.sample_valid & (self.run_ids == -1)))
+
+    @property
+    def observed_duration(self) -> float:
+        """Seconds covered by the runs."""
+        return float((self.run_time_bounds[:, 1] - self.run_time_bounds[:, 0]).sum())
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.
 
         ``n_samples`` counts the input samples, one per entry of ``run_ids``.
         """
-        widths = self.run_time_bounds[:, 1] - self.run_time_bounds[:, 0]
         return {
-            "n_samples": int(self.run_ids.size),
-            "n_runs": int(self.run_path_lengths.size),
-            "n_isolated_samples": int(
-                np.count_nonzero(self.sample_valid & (self.run_ids == -1))
-            ),
+            "n_samples": self.n_samples,
+            "n_runs": self.n_runs,
+            "n_isolated_samples": self.n_isolated_samples,
             "total_distance": self.total_distance,
-            "observed_duration": float(widths.sum()),
+            "observed_duration": self.observed_duration,
         }
 
 

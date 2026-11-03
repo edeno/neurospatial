@@ -177,6 +177,31 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
         place = [status for status in self.unit_status if status != "excluded"]
         return bool(place) and all(status == "passed" for status in place)
 
+    @property
+    def n_passed(self) -> int:
+        """Units that passed the validation."""
+        return self.unit_status.count("passed")
+
+    @property
+    def mean_center_error(self) -> float:
+        """Mean field-center error over evaluated units."""
+        return _nan_stat(self.center_errors, np.mean)
+
+    @property
+    def largest_center_error(self) -> float:
+        """Largest field-center error over evaluated units."""
+        return _nan_stat(self.center_errors, np.max)
+
+    @property
+    def mean_correlation(self) -> float:
+        """Mean map correlation over evaluated units."""
+        return _nan_stat(self.correlations, np.mean)
+
+    @property
+    def smallest_correlation(self) -> float:
+        """Smallest map correlation over evaluated units."""
+        return _nan_stat(self.correlations, np.min)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics.
 
@@ -187,12 +212,12 @@ class SimulationValidationResult(ReadOnlyArraysMixin, ResultMixin):
             "n_selected": self.n_selected,
             "n_evaluated": self.n_evaluated,
             "n_excluded": self.n_excluded,
-            "n_passed": self.unit_status.count("passed"),
+            "n_passed": self.n_passed,
             "passed": self.passed,
-            "mean_center_error": _nan_stat(self.center_errors, np.mean),
-            "largest_center_error": _nan_stat(self.center_errors, np.max),
-            "mean_correlation": _nan_stat(self.correlations, np.mean),
-            "smallest_correlation": _nan_stat(self.correlations, np.min),
+            "mean_center_error": self.mean_center_error,
+            "largest_center_error": self.largest_center_error,
+            "mean_correlation": self.mean_correlation,
+            "smallest_correlation": self.smallest_correlation,
         }
 
     def summary_table(self) -> pd.DataFrame:

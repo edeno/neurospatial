@@ -393,9 +393,9 @@ class TestObjectVectorRangeCoverage:
         ring = (result.distance_range[1] - result.distance_range[0]) / (
             result.n_distance_bins
         )
-        assert abs(result.preferred_distance() - 60.0) <= ring
+        assert abs(result.preferred_distance - 60.0) <= ring
         # The animal is east of the object, so the object lies west of it.
-        west = np.angle(np.exp(1j * (result.preferred_direction() - np.pi)))
+        west = np.angle(np.exp(1j * (result.preferred_direction - np.pi)))
         assert abs(west) <= np.pi / 6
 
     def test_fraction_of_time_in_range_matches_the_geometry(self) -> None:
@@ -1073,7 +1073,7 @@ class TestComputeObjectVectorRateResultMethods:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """preferred_distance() should return a float."""
+        """preferred_distance should return a float."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -1087,7 +1087,7 @@ class TestComputeObjectVectorRateResultMethods:
             distance_range=(0.0, 50.0),
             distance_bin_size=5.0,
         )
-        dist = result.preferred_distance()
+        dist = result.preferred_distance
         assert isinstance(dist, float)
 
     def test_preferred_direction_returns_float(
@@ -1096,7 +1096,7 @@ class TestComputeObjectVectorRateResultMethods:
         object_positions: np.ndarray,
         spike_times: np.ndarray,
     ) -> None:
-        """preferred_direction() should return a float."""
+        """preferred_direction should return a float."""
         from neurospatial.encoding.egocentric import compute_egocentric_rate
 
         times, positions, headings = trajectory_data
@@ -1110,7 +1110,7 @@ class TestComputeObjectVectorRateResultMethods:
             distance_range=(0.0, 50.0),
             distance_bin_size=5.0,
         )
-        direction = result.preferred_direction()
+        direction = result.preferred_direction
         assert isinstance(direction, float)
 
     def test_spatial_information_returns_float(
@@ -1430,7 +1430,7 @@ class TestEgocentricRateConvention:
         # Direction convention recovered within one direction bin.
         direction_bin = 2 * np.pi / self.N_DIRECTION_BINS
         circ_dist = abs(
-            np.angle(np.exp(1j * (result.preferred_direction() - preferred_direction)))
+            np.angle(np.exp(1j * (result.preferred_direction - preferred_direction)))
         )
         assert circ_dist < direction_bin
 
@@ -1440,7 +1440,7 @@ class TestEgocentricRateConvention:
         # one-bin tolerance is intentional: it is tight enough that the old
         # diffusion-smoothed behavior (peak collapsed to ~2.5 cm) fails it.
         distance_bin = (self.DISTANCE_RANGE[1] - self.DISTANCE_RANGE[0]) / 10
-        assert abs(result.preferred_distance() - 10.0) < distance_bin
+        assert abs(result.preferred_distance - 10.0) < distance_bin
 
 
 class TestEgocentricRateNaNHandling:
@@ -1520,6 +1520,6 @@ def test_an_object_on_the_left_is_at_plus_pi_over_2(side, bearing):
         distance_range=(0.0, 50.0),
         distance_bin_size=5.0,
     )
-    error = np.angle(np.exp(1j * (result.preferred_direction() - bearing)))
+    error = np.angle(np.exp(1j * (result.preferred_direction - bearing)))
     assert abs(error) <= np.pi / 12 + 1e-12, side  # within one 30 degree bin
-    assert 15.0 <= result.preferred_distance() <= 25.0
+    assert 15.0 <= result.preferred_distance <= 25.0

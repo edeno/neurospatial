@@ -596,13 +596,18 @@ class SubgoalEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         object.__setattr__(self, "weighted_efficiency", weighted)
         self._own_arrays()
 
+    @property
+    def n_segments(self) -> int:
+        """Number of segments between subgoals."""
+        return len(self.segment_results)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar subgoal-efficiency metrics.
 
         For a human-readable per-segment string use ``str(result)``.
         """
         return {
-            "n_segments": len(self.segment_results),
+            "n_segments": self.n_segments,
             "mean_efficiency": self.mean_efficiency,
             "weighted_efficiency": self.weighted_efficiency,
         }
@@ -649,7 +654,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         average.
     time_to_reach_goal : float or ndarray of shape (n_intervals,)
         Seconds from the first measured sample to arrival: the first sample
-        in a goal bin for a region goal, or within ``goal_radius`` of a point
+        inside a region goal (its polygon), or within ``goal_radius`` of a point
         goal. NaN when the goal was never reached, or when arrival was not
         tested (see ``arrival_tested``). Not to be confused with
         :func:`time_to_goal`, which returns a per-sample array.
@@ -1455,8 +1460,8 @@ def distance_to_goal(
         :func:`~neurospatial.io.from_pynapple` reads it: metadata as fields,
         its inclusive ``end`` as the half-open stop.
     goal : str, array-like of shape (n_dims,), or per-interval sequence
-        A region name (a polygon region is its bins, measured to the nearest
-        bin centre; a point region is its location), a point in environment
+        A region name (a polygon region is measured to its edge, 0 inside
+        it; a point region is its location), a point in environment
         coordinates, or, with ``intervals``, one per interval in row order
         (a ``pandas.Series`` indexed by ``interval_id`` is aligned by id),
         for example ``goal=trials.end_region``. ``None`` marks an unknown
@@ -1484,7 +1489,7 @@ def distance_to_goal(
     -------
     ndarray of float64, shape (n_samples,)
         Distance in environment units (or travel cost, see Notes); 0 at the
-        goal point or a goal bin centre. NaN outside the environment, outside
+        goal point or inside a goal region. NaN outside the environment, outside
         every interval, or with an unknown goal; ``inf`` (geodesic) where
         the goal cannot be reached.
 
@@ -1514,11 +1519,29 @@ def distance_to_goal(
     ``goal=trials.end_region`` is where the animal went, known only after the
     trial; for a predictive model use the instructed goal from the task log.
 
+    **Region goals.** A region is reached at its edge, as a trial ends when
+    the animal enters it. With ``metric="euclidean"`` the distance is the
+    straight line to the region's polygon. With ``metric="geodesic"`` it is
+    the shortest path inside the environment to a point of the region's
+    edge: on a track, where the centerline crosses the region's boundary,
+    from the position's projection onto the centerline; in an open
+    environment, the straight line to the polygon's nearest point when that
+    line stays inside the environment (no path can be shorter). Otherwise
+    the path goes round walls through bin centres, as every geodesic here
+    does (see :func:`shortest_path_length`), and its last leg runs straight
+    from the last of them to the region's edge. That path is never shorter
+    than the true shortest path and can be up to about one bin longer per
+    corner it turns: against exact shortest paths it was at most 0.85 of a
+    bin longer (1.7 cm at 2 cm bins), and 0.17 cm longer on average behind
+    an 80 cm obstacle at 2 cm bins.
+
     **Travel cost.** Each bin has a cost rate per unit length,
     ``rate = terrain_difficulty * (1 + cost_map)``. The cost of a path is the
     integral of the rate along it, each stretch taking the rate of the bin it
     runs through, and the result is the cheapest path inside the environment
-    to the nearest goal bin (the bin holding a goal point). Paths are the same
+    to the nearest goal bin (the bin holding a goal point), 0 inside a goal
+    region. It is measured between bin centres, so a region goal is reached
+    at its bins' centres, not its edge. Paths are the same
     any-angle paths as the geodesic distance, so with a rate of 1 everywhere
     the cost is the geodesic distance between bin centres. Because cost is per
     unit length it does not depend on the bin size: on a 100 cm corridor with
@@ -1620,6 +1643,8 @@ def distance_to_goal(
         bins = env.bin_at(positions[samples])
         located = bins >= 0
         distances[samples[located]] = field[bins[located]]
+        # Inside a region the goal is reached: no cost is left.
+        distances[samples[target.contains(env, positions[samples])]] = 0.0
 
     _warn_if_mostly_nan(
         distances,
@@ -3750,9 +3775,9 @@ def angular_efficiency(
         ``intervals``, one per interval (a ``pandas.Series`` indexed by
         ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
         goal), read as in :func:`distance_to_goal`. A polygon region is
-        approached at its nearest bin: the goal direction is the direction of
-        the shortest path to the nearest bin of the region, the direction in
-        which the distance to the goal falls fastest. For a round well
+        approached at its edge: the goal direction is the direction of the
+        shortest path to the region's nearest point, the direction in which
+        the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
     metric : {"geodesic", "euclidean"}, default="geodesic"
@@ -3814,7 +3839,7 @@ def angular_efficiency(
     deleted row when its valid neighbours are no more than ``max_gap`` apart;
     only a longer gap, an ``epochs`` edge or a declared break leaves the step
     out. A step of zero length has no direction and is left out, as is a
-    step that starts at the goal (a goal bin, or the goal point).
+    step that starts at the goal (inside a goal region, or at the goal point).
 
     Steps are measured on positions smoothed by a Gaussian in time (0.1 s
     standard deviation, the smoothing of :func:`compute_speed`, weighted by
@@ -4238,9 +4263,9 @@ def compute_path_efficiency(
         ``intervals``, one per interval (a ``pandas.Series`` indexed by
         ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
         goal), read as in :func:`distance_to_goal`. A polygon region is
-        approached at its nearest bin: the goal direction is the direction of
-        the shortest path to the nearest bin of the region, the direction in
-        which the distance to the goal falls fastest. For a round well
+        approached at its edge: the goal direction is the direction of the
+        shortest path to the region's nearest point, the direction in which
+        the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
     metric : {"geodesic", "euclidean"}, default="geodesic"
@@ -4323,11 +4348,18 @@ def compute_path_efficiency(
     the first to the last observed sample is usable; with an unbridged
     stretch the observed length underestimates the route and the ratio would
     be biased upward. ``shortest_length`` is the distance from the start to
-    the goal, as :func:`distance_to_goal` measures it (to the nearest goal
-    bin centre for a region). ``time_efficiency`` is wall-clock. When a long
+    the goal, as :func:`distance_to_goal` measures it (to the region's edge
+    for a region). ``time_efficiency`` is wall-clock. When a long
     tracking loss makes a trial's efficiency ``nan``, report its
     ``traveled_length`` instead, or restrict the analysis to completely
     observed trials.
+
+    With ``intervals``, each path is the samples in ``[start, stop)``, so it
+    ends at the last sample before ``stop`` and leaves out the step to the
+    sample at ``stop``. A trial that ends when the animal enters the goal
+    region therefore stops one sample short of the region's edge, and its
+    ``efficiency`` can exceed 1 by at most that final step divided by
+    ``traveled_length`` (0.04% at 500 Hz and 20 cm/s).
 
     ``angular_efficiency`` is a mean over the observed steps, as returned by
     :func:`angular_efficiency` with the same arguments, so a tracking loss
@@ -4695,9 +4727,9 @@ def instantaneous_goal_alignment(
         ``intervals``, one per interval (a ``pandas.Series`` indexed by
         ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
         goal), read as in :func:`distance_to_goal`. A polygon region is
-        approached at its nearest bin: the goal direction is the direction of
-        the shortest path to the nearest bin of the region, the direction in
-        which the distance to the goal falls fastest. For a round well
+        approached at its edge: the goal direction is the direction of the
+        shortest path to the region's nearest point, the direction in which
+        the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
     metric : {"geodesic", "euclidean"}, default="geodesic"
@@ -4755,8 +4787,8 @@ def instantaneous_goal_alignment(
         direction in the x-y plane, range [-1, 1]. NaN where the animal is
         not moving (speed zero or below ``min_speed``), not observed (a
         missing position, one outside the environment, or a sample in no
-        observed run), at the goal (in a goal bin, or exactly at the goal
-        point), outside every interval, or with an unknown goal.
+        observed run), at the goal (inside a goal region, or exactly at the
+        goal point), outside every interval, or with an unknown goal.
 
     Raises
     ------
@@ -5017,9 +5049,9 @@ def goal_bias(
         ``intervals``, one per interval (a ``pandas.Series`` indexed by
         ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
         goal), read as in :func:`distance_to_goal`. A polygon region is
-        approached at its nearest bin: the goal direction is the direction of
-        the shortest path to the nearest bin of the region, the direction in
-        which the distance to the goal falls fastest. For a round well
+        approached at its edge: the goal direction is the direction of the
+        shortest path to the region's nearest point, the direction in which
+        the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
     metric : {"geodesic", "euclidean"}, default="geodesic"
@@ -5195,9 +5227,9 @@ def approach_rate(
         ``intervals``, one per interval (a ``pandas.Series`` indexed by
         ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
         goal), read as in :func:`distance_to_goal`. A polygon region is
-        approached at its nearest bin: the goal direction is the direction of
-        the shortest path to the nearest bin of the region, the direction in
-        which the distance to the goal falls fastest. For a round well
+        approached at its edge: the goal direction is the direction of the
+        shortest path to the region's nearest point, the direction in which
+        the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
     metric : {"geodesic", "euclidean"}, default="geodesic"
@@ -5385,9 +5417,9 @@ def compute_goal_directed_metrics(
         ``intervals``, one per interval (a ``pandas.Series`` indexed by
         ``interval_id`` such as ``trials.end_region``; ``None`` for an unknown
         goal), read as in :func:`distance_to_goal`. A polygon region is
-        approached at its nearest bin: the goal direction is the direction of
-        the shortest path to the nearest bin of the region, the direction in
-        which the distance to the goal falls fastest. For a round well
+        approached at its edge: the goal direction is the direction of the
+        shortest path to the region's nearest point, the direction in which
+        the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
     metric : {"geodesic", "euclidean"}, default="geodesic"
@@ -5492,6 +5524,13 @@ def compute_goal_directed_metrics(
     more than ``max_gap`` apart; only a longer gap, an ``epochs`` edge or a
     declared ``break_before`` splits the recording into runs, and no
     velocity or heading spans a split.
+
+    With ``intervals``, each interval's path is the samples in
+    ``[start, stop)``: it ends at the last sample before ``stop`` and leaves
+    out the step to the sample at ``stop``, so for a trial that ends when the
+    animal enters the goal region, ``goal_distance_at_end`` is the final
+    step's distance short of the edge and arrival is not reached inside the
+    interval.
 
     Heading alignment and approach-rate averages use observed intervals; the
     direction of movement exists only where the animal moves, the rule of

@@ -674,7 +674,8 @@ class TemplateMatchDatasetResult(ReadOnlyArraysMixin, ResultMixin):
         Columns ``template`` (None for every template together), ``group``,
         ``n_trials``, ``n_matches``, ``match_ratio``, ``probability``,
         ``expected``, ``z_score``, ``z_score_upper``, ``p_value`` and
-        ``p_value_exact``; ``attrs`` holds ``method`` and ``statistic``.
+        ``p_value_exact``; ``attrs`` holds ``method``, ``statistic`` and
+        ``units`` (all counts, ratios and probabilities: ``""``).
         """
         import pandas as pd
 
@@ -695,13 +696,20 @@ class TemplateMatchDatasetResult(ReadOnlyArraysMixin, ResultMixin):
                 "p_value_exact": self.p_value_exact,
             }
         )
-        table.attrs.update(method=self.method, statistic=self.statistic)
+        table.attrs.update(
+            method=self.method,
+            statistic=self.statistic,
+            units=dict.fromkeys(table.columns, ""),
+        )
         return table
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.
 
-        The pooled row of the shuffled group, and the shuffle test.
+        The pooled row of the shuffled group, and the shuffle test. The
+        row's counts and statistics are keyed by their path into the
+        per-row arrays, such as ``n_matches[2]`` (row 2 of
+        :meth:`groups_table`).
         """
         row = next(
             index
@@ -712,12 +720,12 @@ class TemplateMatchDatasetResult(ReadOnlyArraysMixin, ResultMixin):
         )
         return {
             "method": self.method,
-            "group": self.shuffle_group,
-            "n_trials": int(self.n_trials[row]),
-            "n_matches": int(self.n_matches[row]),
-            "expected": float(self.expected[row]),
-            "z_score": float(self.z_score[row]),
-            "p_value": float(self.p_value[row]),
+            "shuffle_group": self.shuffle_group,
+            f"n_trials[{row}]": int(self.n_trials[row]),
+            f"n_matches[{row}]": int(self.n_matches[row]),
+            f"expected[{row}]": float(self.expected[row]),
+            f"z_score[{row}]": float(self.z_score[row]),
+            f"p_value[{row}]": float(self.p_value[row]),
             "shuffle_p_value": self.shuffle_p_value,
             "shuffle_z_score": self.shuffle_z_score,
         }

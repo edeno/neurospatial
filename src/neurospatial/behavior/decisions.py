@@ -408,6 +408,26 @@ class DecisionAnalysisResult(ResultMixin):
             return None
         return self.goal_regions[self.chosen_goal]
 
+    @property
+    def pre_decision_mean_speed(self) -> float:
+        """Mean speed in the pre-decision window."""
+        return self.pre_decision.mean_speed
+
+    @property
+    def pre_decision_min_observed_speed(self) -> float:
+        """Smallest observed speed in the pre-decision window."""
+        return self.pre_decision.min_observed_speed
+
+    @property
+    def pre_decision_heading_variance(self) -> float:
+        """Circular variance of heading in the pre-decision window."""
+        return self.pre_decision.heading_circular_variance
+
+    @property
+    def n_boundary_crossings(self) -> int | None:
+        """Decision-boundary crossings; None without a boundary."""
+        return self.boundary.n_crossings if self.boundary is not None else None
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar decision-analysis metrics.
 
@@ -415,14 +435,10 @@ class DecisionAnalysisResult(ResultMixin):
         """
         return {
             "entry_time": self.entry_time,
-            "pre_decision_mean_speed": self.pre_decision.mean_speed,
-            "pre_decision_min_observed_speed": self.pre_decision.min_observed_speed,
-            "pre_decision_heading_variance": (
-                self.pre_decision.heading_circular_variance
-            ),
-            "n_boundary_crossings": (
-                self.boundary.n_crossings if self.boundary is not None else None
-            ),
+            "pre_decision_mean_speed": self.pre_decision_mean_speed,
+            "pre_decision_min_observed_speed": self.pre_decision_min_observed_speed,
+            "pre_decision_heading_variance": self.pre_decision_heading_variance,
+            "n_boundary_crossings": self.n_boundary_crossings,
             "chosen_goal": self.chosen_goal,
             "chosen_goal_region": self.chosen_goal_region,
         }
@@ -1149,7 +1165,8 @@ def geodesic_voronoi_labels(
     is the length of the shortest path between two positions that stays inside
     the environment: it goes around walls and never leaves the environment, and
     on a track it runs along the track's centerline. Bins are measured from
-    their centers, and each goal from its nearest bin center.
+    their centers; a region goal is measured to its edge (0 inside it) and a
+    goal point from the center of its bin.
 
     Parameters
     ----------
@@ -1159,7 +1176,7 @@ def geodesic_voronoi_labels(
         The goals, each a region name or a point in environment coordinates,
         as in :func:`~neurospatial.behavior.distance_to_goal`, for example
         ``goals=["left_well", "right_well"]``. A polygon region is measured
-        to its nearest bin; a point region or a point to the point itself
+        to its edge (0 inside it); a point region or a point to the point itself
         (to the bin containing it for the per-bin labels).
 
     Returns
@@ -1253,9 +1270,11 @@ def _resolved_goals(env: Environment, goals: Any, *, call: str) -> list[Goal]:
 def _goal_fields(
     env: Environment, goals: list[Goal], *, call: str
 ) -> NDArray[np.float64]:
-    """Geodesic distance from every bin center to each goal's nearest bin center.
+    """Geodesic distance from every bin center to each goal.
 
-    A goal point is measured at the bin containing it.
+    A region goal is measured to its edge, as :meth:`Goal.distances` measures
+    it (0 for a bin center inside it); a goal point at the center of the bin
+    containing it.
 
     Returns
     -------
@@ -1265,13 +1284,17 @@ def _goal_fields(
     from neurospatial.behavior._environment_paths import environment_paths
 
     paths = environment_paths(env, call=call)
-    sources = [
-        goal.bins
-        if goal.bins is not None
-        else env.bin_at(np.asarray(goal.point)[None, :]).astype(np.intp)
-        for goal in goals
-    ]
-    return np.vstack([paths.from_bins(bins) for bins in sources])
+    centers = np.asarray(env.bin_centers, dtype=np.float64)
+    return np.vstack(
+        [
+            goal.distances(env, paths, centers)
+            if goal.area is not None
+            else paths.from_bins(
+                env.bin_at(np.asarray(goal.point)[None, :]).astype(np.intp)
+            )
+            for goal in goals
+        ]
+    )
 
 
 @reads_pynapple_samples
@@ -1301,7 +1324,7 @@ def distance_to_decision_boundary(
         The goals, each a region name or a point in environment coordinates,
         as in :func:`~neurospatial.behavior.distance_to_goal`, for example
         ``goals=["left_well", "right_well"]``. A polygon region is measured
-        to its nearest bin; a point region or a point to the point itself
+        to its edge (0 inside it); a point region or a point to the point itself
         (to the bin containing it for the per-bin labels).
 
     Returns

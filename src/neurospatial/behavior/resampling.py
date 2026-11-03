@@ -230,8 +230,11 @@ class ResampledPathResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
             up to three dimensions, otherwise ``position_0``, ``position_1``,
             ...), ``source_left``, ``source_right``, ``weight`` and
             ``off_grid_endpoint``. ``df.attrs`` holds ``spacing``,
-            ``include_endpoint``, ``max_gap`` and ``epochs`` (a copy of the
-            applied windows, or None).
+            ``include_endpoint``, ``max_gap``, ``epochs`` (a copy of the
+            applied windows, or None) and ``units``, the unit of each column:
+            ``"s"`` for times, ``""`` for counts, indices and weights, and
+            ``""`` for the lengths and coordinates too, which are in the
+            positions' units that this result does not record.
         """
         import pandas as pd
 
@@ -259,8 +262,38 @@ class ResampledPathResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
             include_endpoint=self.include_endpoint,
             max_gap=self.max_gap,
             epochs=None if self.epochs is None else self.epochs.copy(),
+            units={name: ("s" if name == "time" else "") for name in data},
         )
         return df
+
+    @property
+    def n_resampled_samples(self) -> int:
+        """Number of resampled samples."""
+        return int(self.times.size)
+
+    @property
+    def n_runs(self) -> int:
+        """Number of runs."""
+        return int(self.run_path_lengths.size)
+
+    @property
+    def total_distance(self) -> float:
+        """Path length summed over runs; NaN without runs."""
+        return (
+            float(self.run_path_lengths.sum())
+            if self.run_path_lengths.size
+            else float("nan")
+        )
+
+    @property
+    def n_off_grid_endpoints(self) -> int:
+        """Samples at a run end that is off the spacing grid."""
+        return int(np.count_nonzero(self.off_grid_endpoint))
+
+    @property
+    def n_stationary_runs(self) -> int:
+        """Runs of zero length."""
+        return int(np.count_nonzero(self.run_path_lengths == 0))
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.
@@ -268,15 +301,14 @@ class ResampledPathResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
         ``n_resampled_samples`` counts the output samples and
         ``n_source_samples`` the input samples they were resampled from.
         """
-        lengths = self.run_path_lengths
         return {
-            "n_resampled_samples": int(self.times.size),
+            "n_resampled_samples": self.n_resampled_samples,
             "n_source_samples": int(self.n_source_samples),
-            "n_runs": int(lengths.size),
+            "n_runs": self.n_runs,
             "spacing": float(self.spacing),
-            "total_distance": float(lengths.sum()) if lengths.size else float("nan"),
-            "n_off_grid_endpoints": int(np.count_nonzero(self.off_grid_endpoint)),
-            "n_stationary_runs": int(np.count_nonzero(lengths == 0)),
+            "total_distance": self.total_distance,
+            "n_off_grid_endpoints": self.n_off_grid_endpoints,
+            "n_stationary_runs": self.n_stationary_runs,
         }
 
 

@@ -467,6 +467,7 @@ def test_samples_table_columns_and_values(n_dims, names):
         "include_endpoint": True,
         "max_gap": None,
         "epochs": None,
+        "units": {name: ("s" if name == "time" else "") for name in df.columns},
     }
 
 

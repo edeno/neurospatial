@@ -23,13 +23,16 @@ from collections.abc import Callable, Sequence
 from copy import deepcopy
 from dataclasses import fields
 from types import MappingProxyType
-from typing import Any, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import InputError, _format_error
 from neurospatial._optional import require_optional
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
 
 
 def read_only_copy(array: Any, dtype: Any = None) -> NDArray[Any]:
@@ -765,7 +768,7 @@ def env_fingerprint(env: Any) -> str:
     -------
     str
         A stable single-line identifier such as
-        ``"Environment(name='', 2D, 25 bins, RegularGrid)"``.
+        ``"Environment(name='', 2D, 25 bins @ 2 cm, RegularGrid)"``.
     """
     return repr(env)
 
@@ -1030,8 +1033,11 @@ class ResultMixin:
         which the default dataclass repr dumps in full -- a wall of numbers when
         a user simply types the result at a REPL. This shows the class name and
         the headline scalars instead (e.g.
-        ``SpatialRateResult(n_bins=121, peak_firing_rate=18.48, ...)``). A
-        ``__repr__`` must never raise: a result without ``summary()`` shows
+        ``SpatialRateResult(n_bins=121, peak_firing_rate()=18.48, ...)``).
+        Each name reads back from the result: ``name=`` is an attribute
+        (``result.name``), ``name()=`` a method to call (``result.name()``),
+        and ``name[key]=`` an entry of a mapping attribute. A ``__repr__``
+        must never raise: a result without ``summary()`` shows
         ``ClassName(...)``, and a failing ``summary()`` names its error.
         """
         name = type(self).__name__
@@ -1040,8 +1046,16 @@ class ResultMixin:
             return f"{name}({summary})"
         if not summary:
             return f"{name}(...)"
-        parts = ", ".join(f"{k}={_format_summary_value(v)}" for k, v in summary.items())
+        parts = ", ".join(
+            f"{self._repr_key(k)}={_format_summary_value(v)}"
+            for k, v in summary.items()
+        )
         return f"{name}({parts})"
+
+    def _repr_key(self, key: str) -> str:
+        """``key()`` when the result's ``key`` is a method, else ``key``."""
+        member = getattr(type(self), key, None)
+        return f"{key}()" if callable(member) else key
 
     def _repr_html_(self) -> str:
         """Rich HTML table of :meth:`summary` metrics for Jupyter.
@@ -1057,7 +1071,7 @@ class ResultMixin:
         if isinstance(summary, str) or not summary:
             return f"<pre>{html.escape(repr(self))}</pre>"
         rows = "".join(
-            f"<tr><th style='text-align:right'>{html.escape(str(k))}</th>"
+            f"<tr><th style='text-align:right'>{html.escape(self._repr_key(k))}</th>"
             f"<td style='text-align:left'>{html.escape(_format_summary_value(v))}</td></tr>"
             for k, v in summary.items()
         )
@@ -1088,3 +1102,110 @@ class ResultMixin:
             f"summary() must be specialized per result type."
         )
         raise NotImplementedError(msg)
+
+
+def unit_index_required(
+    n_units: int,
+    *,
+    what: str,
+    why: str = "each unit's map is 2-D, so the units do not share one axes.",
+) -> ValueError:
+    """The error for ``plot()`` without a unit on a population result.
+
+    A units-by-bins overview has one axis for the bins, which a 2-D map (a
+    spatial, view or polar rate map) does not fit, so these results need a
+    unit to plot.
+
+    Parameters
+    ----------
+    n_units : int
+        Number of units in the result.
+    what : str
+        What one unit's plot shows, such as ``"rate map"``.
+    why : str, optional
+        Why the units cannot share one plot.
+
+    Returns
+    -------
+    ValueError
+        To raise from ``plot(idx=None)``.
+    """
+    return ValueError(
+        _format_error(
+            f"plot() requires a unit index: this result holds {n_units} units, "
+            f"so there is no single {what} to plot.",
+            why=why,
+            fix="pass a unit position, e.g. result.plot(0), select a label with "
+            "result.sel(unit_id=...).plot(), or iterate the units with "
+            "`for unit in result: unit.plot()`",
+        )
+    )
+
+
+def plot_population_heatmap(
+    rates: NDArray[np.float64],
+    bin_edges: NDArray[np.float64],
+    unit_ids: Any,
+    *,
+    ax: Axes | None,
+    xlabel: str,
+    **kwargs: Any,
+) -> Axes:
+    """Draw units-by-bins firing rates as a heatmap, units sorted by peak bin.
+
+    Parameters
+    ----------
+    rates : ndarray, shape (n_units, n_bins)
+        Firing rate of each unit in each bin, Hz. NaN (no data) is drawn
+        blank, not as zero.
+    bin_edges : ndarray, shape (n_bins + 1,)
+        Edges of the bins along the x-axis.
+    unit_ids : sequence, length n_units
+        Unit labels; with at most 20 units they label the rows.
+    ax : matplotlib.axes.Axes or None
+        Axes to draw on; a new figure when None.
+    xlabel : str
+        Label of the x-axis, with its units.
+    **kwargs
+        Passed to ``Axes.pcolormesh`` (``cmap``, ``vmin``, ``vmax``, ...).
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes, with a colorbar labelled "Firing rate (Hz)". Row ``k``
+        (from the top) is the unit with the ``k``-th earliest peak bin;
+        silent units (no rate above zero) and units without any finite rate
+        come last, in their stored order. New axes are titled
+        "N units"; a caller's axes keep their title.
+    """
+    import matplotlib.pyplot as plt
+
+    created = ax is None
+    if ax is None:
+        _, ax = plt.subplots()
+    rates = np.asarray(rates, dtype=np.float64)
+    filled = np.where(np.isfinite(rates), rates, -np.inf)
+    # A silent unit (no rate above zero) has no peak; it sorts last with the
+    # units that have no rate at all.
+    fired = (filled > 0).any(axis=1)
+    peaks = np.where(fired, np.argmax(filled, axis=1), rates.shape[1])
+    order = np.argsort(peaks, kind="stable")
+    kwargs.setdefault("cmap", "viridis")
+    mesh = ax.pcolormesh(
+        np.asarray(bin_edges, dtype=np.float64),
+        np.arange(rates.shape[0] + 1) - 0.5,
+        rates[order],  # pcolormesh leaves NaN cells blank
+        **kwargs,
+    )
+    ax.figure.colorbar(mesh, ax=ax, label="Firing rate (Hz)")
+    ax.set_ylim(rates.shape[0] - 0.5, -0.5)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Unit (sorted by peak)")
+    if rates.shape[0] <= 20:
+        ax.set_yticks(np.arange(rates.shape[0]))
+        ax.set_yticklabels([str(label) for label in np.asarray(unit_ids)[order]])
+    else:
+        ax.set_yticks([])
+    if created:  # a caller's axes keep their title
+        ax.set_title(f"{rates.shape[0]} units")
+    return ax

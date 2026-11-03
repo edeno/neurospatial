@@ -162,6 +162,9 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
     def words_table(self) -> pd.DataFrame:
         """One row per word: ``start``, ``stop``, ``n_letters`` and
         ``n_distinct_letters`` (the cells that fired), indexed by ``word``.
+
+        ``attrs`` holds ``max_isi``, ``word_gap`` and ``units`` (seconds for
+        the times and gaps).
         """
         import pandas as pd
 
@@ -177,14 +180,30 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
             },
             index=pd.RangeIndex(self.n_words, name="word"),
         )
-        table.attrs.update(max_isi=self.max_isi, word_gap=self.word_gap)
+        table.attrs.update(
+            max_isi=self.max_isi,
+            word_gap=self.word_gap,
+            units={
+                "start": "s",
+                "stop": "s",
+                "n_letters": "",
+                "n_distinct_letters": "",
+                "max_isi": "s",
+                "word_gap": "s",
+            },
+        )
         return table
+
+    @property
+    def n_letters(self) -> int:
+        """Number of letters (spikes) across the words."""
+        return int(self.letter_times.size)
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
             "n_words": self.n_words,
-            "n_letters": int(self.letter_times.size),
+            "n_letters": self.n_letters,
             "max_isi": self.max_isi,
             "word_gap": self.word_gap,
         }

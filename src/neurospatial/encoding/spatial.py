@@ -63,6 +63,7 @@ from neurospatial._results import (
     _copy_analysis_settings,
     _copy_unit_table,
     read_only_copy,
+    unit_index_required,
 )
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
@@ -102,6 +103,7 @@ if TYPE_CHECKING:
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
     "place_cell_significance",
+    "PlaceCellSignificanceResult",
     "spatial_cell_type_significance",
     "CellTypeSignificanceResult",
     # Result classes
@@ -133,6 +135,9 @@ PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
 )
 # Statistics recomputed from every shifted spike train, in result column order.
 _CELL_TYPE_STATISTICS = ("spatial_information", "grid_score", "border_score")
+_CELL_TYPE_STATISTIC_UNITS = MappingProxyType(
+    {"spatial_information": "bits/spike", "grid_score": "", "border_score": ""}
+)
 PLACE_SPATIAL_INFO_THRESHOLDS = MappingProxyType({"min_info": 0.5})
 # Every place verdict and label applies the same information cutoff.
 PLACE_GRID_BORDER_THRESHOLDS = MappingProxyType(
@@ -144,26 +149,111 @@ PLACE_GRID_BORDER_THRESHOLDS = MappingProxyType(
 )
 
 
+def _owned_field_bins(
+    fields: Sequence[ArrayLike], *, owner: str
+) -> tuple[NDArray[np.int64], ...]:
+    """Validate place-field bin arrays and return read-only int64 copies.
+
+    Parameters
+    ----------
+    fields : sequence of array-like
+        One 1-D array of bin indices per field.
+    owner : str
+        The class or function the fields are passed to, for error messages.
+
+    Returns
+    -------
+    tuple of ndarray
+        One read-only ``int64`` copy per field.
+
+    Raises
+    ------
+    ValueError
+        If a field is not a 1-D array of non-negative integer bin indices.
+    """
+    owned = []
+    for i, bins in enumerate(fields):
+        array = np.asarray(bins)
+        numeric = array.size == 0 or (
+            np.issubdtype(array.dtype, np.number)
+            and not np.issubdtype(array.dtype, np.complexfloating)
+        )
+        if (
+            array.ndim != 1
+            or not numeric
+            or not np.all(np.isfinite(array))
+            or not np.array_equal(array, np.round(array))
+        ):
+            raise ValueError(
+                _format_error(
+                    f"{owner}: fields[{i}] must be a 1-D array of integer bin "
+                    f"indices, got shape {array.shape} and dtype {array.dtype}.",
+                    why="Why: each field is the set of bins it covers",
+                    fix="pass integer bin indices, e.g. np.flatnonzero(mask)",
+                )
+            )
+        if array.size and array.min() < 0:
+            raise ValueError(
+                _format_error(
+                    f"{owner}: fields[{i}] contains negative bin indices.",
+                    why="Why: bin indices count from 0",
+                    fix="pass non-negative bin indices",
+                )
+            )
+        owned.append(read_only_copy(array.astype(np.int64)))
+    return tuple(owned)
+
+
+def _measure_units(env: Environment) -> str:
+    """Unit of a bin measure: ``cm`` on a track, ``cm^2`` in an arena, ...
+
+    ``""`` when the environment has no units or its bins mix measure
+    dimensions.
+    """
+    dims = np.unique(np.asarray(env.binning.bins.measure_dims))
+    if not env.units or dims.size != 1:
+        return ""
+    return env.units if int(dims[0]) == 1 else f"{env.units}^{int(dims[0])}"
+
+
 @dataclass(frozen=True, repr=False, eq=False)
 class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
-    """Result of ``detect_place_fields()``: detected fields plus exclusion metadata.
+    """Result of ``detect_place_fields()``: one unit's fields and their rate map.
 
     Returned by :func:`detect_place_fields`. Distinguishes "this map
-    has no detectable fields" (``fields=[]``, ``excluded_reason=None``)
+    has no detectable fields" (``fields=()``, ``excluded_reason=None``)
     from "this map was excluded by an explicitly requested spatial-map-mean filter"
-    (``fields=[]``, ``excluded_reason="mean_rate_above_threshold"``) so a
+    (``fields=()``, ``excluded_reason="mean_rate_above_threshold"``) so a
     population pipeline can branch without listening for warnings.
 
-    Attributes
+    Parameters
     ----------
-    fields : tuple of NDArray[np.int64], length n_fields
-        One read-only 1-D array of bin indices per detected field, in order
-        of decreasing peak rate. Empty if no field was detected or the map
-        was excluded by the ``max_mean_rate`` filter.
-    excluded_reason : {"mean_rate_above_threshold"} or None
+    fields : sequence of NDArray[np.int64], length n_fields
+        One 1-D array of bin indices per detected field, in order of
+        decreasing peak rate. Empty if no field was detected or the map was
+        excluded by the ``max_mean_rate`` filter. Stored as a tuple of
+        read-only arrays.
+    env : Environment
+        The environment the map was binned in.
+    firing_rate : NDArray[np.float64], shape (n_bins,)
+        The rate map the fields were cut from (Hz); NaN where unsupported.
+    bandwidth : float
+        Smoothing bandwidth of the map (environment units), which set the
+        smallest field; 0 for an unsmoothed map.
+    excluded_reason : {"mean_rate_above_threshold"} or None, default=None
         ``None`` when ``fields`` is the detection result.
         ``"mean_rate_above_threshold"`` when the explicit ``max_mean_rate``
         filter excluded the map before detection.
+    unit_id : int or str or None, default=None
+        The unit the map belongs to: a rate result's ``unit_id``. None for a
+        map without one, shown as ``<NA>`` in tables.
+
+    Attributes
+    ----------
+    n_fields : int
+        Number of detected fields.
+    total_bins : int
+        Number of bins across all fields.
     n_excluded : int
         ``1`` if ``excluded_reason`` is set, else ``0``, so population
         aggregation can sum exclusions without parsing the reason.
@@ -172,13 +262,32 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     -----
     The result is iterable, indexable and sized like its ``fields``, and is
     truthy when at least one field was detected.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial import Environment
+    >>> from neurospatial.encoding import detect_place_fields
+    >>> env = Environment.from_samples(
+    ...     np.arange(0.0, 101.0, 2.0)[:, None], bin_size=2.0, units="cm"
+    ... )
+    >>> rate = 8.0 * np.exp(-((env.bin_centers[:, 0] - 40.0) ** 2) / (2 * 6.0**2))
+    >>> fields = detect_place_fields(env, rate, bandwidth=0.0)
+    >>> fields.n_fields
+    1
+    >>> list(fields.to_dataframe().columns[:5])
+    ['unit_id', 'field', 'n_bins', 'area', 'peak_rate']
     """
 
     fields: Sequence[NDArray[np.int64]]
+    env: Environment
+    firing_rate: NDArray[np.float64]
+    bandwidth: float
     excluded_reason: Literal["mean_rate_above_threshold"] | None = None
+    unit_id: int | str | None = None
 
     def __post_init__(self) -> None:
-        """Validate and own each field's bins and prevent replacing fields."""
+        """Validate, own each field's bins and the map, prevent replacing fields."""
         if self.excluded_reason not in (None, "mean_rate_above_threshold"):
             raise ValueError(
                 _format_error(
@@ -196,37 +305,26 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
                     fix="pass fields=[] with excluded_reason, or excluded_reason=None",
                 )
             )
-        owned = []
-        for i, bins in enumerate(self.fields):
-            array = np.asarray(bins)
-            numeric = array.size == 0 or (
-                np.issubdtype(array.dtype, np.number)
-                and not np.issubdtype(array.dtype, np.complexfloating)
+        fields = _owned_field_bins(self.fields, owner="PlaceFieldsResult")
+        rate = np.asarray(self.firing_rate, dtype=np.float64)
+        n_bins = self.env.n_bins
+        if rate.shape != (n_bins,) or any(
+            bins.size and bins.max() >= n_bins for bins in fields
+        ):
+            raise ValueError(
+                _format_error(
+                    f"PlaceFieldsResult: firing_rate has shape {rate.shape} and "
+                    f"the fields reach bin {max((int(b.max()) for b in fields if b.size), default=-1)}, "
+                    f"but env has {n_bins} bins.",
+                    why="Why: the fields are bins of the rate map, which has one "
+                    "rate per bin of env",
+                    fix="build the result with detect_place_fields(env, rates)",
+                )
             )
-            if (
-                array.ndim != 1
-                or not numeric
-                or not np.all(np.isfinite(array))
-                or not np.array_equal(array, np.round(array))
-            ):
-                raise ValueError(
-                    _format_error(
-                        f"fields[{i}] must be a 1-D array of integer bin indices, "
-                        f"got shape {array.shape} and dtype {array.dtype}.",
-                        why="Why: each field is the set of bins it covers",
-                        fix="pass integer bin indices, e.g. np.flatnonzero(mask)",
-                    )
-                )
-            if array.size and array.min() < 0:
-                raise ValueError(
-                    _format_error(
-                        f"fields[{i}] contains negative bin indices.",
-                        why="Why: bin indices count from 0",
-                        fix="pass non-negative bin indices",
-                    )
-                )
-            owned.append(read_only_copy(array.astype(np.int64)))
-        object.__setattr__(self, "fields", tuple(owned))
+        object.__setattr__(self, "fields", fields)
+        object.__setattr__(self, "firing_rate", rate)
+        object.__setattr__(self, "bandwidth", float(self.bandwidth))
+        self._own_arrays()
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore owned field arrays after copying."""
@@ -237,6 +335,16 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     def n_excluded(self) -> int:
         """``1`` if a filter excluded the map, else ``0``."""
         return int(self.excluded_reason is not None)
+
+    @property
+    def n_fields(self) -> int:
+        """Number of detected fields."""
+        return len(self.fields)
+
+    @property
+    def total_bins(self) -> int:
+        """Number of bins across all fields."""
+        return int(sum(len(bins) for bins in self.fields))
 
     def __len__(self) -> int:
         return len(self.fields)
@@ -259,65 +367,200 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             Mapping with keys ``n_fields`` (int, number of detected fields),
             ``total_bins`` (int, bins across all fields), ``n_excluded``
             (int), and ``excluded_reason`` (str or ``None``).
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.spatial import PlaceFieldsResult
-        >>> result = PlaceFieldsResult(fields=[np.array([0, 1, 2])])
-        >>> result.summary()["n_fields"]
-        1
-        >>> result.summary()["total_bins"]
-        3
         """
-        total_bins = int(sum(len(f) for f in self.fields))
         return {
-            "n_fields": len(self.fields),
-            "total_bins": total_bins,
+            "n_fields": self.n_fields,
+            "total_bins": self.total_bins,
             "n_excluded": self.n_excluded,
             "excluded_reason": self.excluded_reason,
         }
 
-    def to_dataframe(self) -> pd.DataFrame:
-        """Tidy/long-form table of field membership: one row per (field, bin).
+    def _table_unit_id(self) -> Any:
+        import pandas as pd
 
-        Each detected place field contributes one row per member bin, with a
-        ``field`` index column. Neurons excluded by a filter (``fields=[]``)
-        yield an empty table; ``excluded_reason`` is exposed via
-        :meth:`summary`.
+        return pd.NA if self.unit_id is None else self.unit_id
+
+    def _columns_units(self, columns: Sequence[str]) -> dict[str, str]:
+        """Unit of each table column: Hz, env units, measure units or none."""
+        length = self.env.units or ""
+        units = {
+            "n_bins": "",
+            "area": _measure_units(self.env),
+            "peak_rate": "Hz",
+            "mean_rate": "Hz",
+            "n_fields": "",
+            "largest_field_area": _measure_units(self.env),
+        }
+        return {
+            name: units.get(
+                name,
+                "rad"
+                if name.endswith("angle")
+                else length
+                if name.startswith("centroid_")
+                else "",
+            )
+            for name in columns
+        }
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """One row per detected field, with its size, rates and centroid.
 
         Returns
         -------
         pandas.DataFrame
-            Long-form table with columns ``field`` (int, field index) and
-            ``bin`` (int, member bin index). Empty (with those columns) when
-            no fields were detected.
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from neurospatial.encoding.spatial import PlaceFieldsResult
-        >>> result = PlaceFieldsResult(fields=[np.array([0, 1]), np.array([5])])
-        >>> df = result.to_dataframe()
-        >>> df["field"].tolist()
-        [0, 0, 1]
-        >>> df["bin"].tolist()
-        [0, 1, 5]
+            Columns ``unit_id`` (``<NA>`` without one), ``field`` (0 for the
+            field with the highest peak), ``n_bins``, ``area`` (summed bin
+            measures, :func:`~neurospatial.encoding.field_size`: an area in a
+            2-D arena, a length on a track), ``peak_rate`` (Hz), ``mean_rate``
+            (Hz, mean over the field's bins weighted by their measure) and
+            ``centroid_x``, ``centroid_y``, ... (the rate-weighted centroid,
+            :func:`~neurospatial.encoding.rate_map_centroid`, in environment
+            units; on a polar environment ``centroid_distance`` and
+            ``centroid_angle`` (rad) of the geodesic centroid, a field bin,
+            because averaging angles and distances is not a position). No
+            rows when no field was detected. ``df.attrs`` holds
+            ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
         """
         import pandas as pd
 
-        field_col: list[int] = []
-        bin_col: list[int] = []
-        for field_idx, field_bins in enumerate(self.fields):
-            for b in np.asarray(field_bins).ravel():
-                field_col.append(field_idx)
-                bin_col.append(int(b))
-        return pd.DataFrame(
-            {
-                "field": np.asarray(field_col, dtype=np.int64),
-                "bin": np.asarray(bin_col, dtype=np.int64),
-            }
+        from neurospatial._results import _coord_dim_names
+        from neurospatial.encoding._field_metrics import field_size, rate_map_centroid
+
+        measures = np.asarray(self.env.bin_sizes, dtype=np.float64)
+        names = [f"centroid_{name}" for name in _coord_dim_names(self.env)]
+        # Averaging (distance, angle) bin centers is not a position: a polar
+        # map's centroid is the field bin nearest the rest (the geodesic one).
+        method: Literal["euclidean", "geodesic"] = (
+            "geodesic" if self.env.coordinate_kind == "polar" else "euclidean"
         )
+        rows = []
+        for k, bins in enumerate(self.fields):
+            rates = self.firing_rate[bins]
+            centroid = rate_map_centroid(
+                self.env, self.firing_rate, bins, method=method
+            )
+            rows.append(
+                {
+                    "unit_id": self._table_unit_id(),
+                    "field": k,
+                    "n_bins": len(bins),
+                    "area": field_size(self.env, bins),
+                    "peak_rate": float(np.max(rates)),
+                    "mean_rate": float(np.average(rates, weights=measures[bins])),
+                    **dict(zip(names, np.asarray(centroid, dtype=float), strict=True)),
+                }
+            )
+        columns = [
+            "unit_id",
+            "field",
+            "n_bins",
+            "area",
+            "peak_rate",
+            "mean_rate",
+            *names,
+        ]
+        df = pd.DataFrame(rows, columns=columns)
+        df.attrs.update(
+            units=self._columns_units(columns[2:]),
+            bandwidth=self.bandwidth,
+            excluded_reason=self.excluded_reason,
+        )
+        return df
+
+    def summary_table(self) -> pd.DataFrame:
+        """One row for the unit: its field count, largest field and peak.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Indexed by ``unit_id`` (``<NA>`` without one), with ``n_fields``,
+            ``largest_field_area`` (the largest :func:`field_size` among the
+            fields; NaN without a field) and ``peak_rate`` (Hz, the highest
+            field peak; NaN without a field). ``df.attrs`` holds ``units``,
+            ``bandwidth`` and ``excluded_reason``.
+        """
+        import pandas as pd
+
+        from neurospatial.encoding._field_metrics import field_size
+
+        areas = [field_size(self.env, bins) for bins in self.fields]
+        peaks = [float(np.max(self.firing_rate[bins])) for bins in self.fields]
+        columns = ["n_fields", "largest_field_area", "peak_rate"]
+        df = pd.DataFrame(
+            {
+                "n_fields": [self.n_fields],
+                "largest_field_area": [max(areas, default=np.nan)],
+                "peak_rate": [max(peaks, default=np.nan)],
+            },
+            index=pd.Index([self._table_unit_id()], name="unit_id"),
+        )
+        df.attrs.update(
+            units=self._columns_units(columns),
+            bandwidth=self.bandwidth,
+            excluded_reason=self.excluded_reason,
+        )
+        return df
+
+    def peak_location(self) -> NDArray[np.float64]:
+        """Coordinates of the highest field peak, in environment units.
+
+        Returns
+        -------
+        ndarray, shape (n_dims,)
+            Center of the bin with the highest rate among the field bins;
+            NaN without a field.
+        """
+        if not self.fields:
+            return np.full(self.env.n_dims, np.nan)
+        bins = self.fields[0]
+        peak = int(bins[np.argmax(self.firing_rate[bins])])
+        return np.array(self.env.bin_centers[peak], dtype=np.float64)
+
+    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """Draw the rate map with each field's bins outlined.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on; a new figure when None.
+        **kwargs
+            Passed to ``env.plot_field`` for the rate map.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The rate map (colorbar "Firing rate (Hz)") with the field bins'
+            centers marked, one color per field; on a track or 1-D
+            environment, the rate curve with each field's bins marked at their
+            linear position and rate.
+        """
+        kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
+        ax = self.env.plot_field(self.firing_rate, ax=ax, **kwargs)
+        centers = np.asarray(self.env.bin_centers, dtype=np.float64)
+        # A track's map is drawn as a curve along its linear coordinate.
+        curve = self.env.is_linearized_track or self.env.n_dims == 1
+        for k, bins in enumerate(self.fields):
+            if curve:
+                x = (
+                    self.env.to_linear(centers[bins])
+                    if self.env.is_linearized_track
+                    else centers[bins, 0]
+                )
+                y = self.firing_rate[bins]
+            else:
+                x, y = centers[bins, 0], centers[bins, 1]
+            ax.scatter(
+                x,
+                y,
+                s=12,
+                facecolors="none",
+                edgecolors=f"C{k % 10}",
+                label=f"field {k}",
+            )
+        if self.fields:
+            ax.legend(loc="best", fontsize="small")
+        return ax
 
 
 #: Required GAM diagnostics -- non-``None`` for ``method="glm"``, ``None`` for
@@ -1855,11 +2098,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         >>> isinstance(result.has_place_field(), bool)
         True
         """
-        firing_rate = _to_numpy(self._supported_rates())
         fields = detect_place_fields(
             self.env,
-            firing_rate,
-            bandwidth=0.0 if self.bandwidth is None else self.bandwidth,
+            self,
             threshold=threshold,
             min_peak_rate=min_peak_rate,
             min_secondary_peak_fraction=min_secondary_peak_fraction,
@@ -2348,14 +2589,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         'Axes'
         """
         if idx is None:
-            n_units = np.asarray(self.firing_rates).shape[0]
-            msg = (
-                f"plot() requires a unit index: this batch result holds "
-                f"{n_units} units, so there is no single rate map to plot. "
-                f"Pass a unit index, e.g. result.plot(0), or iterate the units "
-                f"with `for r in result: r.plot()` / `result[i].plot()`."
-            )
-            raise ValueError(msg)
+            raise unit_index_required(len(self), what="rate map")
         rates: NDArray[np.float64] = np.asarray(self.firing_rates)
         kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(_to_numpy(rates[idx]), ax=ax, **kwargs)
@@ -5426,9 +5660,9 @@ def compute_directional_place_fields(
 
 def detect_place_fields(
     env: Environment,
-    firing_rate: NDArray[np.float64],
+    firing_rate: SpatialRateResult | ArrayLike,
     *,
-    bandwidth: float,
+    bandwidth: float | None = None,
     threshold: float = 0.2,
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.0,
@@ -5449,15 +5683,22 @@ def detect_place_fields(
     ----------
     env : Environment
         Spatial environment for binning.
-    firing_rate : array, shape (n_bins,)
-        Firing rate map (Hz) from neuron. NaN bins (unvisited or below the
-        occupancy threshold) never belong to a field and do not connect
-        fields.
-    bandwidth : float
+    firing_rate : SpatialRateResult or array, shape (n_bins,)
+        One unit's rate map (Hz): a result of :func:`compute_spatial_rate`,
+        one unit of :func:`compute_spatial_rates` (``rates[i]``, or iterate:
+        ``[detect_place_fields(env, unit) for unit in rates]``, each with its
+        ``unit_id``), or one neuron's array. NaN bins (unvisited, below the
+        occupancy threshold, or outside a result's occupancy support) never
+        belong to a field and do not connect fields.
+    bandwidth : float or None, default=None
         Smoothing bandwidth (standard deviation, environment units) the map
-        was estimated with: ``result.bandwidth`` of a kernel rate map, 0 for
-        an unsmoothed map. It sets the smallest field, the region one noisy
+        was estimated with. It sets the smallest field, the region one noisy
         bin fills after smoothing (see Notes). Must be finite and >= 0.
+        ``None`` with a rate result uses the bandwidth it records (0 for an
+        unsmoothed ``"binned"`` map and for ``"glm"``, which records none); a
+        different value raises. With an array it is required: pass
+        ``result.bandwidth`` of the rate result the map came from, or 0 for
+        an unsmoothed map.
     threshold : float, default=0.2
         Fraction of each field's own peak rate that defines its boundary
         (0-1). 0.2 is the neurocode ``MapStats`` default [1]_.
@@ -5492,14 +5733,20 @@ def detect_place_fields(
     -------
     PlaceFieldsResult
         Detected fields, one bin-index array each, in order of decreasing
-        peak rate, plus ``excluded_reason``, which says whether the
-        ``max_mean_rate`` filter excluded the map. The result is iterable,
-        indexable and sized like a list of fields.
+        peak rate, with the map, its bandwidth and unit, and
+        ``excluded_reason``, which says whether the ``max_mean_rate`` filter
+        excluded the map. The result is iterable, indexable and sized like a
+        list of fields; ``to_dataframe()`` tabulates each field's size, rates
+        and centroid.
 
     Raises
     ------
+    TypeError
+        If ``firing_rate`` is a population result (:class:`SpatialRatesResult`):
+        segment one unit at a time.
     ValueError
-        If ``firing_rate`` does not have one value per bin, or a parameter is
+        If ``firing_rate`` does not have one value per bin, ``bandwidth`` is
+        missing for an array or disagrees with a result's, or a parameter is
         outside its stated range.
 
     Notes
@@ -5586,6 +5833,18 @@ def detect_place_fields(
     >>> len(fields)
     1
 
+    A rate result carries its bandwidth and unit:
+
+    >>> from neurospatial.encoding import compute_spatial_rates
+    >>> rng = np.random.default_rng(0)
+    >>> positions = rng.uniform(-20, 20, (3000, 2))
+    >>> times = np.arange(3000) * 0.02
+    >>> spikes = [times[np.linalg.norm(positions, axis=1) < 8][::3]]
+    >>> rates = compute_spatial_rates(env, spikes, times, positions)
+    >>> fields = [detect_place_fields(env, unit) for unit in rates]
+    >>> fields[0].bandwidth == rates.bandwidth, fields[0].unit_id
+    (True, 0)
+
     See Also
     --------
     SpatialRateResult.has_place_field : Whether a result's map has a field
@@ -5601,10 +5860,58 @@ def detect_place_fields(
     .. [3] Kavli Institute (NTNU) opexebo, ``opexebo/defaults.py``,
            https://github.com/kavli-ntnu/opexebo
     """
-    firing_rate = np.asarray(firing_rate, dtype=np.float64)
-    if firing_rate.shape != (env.n_bins,):
+    if isinstance(firing_rate, SpatialRatesResult):
+        raise TypeError(
+            _format_error(
+                f"detect_place_fields segments one rate map, but got a population "
+                f"of {len(firing_rate)} units (SpatialRatesResult).",
+                why="Why: each unit's map has its own fields, so the result is "
+                "one PlaceFieldsResult per call",
+                fix="call it once per unit, e.g. "
+                "[detect_place_fields(env, unit) for unit in rates]; iterating "
+                "gives each unit its unit_id",
+            )
+        )
+    unit_ids: list[Any] | None
+    if isinstance(firing_rate, SpatialRateResult):
+        recorded = (
+            0.0 if firing_rate.bandwidth is None else float(firing_rate.bandwidth)
+        )
+        if bandwidth is None:
+            bandwidth = recorded
+        elif firing_rate.bandwidth is not None and bandwidth != recorded:
+            raise ValueError(
+                _format_error(
+                    f"detect_place_fields got bandwidth={bandwidth!r}, but the "
+                    f"rate result was estimated with bandwidth={recorded!r}.",
+                    why="Why: the bandwidth sets the smallest field one noisy "
+                    "bin makes after smoothing, so it must be the map's own",
+                    fix="drop bandwidth= to use the result's, or recompute the "
+                    "rates with the bandwidth you want",
+                )
+            )
+        rates = np.atleast_2d(
+            np.asarray(_to_numpy(firing_rate._supported_rates()), dtype=np.float64)
+        )
+        unit_ids = [firing_rate.unit_id]
+    else:
+        if bandwidth is None:
+            raise ValueError(
+                _format_error(
+                    "detect_place_fields needs bandwidth= with a rate-map array.",
+                    why="Why: the bandwidth the map was smoothed with sets the "
+                    "smallest field one noisy bin makes",
+                    fix="pass the rate result itself, detect_place_fields(env, "
+                    "rates[i]), which records it; or bandwidth=rates.bandwidth "
+                    "of the result the array came from, or bandwidth=0.0 for "
+                    "an unsmoothed map",
+                )
+            )
+        rates = np.asarray(firing_rate, dtype=np.float64)[np.newaxis]
+        unit_ids = None
+    if rates.shape[1:] != (env.n_bins,):
         msg = (
-            f"firing_rate shape {firing_rate.shape} does not match "
+            f"firing_rate shape {rates.shape[1:]} does not match "
             f"env.n_bins ({env.n_bins})"
         )
         raise ValueError(msg)
@@ -5614,16 +5921,19 @@ def detect_place_fields(
         min_secondary_peak_fraction=min_secondary_peak_fraction,
         bandwidth=bandwidth,
     )
-    search = _search_place_fields(
-        env,
-        firing_rate,
-        threshold=threshold,
-        min_peak_rate=min_peak_rate,
-        min_secondary_peak_fraction=min_secondary_peak_fraction,
-        max_mean_rate=max_mean_rate,
-        detect_subfields=detect_subfields,
-    )
-    return _keep_place_fields(env, [search], bandwidth, threshold)[0]
+    searches = [
+        _search_place_fields(
+            env,
+            rate,
+            threshold=threshold,
+            min_peak_rate=min_peak_rate,
+            min_secondary_peak_fraction=min_secondary_peak_fraction,
+            max_mean_rate=max_mean_rate,
+            detect_subfields=detect_subfields,
+        )
+        for rate in rates
+    ]
+    return _keep_place_fields(env, searches, bandwidth, threshold, unit_ids)[0]
 
 
 def _check_place_field_arguments(
@@ -5678,6 +5988,7 @@ class _FieldSearch(NamedTuple):
     peaks: list[int]
     candidates: list[NDArray[np.int64]]
     observed: NDArray[np.bool_]
+    firing_rate: NDArray[np.float64]
     excluded_reason: Literal["mean_rate_above_threshold"] | None = None
 
 
@@ -5695,13 +6006,15 @@ def _search_place_fields(
 
     finite = np.isfinite(firing_rate)
     if not np.any(finite):
-        return _FieldSearch([], [], finite)
+        return _FieldSearch([], [], finite, firing_rate)
 
     # A finite cutoff is an explicit map-level filter, independent of cell type.
     if np.isfinite(max_mean_rate):
         mean_rate = np.nanmean(firing_rate)
         if mean_rate > max_mean_rate:
-            return _FieldSearch([], [], finite, "mean_rate_above_threshold")
+            return _FieldSearch(
+                [], [], finite, firing_rate, "mean_rate_above_threshold"
+            )
 
     min_peak = max(
         min_peak_rate, min_secondary_peak_fraction * float(np.max(firing_rate[finite]))
@@ -5731,7 +6044,7 @@ def _search_place_fields(
             continue
         peaks.append(peak_idx)
         candidates.append(field_bins)
-    return _FieldSearch(peaks, candidates, finite)
+    return _FieldSearch(peaks, candidates, finite, firing_rate)
 
 
 def _keep_place_fields(
@@ -5739,11 +6052,13 @@ def _keep_place_fields(
     searches: Sequence[_FieldSearch],
     bandwidth: float,
     threshold: float,
+    unit_ids: Sequence[Any] | None = None,
 ) -> list[PlaceFieldsResult]:
     """Keep each map's candidates larger than the field one noisy bin makes.
 
     The peaks of every map are tested together, so a population shares one
     batch of impulse diffusions (see :func:`_smoothed_bin_measures`).
+    ``unit_ids`` labels the maps (None: no labels).
     """
     measures = np.asarray(env.binning.bins.sizes, dtype=np.float64)
     peaks = np.array(
@@ -5756,14 +6071,10 @@ def _keep_place_fields(
     smallest = _smoothed_bin_measures(
         env, peaks, owners, observed, bandwidth, threshold, measures
     )
+    labels = [None] * len(searches) if unit_ids is None else list(unit_ids)
     results = []
     start = 0
-    for search in searches:
-        if search.excluded_reason is not None:
-            results.append(
-                PlaceFieldsResult(fields=[], excluded_reason=search.excluded_reason)
-            )
-            continue
+    for search, label in zip(searches, labels, strict=True):
         minima = smallest[start : start + len(search.candidates)]
         start += len(search.candidates)
         fields = [
@@ -5771,7 +6082,16 @@ def _keep_place_fields(
             for field_bins, minimum in zip(search.candidates, minima, strict=True)
             if measures[field_bins].sum() > minimum
         ]
-        results.append(PlaceFieldsResult(fields=fields))
+        results.append(
+            PlaceFieldsResult(
+                fields=fields,
+                env=env,
+                firing_rate=search.firing_rate,
+                bandwidth=bandwidth,
+                excluded_reason=search.excluded_reason,
+                unit_id=label,
+            )
+        )
     return results
 
 
@@ -6418,7 +6738,7 @@ def is_place_cell(
                 spike_window=spike_window,
                 backend=backend,
                 warn_on_drop=warn_on_drop,
-            )[label],
+            ).sel(unit_id=label),
             rate_map,
             alpha=alpha,
             min_info=min_info,
@@ -6528,7 +6848,7 @@ def place_cell_significance(
     n_shuffles: int = 1000,
     min_shift: float = 20.0,
     rng: np.random.Generator | int | None = None,
-) -> dict[Hashable, ShuffleTestResult]:
+) -> PlaceCellSignificanceResult:
     """Test place tuning against circular spike-time shifts.
 
     The test statistic is Skaggs spatial information (bits/spike) of each
@@ -6536,7 +6856,6 @@ def place_cell_significance(
     recounted and smoothed with exactly the observed map's analyzed intervals,
     occupancy and bandwidth. Shuffles preserve counts on the compressed
     analyzed clock and never enter recording gaps.
-    Each result's is_significant(alpha=0.05) compares its p_value with alpha.
 
     A significant test is not a place verdict on its own: in a short
     recording about alpha of untuned units pass it by chance, with almost no
@@ -6544,7 +6863,8 @@ def place_cell_significance(
     cell also needs bias-corrected information,
     ``spatial_information() - spatial_information_bias()`` of
     :func:`compute_spatial_rates` with the same settings, of at least 0.5
-    bits/spike. ``is_place_cell(..., criterion="shuffle")`` and the labels of
+    bits/spike. ``result.classify()``, ``is_place_cell(...,
+    criterion="shuffle")`` and the labels of
     :func:`spatial_cell_type_significance` apply both.
 
     Parameters
@@ -6671,11 +6991,15 @@ def place_cell_significance(
 
     Returns
     -------
-    dict[Hashable, ShuffleTestResult]
+    PlaceCellSignificanceResult
         Per-unit observed spatial information (bits/spike), null scores,
-        corrected p-value and z-score, keyed by unit label in input order. An
-        undefined observed score (a silent unit) or a null with no finite
-        score gives a NaN p-value.
+        p-value, null mean and standard deviation, and z-score, in input
+        order with the units' ``unit_ids``. ``summary_table()`` gives one row
+        per unit, ``classify()`` the place screen, ``result[i]`` or
+        ``result.sel(unit_id=label)`` one unit's
+        :class:`~neurospatial.stats.ShuffleTestResult` and ``plot(i)`` its
+        null distribution. An undefined observed score (a silent unit) or a
+        null with no finite score gives a NaN p-value.
 
     Raises
     ------
@@ -6701,13 +7025,15 @@ def place_cell_significance(
     >>> headings = np.sin(times / 5)
     >>> objects = np.array([[50.0, 50.0]])
     >>> trains = [np.sort(rng.uniform(0, 59.9, 40))]
-    >>> results = place_cell_significance(
+    >>> result = place_cell_significance(
     ...     env, trains, times, positions, n_shuffles=20, rng=0
     ... )
-    >>> list(results)
+    >>> result.unit_ids.tolist()
     [0]
-    >>> results[0].n_shuffles
-    20
+    >>> result.n_shuffles, result.statistic_units
+    (20, 'bits/spike')
+    >>> list(result.summary_table().columns[:3])
+    ['spatial_information', 'spatial_information_bias', 'p_value']
     """
     shuffled = _spatial_shuffle(
         env,
@@ -6737,9 +7063,20 @@ def place_cell_significance(
         min_shift=min_shift,
         rng=rng,
     )
-    from neurospatial.encoding._significance import to_shuffle_results
+    from neurospatial.encoding._metrics import _information_bias_terms
 
-    return to_shuffle_results(shuffled.observed, shuffled.null, shuffled.unit_ids)
+    return PlaceCellSignificanceResult(
+        observed=shuffled.observed[:, 0],
+        null_scores=shuffled.null[:, :, 0].T,
+        unit_ids=shuffled.unit_ids,
+        spatial_information_bias=_information_bias_terms(shuffled.reference).bias,
+        analysis_settings={
+            **(shuffled.reference.analysis_settings or {}),
+            "n_shuffles": n_shuffles,
+            "min_shift": float(min_shift),
+            "shuffle_type": "circular_time_shift",
+        },
+    )
 
 
 def _holm_adjusted(p_values: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -7000,8 +7337,21 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         """Number of shifted trains per unit."""
         return int(self.null_scores.shape[1])
 
+    @property
+    def n_units(self) -> int:
+        """Number of units."""
+        return len(self.unit_ids)
+
     def __len__(self) -> int:
         return len(self.unit_ids)
+
+    def _summary_for_repr(self) -> dict[str, Any]:
+        """Unit and shuffle counts; the label counts depend on ``alpha``.
+
+        ``summary()`` counts each label at the default ``alpha``; the repr
+        shows only what is an attribute of the result.
+        """
+        return {"n_units": self.n_units, "n_shuffles": self.n_shuffles}
 
     def __getitem__(self, idx: int) -> dict[str, ShuffleTestResult]:
         """One unit's test of each statistic, keyed by statistic name."""
@@ -7013,6 +7363,8 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
                 float(self.observed_scores[i, k]),
                 self.null_scores[i, :, k],
                 float(self.p_values[i, k]),
+                statistic=name,
+                statistic_units=_CELL_TYPE_STATISTIC_UNITS[name],
             )
             for k, name in enumerate(self.statistics)
         }
@@ -7302,7 +7654,11 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
         return df
 
     def summary(self) -> dict[str, Any]:
-        """Unit and shuffle counts and the number of units with each label."""
+        """Unit and shuffle counts and the number of units with each label.
+
+        The labels are :meth:`label_cell_types` at its defaults; call it with
+        your ``alpha`` and ``correction`` for others.
+        """
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             labels = self.label_cell_types()
@@ -7318,6 +7674,323 @@ class CellTypeSignificanceResult(UnitSelectionMixin, ResultMixin):
             )
         }
         return {"n_units": len(self), "n_shuffles": self.n_shuffles, **counts}
+
+
+@_copy_analysis_settings
+@dataclass(frozen=True, repr=False, eq=False)
+class PlaceCellSignificanceResult(UnitSelectionMixin, ResultMixin):
+    """Circular-shift tests of each unit's spatial information.
+
+    Returned by :func:`place_cell_significance`. Each unit's spike train was
+    shifted circularly against the behavior ``n_shuffles`` times, and the
+    Skaggs spatial information (bits/spike) of each shifted train's rate map
+    is that unit's null distribution.
+
+    Parameters
+    ----------
+    observed : ndarray, shape (n_units,)
+        Spatial information of each unit's rate map, bits/spike; NaN for a
+        silent unit.
+    null_scores : ndarray, shape (n_units, n_shuffles)
+        Spatial information of the shifted trains' maps, bits/spike; NaN for a
+        shifted map without a defined score.
+    unit_ids : ndarray, shape (n_units,)
+        Unit labels in input order.
+    spatial_information_bias : ndarray, shape (n_units,)
+        Information an untuned cell would show on each observed map
+        (bits/spike), as :meth:`SpatialRatesResult.spatial_information_bias`
+        computes it; NaN when unknown (fewer spikes than independent bins).
+    analysis_settings : dict, optional
+        The rate-map settings of the observed maps, with ``n_shuffles``,
+        ``min_shift`` and ``shuffle_type``.
+
+    Attributes
+    ----------
+    statistic : str
+        ``"spatial_information"``.
+    statistic_units : str
+        ``"bits/spike"``.
+    p_value : ndarray, shape (n_units,)
+        Upper-tail Monte Carlo p-value (k + 1) / (n + 1), where k counts the
+        defined null scores at least the observed score and n is the number
+        of defined null scores. NaN when the observed score is undefined or
+        no null score is defined.
+    null_mean, null_std : ndarray, shape (n_units,)
+        Mean and (population) standard deviation of each unit's defined null
+        scores, bits/spike.
+    z_score : ndarray, shape (n_units,)
+        ``(observed - null_mean) / null_std``, as
+        :attr:`~neurospatial.stats.ShuffleTestResult.z_score`; NaN when the
+        null has no spread.
+    n_units, n_shuffles : int
+        Number of units, and of shifted trains per unit.
+
+    Notes
+    -----
+    ``result[i]`` is unit ``i``'s :class:`~neurospatial.stats.ShuffleTestResult`
+    and ``result.sel(unit_id=label)`` selects it by label.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from neurospatial.encoding import PlaceCellSignificanceResult
+    >>> result = PlaceCellSignificanceResult(
+    ...     observed=np.array([1.2, 0.1]),
+    ...     null_scores=np.array([[0.1, 0.2, 0.3, 0.2], [0.1, 0.2, 0.3, 0.2]]),
+    ...     unit_ids=np.array([7, 9]),
+    ...     spatial_information_bias=np.array([0.05, 0.05]),
+    ... )
+    >>> result.p_value.tolist()
+    [0.2, 1.0]
+    >>> result.sel(unit_id=7).statistic_units
+    'bits/spike'
+    """
+
+    observed: NDArray[np.float64]
+    null_scores: NDArray[np.float64]
+    unit_ids: NDArray[Any]
+    spatial_information_bias: NDArray[np.float64]
+    analysis_settings: dict[str, Any] | None = None
+    p_value: NDArray[np.float64] = field(init=False)
+
+    statistic: ClassVar[str] = "spatial_information"
+    statistic_units: ClassVar[str] = "bits/spike"
+
+    def __post_init__(self) -> None:
+        from neurospatial.encoding._significance import shuffle_pvalues
+
+        observed = np.asarray(self.observed, dtype=np.float64)
+        null = np.asarray(self.null_scores, dtype=np.float64)
+        bias = np.asarray(self.spatial_information_bias, dtype=np.float64)
+        unit_ids = np.asarray(self.unit_ids)
+        n_units = observed.shape[0] if observed.ndim == 1 else -1
+        if (
+            observed.ndim != 1
+            or null.ndim != 2
+            or null.shape[0] != n_units
+            or unit_ids.shape != (n_units,)
+            or bias.shape != (n_units,)
+        ):
+            raise ValueError(
+                _format_error(
+                    "PlaceCellSignificanceResult needs observed, unit_ids and "
+                    "spatial_information_bias of shape (n_units,) and "
+                    "null_scores of shape (n_units, n_shuffles); got "
+                    f"{observed.shape}, {unit_ids.shape}, {bias.shape} and "
+                    f"{null.shape}.",
+                    why="each unit's observed score is tested against its own "
+                    "row of null scores",
+                    fix="build the result with place_cell_significance(...)",
+                )
+            )
+        object.__setattr__(self, "observed", observed)
+        object.__setattr__(self, "null_scores", null)
+        object.__setattr__(self, "spatial_information_bias", bias)
+        object.__setattr__(self, "unit_ids", unit_ids)
+        p_value = shuffle_pvalues(observed[:, None], null.T[:, :, None])[:, 0]
+        object.__setattr__(self, "p_value", p_value)
+        self._own_arrays()
+
+    @property
+    def n_units(self) -> int:
+        """Number of units."""
+        return len(self.unit_ids)
+
+    @property
+    def n_shuffles(self) -> int:
+        """Number of shifted trains per unit."""
+        return int(self.null_scores.shape[1])
+
+    @property
+    def null_mean(self) -> NDArray[np.float64]:
+        """Mean of each unit's defined null scores (bits/spike); NaN without any."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN nulls
+            mean: NDArray[np.float64] = np.nanmean(self.null_scores, axis=1)
+        return mean
+
+    @property
+    def null_std(self) -> NDArray[np.float64]:
+        """Standard deviation of each unit's defined null scores (bits/spike)."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN nulls
+            std: NDArray[np.float64] = np.nanstd(self.null_scores, axis=1)
+        return std
+
+    @property
+    def z_score(self) -> NDArray[np.float64]:
+        """Each unit's observed score in standard deviations of its null.
+
+        As :attr:`~neurospatial.stats.ShuffleTestResult.z_score`: NaN with
+        fewer than two defined null scores or no spread.
+        """
+        from neurospatial.stats.shuffle import _shuffle_zscore
+
+        return np.array(
+            [
+                _shuffle_zscore(float(score), null)
+                for score, null in zip(self.observed, self.null_scores, strict=True)
+            ]
+        )
+
+    def __len__(self) -> int:
+        return len(self.unit_ids)
+
+    def __iter__(self) -> Iterator[ShuffleTestResult]:
+        """Each unit's test, in ``unit_ids`` order."""
+        for i in range(len(self)):
+            yield self[i]
+
+    def __getitem__(self, idx: int) -> ShuffleTestResult:
+        """Unit ``idx``'s test, as a :class:`~neurospatial.stats.ShuffleTestResult`."""
+        from neurospatial.encoding._significance import shuffle_test_result
+
+        i = self._unit_position(idx)
+        return shuffle_test_result(
+            float(self.observed[i]),
+            self.null_scores[i],
+            float(self.p_value[i]),
+            statistic=self.statistic,
+            statistic_units=self.statistic_units,
+        )
+
+    def classify(
+        self, *, alpha: float = 0.05, min_info: float = 0.5
+    ) -> NDArray[np.bool_]:
+        """Screen each unit for place tuning from its shuffle test.
+
+        A unit passes when its information test is significant
+        (``p_value < alpha``) and its bias-corrected information
+        (``observed - spatial_information_bias``) is at least ``min_info``,
+        the rule of ``is_place_cell(..., criterion="shuffle")``, which gives
+        the same answer for the same seeded unit.
+
+        Parameters
+        ----------
+        alpha : float, default=0.05
+            Significance level of each unit's test; no correction across
+            units.
+        min_info : float, default=0.5
+            Inclusive cutoff on bias-corrected information (bits/spike), a
+            common screening convention, not derived or calibrated.
+
+        Returns
+        -------
+        ndarray of bool, shape (n_units,)
+            False for a unit with an undefined p-value or an unknown bias.
+
+        Warns
+        -----
+        UserWarning
+            When a significant unit's bias is unknown, so it fails.
+        """
+        from neurospatial.encoding._metrics import _warn_unknown_bias
+
+        with np.errstate(invalid="ignore"):
+            significant = self.p_value < alpha
+        debiased = self.observed - self.spatial_information_bias
+        _warn_unknown_bias(significant, debiased, kind="place")
+        with np.errstate(invalid="ignore"):
+            passed: NDArray[np.bool_] = significant & (debiased >= min_info)
+        return passed
+
+    def summary_table(
+        self, *, alpha: float = 0.05, min_info: float = 0.5
+    ) -> pd.DataFrame:
+        """One row per unit: the observed score, its null and the screen.
+
+        Parameters
+        ----------
+        alpha : float, default=0.05
+            Significance level of ``is_place_cell``; see :meth:`classify`.
+        min_info : float, default=0.5
+            Bias-corrected information cutoff of ``is_place_cell``
+            (bits/spike); see :meth:`classify`.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Indexed by ``unit_id``, with ``spatial_information`` (the
+            observed score), ``spatial_information_bias``, ``p_value``,
+            ``null_mean``, ``null_std``, ``z_score``, ``n_finite_null`` (the
+            null scores the p-value counts) and ``is_place_cell`` from
+            :meth:`classify`. ``df.attrs`` records ``units``, ``statistic``,
+            ``alpha``, ``classification_thresholds``, ``n_shuffles``,
+            ``shuffle_type`` and ``analysis_settings``.
+        """
+        import pandas as pd
+
+        df = pd.DataFrame(
+            {
+                "spatial_information": self.observed.copy(),
+                "spatial_information_bias": self.spatial_information_bias.copy(),
+                "p_value": self.p_value.copy(),
+                "null_mean": self.null_mean,
+                "null_std": self.null_std,
+                "z_score": self.z_score,
+                "n_finite_null": (~np.isnan(self.null_scores)).sum(axis=1),
+                "is_place_cell": self.classify(alpha=alpha, min_info=min_info),
+            },
+            index=pd.Index(self.unit_ids.tolist(), name="unit_id"),
+        )
+        df.attrs.update(
+            statistic=self.statistic,
+            alpha=alpha,
+            classification_thresholds={"min_info": min_info},
+            n_shuffles=self.n_shuffles,
+            shuffle_type="circular_time_shift",
+            analysis_settings=self.analysis_settings,
+            units={
+                "spatial_information": "bits/spike",
+                "spatial_information_bias": "bits/spike",
+                "p_value": "",
+                "null_mean": "bits/spike",
+                "null_std": "bits/spike",
+                "z_score": "",
+                "n_finite_null": "",
+                "is_place_cell": "",
+            },
+        )
+        return df
+
+    def summary(self) -> dict[str, Any]:
+        """The statistic, its unit, and the unit and shuffle counts."""
+        return {
+            "statistic": self.statistic,
+            "statistic_units": self.statistic_units,
+            "n_units": self.n_units,
+            "n_shuffles": self.n_shuffles,
+        }
+
+    def plot(
+        self, idx: int | None = None, *, ax: Axes | None = None, **kwargs: Any
+    ) -> Axes:
+        """Plot one unit's null distribution with its observed score.
+
+        Parameters
+        ----------
+        idx : int
+            Unit position. Required: each unit has its own null
+            distribution, so ``None`` raises a ``ValueError`` that says how
+            to pick a unit.
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on; a new figure when None.
+        **kwargs
+            Passed to :meth:`~neurospatial.stats.ShuffleTestResult.plot`.
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+        """
+        from neurospatial._results import unit_index_required
+
+        if idx is None:
+            raise unit_index_required(
+                len(self),
+                what="null distribution",
+                why="each unit is tested against its own null distribution.",
+            )
+        return self[idx].plot(ax=ax, **kwargs)
 
 
 @reads_pynapple_samples

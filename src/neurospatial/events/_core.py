@@ -13,7 +13,8 @@ import warnings
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from numbers import Real
-from typing import TYPE_CHECKING, Any
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -615,6 +616,23 @@ def _response_metrics(
     }
 
 
+# Units of every PSTH table column (``df.attrs["units"]``); the settings
+# ``window`` and ``dt`` are seconds, as their names say.
+_PSTH_UNITS = MappingProxyType(
+    {
+        "bin_center": "s",
+        "firing_rate": "Hz",
+        "firing_rate_sem": "Hz",
+        "histogram": "spikes",
+        "sem": "spikes",
+        "events_per_bin": "events",
+        "peak_rate": "Hz",
+        "peak_latency": "s",
+        "baseline_rate": "Hz",
+    }
+)
+
+
 class _PeriEventExports:
     """Tables shared by the single-unit and population PSTH results."""
 
@@ -633,7 +651,7 @@ class _PeriEventExports:
         return _make_bin_edges(self.window, self.dt)[:-1] + self.dt / 2
 
     def _table_attrs(self) -> dict[str, Any]:
-        """Analysis settings stored in ``df.attrs`` of every table."""
+        """Analysis settings and column units stored in ``df.attrs`` of every table."""
         return {
             "window": self.window,
             "dt": self.dt,
@@ -641,6 +659,7 @@ class _PeriEventExports:
             "n_events_dropped": self.n_events_dropped,
             "align": self.align,
             "event_ids": None if self.event_ids is None else self.event_ids.tolist(),
+            "units": dict(_PSTH_UNITS),
         }
 
     def _metrics_table(self, rates: NDArray[np.float64], unit_ids: Any) -> pd.DataFrame:
@@ -731,7 +750,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         Identifier for this unit. Set automatically when indexing/iterating a
         :class:`PopulationPeriEventResult` (``rates[i].unit_id ==
         rates.unit_ids[i]``); ``None`` for a standalone single-unit
-        computation unless supplied explicitly.
+        computation unless supplied explicitly, shown as ``<NA>`` in the
+        ``unit_id`` column and index of its tables, as on the rate results.
     n_events_dropped : int
         Number of input events not analyzed: their windows leave ``epochs``
         or ``spike_window``, or, for intervals, they hold no whole bin.
@@ -826,7 +846,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         """Dense tidy table of the PSTH: one row per time bin.
 
         One row per time bin, carrying a ``unit_id`` column (the unit this PSTH
-        was computed for; ``None`` for a standalone single-unit computation).
+        was computed for; ``<NA>`` for a standalone single-unit computation).
         Use this for plotting / detailed inspection.
 
         Returns
@@ -838,7 +858,8 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
             ``events_per_bin`` (events averaged in the bin; ``n_events`` in
             every bin for plain event times). ``df.attrs`` holds
             ``window``, ``dt``, ``n_events``, ``n_events_dropped``,
-            ``align`` and ``event_ids`` (a list, or None).
+            ``align``, ``event_ids`` (a list, or None) and ``units``, the
+            unit of each column.
 
         Examples
         --------
@@ -859,9 +880,7 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         [-0.5, 0.0, 0.5]
         """
         return self._bins_table(
-            np.array([self.unit_id], dtype=object),
-            self.histogram[np.newaxis],
-            self.sem[np.newaxis],
+            self._row_unit_ids(), self.histogram[np.newaxis], self.sem[np.newaxis]
         )
 
     def summary_table(self) -> pd.DataFrame:
@@ -878,11 +897,35 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
             ``baseline_rate`` (Hz, mean rate over the bins that end at or
             before the event; NaN when the window has none). ``df.attrs``
             holds ``window``, ``dt``, ``n_events``,
-            ``n_events_dropped``, ``align`` and ``event_ids``.
+            ``n_events_dropped``, ``align``, ``event_ids`` and ``units``.
         """
-        return self._metrics_table(
-            self.firing_rate[np.newaxis], np.array([self.unit_id], dtype=object)
-        )
+        return self._metrics_table(self.firing_rate[np.newaxis], self._row_unit_ids())
+
+    def _row_unit_ids(self) -> NDArray[Any]:
+        """``[unit_id]``, with a standalone PSTH's missing label as ``pd.NA``.
+
+        As on the rate results, a PSTH computed for one unit on its own has no
+        identity, so its table rows show ``<NA>`` rather than a made-up label.
+        """
+        import pandas as pd
+
+        label = pd.NA if self.unit_id is None else self.unit_id
+        return np.array([label], dtype=object)
+
+    @property
+    def peak_rate(self) -> float:
+        """Highest firing rate over the bins (Hz)."""
+        return float(self._metrics()["peak_rate"][0])
+
+    @property
+    def peak_latency(self) -> float:
+        """Time of the peak relative to the event (s); NaN when no bin is above zero."""
+        return float(self._metrics()["peak_latency"][0])
+
+    @property
+    def baseline_rate(self) -> float:
+        """Mean rate over the bins that end at or before the event (Hz)."""
+        return float(self._metrics()["baseline_rate"][0])
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of headline scalars for this PSTH.
@@ -914,17 +957,20 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
         >>> round(s["peak_latency"], 3)
         0.0
         """
-        metrics = _response_metrics(
-            self.firing_rate[np.newaxis],
-            self.bin_centers,
-            _pre_event_bins(self.window, self.dt),
-        )
         return {
             "unit_id": self.unit_id,
             "n_events": self.n_events,
             "n_events_dropped": self.n_events_dropped,
-            **{name: float(values[0]) for name, values in metrics.items()},
+            **{name: float(values[0]) for name, values in self._metrics().items()},
         }
+
+    def _metrics(self) -> dict[str, NDArray[np.float64]]:
+        """Peak rate, peak latency and baseline rate, each of shape (1,)."""
+        return _response_metrics(
+            self.firing_rate[np.newaxis],
+            self.bin_centers,
+            _pre_event_bins(self.window, self.dt),
+        )
 
     def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """Plot the PSTH, returning the axis for composition.
@@ -1188,8 +1234,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             bin), ``sem`` (count units) and ``events_per_bin`` (events
             averaged in the bin; ``n_events`` in every bin for plain event
             times). ``df.attrs`` holds ``window``, ``dt``,
-            ``n_events``, ``n_events_dropped``, ``align`` and ``event_ids``
-            (a list, or None).
+            ``n_events``, ``n_events_dropped``, ``align``, ``event_ids``
+            (a list, or None) and ``units``, the unit of each column.
 
         Examples
         --------
@@ -1227,7 +1273,8 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
             ``baseline_rate`` (Hz, mean rate over
             the bins that end at or before the event). ``df.attrs`` holds
             ``window``, ``dt``, ``n_events``, ``n_events_dropped``,
-            ``align`` and ``event_ids`` (a list, or None).
+            ``align``, ``event_ids`` (a list, or None) and ``units``, the
+            unit of each column.
 
         Examples
         --------
@@ -1251,6 +1298,21 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         2
         """
         return self._metrics_table(self.firing_rates, np.asarray(self.unit_ids))
+
+    @property
+    def mean_peak_rate(self) -> float:
+        """Mean over units of each unit's peak rate (Hz); NaN without any."""
+        # Units without a defined rate (no event analyzed) have no peak.
+        peaks, _ = _peak_latencies(self.firing_rates, self.bin_centers)
+        defined = peaks[~np.isnan(peaks)]
+        return float(defined.mean()) if defined.size else float("nan")
+
+    @property
+    def population_peak_latency(self) -> float:
+        """Time of the population-mean peak (s)."""
+        return float(
+            _peak_latencies(self.mean_firing_rate[np.newaxis], self.bin_centers)[1][0]
+        )
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of population headline scalars.
@@ -1279,44 +1341,96 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
         >>> sorted(result.summary())
         ['mean_peak_rate', 'n_events', 'n_events_dropped', 'n_units', 'population_peak_latency']
         """
-        _, latency = _peak_latencies(
-            self.mean_firing_rate[np.newaxis], self.bin_centers
-        )
-        # Units without a defined rate (no event analyzed) have no peak.
-        peaks, _ = _peak_latencies(self.firing_rates, self.bin_centers)
-        defined = peaks[~np.isnan(peaks)]
         return {
             "n_units": self.n_units,
             "n_events": self.n_events,
             "n_events_dropped": self.n_events_dropped,
-            "mean_peak_rate": float(defined.mean()) if defined.size else np.nan,
-            "population_peak_latency": float(latency[0]),
+            "mean_peak_rate": self.mean_peak_rate,
+            "population_peak_latency": self.population_peak_latency,
         }
 
-    def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """Plot the population-average PSTH, returning the axis.
-
-        The band is ``mean_sem``, the standard error across events of the
-        population-mean histogram.
+    def plot(
+        self,
+        idx: int | None = None,
+        *,
+        ax: Axes | None = None,
+        kind: Literal["heatmap", "mean"] = "heatmap",
+        **kwargs: Any,
+    ) -> Axes:
+        """Plot one unit's PSTH, every unit as a heatmap, or the population mean.
 
         Parameters
         ----------
+        idx : int or None, default=None
+            Unit position. With a unit, draws that unit's PSTH as
+            ``self[idx].plot()`` does; ``kind`` must then stay at its default.
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, a new figure/axes is created.
+        kind : {"heatmap", "mean"}, default="heatmap"
+            Without ``idx``: ``"heatmap"`` draws one row per unit, time from
+            the event on the x-axis, rows sorted by the time of each unit's
+            peak, and a colorbar in Hz. ``"mean"`` draws the
+            population-average PSTH, titled "Population mean of N units"; its
+            band is ``mean_sem``, the standard error across events of the
+            population-mean histogram.
         **kwargs
-            Forwarded to :func:`plot_peri_event_histogram`.
+            Forwarded to :func:`plot_peri_event_histogram` for one unit or the
+            mean, or to ``Axes.pcolormesh`` for the heatmap.
 
         Returns
         -------
         matplotlib.axes.Axes
-            The axes the population-average PSTH was drawn on.
+            The axes the plot was drawn on.
+
+        Raises
+        ------
+        ValueError
+            If ``kind`` is not ``"heatmap"`` or ``"mean"``, or ``kind="mean"``
+            is passed with a unit ``idx``.
         """
-        mean_result = PeriEventResult(
-            histogram=self.mean_histogram,
-            sem=self.mean_sem,
-            **_cohort_fields(self),
+        if kind not in ("heatmap", "mean"):
+            raise ValueError(
+                _format_error(
+                    f"kind must be 'heatmap' or 'mean', got {kind!r}.",
+                    fix="pass kind='heatmap' for every unit or kind='mean' for "
+                    "the population average",
+                )
+            )
+        if idx is not None:
+            if kind == "mean":
+                raise ValueError(
+                    _format_error(
+                        f"plot(idx={idx!r}, kind='mean') mixes one unit with the "
+                        "population mean.",
+                        fix="drop idx to plot the population mean, or drop kind "
+                        "to plot one unit",
+                    )
+                )
+            return self[idx].plot(ax=ax, **kwargs)
+        if kind == "mean":
+            mean_result = PeriEventResult(
+                histogram=self.mean_histogram,
+                sem=self.mean_sem,
+                **_cohort_fields(self),
+            )
+            if ax is None:  # a caller's axes keep their title
+                kwargs.setdefault(
+                    "title",
+                    f"Population mean of {len(self)} units (n={self.n_events} events)",
+                )
+            return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
+        from neurospatial._results import plot_population_heatmap
+
+        ax = plot_population_heatmap(
+            self.firing_rates,
+            _make_bin_edges(self.window, self.dt),
+            self.unit_ids,
+            ax=ax,
+            xlabel="Time from event (s)",
+            **kwargs,
         )
-        return plot_peri_event_histogram(mean_result, ax=ax, **kwargs)
+        ax.axvline(0, color="white", linestyle="--", alpha=0.7, linewidth=1)
+        return ax
 
 
 # --- Validation Helpers ---

@@ -229,6 +229,18 @@ class Crossing:
         object.__setattr__(self, "bin_index", int(self.bin_index))
 
 
+LapDirection = Literal[
+    "clockwise", "counter-clockwise", "increasing", "decreasing", "unknown"
+]
+_LAP_DIRECTIONS: tuple[LapDirection, ...] = (
+    "clockwise",
+    "counter-clockwise",
+    "increasing",
+    "decreasing",
+    "unknown",
+)
+
+
 @dataclass(frozen=True)
 class Lap:
     """Detected lap on circular track.
@@ -241,7 +253,10 @@ class Lap:
         End time of lap (seconds); the lap is the half-open window
         ``[start_time, stop_time)``.
     direction : str
-        Direction of lap: 'clockwise', 'counter-clockwise', or 'unknown'.
+        Direction of lap: 'clockwise' or 'counter-clockwise' round a loop;
+        'increasing' or 'decreasing' along the linear coordinate of an
+        environment without a loop (a linear track), the way the lap leaves
+        its start; or 'unknown'.
     overlap_score : float
         Jaccard overlap of the lap's bins with the template lap's bins, both
         widened by one ring of neighbor bins, in [0, 1], for the
@@ -251,7 +266,7 @@ class Lap:
 
     start_time: float
     stop_time: float
-    direction: Literal["clockwise", "counter-clockwise", "unknown"]
+    direction: LapDirection
     overlap_score: float
 
     def __post_init__(self) -> None:
@@ -259,12 +274,7 @@ class Lap:
         start, stop = _checked_interval("Lap", self.start_time, self.stop_time)
         object.__setattr__(self, "start_time", start)
         object.__setattr__(self, "stop_time", stop)
-        validate_choice(
-            self.direction,
-            ("clockwise", "counter-clockwise", "unknown"),
-            name="direction",
-            owner="Lap",
-        )
+        validate_choice(self.direction, _LAP_DIRECTIONS, name="direction", owner="Lap")
         score = float(self.overlap_score)
         if not (np.isnan(score) or 0.0 <= score <= 1.0):
             msg = f"Lap.overlap_score must be in [0, 1] or NaN; got {score!r}."
@@ -846,8 +856,10 @@ def _widen(bins: NDArray[np.int64], adjacency: Any) -> NDArray[np.bool_]:
 
 
 def _detect_lap_direction(
-    bin_centers: NDArray[np.float64], bins: NDArray[np.int64]
-) -> Literal["clockwise", "counter-clockwise", "unknown"]:
+    bin_centers: NDArray[np.float64],
+    bins: NDArray[np.int64],
+    linear: NDArray[np.float64] | None = None,
+) -> LapDirection:
     """Detect lap direction from the signed area of the closed lap path.
 
     The path is closed back to its first point and centered on its centroid
@@ -856,19 +868,38 @@ def _detect_lap_direction(
     An open path's shoelace sum is not translation invariant: an 85%
     counter-clockwise arc far from the origin can read as clockwise.
 
+    In an environment without a loop (``linear`` given), a lap goes out and
+    comes back, so it encloses no area; its direction is toward its farthest
+    point along the linear coordinate, the sign of the step from the start
+    to the lap's farthest point in that coordinate.
+
     Parameters
     ----------
     bin_centers : NDArray[np.float64], shape (n_bins, n_dims)
         Bin center coordinates.
     bins : NDArray[np.int64], shape (n_samples,)
         Sequence of bin indices forming the lap.
+    linear : NDArray[np.float64], shape (n_bins,), optional
+        Linear coordinate of each bin, for an environment without a loop.
 
     Returns
     -------
     str
-        'clockwise', 'counter-clockwise', or 'unknown' (fewer than three
-        samples, a non-2-D environment, or zero enclosed area).
+        'clockwise' or 'counter-clockwise' round a loop; 'increasing' or
+        'decreasing' along ``linear``; 'unknown' for fewer than three
+        samples, a non-2-D loop, zero enclosed area, or a lap that does not
+        leave its start.
     """
+    if linear is not None:
+        if len(bins) < 3:
+            return "unknown"
+        offsets = linear[bins] - linear[bins[0]]
+        step = float(offsets[np.argmax(np.abs(offsets))])
+        if step > 0:
+            return "increasing"
+        if step < 0:
+            return "decreasing"
+        return "unknown"
     if len(bins) < 3 or bin_centers.shape[1] != 2:
         return "unknown"
 
@@ -884,6 +915,15 @@ def _detect_lap_direction(
     if area < 0:
         return "clockwise"
     return "unknown"
+
+
+def _linear_coordinate(env: Environment) -> NDArray[np.float64] | None:
+    """Linear coordinate of each bin of a track or 1-D environment, else None."""
+    if env.is_linearized_track:
+        return np.asarray(env.to_linear(env.bin_centers), dtype=np.float64)
+    if env.n_dims == 1:
+        return np.asarray(env.bin_centers[:, 0], dtype=np.float64)
+    return None
 
 
 def _space_has_loop(env: Environment) -> bool | None:
@@ -1007,7 +1047,8 @@ def _require_loop(env: Environment, method: str) -> None:
         "for back-and-forth runs on a linear track or arm, use "
         "detect_trials(env, times, positions, regions=[start, end]); to "
         "segment round trips against a template, pass "
-        "method='reference' with reference_lap=."
+        "method='reference' with reference_lap=, which reports each round "
+        "trip's direction along the track as 'increasing' or 'decreasing'."
     )
     if has_loop is None:
         raise InputError(
@@ -1041,7 +1082,9 @@ def detect_laps(
     *,
     method: Literal["auto", "reference", "region"] = "auto",
     min_overlap: float = 0.8,
-    direction: Literal["both", "clockwise", "counter-clockwise"] = "both",
+    direction: Literal[
+        "both", "clockwise", "counter-clockwise", "increasing", "decreasing"
+    ] = "both",
     reference_lap: NDArray[np.int64] | None = None,
     start_region: str | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -1073,11 +1116,15 @@ def detect_laps(
         Minimum Jaccard overlap, in (0, 1], between the bins a lap visits and
         the template's bins (each widened by one ring of neighbors). Default
         is 0.8. Not used for 'region' method.
-    direction : {'both', 'clockwise', 'counter-clockwise'}, optional
+    direction : {'both', 'clockwise', 'counter-clockwise', 'increasing', \
+'decreasing'}, optional
         Which lap directions to include:
         - 'both': all laps (default)
         - 'clockwise': only clockwise laps
         - 'counter-clockwise': only counter-clockwise laps
+        - 'increasing', 'decreasing': on an environment without a loop
+          (``method='reference'`` on a linear track), only laps that leave
+          their start toward larger, or smaller, linear coordinates
     reference_lap : NDArray[np.int64] | None, optional
         Bin sequence of one complete lap, for the 'reference' method, for
         example ``env.bin_at(positions[lap_start:lap_stop])``; its first bin
@@ -1240,6 +1287,17 @@ def detect_laps(
     the answer independent of the coordinate origin and of where on the
     circuit the lap starts.
 
+    On an environment without a loop (a linear track with
+    ``method='reference'``), a lap goes out and comes back and encloses no
+    area. Its direction is ``'increasing'`` or ``'decreasing'`` along the
+    linear coordinate (``env.to_linear`` of a track, or the coordinate of a
+    1-D environment): toward its farthest point, the sign of the step from
+    the lap's first bin to the bin farthest from it in that coordinate. On a
+    branched track (a T-maze) the linear coordinate lays the branches end to
+    end, so the direction names the branch order, not a heading in the room.
+    A 2-D environment without a loop that is not a track has no linear
+    coordinate; its laps get the enclosed-area direction above.
+
     **Applications:**
 
     - Lap-by-lap learning curves
@@ -1336,13 +1394,15 @@ def detect_laps(
     validate_choice(
         method, ("auto", "reference", "region"), name="method", owner="detect_laps()"
     )
-    if direction not in ("both", "clockwise", "counter-clockwise"):
+    if direction != "both" and direction not in _LAP_DIRECTIONS[:-1]:
         raise ValueError(
             _format_error(
                 f"direction must be one of 'both', 'clockwise', "
-                f"'counter-clockwise'; got {direction!r}.",
+                f"'counter-clockwise', 'increasing', 'decreasing'; got "
+                f"{direction!r}.",
                 why="an unknown direction would silently match no lap.",
-                fix="pass direction='both', 'clockwise' or 'counter-clockwise'.",
+                fix="pass direction='both', 'clockwise' or 'counter-clockwise' "
+                "round a loop, or 'increasing' or 'decreasing' on a linear track.",
             )
         )
     if method != "region" and not (
@@ -1463,6 +1523,8 @@ def detect_laps(
     adjacency = nx.to_scipy_sparse_array(
         env.connectivity, nodelist=range(env.n_bins), weight=None, format="csr"
     )
+    # Without a loop a lap goes out and back: its direction is along the track.
+    linear = None if _space_has_loop(env) else _linear_coordinate(env)
     for run in runs:
         laps.extend(
             _detect_laps_search_contiguous(
@@ -1475,6 +1537,7 @@ def detect_laps(
                 zone=zone,
                 min_overlap=min_overlap,
                 direction=direction,
+                linear=linear,
             )
         )
     return Intervals(laps, record_type=Lap, analysis_settings=settings)
@@ -1733,6 +1796,7 @@ def _detect_laps_search_contiguous(
     zone: NDArray[np.bool_],
     min_overlap: float,
     direction: str,
+    linear: NDArray[np.float64] | None,
 ) -> list[Lap]:
     """Split one recording into laps at passes through the template's start.
 
@@ -1779,7 +1843,7 @@ def _detect_laps_search_contiguous(
             continue
         lap_start = starts[k]
         lap_direction = _detect_lap_direction(
-            env.bin_centers, position_bins[lap_start:candidate]
+            env.bin_centers, position_bins[lap_start:candidate], linear
         )
         if direction == "both" or lap_direction == direction:
             laps.append(

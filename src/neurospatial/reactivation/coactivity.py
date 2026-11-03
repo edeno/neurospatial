@@ -302,13 +302,27 @@ class AssemblySimilarityResult(ReadOnlyArraysMixin, ResultMixin):
         """Own read-only copies of the arrays."""
         self._own_arrays()
 
+    @property
+    def n_patterns(self) -> int:
+        """Number of patterns compared (rows of ``similarity``)."""
+        return int(self.similarity.shape[0])
+
+    @property
+    def n_reference_patterns(self) -> int:
+        """Number of reference patterns (columns of ``similarity``)."""
+        return int(self.similarity.shape[1])
+
+    @property
+    def mean_best_match_similarity(self) -> float:
+        """Mean over patterns of each one's best-match similarity."""
+        return float(self.best_match_similarity.mean())
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        n_patterns, n_reference = self.similarity.shape
         return {
-            "n_patterns": n_patterns,
-            "n_reference_patterns": n_reference,
-            "mean_best_match_similarity": float(self.best_match_similarity.mean()),
+            "n_patterns": self.n_patterns,
+            "n_reference_patterns": self.n_reference_patterns,
+            "mean_best_match_similarity": self.mean_best_match_similarity,
         }
 
 

@@ -255,7 +255,8 @@ def test_every_shuffle_iteration_honors_breaks(recording, function):
     paused = test(
         *_family_args(family, r, r.shifted_trains, r.shifted_times), **settings
     )
-    for unit in declared:
+    # Units are labelled 0..n-1: position and label agree for every family.
+    for unit in range(len(declared)):
         assert declared[unit].observed_score == pytest.approx(
             paused[unit].observed_score
         )

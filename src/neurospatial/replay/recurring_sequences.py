@@ -322,15 +322,23 @@ class RecurringSequencesResult(ReadOnlyArraysMixin, ResultMixin):
         )
         return table
 
+    @property
+    def n_templates(self) -> int:
+        """Number of template windows (reference spikes)."""
+        return int(self.reference_times.size)
+
+    @property
+    def max_repetitions(self) -> int:
+        """Most repetitions of any template; 0 without templates."""
+        return int(self.repetitions.max()) if self.repetitions.size else 0
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
             "reference_unit": self.reference_unit,
-            "n_templates": int(self.reference_times.size),
+            "n_templates": self.n_templates,
             "n_recurring": self.n_recurring,
-            "max_repetitions": int(self.repetitions.max())
-            if self.repetitions.size
-            else 0,
+            "max_repetitions": self.max_repetitions,
             "window": self.window,
             "tolerance": self.tolerance,
         }
@@ -675,8 +683,8 @@ class RecurringSequencesSignificanceResult(ResultMixin):
         """Flat dict of scalar headline metrics for this result."""
         return {
             "method": self.method,
-            "n_recurring": self.observed.n_recurring,
-            **{f"p_value[{kind}]": value for kind, value in self.p_values.items()},
+            "observed.n_recurring": self.observed.n_recurring,
+            **{f"p_values[{kind}]": value for kind, value in self.p_values.items()},
             "p_value": self.p_value,
             "is_significant": self.is_significant,
         }

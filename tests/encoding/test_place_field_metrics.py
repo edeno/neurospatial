@@ -2563,22 +2563,30 @@ class TestPlaceFieldsResult:
     and ``n_excluded``, and iterates and sizes like its fields.
     """
 
+    @staticmethod
+    def _map() -> dict:
+        """A 10-bin track and a flat map, the fields' environment and rates."""
+        from neurospatial import Environment
+
+        env = Environment.from_samples(np.arange(10.0)[:, None], bin_size=1.0)
+        return {"env": env, "firing_rate": np.ones(env.n_bins), "bandwidth": 0.0}
+
     def test_n_excluded_follows_excluded_reason(self):
         from neurospatial.encoding.spatial import PlaceFieldsResult
 
-        assert PlaceFieldsResult(fields=[]).n_excluded == 0
+        assert PlaceFieldsResult(fields=[], **self._map()).n_excluded == 0
         excluded = PlaceFieldsResult(
-            fields=[], excluded_reason="mean_rate_above_threshold"
+            fields=[], excluded_reason="mean_rate_above_threshold", **self._map()
         )
         assert excluded.n_excluded == 1
         with pytest.raises(TypeError):
-            PlaceFieldsResult(fields=[], n_excluded=1)
+            PlaceFieldsResult(fields=[], n_excluded=1, **self._map())
 
     def test_fields_are_owned_integer_bin_indices(self):
         from neurospatial.encoding.spatial import PlaceFieldsResult
 
         source = np.array([3.0, 4.0, 5.0])
-        result = PlaceFieldsResult(fields=[source])
+        result = PlaceFieldsResult(fields=[source], **self._map())
         assert result[0].dtype == np.int64
         np.testing.assert_array_equal(result[0], [3, 4, 5])
         source[0] = 99.0
@@ -2605,7 +2613,7 @@ class TestPlaceFieldsResult:
         from neurospatial.encoding.spatial import PlaceFieldsResult
 
         with pytest.raises(ValueError, match=match):
-            PlaceFieldsResult(**kwargs)
+            PlaceFieldsResult(**kwargs, **self._map())
 
     def _build_env_and_rates(self):
         from neurospatial import Environment

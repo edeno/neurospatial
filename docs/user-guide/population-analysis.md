@@ -90,8 +90,10 @@ For a per-cell decision you can report, use the shuffle labels of
 test grid and border scores as well), or `is_place_cell(...)`, a
 circular-shift test by default, for one cell. Both call a cell place only when its
 information test is significant and its bias-corrected information reaches the
-screen's cutoff; `place_cell_significance` gives the information test's
-p-values alone.
+screen's cutoff; `place_cell_significance` runs the same information test
+for a population and returns a result whose `summary_table()` gives each
+unit's p-value, null mean (bits/spike) and z-score (no units) and whose `classify()`
+applies both parts of the verdict.
 
 Now compare coverage computed from every map with coverage computed from the
 screened units only:

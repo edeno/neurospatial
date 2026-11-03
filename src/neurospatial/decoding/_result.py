@@ -316,6 +316,24 @@ class _DecodeRecordMixin:
         @property
         def n_time_bins(self) -> int: ...
 
+    def _table_units(self, data: dict[str, Any]) -> dict[str, str]:
+        """Unit of each decode-table column, for ``df.attrs["units"]``.
+
+        Coordinate columns take ``env.units`` (``""`` when unset), except a
+        polar environment's ``angle``, which is in radians.
+        """
+        coordinate_units = getattr(self.env, "units", None) or ""
+        units = {
+            "time": "s",
+            "map_bin": "",
+            "posterior_entropy": "bits",
+            "peak_probability": "",
+        }
+        for column in data:
+            if column.startswith(("map_", "mean_")) and column != "map_bin":
+                units[column] = "rad" if column.endswith("angle") else coordinate_units
+        return {column: units[column] for column in data}
+
     @property
     def spike_window_assumed(self) -> bool:
         """True when spikes were assumed recorded wherever position was.
@@ -356,17 +374,32 @@ class _DecodeRecordMixin:
             f"time_support, first times[{i}] = {self.times[i]}"
         ]
 
+    @property
+    def n_bins(self) -> int:
+        """Number of spatial bins, ``env.n_bins``."""
+        return int(self.env.n_bins)
+
+    @property
+    def max_entropy(self) -> float:
+        """Entropy of a uniform posterior, ``log2(n_bins)`` bits."""
+        return float(np.log2(self.n_bins)) if self.n_bins > 0 else 0.0
+
+    @property
+    def decoded_duration(self) -> float:
+        """Seconds of decoded time support; NaN when it is unknown."""
+        support = self.time_support
+        if support is None:
+            return float("nan")
+        return float(np.sum(support[:, 1] - support[:, 0]))
+
     def _window_summary(self) -> dict[str, Any]:
         """The recording-window entries shared by both ``summary()`` methods."""
-        support = self.time_support
         return {
             "spike_window_assumed": self.spike_window_assumed,
             "spike_window": None
             if self.spike_window is None
             else self.spike_window.tolist(),
-            "decoded_duration": float("nan")
-            if support is None
-            else float(np.sum(support[:, 1] - support[:, 0])),
+            "decoded_duration": self.decoded_duration,
         }
 
     def _time_coord(self) -> NDArray[Any]:
@@ -1139,6 +1172,16 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
 
         return axes[0] if len(panels) == 1 else (axes[0], axes[1])
 
+    @property
+    def n_undecodable(self) -> int:
+        """Time bins without a posterior (all NaN)."""
+        return int(np.count_nonzero(~self._decoded_rows))
+
+    @property
+    def mean_entropy(self) -> float:
+        """Mean posterior entropy over decoded time bins (bits); NaN without any."""
+        return _mean_over(self.posterior_entropy, self._decoded_rows)
+
     def summary(self) -> dict[str, Any]:
         """Scalar headline metrics for the decoded posterior.
 
@@ -1167,14 +1210,12 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         >>> sorted(result.summary())
         ['decoded_duration', 'max_entropy', 'mean_entropy', 'n_bins', 'n_time_bins', 'n_undecodable', 'spike_window', 'spike_window_assumed']
         """
-        n_bins = int(self.posterior.shape[1])
-        decoded = self._decoded_rows
         return {
             "n_time_bins": self.n_time_bins,
-            "n_undecodable": int(np.count_nonzero(~decoded)),
-            "n_bins": n_bins,
-            "mean_entropy": _mean_over(self.posterior_entropy, decoded),
-            "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
+            "n_undecodable": self.n_undecodable,
+            "n_bins": self.n_bins,
+            "mean_entropy": self.mean_entropy,
+            "max_entropy": self.max_entropy,
             **self._window_summary(),
         }
 
@@ -1194,6 +1235,10 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             - ``map_x``, ``map_y``, ... : MAP position coordinates
             - ``mean_x``, ``mean_y``, ... : Mean position coordinates
             - ``posterior_entropy`` : Posterior entropy in bits
+
+            ``df.attrs["units"]`` gives each column's unit: seconds, the
+            environment's units for coordinates (radians for a polar
+            ``angle``) and bits.
 
         Notes
         -----
@@ -1239,7 +1284,9 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         # Add posterior_entropy
         data["posterior_entropy"] = self.posterior_entropy
 
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        df.attrs["units"] = self._table_units(data)
+        return df
 
     def to_xarray(self) -> Any:
         """Convert the posterior to a labeled :class:`xarray.Dataset`.
@@ -1697,6 +1744,9 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             - ``posterior_entropy`` : posterior entropy (bits)
             - ``peak_probability`` : largest posterior probability mass of a bin
 
+            ``df.attrs["units"]`` gives each column's unit, as for
+            :meth:`DecodingResult.to_dataframe`.
+
         Notes
         -----
         Coordinate column naming matches
@@ -1720,7 +1770,19 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         data["posterior_entropy"] = self.posterior_entropy
         data["peak_probability"] = self.peak_probability
 
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        df.attrs["units"] = self._table_units(data)
+        return df
+
+    @property
+    def n_undecodable(self) -> int:
+        """Time bins without a posterior."""
+        return int(np.count_nonzero(self.map_bin < 0))
+
+    @property
+    def mean_entropy(self) -> float:
+        """Mean posterior entropy over decoded time bins (bits); NaN without any."""
+        return _mean_over(self.posterior_entropy, self.map_bin >= 0)
 
     def summary(self) -> dict[str, Any]:
         """Scalar headline metrics for the streamed decode.
@@ -1745,15 +1807,15 @@ class DecodingSummary(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         ``n_undecodable``, ``n_bins``, ``mean_entropy``, ``max_entropy``) match
         :meth:`DecodingResult.summary`.
         """
-        n_bins = int(self.env.n_bins)
-        decoded = self.map_bin >= 0
         return {
             "n_time_bins": self.n_time_bins,
-            "n_undecodable": int(np.count_nonzero(~decoded)),
-            "n_bins": n_bins,
-            "mean_entropy": _mean_over(self.posterior_entropy, decoded),
-            "max_entropy": float(np.log2(n_bins)) if n_bins > 0 else 0.0,
-            "mean_peak_probability": _mean_over(self.peak_probability, decoded),
+            "n_undecodable": self.n_undecodable,
+            "n_bins": self.n_bins,
+            "mean_entropy": self.mean_entropy,
+            "max_entropy": self.max_entropy,
+            "mean_peak_probability": _mean_over(
+                self.peak_probability, self.map_bin >= 0
+            ),
             **self._window_summary(),
         }
 

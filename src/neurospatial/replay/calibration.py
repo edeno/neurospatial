@@ -965,7 +965,7 @@ def matched_alpha(
     ------
     ValueError
         If ``target`` is not in (0, 1); if the table lacks the ``event``,
-        ``method``, ``is_replay``, ``p_value`` or a method's ``passes[...]``
+        ``method``, ``is_replay``, ``p_value`` or a method's ``criteria[...]``
         columns, or repeats an (event, method) pair; if a method in the
         table is not in ``replay_methods``, does not test a p-value
         against alpha, is a rank-order method that chose among several
@@ -1037,7 +1037,7 @@ def matched_alpha(
     ...         "method": "karlsson_frank_2009",
     ...         "is_replay": [p < 0.05 for p in p_values],
     ...         "p_value": p_values,
-    ...         "passes[n_active_cells >= 5]": True,
+    ...         "criteria[n_active_cells >= 5]": True,
     ...     }
     ... )
     >>> row = matched_alpha(null_table, replay_methods=[KARLSSON_FRANK_2009]).iloc[0]
@@ -1175,7 +1175,7 @@ def apply_alpha(
     ...         "method": "karlsson_frank_2009",
     ...         "is_replay": [True, True, False],
     ...         "p_value": [0.002, 0.03, 0.03],
-    ...         "passes[n_active_cells >= 5]": [True, True, False],
+    ...         "criteria[n_active_cells >= 5]": [True, True, False],
     ...     }
     ... )
     >>> matched = apply_alpha(
@@ -1335,7 +1335,7 @@ def _verdicts(
     A template-matching method compares the p-value as its verdicts do
     (``<`` or ``<=``, equal within round-off).
     """
-    columns = [f"passes[{criterion.label}]" for criterion in method.criteria]
+    columns = [f"criteria[{criterion.label}]" for criterion in method.criteria]
     absent = [column for column in columns if column not in frame]
     if absent:
         msg = (

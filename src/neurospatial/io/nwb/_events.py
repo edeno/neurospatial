@@ -426,7 +426,8 @@ class _Column:
 
 # Column descriptions of the Lap fields; any other field gets a generic one.
 _LAP_FIELD_DESCRIPTIONS = {
-    "direction": "Direction of the lap: clockwise, counter-clockwise or unknown",
+    "direction": "Direction of the lap: clockwise or counter-clockwise round a "
+    "loop, increasing or decreasing along a linear track, or unknown",
     "overlap_score": "Jaccard overlap of the lap's bins with the template lap's "
     "bins, in [0, 1]; NaN for a lap without a template score; the column is left "
     "out when no lap has one (laps detected with method='region')",

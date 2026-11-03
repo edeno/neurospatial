@@ -75,9 +75,9 @@ def test_a_boundary_vector_cell_is_recovered(env, session, wall, angle):
     )
 
     sector = np.pi / 24  # half a direction bin
-    error = np.angle(np.exp(1j * (result.preferred_direction() - angle)))
+    error = np.angle(np.exp(1j * (result.preferred_direction - angle)))
     assert abs(error) <= sector + 1e-12, wall
-    assert 10.0 <= result.preferred_distance() <= 20.0
+    assert 10.0 <= result.preferred_distance <= 20.0
 
 
 def test_an_egocentric_boundary_cell_is_recovered(env, session):
@@ -96,8 +96,8 @@ def test_an_egocentric_boundary_cell_is_recovered(env, session):
         direction_bin_size=np.pi / 12,
     )
 
-    assert abs(result.preferred_direction() - np.pi / 2) <= np.pi / 24 + 1e-12
-    assert 10.0 <= result.preferred_distance() <= 20.0
+    assert abs(result.preferred_direction - np.pi / 2) <= np.pi / 24 + 1e-12
+    assert 10.0 <= result.preferred_distance <= 20.0
     # The same cell has no allocentric direction preference to speak of.
     allocentric = compute_boundary_vector_rate(
         env,
@@ -343,7 +343,7 @@ def test_distance_information_is_skaggs_information_along_the_preferred_ray(
     rates = np.asarray(result.firing_rate).reshape(occupancy.shape)
     edges = result.env.grid_edges[1]
     centers = (edges[:-1] + edges[1:]) / 2
-    column = int(np.argmin(np.abs(centers - result.preferred_direction())))
+    column = int(np.argmin(np.abs(centers - result.preferred_direction)))
     assert abs(centers[column]) <= np.pi / 12 + 1e-12  # one of the two East rays
     expected = spatial_information(rates[:, column], occupancy=occupancy[:, column])
     assert result.distance_information() == pytest.approx(expected)
@@ -369,8 +369,8 @@ def test_a_near_wall_cell_is_not_read_as_tuned_to_the_opposite_wall(env, session
 
     assert result.distance_range == pytest.approx((0.0, 50.0))
     assert (result.n_distance_bins, result.n_direction_bins) == (10, 12)
-    assert abs(result.preferred_direction()) <= np.pi / 12 + 1e-12
-    assert 10.0 <= result.preferred_distance() <= 20.0
+    assert abs(result.preferred_direction) <= np.pi / 12 + 1e-12
+    assert 10.0 <= result.preferred_distance <= 20.0
 
 
 def test_the_range_records_the_ray_time_beyond_it(env, session):

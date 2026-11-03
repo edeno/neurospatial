@@ -689,7 +689,7 @@ class TestObjectVectorRateResultPlot:
 
 
 class TestObjectVectorRateResultPreferredDistance:
-    """Test preferred_distance() method of ObjectVectorRateResult."""
+    """Test preferred_distance method of ObjectVectorRateResult."""
 
     def test_preferred_distance_returns_float(
         self,
@@ -697,7 +697,7 @@ class TestObjectVectorRateResultPreferredDistance:
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that preferred_distance() returns a float."""
+        """Test that preferred_distance returns a float."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         result = ObjectVectorRateResult(
@@ -707,7 +707,7 @@ class TestObjectVectorRateResultPreferredDistance:
             env=sample_env,
         )
 
-        dist = result.preferred_distance()
+        dist = result.preferred_distance
         assert isinstance(dist, float)
 
     def test_preferred_distance_is_nonnegative(
@@ -716,7 +716,7 @@ class TestObjectVectorRateResultPreferredDistance:
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that preferred_distance() returns a non-negative value."""
+        """Test that preferred_distance returns a non-negative value."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         result = ObjectVectorRateResult(
@@ -726,7 +726,7 @@ class TestObjectVectorRateResultPreferredDistance:
             env=sample_env,
         )
 
-        dist = result.preferred_distance()
+        dist = result.preferred_distance
         assert dist >= 0.0
 
     def test_preferred_distance_within_range(
@@ -735,7 +735,7 @@ class TestObjectVectorRateResultPreferredDistance:
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that preferred_distance() is within distance_range."""
+        """Test that preferred_distance is within distance_range."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         distance_range = (0.0, 50.0)
@@ -746,7 +746,7 @@ class TestObjectVectorRateResultPreferredDistance:
             env=sample_env,
         )
 
-        dist = result.preferred_distance()
+        dist = result.preferred_distance
         # Should be approximately within distance range (accounting for bin centers)
         assert dist >= distance_range[0] - 5.0  # Allow some margin for bin centers
         assert dist <= distance_range[1] + 5.0
@@ -756,7 +756,7 @@ class TestObjectVectorRateResultPreferredDistance:
         sample_env: Environment,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that preferred_distance() corresponds to peak firing bin."""
+        """Test that preferred_distance corresponds to peak firing bin."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         # Create firing rate with known peak
@@ -772,14 +772,14 @@ class TestObjectVectorRateResultPreferredDistance:
             env=sample_env,
         )
 
-        dist = result.preferred_distance()
+        dist = result.preferred_distance
         # Distance is first component (index 0) of bin_centers
         expected_dist = float(sample_env.bin_centers[peak_idx, 0])
         assert dist == expected_dist
 
 
 class TestObjectVectorRateResultPreferredDirection:
-    """Test preferred_direction() method of ObjectVectorRateResult."""
+    """Test preferred_direction method of ObjectVectorRateResult."""
 
     def test_preferred_direction_returns_float(
         self,
@@ -787,7 +787,7 @@ class TestObjectVectorRateResultPreferredDirection:
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that preferred_direction() returns a float."""
+        """Test that preferred_direction returns a float."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         result = ObjectVectorRateResult(
@@ -797,7 +797,7 @@ class TestObjectVectorRateResultPreferredDirection:
             env=sample_env,
         )
 
-        direction = result.preferred_direction()
+        direction = result.preferred_direction
         assert isinstance(direction, float)
 
     def test_preferred_direction_in_valid_range(
@@ -806,7 +806,7 @@ class TestObjectVectorRateResultPreferredDirection:
         single_neuron_firing_rate: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that preferred_direction() is in [-pi, pi] range.
+        """Test that preferred_direction is in [-pi, pi] range.
 
         The sample_env fixture's 12 direction bins are centered on the
         sampled directions, from -pi to pi - pi/6.
@@ -820,7 +820,7 @@ class TestObjectVectorRateResultPreferredDirection:
             env=sample_env,
         )
 
-        direction = result.preferred_direction()
+        direction = result.preferred_direction
         assert -np.pi - 1e-9 <= direction <= np.pi
 
     def test_preferred_direction_corresponds_to_peak_bin(
@@ -828,7 +828,7 @@ class TestObjectVectorRateResultPreferredDirection:
         sample_env: Environment,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that preferred_direction() corresponds to peak firing bin."""
+        """Test that preferred_direction corresponds to peak firing bin."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         # Create firing rate with known peak
@@ -844,7 +844,7 @@ class TestObjectVectorRateResultPreferredDirection:
             env=sample_env,
         )
 
-        direction = result.preferred_direction()
+        direction = result.preferred_direction
         # Direction is second component (index 1) of bin_centers
         expected_direction = float(sample_env.bin_centers[peak_idx, 1])
         assert direction == expected_direction
@@ -879,7 +879,7 @@ class TestObjectVectorRateResultPreferredDirection:
             env=sample_env,
         )
 
-        direction = result.preferred_direction()
+        direction = result.preferred_direction
         # Should be close to 0 (ahead)
         assert abs(direction) < np.pi / 6  # Within 30 degrees of ahead
 
@@ -892,7 +892,7 @@ class TestObjectVectorRateResultConvenienceMethodsWithNaN:
         sample_env: Environment,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test preferred_distance() works with NaN values in firing rate."""
+        """Test preferred_distance works with NaN values in firing rate."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         n_bins = sample_env.n_bins
@@ -906,7 +906,7 @@ class TestObjectVectorRateResultConvenienceMethodsWithNaN:
             env=sample_env,
         )
 
-        dist = result.preferred_distance()
+        dist = result.preferred_distance
         # Should return distance of the only non-NaN bin
         expected_dist = float(sample_env.bin_centers[10, 0])
         assert dist == expected_dist
@@ -916,7 +916,7 @@ class TestObjectVectorRateResultConvenienceMethodsWithNaN:
         sample_env: Environment,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test preferred_direction() works with NaN values in firing rate."""
+        """Test preferred_direction works with NaN values in firing rate."""
         from neurospatial.encoding.egocentric import ObjectVectorRateResult
 
         n_bins = sample_env.n_bins
@@ -930,7 +930,7 @@ class TestObjectVectorRateResultConvenienceMethodsWithNaN:
             env=sample_env,
         )
 
-        direction = result.preferred_direction()
+        direction = result.preferred_direction
         # Should return direction of the only non-NaN bin
         expected_direction = float(sample_env.bin_centers[15, 1])
         assert direction == expected_direction
@@ -1258,7 +1258,7 @@ class TestObjectVectorRatesResultPlot:
         batch_firing_rates: np.ndarray,
         single_neuron_occupancy: np.ndarray,
     ) -> None:
-        """Test that plot() requires idx parameter."""
+        """plot() without ``idx`` says how to choose a unit's 2-D map."""
         from neurospatial.encoding.egocentric import ObjectVectorRatesResult
 
         result = ObjectVectorRatesResult(
@@ -1268,9 +1268,8 @@ class TestObjectVectorRatesResultPlot:
             env=sample_env,
         )
 
-        # Should raise TypeError without idx
-        with pytest.raises(TypeError):
-            result.plot()  # type: ignore[call-arg]
+        with pytest.raises(ValueError, match=r"requires a unit index(.|\n)*Fix:"):
+            result.plot()
 
     def test_plot_accepts_ax_parameter(
         self,
@@ -1395,7 +1394,7 @@ class TestObjectVectorRatesResultPreferredDistances:
         batch_distances = result.preferred_distances()
         for i, single in enumerate(result):
             np.testing.assert_almost_equal(
-                batch_distances[i], single.preferred_distance()
+                batch_distances[i], single.preferred_distance
             )
 
 
@@ -1459,7 +1458,7 @@ class TestObjectVectorRatesResultPreferredDirections:
         batch_directions = result.preferred_directions()
         for i, single in enumerate(result):
             np.testing.assert_almost_equal(
-                batch_directions[i], single.preferred_direction()
+                batch_directions[i], single.preferred_direction
             )
 
 
@@ -1798,7 +1797,6 @@ class TestObjectVectorRatesResultSummaryTable:
         assert list(df.columns) == [
             "peak_firing_rate",
             "preferred_distance",
-            "preferred_direction_deg",
             "preferred_direction",
             "spatial_information",
             "spatial_information_bias",
@@ -1904,28 +1902,6 @@ class TestObjectVectorRatesResultSummaryTable:
         expected = result.preferred_directions()
         np.testing.assert_array_almost_equal(df["preferred_direction"].values, expected)
 
-    def test_summary_table_preferred_direction_deg_correctness(
-        self,
-        sample_env: Environment,
-        batch_firing_rates: np.ndarray,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """summary_table() preferred_direction_deg should be degrees of preferred_direction."""
-        from neurospatial.encoding.egocentric import ObjectVectorRatesResult
-
-        result = ObjectVectorRatesResult(
-            direction_frame="egocentric",
-            firing_rates=batch_firing_rates,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-        )
-
-        df = result.summary_table()
-        expected = np.degrees(result.preferred_directions())
-        np.testing.assert_array_almost_equal(
-            df["preferred_direction_deg"].values, expected
-        )
-
     def test_summary_table_peak_rate_correctness(
         self,
         sample_env: Environment,
@@ -1989,7 +1965,6 @@ class TestObjectVectorRatesResultSummaryTable:
         assert df.index.name == "unit_id"
         assert "preferred_distance" in df.columns
         assert "preferred_direction" in df.columns
-        assert "preferred_direction_deg" in df.columns
         assert "peak_firing_rate" in df.columns
         assert "is_object_vector_cell" in df.columns
 

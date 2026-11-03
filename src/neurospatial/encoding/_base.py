@@ -421,7 +421,6 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         ['method', 'n_bins', 'peak_firing_rate', 'sparsity', 'spatial_information', 'spike_window', 'spike_window_assumed', 'total_occupancy']
         """
         rates = _to_numpy(self._get_rates())
-        occupancy = _to_numpy(self.occupancy)
 
         # An empty result (0 neurons in a batch, or 0 bins) has no firing-rate
         # values to reduce over. np.nanmax over a zero-size axis raises
@@ -436,13 +435,13 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         out: dict[str, Any] = {}
         if rates.ndim > 1:
             out["n_units"] = int(rates.shape[0])
-        out["n_bins"] = int(rates.shape[-1])
+        out["n_bins"] = self.n_bins
         out["max_peak_firing_rate" if rates.ndim > 1 else "peak_firing_rate"] = (
             peak_value
         )
         if rates.ndim == 1:
             out.update(self._headline_metrics())
-        out["total_occupancy"] = float(np.nansum(occupancy))
+        out["total_occupancy"] = self.total_occupancy
         out["spike_window_assumed"] = self.spike_window_assumed
         out["spike_window"] = (
             None if self.spike_window is None else self.spike_window.tolist()
@@ -451,6 +450,16 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         if hasattr(self, "direction_frame"):
             out["direction_frame"] = self.direction_frame
         return out
+
+    @property
+    def n_bins(self) -> int:
+        """Number of bins of the rate map."""
+        return int(np.shape(self._get_rates())[-1])
+
+    @property
+    def total_occupancy(self) -> float:
+        """Seconds of occupancy summed over the bins."""
+        return float(np.nansum(_to_numpy(self.occupancy)))
 
     def _headline_metrics(self) -> dict[str, float]:
         """O(n_bins) singular metrics displayed by summary and repr."""
@@ -527,15 +536,7 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
         data["method"] = self.method
 
         frame = pd.DataFrame(data)
-        coordinate_units = getattr(getattr(self, "env", None), "units", None)
-        frame.attrs["units"] = {
-            "firing_rate": "Hz",
-            "occupancy": "s",
-            **{
-                name: "rad" if name.endswith("angle") else coordinate_units or ""
-                for name in self._bin_center_columns()
-            },
-        }
+        frame.attrs["units"] = self._column_units()
         frame.attrs.update(self._analysis_attrs())
         frame["spatial_support"] = np.tile(self.spatial_support, n_neurons)
         return frame
@@ -593,7 +594,31 @@ class SpatialResultMixin(ResultMixin, ReadOnlyArraysMixin):
             attrs={**rate_xarray_attrs(self), **self._xarray_attrs()},
         )
         dataset["spatial_support"] = ("bin", self.spatial_support)
+        # Each variable carries its own unit, spelled as in the tables.
+        for name, unit in self._column_units().items():
+            if name in dataset.variables:
+                dataset[name].attrs["units"] = unit
         return dataset
+
+    def _column_units(self) -> dict[str, str]:
+        """Unit of the rate, occupancy and bin-center columns and variables.
+
+        Bin centers named ``*angle`` are radians; the others take
+        :meth:`_coordinate_units` (``""`` when unknown).
+        """
+        coordinate_units = self._coordinate_units() or ""
+        return {
+            "firing_rate": "Hz",
+            "occupancy": "s",
+            **{
+                name: "rad" if name.endswith("angle") else coordinate_units
+                for name in self._bin_center_columns()
+            },
+        }
+
+    def _coordinate_units(self) -> str | None:
+        """Unit of the bin coordinates: the environment's, when there is one."""
+        return getattr(getattr(self, "env", None), "units", None)
 
     def _xarray_attrs(self) -> dict[str, Any]:
         """Family metadata; concrete rate results override this hook."""
@@ -939,6 +964,17 @@ class PopulationRateMixin(_RateResultMixin, UnitSelectionMixin, Generic[_UnitRes
     def __len__(self) -> int:
         """Number of units (rows of ``firing_rates``)."""
         return int(np.shape(self._get_rates())[0])
+
+    @property
+    def n_units(self) -> int:
+        """Number of units, ``len(result)``."""
+        return len(self)
+
+    @property
+    def max_peak_firing_rate(self) -> float:
+        """Highest peak firing rate over the units (Hz); NaN without any."""
+        peaks = np.asarray(self.peak_firing_rate()) if len(self) else np.array([np.nan])
+        return float("nan") if np.isnan(peaks).all() else float(np.nanmax(peaks))
 
     def __iter__(self) -> Iterator[_UnitResultT]:
         """Each unit's single-unit result, in stored order."""

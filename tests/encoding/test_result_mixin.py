@@ -163,21 +163,44 @@ def test_result_to_dataframe_tidy(
 
 
 def test_place_fields_result_surface() -> None:
-    result = PlaceFieldsResult(fields=[np.array([0, 1]), np.array([5])])
+    from neurospatial import Environment
+
+    env = Environment.from_samples(np.arange(10.0)[:, None], bin_size=1.0, units="cm")
+    rate = np.arange(10.0)
+    result = PlaceFieldsResult(
+        fields=[np.array([0, 1]), np.array([5])],
+        env=env,
+        firing_rate=rate,
+        bandwidth=0.0,
+        unit_id=4,
+    )
     s = result.summary()
     assert s["n_fields"] == 2
     assert s["total_bins"] == 3
 
+    # One row per field, computed from the field's own bins.
     df = result.to_dataframe()
-    assert df["field"].tolist() == [0, 0, 1]
-    assert df["bin"].tolist() == [0, 1, 5]
+    assert df["unit_id"].tolist() == [4, 4]
+    assert df["field"].tolist() == [0, 1]
+    assert df["n_bins"].tolist() == [2, 1]
+    np.testing.assert_allclose(df["area"], [2.0, 1.0])  # 1 cm bins
+    np.testing.assert_allclose(df["peak_rate"], [1.0, 5.0])
+    assert df.attrs["units"]["area"] == "cm"
+    assert df.attrs["units"]["peak_rate"] == "Hz"
 
-    # Empty / excluded result yields an empty tidy frame with the columns.
-    excluded = PlaceFieldsResult(fields=[], excluded_reason="mean_rate_above_threshold")
+    # Empty / excluded result yields an empty table with the columns.
+    excluded = PlaceFieldsResult(
+        fields=[],
+        env=env,
+        firing_rate=rate,
+        bandwidth=0.0,
+        excluded_reason="mean_rate_above_threshold",
+    )
     assert excluded.summary()["n_excluded"] == 1
     empty_df = excluded.to_dataframe()
-    assert list(empty_df.columns) == ["field", "bin"]
+    assert list(empty_df.columns[:3]) == ["unit_id", "field", "n_bins"]
     assert len(empty_df) == 0
+    assert excluded.summary_table().index.isna().all()
 
 
 def test_existing_accessors_preserved(spatial_result: object) -> None:

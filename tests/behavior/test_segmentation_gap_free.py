@@ -35,12 +35,11 @@ speed moved to 42.219 cm/s, and the minimum speed, during a true pause, from
 leaks into it. ``compute_vte_session`` was captured again when the session
 result began to keep the input trials' ``interval_ids``; its trial results
 are unchanged. ``compute_decision_analysis``'s ``distance_to_decision_boundary``
-is no longer read from the stored capture: since each goal region is measured
-to its nearest bin and the distance is taken from the position itself, it is
-computed here independently. The track is a fully binned rectangle, so a
-shortest path inside it is a straight line, and the distance is half the
-difference of the straight-line distances from each position to the nearest
-bin center of each goal region.
+is no longer read from the stored capture: each goal region is measured to
+its edge from the position itself, so it is computed here independently. The
+track is a fully binned rectangle, so a shortest path inside it is a straight
+line, and the distance is half the difference of the straight-line distances
+from each position to each goal region's polygon.
 """
 
 import json
@@ -48,7 +47,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from scipy.spatial.distance import cdist
 
 from ._segmentation_snapshots import capture_segmentation_outputs, structural_snapshot
 
@@ -62,12 +60,15 @@ def _boundary_distance_by_hand(track):
     """Half the gap between straight-line distances to the two goal regions.
 
     The track's bins tile a rectangle, so the shortest path inside it from a
-    position to a bin center is the straight line.
+    position to a goal region is the straight line to the region's polygon.
     """
+    import shapely
+
     env = track.env
+    points = shapely.points(track.positions)
     distances = np.stack(
         [
-            cdist(track.positions, env.bin_centers[env.bins_in_region(name)]).min(1)
+            shapely.distance(env.regions[name].data, points)
             for name in ("source", "target")
         ]
     )
@@ -89,6 +90,9 @@ def gap_free_goldens(continuous_pause_track):
         "distance_to_decision_boundary"
     ]
     boundary["values"] = _boundary_distance_by_hand(continuous_pause_track).tolist()
+    # The VTE session result later gained ``units`` (the environment's, "cm");
+    # its trial results are unchanged.
+    goldens["compute_vte_session"]["fields"]["units"] = "cm"
     return goldens
 
 

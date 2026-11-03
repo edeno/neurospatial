@@ -1535,15 +1535,16 @@ class ReplayDetectionResult(ResultMixin):
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result.
 
-        ``n_shuffles_used`` is NaN when no shuffle was scored. A joint
+        ``n_shuffles_used`` is None when no shuffle was scored (NaN in the
+        tables built from these rows). A joint
         decode adds the tested ``template``. A method with a segmentation
         adds ``n_segments`` and the tested segment's ``segment_start_time``
         and ``segment_end_time`` (NaN without one). A method with tested
-        quantities adds each quantity's value under its name, such as
-        ``mean_spread``, and its p-value, ``p_value[mean_spread]``. Each
-        criterion adds the value it was compared on, ``value[label]`` (the
+        quantities adds each quantity's value, ``tested_values[mean_spread]``,
+        and its p-value, ``tested_p_values[mean_spread]``. Each
+        criterion adds the value it was compared on, ``values[label]`` (the
         raw value, before ``absolute`` and the ``relative_to`` scale), and
-        each null of the score's test its z-score, ``z_score[null]``.
+        each null of the score's test its z-score, ``z_scores[null]``.
         ``error``, last, says why the event has no verdict (empty when it
         has one).
         """
@@ -1552,14 +1553,15 @@ class ReplayDetectionResult(ResultMixin):
             "is_replay": self.is_replay,
             "score": self.score,
             "p_value": self.p_value,
-            "n_shuffles_used": np.nan
-            if self.n_shuffles_used is None
-            else self.n_shuffles_used,
-            **{f"passes[{label}]": ok for label, ok in self.criteria.items()},
-            **{f"value[{label}]": value for label, value in self.values.items()},
-            **{f"z_score[{name}]": z for name, z in self.z_scores.items()},
-            **self.tested_values,
-            **{f"p_value[{name}]": p for name, p in self.tested_p_values.items()},
+            "n_shuffles_used": self.n_shuffles_used,
+            **{f"criteria[{label}]": ok for label, ok in self.criteria.items()},
+            **{f"values[{label}]": value for label, value in self.values.items()},
+            **{f"z_scores[{name}]": z for name, z in self.z_scores.items()},
+            **{f"tested_values[{name}]": v for name, v in self.tested_values.items()},
+            **{
+                f"tested_p_values[{name}]": p
+                for name, p in self.tested_p_values.items()
+            },
         }
         if self.template is not None:
             values["template"] = self.template
@@ -3728,14 +3730,14 @@ def compare_replay_methods(
         One row per (event, method): ``event``, ``method``, ``is_replay``,
         ``score``, ``p_value``, ``n_shuffles_used`` (the shuffles the
         p-value counts, smallest over the method's nulls; NaN for methods
-        without shuffles), one ``passes[...]`` column per criterion and a
-        ``value[...]`` column with the value it was compared on (such as
-        ``value[max_map_jump < 0.4 x track_length]``, the raw jump in
-        environment units), a ``z_score[...]`` column per null of the
-        score's shuffle test (``z_score[place_field_circular]`` is rZ of
-        Grosmark & Buzsáki 2016 with ``use_absolute=True``; ``z_score[
+        without shuffles), one ``criteria[...]`` column per criterion and a
+        ``values[...]`` column with the value it was compared on (such as
+        ``values[max_map_jump < 0.4 x track_length]``, the raw jump in
+        environment units), a ``z_scores[...]`` column per null of the
+        score's shuffle test (``z_scores[place_field_circular]`` is rZ of
+        Grosmark & Buzsáki 2016 with ``use_absolute=True``; ``z_scores[
         cell_order]`` for a rank-order permutation test), each
-        tested quantity's value and ``p_value[...]`` for methods with
+        tested quantity's value and ``tested_p_values[...]`` for methods with
         ``tested_quantities`` (NaN for the others),
         ``n_segments``, ``segment_start_time`` and ``segment_end_time`` for
         methods with a segmentation (NaN for the others), ``template`` for
@@ -3743,7 +3745,7 @@ def compare_replay_methods(
         chosen), for rank-order methods given a mapping of rate maps and
         for the arm or pair an arm method found, and ``error``.
         ``error`` says why an event has no verdict, and ``is_replay`` and
-        every ``passes[...]`` of the method are then False: fewer than two
+        every ``criteria[...]`` of the method are then False: fewer than two
         time bins left to score (``"fewer than two time bins with spikes to
         score"`` for a method that drops or zeroes time bins without
         spikes), a null whose every shuffle has an undefined score (the
@@ -3765,7 +3767,7 @@ def compare_replay_methods(
         finds no segment has a verdict, not an error: score NaN,
         ``n_segments`` 0, ``is_replay`` False and an empty ``error``. An
         arm method's checks are named by the event's arms and pairs, so an
-        arm event too short to score has none (its ``passes[...]`` are
+        arm event too short to score has none (its ``criteria[...]`` are
         NaN).
         ``table.attrs["rng_entropy"]`` holds the seed the streams derive
         from; passing it as ``rng`` reproduces the table, also when ``rng``
@@ -3775,13 +3777,13 @@ def compare_replay_methods(
         :class:`ReplayDetectionResult`). For the pooled-SSI test it compares
         the score with the epoch's shuffles, not ``p_value`` with
         ``alpha``. For an arm method it means an arm or pair was reported,
-        and the ``passes[...]`` columns hold every arm's and pair's checks,
+        and the ``criteria[...]`` columns hold every arm's and pair's checks,
         which need not all pass. An arm method with ``arm_fallback``
         (``BERNERS_LEE_2021``) also calls an event replay on a sustained
         run that met none of the sequence rules: its row has
-        ``passes[sequence]`` False and a ``score`` that can be below the
+        ``criteria[sequence]`` False and a ``score`` that can be below the
         threshold or NaN. Count only sequence replays with
-        ``table["is_replay"] & table["passes[sequence]"].eq(True)``.
+        ``table["is_replay"] & table["criteria[sequence]"].eq(True)``.
 
     Raises
     ------

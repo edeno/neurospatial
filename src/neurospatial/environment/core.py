@@ -788,7 +788,8 @@ class Environment(Generic[_C]):
         """Generate an informative single-line string representation.
 
         Returns a concise, single-line representation showing the environment's
-        name, dimensionality, number of bins, and layout type. This method
+        name, dimensionality, number of bins, typical bin size
+        (:attr:`bin_spacing`) with its units, and layout type. This method
         follows Python repr best practices by being informative rather than
         reconstructive for complex objects.
 
@@ -811,9 +812,11 @@ class Environment(Generic[_C]):
         >>> import numpy as np
         >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
         >>> samples = np.c_[x.ravel(), y.ravel()]
-        >>> env = Environment.from_samples(samples, bin_size=2.0, name="MyEnv")
+        >>> env = Environment.from_samples(
+        ...     samples, bin_size=2.0, name="MyEnv", units="cm"
+        ... )
         >>> env
-        Environment(name='MyEnv', 2D, 36 bins, RegularGrid)
+        Environment(name='MyEnv', 2D, 36 bins @ 2 cm, RegularGrid)
 
         """
         return _repr(
@@ -822,6 +825,8 @@ class Environment(Generic[_C]):
             n_dims=self.n_dims,
             n_bins=self.n_bins,
             layout_type=self.layout_type,
+            bin_spacing=self.bin_spacing,
+            units=self.units,
         )
 
     def __str__(self) -> str:
@@ -829,7 +834,7 @@ class Environment(Generic[_C]):
 
         ``str(env)`` returns the same multi-line summary that
         ``env.info()`` produces. ``repr(env)`` keeps its single-line
-        ``Environment(name=..., 2D, 100 bins, RegularGrid)`` shape for
+        ``Environment(name=..., 2D, 100 bins @ 2 cm, RegularGrid)`` shape for
         interactive debugging and logs.
         """
         return self.info()

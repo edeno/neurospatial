@@ -204,6 +204,35 @@ class SpatialFeatureResult(ReadOnlyArraysMixin, ResultMixin):
         df.attrs.update(units=self.units, frame=self.frame)
         return df
 
+    @property
+    def n_samples(self) -> int:
+        """Number of samples."""
+        return int(self.values.shape[0])
+
+    @property
+    def n_features(self) -> int:
+        """Number of features."""
+        return int(self.values.shape[-1])
+
+    @property
+    def n_points(self) -> int:
+        """Points per sample (0 without a point axis)."""
+        return int(self.values.shape[1]) if self.values.ndim == 3 else 0
+
+    @property
+    def fraction_supported(self) -> float:
+        """Fraction of sampled values that are supported; NaN without any."""
+        return (
+            float(self.support.sum() / self.support.size)
+            if self.support.size
+            else float("nan")
+        )
+
+    @property
+    def n_outside(self) -> int:
+        """Sampled locations outside the environment."""
+        return int(np.count_nonzero(self.bins < 0))
+
     def summary(self) -> dict[str, Any]:
         """Scalar description of how much of the sampling was supported.
 
@@ -231,15 +260,12 @@ class SpatialFeatureResult(ReadOnlyArraysMixin, ResultMixin):
         >>> summary["fraction_supported"], summary["n_outside"]
         (0.5, 1)
         """
-        n_values = self.support.size
         return {
-            "n_samples": int(self.values.shape[0]),
-            "n_features": int(self.values.shape[-1]),
-            "n_points": int(self.values.shape[1]) if self.values.ndim == 3 else 0,
-            "fraction_supported": (
-                float(self.support.sum() / n_values) if n_values else float("nan")
-            ),
-            "n_outside": int(np.count_nonzero(self.bins < 0)),
+            "n_samples": self.n_samples,
+            "n_features": self.n_features,
+            "n_points": self.n_points,
+            "fraction_supported": self.fraction_supported,
+            "n_outside": self.n_outside,
         }
 
 

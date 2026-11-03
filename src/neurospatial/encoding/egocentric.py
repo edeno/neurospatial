@@ -72,7 +72,11 @@ from neurospatial._intervals import (
 from neurospatial._observation import validate_break_before
 from neurospatial._plotting import _require_polar
 from neurospatial._pynapple import reads_pynapple_samples
-from neurospatial._results import _copy_analysis_settings, _copy_unit_table
+from neurospatial._results import (
+    _copy_analysis_settings,
+    _copy_unit_table,
+    unit_index_required,
+)
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.encoding._base import (
@@ -281,7 +285,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
     **Reference frame**: ``direction_frame`` records how direction to the
     object was computed: allocentric (0 = East, +pi/2 = North) or egocentric
     (0 = ahead, +pi/2 = left). The object-to-animal vector is reversed: add
-    pi to ``preferred_direction()`` and wrap to [-pi, pi].
+    pi to ``preferred_direction`` and wrap to [-pi, pi].
 
     Examples
     --------
@@ -402,8 +406,8 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
                 "preferred_direction": float("nan"),
             }
         return {
-            "preferred_distance": float(self.preferred_distance()),
-            "preferred_direction": float(self.preferred_direction()),
+            "preferred_distance": float(self.preferred_distance),
+            "preferred_direction": float(self.preferred_direction),
         }
 
     def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
@@ -450,6 +454,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(_to_numpy(self.firing_rate), ax=ax, **kwargs)
 
+    @property
     def preferred_distance(self) -> float:
         """Distance to object at peak firing rate.
 
@@ -491,7 +496,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         ...     distance_range=(0.0, 50.0),
         ...     distance_bin_size=5.0,
         ... )
-        >>> dist = result.preferred_distance()
+        >>> dist = result.preferred_distance
         >>> print(f"Preferred distance: {dist:.1f} cm")
         Preferred distance: 2.5 cm
 
@@ -502,6 +507,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         """
         return float(self._peak_coordinates(0)[0])
 
+    @property
     def preferred_direction(self) -> float:
         """Direction from the animal to the object at peak firing rate.
 
@@ -535,7 +541,7 @@ class ObjectVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
         ...     distance_range=(0.0, 50.0),
         ...     distance_bin_size=5.0,
         ... )
-        >>> direction = result.preferred_direction()
+        >>> direction = result.preferred_direction
         >>> print(f"Preferred direction: {np.degrees(direction):.1f}")
         Preferred direction: -45.0
 
@@ -979,7 +985,9 @@ class ObjectVectorRatesResult(
             bandwidth=self.bandwidth,
         )
 
-    def plot(self, idx: int, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(
+        self, idx: int | None = None, *, ax: Axes | None = None, **kwargs: Any
+    ) -> Axes:
         """Plot the object-vector rate map for a specific neuron.
 
         Delegates to the polar environment's plot_field method for
@@ -988,7 +996,9 @@ class ObjectVectorRatesResult(
         Parameters
         ----------
         idx : int
-            Index of the neuron to plot (0-indexed).
+            Position of the neuron to plot (0-indexed). Required: each
+            unit's map is 2-D (distance by direction), so ``None`` raises a
+            ``ValueError`` that says how to pick a unit.
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, creates a new figure and axes.
         **kwargs
@@ -1024,6 +1034,8 @@ class ObjectVectorRatesResult(
         preferred_distances : Get distance preferences for all neurons
         ObjectVectorRateResult.plot : Plot for single-neuron result
         """
+        if idx is None:
+            raise unit_index_required(len(self), what="object-vector rate map")
         kwargs.setdefault("colorbar_label", "Firing rate (Hz)")
         return self.env.plot_field(
             _to_numpy(self.firing_rates[idx]),  # type: ignore[index]
@@ -1337,9 +1349,8 @@ class ObjectVectorRatesResult(
             - peak_firing_rate: maximum firing rate (Hz)
             - preferred_distance: preferred distance to the object, in the
               environment's length units (``df.attrs["units"]``)
-            - preferred_direction_deg: preferred direction (degrees in
-              ``result.direction_frame``)
-            - preferred_direction: preferred direction (radians, same frame)
+            - preferred_direction: preferred direction (radians, in
+              ``result.direction_frame``; ``np.degrees`` converts)
             - spatial_information: Skaggs information of the polar map
               (bits/spike)
             - spatial_information_bias: the information an untuned cell
@@ -1407,7 +1418,7 @@ class ObjectVectorRatesResult(
         ... )
         >>> df = result.summary_table()
         >>> list(df.columns)
-        ['peak_firing_rate', 'preferred_distance', 'preferred_direction_deg', 'preferred_direction', 'spatial_information', 'spatial_information_bias', 'n_spikes_outside_intervals', 'is_object_vector_cell']
+        ['peak_firing_rate', 'preferred_distance', 'preferred_direction', 'spatial_information', 'spatial_information_bias', 'n_spikes_outside_intervals', 'is_object_vector_cell']
         >>> len(df)
         3
         >>> df.index.name
@@ -1687,8 +1698,8 @@ def compute_egocentric_rate(
     >>> # Access results
     >>> result.firing_rate.shape
     (120,)
-    >>> pref_dist = result.preferred_distance()
-    >>> pref_dir = result.preferred_direction()
+    >>> pref_dist = result.preferred_distance
+    >>> pref_dir = result.preferred_direction
     >>> info = result.spatial_information()
     >>> is_object_vector_cell = result.is_object_vector_cell()
 
@@ -2796,8 +2807,8 @@ def compute_egocentric_rates(
 
     >>> # Iterate over neurons
     >>> for i, single in enumerate(result):
-    ...     pref_dist = single.preferred_distance()
-    ...     pref_dir = single.preferred_direction()
+    ...     pref_dist = single.preferred_distance
+    ...     pref_dir = single.preferred_direction
     ...     print(f"Neuron {i}: {pref_dist:.1f} cm at {np.degrees(pref_dir):.0f} deg")
     Neuron 0: 2.5 cm at 15 deg
     Neuron 1: 52.5 cm at -135 deg
@@ -4741,7 +4752,13 @@ def _object_vector_significance(
         min_shift=min_shift,
         rng=rng,
     )
-    return to_shuffle_results(observed, null, ids)
+    return to_shuffle_results(
+        observed,
+        null,
+        ids,
+        statistic="spatial_information",
+        statistic_units="bits/spike",
+    )
 
 
 @reads_pynapple_samples

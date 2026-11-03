@@ -104,7 +104,7 @@ class TestUndefinedEventScore:
         assert np.isnan(result.score)
         assert np.isnan(result.p_value)
         assert not any(result.criteria.values())
-        assert np.isnan(result.summary()["n_shuffles_used"])
+        assert result.summary()["n_shuffles_used"] is None
         assert result.error.startswith("score undefined")
         assert list(result.summary())[-1] == "error"
 
@@ -128,7 +128,7 @@ class TestUndefinedEventScore:
         }
         assert not still["is_replay"].any()
         assert still["p_value"].isna().all()
-        criterion = "passes[n_active_cells >= 4]"
+        criterion = "criteria[n_active_cells >= 4]"
         assert still.loc["wu_2017", criterion] is False
         good = table[table["event"] == 0]
         assert (good["error"] == "").all()
@@ -442,7 +442,7 @@ class TestUndefinedShuffles:
         used = result.n_shuffles_used["column_cycle"]
         assert 0 < used < 200
         assert used == finite.sum()
-        assert result.summary()["column_cycle_n_shuffles_used"] == used
+        assert result.summary()["n_shuffles_used[column_cycle]"] == used
         assert np.isfinite(test.z_score)
         observed = test.observed_score
         expected = (np.sum(test.null_scores[finite] >= observed) + 1) / (used + 1)
@@ -481,7 +481,7 @@ class TestCompareInputs:
             spike_counts=[good_counts, one_bin],
             rng=0,
         )
-        column = "passes[n_active_cells >= 5]"
+        column = "criteria[n_active_cells >= 5]"
         assert table.loc[1, "error"] != ""
         assert not table.loc[1, column]  # False, not NaN (truthy)
         assert table[column].astype(bool).tolist() == [True, False]

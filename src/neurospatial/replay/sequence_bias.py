@@ -98,13 +98,27 @@ class PairwiseBiasResult(ReadOnlyArraysMixin, ResultMixin):
         """Own read-only copies of the arrays."""
         self._own_arrays()
 
+    @property
+    def n_units(self) -> int:
+        """Number of units."""
+        return int(self.n_spikes.size)
+
+    @property
+    def n_active_cells(self) -> int:
+        """Units with at least one spike."""
+        return int(np.sum(self.n_spikes > 0))
+
+    @property
+    def n_pairs(self) -> int:
+        """Unit pairs with a defined bias."""
+        return int(np.sum(np.triu(np.isfinite(self.bias), 1)))
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
-        upper = np.triu(np.isfinite(self.bias), 1)
         return {
-            "n_units": int(self.n_spikes.size),
-            "n_active_cells": int(np.sum(self.n_spikes > 0)),
-            "n_pairs": int(np.sum(upper)),
+            "n_units": self.n_units,
+            "n_active_cells": self.n_active_cells,
+            "n_pairs": self.n_pairs,
         }
 
 
@@ -151,12 +165,17 @@ class BiasSimilarityResult(ReadOnlyArraysMixin, ResultMixin):
         """Own read-only copies of the arrays."""
         self._own_arrays()
 
+    @property
+    def n_shuffles_used(self) -> int:
+        """Shuffles with a defined similarity: the n of the p-value."""
+        return int(np.sum(np.isfinite(self.null_similarities)))
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar headline metrics for this result."""
         return {
             "similarity": self.similarity,
             "p_value": self.p_value,
-            "n_shuffles_used": int(np.sum(np.isfinite(self.null_similarities))),
+            "n_shuffles_used": self.n_shuffles_used,
             "n_pairs": self.n_pairs,
             "n_active_cells": self.n_active_cells,
             "use_absolute": self.use_absolute,

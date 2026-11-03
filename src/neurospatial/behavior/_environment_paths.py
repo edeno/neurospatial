@@ -366,6 +366,35 @@ class EnvironmentPaths(ABC):
             out[rows] = self._directions(points[rows], point_bins[rows], target, root)
         return out
 
+    def sees(
+        self, starts: NDArray[np.float64], ends: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        """Whether each straight segment stays inside (open environments).
+
+        A segment with an end outside the environment, or a NaN end, is not
+        seen.
+        """
+        msg = f"{type(self).__name__} has no straight segments"
+        raise NotImplementedError(msg)
+
+    def to_area(
+        self,
+        source_bins: NDArray[np.intp],
+        edge_distance: NDArray[np.float64],
+        entry_distance: Callable[
+            [NDArray[np.float64], NDArray[np.intp]], NDArray[np.float64]
+        ],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+        """Each point's shortest path to the edge of an area (open environments).
+
+        A track measures to where its centerline crosses the area's edge
+        instead (:meth:`to_point` of each crossing).
+        """
+        msg = f"{type(self).__name__} has no area field"
+        raise NotImplementedError(msg)
+
     @abstractmethod
     def from_bins(self, source_bins: NDArray[np.intp]) -> NDArray[np.float64]:
         """Distance from every bin center to the nearest source bin center.
@@ -552,7 +581,8 @@ class _OpenPaths(EnvironmentPaths):
         self._nearest = float(lengths.min()) * (1 + 1e-6) if lengths.size else np.inf
         self._fields = _RootFields(n_bins)
         self._source_fields: dict[
-            tuple[int, ...], tuple[NDArray[np.float64], NDArray[np.int32]]
+            tuple[int, ...],
+            tuple[NDArray[np.float64], NDArray[np.int32], NDArray[np.int32]],
         ] = {}
 
     def pairwise(self, points: NDArray[np.float64]) -> PairDistances:
@@ -733,7 +763,76 @@ class _OpenPaths(EnvironmentPaths):
             The bin whose center the path goes to first; -1 where no source
             is reachable.
         """
-        length, anchor = self._source_field(source_bins)
+        length, anchor, _ = self._source_field(source_bins)
+        return self._corners_through(length, anchor, points, point_bins)
+
+    @override
+    def to_area(
+        self,
+        source_bins: NDArray[np.intp],
+        edge_distance: NDArray[np.float64],
+        entry_distance: Callable[
+            [NDArray[np.float64], NDArray[np.intp]], NDArray[np.float64]
+        ],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+        """Each point's shortest path to the edge of an area.
+
+        One field grows from the area's bins (``source_bins``, the bins whose
+        centers lie in it). A bin's path runs through its waypoints to the
+        last one, the lead, which sees a source center; the straight leg from
+        the lead to that center is replaced by the lead's distance to the
+        edge, ``edge_distance[lead]``. A point joins the field through a
+        visible corner, as :meth:`from_bins_at`. A source center's value is
+        minus its depth inside the area, so a point that sees one is ranked
+        by ``|point - center| - depth``, never shorter than the straight line
+        to where that line enters the area; the point's length is then that
+        entry, ``entry_distance(points, corners)``.
+
+        Parameters
+        ----------
+        source_bins : ndarray of int, shape (n_sources,)
+            Bins whose centers lie in the area.
+        edge_distance : ndarray, shape (n_bins,)
+            Signed straight distance from each bin center to the area's
+            edge: positive outside, minus the depth inside.
+        entry_distance : callable
+            ``entry_distance(points, corners)``: length of the straight line
+            from each point toward its corner's center up to the area.
+        points : ndarray, shape (n_points, n_dims)
+        point_bins : ndarray of int, shape (n_points,)
+            The points' bins, all valid.
+
+        Returns
+        -------
+        length : ndarray, shape (n_points,)
+            Path length to the area's edge; ``inf`` where it cannot be
+            reached.
+        corner : ndarray of int, shape (n_points,)
+            The bin whose center the path goes to first (a source when the
+            point sees one); -1 where the area cannot be reached.
+        """
+        length, anchor, lead = self._source_field(source_bins)
+        reached = lead >= 0
+        to_edge = np.full(self._n_bins, np.inf)
+        to_edge[reached] = (
+            length[reached] - length[lead[reached]] + edge_distance[lead[reached]]
+        )
+        total, corner = self._corners_through(to_edge, anchor, points, point_bins)
+        direct = np.flatnonzero(np.isin(corner, source_bins))
+        if direct.size:
+            total[direct] = entry_distance(points[direct], corner[direct])
+        return total, corner
+
+    def _corners_through(
+        self,
+        length: NDArray[np.float64],
+        anchor: NDArray[np.int32],
+        points: NDArray[np.float64],
+        point_bins: NDArray[np.intp],
+    ) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+        """Each point's shortest path through a corner of a grown field."""
         n_points = points.shape[0]
         # Candidate corners: the anchor of the point's bin and the anchors of
         # the bin's open neighbors, each where the point sees it, so the
@@ -1066,6 +1165,19 @@ class _OpenPaths(EnvironmentPaths):
             waypoint[rest] = first_point
         return out, waypoint
 
+    @override
+    def sees(
+        self, starts: NDArray[np.float64], ends: NDArray[np.float64]
+    ) -> NDArray[np.bool_]:
+        start_bins, end_bins = self.bins(starts), self.bins(ends)
+        out = np.zeros(starts.shape[0], dtype=bool)
+        rows = np.flatnonzero((start_bins >= 0) & (end_bins >= 0))
+        if rows.size:
+            out[rows] = self._sees(
+                starts[rows], ends[rows], start_bins[rows], end_bins[rows]
+            )
+        return out
+
     def _sees(
         self,
         starts: NDArray[np.float64],
@@ -1086,15 +1198,15 @@ class _OpenPaths(EnvironmentPaths):
 
     def _source_field(
         self, source_bins: NDArray[np.intp]
-    ) -> tuple[NDArray[np.float64], NDArray[np.int32]]:
-        """Kept field from a set of source bins: (length, anchor) per bin."""
+    ) -> tuple[NDArray[np.float64], NDArray[np.int32], NDArray[np.int32]]:
+        """Kept field from a set of source bins: (length, anchor, lead) per bin."""
         from neurospatial._lru import lru_get, lru_put
 
         key = tuple(sorted(int(b) for b in source_bins))
         cached = lru_get(self._source_fields, key)
         if cached is None:
-            length, anchor, _ = self._grow([np.asarray(key, dtype=np.intp)])
-            cached = (length[0], anchor[0])
+            length, anchor, lead = self._grow([np.asarray(key, dtype=np.intp)])
+            cached = (length[0], anchor[0], lead[0])
             lru_put(self._source_fields, key, cached, limit=_SOURCE_CACHE_LIMIT)
         return cached
 

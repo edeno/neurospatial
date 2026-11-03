@@ -300,9 +300,14 @@ class VTESessionResult(ResultMixin):
         The input trials' ``interval_ids``, one per entry of
         ``trial_results``; unique and non-negative. Default (None): ``0`` to
         ``n_trials - 1``, the ids of trials built from a list.
+    units : str or None
+        Length unit of the positions (``env.units``), so speeds are in
+        ``units`` per second. None when unknown.
     mean_head_sweep : float
         Session mean of head sweep magnitude (the z-scoring baseline), over
-        trials with an observed head sweep. NaN when no trial has one.
+        trials with an observed head sweep. NaN when no trial has one; 0.0
+        when it is below floating-point noise (1e-10 rad), as on a straight
+        run.
     std_head_sweep : float
         Session (population) std of head sweep magnitude, over the same
         trials.
@@ -351,6 +356,7 @@ class VTESessionResult(ResultMixin):
 
     trial_results: tuple[VTETrialResult, ...]
     interval_ids: NDArray[np.int64] = None  # type: ignore[assignment]
+    units: str | None = None
 
     def __post_init__(self) -> None:
         """Store the trial results as a tuple and the ids read-only."""
@@ -386,13 +392,21 @@ class VTESessionResult(ResultMixin):
 
     @property
     def mean_head_sweep(self) -> float:
-        """Session mean head sweep over trials with one; NaN without any."""
-        return _mean_or_nan(self._observed("head_sweep_magnitude"))
+        """Session mean head sweep over trials with one; NaN without any.
+
+        0.0 when the mean is below floating-point noise (``1e-10`` rad).
+        """
+        mean = _mean_or_nan(self._observed("head_sweep_magnitude"))
+        return 0.0 if abs(mean) < _NO_VARIATION_TOLERANCE else mean
 
     @property
     def std_head_sweep(self) -> float:
-        """Session std of head sweep over trials with one; NaN without any."""
-        return _std_or_nan(self._observed("head_sweep_magnitude"))
+        """Session std of head sweep over trials with one; NaN without any.
+
+        0.0 when the std is below floating-point noise (``1e-10`` rad).
+        """
+        std = _std_or_nan(self._observed("head_sweep_magnitude"))
+        return 0.0 if abs(std) < _NO_VARIATION_TOLERANCE else std
 
     @property
     def mean_speed(self) -> float:
@@ -441,6 +455,11 @@ class VTESessionResult(ResultMixin):
         """
         return sum(trial.is_vte is not None for trial in self.trial_results)
 
+    @property
+    def n_trials(self) -> int:
+        """Number of input trials."""
+        return len(self.trial_results)
+
     def summary(self) -> dict[str, Any]:
         """Flat dict of scalar session-level VTE metrics.
 
@@ -456,7 +475,7 @@ class VTESessionResult(ResultMixin):
         (0, 0, nan)
         """
         return {
-            "n_trials": len(self.trial_results),
+            "n_trials": self.n_trials,
             "n_classified": self.n_classified,
             "n_vte_trials": self.n_vte_trials,
             "vte_fraction": self.vte_fraction,
@@ -475,16 +494,33 @@ class VTESessionResult(ResultMixin):
             Indexed by ``interval_id`` (the input trials' ids), with the
             columns of :meth:`VTETrialResult.summary`: window bounds and
             ``status`` first, then the raw metrics, z-scores and VTE index,
-            and the ``is_vte`` verdict last. Join it to the trials with
+            and the ``is_vte`` verdict last, a nullable boolean column that
+            is ``<NA>`` for an unclassified trial. ``df.attrs["units"]``
+            gives each column's unit. Join it to the trials with
             ``trials.intervals_table().join(result.trials_table())``.
         """
         import pandas as pd
 
-        return pd.DataFrame(
+        table = pd.DataFrame(
             [trial.summary() for trial in self.trial_results],
             columns=list(_TRIAL_COLUMNS),
             index=pd.Index(np.array(self.interval_ids), name="interval_id"),
         )
+        table["is_vte"] = table["is_vte"].astype("boolean")
+        speed = "" if self.units is None else f"{self.units}/s"
+        table.attrs["units"] = {
+            "window_start": "s",
+            "window_end": "s",
+            "status": "",
+            "head_sweep_magnitude": "rad",
+            "mean_speed": speed,
+            "min_observed_speed": speed,
+            "z_head_sweep": "",
+            "z_speed_inverse": "",
+            "vte_index": "",
+            "is_vte": "",
+        }
+        return table
 
     def __str__(self) -> str:
         n_classified = self.n_classified
@@ -858,17 +894,37 @@ def normalize_vte_scores(
     z_head_sweeps = _observed_z_scores(
         head_sweeps,
         no_variation="No variation in head sweep magnitude across trials (std=0). "
-        "All trials have identical head sweep behavior. ",
+        "All trials have identical head sweep behavior. " + _ZERO_Z_NOTE,
         invert=False,
     )
-    # Negate the speed z-score so slower = higher score.
-    z_speed_inverse = _observed_z_scores(
+    return z_head_sweeps, _speed_z_scores(speeds)
+
+
+_ZERO_Z_NOTE = (
+    "Z-scores will be 0, and VTE classification may not be meaningful. "
+    "Consider adjusting window_duration or min_speed parameters."
+)
+
+
+def _speed_z_scores(speeds: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Negated session z-scores of speed, so slower is a higher score."""
+    return _observed_z_scores(
         speeds,
         no_variation="No variation in speed across trials (std=0). "
-        "All trials have identical speed behavior. ",
+        "All trials have identical speed behavior. " + _ZERO_Z_NOTE,
         invert=True,
     )
-    return z_head_sweeps, z_speed_inverse
+
+
+# A session standard deviation below this is floating-point noise: the trials
+# do not differ, as head sweeps on straight runs (sums of ~1e-16 rad steps).
+_NO_VARIATION_TOLERANCE = 1e-10
+
+
+def _no_variation(values: NDArray[np.float64]) -> bool:
+    """Whether two or more finite entries have no variation (std at noise)."""
+    observed = values[np.isfinite(values)]
+    return bool(observed.size > 1 and np.std(observed) < _NO_VARIATION_TOLERANCE)
 
 
 def _observed_z_scores(
@@ -882,13 +938,11 @@ def _observed_z_scores(
     observed = values[finite]
     mean = np.mean(observed)
     std = np.std(observed)
-    if std < 1e-10:
+    if std < _NO_VARIATION_TOLERANCE:
         # One observed trial always has std 0; that is not a finding.
         if observed.size > 1:
             warnings.warn(
-                no_variation + "Z-scores will be 0, and VTE classification may not be "
-                "meaningful. Consider adjusting window_duration or min_speed "
-                "parameters.",
+                no_variation,
                 category=UserWarning,
                 stacklevel=_external_stacklevel(),
             )
@@ -1349,6 +1403,9 @@ def compute_vte_session(
         measured keeps its place with NaN metrics, ``is_vte=None`` and a
         ``status`` saying why; a measured trial without an observed head
         sweep or speed has status ``"ok"``, NaN metrics and ``is_vte=None``.
+        When two or more trials have head sweeps that do not differ (session
+        std below 1e-10 rad, as on straight runs), every trial has
+        ``is_vte=None``: ranking such trials would classify on speed alone.
         Without any measured trial the session statistics and
         ``vte_fraction`` are NaN.
 
@@ -1367,7 +1424,8 @@ def compute_vte_session(
     UserWarning
         For each trial with duration but no sample in its
         ``[start_time, stop_time)`` (often trial times on another clock). Also when two or more trials
-        all have the same head sweep or speed (z-scores of 0).
+        all have the same head sweep (no trial is classified) or the same
+        speed (speed z-scores of 0).
 
     Notes
     -----
@@ -1447,7 +1505,7 @@ def compute_vte_session(
     One row per trial, in row order:
 
     >>> result.trials_table()[["status", "is_vte"]].values.tolist()
-    [['ok', False], ['ok', False], ['ok', True], ['ok', None]]
+    [['ok', False], ['ok', False], ['ok', True], ['ok', <NA>]]
     """
     from neurospatial._interval_table import require_intervals
 
@@ -1527,7 +1585,23 @@ def compute_vte_session(
     # get NaN z-scores and stay out of the baseline.
     head_sweeps = np.array([m.head_sweep_magnitude for m in measured])
     speeds = np.array([m.mean_speed for m in measured])
-    z_head_sweeps, z_speed_inv = normalize_vte_scores(head_sweeps, speeds)
+    # Trials whose head sweeps do not differ (straight runs, sums of
+    # floating-point noise) cannot be ranked by sweeping: a verdict would rest
+    # on speed alone, so they are left unclassified.
+    sweeps_vary = not _no_variation(head_sweeps)
+    z_head_sweeps = _observed_z_scores(
+        head_sweeps,
+        no_variation="No variation in head sweep magnitude across trials "
+        f"(std below {_NO_VARIATION_TOLERANCE:g} rad): every trial has the same "
+        "head sweep, as on straight runs, so is_vte is <NA> (unclassified) for "
+        "every trial instead of a verdict on speed alone.\n"
+        "Why: VTE is a trial with more head sweeping than the session's other "
+        "trials, and these trials do not differ in sweeping.\n"
+        "Fix: check that headings vary in the decision window (pass headings= "
+        "or a smaller min_speed), or widen window_duration.",
+        invert=False,
+    )
+    z_speed_inv = _speed_z_scores(speeds)
 
     trial_results = []
     for m, z_head_sweep, z_speed in zip(
@@ -1542,11 +1616,17 @@ def compute_vte_session(
                 z_head_sweep=z_head_sweep,
                 z_speed_inverse=z_speed,
                 vte_index=vte_idx,
-                is_vte=classify_vte(vte_idx, threshold=vte_threshold),
+                is_vte=(
+                    classify_vte(vte_idx, threshold=vte_threshold)
+                    if sweeps_vary
+                    else None
+                ),
             )
         )
     return VTESessionResult(
-        trial_results=tuple(trial_results), interval_ids=trials.interval_ids
+        trial_results=tuple(trial_results),
+        interval_ids=trials.interval_ids,
+        units=env.units,
     )
 
 

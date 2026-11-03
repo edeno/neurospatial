@@ -2,7 +2,8 @@
 
 A goal is a region name, a point, or one per trial. Each trial is measured
 from its own samples, as if it were the whole recording. A region is
-approached at its nearest bin.
+reached at its edge: the distance to it is 0 inside and the distance to its
+polygon outside.
 """
 
 import numpy as np
@@ -190,7 +191,7 @@ def test_overlapping_trials_are_refused_only_for_per_sample_results(arena, sessi
 
 
 def test_round_well_is_approached_at_its_center(arena):
-    """For a round well the nearest-bin direction points at the well's center."""
+    """A round well's nearest edge point lies on the line to its center."""
     times = np.arange(60) / FS
     # A run heading straight at the east well's center, from the south-west.
     start, center = np.array([40.0, 20.0]), np.array([90.0, 50.0])
@@ -201,21 +202,16 @@ def test_round_well_is_approached_at_its_center(arena):
     point = instantaneous_goal_alignment(arena, times, path, goal=center, min_speed=2.0)
     moving = np.isfinite(point)
     np.testing.assert_allclose(point[moving], 1.0, atol=1e-9)  # straight at it
-    # The nearest goal bin's center lies within half a bin diagonal of the
-    # line to the center, so the goal direction turns by at most
-    # asin(half diagonal / distance to the well's edge).
-    half_diagonal = np.sqrt(2.0) * arena.bin_spacing / 2
-    to_edge = np.linalg.norm(path - center, axis=1) - 5.0
-    bound = np.cos(np.arcsin(np.minimum(half_diagonal / to_edge, 1.0)))
-    assert np.all(region[moving] >= bound[moving] - 1e-12)
-    assert np.nanmin(region) > 0.98
+    # The well is a polygon disk: its nearest point is on the line to its
+    # center, up to the polygon's facets (well under a degree here).
+    assert np.nanmin(region[moving]) > 0.9999
 
 
-def test_arm_is_approached_at_its_nearest_bin_not_its_centroid(arena):
+def test_arm_is_approached_at_its_nearest_edge_not_its_centroid(arena):
     """Running straight at the nearest part of an arm is fully aligned."""
     times = np.arange(60) / FS
-    # North along the bin column at x = 61 cm, below the arm's west end
-    # (the arm spans x = 60..100, y = 80..90).
+    # North along x = 61 cm, below the arm's west end (the arm spans
+    # x = 60..100, y = 80..90), whose nearest edge is straight ahead.
     path = np.c_[np.full(60, 61.0), np.linspace(20, 60, 60)]
     to_arm = instantaneous_goal_alignment(
         arena, times, path, goal="north_arm", min_speed=2.0
@@ -234,10 +230,12 @@ def test_region_arrival_is_entering_the_region(arena):
     times = np.arange(90) / FS
     path = np.c_[np.linspace(40, 95, 90), np.full(90, 50.0)]
     metrics = compute_goal_directed_metrics(arena, times, path, goal="east_well")
-    # The well's bins have centers within 5 cm of (90, 50); x reaches 85 cm
-    # (the first bin center inside, at 85 or 86 cm) by sample index ~73.
+    # Arrival is the first sample inside the well's polygon (its edge at
+    # x = 85 cm on this line), not the first in one of its bins.
+    import shapely
+
     entered = np.flatnonzero(
-        np.isin(arena.bin_at(path), arena.bins_in_region("east_well"))
+        shapely.covers(arena.regions["east_well"].data, shapely.points(path))
     )
     assert metrics.time_to_reach_goal == pytest.approx(times[entered[0]] - times[0])
     assert metrics.goal == "east_well"
@@ -245,6 +243,99 @@ def test_region_arrival_is_entering_the_region(arena):
         compute_goal_directed_metrics(
             arena, times, path, goal="east_well", goal_radius=5.0
         )
+
+
+def test_region_goal_distance_is_zero_inside_and_polygon_distance_outside(arena):
+    """Checked against shapely's distance to the region polygon."""
+    import shapely
+
+    rng = np.random.default_rng(0)
+    positions = rng.uniform(0, 100, (500, 2))
+    positions[:20] = rng.uniform([87.0, 47.0], [93.0, 53.0], (20, 2))  # in the well
+    times = np.arange(len(positions), dtype=float)
+    polygon = arena.regions["east_well"].data
+    expected = shapely.distance(polygon, shapely.points(positions))
+    assert (expected[:20] == 0).sum() > 10
+    for metric in ("euclidean", "geodesic"):
+        distances = distance_to_goal(
+            arena, times, positions, goal="east_well", metric=metric
+        )
+        # The arena is convex: the shortest path inside it is the straight line.
+        np.testing.assert_allclose(distances, expected, rtol=1e-9, atol=1e-9)
+        assert np.all(distances[expected == 0] == 0.0)
+
+
+def test_region_goal_behind_a_corner_goes_round_it():
+    """Around the inner corner of an L, checked against the exact path.
+
+    The shortest path to a well in the other arm is the straight line when it
+    stays inside the L, else the line to the inner corner and on to the
+    well's edge. The geodesic engine routes through bin centers, so it may
+    exceed the exact path by up to about one bin per corner, never fall short
+    of it; its first leg heads for the corner.
+    """
+    import shapely
+    from shapely.geometry import LineString, Point
+
+    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.behavior._goals import resolve_goal
+
+    arena = box(0, 0, 100, 100).difference(box(50, 50, 100, 100))
+    env = Environment.from_polygon(arena, bin_size=2.0, units="cm")
+    regions = Regions()
+    regions.add("well", point=(25.0, 85.0), radius=5.0)
+    env = env.with_regions(regions)
+    well = env.regions["well"].data
+    corner = np.array([50.0, 50.0])
+    positions = np.array([[90.0, 25.0], [80.0, 10.0], [95.0, 45.0], [60.0, 30.0]])
+
+    exact, toward = [], []
+    for p in positions:
+        nearest = np.asarray(shapely.shortest_line(Point(p), well).coords[1])
+        if arena.covers(LineString([p, nearest])):
+            exact.append(np.linalg.norm(nearest - p))
+            toward.append(nearest - p)
+        else:
+            exact.append(np.linalg.norm(corner - p) + well.distance(Point(corner)))
+            toward.append(corner - p)
+    exact, toward = np.array(exact), np.array(toward)
+    hidden = [0, 1, 2]  # the last position sees the well past the corner
+    assert not any(
+        arena.covers(LineString([positions[i], np.asarray(well.centroid.coords[0])]))
+        for i in hidden
+    )
+
+    distances = distance_to_goal(env, np.arange(4.0), positions, goal="well")
+    assert np.all(distances >= exact - 1e-9)
+    assert np.all(distances <= exact + env.bin_spacing)
+    np.testing.assert_allclose(distances[3], exact[3], rtol=1e-12)
+
+    paths = environment_paths(env, call="test")
+    goal = resolve_goal(env, "well", paths=paths, call="test")
+    unit = goal.directions(env, paths, positions)
+    cosine = np.sum(unit * toward, axis=1) / np.linalg.norm(toward, axis=1)
+    assert np.all(cosine > 0.99)
+
+
+def test_track_region_goal_is_reached_where_the_track_enters_it():
+    """On a track the edge is where the centerline crosses the region."""
+    from neurospatial.behavior import shortest_path_length
+
+    track = Environment.linear_track(
+        endpoints=[[0.0, 0.0], [100.0, 0.0]], bin_size=4.0, units="cm"
+    ).with_track_width(4.0)
+    regions = Regions()
+    regions.add("well", point=(90.0, 0.0), radius=5.0)  # on the track: 85 to 95
+    track = track.with_regions(regions)
+    positions = np.array([[10.0, 0.0], [50.0, 1.0], [88.0, 0.0], [97.0, 0.0]])
+    distances = distance_to_goal(track, np.arange(4.0), positions, goal="well")
+    # 97 cm is past the well: its nearest edge is the far one, at 95 cm.
+    np.testing.assert_allclose(distances, [75.0, 35.0, 0.0, 2.0], atol=1e-9)
+    # The same as the geodesic to the entry point itself.
+    entry = np.array([85.0, 0.0])
+    assert distances[0] == pytest.approx(
+        shortest_path_length(track, positions[0], entry)
+    )
 
 
 def test_point_goal_is_its_exact_coordinates(arena):

@@ -207,7 +207,7 @@ class TestCompareReplayMethods:
         assert table.loc[(2, "ji_wilson_2007"), "error"] == (
             "fewer than 4 active template cells"
         )
-        assert not table.loc[(2, "ji_wilson_2007"), "passes[n_active_cells >= 4]"]
+        assert not table.loc[(2, "ji_wilson_2007"), "criteria[n_active_cells >= 4]"]
         assert table.loc[(2, "lee_wilson_2002"), "error"] == ""
         # The verdicts equal the per-event function's on the decoding span.
         single = detect_template_match_replay(
@@ -446,7 +446,8 @@ def test_the_summary_reports_the_shuffled_group(track):
         rng=0,
     )
     summary = result.summary()
-    assert summary["group"] == "candidate_frames"
-    assert summary["n_matches"] == 4
+    assert summary["shuffle_group"] == "candidate_frames"
+    row = next(key for key in summary if key.startswith("n_matches["))
+    assert summary[row] == 4
     assert isinstance(result.groups_table(), pd.DataFrame)
     assert not result.shuffle_statistics.flags.writeable

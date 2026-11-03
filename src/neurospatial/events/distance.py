@@ -126,12 +126,30 @@ class PeriEventDistanceResult(ResultMixin, ReadOnlyArraysMixin):
         return np.asarray((self.occupancy > 0).sum(axis=0), dtype=np.intp)
 
     def _attrs(self) -> dict[str, Any]:
+        # Distances are in the positions' units, which the result does not
+        # record: "" marks them as lengths of unknown unit.
         return {
             "window": self.window,
             "bin_size": self.bin_size,
             "n_events": self.n_events,
             "n_events_dropped": self.n_events_dropped,
+            "units": {
+                "bin_center": "",
+                "firing_rate": "Hz",
+                "spike_count": "spikes",
+                "occupancy": "s",
+                "n_events_covering": "events",
+                "peak_rate": "Hz",
+                "peak_distance": "",
+                "baseline_rate": "Hz",
+            },
         }
+
+    def _unit_label(self) -> Any:
+        """``unit_id``, with a standalone result's missing label as ``pd.NA``."""
+        import pandas as pd
+
+        return pd.NA if self.unit_id is None else self.unit_id
 
     def to_dataframe(self) -> pd.DataFrame:
         """Dense tidy table: one row per distance bin.
@@ -142,13 +160,17 @@ class PeriEventDistanceResult(ResultMixin, ReadOnlyArraysMixin):
             Columns ``unit_id``, ``bin_center`` (distance from the event),
             ``firing_rate`` (Hz), ``spike_count`` and ``occupancy`` (s) summed
             over events, and ``n_events_covering``. ``df.attrs`` holds
-            ``window``, ``bin_size``, ``n_events`` and ``n_events_dropped``.
+            ``window``, ``bin_size``, ``n_events``, ``n_events_dropped`` and
+            ``units`` (per column; distances are in the positions' units,
+            given as ``""``).
         """
         import pandas as pd
 
         df = pd.DataFrame(
             {
-                "unit_id": np.full(self.bin_centers.size, self.unit_id, dtype=object),
+                "unit_id": np.full(
+                    self.bin_centers.size, self._unit_label(), dtype=object
+                ),
                 "bin_center": self.bin_centers,
                 "firing_rate": self.firing_rate,
                 "spike_count": self.spike_counts.sum(axis=0),
@@ -169,6 +191,7 @@ class PeriEventDistanceResult(ResultMixin, ReadOnlyArraysMixin):
             highest rate; NaN when no bin has a rate) and ``baseline_rate``
             (Hz, spikes over seconds pooled over the bins that end at or
             before the event; NaN when there are none or they hold no time).
+            ``df.attrs`` as for :meth:`to_dataframe`.
         """
         import pandas as pd
 
@@ -192,10 +215,30 @@ class PeriEventDistanceResult(ResultMixin, ReadOnlyArraysMixin):
                 "peak_distance": [peak_distance],
                 "baseline_rate": [baseline],
             },
-            index=pd.Index([self.unit_id], name="unit_id"),
+            index=pd.Index([self._unit_label()], name="unit_id"),
         )
         df.attrs = self._attrs()
         return df
+
+    @property
+    def peak_rate(self) -> float:
+        """Highest pooled rate over the distance bins (Hz); NaN without any."""
+        return float(self.summary_table()["peak_rate"].iloc[0])
+
+    @property
+    def peak_distance(self) -> float:
+        """Center of the bin with the highest rate; NaN without any."""
+        return float(self.summary_table()["peak_distance"].iloc[0])
+
+    @property
+    def baseline_rate(self) -> float:
+        """Pooled rate over the bins before the event (Hz)."""
+        return float(self.summary_table()["baseline_rate"].iloc[0])
+
+    @property
+    def total_occupancy(self) -> float:
+        """Seconds of occupancy over every event and bin."""
+        return float(self.occupancy.sum())
 
     def summary(self) -> dict[str, Any]:
         """Flat dict of headline scalars.
@@ -214,7 +257,7 @@ class PeriEventDistanceResult(ResultMixin, ReadOnlyArraysMixin):
             "peak_rate": float(row["peak_rate"]),
             "peak_distance": float(row["peak_distance"]),
             "baseline_rate": float(row["baseline_rate"]),
-            "total_occupancy": float(self.occupancy.sum()),
+            "total_occupancy": self.total_occupancy,
         }
 
     def plot(self, *, ax: Axes | None = None, **kwargs: Any) -> Axes:
