@@ -36,7 +36,7 @@
   - `read_position` (`_behavior.py:36`), `read_head_direction` (`_behavior.py:435`), `read_units` (`_units.py:85`), `read_intervals` (`_events.py:234`), `read_trials` (`_events.py:1096`);
   - container search order (`_core.py:123`), and `_MissingObjectError(KeyError)` (`_core.py:97`).
 - [src/neurospatial/_optional.py:11](../../../../src/neurospatial/_optional.py): `require_optional(module, *, extra, purpose)`.
-- [src/neurospatial/__init__.py:343](../../../../src/neurospatial/__init__.py): `_LAZY_SUBMODULES` (343–364) and `__all__` (414). A new submodule is added to both.
+- [`src/neurospatial/__init__.py:343`](../../../../src/neurospatial/__init__.py): `_LAZY_SUBMODULES` (343–364) and `__all__` (414). A new submodule is added to both.
 - [tests/test_public_api_snapshot.py:12](../../../../tests/test_public_api_snapshot.py): `NAMESPACES` (lines 12–38).
 - [src/neurospatial/_exceptions.py](../../../../src/neurospatial/_exceptions.py): `NeurospatialError` (24), `_format_error(what, *, fix, why=None)` (69).
 - [src/neurospatial/_interval_table.py](../../../../src/neurospatial/_interval_table.py): `Intervals` (327), `Intervals.from_arrays` (1202). Trials use it.
