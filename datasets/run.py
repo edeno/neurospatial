@@ -39,6 +39,12 @@ LOADERS = {
     "miniscope_002030": "load_miniscope_002030",
     "giocomo_000405": "load_giocomo_000405",
     "giocomo_001701": "load_giocomo_001701",
+    "gardner_2022_grid": "load_gardner_2022_grid",
+    "vollan_lt": "load_vollan_lt",
+    "vollan_of": "load_vollan_of",
+    "grosmark_000044_circular": "load_grosmark_000044_circular",
+    "grosmark_000044_linear": "load_grosmark_000044_linear",
+    "jadhav_000447": "load_jadhav_000447",
 }
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
