@@ -25,8 +25,11 @@ Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s
 is also given as a one-edge graph from (−160, 0) to (160, 0) cm; its width
 is not stated. That graph is the declared environment
 (``geometry["environment"]``): the archive's ``readme_hafting2008.txt``
-(read from the zip) states "a linear track (mostly 320 cm)", and the file's
-own coordinates place it; the fit is in ``conversions``.
+(read from the zip) states "a linear track (mostly 320 cm)", and the line is
+drawn in the file's own frame, not given by the authors; the fit is in
+``conversions``. Nothing independent of the samples checks it: the samples
+span the stated 320 cm because the authors scaled the frame to it, and the
+unit is read from that span.
 """
 
 from __future__ import annotations
@@ -130,9 +133,9 @@ def load(cache: Path | None = None) -> Recording:
         name=DATASET["key"],
         placement="the file's own frame (posx spans -160 to 160, posy is centred on 0)",
         placed_by="file's coordinates",
-        stated_lengths={
-            "length": (float(np.ptp(positions[:, 0])), 2 * _HALF_LENGTH_CM)
-        },
+        # No stated length is compared: the samples span the stated 320 cm
+        # because the authors scaled the frame to it, and the unit is read
+        # from that span, so the length cannot check the track.
         tracked_point="one tracking LED (readme_hafting2008.txt: 'the tracking LED')",
         speed_thresholds=(5.0, 30.0),
     )

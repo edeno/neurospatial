@@ -124,12 +124,14 @@ AUTHORS_GEOMETRY = (
     "file's linearized coordinate",
     "authors' bars (file)",
 )
+FILE_FRAME_TRACK = "track drawn in the file's frame (scaled to the samples)"
 # The placements each reference is the same geometry as: a declared track is
 # not judged against its own geometry. The loader's ``geometry["graph"]`` is
 # the authors' graph or, where the loader draws the track in the file's
 # frame (Hafting's straight line), that line.
 REFERENCE_SOURCE = {
-    "authors' track graph": ("authors' graph", "file's coordinates"),
+    "authors' track graph": ("authors' graph",),
+    FILE_FRAME_TRACK: ("file's coordinates",),
     "authors' track centrelines (file)": ("authors' centrelines",),
     "centreline from the file's linearized position": ("file's linearized coordinate",),
     "principal axis of the samples (straight track)": ("samples' principal axis",),
@@ -367,9 +369,10 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "hafting_2008_nird": Apparatus(
         "track",
-        "archive readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; no width",
+        "archive readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; no"
+        " width. The file's frame is scaled to that length (posx spans exactly"
+        " -160 to 160) and the unit is read from it, so it is not compared",
         True,
-        track_length=320.0,
     ),
     "takigawa_7114733": Apparatus(
         "track",
@@ -838,7 +841,14 @@ def reference_for(rec: Recording, app: Apparatus | None) -> Reference | None:
     if "lattice_bars_cm" in geometry:
         ref = lattice_reference(np.asarray(geometry["lattice_bars_cm"], dtype=float))
     elif "graph" in geometry:
-        ref = graph_reference(geometry["graph"], "authors' track graph")
+        # A loader that draws its track in the file's frame (Hafting's line,
+        # in a frame the authors scaled to the stated length) gives no
+        # authors' graph.
+        drawn = geometry.get("declared_from") == "file's coordinates"
+        ref = graph_reference(
+            geometry["graph"],
+            FILE_FRAME_TRACK if drawn else "authors' track graph",
+        )
     elif "track_centrelines_cm" in geometry:
         parts = [np.asarray(c, dtype=float) for c in geometry["track_centrelines_cm"]]
         nodes = np.vstack(parts)
@@ -1443,6 +1453,7 @@ def bar_alignment(rec: Recording, ref: Reference) -> dict[str, Any]:
 SAMPLE_DERIVED_REFERENCES = (
     "centreline from the file's linearized position",
     "principal axis of the samples (straight track)",
+    "track drawn in the file's frame (scaled to the samples)",
 )
 
 
