@@ -7,7 +7,11 @@ each dataset with a declared environment, it tabulates the summaries that
 depend on the environment: bins, occupancy, spatial information, place
 screen, decoding error and its chance level, laps (default and by start
 region), turns and replay detection rates, with each cell's status when it is
-not ``ok``.
+not ``ok``. Decoding error is the median geodesic error along each run's own
+environment (the declared track, or the samples' grid); "the declared
+track's samples" restricts both runs to the time bins whose true position
+the declared environment places, so the two are medians over the same
+samples.
 
 Writes ``results/studies/declared_vs_inferred.md``. Run after both driver
 runs: ``uv run --group datasets python datasets/studies/declared_vs_inferred.py``.
@@ -33,7 +37,19 @@ MEASURES: tuple[tuple[str, str, str, str], ...] = (
     ("rates.spatial_information", "bits_per_spike_median", "info (bits/spike)", ".3f"),
     ("rates.information_vs_shifts", "frac_above_every_shift", "above shifts", ".0%"),
     ("cells.place_screen", "n_place_screen", "place screen", "d"),
-    ("decode.position", "median_error", "decode error", ".1f"),
+    (
+        "decode.position",
+        "median_error",
+        "decode error (each run's placed samples)",
+        ".1f",
+    ),
+    (
+        "decode.position",
+        "median_error_on_declared",
+        "decode error (the declared track's samples)",
+        ".1f",
+    ),
+    ("decode.position", "frac_actual_outside", "true positions outside", ".1%"),
     ("decode.position", "chance_median_error", "chance error", ".1f"),
     ("behavior.laps", "n_laps", "laps (default)", "d"),
     ("behavior.laps", "n_laps_region", "laps (region)", "d"),
