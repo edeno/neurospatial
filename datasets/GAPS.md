@@ -292,6 +292,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: warn when the environment has fewer than a handful of bins
   along a dimension (the existing check only fires at one bin or fewer).
 - Status: open
+- More evidence (CRCNS batch): on hc31_anm190422's 48 m track (1-D), ÷100
+  gives a 48 "cm" track of 21 bins, above check 2's threshold of 5; nothing
+  in the environment can tell, and `env.occupancy` and `rates.spatial` refuse
+  it only through `min_speed` (every interval excluded, with the units hint).
+  Check 2 does not cover a long track; the speed gate does.
 - More evidence (archive batch): `length_unit_off_by_100` is caught by `Environment.from_samples` on all seven new cm recordings (bin at least the extent), but `segment_by_velocity` finds 0 running segments silently on each (281, 604, 491, 715, 516 and 290 -> 0; 668 -> 1 on the Z-track), and on hafting_2008_nird and olafsdottir_5566548 occupancy and rate maps change without a warning of their own (occupancy 655.6 -> 0.24 s and 1266 -> 0.84 s).
 - More evidence (NWB breadth batch): `segment_by_velocity` with positions
   /100 finds 0 running segments, silently, on 001880 (1,030 clean), 001695
@@ -326,6 +331,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   000447 W-track, a track with no loop built from samples, gives 1 clockwise
   lap. Straight tracks (000044 linear, Vollan linear) are refused, as they
   should be. On a real loop the opposite fails: G-037.
+- More evidence (CRCNS batch): hc-2's 180 cm open field gives 1 clockwise
+  "lap" (hazards that move untracked frames to a corner flip it to
+  counter-clockwise); the hc-28 W-track is refused ("no loop"), while the
+  000447 W-track gave 1 lap; the hc-3 250 cm linear track and the hc-31 48 m
+  track are refused, as they should be.
 - More evidence (archive batch): refused ("no loop") on the water maze, the two Takigawa tracks, the Z-track, the radial maze and the 3-arm maze, and on the 3-D lattice ("cannot tell whether this 3-D environment has a loop"); none of these has a loop, so the refusals are right. The water-maze pool is an open arena that is refused, not given a spurious lap.
 - More evidence (NWB breadth batch): refused ("no loop") on the 000987 and
   001880 arenas, the 001695, 000568 and 000165 linear tracks, the 001754
@@ -382,6 +392,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: warn when a sizeable share of samples sit at exactly the
   same coordinate (or at exactly 0) between moving samples.
 - Status: open
+- More evidence (CRCNS batch): hc-28's `rawpos` stores 0 for every
+  coordinate of an untracked frame (the documentation says so): 15.5 % of HPa
+  day 1 epoch 4. The loader makes them NaN; put back (the generic hazard, which
+  here restores exactly the file's zeros) they sit at the pixel origin outside
+  the W-track: extent 92.5 → 145 cm, total occupancy up 158 s, of which the
+  origin bin holds 175.3 s (the most of any bin),
+  running segments 487 → 455, all silent. Check 1 would fire (15.5 % at the
+  origin against 0 % on every clean recording, now 19 of 19 with positions).
 - More evidence (archive batch): NaN positions as (0, 0) are silent on the water maze (0.29 % of samples), Takigawa (85 %: everything off the tracks), the Z-track (29 %: largest occupancy bin 43.9 -> 290.6 s) and the 3-arm maze, both as NaN -> 0 and as the file's own `xMM = yMM = 0` sentinel (0.20 %). Check 1 (origin share >= 0.1 %) would fire on all four.
 - More evidence (NWB breadth batch): silent on 001880 (5.3 % NaN, mostly
   off the maze: 1,080 -> 1,085 bins, 1,030 -> 1,035 movement segments),
@@ -478,6 +496,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   shuffle null on sparse occupancy; warn when most visited bins hold very
   little time, and point to `min_occupancy` or larger bins.
 - Status: open
+- More evidence (CRCNS batch): hc18_train261, positions in pixels while a
+  model train carries the rat at about 4.2 px per 25.6 ms frame (median),
+  close to the 5 px bin: 341 of 2487 visited bins hold a single frame, and
+  the median unit's peak rate is exactly 1 spike / 1 frame = 39.06 Hz.
+  `min_occupancy` defaults to 0 s.
 - More evidence (archive batch): the Grieves lattice (3-D, 4 cm bins, 8182 visited bins, 24 % of them under 0.1 s, median 0.23 s) gives the information-bias study's second sparse 3-D case. Untuned Poisson cells: mean information / mean bias 0.94, 1.00, 1.00 at 0.5, 2, 8 Hz (200 cells each); bursty cells 3.0, 4.1, 4.7. Real units (17 with a defined bias, 100 shifts each): median information 0.579, bias 0.169, shift-null mean 0.392, null / bias 2.51; 6 % pass the bias rule but not the shifts' 95th percentile (bat, rerun: 0.92 and 2.24 at 8 Hz, null / bias 2.19, 44 %). The estimate holds for Poisson cells on sparse 3-D occupancy; the gap to the shift null is temporal structure, as on the bat.
 
 ## G-023: 3-D position decoding is near chance on the bat session
@@ -752,6 +775,12 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   choice, overlap on gappy laps, segmentation at gaps) and test on this
   session, where the true count is known from the angle.
 - Status: open
+- More evidence (CRCNS batch): hc18_train261, a model train on a closed
+  circuit. The unwrapped angle of the position around the circuit's centre
+  gives 13.8–18.0 net laps per travel session, 107 over the seven (the
+  documentation: about 15 per session). `detect_laps` with its defaults
+  returns 1 clockwise lap. Tracking is 93–98 % complete in each session, so
+  this is a loop with few gaps, and the defaults still miss nearly every lap.
 
 ## G-038: Replay on a track recorded in 2-D needs the track coordinate
 
@@ -1485,6 +1514,196 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   boundary maps with the same `criterion=` contract as the other
   predicates; `min_speed=` on the boundary-vector entry points
 - Status: open
+
+## G-090: The same session in CRCNS hc-11 and DANDI 000044 differs only in its sleep scoring
+
+- Datasets: hc11_achilles, grosmark_000044_linear
+- Operation / step: loader (cross-check, `studies/hc11_vs_000044.py`)
+- Kind: data-quirk
+- Evidence: Achilles 10252013 from both archives: 137 units paired one to one
+  in the same order, every spike time identical (8,414,607 spikes), cell types
+  agree on all 137 (pyramidal/interneuron against excitatory/inhibitory), the
+  80,762 position samples agree to 5e-8 s with identical 2-D and linearized
+  positions and NaN patterns, and PRE/MAZE/POST bounds are identical. The
+  sleep states differ: hc-11's `sessInfo.Epochs` scores five states (Wake 20
+  intervals / 5698 s, Drowsy 72 / 9967 s, NREM 57 / 15488 s, Intermediate
+  31 / 510 s, REM 28 / 2653 s); 000044's `states` table has three (Awake 62 /
+  16747 s, Non-REM 60 / 15890 s, REM 22 / 2071 s), not a merge of hc-11's.
+  So the same burst rule finds 1803 POST non-REM candidates on hc-11 and 1646
+  on 000044. 000044's unit ids (1–272) are not hc-11's cluster ids (shank ×
+  100 + cluster); the order is the same.
+- Harness workaround: none
+- Proposed change: none for neurospatial; a replay result that depends on
+  sleep epochs depends on which archive's scoring was used
+- Status: won't fix (data quirk)
+- More evidence: on the driver's operations the two loaders agree to about
+  1e-11 (the 5e-8 s timestamp differences), except `replay.compare_methods`:
+  `GROSMARK_2016` calls 16 % of the first 200 candidates replay on hc-11 and
+  14 % on 000044, because the candidates come from different non-REM epochs.
+
+## G-091: Pre-registered expectations that were wrong in the CRCNS batch
+
+- Datasets: hc3_ec013_669, hc28_hpa
+- Operation / step: expectations
+- Kind: data-quirk
+- Evidence: hc-3's cell table lists 125 sorted cells for topdir `ec013.38`;
+  only 72 fire in session ec013.669 (expected 100–125). The cells were
+  sorted over all of the day's sessions (3 novel midSquare sessions, a wheel
+  task, three linear-track sessions), and each `.clu` header counts every
+  cluster of the day, so a cell silent in one session is expected (the hc-3
+  description says so). The hc-28 stub said day 1 epoch 2 is a W-track run;
+  that was read from the day-2 task file. Day 1 epoch 2 is a linear-track run
+  (`lin`); the loader uses day 1's first W-track run, epoch 4.
+- Harness workaround: none (the expectations stay as registered)
+- Proposed change: none
+- Status: won't fix (the expectations, not the loaders, were wrong)
+
+## G-092: hc-28's LED angle sits about 15–20° off the path, beyond the heading frame check
+
+- Datasets: hc28_hpa
+- Operation / step: loader (heading frame check)
+- Kind: data-quirk
+- Evidence: on HPa day 1 epoch 4, the angle from the back LED to the front
+  LED minus the direction of movement above 10 cm/s, with one-frame steps:
+  circular mean −25.5°, median spread 51.0° (the other LED order 154.5°).
+  `rawpos` is whole pixels, so one-frame directions are quantised and most of
+  that spread, and most of the direction dependence first seen (−85° to +22°
+  across 45° sectors), is the check's artefact (G-098). With movement over
+  longer steps: 3 frames −23.3°/39.5°, 8 frames −18.8°/25.7°, 15 frames
+  −14.4°/18.8°, 30 frames −12.7°/17.1°; sector means at 15 frames −30° to
+  +3°. The authors' own `pos` `dir` against their smoothed x, y: −21.9°,
+  28.0°. This looks like a mounting offset of about −15 to −20° plus a
+  residual of about 30° that depends on the direction of movement. The LEDs
+  are 15.7 cm apart (median); `pos` x, y follow one LED (`arg` `diode` 1),
+  7.9 cm from the midpoint.
+- Harness workaround: the loader keeps positions and drops head direction:
+  the mean is outside the check's 0.2 rad at every lag, and a rotation fitted
+  to this session's movement would be tuned to the data
+- Proposed change: none for neurospatial
+- Status: won't fix (data quirk)
+
+## G-093: hc-31 stores position in inches and time in microseconds; its interneuron marker is lost
+
+- Datasets: hc31_anm190422
+- Operation / step: loader
+- Kind: data-quirk
+- Evidence: `posMazeLin`/`posMaze` give `unitsPerCm` 0.3937 and `px` 2.54:
+  the coordinates are inches (the 48 m track spans 0–1896 units, 4815 cm
+  after conversion); times and spike `timeStamps` are microseconds
+  (`unitsPerSecond` 1e6); the velocity column is inches per microsecond
+  (at most 5.8e-5). Nothing but those two scalars says so. The readme says
+  interneurons and poor units have NaN in `ID` and gives the rule
+  `all(ID <= 2, 2)` to exclude them, but `ID` is uint8 (entries: 154 zeros,
+  35 ones, 189 twos), which has no NaN; MATLAB's `uint8(NaN)` is 0, so a
+  marker that was set is now indistinguishable from "silent" (7 units are 0
+  in every column), and all 63 units pass the rule. The other routes are
+  thin: `spAll.width` is empty, the stored `rate` is at most 1.29 Hz for
+  every unit (median 0.19), so none looks fast-spiking, and
+  `clustInf.score` holds four quality strings per unit ('3+', '4-', …),
+  not a cell type.
+- Harness workaround: the loader divides by `unitsPerCm` and
+  `unitsPerSecond`, checks 2-D steps against linear steps (ratio 1.000) and
+  stored speed against step speed (0.90), and keeps every unit; hazards
+  `inches_as_cm` and `times_in_microseconds` put the stored units back
+- Proposed change: none for neurospatial
+- Status: won't fix (data quirk)
+
+## G-094: Two-LED frames with both LEDs at one point give heading 0 (east)
+
+- Datasets: hc3_ec013_669, hc2_ec013_527
+- Operation / step: loader; hd.tuning (hazard `coincident_leds_as_east`)
+- Kind: silent-hazard
+- Evidence: 5.1 % of tracked frames of hc-3 ec013.669 and 2.3 % of hc-2
+  ec013.527 have identical coordinates for both LEDs (the tracker gave one
+  blob to both). The back-to-front angle is `arctan2(0, 0)`, which NumPy
+  returns as 0, so a reader that does not check gets a heading of exactly 0
+  (east) on those frames. The .whl format also does not say which LED is in
+  front or whether y points down the image; the movement check picks the
+  order (mean 6.2° on hc-3, 0.4° on hc-2; the other order about ±180°).
+- Harness workaround: `_formats.two_led_heading` returns NaN on those frames
+- Proposed change: see the hazard rows in `results/warnings.md`
+- Status: open
+
+## G-095: `Environment` warns on `units="pixel"`, which neurospatial's own unit table accepts
+
+- Datasets: hc3_ec013_669, hc2_ec013_527, hc18_train261
+- Operation / step: env.from_samples, io.nwb_roundtrip
+- Kind: false-alarm
+- Evidence: `Environment.from_samples(..., units="pixel")` warns
+  "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm',
+  'pixels', 'px'] …" on every environment of the three pixel recordings. The
+  registry (`src/neurospatial/environment/_publication.py:90`) lists `px` and
+  `pixels` only, while the unit alias table that the rest of the package
+  uses (`src/neurospatial/_units.py:40`) maps `px`, `pixel` and `pixels` to
+  `px`; the alias table also accepts `centimeters`, `meters` and others the
+  registry warns on. The warning also makes the hazard probes count a "new"
+  warning on `rates.spatial`: the clean run records it once, in
+  `env.from_samples`, and reuses that environment, while a probe builds its
+  own environment inside the probed operation, so the warning is new there
+  (three `warned` rows whose real response was silent or a different
+  warning).
+- Harness workaround: none (the harness's position unit is "pixel")
+- Proposed change: one unit table; the registry check accepts every alias
+  that `_units` resolves
+- Status: duplicate of G-058 (same warning, found independently on the CRCNS pixel recordings)
+
+## G-096: A missing-sample marker other than NaN or 0 passes silently
+
+- Datasets: hc3_ec013_669, hc2_ec013_527, hc18_train261 (hazards `whl_minus_one_kept`, `pos_minus_one_kept`)
+- Operation / step: env.from_samples, env.occupancy, rates.spatial, behavior.segment_by_velocity, behavior.laps
+- Kind: silent-hazard
+- Evidence: Neuroscope `.whl` and `.pos` files mark untracked frames with
+  `-1` (hc-2 description). Kept as a coordinate, every untracked frame sits
+  at (-1, -1) px, outside the video image: hc-3 540 → 553 bins and 8 s of
+  occupancy more in all (6.1 s in the (-1, -1) bin), median peak 2.99 → 3.47
+  Hz; hc-18 69 s more in all, 68.8 s of it in the (-1, -1) bin, and
+  1 → 0 laps; hc-2 3210 → 3224 bins. Nothing warns, and the proposed origin
+  check (check 1) would not fire, since the marker is not 0. A rule for "many
+  samples at one exact coordinate" was rejected earlier because the bat's
+  perch holds 15 % of its samples.
+- Harness workaround: the Neuroscope readers in `_formats.py` turn -1 into NaN
+- Proposed change: none in neurospatial beyond documenting that missing
+  samples must be NaN; a Neuroscope reader would own the marker
+- Status: open
+
+## G-097: Spike times on the wrong clock pass silently when the spikes that leave tracking are outside the analysis epochs
+
+- Datasets: hc18_train261 (hazard `clock_assumed_20khz`)
+- Operation / step: rates.spatial
+- Kind: silent-hazard
+- Evidence: hc-18's `.res` samples are on a 32,552.083 Hz clock (stated in the
+  `.xml`); hc-2 and hc-3 use 20 kHz. Read at 20 kHz, every spike time is
+  1.63 times too late. With `epochs=` the seven travel sessions, the median
+  mean rate falls 0.78 → 0.27 Hz and the median peak 39 → 2.0 Hz with no
+  warning: the spikes pushed past the end of tracking are outside the
+  requested epochs, and since #265 the drop warning counts only spikes inside
+  them; inside the epochs, the spikes are merely misplaced. A spike-time
+  scaling that keeps most spikes inside the recording looks like a quiet
+  session.
+- Harness workaround: the loader reads the rate from the `.xml`
+- Proposed change: none decided; a check that the last spike is near the end
+  of tracking (here 32,500 s against 19,964 s) would see it, but sleep
+  recordings legitimately run on after tracking
+- Status: open
+
+## G-098: The harness's heading frame check is biased by whole-pixel positions
+
+- Datasets: hc28_hpa (also any loader with integer-pixel tracking)
+- Operation / step: loader (`_record.heading_vs_movement`)
+- Kind: friction (harness)
+- Evidence: `heading_vs_movement` takes the direction of movement from one
+  sample to the next. On hc-28's `rawpos` (whole pixels at 30 Hz, steps of a
+  few pixels) those directions snap to a few angles, which widened the
+  spread to 51° and produced a direction-dependent offset that is mostly the
+  check's own: over 15 frames the spread is 18.8°. A simulated head running a
+  60 px circle in whole pixels at 1.6 px per frame gives a one-step spread
+  above 10° against under 3° over 10 steps
+  (`tests/test_record.py::test_heading_vs_movement_lag_removes_pixel_quantisation`).
+- Harness workaround: `heading_vs_movement(..., lag=)` (default 1, unchanged)
+  measures movement over `lag` samples; the hc-28 loader reports lags 1 and 15
+- Proposed change: use a lag of several samples for integer-pixel tracking in
+  future loaders
+- Status: fixed in the harness (option added); earlier loaders keep lag 1
 
 ## G-110: An environment from samples joins the labyrinth's corridors through the walls between them
 

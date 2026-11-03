@@ -1,6 +1,6 @@
 # Real-data survey batches Implementation Plan
 
-**Status:** Not started.
+**Status:** Phases 1–3 merged (#268, #269, #271); phase 4 (#273) and the environment-fidelity study (#274) open; phase 5 next.
 
 Extend the `datasets/` survey harness from eight recordings to most of the
 open-dataset catalog, in four batches. The first batch is the one the
@@ -30,4 +30,5 @@ For agent invocation, **load only the slice you need**:
   - [phase-2-dandi-nwb-breadth.md](phase-2-dandi-nwb-breadth.md) — nine small DANDI / EBRAINS NWB recordings (head direction in arenas, pixels, `conversion`, pose, objects, linear tracks)
   - [phase-3-archive-formats.md](phase-3-archive-formats.md) — non-NWB archives: egocentric boundary cells, 3-D lattice, water maze, Axona, MATLAB, NPY, track-graph `.npz`
   - [phase-4-crcns.md](phase-4-crcns.md) — CRCNS hippocampal sets behind an account, including a same-session cross-check against DANDI 000044
+  - [phase-5-faithful-environments.md](phase-5-faithful-environments.md) — every loader declares its apparatus (outline, track graph, bars, room) so environments are built from stated geometry, compared with the samples-built ones
 - [appendix.md](appendix.md) — per-dataset access details verified at planning time, and what is still unverified

@@ -64,6 +64,12 @@ HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 | `grosmark_000044_circular` | Rat CA1 on a 1 m circular track with sleep before and after (DANDI 000044) | streamed from 9.2 GB | CC-BY-4.0 |
 | `grosmark_000044_linear` | Rat CA1 on a 1.6 m linear track with sleep before and after (DANDI 000044) | streamed from 8.7 GB | CC-BY-4.0 |
 | `jadhav_000447` | Rat CA1 and PFC units on a W-track (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
+| `hc11_achilles` | Rat CA1 on a 1.6 m linear track, sleep before and after; the session of `grosmark_000044_linear` (CRCNS hc-11) | 38.5 MB from a 277.5 MB archive | CRCNS terms |
+| `hc3_ec013_669` | Rat CA1 and entorhinal units on a 250 cm linear track, two LEDs (CRCNS hc-3) | 5.5 MB from a 233.8 MB archive, plus a 1.1 MB cell table | CRCNS terms |
+| `hc2_ec013_527` | Rat CA1 units in a 180 cm open field, two LEDs (CRCNS hc-2) | 6 MB from a 211.8 MB archive | CRCNS terms |
+| `hc28_hpa` | Rat CA1 and PFC units on a W-track, untracked frames stored as 0 (CRCNS hc-28) | 21.3 MB from a 2.8 GB archive | CRCNS terms |
+| `hc31_anm190422` | Rat CA1 units on a 48 m track, position in inches (CRCNS hc-31) | 166.8 MB | CRCNS terms |
+| `hc18_train261` | Rat CA1 units while carried on a model train (CRCNS hc-18) | 134.8 MB from a 6.5 GB archive | CRCNS terms |
 | `grieves_2020_lattice` | Rat CA1 in a 3-D climbing lattice (UCL RDR 9926477; one Deflate64 member of an 11.2 GB zip by byte range) | 431 MB | CC0 |
 | `watermaze_10248158` | Mouse Morris water-maze swim paths, EthoVision JSON, behavior only (Figshare 10248158) | 9.9 MB | CC-BY-4.0 |
 | `olafsdottir_5566548` | Rat hippocampus and deep MEC tetrodes on a Z-track, Axona files (Zenodo 5566548; 34 members of a 9.9 GB zip by byte range) | 105 MB | CC-BY-4.0 |
@@ -90,6 +96,15 @@ range-checked arrays. `io.read_pose` runs `read_pose` the same way, reports each
 keypoint's share of NaN samples, and feeds one keypoint to the rate maps (or
 occupancy, for a behavior-only file).
 
+CRCNS loaders (`hc*`) need a free crcns.org account. They read it from the
+`CRCNS_USERNAME` and `CRCNS_PASSWORD` environment variables and never print,
+log or store either value (`_fetch.fetch_crcns`). CRCNS serves `.tar.gz`
+archives, which cannot be read by byte range: `_fetch.fetch_crcns_tar_members`
+streams an archive once and keeps only the pinned members, so the first load
+of `hc28_hpa` or `hc18_train261` reads the whole 2.8 or 6.5 GB archive (about
+3-10 min). CRCNS terms: cite the data set and its paper; some labs ask to be
+consulted about authorship (see each loader's `DATASET["license"]`).
+
 ## Studies
 
 `studies/` holds analyses that use the loaders but are not dataset ×
@@ -101,6 +116,8 @@ operation cells; each writes to `results/studies/`:
 - `information_bias_null.py`: `spatial_information_bias` against simulated
   untuned Poisson and bursty cells on each recording's own occupancy, and
   real units against 100 circular shifts.
+- `hc11_vs_000044.py`: the same session from CRCNS hc-11 and DANDI 000044,
+  unit by unit, sample by sample.
 - `egocentric_boundary_survey.py`: the `rates.egocentric_boundary` operation
   on every recording with head direction, without rewriting the driver's
   results.
