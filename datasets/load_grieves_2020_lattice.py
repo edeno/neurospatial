@@ -33,28 +33,47 @@ What the loader converts:
   kept in ``geometry["lattice_bars_cm"]``, shape (147, 2, 3); the loader
   checks there are 147 bars (7 x 7 per axis), each 97.0 cm (the paper's
   Supplementary Methods: 0.97 m a side).
-- Head direction is not used. ``sdata.lattice.poh`` (degrees) is the azimuth
-  in the overhead camera's 2-D frame: against the 2-D positions
-  (``sdata.lattice.pox/poy``) heading minus movement direction has mean
-  -0.8° and spread 42°, but against the 3-D frame's x, y the mean is -113°:
-  the lattice frame is rotated from the camera's, so the azimuth is not a
-  heading in the positions' frame.
+- Headings: ``-sdata.lattice.poh`` in radians. ``poh`` (degrees) is the
+  azimuth in the overhead camera's 2-D frame (``sdata.lattice.pox/poy``):
+  against those positions heading minus movement direction has mean -0.8°
+  and spread 42°. The 3-D frame's x, y are the camera's mirrored in y and
+  shifted (``pox3 = pox + 165.6``, ``poy3 = 1039.6 - poy`` mm, sample by
+  sample; the loader checks it), so in the positions' frame the azimuth turns
+  the other way and ``-poh`` is the heading (mean and spread in
+  ``conversions``; the loader refuses |mean| over 0.2 rad or a spread over
+  45°).
 
 Analysis choices (``params``): ``bin_size`` 4 cm, close to the authors' 3-D
 rate maps (33 x 35 x 39 bins over the volume); ``min_speed`` 3 cm/s;
 ``analysis_epochs`` the lattice part; ``dt`` 0.25 s and alternating 60 s
 train/test blocks.
+
+Environment (``geometry["environment"]``): the lattice the rat climbed, as its
+bars. The file's 147 bars are cut at their crossings into a graph of
+segments (``_geometry.lattice_graph``) and built with
+``_geometry.graph_environment``, which keeps every segment
+(``Environment.from_graph`` keeps only the segments its edge order lists).
+The Supplementary Methods (read) state the tubes' diameter, 10 mm, but the
+tracked point is the head, which a rat on a bar holds a median 6 cm from it,
+so a 10 mm track would leave almost every sample off it. No source states how
+far the head reaches from a bar, so ``track_width`` is twice the 99th
+percentile of the head's distance from the nearest bar, measured here (about
+31 cm): it places 99 % of the samples. The voxel environment built from the
+samples stays the driver's ``env.from_samples`` and is used whole with
+``--inferred-env``.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from _fetch import fetch_zip_member
+from _geometry import distance_to_segments, graph_environment, lattice_graph
 from _record import (
     Range,
     Recording,
@@ -97,7 +116,16 @@ _MM_PER_CM = 10.0
 # bars along each of the three axes.
 _N_BARS = 147
 _LATTICE_SIDE_CM = 97.0
+# Grieves et al. 2020 Supplementary Methods: tubes 10 mm across.
+_TUBE_CM = 1.0
+_N_CUBES = 6
+_BIN_SIZE = 4.0
 RUNNING_CM_S = 10.0
+# The survey's rule for a heading in the positions' frame: heading minus the
+# direction of movement has |mean| at most 0.2 rad and a spread under 45 deg.
+_HEADING_MEAN_RAD = 0.2
+_HEADING_SPREAD_RAD = np.radians(45.0)
+_MIRROR_RMS_MM = 0.01
 
 
 def _vector(group: Any, name: str) -> np.ndarray:
@@ -155,15 +183,45 @@ def load(cache: Path | None = None) -> Recording:
         )
         raise ValueError(msg)
     span = checked_span(positions, *_SPAN_CM)
-    # The azimuth against the camera's 2-D frame and against the 3-D frame.
+    # The 3-D frame's x, y are the camera's mirrored in y: x3 = x + a and
+    # y3 = b - y, sample by sample. So the camera azimuth, negated, is the
+    # heading in the positions' frame.
+    shift = stored[:, :2] - camera * np.array([1.0, -1.0])
+    both = np.isfinite(shift).all(axis=1)
+    mirror_rms = float(np.sqrt(np.mean((shift[both] - np.median(shift[both], 0)) ** 2)))
+    if mirror_rms > _MIRROR_RMS_MM:
+        msg = (
+            f"lattice_3d pox/poy against lattice pox/poy: RMS {mirror_rms:.3g} mm"
+            " from a y-mirror plus a shift; recheck the frames"
+        )
+        raise ValueError(msg)
+    headings = np.angle(np.exp(-1j * azimuth))
     in_camera = heading_vs_movement(
         times, camera / _MM_PER_CM, azimuth, min_speed=RUNNING_CM_S
     )
     in_lattice = heading_vs_movement(
-        times, positions[:, :2], azimuth, min_speed=RUNNING_CM_S
+        times, positions[:, :2], headings, min_speed=RUNNING_CM_S
     )
+    if abs(in_lattice[0]) > _HEADING_MEAN_RAD or in_lattice[1] > _HEADING_SPREAD_RAD:
+        msg = (
+            f"-lattice.poh against movement: mean {np.degrees(in_lattice[0]):.1f},"
+            f" spread {np.degrees(in_lattice[1]):.1f} deg; not a heading, recheck"
+        )
+        raise ValueError(msg)
     lattice = np.array([[times[0], times[-1]]])
     train, test = alternating_blocks(times[0], times[-1], 60.0)
+    graph = lattice_graph(bars_cm, _N_CUBES)
+    reach = distance_to_segments(positions[np.isfinite(positions).all(axis=1)], bars_cm)
+    reach_pct = np.percentile(reach, [50, 95, 99])
+    width = 2 * float(reach_pct[2])
+    environment = partial(
+        graph_environment,
+        graph,
+        bin_size=_BIN_SIZE,
+        track_width=width,
+        units="cm",
+        name=DATASET["key"],
+    )
     return Recording(
         dataset=DATASET["key"],
         session="926_06042018 lattice",
@@ -172,12 +230,33 @@ def load(cache: Path | None = None) -> Recording:
         times=times,
         positions=positions,
         position_units="cm",
+        headings=headings,
         spike_times=tuple(spikes),
         unit_ids=np.asarray(ids),
         epochs={"lattice": lattice},
-        geometry={"lattice_bars_cm": bars_cm, "lattice_type": lattice_type},
+        geometry={
+            "tracked_point": "the head, per the loader (lattice_3d positions with the head azimuth poh); how it was tracked is not stated here",
+            "lattice_bars_cm": bars_cm,
+            "lattice_type": lattice_type,
+            "environment": environment,
+            "declared_from": "authors' bars (file)",
+            # A placement tolerance chosen from the samples, not a stated
+            # width: the tubes are 10 mm across (Supplementary Methods).
+            "declared_track_width": width,
+            "declared_track_width_kind": "placement tolerance (2 x the head's 99th"
+            " percentile distance from a bar)",
+            "declared_physical_width": _TUBE_CM,
+            "declared_physical_width_kind": "stated",
+            "declared_speed_thresholds": (3.0, 30.0),
+            # The file's bars against the paper's 0.97 m side.
+            "environment_fit": {
+                "size_residual_lattice_side": float(
+                    np.median(bar_lengths) / _LATTICE_SIDE_CM - 1
+                )
+            },
+        },
         params={
-            "bin_size": 4.0,
+            "bin_size": _BIN_SIZE,
             "min_speed": 3.0,
             "dt": 0.25,
             "analysis_epochs": lattice,
@@ -193,13 +272,21 @@ def load(cache: Path | None = None) -> Recording:
             f" bars; config3.lattice_type {lattice_type!r}",
             f"units: {len(spikes)} tetrode/cluster fields; cluster 0 of each tetrode"
             f" ({n_unsorted} spikes, unsorted) left out",
-            "headings: none; lattice.poh minus the direction of movement above"
-            f" {RUNNING_CM_S:g} cm/s: in the camera's 2-D frame (lattice.pox, poy)"
-            f" mean {np.degrees(in_camera[0]):.1f} deg, spread"
-            f" {np.degrees(in_camera[1]):.1f} deg; in the 3-D frame's x, y mean"
-            f" {np.degrees(in_lattice[0]):.1f} deg, spread"
-            f" {np.degrees(in_lattice[1]):.1f} deg: not a heading in the positions'"
-            " frame",
+            f"environment: declared lattice, its {len(bars_cm)} bars (Grieves et al."
+            " 2020 Supplementary Methods: 6 x 6 x 6 cubes, 0.97 m a side) as a graph of"
+            f" {graph.number_of_nodes()} crossings and {graph.number_of_edges()}"
+            " segments, every segment kept (_geometry.graph_environment); placement:"
+            " the file's bars, in the positions' frame (not fitted); track_width"
+            f" {width:.1f} cm = 2 x the 99th percentile of the head's distance from"
+            f" the nearest bar (median {reach_pct[0]:.1f}, 95th percentile"
+            f" {reach_pct[1]:.1f} cm), not the stated 10 mm tube diameter",
+            "headings: -lattice.poh (deg -> rad, wrapped): the 3-D frame's x, y"
+            " are the camera's (lattice.pox, poy) mirrored in y plus a shift (RMS"
+            f" {mirror_rms:.1g} mm), so the camera azimuth turns the other way;"
+            f" heading minus the direction of movement above {RUNNING_CM_S:g} cm/s:"
+            f" mean {np.degrees(in_lattice[0]):.1f} deg, spread"
+            f" {np.degrees(in_lattice[1]):.1f} deg (poh in the camera frame: mean"
+            f" {np.degrees(in_camera[0]):.1f}, spread {np.degrees(in_camera[1]):.1f})",
         ),
     )
 

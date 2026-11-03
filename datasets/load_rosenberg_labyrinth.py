@@ -36,6 +36,18 @@ Analysis choices (``params``):
 - ``bin_size`` 0.25 cells for 2-D environments (4 bins per corridor width);
   ``graph_bin_size`` 0.5 cells along the track graph.
 - ``min_speed`` 1 cell/s: about one corridor width per second.
+
+Declared environment (``geometry["environment"]``): the track graph rebuilt
+from the repository's ``NewMaze`` with each of its 64 dead ends moved half a
+cell on, to the end wall the repository's ``MazeWall`` draws round the last
+cell (the graph's run ends are cell centres, so the floor runs half a cell
+past them; the entrance, open to the home cage, is not moved), every edge
+kept and 0.5-cell bins along it, with a
+physical width chosen as one cell, the corridor pitch, so a corridor ends at
+the wall it shares with its neighbour; the paper's corridors are 1-1/8
+inches wide on a 1.5 inch grid (0.75 of a cell). 2.0 % of nose samples lie
+beyond half a cell (12.8 % beyond half the paper's corridor); the track is
+built with a placement tolerance measured from the samples.
 """
 
 from __future__ import annotations
@@ -49,6 +61,7 @@ from typing import Any, ClassVar
 import numpy as np
 from _fetch import fetch
 from _record import Range, Recording, check_expectations, validate_recording
+from _tracks import declared_geometry, with_declared
 
 DATASET = {
     "key": "rosenberg_labyrinth",
@@ -194,6 +207,29 @@ def maze_graph(levels: int = _LEVELS) -> Any:
     return graph
 
 
+def to_end_walls(graph: Any) -> Any:
+    """``graph`` with each dead end moved half a cell on, to its end wall.
+
+    ``NewMaze`` ends a run at the centre of its last cell, but the maze's
+    walls (``MazeWall``, same file) go round an end cell half a cell past its
+    centre (``c1 + nw``, ``c1 + ne``), so the floor runs that far. The
+    entrance, open to the home cage, is left where it is.
+    """
+    extended = graph.copy()
+    for node in graph.nodes:
+        if node == "entrance" or graph.degree(node) != 1:
+            continue
+        (parent,) = graph.neighbors(node)
+        end = np.asarray(graph.nodes[node]["pos"], dtype=float)
+        step = end - np.asarray(graph.nodes[parent]["pos"], dtype=float)
+        end = end + 0.5 * step / np.linalg.norm(step)
+        extended.nodes[node]["pos"] = (float(end[0]), float(end[1]))
+        extended.edges[parent, node]["distance"] = float(
+            np.linalg.norm(end - np.asarray(graph.nodes[parent]["pos"], dtype=float))
+        )
+    return extended
+
+
 def load(cache: Path | None = None) -> Recording:
     """Fetch mouse B1's trajectory and return it with the maze graph."""
     path = fetch(
@@ -215,7 +251,7 @@ def load(cache: Path | None = None) -> Recording:
             np.asarray(traj.fr)[:, 1] / _FRAME_RATE,
         ]
     )
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session=_MOUSE,
         source=_URL,
@@ -238,6 +274,29 @@ def load(cache: Path | None = None) -> Recording:
             "geometry['graph']: rebuilt from NewMaze (MM_Maze_Utils.py) plus an entrance node",
         ),
     )
+    entries, line = declared_geometry(
+        to_end_walls(rec.geometry["graph"]),
+        rec.positions,
+        times=rec.times,
+        kind="binary-tree labyrinth, the repository's track graph with each dead"
+        " end extended half a cell to its end wall (MazeWall)",
+        source="Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py):"
+        " corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)'"
+        " on a 1.5 inch grid",
+        bin_size=rec.params["graph_bin_size"],
+        physical_width=rec.geometry["track_width"],
+        width_kind="chosen",
+        width_note="the corridor pitch, so a corridor's footprint ends at the wall"
+        " it shares with its neighbour; the paper's corridors are 1-1/8 in on a"
+        " 1.5 in grid, 0.75 cell, at which 13% of nose samples fall outside",
+        units=None,
+        name=DATASET["key"],
+        placement="the maze cells of the repository's own alignment",
+        placed_by="authors' graph",
+        tracked_point="the nose (the repository's trajectory keypoints)",
+        speed_thresholds=(1.0,),
+    )
+    return with_declared(rec, entries, line)
 
 
 def _image_y_down(rec: Recording) -> Recording:

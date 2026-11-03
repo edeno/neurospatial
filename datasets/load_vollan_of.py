@@ -20,6 +20,24 @@ autocorrelogram (``module_grid_score``). These are the reference for the grid
 score comparison.
 
 Analysis choices (``params``): as in ``load_vollan_lt``.
+
+Environment (``geometry["environment"]``): a circular arena 150 cm in
+diameter, centred at the origin (the dataset's ``mat_files.md``: x, y are
+"relative to arena center"). Vollan et al. 2025 (Methods) state a 150 x 150 cm
+box for the open-field rats, with one exception: "a rat foraged during
+recording in a dark room encountered for the first time ... a circular arena
+150 cm in diameter was used", and decoding there used "tuning curves from a
+succeeding recording session with room lights on (same arena)" (Extended Data
+Fig. 9k). This file's one session is of type ``open_field_light``. Of the
+18 other open-field files downloaded for this survey, 16 are ``open_field``,
+whose samples fill a square (convex hull 0.98-1.00 of its minimum rectangle,
+one at 0.92), and 2 are ``open_field_darkness``, whose samples are round
+(hull 0.79 of its minimum rectangle, 0.97 of its minimum circle). This
+session's samples are round as well (0.81 and 0.94), so it is taken to be the lit
+session in the circular arena (the other exception, a 1 m square with a
+transparent floor, is ruled out by the samples' 1.4 m span). The paper names neither the rat nor the file:
+the identification is an inference from the session type and the samples'
+shape.
 """
 
 from __future__ import annotations
@@ -29,6 +47,7 @@ from typing import Any
 
 import numpy as np
 from _fetch import fetch
+from _geometry import declared_circle, with_environment
 from _record import Range, Recording, check_expectations, validate_recording
 from load_vollan_lt import (
     BUCKET,
@@ -53,11 +72,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": 644,
     "n_dims": 2,
     "sampling_rate_hz": Range(99.0, 101.0),
-    "position_extent_cm": lambda rec: Range(130, 160).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 130-160 cm
+    # (checked_span), so one here could never fail; the span is in
+    # ``conversions``.
     "headings_span_the_circle": lambda rec: bool(
         np.nanmin(rec.headings) < -3.0 and np.nanmax(rec.headings) > 3.0
     ),
@@ -76,12 +93,27 @@ def load(cache: Path | None = None) -> Recording:
         subdir=SUBDIR,
         cache=cache,
     )
-    return to_recording(
+    rec = to_recording(
         read_session(path),
         dataset=DATASET,
         file=_FILE,
-        session="26018_2 open_field",
+        session="26018_2 open_field_light",
         span_cm=(130.0, 160.0),
+    )
+    return with_environment(
+        rec,
+        *declared_circle(
+            rec.positions,
+            150.0,
+            bin_size=rec.params["bin_size"],
+            units="cm",
+            name=DATASET["key"],
+            source="Vollan et al. 2025 Methods: 'a circular arena 150 cm in diameter'"
+            " (dark-room session; the lit session after it in the same arena);"
+            " file session type 'open_field_light'",
+            centre=(0.0, 0.0),
+        ),
+        tracked_point="the head, OptiTrack motion capture (per the loader, from the dataset's documentation)",
     )
 
 

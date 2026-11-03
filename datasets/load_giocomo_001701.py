@@ -19,6 +19,13 @@ Analysis choices (``params``):
 - ``bin_size`` 2.5 cm.
 - ``dt`` 0.25 s and alternating 60 s ``train_epochs``/``test_epochs``, as for
   the other open recordings.
+
+Declared environment (``geometry["environment"]``): the X maze as its
+samples show it, two junctions joined by a short centre segment with two
+arms each, the six node positions fitted to the samples. Aery Jones et al.
+2026 (Methods) state a "130-cm X-maze with 20-cm walls" but not what the
+130 cm spans or how wide the arms are, so the width is measured from the
+samples (``_tracks.declared_geometry``).
 """
 
 from __future__ import annotations
@@ -34,7 +41,15 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
+    checked_span,
     validate_recording,
+)
+from _tracks import (
+    declared_geometry,
+    edge_lengths,
+    fitted_maze,
+    with_declared,
+    x_maze_candidates,
 )
 
 DATASET = {
@@ -93,14 +108,18 @@ def load(cache: Path | None = None) -> Recording:
         msg = "head direction no longer matches the radians-labelled-degrees quirk; recheck"
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=float)
+    positions = np.asarray(position.positions, dtype=float)
+    # The stated "130-cm X-maze": the tracked span must lie between half of
+    # it and it plus a 10 cm margin (what the 130 cm spans is not stated).
+    span = checked_span(positions, 65.0, 140.0)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="BaggySweatpantsDY15-g1",
         source=f"{DATASET['source']} {_PATH}",
         license=DATASET["license"],
         times=times,
-        positions=np.asarray(position.positions, dtype=float),
+        positions=positions,
         position_units="cm",
         headings=headings,
         spike_times=tuple(np.asarray(s, dtype=float) for s in units.spike_times),
@@ -114,11 +133,30 @@ def load(cache: Path | None = None) -> Recording:
             "readers_used": ("position", "units"),
         },
         conversions=(
-            "positions: read_position, cm; range checked: 3.6-79 by 3.9-94 cm",
+            f"positions: read_position, cm; {span}",
             "headings: CompassDirection/head direction labelled degrees, values in"
             " [-pi, pi]; kept as radians (read with pynwb)",
         ),
     )
+    graph = fitted_maze(x_maze_candidates(rec.positions), rec.positions, cap=10.0)
+    entries, line = declared_geometry(
+        graph,
+        rec.positions,
+        times=rec.times,
+        kind="X maze: two junctions joined by a centre segment, two arms each",
+        source="Aery Jones et al. 2026 Methods: '130-cm X-maze with 20-cm walls'"
+        " (what the 130 cm spans and the arm width are not stated)",
+        bin_size=2.5,
+        physical_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placed_by="fitted to the samples",
+        placement=f"node positions fitted to the samples; edges (cm):"
+        f" {edge_lengths(graph)}",
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
+    )
+    return with_declared(rec, entries, line)
 
 
 def _headings_read_as_degrees(rec: Recording) -> Recording:

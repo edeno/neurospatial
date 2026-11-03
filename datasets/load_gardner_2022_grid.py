@@ -34,6 +34,13 @@ What the loader converts:
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``dt`` 0.25 s and
 alternating 60 s train/test blocks, inside the valid times, for decoding; each unit's grid module in
 ``params["module"]``.
+
+Environment (``geometry["environment"]``): the open-field arena Gardner et
+al. 2022 (Methods, "Open-field foraging task"; open-access PDF read) state,
+"a square open-field (OF) arena of size 1.5 × 1.5 m" with 50 cm walls, built
+with ``Environment.from_polygon`` at ``bin_size``. Centre and rotation are
+fitted to the open-field samples (``_geometry.declared_rectangle``); the
+residual of their own fitted sides against 150 cm is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -49,6 +56,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from _fetch import fetch_zip_member
+from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
     Recording,
@@ -74,11 +82,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": Range(250, 450),
     "n_dims": 2,
     "sampling_rate_hz": Range(99.0, 101.0),
-    "position_extent_cm": lambda rec: Range(140, 160).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 140-160 cm
+    # (checked_span), so one here could never fail; the span is in
+    # ``conversions``.
     "headings_span_the_circle": lambda rec: bool(
         np.nanmin(rec.headings) < -3.0 and np.nanmax(rec.headings) > 3.0
     ),
@@ -275,7 +281,7 @@ def load(cache: Path | None = None) -> Recording:
             modules.append(module)
     blocks = alternating_blocks(times[0], times[-1], 60.0)
     train, test = (intersect_intervals(b, valid) for b in blocks)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="rat_r_day1 open_field_1",
         source=f"{DATASET['source']} {_ARRAYS}",
@@ -307,6 +313,19 @@ def load(cache: Path | None = None) -> Recording:
             f" {np.degrees(offset):.1f} deg, median spread {np.degrees(spread):.1f} deg",
             f"analysis epochs: the session's valid times {valid.tolist()}",
         ),
+    )
+    return with_environment(
+        rec,
+        *declared_rectangle(
+            rec.positions,
+            150.0,
+            150.0,
+            bin_size=rec.params["bin_size"],
+            units="cm",
+            name=DATASET["key"],
+            source="Gardner et al. 2022 Methods: 'square open-field (OF) arena of size 1.5 x 1.5 m', 50 cm walls",
+        ),
+        tracked_point="the head (the data's head position and azimuth at 100 Hz); the marker is not stated",
     )
 
 

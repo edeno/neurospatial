@@ -40,6 +40,10 @@ Analysis choices (``params``):
   maps; place maps here mix two apparatus seen in the same camera image.
 - ``dt`` 0.25 s, alternating 60 s ``train_epochs``/``test_epochs`` inside the
   awake periods.
+
+Environment: built from the samples (inferred). Positions are pixels with no
+stated scale, and the open field and the theta maze share one image with no
+epochs separating them, so no stated outline can be placed.
 """
 
 from __future__ import annotations
@@ -134,6 +138,7 @@ def load(cache: Path | None = None) -> Recording:
     awake = windows[labels == "awake"]
     blocks = [alternating_blocks(a, b, 60.0) for a, b in awake]
     return Recording(
+        geometry={"tracked_point": "not stated (video pixels)"},
         dataset=DATASET["key"],
         session="YutaMouse41-150829",
         source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",
@@ -158,7 +163,9 @@ def load(cache: Path | None = None) -> Recording:
             " metres;"
             f" range checked: {np.nanmin(positions[:, 0]):.0f}-"
             f"{np.nanmax(positions[:, 0]):.0f} by {np.nanmin(positions[:, 1]):.0f}-"
-            f"{np.nanmax(positions[:, 1]):.0f}: pixels, kept as pixels (no calibration)",
+            f"{np.nanmax(positions[:, 1]):.0f}: pixels, kept as pixels (no calibration);"
+            " reference frame 'unknown', so whether pixel y runs up or down the image"
+            " is not stated and y is kept as stored",
             f"times: starting_time {start} s + index / {rate} Hz; the implied"
             f" {duration:.1f} s matches the LFP's {lfp_duration:.1f} s and the last"
             f" spike at {last_spike:.1f} s",

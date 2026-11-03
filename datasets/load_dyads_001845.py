@@ -15,9 +15,12 @@ behavior file (1.4 MB). Its keypoints cover only the first 123 s
 file with pose, and its short pose is itself a property of the published file.
 
 What the loader converts: positions are ``processed_position/head``
-(cm, "Maze coordinates in centimeters"): DeepLabCut coordinates with
-confidence below 0.6 removed, gaps up to 0.5 s interpolated, smoothed
-(sigma 0.15 s) and converted to cm by the authors. NaN where tracking was
+(cm, "Maze coordinates in centimeters"), with y negated: they are the
+DeepLabCut pixels scaled per axis (0.158 and 0.160 cm per pixel, checked),
+so y runs down the image, and North is up in the survey's frame. The
+DeepLabCut coordinates had confidence below 0.6 removed, gaps up to 0.5 s
+interpolated, smoothed (sigma 0.15 s) and converted to cm by the authors.
+NaN where tracking was
 not usable: 38 % of head samples (body 32 %, nose 45 %). The head is chosen
 because the authors' own reward-well visits are defined from it; the body
 has fewer NaN samples. The raw ``PoseEstimation`` keypoints have no NaN (low
@@ -27,6 +30,16 @@ eight repeats. ``processed_position/tail_end`` is labelled centimeters but
 spans 13-522 by 179-908, the raw pixel range: it was not converted.
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s.
+
+Declared environment (``geometry["environment"]``): the left rat's W-maze
+(Shukla et al. 2026, the paper the dandiset names: 80 x 80 cm with about
+7 cm wide sections) as three parallel arms joined by a base, its node
+positions fitted to the head samples; the stated 7 cm is recorded as the
+physical width, and the track is built with a placement tolerance measured
+from the samples. With 123 s
+of pose the base is thinly sampled (80 % of a base segment has no sample
+within a bin), so the fit is refused and the recording stays inferred
+(``conversions``, G-153).
 """
 
 from __future__ import annotations
@@ -38,6 +51,15 @@ from typing import Any
 import numpy as np
 from _fetch import dandi_asset_url, fetch, open_nwb
 from _record import Range, Recording, check_expectations, validate_recording
+from _tracks import (
+    arms_text,
+    declared_geometry,
+    edge_lengths,
+    fitted_maze,
+    parallel_arm_candidates,
+    parallel_arm_lengths,
+    with_declared,
+)
 
 DATASET = {
     "key": "dyads_001845",
@@ -65,9 +87,29 @@ _PATH = "sub-FXM110/sub-FXM110_ses-15-rc100_behavior.nwb"
 _ASSET_ID = "65a0aa61-cda8-4353-886c-ee950558d930"
 _SHA256 = "498cdb5334d2e932604a93ca09ec44e510e643ef2a57178ac09006b04c9a119d"
 _KEYPOINT = "head"
+_POSE = "PoseEstimation_1-FXM110-1_left_wtrack"
 _PROCESSED = "processing/behavior/processed_position"
 # A rat W-maze in cm: the tracked span along each axis must lie here.
 _MAZE_CM = (50.0, 200.0)
+_TRACK_WIDTH_CM = 7.0
+_FIT_CAP_CM = 10.0
+
+
+def _scale_from_pixels(
+    path: Path, times: np.ndarray, positions: np.ndarray
+) -> np.ndarray:
+    """Per-axis slope of the processed head (cm) on its DeepLabCut pixels."""
+    import h5py
+
+    with h5py.File(path, "r") as nwb:
+        series = nwb[f"processing/behavior/{_POSE}/PoseEstimationSeriesHead"]
+        pixels = np.asarray(series["data"][:], dtype=float)
+        pixel_times = np.asarray(series["timestamps"][:], dtype=float)
+    index = np.clip(np.searchsorted(pixel_times, times), 0, len(pixel_times) - 1)
+    same = np.abs(pixel_times[index] - times) < 1e-3
+    a, b = pixels[index[same]], positions[same]
+    ok = np.isfinite(a).all(axis=1) & np.isfinite(b).all(axis=1)
+    return np.array([np.polyfit(a[ok, k], b[ok, k], 1)[0] for k in range(2)])
 
 
 def load(cache: Path | None = None) -> Recording:
@@ -91,7 +133,15 @@ def load(cache: Path | None = None) -> Recording:
         }
         visits = nwbfile.processing["behavior"]["reward_well_visits"].to_dataframe()
 
-    positions = np.asarray(position.positions, dtype=float)
+    positions = np.array(position.positions, dtype=float)
+    # The processed positions are the DeepLabCut pixels scaled per axis
+    # (image y down): fit each axis against the pixels at the same frames.
+    scale = _scale_from_pixels(path, np.asarray(position.times, dtype=float), positions)
+    if not (scale > 0).all():
+        msg = f"processed head = {scale} x DLC pixels; the frame changed, recheck"
+        raise ValueError(msg)
+    # Image rows run down; North (+y) is up, so y is negated.
+    positions[:, 1] = -positions[:, 1]
     span = np.nanmax(positions, axis=0) - np.nanmin(positions, axis=0)
     tail_span = np.nanmax(np.asarray(tail.positions), axis=0)
     if (
@@ -105,7 +155,7 @@ def load(cache: Path | None = None) -> Recording:
         )
         raise ValueError(msg)
     nan_share = float(np.isnan(positions).any(axis=1).mean())
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="FXM110-ses-15-rc100",
         source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",
@@ -129,11 +179,40 @@ def load(cache: Path | None = None) -> Recording:
             f" range checked: {np.nanmin(positions[:, 0]):.1f}-"
             f"{np.nanmax(positions[:, 0]):.1f} by {np.nanmin(positions[:, 1]):.1f}-"
             f"{np.nanmax(positions[:, 1]):.1f} cm; {nan_share:.1%} NaN, kept",
+            f"positions: y negated (image y down): the processed head is"
+            f" {scale[0]:.4f} x and {scale[1]:.4f} x the DeepLabCut pixels"
+            f" ({_POSE}/PoseEstimationSeriesHead) per axis",
             f"{_PROCESSED}/tail_end labelled cm reaches {tail_span.round(0)}: pixels,"
             " not used",
             "events: behavioral_events timestamps by name; epochs: reward_well_visits",
         ),
     )
+    graph = fitted_maze(parallel_arm_candidates(positions), positions, cap=_FIT_CAP_CM)
+    entries, line = declared_geometry(
+        graph,
+        positions,
+        times=rec.times,
+        kind="W-maze: three parallel arms joined by a base",
+        source="Shukla et al. 2026 Methods: 'elevated W-shaped mazes (80 x 80 cm)"
+        " with ~7-cm-wide track sections'",
+        bin_size=2.5,
+        physical_width=_TRACK_WIDTH_CM,
+        units="cm",
+        name=DATASET["key"],
+        placed_by="fitted to the samples",
+        stated_lengths=dict(
+            zip(
+                ("base", "arms"),
+                ((x, 80.0) for x in parallel_arm_lengths(graph)),
+                strict=True,
+            )
+        ),
+        placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')};"
+        f" stated 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
+        tracked_point="the DeepLabCut 'head' keypoint as processed by the authors (processed_position/head)",
+        speed_thresholds=(4.0, 30.0),
+    )
+    return with_declared(rec, entries, line)
 
 
 def _tail_end_keypoint(rec: Recording) -> Recording:

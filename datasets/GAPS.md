@@ -104,6 +104,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   recordings with spikes and 2-D positions (000987, 001880, 001695, 001754,
   000568, 000165, 000003, Kanter): every environment there is built from
   samples.
+- More evidence (faithful arenas batch): with the stated outline declared
+  (`Environment.from_polygon`), `border_scores()` runs on 000582, Gardner,
+  Vollan's open field, Kanter and hc-2 (cells `ok`); 000987, 001880,
+  000003 and Hafting stay built from samples and still refuse. On the
+  samples-built environments, `boundary_source="analysis"` would make the
+  edges of unvisited holes walls: 515 of 574 Vollan units, 258 of 299 Kanter
+  units and all 34 hc-2 units then score above 0.5. Declared walls bring
+  their own failure where the head never reaches the wall bins (G-131).
 
 ## G-006: Grid score differs from opexebo on the same rate map because of the autocorrelogram
 
@@ -356,6 +364,12 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   the holes the outlines match the stated squares: the outermost bins come
   within a median 1.6 cm (0.6 bin) of the stated wall in 000582, Kanter and
   Gardner, so border and boundary measures see the wall where it is.
+- More evidence (faithful arenas batch): with the stated outline declared,
+  `detect_laps` refuses every open arena ("no loop"): 000582, 002030,
+  000405, Vollan's open field, Kanter and hc-2, which gave 0-1 spurious laps
+  on the samples-built environment (`results/inferred_env/`). The refusal is
+  right; the holes of a samples-built arena were the loops. On the 3-D
+  lattice declared as its bars it finds a lap instead (G-134).
 
 ## G-016: A track graph without `track_width` cannot place positions
 
@@ -482,9 +496,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Evidence: 3-D rate maps of 289 units over 1352 bins of 0.2 m, restricted to
   37 flights during the neural recording (121 s of occupancy; median 0.067 s
   per visited bin, 70 % of the 1201 visited bins under 0.1 s). Median spatial
-  information is 3.38 bits/spike; with each unit's spikes circularly shifted
-  (4 seeded shifts, `rates.information_vs_shifts`) it is 3.55, and only 34 %
-  of units beat every shift (all 6 on 000582, 94 % on the figure-8).
+  information is 3.47 bits/spike; with each unit's spikes circularly shifted
+  within the counted flight time (4 seeded shifts,
+  `rates.information_vs_shifts`) it is 3.18, and 57 % of units beat every
+  shift (all 6 on 000582, 96 % on the figure-8). Before the shift was
+  confined to counted time (G-043) the shifts gave 3.55 and 34 %.
   `spatial_information_bias`, the "expected untuned information" that
   `classify()` compares with, has a median of 0.37 bits/spike. The 101 units
   firing above 2 Hz during flight (which the record's script sets aside as
@@ -501,7 +517,7 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   close to the 5 px bin: 341 of 2487 visited bins hold a single frame, and
   the median unit's peak rate is exactly 1 spike / 1 frame = 39.06 Hz.
   `min_occupancy` defaults to 0 s.
-- More evidence (archive batch): the Grieves lattice (3-D, 4 cm bins, 8182 visited bins, 24 % of them under 0.1 s, median 0.23 s) gives the information-bias study's second sparse 3-D case. Untuned Poisson cells: mean information / mean bias 0.94, 1.00, 1.00 at 0.5, 2, 8 Hz (200 cells each); bursty cells 3.0, 4.1, 4.7. Real units (17 with a defined bias, 100 shifts each): median information 0.579, bias 0.169, shift-null mean 0.392, null / bias 2.51; 6 % pass the bias rule but not the shifts' 95th percentile (bat, rerun: 0.92 and 2.24 at 8 Hz, null / bias 2.19, 44 %). The estimate holds for Poisson cells on sparse 3-D occupancy; the gap to the shift null is temporal structure, as on the bat.
+- More evidence (archive batch, rerun with shifts within counted time, G-043): the Grieves lattice (its declared bar graph, 4 cm bins, 2506 visited bins, 13 % of them under 0.1 s, median 0.62 s) gives the information-bias study's second sparse 3-D case. Untuned Poisson cells: mean information / mean bias 1.00, 1.01, 1.00 at 0.5, 2, 8 Hz (200 cells each); bursty cells 3.3, 4.3, 4.7. Real units (16 with a defined bias, 100 shifts each): median information 0.602, bias 0.182, shift-null mean 0.438, null / bias 2.56; 6 % pass the bias rule but not the shifts' 95th percentile. Bat: 0.92 (Poisson) and 2.22 (bursty) at 8 Hz; real units' null / bias 1.23 and 15 % pass the bias rule but not the shifts (2.19 and 44 % with the old whole-span shifts). The estimate holds for Poisson cells on sparse 3-D occupancy; the gap to the shift null is temporal structure the shifts keep (bursts), not firing locked to flights, which shifts within counted time do not keep.
 
 ## G-023: 3-D position decoding is near chance on the bat session
 
@@ -562,6 +578,35 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   rest cluster within 0.2 m). The voxels reach the x walls and the
   ceiling (within 0.11 m) but stop 0.12 m above the floor. The room's walls
   are not part of the environment, only the visited voxels.
+- More evidence (faithful arenas batch): the loader now declares the room,
+  every voxel of a grid tiling `r_lim` exactly (8,294 voxels, 29 x 26 x 11
+  cells of 0.2 x 0.2 x 0.209 m; `from_samples` with `dimension_ranges=r_lim`
+  and `infer_active_bins=False`), so the corridor of voxels to y = -4.2 m is
+  gone (0 % of voxels outside the room, against 4.4 %) and both feeders lie
+  in the environment. The 3.66 % of samples outside `r_lim` are not placed
+  (`env.declared` `frac_samples_outside`). The fidelity study first judged
+  that a mismatch (limit 2 %); with one verdict for every declared
+  environment (`_geometry.judge_declared`) it is a tracking and room
+  measure, reported and not judged: 0.11 % of the flight samples the
+  analyses use lie outside `r_lim`, split by speed 0.0 % below and 0.1 %
+  above the loader's 0.5 m/s `v_th`. The room is judged on stated facts
+  only, `r_lim`'s sides against the paper's room (x +3.6 %, y +0.0 %,
+  z -8.0 %, within 15 %): matches. Forli et al. 2025 state the indoor room as 5.6 x
+  5.2 x 2.5 m and an outdoor enclosure 10.1 m long; `r_lim` and the
+  samples' 5.7 m span place this session indoors. The paper's size centred
+  on `r_lim` would leave 3.77 % outside, cutting samples at the x walls
+  (they reach x = +-2.85 m), so `r_lim` is used. Decoding is worse on the
+  room (median 2.36 m against 2.18 m on the visited voxels; chance 2.56 and
+  2.64 m): 14 % of the room's voxels are visited in flight, and the uniform
+  prior covers the rest.
+- More evidence (review round): a room is now judged as an outline is, per
+  face (`_geometry.judge_declared`: each judged sample assigned to the face
+  it lies farthest past, inside the nearest; the 95th percentile of a
+  face's samples past it more than one bin is a mismatch). On the flight
+  samples, 57 are nearest the y-low face and 17 of them lie 1.4 m past it,
+  at the perch beyond `r_lim`, so that face's 95th percentile is 1.41 m
+  against a 0.2 m limit: the room is a mismatch. The sizes still match
+  (x +3.6 %, y +0.0 %, z -8.0 %).
 
 ## G-026: The figure-8's linearized position wraps around
 
@@ -902,25 +947,28 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   nothing on raw arrays can tell speed from a third spatial axis
 - Status: open
 
-## G-043: On Vollan's speed-filtered data, real units carry less spatial information than their circular shifts
+## G-043: On Vollan's speed-filtered data, real units carried less spatial information than their circular shifts
 
 - Datasets: vollan_lt, vollan_of
 - Operation / step: rates.information_vs_shifts
-- Kind: wrong-result (candidate; cause not found)
-- Evidence: open field (rat 26018, 644 units, 233 in grid modules): median
-  information 0.436 bits/spike, median over 4 shifts 0.596; 22 % of units
-  beat every shift. Linear track: 0.289 vs 0.424, 12 %. On every other
-  recording real units are far above their shifts (000044: 0.83 vs 0.08).
-  The grid scores of the same units match the authors' module medians on
-  modules 1–2, so spikes and positions are aligned. Not the cause: bridging
-  of the speed-filter gaps (with `max_gap=0.025` s, 2.5 sampling intervals,
-  0.431 vs 0.589, 24 %). Untested: whether the shift rule, which shifts over
-  the whole span including the removed stretches, moves spikes into a few
-  tracked samples; and whether firing locked to slow periods matters.
-- Harness workaround: none
-- Proposed change: undecided; find the cause before trusting shuffle verdicts
-  on speed-filtered data
-- Status: open
+- Kind: harness-bug (fixed)
+- Evidence: open field (rat 26018, 644 units, samples-built environment):
+  median information 0.436 bits/spike, median over 4 shifts 0.596; 22 % of
+  units beat every shift. Linear track: 0.289 vs 0.424, 12 %. The cause
+  was the harness's shift rule: `operations.shifted_trains` shifted spikes
+  circularly over the whole span `[times[0], times[-1]]`, while the maps
+  count only the analysis epochs, the speed gate and tracking gaps (the
+  recordings are speed-filtered, so most of the span is gaps). On the first
+  150 open-field units 39 % of shifted spikes stayed inside counted time
+  against 99.9 % of real ones; fewer spikes give higher bits per spike, so
+  the null was inflated. Spikes are now shifted within the counted
+  intervals (`analysis_settings["observed_intervals"]`, joined end to
+  end). Rerun: open field 0.436 vs 0.238, 84 % beat every shift; linear
+  track 0.289 vs 0.109, 86 % (declared environments: 0.380 vs 0.188, 84 %;
+  0.152 vs 0.048, 79 %).
+- Harness workaround: none needed after the fix
+- Proposed change: none in neurospatial
+- Status: resolved (harness fix)
 
 ## G-050: Position and head orientation stored one axis per series cannot be read
 
@@ -1027,8 +1075,9 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   catch (0, 255) as well as (0, 0)
 - Status: open
 - More evidence (environment fidelity): the driver's environment pools the
-  five sessions, which overlap in the image (all span about 50-250 px):
-  2,174 bins, one main part. The staircase session alone gives 1,233 bins
+  five sessions, four of which overlap in the image (the 1st-99th
+  percentile of x spans about 0-255 px in sessions 2-5; session 1, a BL
+  run, spans only x 16-40 by y 166-220 px): 2,174 bins, one main part. The staircase session alone gives 1,233 bins
   in 23 parts (2 with 1 % of the bins or more), 74 holes and 58 % of its
   bins holding fewer than 5 samples; its samples fill x 0-239 and y 81-254
   px (1st-99th percentile) with no visible track, so whether staircase parts at different
@@ -1321,12 +1370,17 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   `pov`'s median of 11.7 is a climbing rat's speed in cm/s, so positions
   are mm. The head direction `lattice.poh` is the azimuth in the overhead
   camera's 2-D frame: against `lattice.pox/poy` heading minus movement has
-  mean −0.8° and spread 42°, against the 3-D frame's x, y the mean is
-  −113°. Each tetrode's cluster 0 field holds only `spike_times`
+  mean −0.8° and spread 42°. The 3-D frame's x, y are that frame mirrored in
+  y and shifted, sample by sample (`lattice_3d.pox = lattice.pox + 165.6`,
+  `lattice_3d.poy = 1039.6 − lattice.poy` mm, RMS 3e-5 mm), not rotated, so
+  `−poh` is the heading in the positions' frame (mean +0.8°, spread 42°).
+  An earlier reading, that the frame was rotated and the azimuth not
+  usable, compared `poh` itself with the 3-D frame (mean −113°). Each tetrode's cluster 0 field holds only `spike_times`
   (0.68–1.5 million spikes, 5.7 million in all), the unsorted remainder.
   The zip uses Deflate64, which Python's `zipfile` cannot inflate.
 - Harness workaround: the loader divides by 10 with the speed-ratio check,
-  leaves out headings and cluster 0, and `_fetch` inflates Deflate64 with
+  returns `−poh` as the heading after checking the mirror and the heading
+  against movement, leaves out cluster 0, and `_fetch` inflates Deflate64 with
   `inflate64` and checks the CRC-32
 - Proposed change: none
 - Status: won't fix (data quirk)
@@ -1514,6 +1568,14 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   boundary maps with the same `criterion=` contract as the other
   predicates; `min_speed=` on the boundary-vector entry points
 - Status: open
+- More evidence (faithful arenas batch): with the walls declared, the
+  outermost-ring share falls from 48 % to 5 % of Vollan's open-field units
+  (median preferred distance 42.5 -> 7.5 cm, median distance information
+  0.021 -> 0.068 bits) and from 38 % to 20 % on Kanter (37.5 cm), while
+  Gardner, with no holes in its samples-built environment, barely moves
+  (10 % -> 13 %, 12.5 cm both). The 48 % was the edges of unvisited holes
+  standing in for walls. Kanter's share of units peaking on the left also
+  moves, 0.85 -> 0.47.
 
 ## G-090: The same session in CRCNS hc-11 and DANDI 000044 differs only in its sleep scoring
 
@@ -1717,12 +1779,17 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   random sample pairs (seeded) the path through its bins is a median 0.66 x
   the distance along the authors' corridors (5th percentile 0.28). Nothing in
   the samples shows the walls: 0.05 % of links have no sample within a bin of
-  their midpoint (2.4 % none within half a bin), because the mouse came close
-  to both sides of every wall. The track-graph environment the driver also
-  builds (`from_graph`, 350 bins) follows the corridors.
-- Harness workaround: none (`env.occupancy` and the other operations that
-  take `_env` use the sample-built grid; `laps` and `turn_sequence` use the
-  graph)
+  their midpoint (2.4 % none within half a bin). That test cannot find a
+  wall thinner than a bin at all: when every bin holds a sample a link's
+  midpoint is at most about 1.4 bins from one (a U of two 10 cm corridors
+  behind a 0.5-3 cm wall merges with no far link). Against the stated
+  layout the links show it: 795 of the grid's links (8.1 %) join bins more
+  than 3 x the link (plus both bins' offsets) apart along the corridors
+  (`studies/environment_fidelity.py` `jump_links`). The track-graph
+  environment the driver also builds (`from_graph`, 350 bins) follows the
+  corridors.
+- Harness workaround: the loader declares the graph (one chosen cell wide),
+  so every operation uses it (`BATCH_FAITHFUL_TRACKS.md`)
 - Proposed change: say in the `from_samples` docs that it cannot see walls
   thinner than a bin, and point mazes to `from_graph` or to declared walls
   (`arena=` with walls, which close the links they cross); in the harness,
@@ -1762,6 +1829,19 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   voxel environment from head positions measures the head's space, not the
   climbing paths
 - Status: open
+- More evidence (faithful arenas batch): the loader now declares the bars
+  (`_geometry.lattice_graph`: 343 crossings, 882 segments, all kept;
+  `track_width` 30.8 cm = 2 x the 99th-percentile head-to-bar distance, no
+  source states how far the head reaches; the Supplementary Methods give
+  the tubes as 10 mm across). Against the bars the declared environment's
+  path is a median 0.95 x the distance along the bars (voxels: 0.77), and
+  for the 5,478 pairs on parallel bars of one face it is 30.4 cm against
+  31.1 along the bars (voxels: 18.2). It places 99.0 % of head positions;
+  57 % of its 4,410 bins get occupancy. Spatial information rises (median
+  0.86 against 0.78 bits/spike), decoding is at chance on both (97.0 cm
+  against chance 97.0 on the bars, 82.7 against 76.8 on the voxels), and
+  `detect_laps` now finds a lap (G-134). The voxel environment stays
+  available with `--inferred-env`.
 
 ## G-112: `Environment.from_graph` silently drops graph edges missing from `edge_order`, but still counts positions on them as on the track
 
@@ -1806,7 +1886,8 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 
 ## G-113: The driver builds one environment from every sample, merging apparatus that share a camera frame
 
-- Datasets: jadhav_000447, neurolab_001754, senzai_000003, grosmark_000044_linear
+- Datasets: jadhav_000447, neurolab_001754, senzai_000003, grosmark_000044_linear,
+  ca1ca3_001880
 - Operation / step: env.from_samples and every operation that uses it
 - Kind: wrong-result
 - Evidence: `operations._env` bins every tracked sample; `analysis_epochs`
@@ -1821,7 +1902,11 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   image: all sessions give 2,174 bins, the staircase session alone 1,233.
   000003 pools an open field and a maze (stated by the loader). On 000044's
   linear track the first 110 s, before the rat reached the track, add a path
-  up to y = 161 cm (3.5 % of samples).
+  up to y = 161 cm (3.5 % of samples). 001880's start box between the
+  cheeseboard sub-sessions is outside `analysis_epochs` (`onMaze`) but in
+  the bins: about 62,000 off-maze samples, most of them the box's held
+  runs of identical samples (G-158). The loader keeps them as the file
+  stores them (an earlier version set held runs to NaN, leaving 3,010).
 - Harness workaround: none
 - Proposed change: in the harness, build one environment per apparatus from
   the samples of its epochs (a loader parameter such as
@@ -1848,7 +1933,18 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   across")
 - Proposed change: none in neurospatial; record the arena per session in the
   loader once the source says which
-- Status: open
+- Status: resolved in the harness: the file's session type is
+  `open_field_light` (`Dsession.sessions.type`). Of the 18 other open-field
+  files downloaded for this survey, 16 are `open_field` with square samples
+  (hull 0.98-1.00 of its minimum rectangle, one at 0.92) and 2 are
+  `open_field_darkness` with round ones (0.79). The paper's one circular
+  arena (150 cm) held the dark-room session and "a succeeding recording
+  session with room lights on (same arena)" (Extended Data Fig. 9k), so the
+  loader declares a 150 cm circle centred at the origin (`mat_files.md`:
+  positions "relative to arena center"). The paper names no rat or file, so
+  this is an inference from the session type and the samples' shape. The
+  samples' bounding circle is 144 cm across (residual -4.3 %) and its centre
+  1.65 cm from the origin.
 
 ## G-115: A 1-D environment from a linearized coordinate with gaps between edges falls into one part per corridor
 
@@ -1902,4 +1998,559 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: in the loader, drop samples that jump faster than a rat
   runs (the cause, reflections or a second light, is not checked); in
   neurospatial, none beyond `bin_count_threshold`
+- Status: open
+
+## G-130: 000987's samples span 52 cm where the study's square has 80 cm walls
+
+- Datasets: rsc_000987
+- Operation / step: loader (declared environment)
+- Kind: data-quirk
+- Evidence: the file says only "square arena". The study's preprint
+  (Mehrotra, Levenstein et al. 2023, bioRxiv 10.1101/2023.09.12.557442,
+  Methods) builds the square from "removable walls (width: 80 cm, height:
+  50 cm)" and gives the RSC mice a 70 cm circle as well. The samples' fitted
+  rectangle (after trimming 0.1 % per tail) is 52.6 x 52.1 cm, 34 % short of
+  80 cm, and the samples fill a square (convex hull 0.98 of its minimum
+  rectangle, 0.64 of its minimum circle), so this is the square, not the
+  circle. A mouse tracked on the head reaches within a few cm of a wall in
+  the other open fields here (000582: 99.5 x 97.1 cm in a 1 m box), so the
+  gap is not the head's distance from the wall. Either the walls overlap to
+  make a smaller square, or the position unit (read as metres from the
+  value ranges, unlabelled in the file) is off by about 1.5.
+  `_geometry.declared_rectangle` refuses an 80 cm square (residual -34 %,
+  limit 15 %), so the environment stays built from the samples.
+- Harness workaround: none (environment inferred)
+- Proposed change: none in neurospatial; read the published methods (Current
+  Biology 2024, not available here) for the square's size
+- Status: open
+
+## G-131: With declared walls, border scores are -1 for most cells where the tracked point stays a few cm off the wall
+
+- Datasets: vollan_of, hc2_ec013_527 (also gardner_2022_grid, kanter_2025, sargolini_000582)
+- Operation / step: cells.border_score on a declared environment
+- Kind: wrong-result
+- Evidence: declaring the stated outline (`Environment.from_polygon`) lets
+  `border_scores()` run (G-005), but the bins along the wall are the ones
+  the tracked head never enters: the samples-built environment's outermost
+  bins sit a median 4.3 cm (Vollan's 150 cm circle) and 3.8 px (hc-2's
+  180 cm square) inside the declared wall
+  (`results/studies/environment_fidelity.md`). `observed_wall_fraction` of
+  the first unit's map is 0.014 on Vollan's open field and 0.049 on hc-2
+  (0.47 Gardner, 0.42 Kanter, 0.50 000582). The coverage term counts an
+  unvisited piece of wall as not covered (documented in `border_score`,
+  unlike BNT/opexebo, which look up to 8 bins inward), so coverage is near 0
+  and the score is -1 for 407 of 619 units on Vollan's open field and 27 of
+  36 on hc-2 (60 of 483 on Gardner, 20 of 337 on Kanter, 1 of 6 on 000582).
+  No unit reaches 0.5 on Vollan or hc-2. With the samples-built
+  environment and `boundary_source="analysis"`, the opposite happens: the
+  edges of unvisited holes count as walls and 515 of 574 Vollan units, 258
+  of 299 Kanter units and all 34 hc-2 units score above 0.5.
+- Harness workaround: none (the scores are reported as computed)
+- Proposed change: in neurospatial, a documented way to score a wall the
+  tracked point cannot reach (BNT's inward lookup, or a wall offset by the
+  tracking point's distance from the body), and a warning from
+  `border_scores` when `observed_wall_fraction` is small; in the harness,
+  report `observed_wall_fraction` beside the scores
+- Status: open
+
+## G-132: A wrong length unit inside a declared environment collapses the positions into a few bins without a warning
+
+- Datasets: sargolini_000582, gardner_2022_grid, giocomo_000405, kanter_2025, vollan_of (hazard probes)
+- Operation / step: env.occupancy, rates.spatial on a declared environment
+- Kind: silent-hazard
+- Evidence: with the samples-built environment, metres labelled cm
+  (hazard `length_unit_off_by_100`, positions x 0.01) are caught by
+  `Environment.from_samples` ("bin_size=2.5 is at least the per-axis data
+  extent") and by `compute_spatial_rates` ("bandwidth=5 spans the
+  environment"). With the stated arena declared, neither runs: the
+  environment is the right size and the positions shrink into its centre.
+  Occupancy piles into 1 of 1601 bins on 000582 (600 s), 2 of 3601 on
+  Gardner, 2 of 1601 on Kanter, 4 of 2828 on Vollan's open field, and
+  `compute_spatial_rates` returns maps 99.9 % NaN, with no warning. Positions
+  read as mm on 000405 (x 0.1) cover 1.3 % of the declared 1.5 x 1.3 m field,
+  again silent. Where the shrunk positions leave the declared outline (the
+  002030 circle sits at 10-105 cm), occupancy raises ("Interval filtering
+  excluded ALL trajectory intervals ... check that positions use the
+  environment's coordinates"), and positions 100 x too large raise on the
+  bat's room. A declared environment makes a unit error visible (the
+  samples cover a tiny share of a known arena) but nothing reports it.
+- Harness workaround: none (`env.declared` reports `frac_samples_outside`,
+  which stays 0 when the positions shrink inside)
+- Proposed change: warn in `occupancy` and `compute_spatial_rates` when the
+  samples span a small share of an environment with a declared outline (for
+  example under a tenth of its extent on every axis), naming the units
+- Status: open
+
+## G-133: Egocentric boundary maps refuse a recording in pixels unless `distance_range` is given
+
+- Datasets: hc2_ec013_527
+- Operation / step: rates.egocentric_boundary
+- Kind: friction
+- Evidence: `compute_boundary_vector_rates(..., direction_frame="egocentric")`
+  raises "distance_range is required because env.units='pixel' is not a
+  known length unit ... pass distance_range=(0.0, max_distance) and
+  distance_bin_size in the units of positions", with the declared and the
+  samples-built environment alike. The refusal is right: the default 0-50 cm
+  rings cannot be placed without a scale. The loader has one,
+  `geometry["inferred_cm_per_pixel"]` (0.995), but the operation passes the
+  defaults.
+- Harness workaround: none (cell `err`)
+- Proposed change: in the harness, pass `distance_range` and
+  `distance_bin_size` converted with the loader's inferred scale for pixel
+  recordings; none in neurospatial
+- Status: open
+
+## G-134: `detect_laps` reports a lap on the 3-D lattice's bar graph
+
+- Datasets: grieves_2020_lattice
+- Operation / step: behavior.laps on the declared bar-graph environment
+- Kind: wrong-result
+- Evidence: on the voxel environment `detect_laps(method="auto")` refuses:
+  "cannot tell whether this 3-D environment has a loop". On the declared
+  environment, `Environment.from_graph` on the lattice's 343 crossings and
+  882 segments, it accepts the graph (every cube face is a cycle) and
+  returns 1 lap of direction "unknown". A climbing lattice has no loop a lap
+  goes round: its cycles are the faces of its cubes, as a junction clique
+  was for the labyrinth (G-015). The cell is `ok`.
+- Harness workaround: none
+- Proposed change: refuse a graph whose node positions are 3-D, as for 3-D
+  grids, or ask for the loop explicitly
+- Status: open
+
+## G-135: Fewer finite grid scores on a declared arena with unvisited bins, from the smoothed maps
+
+- Datasets: kanter_2025 (also vollan_of, sargolini_000582)
+- Operation / step: cells.grid_score on a declared environment
+- Kind: wrong-result (cause partly traced)
+- Evidence: Kanter's finite grid scores fall from 235 (samples-built
+  environment) to 144 (declared 1 m box, 35 % of its bins unvisited, NaN);
+  Vollan's from 611 to 593, 000582's from 6 to 5. The units that lose a
+  score are not grid cells (Kanter: a median -0.37 and at most 0.38 on the
+  samples-built environment; Vollan at most -0.02; Gardner's grid cells keep
+  every score). A check on Kanter
+  (`compute_spatial_rates` on four environments, default and binned rates)
+  separates the causes:
+
+  | Environment | Bins (NaN) | Finite, `diffusion_kde` | Finite, `binned` |
+  | --- | --- | --- | --- |
+  | declared box | 1601 (35 %) | 144 | 361 |
+  | samples-built | 1049 (0 %) | 235 | 364 |
+  | samples-built on the declared grid's alignment | 1053 (0 %) | 262 | 361 |
+  | the same with holes filled | 1512 (30 %) | 176 | 361 |
+
+  The grid alignment is not the cause (aligned with the declared grid, the
+  samples-built environment keeps 262). With unsmoothed rates the counts
+  agree (361-364). The drop comes with the default `diffusion_kde` maps on
+  an environment that holds unvisited bins (declared, or holes filled): the
+  smoothing domain then includes those bins. Why the autocorrelogram of
+  those maps yields a NaN score (the score's result reports no failure; one
+  000582 unit had 2 peaks found) was not traced.
+- Harness workaround: none (scores reported as computed; behaviour unchanged)
+- Proposed change: trace in neurospatial how `grid_score` handles a
+  smoothed map with NaN bins inside the arena, and say in its docs when a
+  score is NaN rather than low
+- Status: open
+
+## G-150: The track factories say a track without a width is located by nearest-track projection, but `bin_at` refuses it
+
+- Datasets: every declared track whose source states no width (figure8_000552,
+  grosmark_000044_linear, grosmark_000044_circular, vollan_lt,
+  aeryjones_000165, gonzalez_001695, hafting_2008_nird, hc31_anm190422,
+  hc18_train261, takigawa_7114733, agarwal_24757638, giocomo_001701)
+- Operation / step: env.declared, env.occupancy and every operation that
+  places positions on a declared track
+- Kind: docs
+- Evidence: `Environment.from_graph` documents `track_width` as optional:
+  "When omitted, the physical footprint stays unknown and the existing
+  nearest-track lookup remains available"
+  (`src/neurospatial/environment/core.py:4024`); `linear_track` and `maze`
+  say "bin_at() remains nearest-track projection when width is unknown"
+  (lines 3742 and 3898). On the declared figure-8 built without a width,
+  `env.bin_at(positions)` raises `NotImplementedError: Positions cannot be
+  assigned to the bins of a track built without track_width`
+  (`geometry/_lookup.py:554`, `require_track_width`), and so do
+  `occupancy`, `detect_laps` and `graph_turn_sequence`. The refusal is the
+  safer behaviour and its message says what to do (G-016 records it); the
+  three docstrings promise the opposite.
+- Harness workaround: every declared track is built with a placement
+  tolerance measured from the samples (`_tracks.declared_geometry`: twice
+  the samples' 99th percentile distance from the graph, at least the
+  physical width and one bin), recorded in `conversions` as a tolerance, not
+  a width (G-152)
+- Proposed change: correct the three docstrings: without `track_width` the
+  track has bins and geometry but positions cannot be placed on it; say how
+  to measure a width when none is stated
+- Status: open
+
+## G-151: A sample outside a track's width splits `detect_laps`' recording, so a narrow track loses most laps
+
+- Datasets: figure8_000552, hc18_train261, grosmark_000044_circular
+- Operation / step: behavior.laps (`detect_laps(..., method="region")`)
+- Kind: wrong-result
+- Evidence: the declared figure-8 (fitted graph, start region across the
+  centre bar), 21 trials in the file. `detect_laps(method="region")` with the
+  maze epoch finds, by track width (share of tracked samples outside it):
+  6.6 cm (5.0 %) 2 laps; 10 cm (1.5 %) 14; 15 cm (0.7 %) 18; 30 cm (0 %) 20,
+  alternating clockwise and counter-clockwise, as the task does; `max_gap`
+  None changes none of these. The Notes say why: "A position outside the
+  environment is observed but not located, so an interval with a sample
+  there is not observed and splits the recording", and no lap spans a split.
+  Head tracking leaves the footprint of a narrow track for a frame or two
+  routinely, so a width that is the apparatus's (or a 95th percentile)
+  removes most laps without a warning. hc-18's train circuit (declared loop,
+  travel epochs, about 107 laps by the unwrapped angle, G-037): at the
+  measured 35 px width (1.0 % of travel samples outside) 31 laps, 33 with
+  `max_gap=None`; at 60 px (0 % outside) 92 and 97; at 120 px 93 and 99.
+- Harness workaround: the placement tolerance is twice the 99th percentile
+  sample distance (1 % outside by construction), not the 95th
+- Proposed change: treat a position outside the environment like a missing
+  one, bridged up to `max_gap`, or warn with the share of the recording lost
+  to splits
+- Status: open
+
+## G-152: One `track_width` is both the track's physical width and the placement tolerance, and head tracking leaves the physical width
+
+- Datasets: j16_23020757, hc28_hpa, hc3_ec013_669, jadhav_000447_familiar,
+  valero_000568, shipley_30902972, rosenberg_labyrinth, jadhav_000447,
+  olafsdottir_5566548, dyads_001845
+- Operation / step: env.declared and every operation on a declared track
+- Kind: missing-feature
+- What `track_width` controls (read in `src/`, checked on a two-segment
+  track at widths 6 and 30 cm): only which positions are placed
+  (`TrackArena.contains`, and so `bin_at`, `occupancy` and every operation
+  that bins positions) and the footprint (`TrackArena` capsules, used by
+  `combine`'s component lookup and saved by the codecs). The bins, their
+  measure (lengths), connectivity, smoothing kernels, and the occupancy and
+  rates of the samples it places are the same at both widths.
+- Evidence: the share of tracked samples farther than half the stated (or,
+  for the labyrinth, chosen) physical width from the declared track,
+  `environment_fit["outside_physical_width"]`, split by speed
+  (stopped < `min_speed` <= moving < 30 cm/s <= fast): J16 63.8 % (6.5 cm;
+  87 / 64 / 35 %), hc-28 37.3 % (7 cm; 24 / 38 / 57 %), hc-3 26.3 % (7 cm;
+  19 / 34 / 15 %), 000447's familiar W-track 13.0 % (7 cm; 2 / 32 / 26 %),
+  000568 12.4 % (6.35 cm; 12 / 14 / 9 %), Shipley 0.7 % (10 cm arms; 1 / 0
+  / 1 %), the labyrinth 4.6 % (one cell; 17.9 % at the paper's 0.75 cell);
+  on the three refused layouts (G-153), 000447's novel W-track 35.8 % (7 cm;
+  22 / 50 / 44 %), the Z-track 7.6 % (10 cm; 30 / 9 / 7 %) and 001845 6.1 %
+  (7 cm; 0 / 16 / 16 %). The pattern differs: on J16 and the Z-track the
+  head is off the track most while stopped, on the W-tracks and hc-3 while
+  moving, which fits swings at the turns more than posture at the wells. None of
+  these is misplacement: the worst straight stretch of each track has its
+  samples a median 0.03-1.81 (units of each file) to one side, under one
+  bin. The tracked point is a head-mounted LED (or keypoint) above an
+  unwalled track: the head swings past the edge, and a 2-D camera projects
+  a raised head outward.
+- J16 in detail (the authors' graph, 6.5 cm hallways): on each corridor the
+  samples' median signed lateral offset is -1.3 to +1.8 cm, so the graph is
+  placed right; the "bias" earlier read as about 3 cm was the median
+  |offset| (4.2 cm), not a bias. Only 13.1 % of samples are more than 10 cm
+  off; on every corridor the 95th percentile |offset| is 15-18 cm. It is
+  not parallax: a uniform scale about a fitted centre comes out at 1.024 and
+  leaves 57.2 % outside (63.7 % before) with worse per-edge offsets, and the
+  best single translation ((-1.25, +2.00) cm) leaves 50.4 %; with another
+  fit (truncated squared distance, (-1.46, +1.54) cm) the median distance
+  falls only from 4.2 to 3.4 cm and two corridors' offsets grow to 2.6-2.7
+  cm. It depends on speed: below 4 cm/s 89.5 % are beyond the half-width
+  (4.2 % more than 10 cm off), 4-10 cm/s 65.5 %, 10-30 cm/s 62.7 % (32.0 %
+  more than 10 cm off), above 30 cm/s 33.6 %; while running, 61 % of
+  samples in the junction-end tenth of each edge are outside, 34 % mid-edge.
+  This is the tracked head moving about a correct graph, through stopped
+  head posture and swings at turns, not the reward ports (an earlier
+  reading). No shift or scale is applied.
+- Harness workaround: every declared track is built with a placement
+  tolerance measured from the samples (twice their 99th percentile distance
+  from the track, at least the physical width and a bin, so it places 99 %
+  of them by construction), and the stated
+  physical width is recorded apart (`geometry["declared_physical_width"]`)
+  with the share beyond it reported as a tracking measure, not judged
+- Proposed change: separate the apparatus's width from how far off it a
+  position may be placed (a `reach=` or tolerance on the track, the
+  footprint keeping the physical width), so a declared track can state its
+  floor and still place head-tracked positions; J16 is the case for it
+- Status: open
+
+## G-153: Several mazes' fitted layouts disagree with the stated dimensions
+
+- Datasets: olafsdottir_5566548, jadhav_000447, dyads_001845, hc28_hpa,
+  jadhav_000447_familiar, shipley_30902972
+- Operation / step: the loaders' declared environments
+- Kind: data-quirk
+- Evidence: the layout fitted to the samples (node positions; topology and
+  width from the source) against the source's dimensions, the base and the
+  mean arm of a W against its stated 80 cm footprint, each section of the
+  Z, each radial arm's reach (`_tracks.declared_geometry`, refused beyond
+  `_geometry.MAX_SIZE_RESIDUAL`, 15 %). The Z-track's sections are 165, 204
+  and 159 cm against the stated 190, 220 and 190 (Olafsdottir et al. 2016,
+  Online Methods; -13 %, -7 % and -16 %, not one scale), so it is refused:
+  either the file's `pixels_per_metre` 390 is off or the stated lengths are
+  not centreline lengths; neither can be checked here. 000447's novel
+  W-track has a 93.5 cm base and arms of 87.1-105.1 cm (mean +19 %; the
+  longest is 1.31 x 80 cm), against Tang et al. 2023's "~80 x 80 cm", and is
+  refused; its familiar W-track, described with the same size, has a 79.0
+  cm base and arms of 80.7-89.4 cm (+6 %) and is kept, so the two mazes are
+  not the same size in this file's frame. hc-28's W-track has a 71.6 cm base
+  and arms of 64.9-75.8 cm (-11 %, kept). 001845's W-maze (base 91.6 cm,
+  arms 80.4-93.9 cm) is refused for its thinly sampled base (80 % of a base
+  segment has no sample within a bin in 123 s of pose, G-116), not its size.
+  With support judged per straight stretch of 20 bins (review round), the
+  thin part is a short base segment between junctions, reported, and the
+  W-maze is kept (base +14 %, arms +7 %; fidelity: matches).
+  Shipley's radial maze agrees: centre to arm end 86.9-95.5 cm against the
+  stated 80 cm arm plus a 12.35 cm platform radius (92.35 cm; -6 % to +3 %).
+- Harness workaround: a refused layout stays inferred; a kept one uses the
+  fitted lengths, which are the samples' frame, and states the comparison in
+  `conversions`
+- Proposed change: none in neurospatial
+- Status: open
+
+## G-154: 000044's circular linearized coordinate leaves out the reward area
+
+- Datasets: grosmark_000044_circular
+- Operation / step: params['linearized'] (G-039, G-021)
+- Kind: data-quirk
+- Evidence: a robust circle fit to the samples with a linearized coordinate
+  gives a centre (47.3, 50.5) cm and a radius of 49.9 cm, the paper's "1 m in
+  diameter" circular maze (Grosmark & Buzsaki 2016, Supplementary
+  Materials; 314 cm round). The coordinate runs 0-290 cm and its ends are 27
+  cm apart in the camera. The 28.3 % of tracked samples without a
+  coordinate are on the track too (their radius 40-58 cm, 5th-95th
+  percentile). The coordinate starts at -1.5 degrees (east of the centre)
+  and increases counter-clockwise to 290 cm at -30 degrees; in the 30 degree
+  sector between its end and its zero 90-97 % of samples have no coordinate
+  (23,000 samples, 27 % of all tracked ones): about 26 cm of arc where the rat
+  spends much of its time, matching the paper's "predetermined 30 cm reward
+  area". So the file's
+  "on track" share (72 %, G-039) is the share outside the reward area, and
+  the 290 cm coordinate is the loop minus that area; the 134 cm extent of the
+  samples is the head leaning off a 1 m circle.
+- Harness workaround: the declared environment is the stated 1 m circle
+  centred on the samples, a closed loop that includes the reward area
+- Proposed change: none
+- Status: open
+
+## G-155: Occupancy and rate maps drop positions outside a declared track without a warning
+
+- Datasets: takigawa_7114733, shipley_30902972, hafting_2008_nird,
+  grosmark_000044_circular, j16_23020757 (hazard probes and the first run of
+  this batch)
+- Operation / step: env.occupancy, rates.spatial, behavior.laps
+- Kind: silent-hazard
+- Evidence: `env.occupancy` and `compute_spatial_rates` leave out every
+  position the declared environment cannot place, with no warning. With
+  J16's track built at the stated 6.5 cm (this batch's first run) that was
+  63.8 % of the samples, occupancy 423.6 s against 802 s on the grid; at
+  the placement tolerance the loaders now use, 1 % (792 s). Only
+  `decoding_error` says that "time bins have a decoded or actual position
+  outside the environment", and `detect_laps` warns when most positions are
+  outside ("720604 of 776429 positions with finite coordinates (93%) are
+  outside the environment" on hc-18, whose default count spans the
+  sleep-box sessions). The hazard probes show the same silence when
+  positions are wrong: pixels read as cm (`pixels_labelled_cm`) leave 5.96
+  of 1,069 s on Takigawa's tracks and 33 of 1,344 s on Shipley's maze,
+  Hafting's track with positions / 100 keeps 0.24 of 650 s, and on 000044's
+  circle untracked samples moved to (0, 0) fall outside the loop and cut its
+  laps by region from 65 to 15 (G-151), each with no warning of its own. An
+  environment built from the samples cannot show this (every sample has a
+  bin by construction); a declared one can, which makes the share outside
+  the first check of a declared apparatus.
+- Harness workaround: `env.declared` reports `frac_samples_outside`, and the
+  tracks are built with a placement tolerance (G-152)
+- Proposed change: give `occupancy` and `compute_spatial_rates` the warning
+  `detect_laps` has, at a lower share (a few percent of the analysed
+  samples), naming the share and the fix (the frame, the units or the track
+  width)
+- Status: open
+
+## G-156: The fidelity study's `jump_links` flags links inside an open hub, where the arms' corridors overlap
+
+- Datasets: none in this batch (no radial maze has an independent layout);
+  a synthetic 8-arm star (the probe below)
+- Operation / step: studies/environment_fidelity.py `jump_links`
+- Kind: harness-limitation
+- Evidence: `jump_links` projects each bin centre onto the nearest segment
+  of the stated layout and calls a link a jump when the distance along the
+  layout between its two bins is more than 3 x the link plus both bins'
+  offsets. At a hub the arms' corridors overlap (8 arms 10 cm wide overlap
+  out to 5 / tan(22.5 deg) = 12 cm from the centre), so two neighbouring
+  bins there project onto different arms and are a detour through the hub
+  apart along the layout. On 8 arms of 70 x 10 cm sampled uniformly, with
+  `Environment.from_samples` at 2.5 cm, 128 of 3,504 links are flagged, all
+  within 17.4 cm of the centre (72 within 12 cm); 6 arms give 35 of 2,679;
+  a sampled 8 cm platform at the hub changes nothing (128). None joins
+  corridors through a wall. The probe: arms at angles 2 pi k / n from the
+  origin, samples uniform 0-70 cm along and +/-5 cm across each, the
+  reference a star of n segments from (0, 0), counting `jump_links` and the
+  radius of each flagged link's midpoint.
+- Harness workaround: none; only references with an open hub are affected
+  and none of this batch's judged references has one (the labyrinth's and
+  Takigawa's are corridors; on J16's graph, whose junctions join three
+  edges, no link is flagged). A radial or star maze judged against an independent
+  layout would need the hub drawn as a platform polygon, or links inside
+  the overlap of two corridors excused, which needs the corridor width.
+- Proposed change: harness only (not neurospatial); give `Reference` an
+  optional corridor width and excuse links whose bins both lie within half
+  of it of a shared node
+- Status: open
+
+## G-157: Wall and segment support cannot tell a tracked point kept off the apparatus from apparatus drawn where the animal never went
+
+- Datasets: giocomo_000405, vollan_of, hc2_ec013_527, grieves_2020_lattice
+- Operation / step: `_geometry.judge_declared` (fidelity study, declared
+  environments)
+- Kind: harness-limitation
+- Evidence: the support check flagged an outline side (a run of edges
+  turning less than 10 degrees; a circle is one side) with no sample within
+  3 bins over more than 15 % of its length, and a lattice bar segment with
+  no sample within one bin over more than 25 % of it. Four declared
+  environments failed only this check. On 000405 69 % of one side of the
+  150 x 130 cm field has no sample within 7.5 cm; the samples' own
+  rectangle is 8.2 % and 8.0 % short of the stated sides and their
+  outermost 5 % stay 7.3 cm inside the nearest wall all round. On Vollan's
+  150 cm circle 31 % of the wall has none within 7.5 cm (samples' diameter
+  4.3 % short, centre 2.2 % of the radius from the stated one). On hc-2's
+  elevated 180 cm square 36 % of one side has none within 3 bins (the
+  samples' sides 2.1 % and 3.0 % short). On the lattice 90 % of the 882
+  bar segments have over 25 % of their length with no head sample within
+  one 4 cm bin: the head is a median 6.0 cm from the nearest bar. In each
+  case the tracked point (a head marker) keeps off the walls or bars, and
+  the same numbers would follow from a wall drawn a few cm too far out.
+- Harness workaround: the maintainer's rule (2026-11-03): head samples fall
+  short of walls and bars because the tracked LEDs sit on a headstage above
+  the animal, so for declared outlines (arenas, circles, rooms) and the
+  lattice the support share is reported (`fit["max_side_unsupported"]`,
+  `fit["max_unsupported"]`), not judged. A misplaced or wrongly sized
+  outline is caught by samples reaching past the opposite wall, the samples'
+  fitted size against the stated size, and the stated centre. Track segment
+  coverage, within the placement tolerance, stays a criterion. With it the
+  four now match on their stated sizes (000405 -8.2 % and -8.0 %, Vollan's
+  diameter -4.3 %, hc-2 -2.1 % and -3.0 %, the lattice's side +0.0 % of the
+  stated 97 cm with the authors' bars), and all ten declared arenas and
+  3-D environments match.
+- More evidence (review round): the stated shapes are now placed after a
+  radial trim of the samples, and the residuals are 000405 -6.9 % and
+  -6.3 %, Vollan's diameter -4.0 %, hc-2 +0.0 % and -0.8 %. A room is now
+  judged per face as an outline per side, and the bat's room is a
+  mismatch (G-025), so nine of the ten match. Track support is judged per
+  straight stretch of 20 bins, not per segment, with the 3 bins nearest a
+  free end reported, as for walls; the lattice's segments (16 cm between
+  crossings, below 20 bins) have their support reported. Its placement is
+  now judged as a whole, horizontally (`_tracks.frame_offset`; the vertical,
+  raised by a head above the bars, is reported); refitted it is 9.4 cm, in
+  one step 0.38 bin, so it is not verified (G-159) and eight of the ten
+  match.
+- Proposed change: none in neurospatial; in the harness, measure the
+  remaining checks' sensitivity on planted misfits (phase 6, rungs 2-3)
+- Status: resolved (harness rule)
+
+## G-158: Runs of identical positions may be lost tracking or stillness, and nothing in the file tells them apart
+
+- Datasets: ca1ca3_001880, valero_000568, rsc_000987
+- Operation / step: loader (`_record.find_suspect_tracking`, a load warning)
+- Kind: data-quirk
+- Evidence: runs of 11 or more frames identical in every coordinate (10 or
+  more repeats of a value), on positions with sub-pixel values (about
+  64,000 to 154,000 distinct values per axis, none on integer
+  coordinates): 001880 29 % of the frames, in 90
+  runs up to 82 s (most in the start box between sub-sessions, G-113);
+  000568 46 runs up to 6 s; 000987 0.4 % of the frames in 22 runs up to
+  1 s. A tracker that loses the animal can repeat its last fix; a still
+  animal at a well or in the box can repeat a value too where the estimate
+  is coarse. The 100 cm/s limit for a fast sample has no citation: it was
+  chosen as faster than a mouse runs (000568's 99.9th percentile step is
+  218 cm/s, from jumps after held frames). No independent signal of lost
+  tracking (an LED flag, a second LED, a quality field) was found in these
+  files, and the runs' place, the speed before them and the step after them
+  were not measured.
+- Harness workaround: none: the loaders keep positions as stored and warn
+  with the counts (the maintainer's direction, 2026-11-03: warn users of
+  issues, do not change the data). An earlier version set held runs and
+  fast samples to NaN.
+- Proposed change: none in neurospatial; a reader of these recordings
+  checks the runs before analysing stops (wells, ripples, replay)
+- Status: open
+
+## G-159: The lattice's head samples may sit 9 cm horizontally off the authors' bars
+
+- Datasets: grieves_2020_lattice
+- Operation / step: `_geometry.judge_declared` (fidelity study, the whole
+  lattice's frame offset, `_tracks.frame_offset`)
+- Kind: data-quirk (unconfirmed)
+- Evidence: one translation fitted to the median offset, perpendicular to
+  each bar, of the head samples near each of 738 bar segments (each segment
+  weighted once, refitted until it settles: 22 steps) is
+  (-8.2, +4.6, +2.2) cm, 9.4 cm (2.35 bins of 4 cm) horizontally. The fit
+  is well posed (eigenvalues of the summed projections 482-497: the bars
+  run in three directions). A single least-squares step reads
+  (-1.4, +0.6, +1.8) cm, 0.38 bin, over 792 segments; on a synthetic tilted
+  lattice a single step reads under a bin for any shift up to about 2.5
+  bins, so it cannot rule out a shift this size. A search for the shift
+  that brings the samples closest to the bars has several near-equal
+  minima on the repeating bars: (-8, +4 to +6, +2) cm on a 2 cm grid
+  (median distance to the nearest bar 6.0 -> 3.4 cm) and (-8.0, -7.8,
+  -6.6) cm coarse to fine on a 10,000-sample subsample, so it is not used
+  as a reference. The samples' 0.5-99.5 % extent is offset
+  the same way in y (centre +5.1 cm from the bars' centre; x -2.9 cm). A
+  head on a headstage above the bars raises z, which is reported, not
+  judged; a head held ahead of the body turns with the animal, so it would
+  not give one world-frame offset unless the animal faced one way. Whether
+  the bars (`lattice_3d lx/ly/lz`) and the positions (`pox/poy/poz`) share
+  a frame is not stated in the file or in Grieves et al. 2020's methods.
+- Harness workaround: the maintainer's rule (2026-11-03): the frame offset
+  is read by the single step and the refitted shift, a mismatch only when
+  both exceed one bin; here they straddle it, so the lattice is not
+  verified (its side, +0.0 % of the stated 97 cm, still matches). The
+  loader keeps the bars as stored.
+- Proposed change: none in neurospatial; ask the authors whether the bars
+  were placed in the tracking frame, or how
+- Status: open
+
+## G-160: A track's offset is read in a window narrower than its samples' lateral scatter
+
+- Datasets: grosmark_000044_linear, rosenberg_labyrinth and
+  grieves_2020_lattice (corridor or bar spacing)
+- Operation / step: `_tracks.frame_offset` and the per-stretch bias in
+  `_tracks.edge_fit` (fidelity study, declared tracks)
+- Kind: harness-limitation
+- Evidence: both read a median of the samples within 3 bins (7.5 cm) of
+  the track. On 000044's linear track the lateral offsets of samples
+  projecting inside it run from -12 to +25 cm (5th-95th percentile; median
+  +7.0 cm, quartiles -0.9 and +14.7), with a dip near 0. In the window the
+  median is 1.5-1.7 cm; one least-squares step of the frame fit gives
+  1.35 cm, and refitting on the samples less the shift found, until it
+  settles (as the fit does; needed on short corridors, where one step
+  recovers only half to two thirds of a planted shift), moves the window
+  with it and ends at 3.22 cm (2.95 cm with any one piece left out,
+  1.18 bins). On every other declared track both are 0.42 bin or less. A
+  search for the shift bringing the samples closest to the track (median
+  distance) goes further, to +10.25 cm, onto the densest band of samples.
+  The window's edge does not change with the refit: 10.3 % of the 26,168
+  near-piece samples lie within 10 % of it before, 10.2 % after. The track's across-track placement comes from
+  the file's linearized coordinate; no source read states where the track
+  lies across it, and the reward-end samples spread up to 27 cm across the
+  axis.
+- Harness workaround: the maintainer's rule (2026-11-03): the frame offset
+  is read by both the single step (in the fixed window) and the refitted
+  shift; a mismatch when both exceed one bin, matches for this check when
+  both are under it, and "not verified: the frame offset depends on the
+  estimator" when they straddle it, unless another check gives a
+  mismatch. 000044's linear track (0.50 and 1.18 bins) and the lattice
+  (0.38 and 2.35, G-159) are not verified. On the test cases a single step
+  exceeds a bin only from about a 2-bin shift (15 cm corridors) or 3 bins
+  (16 cm lattice bars), so smaller misplacements there are not verified,
+  not mismatches. At the real recordings' scatter the single step stays
+  under a bin, so on a misplaced layout the check gives at most "not
+  verified". The median-distance search is not used: it moves onto
+  the densest band and has several minima on the lattice.
+- Aliasing (second review, 2026-11-03): each sample is read on its
+  nearest piece, so a shift past half the spacing between two parallel
+  pieces is read on the neighbour, the other way; on 5 cm corridors at
+  2.5 cm bins a 1.5-bin shift read under a bin by both estimators and
+  matched, and a shift of one spacing reads as none. The check now
+  resolves only shifts below half the smallest spacing between distinct
+  parallel pieces (`_tracks.piece_spacing`, from the declared geometry),
+  and when its 3-bin window is wider than half that spacing it adds "not
+  verified: the frame offset cannot be read beyond half the corridor
+  spacing". A refit that has not settled in 50 steps is not verified
+  either.
+- Proposed change: none in neurospatial
 - Status: open

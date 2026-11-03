@@ -7,6 +7,7 @@ is internal to the survey harness, not a proposal for a neurospatial object.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -74,6 +75,16 @@ class Recording:
     conversions: tuple[str, ...] = ()
 
 
+def _is_interval_table(table: NDArray[np.float64]) -> bool:
+    """Whether ``table`` is finite (n, 2) [start, stop) rows with stop >= start."""
+    return bool(
+        table.ndim == 2
+        and table.shape[1] == 2
+        and np.isfinite(table).all()
+        and np.all(table[:, 1] >= table[:, 0])
+    )
+
+
 def validate_recording(rec: Recording) -> None:
     """Raise ValueError listing every contract violation in ``rec``."""
     problems: list[str] = []
@@ -120,8 +131,42 @@ def validate_recording(rec: Recording) -> None:
     ):
         problems.append("activity must have one row per activity time")
     for name, table in rec.epochs.items():
-        if table.ndim != 2 or table.shape[1] != 2 or np.any(table[:, 1] < table[:, 0]):
-            problems.append(f"epochs[{name!r}] must be (n, 2) with stop >= start")
+        if not _is_interval_table(table):
+            problems.append(
+                f"epochs[{name!r}] must be finite (n, 2) rows with stop >= start"
+            )
+    tables = {}
+    for name in ("train_epochs", "test_epochs", "analysis_epochs"):
+        if name not in rec.params:
+            continue
+        try:
+            table = np.asarray(rec.params[name], dtype=float)
+        except (TypeError, ValueError):
+            table = np.empty(0)
+        if not _is_interval_table(table):
+            problems.append(
+                f"params[{name!r}] must be finite (n, 2) rows with stop >= start"
+            )
+        elif name != "analysis_epochs":
+            tables[name] = table
+            if np.any(np.diff(table[:, 0]) < 0) or np.any(table[1:, 0] < table[:-1, 1]):
+                problems.append(f"params[{name!r}] must be sorted, without overlaps")
+    if len(tables) == 2:
+        both = intersect_intervals(tables["train_epochs"], tables["test_epochs"])
+        if len(both):
+            problems.append(
+                f"params['train_epochs'] and params['test_epochs'] overlap"
+                f" ({len(both)} intersections, from {both[0, 0]:g} s)"
+            )
+    for name, table in rec.events.items():
+        table = np.asarray(table, dtype=float)
+        if not (
+            (table.ndim == 1 and np.isfinite(table).all()) or _is_interval_table(table)
+        ):
+            problems.append(
+                f"events[{name!r}] must be finite times (n,) or (n, 2) intervals"
+                " with stop >= start"
+            )
     if problems:
         msg = (
             f"{rec.dataset}/{rec.session} breaks the Recording contract:\n- "
@@ -219,14 +264,46 @@ def alternating_blocks(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Split [start, stop) into alternating train and test blocks of ``length`` s.
 
+    The last block ends at ``stop`` and is shorter than ``length`` unless the
+    span is a whole number of blocks; an edge within a millionth of a block
+    of ``stop`` (float rounding) is not a block of its own.
+
     Returns
     -------
     train, test : ndarray, shape (n, 2)
         Even-numbered and odd-numbered blocks as [start, stop) rows.
     """
-    edges = np.append(np.arange(start, stop, length), stop)
+    n_blocks = max(int(np.ceil((stop - start) / length - 1e-6)), 1)
+    edges = np.append(start + length * np.arange(n_blocks), stop)
     blocks = np.column_stack([edges[:-1], edges[1:]])
     return blocks[::2], blocks[1::2]
+
+
+def alternate_within(labels: NDArray[Any]) -> NDArray[np.bool_]:
+    """Trials alternating between train and test within each label, in order.
+
+    On an alternation task consecutive trials run different arms or
+    directions, so even and odd trials would split them by arm; alternating
+    within each label (arm, direction, start and end well) puts every label
+    in both halves.
+
+    Parameters
+    ----------
+    labels : ndarray, shape (n_trials,)
+        Any hashable per-trial label, in trial order.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_trials,)
+        True for the train trials (the 1st, 3rd, ... of each label), False
+        for the test trials.
+    """
+    labels = np.asarray(labels)
+    train = np.zeros(len(labels), dtype=bool)
+    for label in np.unique(labels):
+        mine = np.flatnonzero(labels == label)
+        train[mine[::2]] = True
+    return train
 
 
 def heading_vs_movement(
@@ -312,3 +389,122 @@ def intersect_intervals(
     stop = np.minimum(a[:, None, 1], b[None, :, 1])
     keep = stop > start
     return np.column_stack([start[keep], stop[keep]])
+
+
+def find_suspect_tracking(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    min_frozen: int,
+    max_speed: float,
+    units: str = "cm",
+) -> tuple[dict[str, Any], str]:
+    """Find held and fast samples that may be lost tracking; change nothing.
+
+    A tracker that loses the animal often keeps reporting the last fix
+    (identical samples) and then joins it to the next fix with a jump; an
+    animal still at a well can also give identical samples when positions
+    are coarse. So the samples are reported for the reader to judge, not
+    removed:
+
+    - held: a sample identical in every coordinate to the one before it, in
+      a run of at least ``min_frozen`` such repeats, so ``min_frozen + 1``
+      identical samples (the run's first sample, the last fix before it, is
+      not counted);
+    - fast: one sequential pass over the finite samples that are not held.
+      Two samples agree when their distance over the time between them is
+      at most ``max_speed`` (``units`` per second). The pass starts at the
+      first sample that agrees with each of the next two (which agree with
+      each other): a bad first sample would otherwise anchor the pass and
+      count every later sample until the animal came back near it. Three
+      samples, because a glitch held for two frames agrees with itself.
+      Samples before the start are counted as fast when they do not agree
+      with it, and the pass starts at the first finite sample when no three
+      agree. The anchor is then the last sample passed; a later sample is
+      passed, and becomes the anchor, when it agrees with the anchor, and is
+      counted as fast otherwise. NaN and held samples are skipped and do not
+      move the anchor, so the step after a held run is measured from the
+      run's first sample, a one-frame glitch counts once (not its return
+      too), and every sample of an excursion counts. After a real jump of
+      distance ``d`` the pass re-anchors once ``d / max_speed`` seconds have
+      passed.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+    positions : ndarray, shape (n_time, n_dims)
+    min_frozen : int
+        Repeats of one value, in frames, from which a run counts as held.
+    max_speed : float
+        Fastest step counted as believable, ``units`` per second.
+    units : str
+        Length unit of ``positions``, for the message.
+
+    Returns
+    -------
+    summary : dict
+        ``held_runs``, ``held_samples``, ``held_share`` (of all samples),
+        ``held_seconds`` (total), ``longest_held_seconds``, ``fast_samples``
+        and the index arrays ``held`` and ``fast`` (boolean, shape
+        (n_time,)).
+    message : str
+        One sentence for a warning (``load_warnings``).
+    """
+    positions = np.asarray(positions, dtype=float)
+    times = np.asarray(times, dtype=float)
+    repeat = np.r_[False, np.all(np.diff(positions, axis=0) == 0, axis=1)]
+    edges = np.diff(np.r_[0, repeat.astype(np.int8), 0])
+    starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    long_runs = stops - starts >= min_frozen
+    held = np.zeros(len(positions), dtype=bool)
+    for start, stop in zip(starts[long_runs], stops[long_runs], strict=True):
+        held[start:stop] = True
+    durations = times[stops[long_runs] - 1] - times[starts[long_runs] - 1]
+    fast = np.zeros(len(positions), dtype=bool)
+    finite = np.flatnonzero(np.isfinite(positions).all(axis=1) & ~held)
+    points, clock = positions.tolist(), times.tolist()
+
+    def agree(a: int, b: int) -> bool:
+        return math.dist(points[a], points[b]) <= max_speed * abs(clock[b] - clock[a])
+
+    order = finite.tolist()
+    first = next(
+        (
+            i
+            for i in range(len(order) - 2)
+            if agree(order[i], order[i + 1])
+            and agree(order[i], order[i + 2])
+            and agree(order[i + 1], order[i + 2])
+        ),
+        0,
+    )
+    if order:
+        anchor = order[first]
+        for k in order[:first]:
+            fast[k] = not agree(k, anchor)
+        for k in order[first + 1 :]:  # sequential: each test needs the last kept
+            if agree(anchor, k):
+                anchor = k
+            else:
+                fast[k] = True
+    summary = {
+        "held_runs": int(long_runs.sum()),
+        "held_samples": int(held.sum()),
+        "held_share": float(held.mean()) if len(held) else 0.0,
+        "held_seconds": float(durations.sum()),
+        "longest_held_seconds": float(durations.max()) if len(durations) else 0.0,
+        "fast_samples": int(fast.sum()),
+        "held": held,
+        "fast": fast,
+    }
+    message = (
+        f"suspect tracking, positions kept as stored: {summary['held_runs']} runs of"
+        f" {min_frozen + 1}+ identical samples ({summary['held_samples']} repeats,"
+        f" {summary['held_share']:.1%}; {summary['held_seconds']:.1f} s in all,"
+        f" longest {summary['longest_held_seconds']:.1f} s) and"
+        f" {summary['fast_samples']} samples farther than {max_speed:g} {units}/s"
+        " from the last sample before them. A held run is lost tracking if the"
+        " tracker repeated its last fix, or stillness; check before analysing"
+        " stops (wells, ripples)"
+    )
+    return summary, message

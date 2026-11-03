@@ -39,6 +39,11 @@ Analysis choices (``params``): the pixel scale is inferred from the stated
 apparatus (250 cm over the tracked span along the track's long axis) and is
 used only to choose ``bin_size`` (about 2.5 cm) and ``min_speed`` (4 cm/s)
 in pixels; ``dt`` 0.25 s with alternating 60 s train/test blocks.
+
+Declared environment (``geometry["environment"]``): the 250 x 7 cm track
+(Mizuseki et al. 2012, Behavioral Testing) as a one-edge graph in pixels at
+the inferred scale, along the samples' principal axis and centred on them.
+Its length is not an independent check: the scale comes from the same 250 cm.
 """
 
 from __future__ import annotations
@@ -68,6 +73,12 @@ from _record import (
     heading_vs_movement,
     validate_recording,
 )
+from _tracks import (
+    declared_geometry,
+    straight_placement,
+    straight_track,
+    with_declared,
+)
 
 DATASET = {
     "key": "hc3_ec013_669",
@@ -87,11 +98,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_dims": 2,
     "sampling_rate_hz": Range(38.5, 39.5),
     "duration_s": Range(780.0, 800.0),
-    "track_long_axis_px": lambda rec: Range(100, 720).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 150-400 px
+    # (checked_span), inside the 100-720 px once expected here, so that
+    # expectation could never fail; the span is in ``conversions``.
     "has_headings": lambda rec: rec.headings is not None
     and bool(np.mean(np.isfinite(rec.headings)) > 0.5),
 }
@@ -104,6 +113,7 @@ BASE = "ec013.669"
 TOPDIR = "ec013.38"
 N_SHANKS = 8
 TRACK_CM = 250.0
+TRACK_WIDTH_CM = 7.0
 RUNNING_CM_S = 10.0
 _SHA256 = {
     "clu.1": "ca742885578da8600369e0f38ef160a91409e38cb6d24c700ea9278c2904ebcd",
@@ -223,12 +233,16 @@ def neuroscope_recording(
     apparatus_span_px: Any,
     span_px: tuple[float, float],
     geometry: dict[str, Any],
+    min_matched: float | None = None,
 ) -> Recording:
     """Recording from a Neuroscope session tracked with two LEDs, in pixels.
 
     ``units`` maps (shank, cluster) to the source's cell-table row; None keeps
-    every cluster from 2 up. ``apparatus_span_px`` measures the span in
-    pixels that ``apparatus_cm`` corresponds to; it sets the inferred scale.
+    every cluster from 2 up. With ``min_matched``, fewer than that share of
+    the session's clusters from 2 up found in ``units`` is refused (a cell
+    table mapped to the wrong electrodes). ``apparatus_span_px`` measures
+    the span in pixels that ``apparatus_cm`` corresponds to; it sets the
+    inferred scale.
     """
     rates = neuroscope_rates(files["xml"])
     wideband = rates["wideband_hz"]
@@ -255,6 +269,13 @@ def neuroscope_recording(
             ids.append(f"{shank}.{cluster}")
             kept[key] = (units or {}).get(key, {})
     missing = sorted(set(units or {}) - set(kept))
+    if min_matched is not None and len(kept) / max(found, 1) < min_matched:
+        msg = (
+            f"{len(kept)} of the session's {found} clusters are in the cell table,"
+            f" fewer than the {min_matched:.1%} the loader documents; the table's"
+            " electrodes no longer map to this session's shanks, recheck the offset"
+        )
+        raise ValueError(msg)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
     tracked = np.isfinite(positions).all(axis=1)
     return Recording(
@@ -274,6 +295,7 @@ def neuroscope_recording(
             "bin_size": round(2.5 / cm_per_px, 2),
             "min_speed": round(4.0 / cm_per_px, 2),
             "dt": 0.25,
+            "whl_source": str(files["whl"]),
             "train_epochs": train,
             "test_epochs": test,
             "region": np.array([row.get("region", "") for row in kept.values()]),
@@ -313,7 +335,7 @@ def load(cache: Path | None = None) -> Recording:
     units = {
         (int(row["ele"]), int(row["clu"])): row for row in cell_table(TOPDIR, cache)
     }
-    return neuroscope_recording(
+    rec = neuroscope_recording(
         files,
         dataset=DATASET,
         session=f"{TOPDIR}/{BASE}",
@@ -325,6 +347,26 @@ def load(cache: Path | None = None) -> Recording:
         span_px=(150.0, 400.0),
         geometry={"shape": "linear track", "length_cm": TRACK_CM},
     )
+    cm_per_px = rec.geometry["inferred_cm_per_pixel"]
+    graph, fit = straight_track(rec.positions, TRACK_CM / cm_per_px)
+    entries, line = declared_geometry(
+        graph,
+        rec.positions,
+        times=rec.times,
+        kind=f"straight track {TRACK_CM:g} x {TRACK_WIDTH_CM:g} cm",
+        source="Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7"
+        " cm2)'; in pixels at the inferred scale, which comes from the same 250 cm",
+        bin_size=rec.params["bin_size"],
+        physical_width=TRACK_WIDTH_CM / cm_per_px,
+        units="pixel",
+        name=DATASET["key"],
+        placement=straight_placement(fit, "pixel"),
+        # The pixel scale comes from the same 250 cm, so no length is compared.
+        placed_by="samples' principal axis",
+        tracked_point="the midpoint of two head-mounted LEDs (hc-3 .whl: two LEDs per frame)",
+        speed_thresholds=(4.0 / cm_per_px, 30.0 / cm_per_px),
+    )
+    return with_declared(rec, entries, line)
 
 
 def coincident_leds_as_east(rec: Recording) -> Recording:
@@ -344,9 +386,14 @@ def leds_swapped(rec: Recording) -> Recording:
 
 
 def whl_minus_one_kept(rec: Recording) -> Recording:
-    # A reader that keeps the .whl's -1 marker as a coordinate.
-    assert rec.positions is not None
-    return replace(rec, positions=np.nan_to_num(rec.positions, nan=-1.0))
+    """A reader that keeps the .whl's -1 marker and averages the two LEDs.
+
+    Where both LEDs are lost the midpoint is (-1, -1); where one is lost it
+    is halfway between the other LED and (-1, -1), a plausible-looking
+    position inside the image.
+    """
+    raw = np.loadtxt(rec.params["whl_source"], dtype=float, ndmin=2)
+    return replace(rec, positions=(raw[:, :2] + raw[:, 2:4]) / 2.0)
 
 
 HAZARDS = {

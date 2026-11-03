@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -23,12 +24,42 @@ def test_captured_groups_by_template():
     assert rows == [
         {
             "category": "UserWarning",
-            "origin": "neurospatial",
+            "origin": "loader",  # issued here, in the survey's own files
             "template": "# bins were dropped",
             "example": "3 bins were dropped",
             "count": 2,
         }
     ]
+
+
+def test_captured_labels_a_warning_by_who_issued_it(tmp_path, monkeypatch):
+    # neurospatial points its warning's stacklevel at the caller, here a
+    # loader file; it is still neurospatial's warning. The loader's own
+    # warning is the loader's.
+    import _calibration
+
+    (tmp_path / "load_origin_probe.py").write_text(
+        "import warnings\n"
+        "import numpy as np\n"
+        "from neurospatial import Environment\n"
+        "def load():\n"
+        "    samples = np.random.default_rng(0).uniform(0, 10, (200, 2))\n"
+        "    Environment.from_samples(samples, bin_size=1.0, units='pixel')\n"
+        "    warnings.warn('the loader saw 3 gaps', UserWarning, stacklevel=1)\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(_calibration, "_HARNESS", tmp_path.resolve())
+    from load_origin_probe import load
+
+    with warnings.catch_warnings(record=True) as raw:
+        warnings.simplefilter("always")
+        load()
+    assert {Path(w.filename).name for w in raw} == {"load_origin_probe.py"}
+    _, error, rows = captured(load)
+    assert error is None
+    by_text = {row["template"][:28]: row for row in rows}
+    assert by_text["Environment.units='pixel' is"]["origin"] == "neurospatial"
+    assert by_text["the loader saw # gaps"]["origin"] == "loader"
 
 
 def _probe(name, run):

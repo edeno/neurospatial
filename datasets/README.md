@@ -22,7 +22,13 @@ MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python datas
 ```
 
 `run.py --datasets KEY ... --ops OP_ID ...` runs a subset; `run.py --render-only`
-rebuilds the Markdown tables from the JSON results. One loader alone:
+rebuilds the Markdown tables from the JSON results. A subset run keeps the
+other cells of the stored record, so it is refused when the load differs
+from the stored one: its `conversions`, `env_kind` or `load_fingerprint`
+(hashes of `params` and the geometry's stated entries, the positions' shape
+and NaN count, the tracked span, each unit's spike count and the unit ids).
+Records written before the fingerprint have none; each needs one full rerun
+(without `--ops`) before `--ops` works on it. One loader alone:
 `uv run --group datasets --extra nwb python datasets/load_sargolini_000582.py`.
 
 Offline tests (simulated data, no network):
@@ -63,7 +69,8 @@ HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 | `vollan_of` | Rat MEC Neuropixels grid modules in an open field, with the authors' grid scores (EBRAINS 10.25493/R5FR-EDG) | 205.7 MB | CC-BY-SA-4.0 |
 | `grosmark_000044_circular` | Rat CA1 on a 1 m circular track with sleep before and after (DANDI 000044) | streamed from 9.2 GB | CC-BY-4.0 |
 | `grosmark_000044_linear` | Rat CA1 on a 1.6 m linear track with sleep before and after (DANDI 000044) | streamed from 8.7 GB | CC-BY-4.0 |
-| `jadhav_000447` | Rat CA1 and PFC units on a W-track (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
+| `jadhav_000447` | Rat CA1 and PFC units on the novel W-track, runs 1 and 3 (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
+| `jadhav_000447_familiar` | The same session on the familiar W-track, run 2 (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
 | `hc11_achilles` | Rat CA1 on a 1.6 m linear track, sleep before and after; the session of `grosmark_000044_linear` (CRCNS hc-11) | 38.5 MB from a 277.5 MB archive | CRCNS terms |
 | `hc3_ec013_669` | Rat CA1 and entorhinal units on a 250 cm linear track, two LEDs (CRCNS hc-3) | 5.5 MB from a 233.8 MB archive, plus a 1.1 MB cell table | CRCNS terms |
 | `hc2_ec013_527` | Rat CA1 units in a 180 cm open field, two LEDs (CRCNS hc-2) | 6 MB from a 211.8 MB archive | CRCNS terms |
@@ -157,5 +164,36 @@ operation cells; each writes to `results/studies/`:
    unit against the value ranges, and list every conversion.
 3. Add `HAZARDS` for any quirk the loader corrects, so the driver can check
    whether neurospatial would have caught it.
+   Where a source states the apparatus, declare it in
+   `geometry["environment"]`, a zero-argument callable returning the
+   environment, placed on the clean samples inside `load()`: arenas with
+   `_geometry` (a stated square or circle), tracks and mazes with `_tracks`
+   (a graph from the authors' file or a stated layout fitted to the samples,
+   the stated width or one measured, the fit residual in `conversions`). The
+   driver analyses it (`env_kind` "declared" in the matrix);
+   `run.py --inferred-env` reruns on samples-built environments into
+   `results/inferred_env/` for comparison
+   (`studies/declared_vs_inferred.py`). Only that run's `matrix.md` is
+   committed; its per-recording JSON is regenerated locally (run
+   `--inferred-env` before rerunning the comparison study).
 4. Run the driver, give every non-`ok` cell and every new warning or hazard row
    a gap entry or verdict, and commit the results.
+
+## Follow-ups
+
+Left from the second review of the frame-offset and record fixes:
+
+- The frame offset's pieces depend on how the graph is cut: `_straight_pieces`
+  gives one sliding window per segment, so a straight track cut at 15 and
+  85 cm reads its cross direction while the same track as one segment does
+  not, and a 72-sector circle counts as many overlapping pieces. Merge
+  windows on the same straight run into one piece before the frame fit.
+- `frame_offset`'s read-direction rule tests each eigenvector of
+  `sum P_k`, which `eigh` returns in an arbitrary basis when `sum P_k` is
+  isotropic (a symmetric Y, an 8-arm maze); make the rule
+  basis-independent (the leave-one-out minimum eigenvalue on each
+  eigenspace) and test it on rotated copies of both.
+- The frame check resolves only shifts below half the smallest spacing
+  between parallel pieces, and passes no verdict when its window is wider
+  than that; a shift of about one spacing on a maze whose window fits
+  (15 cm corridors at 2.5 cm bins) still reads as none and can match.

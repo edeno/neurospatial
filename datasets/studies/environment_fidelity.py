@@ -1,10 +1,15 @@
 """Does each recording's Environment capture the apparatus: its shape and connectivity?
 
-For each loader in ``run.LOADERS`` with positions, the environment is built as
-the driver builds it (``operations._env``: ``Environment.from_samples`` from
-every tracked sample at the loader's ``bin_size``) and measured against the
-tracked samples and, where a source states it, the apparatus. Where the loader
-gives the authors' track graph, it is also built with ``operations._graph_env``.
+For each loader in ``run.LOADERS`` with positions, the environment is built
+from the samples as the driver builds it without a declared apparatus
+(``operations._samples_env``: ``Environment.from_samples`` from every tracked
+sample at the loader's ``bin_size``) and measured against the tracked samples
+and, where a source states it, the apparatus. Where the loader gives the
+authors' track graph, it is also built with ``operations._graph_env``. Where
+the loader declares the apparatus (``geometry["environment"]``, the
+environment the driver analyses), that environment is measured the same way
+against the same samples and reference, plus the share of samples it cannot
+place (``measure_declared``).
 
 Measures of the environment against the samples:
 
@@ -42,7 +47,8 @@ Measures against the apparatus, where a source gives it:
   else ``ASSUMED_TRACK_WIDTH_CM``), the share of samples within ``w / 2`` of
   the reference and of bin centres within ``w / 2`` plus half a bin. None for
   the lattice, where every point is within 11.4 cm of a bar.
-- **arena outline**: for a stated square or circle, the stated shape is
+- **arena outline**: for a declared arena, its outline as the loader placed
+  it; else, for a stated square or circle, the stated shape is
   placed on the samples (a square along the samples' minimum rotated
   rectangle, a circle at the centre of the samples' extent) and the share of
   its area covered by bins, the share of bin centres more than half a bin
@@ -60,7 +66,8 @@ tracked): bins, neighbour links (thinned when there are many; unsupported
 ones in red) and samples, with the reference overlaid; three projections and
 height slices for 3-D recordings.
 
-Writes ``results/studies/environment_fidelity.{md,json}``. Run:
+Writes ``results/studies/environment_fidelity.{md,json}``; given dataset
+keys, it replaces only their rows (``merged``). Run:
 ``MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python
 datasets/studies/environment_fidelity.py [KEY ...]``.
 """
@@ -86,8 +93,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _fetch import cache_root  # noqa: E402
+from _geometry import MAX_SIZE_RESIDUAL, judge_declared  # noqa: E402
 from _record import Recording  # noqa: E402
-from operations import _env, _graph_env  # noqa: E402
+from operations import _graph_env, _samples_env, env_kind  # noqa: E402
 from run import LOADERS  # noqa: E402
 
 RESULTS = HERE.parent / "results" / "studies"
@@ -104,6 +112,31 @@ ALIGN_STEP_SAMPLES = 10
 LOOP_CLOSURE_SHARE = 0.1
 ALIGN_MIN_SPEED = 10.0
 ALIGN_DEGREES = 20.0
+# Layouts whose bins are the active cells of a regular grid (``grid_edges`` and
+# ``active_mask``): from samples, and a grid masked by a declared polygon.
+GRID_LAYOUTS = ("RegularGrid", "ShapelyPolygon")
+# Declared from the authors' geometry, used as stated: a fact a verdict can
+# rest on. A layout drawn in the file's coordinate frame ("file's
+# coordinates") is not one: only a stated size checks it.
+AUTHORS_GEOMETRY = (
+    "authors' graph",
+    "authors' centrelines",
+    "file's linearized coordinate",
+    "authors' bars (file)",
+)
+FILE_FRAME_TRACK = "track drawn in the file's frame (scaled to the samples)"
+# The placements each reference is the same geometry as: a declared track is
+# not judged against its own geometry. The loader's ``geometry["graph"]`` is
+# the authors' graph or, where the loader draws the track in the file's
+# frame (Hafting's straight line), that line.
+REFERENCE_SOURCE = {
+    "authors' track graph": ("authors' graph",),
+    FILE_FRAME_TRACK: ("file's coordinates",),
+    "authors' track centrelines (file)": ("authors' centrelines",),
+    "centreline from the file's linearized position": ("file's linearized coordinate",),
+    "principal axis of the samples (straight track)": ("samples' principal axis",),
+    "lattice bars (file lattice_3d lx/ly/lz)": ("authors' bars (file)",),
+}
 
 
 # --- Apparatus stated by a source read for this study ---------------------------
@@ -117,7 +150,10 @@ class Apparatus:
     ``shape`` is "square" or "circle" for an arena with a stated size
     ``size`` (side or diameter, in the recording's units); ``track_width`` is
     the stated full width; ``n_parts`` the number of separate apparatus the
-    samples cover. ``source`` names what was read. ``verified`` is True when
+    samples cover; ``n_loops`` the loops of a track (each is a hole in a 2-D
+    environment built from the samples); ``linearized_reference`` False when the file's linearized
+    coordinate cannot serve as a 2-D centreline (it gives two places one
+    value). ``source`` names what was read. ``verified`` is True when
     every value given here (the number of parts, and any shape, size, length
     or width) comes from a source read for this study; a size not given is
     not compared.
@@ -132,6 +168,8 @@ class Apparatus:
     track_length: float | None = None
     n_parts: int = 1
     notes: str = ""
+    linearized_reference: bool = True
+    n_loops: int = 0
 
 
 APPARATUS: dict[str, Apparatus] = {
@@ -150,28 +188,39 @@ APPARATUS: dict[str, Apparatus] = {
         size=96.0,
     ),
     "giocomo_000405": Apparatus(
-        "open", "no size stated in the file or dandiset description", False
+        "open",
+        "Gonzalez & Giocomo 2024 eLife Methods (open-access PDF): 'The dimensions"
+        " of field are 1.3m x 1.5m'",
+        True,
+        shape="rectangle",
+        notes="150 x 130 cm; placed by the loader",
     ),
     "gardner_2022_grid": Apparatus(
         "open",
-        "loader: 1.5 m box 'in the paper'; the paper was not read and the"
-        " Figshare description gives no size",
-        False,
+        "Gardner et al. 2022 Methods (open-access PDF): 'square open-field (OF)"
+        " arena of size 1.5 x 1.5 m', 50 cm walls",
+        True,
         shape="square",
         size=150.0,
     ),
     "vollan_of": Apparatus(
         "open",
-        "Vollan et al. 2025 Methods: square open field, floor 150 x 150 cm",
+        "Vollan et al. 2025 Methods: 150 x 150 cm box, except one rat's dark-room"
+        " session and the lit session after it, in 'a circular arena 150 cm in"
+        " diameter'; this file's session type is 'open_field_light' and its"
+        " samples are round (G-114)",
         True,
-        shape="square",
+        shape="circle",
         size=150.0,
     ),
     "rsc_000987": Apparatus(
         "open",
-        "NWB session_description: 'square arena' (no size)",
+        "NWB session_description: 'square arena'; Mehrotra, Levenstein et al."
+        " 2023 bioRxiv Methods: square of 'removable walls (width: 80 cm, height:"
+        " 50 cm)'",
         True,
         shape="square",
+        size=80.0,
     ),
     "ca1ca3_001880": Apparatus(
         "open",
@@ -193,6 +242,15 @@ APPARATUS: dict[str, Apparatus] = {
         shape="circle",
         size=190.0,
     ),
+    "hc2_ec013_527": Apparatus(
+        "open",
+        "crcns-hc2-data-description.pdf: 'an elevated square platform (180 cm x"
+        " 180 cm ...)', ec013.527 180 cm (pixels; the scale is inferred from that"
+        " side)",
+        True,
+        shape="square",
+        notes="placed by the loader in pixels",
+    ),
     "senzai_000003": Apparatus(
         "open",
         "loader: open field and theta maze in one camera image, pixels (no size)",
@@ -208,16 +266,18 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "figure8_000552": Apparatus(
         "track",
+        "NWB: camera (x, y) cm and the linearized position around the maze as a loop",
+        True,
+        notes="figure-8: two loops sharing the centre arm",
+        linearized_reference=False,
+        n_loops=2,
+    ),
+    "figure8_000552_linearized": Apparatus(
+        "track",
         "NWB: linearized position 0-222 cm, both ends at camera (85, 43) cm",
         True,
         track_length=222.0,
         notes="1-D loop",
-    ),
-    "figure8_000552_camera": Apparatus(
-        "track",
-        "NWB: camera (x, y) cm and the linearized position around the maze as a loop",
-        True,
-        notes="figure-8: two loops sharing the centre arm",
     ),
     "neurolab_001754_escher": Apparatus(
         "track",
@@ -255,6 +315,7 @@ APPARATUS: dict[str, Apparatus] = {
         True,
         size=100.0,
         notes="loop",
+        n_loops=1,
     ),
     "grosmark_000044_linear": Apparatus(
         "track",
@@ -266,23 +327,19 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "jadhav_000447": Apparatus(
         "track",
-        "DANDI 000447: novel W-track (run 1 and 3) and familiar W-track (run 2);"
-        " the two mazes lie in one camera frame. Shin et al. 2019 states 80 x 80 cm"
-        " with 7 cm tracks for its W-maze; 000447 does not say it is that maze",
+        "DANDI 000447: the novel W-track (run epochs 1 and 3; the loader keeps"
+        " only these). Tang, Shin & Jadhav 2023 (the paper the dandiset is"
+        " described by): '~80 x 80 cm with ~7-cm wide tracks'",
         True,
-        n_parts=2,
-        notes="two W-tracks rotated 90 degrees in one frame",
-    ),
-    "jadhav_000447_novel": Apparatus(
-        "track",
-        "DANDI 000447: the novel W-track (run epochs 1 and 3)",
-        True,
+        track_width=7.0,
         notes="W-track: three arms joined at their base",
     ),
     "jadhav_000447_familiar": Apparatus(
         "track",
-        "DANDI 000447: the familiar W-track (run epoch 2)",
+        "DANDI 000447: the familiar W-track (run epoch 2). Tang, Shin & Jadhav"
+        " 2023: '~80 x 80 cm with ~7-cm wide tracks'",
         True,
+        track_width=7.0,
         notes="W-track: three arms joined at their base",
     ),
     "vollan_lt": Apparatus(
@@ -299,16 +356,23 @@ APPARATUS: dict[str, Apparatus] = {
         track_width=6.35,
     ),
     "aeryjones_000165": Apparatus(
-        "track", "DANDI 000165: linear track (no length; unit not confirmed)", True
+        "track",
+        "Aery Jones et al. 2021 (Cell Reports) Methods: 'a 36 cm linear track'",
+        True,
+        track_length=36.0,
     ),
     "gonzalez_001695": Apparatus(
-        "track", "NWB: 'Novel Maze Session' (no length stated)", False
+        "track",
+        "Gonzalez et al. 2026 Methods: a linear track with a water well at either"
+        " end (its size, Supplementary Table 1, not read)",
+        True,
     ),
     "hafting_2008_nird": Apparatus(
         "track",
-        "loader quotes the archive readme ('mostly 320 cm'); readme not read here",
-        False,
-        track_length=320.0,
+        "archive readme_hafting2008.txt: 'a linear track (mostly 320 cm)'; no"
+        " width. The file's frame is scaled to that length (posx spans exactly"
+        " -160 to 160) and the unit is read from it, so it is not compared",
+        True,
     ),
     "takigawa_7114733": Apparatus(
         "track",
@@ -320,10 +384,18 @@ APPARATUS: dict[str, Apparatus] = {
         n_parts=2,
     ),
     "olafsdottir_5566548": Apparatus(
-        "track", "Zenodo README: Z-track (no dimensions)", True
+        "track",
+        "Olafsdottir et al. 2016 Online Methods: Z-track of '10 cm wide runways',"
+        " parallel sections 190 cm, diagonal 220 cm",
+        True,
+        track_width=10.0,
     ),
     "j16_23020757": Apparatus(
-        "track", "file: the authors' track graph (10 nodes, 9 corridors)", True
+        "track",
+        "file: the authors' track graph (10 nodes, 9 corridors); Comrie et al."
+        " 2026 STAR Methods: 'Hallways were 6.5 cm wide'",
+        True,
+        track_width=6.5,
     ),
     "agarwal_24757638": Apparatus(
         "track",
@@ -331,12 +403,47 @@ APPARATUS: dict[str, Apparatus] = {
         True,
     ),
     "shipley_30902972": Apparatus(
-        "track", "8-arm radial maze (paper not read; no dimensions)", False
+        "track",
+        "Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an octagonal"
+        " centre platform (24.7cm diameter, 10cm sides)'",
+        True,
+        track_width=10.0,
     ),
     "dyads_001845": Apparatus(
         "track",
-        "DANDI 001845: paired W-mazes, this file the left rat's (no dimensions)",
+        "DANDI 001845: paired W-mazes, this file the left rat's; Shukla et al."
+        " 2026 Methods: 'W-shaped mazes (80 x 80 cm) with ~7-cm-wide track"
+        " sections'",
         True,
+        track_width=7.0,
+    ),
+    "hc3_ec013_669": Apparatus(
+        "track",
+        "Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7"
+        " cm2)'; the file is in pixels and its scale is inferred from the same"
+        " 250 cm, so neither size is compared",
+        True,
+    ),
+    "hc28_hpa": Apparatus(
+        "track",
+        "Jadhav et al. 2016 Supplemental Experimental Procedures: 'The W-track had"
+        " dimensions of ~80 x 80 cm', '7 cm wide metal sections'",
+        True,
+        track_width=7.0,
+        notes="W-track: three arms joined at their base",
+    ),
+    "hc31_anm190422": Apparatus(
+        "track",
+        "hc-31 data description: 'a novel 48-m long linear track' (1-D coordinate)",
+        True,
+    ),
+    "hc18_train261": Apparatus(
+        "track",
+        "hc-18 and Drieu et al. 2018: a model train's circuit (no shape or size"
+        " stated)",
+        False,
+        notes="loop",
+        n_loops=1,
     ),
     "neurolab_001754": Apparatus(
         "track",
@@ -734,7 +841,14 @@ def reference_for(rec: Recording, app: Apparatus | None) -> Reference | None:
     if "lattice_bars_cm" in geometry:
         ref = lattice_reference(np.asarray(geometry["lattice_bars_cm"], dtype=float))
     elif "graph" in geometry:
-        ref = graph_reference(geometry["graph"], "authors' track graph")
+        # A loader that draws its track in the file's frame (Hafting's line,
+        # in a frame the authors scaled to the stated length) gives no
+        # authors' graph.
+        drawn = geometry.get("declared_from") == "file's coordinates"
+        ref = graph_reference(
+            geometry["graph"],
+            FILE_FRAME_TRACK if drawn else "authors' track graph",
+        )
     elif "track_centrelines_cm" in geometry:
         parts = [np.asarray(c, dtype=float) for c in geometry["track_centrelines_cm"]]
         nodes = np.vstack(parts)
@@ -748,7 +862,11 @@ def reference_for(rec: Recording, app: Apparatus | None) -> Reference | None:
         ref = Reference(
             nodes, edges.astype(np.intp), "authors' track centrelines (file)"
         )
-    elif "linearized" in params and rec.positions.shape[1] == 2:
+    elif (
+        "linearized" in params
+        and rec.positions.shape[1] == 2
+        and (app is None or app.linearized_reference)
+    ):
         closed = app is not None and "loop" in app.notes
         points = centreline_from_linearized(
             rec.positions, np.asarray(params["linearized"], dtype=float), step=5.0
@@ -816,12 +934,18 @@ def rectangle_of(samples: NDArray[np.float64]) -> tuple[float, float, float]:
 
 
 def outline_measures(
-    env: Any, samples: NDArray[np.float64], app: Apparatus
+    env: Any, samples: NDArray[np.float64], app: Apparatus | None, shape: Any = None
 ) -> dict[str, Any]:
-    """Coverage of the stated shape by bins, bin area outside it, and wall gaps."""
+    """Coverage of the stated shape by bins, bin area outside it, and wall gaps.
+
+    ``shape`` is the stated outline as placed by the loader (a declared
+    environment's polygon); without it the stated square or circle is placed
+    here (``stated_shape``).
+    """
     import shapely
 
-    shape = stated_shape(samples, app)
+    if shape is None:
+        shape = stated_shape(samples, app)
     bin_size = float(np.min(env.bin_sizes) ** (1 / env.n_dims))
     step = COVER_STEP_BINS * float(np.mean(np.diff(np.asarray(env.grid_edges[0]))))
     xmin, ymin, xmax, ymax = shape.bounds
@@ -867,8 +991,8 @@ def outline_measures(
         "hull_over_min_circle": float(
             hull.area / shapely.minimum_bounding_circle(hull).area
         ),
-        "shape": app.shape,
-        "stated_size": app.size,
+        "shape": None if app is None else app.shape,
+        "stated_size": None if app is None else app.size,
         "sample_rectangle": [round(long, 1), round(short, 1)],
         "sample_rectangle_angle_deg": round(angle, 1),
         "stated_area_covered": covered,
@@ -895,7 +1019,7 @@ def measure_env(
     pairs = np.asarray(env.edge_pairs)
     bin_size = (
         float(np.mean(np.diff(np.asarray(env.grid_edges[0]))))
-        if env.layout_type == "RegularGrid"
+        if env.layout_type in GRID_LAYOUTS
         else float(np.median(np.asarray(env.bin_sizes)))
     )
     tree = cKDTree(samples)
@@ -918,7 +1042,7 @@ def measure_env(
         "far_edges": float(np.mean(gaps > bin_size)) if len(gaps) else 0.0,
         "edge_gap_max_bins": float(gaps.max() / bin_size) if len(gaps) else 0.0,
     }
-    if env.layout_type == "RegularGrid":
+    if env.layout_type in GRID_LAYOUTS:
         active = np.asarray(env.active_mask)
         index = grid_index(env)
         corners = corner_links(index, pairs, active)
@@ -926,6 +1050,11 @@ def measure_env(
         if env.n_dims == 2:
             holes = hole_sizes(active)
             out["holes"] = len(holes)
+            # Holes of 1 % of the bins or more: the inside of a loop, not a
+            # patch the animal happened to miss.
+            out["major_holes"] = int(
+                np.sum(holes >= MAJOR_COMPONENT_SHARE * env.n_bins)
+            )
             out["hole_bins"] = int(holes.sum())
             out["largest_hole_bins"] = int(holes[0]) if len(holes) else 0
         out["_corners"] = corners
@@ -937,8 +1066,12 @@ def measure_env(
     out["thin_bins"] = float(np.mean(counts < THIN_BIN_SAMPLES))
     first, second = sample_pairs(len(samples), rng)
     straight = np.linalg.norm(samples[first] - samples[second], axis=1)
-    keep = (straight >= MIN_PAIR_BINS * bin_size) & (
-        part[bins[first]] == part[bins[second]]
+    # A declared environment leaves some samples outside (bin -1): skip them.
+    inside = (bins[first] >= 0) & (bins[second] >= 0)
+    keep = (
+        inside
+        & (straight >= MIN_PAIR_BINS * bin_size)
+        & (part[bins[first]] == part[bins[second]])
     )
     first, second, straight = first[keep], second[keep], straight[keep]
     geo = geodesics(graph, bins[first], bins[second])
@@ -971,13 +1104,51 @@ def on_track_shares(
     return on_samples, on_bins
 
 
+JUMP_FACTOR = 3.0
+
+
+def jump_links(
+    env: Any,
+    ref: Reference,
+    segment: NDArray[np.intp],
+    along: NDArray[np.float64],
+    offset: NDArray[np.float64],
+) -> NDArray[np.bool_]:
+    """Links between bins that the stated layout puts far apart along the track.
+
+    Each bin centre is projected onto the reference (``segment``, ``along``
+    and its distance ``offset`` from ``project``); a link is a jump when the
+    distance along the reference between its two bins is more than
+    ``JUMP_FACTOR`` times the link's own length plus both bins' offsets (a
+    bin beside an inner corner projects onto the other segment, round the
+    corner): it joins corridors through a wall or a gap the layout keeps
+    apart, whatever the samples near its midpoint. Unlike a gap in the
+    samples, this does not need the wall to be wider than a bin.
+    """
+    pairs = np.asarray(env.edge_pairs)
+    if not len(pairs):
+        return np.zeros(0, dtype=bool)
+    centers = np.asarray(env.bin_centers, dtype=float)
+    length = np.linalg.norm(centers[pairs[:, 0]] - centers[pairs[:, 1]], axis=1)
+    distance = along_track_distance(
+        ref,
+        segment[pairs[:, 0]],
+        along[pairs[:, 0]],
+        segment[pairs[:, 1]],
+        along[pairs[:, 1]],
+    )
+    slack = offset[pairs[:, 0]] + offset[pairs[:, 1]]
+    return distance > JUMP_FACTOR * length + slack
+
+
 def against_reference(
     env_out: dict[str, Any], env: Any, samples: NDArray[np.float64], ref: Reference
 ) -> dict[str, Any]:
     """On-track shares and the environment's geodesic over the distance along the track."""
     dist_s, seg_s, along_s = project(samples, ref)
     centers = np.asarray(env.bin_centers, dtype=float)
-    dist_b = project(centers, ref)[0]
+    dist_b, seg_b, along_b = project(centers, ref)
+    jumps = jump_links(env, ref, seg_b, along_b, dist_b)
     first, second, geo, _ = env_out["_pairs"]
     along = along_track_distance(
         ref, seg_s[first], along_s[first], seg_s[second], along_s[second]
@@ -1003,6 +1174,8 @@ def against_reference(
         "share_pairs_shortcut": float(np.mean(ratio < 0.9))
         if len(ratio)
         else float("nan"),
+        "jump_links": int(jumps.sum()),
+        "jump_link_share": float(np.mean(jumps)) if len(jumps) else 0.0,
     }
     if ref.width is not None:
         out["track_width"] = ref.width
@@ -1275,22 +1448,40 @@ def bar_alignment(rec: Recording, ref: Reference) -> dict[str, Any]:
     }
 
 
+# References built from the recording's own samples. A track's shape judged
+# against one of them is not judged against anything the source states.
+SAMPLE_DERIVED_REFERENCES = (
+    "centreline from the file's linearized position",
+    "principal axis of the samples (straight track)",
+    "track drawn in the file's frame (scaled to the samples)",
+)
+
+
 def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
     """Verdict against the stated apparatus, and the reasons for a mismatch.
 
-    Checked when stated: the number of separate apparatus (components of at
-    least ``MAJOR_COMPONENT_SHARE`` of the bins), a square or circle's
-    coverage, a track's length (within 10 %), the share of bins on a track of
-    the stated width (90 %, ``on_track_shares``), the environment's geodesic
-    against the distance along the track (median 0.9 or more), the room
-    bounds, and for a 1-D loop that its ends meet in the camera (within
-    ``LOOP_CLOSURE_SHARE`` of its length) and that the bins join them (their
-    path no longer than the camera distance plus that share). An assumed
-    track width is reported but not judged.
+    "matches" or "mismatch" rests only on facts a source states
+    independently of the samples; with none, the verdict is "not verified"
+    and the measurements are reported. Facts judged, each within
+    ``_geometry.MAX_SIZE_RESIDUAL`` where it is a size: a track's stated
+    loops (holes of ``MAJOR_COMPONENT_SHARE`` of the bins or more), a
+    square's or circle's coverage, a track's stated length and a circular
+    track's circumference (pi x its diameter) against the length the samples
+    give, a lattice's side, the room's bounds, a 1-D loop whose ends meet,
+    and, against an independent reference (the authors' graph, centrelines
+    or bars, not a reference built from the samples:
+    ``SAMPLE_DERIVED_REFERENCES``), links that join places far apart along
+    it (``jump_links``) and the environment's geodesic over the distance
+    along it (median 0.9 or more). The number of separate parts and, on a
+    tree or straight track, loop-sized holes can make a mismatch but are not
+    enough for a match. The share of bins beyond a stated width is a
+    tracking measure (the tracked head swings past an unwalled track), not
+    judged. A declared environment is judged by ``measure_declared``.
     """
     if app is None or not app.verified:
         return "not verified", "no source read here states the geometry"
-    reasons = []
+    reasons: list[str] = []
+    facts: list[str] = []
     env = row["env"]
     if env["major_components"] != app.n_parts:
         n = env["major_components"]
@@ -1300,6 +1491,7 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
         )
     outline = row.get("outline")
     if outline:
+        facts.append("stated outline")
         if outline["stated_area_covered"] < 0.9:
             filled = row["open_field_preset"]["stated_area_covered"]
             reasons.append(
@@ -1310,30 +1502,66 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
             reasons.append(
                 f"{outline['bin_centres_outside_stated']:.0%} of bins outside it"
             )
+    if app.kind == "track" and "major_holes" in env:
+        if app.n_loops > 0:
+            facts.append("stated loops")
+        if env["major_holes"] != app.n_loops:
+            reasons.append(
+                f"{env['major_holes']} loop-sized hole{'s' if env['major_holes'] != 1 else ''}"
+                f" (1% of the bins or more), apparatus has {app.n_loops}"
+                f" loop{'s' if app.n_loops != 1 else ''}"
+            )
     track = row.get("reference")
     if track:
+        if app.size is not None and "loop" in app.notes and app.kind == "track":
+            facts.append("stated diameter")
+            stated = np.pi * app.size
+            if abs(track["reference_length"] / stated - 1) > MAX_SIZE_RESIDUAL:
+                reasons.append(
+                    f"loop {track['reference_length']:.0f} round, stated diameter"
+                    f" {app.size:g} ({stated:.0f} round)"
+                )
         if app.track_length is not None:
+            facts.append("stated length")
             stated = app.track_length * app.n_parts
-            if abs(track["reference_length"] / stated - 1) > 0.1:
+            if abs(track["reference_length"] / stated - 1) > MAX_SIZE_RESIDUAL:
                 reasons.append(
                     f"track {track['reference_length']:.0f} long, stated {stated:g}"
                 )
-        if track.get("track_width_stated") and track["bins_on_track"] < 0.9:
-            reasons.append(
-                f"{track['bins_on_track']:.0%} of bins within the stated track width"
-            )
-        if track["env_over_track_median"] < 0.9:
-            reasons.append(
-                f"geodesic {track['env_over_track_median']:.2f} x the distance along the"
-                f" {'bars' if app.kind == '3d' else 'track'}"
-            )
+        if track.get("reference") not in SAMPLE_DERIVED_REFERENCES:
+            facts.append(track.get("reference") or "an independent reference")
+            if track.get("jump_links"):
+                reasons.append(
+                    f"{track['jump_links']} links join places far apart along the"
+                    " track (through a wall or gap)"
+                )
+            if track["env_over_track_median"] < 0.9:
+                reasons.append(
+                    f"geodesic {track['env_over_track_median']:.2f} x the distance"
+                    f" along the {'bars' if app.kind == '3d' else 'track'}"
+                )
     room = row.get("room")
-    if room and room["bins_outside_room"] > 0.0:
-        reasons.append(
-            f"{room['bins_outside_room']:.1%} of bins outside the room bounds"
-        )
+    if room:
+        facts.append("stated room")
+        if room["bins_outside_room"] > 0.0:
+            reasons.append(
+                f"{room['bins_outside_room']:.1%} of bins outside the room bounds"
+            )
     one_d = row.get("one_d")
+    if one_d and app.track_length is not None:
+        facts.append("stated length")
+        span = one_d["range"][1] - one_d["range"][0]
+        if abs(span / app.track_length - 1) > MAX_SIZE_RESIDUAL:
+            reasons.append(f"track {span:.0f} long, stated {app.track_length:g}")
+    lattice = row.get("lattice")
+    if lattice and app.size is not None and "lattice_side" in lattice:
+        facts.append("stated lattice")
+        if abs(lattice["lattice_side"] / app.size - 1) > MAX_SIZE_RESIDUAL:
+            reasons.append(
+                f"lattice {lattice['lattice_side']:.0f} a side, stated {app.size:g}"
+            )
     if one_d and "loop" in app.notes and "camera_distance_between_ends" in one_d:
+        facts.append("the file's loop")
         camera = one_d["camera_distance_between_ends"]
         length = one_d["range"][1] - one_d["range"][0]
         if camera > LOOP_CLOSURE_SHARE * length:
@@ -1346,7 +1574,11 @@ def verdict(row: dict[str, Any], app: Apparatus | None) -> tuple[str, str]:
                 f"loop ends {one_d['end_to_end_geodesic']:.0f} apart along the bins,"
                 f" {camera:.0f} in the camera"
             )
-    return ("mismatch", "; ".join(reasons)) if reasons else ("matches", "")
+    if reasons:
+        return "mismatch", "; ".join(reasons)
+    if facts:
+        return "matches", ""
+    return "not verified", "no stated fact independent of the samples checks it"
 
 
 # --- Figures ---------------------------------------------------------------------
@@ -1373,7 +1605,7 @@ def _draw(
     pairs = np.asarray(env.edge_pairs)
     gaps = measures["_gaps"]
     bin_size = measures["bin_size"]
-    if env.n_dims == 2 and env.layout_type == "RegularGrid":
+    if env.n_dims == 2 and env.layout_type in GRID_LAYOUTS:
         active = np.asarray(env.active_mask)
         padded = np.pad(~active, 1, constant_values=True)
         labels = ndimage.label(
@@ -1402,7 +1634,7 @@ def _draw(
     ax.scatter(
         *shown[:, dims].T, s=0.3, c="0.35", alpha=0.5, linewidths=0, rasterized=True
     )
-    if env.n_dims != 2:
+    if env.n_dims != 2 or env.layout_type not in GRID_LAYOUTS:
         ax.scatter(
             *centers[:, dims].T,
             s=2,
@@ -1414,7 +1646,7 @@ def _draw(
     good = np.flatnonzero(gaps <= bin_size)
     if len(good) > MAX_DRAWN_EDGES:
         good = rng.choice(good, MAX_DRAWN_EDGES, replace=False)
-    if env.n_dims != 2 or env.layout_type != "RegularGrid":
+    if env.n_dims != 2 or env.layout_type not in GRID_LAYOUTS:
         ax.add_collection(
             LineCollection(
                 centers[pairs[good]][:, :, dims],
@@ -1548,14 +1780,34 @@ def _public(value: Any) -> Any:
     return value
 
 
+def declared_outline(env: Any) -> Any:
+    """The polygon a declared 2-D environment was built from, or None."""
+    domain = getattr(env.arena, "polygonal_domain", None)
+    return domain() if env.n_dims == 2 and domain is not None else None
+
+
 def analyse(rec: Recording, *, figures: bool = True) -> dict[str, Any]:
-    """Every measure for one recording, and the figure."""
+    """Every measure for one recording, and the figure.
+
+    ``row["env"]`` is the environment built from the samples
+    (``operations._samples_env``). Where the loader declares the apparatus
+    (``geometry["environment"]``, the environment the driver analyses), it is
+    measured and judged in ``row["declared"]`` (``measure_declared``),
+    against the same samples, reference, outline and room. The outline is the
+    one the loader placed when it declares one, else the stated square or
+    circle placed here (``stated_shape``).
+    """
+    from neurospatial import Environment
+
     rng = np.random.default_rng(SEED)
     app = APPARATUS.get(rec.dataset)
     samples = tracked(rec)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        env = _env(rec, {})
+        env = _samples_env(rec, {})
+        declared_env = (
+            rec.geometry["environment"]() if env_kind(rec, {}) == "declared" else None
+        )
     row: dict[str, Any] = {
         "dataset": rec.dataset,
         "units": rec.position_units,
@@ -1565,28 +1817,28 @@ def analyse(rec: Recording, *, figures: bool = True) -> dict[str, Any]:
     measures = measure_env(env, samples, rng)
     row["env"] = measures
     ref = reference_for(rec, app) if env.n_dims > 1 else None
-    outline = None
     if ref is not None:
         row["reference"] = against_reference(measures, env, samples, ref)
+    outline = None if declared_env is None else declared_outline(declared_env)
     if (
-        app is not None
+        outline is None
+        and app is not None
         and app.shape is not None
         and app.size is not None
         and env.n_dims == 2
     ):
-        row["outline"] = outline_measures(env, samples, app)
         outline = stated_shape(samples, app)
+    if outline is not None:
+        row["outline"] = outline_measures(env, samples, app, outline)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            from neurospatial import Environment
-
             filled = Environment.open_field(
                 rec.positions, bin_size=rec.params["bin_size"], units=_units(rec)
             )
         row["open_field_preset"] = {
             "n_bins": int(filled.n_bins),
             "holes": len(hole_sizes(np.asarray(filled.active_mask))),
-            "stated_area_covered": outline_measures(filled, samples, app)[
+            "stated_area_covered": outline_measures(filled, samples, app, outline)[
                 "stated_area_covered"
             ],
         }
@@ -1604,9 +1856,193 @@ def analyse(rec: Recording, *, figures: bool = True) -> dict[str, Any]:
         lattice["movement_along_bars"] = bar_alignment(rec, ref)
         row["lattice"] = lattice
     row["verdict"], row["verdict_reason"] = verdict(row, app)
+    if declared_env is not None:
+        row["declared"] = measure_declared(
+            rec, app, samples, ref, env=declared_env, outline=outline, room=room
+        )
     if figures:
         row["figure"] = save_figure(rec, env, samples, measures, ref, outline, room)
+        if declared_env is not None:
+            row["declared_figure"] = save_figure(
+                replace(rec, dataset=f"{rec.dataset}_declared"),
+                declared_env,
+                samples,
+                row["declared"]["env"],
+                ref,
+                outline,
+                room,
+            )
     return row
+
+
+def measure_declared(
+    rec: Recording,
+    app: Apparatus | None,
+    samples: NDArray[np.float64],
+    ref: Reference | None,
+    *,
+    env: Any = None,
+    outline: Any = None,
+    room: NDArray[np.float64] | None = None,
+) -> dict[str, Any]:
+    """The declared environment, measured as the samples-built one is, and judged.
+
+    A "mismatch" is misfit evidence (``_geometry.judge_declared``, on the
+    samples in ``params["analysis_epochs"]`` where the loader sets them: a
+    stretch of track beside its samples, the whole track or lattice offset
+    from its samples (``_tracks.frame_offset``), a segment with no samples
+    near it,
+    samples reaching past a track's free end or falling short of a wall, a
+    stated length off by more than ``MAX_SIZE_RESIDUAL``) or a stated fact
+    that fails (the parts, an independent reference). A "matches" needs a
+    stated fact independent of the samples: a stated length, diameter or
+    arm length compared with the samples' own, the authors' graph,
+    centreline or linearization used as stated (``AUTHORS_GEOMETRY``), or a
+    reference that is neither built from the samples
+    (``SAMPLE_DERIVED_REFERENCES``) nor the geometry the track was declared
+    from (``REFERENCE_SOURCE``). Otherwise the verdict is "not verified" and
+    the measurements stand. The share of samples beyond the physical width
+    is a tracking measure, reported with its split by speed, not judged: a
+    head-mounted LED above an unwalled track swings past its edge.
+    """
+    if env is None:
+        env = rec.geometry["environment"]()
+    measures = measure_env(env, samples, np.random.default_rng(SEED))
+    fit = dict(rec.geometry.get("environment_fit", {}))
+    # Judged on the samples the analyses use (``analysis_epochs``, else all):
+    # hc-18's sleep-box sessions are off the circuit by design.
+    positions = np.asarray(rec.positions, dtype=float)
+    epochs = rec.params.get("analysis_epochs")
+    if epochs is not None:
+        analysed = np.zeros(len(rec.times), dtype=bool)
+        for start, stop in np.asarray(epochs, dtype=float).reshape(-1, 2):
+            analysed |= (rec.times >= start) & (rec.times < stop)
+        positions = np.where(analysed[:, None], positions, np.nan)
+    judged = judge_declared(
+        env,
+        rec.times,
+        positions,
+        physical_width=rec.geometry.get("declared_physical_width"),
+        speed_thresholds=speed_thresholds(rec),
+        # A circle's one residual is its diameter's (``declared_circle``).
+        stated_residuals={
+            (
+                "diameter" if k == "size_residual" else k.removeprefix("size_residual_")
+            ): v
+            for k, v in fit.items()
+            if k.startswith("size_residual")
+        },
+        centre_offset=centre_offset_share(fit),
+        bin_size=rec.params.get("graph_bin_size", rec.params["bin_size"]),
+        lattice="lattice_bars_cm" in rec.geometry,
+    )
+    judged_samples = positions[np.isfinite(positions).all(axis=1)]
+    declared_from = rec.geometry.get("declared_from")
+    independent = (
+        ref is not None
+        and ref.label not in SAMPLE_DERIVED_REFERENCES
+        and declared_from not in REFERENCE_SOURCE.get(ref.label, ())
+    )
+    out: dict[str, Any] = {
+        "layout": env.layout_type,
+        "tracked_point": rec.geometry.get("tracked_point", "not stated"),
+        # Over the judged samples, as ``outside_physical_width``.
+        "frac_samples_outside": float(
+            np.mean(np.asarray(env.bin_at(judged_samples)) < 0)
+        ),
+        "track_width": rec.geometry.get("declared_track_width"),
+        "track_width_kind": rec.geometry.get("declared_track_width_kind"),
+        "physical_width": rec.geometry.get("declared_physical_width"),
+        "physical_width_kind": rec.geometry.get("declared_physical_width_kind"),
+        "outside_physical_width": judged["outside"],
+        "outside_physical_width_by_speed": judged["outside_by_speed"],
+        "declared_from": rec.geometry.get("declared_from"),
+        "fit": judged["fit"],
+        "misfit": judged["misfit"],
+        "reference_independent": independent,
+        "env": measures,
+    }
+    if ref is not None:
+        # Against its own geometry this measures the binning, not the placement.
+        out["reference"] = against_reference(measures, env, samples, ref)
+    if outline is not None and env.layout_type in GRID_LAYOUTS:
+        # Covered by construction when ``outline`` is the declared one.
+        out["outline"] = outline_measures(env, samples, app, outline)
+    if room is not None:
+        out["room"] = bat_room(env, samples, room, rec)
+    if "lattice_bars_cm" in rec.geometry and ref is not None:
+        out["adjacent_bars"] = adjacent_bar_pairs(bin_graph(env), env, samples, ref)
+    view: dict[str, Any] = {"env": measures}
+    if independent:
+        view["reference"] = out["reference"]
+    status, reason = verdict(view, app)
+    # Stated facts the declared track can be checked against, independent of
+    # the samples it was placed on.
+    # The samples' extent across the declared outline compares the samples
+    # with the declaration itself, so it is misfit evidence but not a fact.
+    facts = [
+        f"{key.removeprefix('size_residual_')} {value:+.0%} of the stated"
+        for key, value in judged["fit"].items()
+        if key.startswith("size_residual") and key != "size_residual_extent"
+    ]
+    if declared_from in AUTHORS_GEOMETRY:
+        facts.append(f"the {declared_from} as stated")
+    out["facts"] = facts
+    if status == "not verified" and (app is None or not app.verified):
+        # Nothing stated checks the layout, so misfit cannot make a mismatch
+        # (it could not fail on a correct layout either); it is named.
+        if judged["misfit"]:
+            reason += "; misfit against the samples: " + "; ".join(judged["misfit"])
+    elif status == "mismatch" or judged["misfit"]:
+        reasons = ([reason] if status == "mismatch" else []) + judged["misfit"]
+        status, reason = "mismatch", "; ".join(reasons)
+    elif facts or (status == "matches" and independent):
+        # The declared environment's own loops and outline are what was
+        # declared, so they confirm nothing; only the facts above and an
+        # independent reference do.
+        status = "matches"
+        reason = "on " + "; ".join(facts + ([ref.label] if independent else []))
+    else:
+        status = "not verified"
+        reason = "no stated fact independent of the samples checks the layout" + (
+            f" ({ref.label} is built from the samples or is what it was declared from)"
+            if ref
+            else ""
+        )
+    if status != "mismatch" and judged["unverified"]:
+        # A check that cannot be read confirms nothing; the earlier reason
+        # (a match's facts, a misfit against the samples, or no stated fact)
+        # is kept after it.
+        unread = "; ".join(judged["unverified"])
+        reason = unread + (
+            f" (otherwise matches {reason})" if status == "matches" else f"; {reason}"
+        )
+        status = "not verified"
+    out["unverified"] = judged["unverified"]
+    out["verdict"], out["verdict_reason"] = status, reason
+    return out
+
+
+def speed_thresholds(rec: Recording) -> tuple[float, ...]:
+    """Speed bands for the share of samples outside a declared environment.
+
+    The loader's (``geometry["declared_speed_thresholds"]``), else its
+    ``min_speed`` and, in cm, 30 cm/s, the bands the track loaders use.
+    """
+    if (stated := rec.geometry.get("declared_speed_thresholds")) is not None:
+        return tuple(stated)
+    bands = [] if rec.params.get("min_speed") is None else [rec.params["min_speed"]]
+    if rec.position_units == "cm":
+        bands.append(30.0)
+    return tuple(sorted(set(bands)))
+
+
+def centre_offset_share(fit: dict[str, Any]) -> float | None:
+    """A stated centre's distance from the samples' centre over the stated radius."""
+    if "centre_offset" not in fit:
+        return None
+    radius = fit["samples_diameter"] / (1 + fit["size_residual"]) / 2
+    return float(fit["centre_offset"] / radius)
 
 
 def _units(rec: Recording) -> str | None:
@@ -1617,6 +2053,55 @@ def _fmt(value: Any, spec: str) -> str:
     if value is None or (isinstance(value, float) and not np.isfinite(value)):
         return "–"
     return format(value, spec)
+
+
+def compare_table(rows: list[dict[str, Any]]) -> list[str]:
+    """Declared environments beside the samples-built ones (declared / samples)."""
+    declared = [row for row in rows if "declared" in row]
+    if not declared:
+        return []
+    lines = [
+        "",
+        "## Declared against samples-built environments",
+        "",
+        "Each cell: declared / samples-built, measured against the same samples"
+        " (every tracked sample), reference and outline. Outside: share of the"
+        " judged samples (those in `analysis_epochs`, as the verdict uses) the"
+        " declared environment cannot place (`env.bin_at` -1), a tracking"
+        " measure, not judged. Covered and wall gap: against the outline the loader placed; a"
+        " declared environment covers its own outline by construction, so only"
+        " the samples-built value is evidence.",
+        "",
+        "| Dataset | Bins | Components (1 %) | Holes (bins) | Sparse bins | Far links |"
+        " Geodesic / straight | Env / track | Covered | Wall gap | Outside |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+
+    def pair(a: Any, b: Any, spec: str) -> str:
+        return f"{_fmt(a, spec)} / {_fmt(b, spec)}"
+
+    for row in declared:
+        dec = row["declared"]
+        env, base = dec["env"], row["env"]
+        holes = (
+            f"{env.get('holes', '–')} ({env.get('hole_bins', '–')}) /"
+            f" {base.get('holes', '–')} ({base.get('hole_bins', '–')})"
+        )
+        ref, base_ref = dec.get("reference", {}), row.get("reference", {})
+        outline, base_outline = dec.get("outline", {}), row.get("outline", {})
+        lines.append(
+            f"| {row['dataset']} | {env['n_bins']} / {base['n_bins']} |"
+            f" {env['components']} ({env['major_components']}) /"
+            f" {base['components']} ({base['major_components']}) | {holes} |"
+            f" {pair(env['sparse_bins'], base['sparse_bins'], '.0%')} |"
+            f" {pair(env['far_edges'], base['far_edges'], '.2%')} |"
+            f" {pair(env['geodesic_ratio_median'], base['geodesic_ratio_median'], '.2f')} |"
+            f" {pair(ref.get('env_over_track_median'), base_ref.get('env_over_track_median'), '.2f')} |"
+            f" {pair(outline.get('stated_area_covered'), base_outline.get('stated_area_covered'), '.0%')} |"
+            f" {pair(outline.get('wall_gap_median'), base_outline.get('wall_gap_median'), '.1f')} |"
+            f" {dec['frac_samples_outside']:.2%} |"
+        )
+    return lines
 
 
 def render(rows: list[dict[str, Any]]) -> str:
@@ -1665,6 +2150,106 @@ def render(rows: list[dict[str, Any]]) -> str:
             f" {_fmt(env['geodesic_ratio_median'], '.2f')}, {_fmt(env['geodesic_ratio_p95'], '.2f')} |"
             f" {on_track} | {track} | {outline_cell} | {verdict_cell} |"
         )
+    declared = [row for row in rows if "declared" in row]
+    if declared:
+        lines += [
+            "",
+            "## Declared environments",
+            "",
+            "The environment the driver analyses where the loader declares the"
+            " apparatus (`geometry['environment']`), measured as above against the"
+            " same samples. Verdict: misfit evidence (`_geometry.judge_declared`: a"
+            " stretch of track whose samples lie to one side by more than a bin, the"
+            " whole track or lattice offset from its samples by more than a bin"
+            " by both estimators below (horizontally on the lattice), a"
+            " track segment with no sample near it, a stated length off by more than"
+            " 15 %; on an outline or the lattice the share with no sample near it is"
+            " reported, not judged: the tracked head keeps off walls and bars),"
+            " the stated parts and an independent reference. Beyond physical: the"
+            " share of tracked samples farther than half the physical width from the"
+            " track, a tracking measure (the tracked head swings past an unwalled"
+            " track), not judged; in brackets the same share by speed, slowest band"
+            " first (below the loader's running speed, up to 30 cm/s, above; bands"
+            " in the details). Tolerance: the"
+            " placement tolerance the track is built with (`track_width`), measured"
+            " from the samples so about 1 % are dropped. Lateral: the median"
+            " |lateral offset| and the worst stretch's median signed offset. Frame"
+            " offset: one translation of the samples off the whole track or lattice"
+            " (`_tracks.frame_offset`, every straight piece's median perpendicular"
+            " offset, each piece weighted once), the refitted shift's components,"
+            " the judged norm (the smallest with any one piece left out; horizontal"
+            " on the lattice) from a single least-squares step and from the shift"
+            " refitted until it settles, against one bin (a mismatch when both"
+            " exceed it, not verified when they straddle it), and in brackets the"
+            " pieces each used and the directions not read (no piece, or only"
+            " one, crosses them). Env /"
+            " track: `own` when the reference is the geometry the track was declared"
+            " from, which then measures only its binning.",
+            "",
+            "| Dataset | Tracked point | Declared from | Bins | Components (1 % of bins or more) | Physical width | Beyond physical | Tolerance (outside) | Lateral: median, worst stretch | Frame offset: refitted components; judged one step / refitted (pieces, unread) | Far links | Env / track (median, p5) | Verdict |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+        for row in declared:
+            dec = row["declared"]
+            env, ref, fit = dec["env"], dec.get("reference", {}), dec.get("fit", {})
+            physical = (
+                "not stated"
+                if dec.get("physical_width") is None
+                else f"{dec['physical_width']:.3g} {dec['physical_width_kind']}"
+            )
+            by_speed = {
+                k: v
+                for k, v in (dec.get("outside_physical_width_by_speed") or {}).items()
+                if k != "all"
+            }
+            beyond = (
+                "–"
+                if dec.get("outside_physical_width") is None
+                else f"{dec['outside_physical_width']:.1%}"
+                + (
+                    " (" + " / ".join(f"{v:.0%}" for v in by_speed.values()) + ")"
+                    if by_speed
+                    else ""
+                )
+            )
+            tolerance = (
+                f"{dec['track_width']:.3g} ({dec['frac_samples_outside']:.1%})"
+                if dec.get("track_width") is not None
+                else "–"
+            )
+            lateral = (
+                f"{fit['median_abs_lateral']:.2f}, {fit['max_edge_bias']:.2f}"
+                if "max_edge_bias" in fit
+                else "–"
+            )
+            frame = (
+                "("
+                + ", ".join(_fmt(v, "+.2f") for v in fit["frame_offset"])
+                + f"); {_fmt(fit['frame_offset_judged_one_step'], '.2f')} /"
+                f" {_fmt(fit['frame_offset_judged'], '.2f')}"
+                f" ({fit['frame_pieces_one_step']} / {fit['frame_pieces']},"
+                f" {fit['frame_judged_unconstrained']})"
+                if "frame_offset" in fit
+                else "–"
+            )
+            track = (
+                f"{_fmt(ref.get('env_over_track_median'), '.2f')}, {_fmt(ref.get('env_over_track_p05'), '.2f')}"
+                + ("" if dec.get("reference_independent") else " (own)")
+                if ref
+                else "–"
+            )
+            verdict_cell = dec["verdict"] + (
+                f": {dec['verdict_reason']}" if dec["verdict_reason"] else ""
+            )
+            lines.append(
+                f"| {row['dataset']} | {dec.get('tracked_point', '–')} |"
+                f" {dec.get('declared_from') or '–'} | {env['n_bins']} |"
+                f" {env['components']} ({env['major_components']}) | {physical} |"
+                f" {beyond} | {tolerance} | {lateral} | {frame} |"
+                f" {env['far_edges']:.2%} |"
+                f" {track} | {verdict_cell} |"
+            )
+    lines += compare_table(rows)
     lines += ["", "## Sources and details", ""]
     for row in rows:
         lines.append(f"### {row['dataset']}")
@@ -1678,6 +2263,7 @@ def render(rows: list[dict[str, Any]]) -> str:
             "one_d",
             "room",
             "lattice",
+            "declared",
         ):
             if key in row:
                 lines.append(f"- {key}: `{json.dumps(_public(row[key]), default=str)}`")
@@ -1688,30 +2274,15 @@ def render(rows: list[dict[str, Any]]) -> str:
 def expand(rec: Recording) -> list[Recording]:
     """The recording, plus derived views that answer a question about its apparatus.
 
-    - figure8_000552: the driver's environment is 1-D (the linearized loop);
-      the camera (x, y) is also built. The file's linearized position gives
-      the two side loops the same values, so it cannot serve as a 2-D
-      reference here.
     - a recording with a 2-D track and the file's linearized position
       (``params["linearized"]``): the 1-D environment the replay operation
-      builds from it, ``Environment.from_samples`` on that coordinate.
-    - jadhav_000447: the novel W-track (runs 1 and 3) and the familiar one
-      (run 2) lie rotated 90 degrees in one camera frame; each is also built
-      alone.
+      builds from it without a declared track, ``Environment.from_samples``
+      on that coordinate (for the figure-8, its linearized loop).
     - neurolab_001754: the driver builds one environment from all five
       sessions (three apparatus in one image); the Escher staircase session
       alone is also built.
     """
     views = [rec]
-    if rec.dataset == "figure8_000552":
-        views.append(
-            replace(
-                rec,
-                dataset="figure8_000552_camera",
-                positions=np.asarray(rec.geometry["positions_2d"], dtype=float),
-                params={k: v for k, v in rec.params.items() if k != "linearized"},
-            )
-        )
     if "linearized" in rec.params and np.asarray(rec.positions).shape[1] == 2:
         views.append(
             replace(
@@ -1722,20 +2293,6 @@ def expand(rec: Recording) -> list[Recording]:
                 params={k: v for k, v in rec.params.items() if k != "linearized"},
             )
         )
-    if rec.dataset == "jadhav_000447":
-        runs = np.asarray(rec.epochs["run"])
-        for name, rows in (("novel", [0, 2]), ("familiar", [1])):
-            keep = np.zeros(len(rec.times), dtype=bool)
-            for start, stop in runs[rows]:
-                keep |= (rec.times >= start) & (rec.times < stop)
-            views.append(
-                replace(
-                    rec,
-                    dataset=f"jadhav_000447_{name}",
-                    times=rec.times[keep],
-                    positions=np.asarray(rec.positions)[keep],
-                )
-            )
     if rec.dataset == "neurolab_001754":
         session = np.zeros(len(rec.times), dtype=bool)
         for start, stop in np.asarray(rec.params["analysis_epochs"]):
@@ -1759,13 +2316,49 @@ def run(keys: tuple[str, ...]) -> list[dict[str, Any]]:
             continue
         for view in expand(rec):
             rows.append(analyse(view))
+            declared = rows[-1].get("declared")
             print(
                 view.dataset,
                 rows[-1]["verdict"],
                 rows[-1]["verdict_reason"],
+                *(
+                    ("| declared:", declared["verdict"], declared["verdict_reason"])
+                    if declared
+                    else ()
+                ),
                 flush=True,
             )
     return rows
+
+
+def merged(
+    previous: list[dict[str, Any]], new: list[dict[str, Any]], keys: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """``previous`` rows with those of ``keys`` (and their views) replaced by ``new``.
+
+    A row belongs to the longest key that its dataset equals or starts with
+    followed by an underscore (a derived view). Rows keep their earlier order;
+    rows of datasets not seen before are appended.
+    """
+
+    def owner(row: dict[str, Any]) -> str | None:
+        name = row["dataset"]
+        owners = [k for k in keys if name == k or name.startswith(f"{k}_")]
+        return max(owners, key=len) if owners else None
+
+    fresh: dict[str, list[dict[str, Any]]] = {}
+    for row in new:
+        fresh.setdefault(owner(row) or row["dataset"], []).append(row)
+    out: list[dict[str, Any]] = []
+    for row in previous:
+        key = owner(row)
+        if key is None:
+            out.append(row)
+        elif key in fresh:
+            out += fresh.pop(key)
+    for rows in fresh.values():
+        out += rows
+    return out
 
 
 if __name__ == "__main__":
@@ -1773,6 +2366,10 @@ if __name__ == "__main__":
     rows = run(keys)
     RESULTS.mkdir(parents=True, exist_ok=True)
     public = [_public(row) for row in rows]
+    previous_path = RESULTS / "environment_fidelity.json"
+    if sys.argv[1:] and previous_path.exists():
+        # Rerun on some datasets: keep the other rows of the last full run.
+        public = merged(json.loads(previous_path.read_text()), public, keys)
     (RESULTS / "environment_fidelity.json").write_text(
         json.dumps(public, indent=2, default=str) + "\n"
     )

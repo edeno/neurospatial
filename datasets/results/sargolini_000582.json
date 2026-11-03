@@ -5,7 +5,8 @@
   "license": "CC-BY-4.0",
   "conversions": [
     "positions: cm = read_position metres x 100 (file stores cm, conversion=0.01)",
-    "headings: none; the file has one LED (SpatialSeriesLED1)"
+    "headings: none; the file has one LED (SpatialSeriesLED1)",
+    "environment: declared square (100 x 100, NWB session_description: 'a 1 x 1 meter enclosure'); placement fitted: centre_x 0.332, centre_y -0.12, rotation_rad 0.00355, samples_side_a 99.9, samples_side_b 97.4, size_residual_a -0.000663, size_residual_b -0.0258"
   ],
   "expectations": [
     {
@@ -35,15 +36,33 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "3d57376a258e5a8f05b0d3ae64291e22643f783d3c2575e02b68dffbae4b0a7a",
+    "positions": [
+      [
+        30000,
+        2
+      ],
+      2
+    ],
+    "times": [
+      0.0,
+      599.98,
+      30000
+    ],
+    "spike_counts": "a5640f21dfbea43531be462021914a1df9f0a528ac5d3742df0ba43b7539cb79",
+    "unit_ids": "a8d78592f509e595e26d06a5849bef2641b09fa4ba864b87ae0e812bc8baa6f3",
+    "geometry": "85c5b3a6ac7f7ddcee00eb41124f35b2521dc2e997f5e20d0971ecae920ad9f5"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -55,42 +74,56 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.799,
-      "peak_mb": 30.1
+      "seconds": 0.147,
+      "peak_mb": 5.9
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
         "total_s": 599.96,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.27999999999974534,
-        "max_s": 9.620000000000346
+        "frac_bins_visited": 0.8575890068707058,
+        "median_s_per_visited_bin": 0.2800000000002001,
+        "max_s": 10.520000000000437
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
-      "peak_mb": 3.8
+      "seconds": 0.169,
+      "peak_mb": 8.3
+    },
+    "env.declared": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 1601,
+        "n_dims": 2,
+        "max_extent": 100.0,
+        "frac_samples_outside": 0.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.017,
+      "peak_mb": 4.2
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.0,
-        "median_peak_hz": 8.922085900468817,
-        "median_mean_hz": 0.931964316009954
+        "frac_nan_bins": 0.1424109931292942,
+        "median_peak_hz": 7.760849812585338,
+        "median_mean_hz": 0.9267649261391575
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.546,
-      "peak_mb": 54.0
+      "seconds": 0.91,
+      "peak_mb": 69.2
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 1.0082116647675357,
-        "bits_per_spike_max": 1.6664030367388312,
+        "bits_per_spike_median": 0.9449936447265366,
+        "bits_per_spike_max": 1.593895582480509,
         "bits_per_spike_n_finite": 6
       },
       "note": "",
@@ -102,8 +135,8 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 1.0082116647675357,
-        "median_shifted_bits_per_spike": 0.37600166308994,
+        "median_bits_per_spike": 0.9449936447265366,
+        "median_shifted_bits_per_spike": 0.33420661377104843,
         "frac_above_every_shift": 1.0,
         "n_units": 6,
         "n_shifts": 4
@@ -111,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.048,
+      "seconds": 0.156,
       "peak_mb": 3.9
     },
     "cells.place_screen": {
@@ -123,32 +156,41 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.028,
-      "peak_mb": 80.4
+      "seconds": 0.037,
+      "peak_mb": 90.3
     },
     "cells.grid_score": {
       "status": "ok",
       "summary": {
-        "median": 0.2922088711921358,
-        "max": 0.9639771872772648,
+        "median": 0.3005402714976676,
+        "max": 0.8693050166524058,
         "n_finite": 6
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.034,
+      "seconds": 0.035,
       "peak_mb": 8.5
     },
     "cells.border_score": {
-      "status": "error",
-      "summary": {},
-      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "status": "ok",
+      "summary": {
+        "median": -0.5132609746193602,
+        "max": 0.3856425810299372,
+        "n_finite": 6
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
-      "peak_mb": 0.6
+      "seconds": 0.093,
+      "peak_mb": 2.8
     },
     "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "rates.egocentric_boundary": {
       "status": "n/a",
       "note": "needs headings",
       "warnings": []
@@ -156,27 +198,31 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 65.96194077712559,
-        "chance_median_error": 55.281100267422524,
+        "median_error": 64.31980515339464,
+        "chance_median_error": 56.21320343559643,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
         "units": "cm",
-        "n_time_bins": 1199
+        "n_time_bins": 1199,
+        "median_error_on_declared": 64.31980515339464,
+        "n_on_declared": 1199
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.063,
-      "peak_mb": 31.0
+      "seconds": 0.624,
+      "peak_mb": 66.1
     },
     "io.nwb_roundtrip": {
       "status": "ok",
       "summary": {
-        "n_bins": 1399
+        "n_bins": 1601
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.409,
-      "peak_mb": 12.1
+      "seconds": 2.443,
+      "peak_mb": 14.4
     },
     "env.from_graph": {
       "status": "n/a",
@@ -193,20 +239,17 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.562,
+      "seconds": 0.548,
       "peak_mb": 21.4
     },
     "behavior.laps": {
-      "status": "ok",
-      "summary": {
-        "n_laps": 1,
-        "n_clockwise": 1
-      },
-      "note": "",
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.029,
-      "peak_mb": 5.0
+      "seconds": 0.02,
+      "peak_mb": 3.7
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -223,7 +266,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.095,
+      "seconds": 0.1,
       "peak_mb": 3.1
     },
     "io.nwb_readers": {
@@ -236,8 +279,17 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.211,
-      "peak_mb": 2.7
+      "seconds": 0.22,
+      "peak_mb": 3.7
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.932,
+      "peak_mb": 12.2
     },
     "imaging.rates": {
       "status": "n/a",
@@ -250,6 +302,7 @@
       "warnings": []
     }
   },
+  "env_kind": "declared",
   "hazards": [
     {
       "hazard": "missing_positions_as_zero",
@@ -276,15 +329,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 599.96,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.27999999999974534,
-        "max_s": 9.620000000000346
+        "frac_bins_visited": 0.8575890068707058,
+        "median_s_per_visited_bin": 0.2800000000002001,
+        "max_s": 10.520000000000437
       },
       "hazard_summary": {
         "total_s": 599.98,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.27999999999974534,
-        "max_s": 9.620000000000346
+        "frac_bins_visited": 0.8575890068707058,
+        "median_s_per_visited_bin": 0.2800000000002001,
+        "max_s": 10.520000000000437
       }
     },
     {
@@ -295,15 +348,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.0,
-        "median_peak_hz": 8.922085900468817,
-        "median_mean_hz": 0.931964316009954
+        "frac_nan_bins": 0.1424109931292942,
+        "median_peak_hz": 7.760849812585338,
+        "median_mean_hz": 0.9267649261391575
       },
       "hazard_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.0,
-        "median_peak_hz": 8.922085900468808,
-        "median_mean_hz": 0.9319466872622875
+        "frac_nan_bins": 0.1424109931292942,
+        "median_peak_hz": 7.760849812585326,
+        "median_mean_hz": 0.9267466935998303
       }
     },
     {
@@ -318,17 +371,11 @@
     {
       "hazard": "missing_positions_as_zero",
       "op": "behavior.laps",
-      "response": "silent",
-      "message": "",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 1,
-        "n_clockwise": 1
-      },
-      "hazard_summary": {
-        "n_laps": 1,
-        "n_clockwise": 1
-      }
+      "clean_summary": {},
+      "hazard_summary": null
     },
     {
       "hazard": "missing_positions_as_zero",
@@ -347,13 +394,13 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.0,
-        "median_peak_hz": 8.922085900468817,
-        "median_mean_hz": 0.931964316009954
+        "frac_nan_bins": 0.1424109931292942,
+        "median_peak_hz": 7.760849812585338,
+        "median_mean_hz": 0.9267649261391575
       },
       "hazard_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.0,
+        "frac_nan_bins": 0.1424109931292942,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
       }
@@ -362,7 +409,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.980399291953292, 1.0] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.02 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9804, 1] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 1399,
@@ -383,34 +430,34 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 599.96,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.27999999999974534,
-        "max_s": 9.620000000000346
+        "frac_bins_visited": 0.8575890068707058,
+        "median_s_per_visited_bin": 0.2800000000002001,
+        "max_s": 10.520000000000437
       },
       "hazard_summary": {
         "total_s": 599.96,
-        "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 151.67000000000007,
-        "max_s": 163.2199999999998
+        "frac_bins_visited": 0.0006246096189881324,
+        "median_s_per_visited_bin": 599.96,
+        "max_s": 599.96
       }
     },
     {
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
-      "response": "warned",
-      "message": "bandwidth=5 spans the environment (extent 5 cm), which can erase spatial tuning. Choose an explicit bandwidth in the same units as positions; check env.units and the scale of your recording.",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.0,
-        "median_peak_hz": 8.922085900468817,
-        "median_mean_hz": 0.931964316009954
+        "frac_nan_bins": 0.1424109931292942,
+        "median_peak_hz": 7.760849812585338,
+        "median_mean_hz": 0.9267649261391575
       },
       "hazard_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.0,
-        "median_peak_hz": 0.9194317116302448,
-        "median_mean_hz": 0.9058958261167503
+        "frac_nan_bins": 0.9993753903810119,
+        "median_peak_hz": 0.9058937262484164,
+        "median_mean_hz": 0.9058937262484164
       }
     },
     {
@@ -425,13 +472,10 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "raised",
-      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 1,
-        "n_clockwise": 1
-      },
+      "clean_summary": {},
       "hazard_summary": null
     },
     {

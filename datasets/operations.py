@@ -13,13 +13,16 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import tempfile
-from collections.abc import Callable, Mapping
+import warnings
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
+from _geometry import graph_environment
 from _record import Recording
+from numpy.typing import NDArray
 
 Status = Literal["ok", "workaround", "missing", "error", "n/a"]
 
@@ -48,16 +51,39 @@ def _units(rec: Recording) -> str | None:
     return None if rec.position_units == "arbitrary" else rec.position_units
 
 
-def _env(rec: Recording, cache: dict[str, Any]) -> Any:
+def env_kind(rec: Recording, cache: dict[str, Any]) -> str:
+    """``"declared"`` when the loader declares the apparatus and the run uses it."""
+    if "environment" in rec.geometry and not cache.get("inferred_env"):
+        return "declared"
+    return "inferred"
+
+
+def _samples_env(rec: Recording, cache: dict[str, Any]) -> Any:
     from neurospatial import Environment
 
-    if "env" not in cache:
-        cache["env"] = Environment.from_samples(
+    if "samples_env" not in cache:
+        cache["samples_env"] = Environment.from_samples(
             rec.positions,
             bin_size=rec.params["bin_size"],
             units=_units(rec),
             name=rec.dataset,
         )
+    return cache["samples_env"]
+
+
+def _env(rec: Recording, cache: dict[str, Any]) -> Any:
+    """The analysis environment: the declared apparatus when the loader gives one.
+
+    ``rec.geometry["environment"]`` is a zero-argument callable returning the
+    environment built from the source's stated apparatus; otherwise, or when
+    the run sets ``cache["inferred_env"]``, the environment is built from the
+    samples.
+    """
+    if "env" not in cache:
+        if env_kind(rec, cache) == "declared":
+            cache["env"] = rec.geometry["environment"]()
+        else:
+            cache["env"] = _samples_env(rec, cache)
     return cache["env"]
 
 
@@ -89,11 +115,30 @@ def _finite_stats(values: Any) -> dict[str, float | int]:
 
 
 def env_from_samples(rec: Recording, cache: dict[str, Any]) -> Outcome:
-    env = _env(rec, cache)
+    env = _samples_env(rec, cache)
     extent = np.ptp(np.asarray(env.bin_centers), axis=0)
     return Outcome(
         "ok",
         {"n_bins": env.n_bins, "n_dims": env.n_dims, "max_extent": float(extent.max())},
+    )
+
+
+def env_declared(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """The declared environment, and the share of tracked samples it cannot place."""
+    if env_kind(rec, cache) != "declared":
+        return Outcome("n/a", note="the loader declares no apparatus")
+    env = _env(rec, cache)
+    extent = np.ptp(np.asarray(env.bin_centers), axis=0)
+    tracked = rec.positions[np.isfinite(rec.positions).all(axis=1)]
+    outside = float(np.mean(np.asarray(env.bin_at(tracked)) < 0))
+    return Outcome(
+        "ok",
+        {
+            "n_bins": env.n_bins,
+            "n_dims": env.n_dims,
+            "max_extent": float(extent.max()),
+            "frac_samples_outside": outside,
+        },
     )
 
 
@@ -151,40 +196,84 @@ REPLAY_ON_LINEARIZED_GAP = "G-038"
 MIN_SHIFT_S = 20.0
 
 
-def shifted_trains(rec: Recording, seed: int) -> list[np.ndarray]:
-    """Each unit's spikes inside the tracking span, circularly shifted (seeded).
+def counted_intervals(rates: Any) -> np.ndarray:
+    """The half-open intervals a rate result counts, shape (n_intervals, 2)."""
+    return np.asarray(
+        rates.analysis_settings["observed_intervals"], dtype=float
+    ).reshape(-1, 2)
 
-    The shift is uniform between ``MIN_SHIFT_S`` and the span minus
-    ``MIN_SHIFT_S``, one per unit, wrapping around; spikes outside the span
-    stay put.
+
+def shifted_trains(
+    trains: Sequence[np.ndarray], intervals: np.ndarray, seed: int
+) -> list[np.ndarray]:
+    """Each unit's counted spikes, circularly shifted within the counted time (seeded).
+
+    ``intervals``, shape (n_intervals, 2), are the half-open time intervals
+    the rate maps count (``analysis_settings["observed_intervals"]``: the
+    analysis epochs, the speed gate, tracking gaps and the environment's
+    bounds). They are joined end to end into one axis, each unit's spikes on
+    it are shifted by one amount drawn uniformly between ``MIN_SHIFT_S`` and
+    the counted length minus ``MIN_SHIFT_S``, wrapping around, and mapped
+    back. Shifted spikes stay inside counted time, so the shifted maps have
+    the real maps' spike counts; spikes outside it are counted in neither
+    and stay put. Spike-to-spike intervals are kept except across a join,
+    but firing locked to the intervals themselves (a flight's or a run's
+    start) is not. The intervals are taken in time order; overlapping ones
+    raise ``ValueError`` (their time would be counted twice).
     """
-    start, stop = float(rec.times[0]), float(rec.times[-1])
-    span = stop - start
+    intervals = np.asarray(intervals, dtype=float).reshape(-1, 2)
+    intervals = intervals[np.argsort(intervals[:, 0], kind="stable")]
+    starts, stops = intervals[:, 0], intervals[:, 1]
+    if np.any(starts[1:] < stops[:-1]):
+        k = int(np.flatnonzero(starts[1:] < stops[:-1])[0])
+        message = (
+            f"counted intervals overlap: [{starts[k]:g}, {stops[k]:g}) and"
+            f" [{starts[k + 1]:g}, {stops[k + 1]:g}); merge them before shifting"
+        )
+        raise ValueError(message)
+    cum = np.concatenate([[0.0], np.cumsum(stops - starts)])
+    total = float(cum[-1])
+    if total <= 2 * MIN_SHIFT_S:
+        message = (
+            f"the counted time is {total:.3g} s, too short for shifts of at least"
+            f" {MIN_SHIFT_S:g} s each way"
+        )
+        raise ValueError(message)
     rng = np.random.default_rng(seed)
-    trains = []
-    for train in rec.spike_times or ():
-        inside = (train >= start) & (train <= stop)
+    out = []
+    for train in trains:
+        train = np.asarray(train, dtype=float)
+        run = np.searchsorted(starts, train, side="right") - 1
+        inside = (run >= 0) & (train < stops[np.maximum(run, 0)])
+        on_axis = cum[run[inside]] + train[inside] - starts[run[inside]]
+        on_axis = (on_axis + rng.uniform(MIN_SHIFT_S, total - MIN_SHIFT_S)) % total
+        back = np.minimum(
+            np.searchsorted(cum, on_axis, side="right") - 1, len(starts) - 1
+        )
         moved = train.copy()
-        shift = rng.uniform(MIN_SHIFT_S, span - MIN_SHIFT_S)
-        moved[inside] = (train[inside] - start + shift) % span + start
-        trains.append(np.sort(moved))
-    return trains
+        moved[inside] = starts[back] + on_axis - cum[back]
+        out.append(np.sort(moved))
+    return out
 
 
 def information_vs_shifts(rec: Recording, cache: dict[str, Any]) -> Outcome:
     """Spatial information against circularly shifted spikes (seeded).
 
-    Each unit's spikes inside the tracking span are shifted by a random
-    amount between 20 s and the span minus 20 s, wrapping around, ``N_SHIFTS``
-    times (seeds 0, 1, …); spikes outside the span stay put. A unit whose
-    information does not beat its shifts carries no more than sampling noise.
+    Each unit's spikes are shifted within the time the maps count
+    (``shifted_trains``: the analysis epochs, the speed gate and tracking
+    gaps joined end to end) by a random amount between 20 s and that length
+    minus 20 s, wrapping around, ``N_SHIFTS`` times (seeds 0, 1, …). A unit
+    whose information does not beat its shifts carries no more than sampling
+    noise.
     """
     from neurospatial.encoding import compute_spatial_rates
 
-    real = np.asarray(_rates(rec, cache).spatial_information(), dtype=float)
+    real_rates = _rates(rec, cache)
+    real = np.asarray(real_rates.spatial_information(), dtype=float)
+    intervals = counted_intervals(real_rates)
     shifted_info = []
     for seed in range(N_SHIFTS):
-        trains = shifted_trains(rec, seed)
+        trains = shifted_trains(list(rec.spike_times or ()), intervals, seed)
         rates = compute_spatial_rates(
             _env(rec, cache),
             trains,
@@ -219,9 +308,16 @@ def _one_dimensional(rec: Recording) -> bool:
     return rec.positions is not None and rec.positions.shape[1] == 1
 
 
+def _on_track(rec: Recording, cache: dict[str, Any]) -> bool:
+    """Whether the analysis environment is a track graph (positions along a track)."""
+    return bool(_env(rec, cache).is_linearized_track)
+
+
 def grid_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
     if _one_dimensional(rec):
         return Outcome("n/a", note="grid score needs 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome("n/a", note="grid score needs a 2-D area, not a track graph")
     scores = _rates(rec, cache).grid_scores().scores
     return Outcome("ok", _finite_stats(scores))
 
@@ -229,6 +325,8 @@ def grid_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
 def border_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
     if _one_dimensional(rec):
         return Outcome("n/a", note="border score needs 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome("n/a", note="border score needs a 2-D area, not a track graph")
     scores = _rates(rec, cache).border_scores().scores
     return Outcome("ok", _finite_stats(scores))
 
@@ -257,15 +355,16 @@ def hd_tuning(rec: Recording, cache: dict[str, Any]) -> Outcome:
 
 def chance_errors(
     env: Any, actual: np.ndarray, *, seed: int
-) -> tuple[np.ndarray, float]:
+) -> tuple[np.ndarray, float, float]:
     """Chance decoding errors: each true position against a shuffled other one.
 
-    The true positions at the decoded times are permuted (seeded) within
-    each connected part of the environment's bin graph, and each pair's
-    distance is measured as ``error_against`` measures by default
-    (geodesic, along the bin graph). A permutation across parts would put
-    pairs an infinite path apart; their share under one global permutation
-    is returned alongside.
+    True positions the environment cannot place (``bin_at`` -1, outside a
+    declared track) are left out, and their share is returned. The others
+    are permuted (seeded) within each connected part of the environment's
+    bin graph, and each pair's distance is measured as ``error_against``
+    measures by default (geodesic, along the bin graph). A permutation
+    across parts would put pairs an infinite path apart; their share under
+    one global permutation of the placed positions is returned alongside.
 
     Parameters
     ----------
@@ -276,10 +375,12 @@ def chance_errors(
 
     Returns
     -------
-    errors : ndarray, shape (n,)
-        Geodesic distance of each within-part pair.
+    errors : ndarray, shape (n_placed,)
+        Geodesic distance of each within-part pair of placed positions.
     frac_disconnected : float
-        Share of pairs in different parts under a global permutation.
+        Share of placed pairs in different parts under a global permutation.
+    frac_outside : float
+        Share of ``actual`` the environment cannot place.
     """
     import networkx as nx
 
@@ -290,51 +391,81 @@ def chance_errors(
     for label, part in enumerate(nx.connected_components(env.connectivity)):
         part_of_bin[list(part)] = label
     bins = np.asarray(env.bin_at(actual))
-    part = np.where(bins >= 0, part_of_bin[np.clip(bins, 0, None)], -1)
-    frac_disconnected = float(np.mean(part != part[rng.permutation(len(part))]))
+    placed = bins >= 0
+    frac_outside = float(np.mean(~placed)) if len(bins) else 0.0
+    actual, part = actual[placed], part_of_bin[bins[placed]]
+    frac_disconnected = (
+        float(np.mean(part != part[rng.permutation(len(part))])) if len(part) else 0.0
+    )
     shuffled = actual.copy()
     for label in np.unique(part):
         members = np.flatnonzero(part == label)
         shuffled[members] = actual[members[rng.permutation(len(members))]]
     errors = decoding_error(env, shuffled, actual, metric="geodesic")
-    return np.asarray(errors, dtype=float), frac_disconnected
+    return np.asarray(errors, dtype=float), frac_disconnected, frac_outside
 
 
-def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
+def _decode(rec: Recording, env: Any) -> tuple[Any, NDArray[np.float64]]:
+    """Fit on ``train_epochs``, decode ``test_epochs``; the result and its errors."""
     from neurospatial.decoding import BayesianDecoder
 
-    train, test = rec.params.get("train_epochs"), rec.params.get("test_epochs")
-    if train is None or test is None:
-        return Outcome("n/a", note="params has no train_epochs/test_epochs")
     spikes = list(rec.spike_times or ())
-    decoder = BayesianDecoder(_env(rec, cache), dt=rec.params["dt"]).fit(
+    decoder = BayesianDecoder(env, dt=rec.params["dt"]).fit(
         spikes,
         rec.times,
         rec.positions,
         min_speed=rec.params.get("min_speed"),
-        epochs=train,
+        epochs=rec.params["train_epochs"],
     )
-    result = decoder.predict(spikes, rec.times, epochs=test)
-    error = result.error_against(rec.times, rec.positions)
+    result = decoder.predict(spikes, rec.times, epochs=rec.params["test_epochs"])
+    error = np.asarray(result.error_against(rec.times, rec.positions), dtype=float)
+    return result, error
+
+
+def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    train, test = rec.params.get("train_epochs"), rec.params.get("test_epochs")
+    if train is None or test is None:
+        return Outcome("n/a", note="params has no train_epochs/test_epochs")
+    result, error = _decode(rec, _env(rec, cache))
     actual = np.column_stack(
         [
             np.interp(result.times, rec.times, column)
             for column in np.asarray(rec.positions).T
         ]
     )
-    chance, disconnected = chance_errors(
-        result.env, actual[np.isfinite(actual).all(axis=1)], seed=0
-    )
-    return Outcome(
-        "ok",
-        {
-            "median_error": float(np.nanmedian(error)),
-            "chance_median_error": float(np.nanmedian(chance)),
-            "chance_frac_disconnected": disconnected,
-            "units": str(rec.position_units),
-            "n_time_bins": int(result.n_time_bins),
-        },
-    )
+    finite = np.isfinite(actual).all(axis=1)
+    chance, disconnected, outside = chance_errors(result.env, actual[finite], seed=0)
+    summary: dict[str, float | int | str] = {
+        "median_error": float(np.nanmedian(error)),
+        "chance_median_error": float(np.nanmedian(chance)),
+        "chance_frac_disconnected": disconnected,
+        "frac_actual_outside": outside,
+        "units": str(rec.position_units),
+        "n_time_bins": int(result.n_time_bins),
+    }
+    if "environment" in rec.geometry:
+        # The same time bins in both runs (declared and --inferred-env): each
+        # run also decodes with the other run's environment and keeps the
+        # time bins with an error in both, so a true position either
+        # environment cannot place, or a bin either decode leaves undecoded,
+        # is left out of both medians. The other decode's warnings belong to
+        # the other run's record, which makes the same decode.
+        if env_kind(rec, cache) == "declared":
+            other_env = _samples_env(rec, cache)
+        else:
+            other_env = rec.geometry["environment"]()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            other, other_error = _decode(rec, other_env)
+        if not np.array_equal(other.times, result.times):
+            msg = "the declared and samples-built decodes have different time bins"
+            raise AssertionError(msg)
+        shared = ~np.isnan(error) & ~np.isnan(other_error)
+        summary["median_error_on_declared"] = (
+            float(np.median(error[shared])) if shared.any() else float("nan")
+        )
+        summary["n_on_declared"] = int(shared.sum())
+    return Outcome("ok", summary)
 
 
 def nwb_roundtrip(rec: Recording, cache: dict[str, Any]) -> Outcome:
@@ -381,27 +512,30 @@ def nwb_roundtrip(rec: Recording, cache: dict[str, Any]) -> Outcome:
 def _graph_env(rec: Recording, cache: dict[str, Any]) -> Any | None:
     """The track-graph environment, or None when the source gives no graph.
 
-    Edges are ordered by a depth-first walk from ``geometry["graph_root"]``
-    (or the graph's first node), which lays a tree out branch by branch.
+    Every edge is kept (``_geometry.graph_edge_order``): a depth-first walk
+    from ``geometry["graph_root"]`` (or the graph's first node), then the
+    edges that close cycles, which ``Environment.from_graph`` would otherwise
+    drop without a word.
     ``geometry["track_width"]``, when the source states it, is the corridor
-    width.
+    width. A declared environment that is a track graph is the graph
+    environment, whether or not the loader also gives ``geometry["graph"]``.
     """
-    import networkx as nx
 
-    from neurospatial import Environment
-
+    if env_kind(rec, cache) == "declared" and _env(rec, cache).is_linearized_track:
+        # The declared track: the loader's graph with its width, or a graph it
+        # fitted to a stated layout.
+        return _env(rec, cache)
     graph = rec.geometry.get("graph")
     if graph is None:
         return None
     if "graph_env" not in cache:
-        root = rec.geometry.get("graph_root", next(iter(graph.nodes)))
-        cache["graph_env"] = Environment.from_graph(
+        cache["graph_env"] = graph_environment(
             graph,
-            list(nx.dfs_edges(graph, source=root)),
             bin_size=rec.params.get("graph_bin_size", rec.params["bin_size"]),
+            track_width=rec.geometry.get("track_width"),
             units=_units(rec),
             name=f"{rec.dataset}-graph",
-            track_width=rec.geometry.get("track_width"),
+            root=rec.geometry.get("graph_root"),
         )
     return cache["graph_env"]
 
@@ -433,19 +567,42 @@ def segment_by_velocity(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     )
 
 
+def _lap_counts(found: Any, prefix: str) -> dict[str, int]:
+    directions = list(found.intervals_table()["direction"]) if len(found.start) else []
+    return {
+        f"n_{prefix}": len(directions),
+        **{f"n_{prefix}_{d}": directions.count(d) for d in sorted(set(directions))},
+    }
+
+
 def laps(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Laps with ``detect_laps``' defaults and, where the loader states one, by start region.
+
+    ``geometry["lap_start_region"]`` is a ``Region`` drawn across the loop
+    (where the source puts the start, or a stated cut); the second count is
+    ``method="region"`` with it added to the environment's regions, inside
+    ``params["analysis_epochs"]``. The default count keeps its earlier call
+    (no epochs), so it stays comparable with recordings not rerun.
+    """
     from neurospatial.behavior import detect_laps
 
     env = _graph_env(rec, cache) or _env(rec, cache)
+    summary: dict[str, float | int | str] = {}
+    region = rec.geometry.get("lap_start_region")
+    if region is not None:
+        with_start = env.with_regions({**env.regions, region.name: region})
+        found = detect_laps(
+            with_start,
+            rec.times,
+            rec.positions,
+            method="region",
+            start_region=region.name,
+            epochs=rec.params.get("analysis_epochs"),
+        )
+        summary.update(_lap_counts(found, "laps_region"))
     found = detect_laps(env, rec.times, rec.positions)
-    directions = list(found.intervals_table()["direction"]) if len(found.start) else []
-    return Outcome(
-        "ok",
-        {
-            "n_laps": len(directions),
-            **{f"n_{d}": directions.count(d) for d in sorted(set(directions))},
-        },
-    )
+    summary = {**_lap_counts(found, "laps"), **summary}
+    return Outcome("ok", summary)
 
 
 def turn_sequence(rec: Recording, cache: dict[str, Any]) -> Outcome:
@@ -468,7 +625,23 @@ def turn_sequence(rec: Recording, cache: dict[str, Any]) -> Outcome:
     )
 
 
+# Replay runs as a smoke test: comparing published replay methods is not a
+# goal of the survey (maintainer's decision), so a few events and shuffles
+# show that the methods run on the recording, not how they compare.
+REPLAY_MAX_EVENTS = 20
+REPLAY_N_SHUFFLES = 50
+
+
 def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Run ``DAVIDSON_2009`` and ``GROSMARK_2016`` on the first candidate events.
+
+    A smoke run, not a comparison of the methods: comparing published replay
+    methods is not a survey goal. Only the first ``REPLAY_MAX_EVENTS`` events
+    in time are decoded, with ``REPLAY_N_SHUFFLES`` shuffles per method
+    (``params["replay_n_shuffles"]`` overrides it), far fewer than either
+    paper used, so the detection rates show that the methods run on the
+    recording and are not estimates to compare.
+    """
     from neurospatial.encoding import compute_spatial_rates
     from neurospatial.replay import (
         compare_replay_methods,
@@ -490,8 +663,18 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
             note="needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
         )
     dt = rec.params["replay_dt"]
+    n_candidates = len(ripples)
+    ripples = np.asarray(ripples, dtype=float).reshape(-1, 2)
+    ripples = ripples[np.argsort(ripples[:, 0], kind="stable")][:REPLAY_MAX_EVENTS]
     positions, status, gap, note = rec.positions, "ok", None, ""
-    if positions.shape[1] > 1 and "linearized" in rec.params:
+    declared_track = env_kind(rec, cache) == "declared" and bool(
+        _env(rec, cache).is_linearized_track
+    )
+    if declared_track:
+        # The declared track graph gives the position along the track.
+        env = _env(rec, cache)
+        note = "decoded on the declared track graph"
+    elif positions.shape[1] > 1 and "linearized" in rec.params:
         # Replay scores need a position along a track; a track recorded in 2-D
         # is decoded on the file's own linearized coordinate instead.
         from neurospatial import Environment
@@ -517,10 +700,11 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
         epochs=rec.params.get("train_epochs"),
     )
     events, counts = decode_intervals(env, spikes, ripples, rates, dt=dt)
-    methods = [DAVIDSON_2009, GROSMARK_2016]
-    if (n_shuffles := rec.params.get("replay_n_shuffles")) is not None:
-        # Fewer shuffles than published, for quick checks; real runs omit it.
-        methods = [dataclasses.replace(m, n_shuffles=n_shuffles) for m in methods]
+    n_shuffles = rec.params.get("replay_n_shuffles", REPLAY_N_SHUFFLES)
+    methods = [
+        dataclasses.replace(m, n_shuffles=n_shuffles)
+        for m in (DAVIDSON_2009, GROSMARK_2016)
+    ]
     table = compare_replay_methods(
         env,
         events,
@@ -531,7 +715,12 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
         dt=dt,
         rng=0,
     )
-    summary: dict[str, float | int | str] = {"n_events": len(events), "events": kind}
+    summary: dict[str, float | int | str] = {
+        "n_events": len(events),
+        "n_candidates": n_candidates,
+        "n_shuffles": n_shuffles,
+        "events": kind,
+    }
     for row in detection_rates(table).itertuples():
         summary[f"{row.method}_rate"] = float(row.rate)
         summary[f"{row.method}_ci"] = f"{row.ci_low:.3f}-{row.ci_high:.3f}"
@@ -558,15 +747,25 @@ def _reader_result(
 
 
 def _same_times(got: Any, expected: Any) -> bool:
+    """Whether two clocks agree to a hundredth of the sampling interval.
+
+    The tolerance is absolute: a relative one grows with the clock's value
+    (0.18 s at 18,000 s for ``np.allclose``'s default).
+    """
     got, expected = np.asarray(got, dtype=float), np.asarray(expected, dtype=float)
-    return got.shape == expected.shape and np.allclose(got, expected)
+    if got.shape != expected.shape:
+        return False
+    tolerance = 0.01 * float(np.median(np.diff(expected))) if expected.size > 1 else 0.0
+    return bool(np.allclose(got, expected, rtol=0.0, atol=tolerance))
 
 
 def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     """Run the NWB readers with default arguments and compare with the loader.
 
     Each reader is ``ok`` when it returns the loader's range-checked arrays
-    and times (after unit scaling), ``absent`` when neither finds the data,
+    and times (after unit scaling; positions where the loader kept a
+    sample, with the count of reader-finite samples the loader set to NaN),
+    ``absent`` when neither finds the data,
     and otherwise a mismatch or a miss, which makes the cell a workaround; a
     reader that raises anything but "not found" makes it an error. When the
     loader itself built a field with that reader (``params["readers_used"]``),
@@ -604,8 +803,17 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
             )
         if not _same_times(value.times, rec.times):
             return "mismatch: times differ"
-        same = np.allclose(scaled, rec.positions, equal_nan=True)
-        return labelled("position", "ok" if same else "mismatch: values differ")
+        # Compared where the loader kept a sample: samples it set to NaN (a
+        # value the file stores for an untracked frame, such as -1 or 0,
+        # listed in ``conversions``) are its own choice.
+        kept = np.isfinite(rec.positions).all(axis=1)
+        same = np.allclose(scaled[kept], rec.positions[kept], equal_nan=True)
+        # Reported, so a loader that masks real data stays visible.
+        masked = int(np.sum(np.isfinite(scaled).all(axis=1) & ~kept))
+        note = (
+            f"; {masked} reader-finite samples the loader set to NaN" if masked else ""
+        )
+        return labelled("position", "ok" if same else "mismatch: values differ") + note
 
     def heading(value: Any) -> str:
         got = np.asarray(wrap_angle(np.asarray(value.headings, dtype=float)))
@@ -703,7 +911,9 @@ def read_pose_operation(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     else:
         span = np.nanmax(xy, axis=0) - np.nanmin(xy, axis=0)
         bin_size = float(span.max()) / POSE_BINS_PER_SPAN
-    env = Environment.from_samples(xy, bin_size=bin_size, name=f"{rec.dataset}-pose")
+    env = Environment.from_samples(
+        xy, bin_size=bin_size, units=pose_units, name=f"{rec.dataset}-pose"
+    )
     if rec.spike_times is not None:
         compute_spatial_rates(env, list(rec.spike_times), times, xy)
         summary["fed"] = "compute_spatial_rates"
@@ -823,12 +1033,17 @@ def egocentric_boundary(rec: Recording, cache: dict[str, Any]) -> Outcome:
     edge of the visited bins (``boundary_source="analysis"``). The summary
     counts units whose peak is in the outermost ring, where the docstring
     says untuned cells peak by chance, and units whose peak is on the left
-    (egocentric direction in (0, pi)).
+    (egocentric direction in (0, pi)). With a declared environment the edge
+    of its bins is the stated outline, within half a bin.
     """
     from neurospatial.encoding import compute_boundary_vector_rates
 
     if rec.positions.shape[1] != 2:
         return Outcome("n/a", note="egocentric boundary maps need 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome(
+            "n/a", note="egocentric boundary maps need a 2-D area, not a track graph"
+        )
     rates = compute_boundary_vector_rates(
         _env(rec, cache),
         list(rec.spike_times or ()),
@@ -865,7 +1080,12 @@ def egocentric_boundary(rec: Recording, cache: dict[str, Any]) -> Outcome:
                 for k, v in _finite_stats(table["distance_information"]).items()
             },
         },
-        note="walls = edge of the visited bins (boundary_source='analysis')",
+        note=(
+            "walls = edge of the declared environment's bins"
+            if env_kind(rec, cache) == "declared"
+            else "walls = edge of the visited bins"
+        )
+        + " (boundary_source='analysis')",
     )
 
 
@@ -874,6 +1094,7 @@ _SPIKES_AND_POSITIONS = ("positions", "spike_times")
 OPERATIONS: tuple[Operation, ...] = (
     Operation("env.from_samples", ("positions",), env_from_samples),
     Operation("env.occupancy", ("positions",), occupancy),
+    Operation("env.declared", ("positions",), env_declared),
     Operation("rates.spatial", _SPIKES_AND_POSITIONS, rates_spatial),
     Operation("rates.spatial_information", _SPIKES_AND_POSITIONS, spatial_information),
     Operation(

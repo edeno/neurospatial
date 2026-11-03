@@ -34,6 +34,12 @@ What the loader converts:
 Analysis choices (``params``): ``bin_size`` 5 units (about 1/19 of the pool
 radius); no ``min_speed``: a speed threshold needs a length unit, which the
 file does not give.
+
+Environment (``geometry["environment"]``): the pool as the file states it
+(``arena.bounds``: centre and radius 95 tracking units), built with
+``Environment.from_polygon`` at ``bin_size``. The centre is the stated one; the
+offset of the samples' fitted centre and the residual of their fitted
+diameter against 190 units are in ``conversions``.
 """
 
 from __future__ import annotations
@@ -45,6 +51,7 @@ from typing import Any
 
 import numpy as np
 from _fetch import fetch
+from _geometry import declared_circle, with_environment
 from _record import (
     Range,
     Recording,
@@ -133,7 +140,7 @@ def load(cache: Path | None = None) -> Recording:
     # A swim path covers the pool: its span is close to the stated diameter.
     span = checked_span(xy, 0.9 * 2 * radius, 1.1 * 2 * radius, units="units")
     n_missing = int(np.isnan(xy).any(axis=1).sum()) - len(trials)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session=_MOUSE,
         source=_URL,
@@ -162,6 +169,19 @@ def load(cache: Path | None = None) -> Recording:
             " index, trials in day/trial order",
             f"times: one NaN sample {_SAMPLE_S:g} s after each trial's last sample",
         ),
+    )
+    return with_environment(
+        rec,
+        *declared_circle(
+            rec.positions,
+            2 * rec.geometry["pool_radius"],
+            bin_size=rec.params["bin_size"],
+            units=None,
+            name=DATASET["key"],
+            source="Experiment.json arena.bounds: circle, radius 95 tracking units",
+            centre=tuple(rec.geometry["pool_centre"]),
+        ),
+        tracked_point="not stated (EthoVision 3 swim paths)",
     )
 
 

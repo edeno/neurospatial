@@ -34,16 +34,37 @@ Analysis choices (``params``):
 - ``train_epochs``/``test_epochs``: even and odd of those flights, for held-out
   decoding.
 - ``dt`` 0.25 s, as for the 2-D datasets.
+
+Environment (``geometry["environment"]``): the room, every voxel of a grid
+that tiles ``r_lim`` exactly (``Environment.from_samples`` with
+``dimension_ranges`` set to it and ``infer_active_bins=False``), so the
+environment holds the air the bat could fly through, not only the voxels it
+visited. Each axis has a whole number of cells close to ``bin_size`` (29 x
+26 x 11 cells of 0.2 x 0.2 x 0.209 m): with 0.2 m cells on every axis the 2.3 m
+height is 11.5 cells and the grid would reach 5 cm past the floor and the
+ceiling. Forli et al. 2025 (Methods, read
+from Zotero's full-text cache) flew four bats in "an indoor flight room
+(... 5.6 m x 5.2 m x 2.5 m)" and two in an outdoor enclosure 10.1 m long;
+``r_lim`` (5.8 x 5.2 x 2.3 m; "boundaries of the room" in ``NP_Bat_Demo.m``)
+and the samples' 5.7 m span place this session in the indoor room. ``r_lim``
+is used because it is stated in the positions' frame: the paper gives only a
+size. Centring the paper's size on ``r_lim`` would cut the samples at the x
+walls (they reach x = +-2.85 m, the paper's half-length is 2.8 m). The share
+of samples outside each is in ``conversions``; the resting samples beyond the
+-y wall (G-025) stay outside.
 """
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from _fetch import fetch_zip_member
 from _record import Range, Recording, check_expectations, validate_recording
+
+from neurospatial import Environment
 
 DATASET = {
     "key": "yartsev_bat_demo",
@@ -76,6 +97,17 @@ _FILES = {
     "SU_kilosort4_outdir_probe3.mat": "7a1b3254f176b192ec0bfa44366946fff104b3cdb5f038daa25900c5eeea0882",
 }
 _CLOSE_S = 0.001
+_BIN_SIZE = 0.2
+# Forli et al. 2025 (Methods): "an indoor flight room (n = 4 bats, 5.6 m x 5.2 m
+# x 2.5 m) or ... an outdoor flight enclosure (n = 2 bats, 10.1 m x 4.1 m x 2.8 m)".
+_PAPER_ROOM_M = np.array([5.6, 5.2, 2.5])
+
+
+def _outside(positions: np.ndarray, bounds: np.ndarray) -> float:
+    """Share of tracked samples outside the box ``bounds``, shape (n_dims, 2)."""
+    tracked = positions[np.isfinite(positions).all(axis=1)]
+    inside = np.all((tracked >= bounds[:, 0]) & (tracked <= bounds[:, 1]), axis=1)
+    return float(1 - inside.mean())
 
 
 def _fetch(name: str, cache: Path | None) -> Path:
@@ -184,20 +216,50 @@ def load(cache: Path | None = None) -> Recording:
         max(float(s[-1]) for s in units.values() if s.size),
     )
     neural_flights = _clip(flight_windows, recorded)
+    positions = np.asarray(behavior["r"], dtype=float)
+    # A whole number of cells close to _BIN_SIZE on each axis, so the grid
+    # tiles r_lim exactly.
+    n_cells = np.floor(np.ptp(room, axis=1) / _BIN_SIZE + 0.5)
+    room_bins = np.ptp(room, axis=1) / n_cells
+    environment = partial(
+        Environment.from_samples,
+        positions,
+        bin_size=tuple(float(b) for b in room_bins),
+        dimension_ranges=[tuple(bounds) for bounds in room],
+        infer_active_bins=False,
+        units="m",
+        name=DATASET["key"],
+    )
+    # The paper's room size, centred where r_lim is, for comparison.
+    paper = np.mean(room, axis=1)[:, None] + np.outer(_PAPER_ROOM_M, [-0.5, 0.5])
+    paper[2] = [room[2, 0], room[2, 0] + _PAPER_ROOM_M[2]]
     return Recording(
         dataset=DATASET["key"],
         session="Dataset_3_14543_240419",
         source=_ZIP,
         license=DATASET["license"],
         times=times,
-        positions=np.asarray(behavior["r"], dtype=float),
+        positions=positions,
         position_units="m",
         spike_times=tuple(units.values()),
         unit_ids=np.asarray(list(units)),
         epochs={"flight": flight_windows, "neural_recording": np.array([recorded])},
-        geometry={"room_bounds_m": room},
+        geometry={
+            "tracked_point": "not stated (the room's tracking system)",
+            "room_bounds_m": room,
+            "environment": environment,
+            "declared_from": "file's coordinates",
+            # r_lim's sides against the paper's room: stated facts, both
+            # independent of the samples.
+            "environment_fit": {
+                f"size_residual_room_{axis}": float(side / stated - 1)
+                for axis, side, stated in zip(
+                    "xyz", np.ptp(room, axis=1), _PAPER_ROOM_M, strict=True
+                )
+            },
+        },
         params={
-            "bin_size": 0.2,
+            "bin_size": _BIN_SIZE,
             "dt": 0.25,
             "min_speed": float(behavior["v_th"]),
             "analysis_epochs": neural_flights,
@@ -212,6 +274,14 @@ def load(cache: Path | None = None) -> Recording:
             "epochs['neural_recording']: first to last spike of any unit",
             "params flights: flights clipped to the neural recording",
             "unit_ids: probe<n>-<kilosort cluster id>",
+            "environment: declared room, every voxel of a grid tiling r_lim"
+            f" {np.ptp(room, axis=1).round(2).tolist()} m (NP_Bat_Demo.m: 'boundaries"
+            f" of the room') exactly: {n_cells.astype(int).tolist()} cells of"
+            f" {room_bins.round(3).tolist()} m; {_outside(positions, room):.2%} of tracked samples lie"
+            " outside it; Forli et al. 2025 Methods state 5.6 x 5.2 x 2.5 m: that"
+            " size centred on r_lim in x and y, from r_lim's floor in z, leaves"
+            f" {_outside(positions, paper):.2%} outside; placement: the file's frame"
+            " (not fitted)",
         ),
     )
 

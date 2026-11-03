@@ -28,6 +28,12 @@ Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s, as
 for the figure-8; ``dt`` 0.25 s with alternating 60 s train/test blocks inside
 the maze epoch; ``replay_dt`` 0.02 s; the first ``N_CANDIDATES`` POST non-REM
 bursts are decoded, to bound the run time.
+
+Declared environment (``geometry["environment"]``, ``declare_circle``): the
+stated 1 m diameter circle (Grosmark & Buzsaki 2016) as a closed loop of
+``N_VERTICES`` segments, centred by a robust circle fit to the samples on the
+track; the width is not stated. ``geometry["lap_start_region"]`` cuts the
+loop where the file's linearized coordinate starts.
 """
 
 from __future__ import annotations
@@ -44,6 +50,14 @@ from _record import (
     check_expectations,
     checked_span,
     validate_recording,
+)
+from _tracks import (
+    circle_points,
+    cut_region,
+    declared_geometry,
+    fit_circle_centre,
+    polyline_graph,
+    with_declared,
 )
 
 DATASET = {
@@ -220,10 +234,60 @@ def load_session(
     )
 
 
+DIAMETER_CM = 100.0
+N_VERTICES = 72
+
+
+def declare_circle(rec: Recording) -> Recording:
+    """``rec`` with the stated 1 m circle declared, centred on the samples.
+
+    The centre is a robust circle fit to the samples where the file's
+    linearized coordinate is defined; the radius is the stated one. The lap
+    start region is drawn across the track where that coordinate starts.
+    """
+    linear = np.asarray(rec.params["linearized"], dtype=float)
+    on_track = np.isfinite(linear) & np.isfinite(rec.positions).all(axis=1)
+    centre, radius = fit_circle_centre(rec.positions[on_track], scale=3.0)
+    graph = polyline_graph(
+        circle_points(centre, DIAMETER_CM / 2, N_VERTICES), closed=True
+    )
+    start = rec.positions[on_track & (linear > 0) & (linear < 5.0)].mean(axis=0)
+    angle = np.arctan2(*(start - centre)[::-1])
+    point = centre + DIAMETER_CM / 2 * np.array([np.cos(angle), np.sin(angle)])
+    region = cut_region(
+        "linearized_zero",
+        point,
+        (-np.sin(angle), np.cos(angle)),
+        half_length=3.0,
+        half_width=15.0,
+    )
+    entries, line = declared_geometry(
+        graph,
+        rec.positions,
+        times=rec.times,
+        kind=f"circle {DIAMETER_CM:g} cm in diameter as a {N_VERTICES}-gon loop",
+        source="Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1 m in"
+        " diameter wooden circular maze'; width not stated",
+        bin_size=rec.params["bin_size"],
+        physical_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placed_by="fitted to the samples",
+        stated_lengths={"diameter": (2 * radius, DIAMETER_CM)},
+        placement=f"centre ({centre[0]:.1f}, {centre[1]:.1f}) cm from a robust"
+        f" circle fit to the on-track samples (their own radius {radius:.1f} cm);"
+        f" lap start region across the track at the file's linearized zero,"
+        f" {np.degrees(angle):.0f} deg from the centre",
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
+    )
+    return with_declared(rec, {**entries, "lap_start_region": region}, line)
+
+
 def load(cache: Path | None = None) -> Recording:
     """Stream the session; positions in cm, spikes, epochs and candidate events."""
     del cache  # read by byte range: nothing is cached
-    return load_session(
+    rec = load_session(
         dataset=DATASET,
         asset_id=_ASSET_ID,
         sha256=_SHA256,
@@ -232,6 +296,7 @@ def load(cache: Path | None = None) -> Recording:
         span_cm=(100.0, 160.0),
         track_cm=(250.0, 330.0),
     )
+    return declare_circle(rec)
 
 
 if __name__ == "__main__":

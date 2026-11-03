@@ -38,6 +38,13 @@ along the track; ``min_speed`` 4 cm/s (running); ``dt`` 0.25 s and
 alternating 60 s train/test blocks for decoding; ``linearized`` is the
 file's ``linear_position`` (cm along the authors' edge order, with 15 cm
 gaps between edges).
+
+Declared environment (``geometry["environment"]``): the authors' track graph
+from the file, every edge kept. The 6.5 cm hallway width Comrie et al. 2026
+(STAR Methods) state is recorded as the physical width; about 64 % of head
+samples lie beyond half of it, spread a few centimetres off every corridor
+and most when the rat is stopped or turning (G-152), so the track is built
+with a placement tolerance measured from the samples (``conversions``).
 """
 
 from __future__ import annotations
@@ -56,6 +63,7 @@ from _record import (
     heading_vs_movement,
     validate_recording,
 )
+from _tracks import declared_geometry, with_declared
 
 DATASET = {
     "key": "j16_23020757",
@@ -86,6 +94,7 @@ _NAME = "j1620210710_02_r1_figure04_inputs.npz"
 _URL = f"https://zenodo.org/api/records/23020757/files/{_NAME}/content"
 _SHA256 = "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
 _SPAN_CM = (150.0, 260.0)
+_HALLWAY_CM = 6.5
 RUNNING_CM_S = 10.0
 
 
@@ -131,7 +140,7 @@ def load(cache: Path | None = None) -> Recording:
         for i in range(len(offsets) - 1)
     )
     train, test = alternating_blocks(times[0], times[-1], 60.0)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="j16 20210710 02_r1",
         source=_URL,
@@ -169,6 +178,23 @@ def load(cache: Path | None = None) -> Recording:
             " track_edge_distance",
         ),
     )
+    entries, line = declared_geometry(
+        rec.geometry["graph"],
+        positions,
+        times=times,
+        kind="the authors' track graph (10 nodes, 9 corridors)",
+        source="file: track_nodes, track_edges; Comrie et al. 2026 STAR Methods:"
+        " 'Hallways were 6.5 cm wide and linear track segments were each 53 cm long'",
+        bin_size=rec.params["graph_bin_size"],
+        physical_width=_HALLWAY_CM,
+        units="cm",
+        name=DATASET["key"],
+        placement="the file's node positions",
+        placed_by="authors' graph",
+        tracked_point="the head (the file's head_position; how it was tracked is not stated)",
+        speed_thresholds=(4.0, 30.0),
+    )
+    return with_declared(rec, entries, line)
 
 
 if __name__ == "__main__":

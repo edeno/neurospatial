@@ -17,7 +17,12 @@ of the 35 units peaks at that alignment (1.09 bits/spike) and drops to 0.81
 with the video timestamps and to at most 0.85 at any shift of 5-40 s in either
 direction (checked once while writing this loader). The track runs along y
 (0.5-116.5 cm); x spans 4-21 cm, wider than the 6.35 cm track, as the LED
-moves with the head.
+moves with the head. Positions are kept as stored. Suspect tracking is
+reported as a load warning (``_record.find_suspect_tracking``): 46 runs of 11
+or more identical frames (10 or more repeats; the longest held 6 s), which may be a tracker
+repeating its last fix or a still mouse, and samples farther than 100 cm/s
+from the sample before them (the 99.9th percentile of this file's steps is
+218 cm/s, from jumps after held frames).
 
 Analysis choices (``params``):
 
@@ -26,10 +31,14 @@ Analysis choices (``params``):
   track epoch (the file has no trial table).
 - ``replay_dt`` 0.02 s; ``events["ripples"]``: the 24 ripples inside the
   tracked track epoch.
+- Declared environment (``geometry["environment"]``): the stated 110 cm by
+  6.35 cm track as a one-edge graph along the samples' principal axis,
+  centred on them (``_tracks.straight_track``); the fit is in ``conversions``.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -41,8 +50,10 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
+    find_suspect_tracking,
     validate_recording,
 )
+from _tracks import declared_geometry, straight_placement, straight_track
 
 DATASET = {
     "key": "valero_000568",
@@ -76,6 +87,7 @@ _ASSET_ID = "48f2daa0-752b-4de5-932a-6e4682478493"
 _SHA256 = "17bc28bed791fad03b3a87702a77f2f8c74ca5daac0a8e8dbc742df3506b1790"
 # The track is 110 cm; the tracked span along it must lie here (cm).
 _TRACK_CM = (100.0, 130.0)
+_LENGTH_CM, _WIDTH_CM = 110.0, 6.35
 
 
 def _windows(table: object) -> np.ndarray:
@@ -119,10 +131,29 @@ def load(cache: Path | None = None) -> Recording:
             f" video timestamps {offset.min():.3f}-{offset.max():.3f} s; recheck"
         )
         raise ValueError(msg)
+    _, suspect = find_suspect_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    warnings.warn(suspect, UserWarning, stacklevel=1)
     windows = epochs[["start_time", "stop_time"]].to_numpy(dtype=float)
     track = windows[(windows[:, 0] <= times[0]) & (windows[:, 1] >= times[-1])]
     on_track = (ripples[:, 0] >= times[0]) & (ripples[:, 1] <= times[-1])
     train, test = alternating_blocks(times[0], times[-1], 60.0)
+    graph, fit = straight_track(positions, _LENGTH_CM)
+    declared, declared_line = declared_geometry(
+        graph,
+        positions,
+        times=times,
+        kind=f"straight track {_LENGTH_CM:g} cm",
+        source="NWB series description '110 cm long, 6.35 cm wide'",
+        bin_size=2.5,
+        physical_width=_WIDTH_CM,
+        units="cm",
+        name=DATASET["key"],
+        placement=straight_placement(fit, "cm"),
+        placed_by="samples' principal axis",
+        stated_lengths={"length": (fit["samples_span"], _LENGTH_CM)},
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
+    )
     return Recording(
         dataset=DATASET["key"],
         session="fCamk2_201014_sess3",
@@ -143,7 +174,11 @@ def load(cache: Path | None = None) -> Recording:
             },
         },
         events={"ripples": ripples[on_track], "all_ripples": ripples},
-        geometry={"track_length_cm": 110.0, "track_width_cm": 6.35},
+        geometry={
+            "track_length_cm": _LENGTH_CM,
+            "track_width_cm": _WIDTH_CM,
+            **declared,
+        },
         params={
             "bin_size": 2.5,
             "min_speed": 4.0,
@@ -155,15 +190,16 @@ def load(cache: Path | None = None) -> Recording:
             "readers_used": ("position", "units"),
         },
         conversions=(
-            f"positions: read_position, cm; range checked: {positions[:, 0].min():.1f}-"
-            f"{positions[:, 0].max():.1f} by {positions[:, 1].min():.1f}-"
-            f"{positions[:, 1].max():.1f} cm (track 110 cm along y)",
+            f"positions: read_position, cm; range checked: {np.nanmin(positions[:, 0]):.1f}-"
+            f"{np.nanmax(positions[:, 0]):.1f} by {np.nanmin(positions[:, 1]):.1f}-"
+            f"{np.nanmax(positions[:, 1]):.1f} cm (track 110 cm along y)",
             "times: position timestamps, not the video timestamps"
             f" ({offset.min():.2f}-{offset.max():.2f} s earlier for the same"
             " frames); spatial information peaks at the position timestamps",
             f"events['ripples']: the {int(on_track.sum())} of {len(ripples)}"
             " RippleTimeIntervals rows inside the track tracking",
             "epochs: the epoch holding the tracking as track; SleepStates by label",
+            declared_line,
         ),
     )
 

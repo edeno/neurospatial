@@ -49,6 +49,17 @@ hc-11 Achilles 25 Oct 2013 (the same session as 000044's linear track), hc-3
 frames), hc-31 (a 48 m track in inches and µs) and hc-18 (a model train,
 32,552 Hz clock). hc-13 is one 8.1 GB tarball and was not loaded.
 
+Declared environments (details in [ENVIRONMENT_FIDELITY.md](ENVIRONMENT_FIDELITY.md),
+[BATCH_FAITHFUL_ARENAS.md](BATCH_FAITHFUL_ARENAS.md) and
+[BATCH_FAITHFUL_TRACKS.md](BATCH_FAITHFUL_TRACKS.md)): 30 loaders now declare
+the apparatus a source states (an outline, a room, a track graph, the
+lattice's bars), and every recording is run twice, on the declared
+environment (`results/`) and on one built from the samples
+(`results/inferred_env/`, compared in `results/studies/declared_vs_inferred.md`).
+000447's two W-tracks are now separate recordings. The counts in this
+introduction and in "At a glance" (recordings, probes, silent defects) are
+from the first five batches; the full rerun after this batch refreshes them.
+
 ## At a glance
 
 - **The common path holds up.** Environments, occupancy, rate maps, spatial
@@ -86,6 +97,47 @@ frames), hc-31 (a 48 m track in inches and µs) and hc-18 (a model train,
   every recording, sparse 3-D occupancy included, it matches simulated untuned
   Poisson cells; bursty cells and real units sit 2–7× above it. A
   sparse-occupancy warning would be the wrong fix (proposal 4).
+- **Declared environments are right where the samples-built ones are not.**
+  8 of the 10 declared arenas and 3-D environments match (stated size
+  within 15 %), against 2 of 10 built from the samples; the bat's room is
+  a mismatch, now that a room is judged by its faces: 17 of the 57 flight
+  samples nearest one wall lie 1.4 m past it, at the perch beyond `r_lim`
+  (G-025). The lattice is not verified: its side matches (+0.0 % of
+  97 cm), but judged as a whole its head samples sit 9.4 cm horizontally
+  off the authors' bars by the refitted shift (2.35 bins) and 0.38 bin by
+  a single step, which on a synthetic lattice reads under a bin for shifts
+  up to about 2.5 bins (G-159). Of 20 declared tracks, 11 match and 9 are
+  not verified (no fact independent of the samples, a frame offset that
+  depends on the estimator, or corridors closer than twice the window the
+  offset is read in), against 4 matches, 7 mismatches and
+  9 not verified built from the samples. Every declared track and the
+  lattice is now also judged as a whole: one translation fitted to every
+  straight piece's median offset, any length, read by a single
+  least-squares step and refitted until it settles; both over one bin is a
+  mismatch, straddling it not verified. The
+  labyrinth and Takigawa's tracks, which have no stretch of the 20 bins a
+  stretch's bias needs, now have a whole-track check. Takigawa's passes
+  (0.40 bin); the labyrinth's reads 0.21 bin over 127 pieces but its
+  corridors lie 1 cell apart, so a shift past half a cell would read as
+  the next corridor's, and it is not verified (G-160). At the real
+  recordings' scatter the single step stays under a bin, so this check
+  gives at most "not verified" on a misplaced layout. On 000044's linear track the two
+  straddle the limit (0.50 and 1.18 bins across the track), on a lateral
+  scatter far wider than the 3-bin window the offset is read in, so it is
+  not verified (G-160). Samples cannot show walls thinner than a bin (the
+  labyrinth's corridors join, G-110) or tell apart two apparatus in one
+  camera frame (G-113). Head samples beyond a track's width or short of a
+  wall are expected (headstage LEDs, swings, camera projection), so they
+  are reported, not judged (G-152, G-157).
+- **What declaring changes.** Laps exist on the declared loops (000044's
+  circle 67 and hc-18 35, against 1 each, G-037), but a sample outside the
+  track splits the recording and costs laps (G-151). Border scores run on
+  declared arenas, and are -1 for most cells where the tracked head stays a
+  few cm off the wall (407 of 619 on Vollan's open field, G-131). Grid
+  scores of grid cells do not change (Gardner median 0.953 against 0.949).
+  Decoding errors fell where train and test now alternate within each arm
+  instead of by even and odd trial, which split them by direction or loop:
+  000447's familiar W-track 35.9 to 4.9 cm, the figure-8 7.8 to 5.9 cm.
 - **Biggest missing capability**: spatial maps from calcium imaging or binned
   rates (G-029), deferred; loop tracks (G-021), now on the plan.
 
@@ -195,7 +247,7 @@ dataset is the evidence, the section says why that is enough.
 
 ### 4. Spatial information on sparse occupancy (G-022)
 
-- **Problem.** On the bat's sparse 3-D occupancy, 44 % of units pass the bias
+- **Problem.** On the bat's sparse 3-D occupancy, 15 % of units pass the bias
   screen (information minus `spatial_information_bias()` above 0.1 bits/spike)
   while their information is below the 95th percentile of their own circular
   shifts. The question was whether sparse occupancy breaks the bias estimate.
@@ -208,20 +260,22 @@ dataset is the evidence, the section says why that is enough.
   - Untuned bursty cells (bursts of mean 3 spikes) at the same rates: 2.2–5.0×
     the bias, close to the factor of 5 a geometric burst size of mean 3
     predicts (E[k²]/E[k]).
-  - Real units: the shift null's mean is 2.2× the bias on the bat and 5.6–6.6×
+  - Real units, with each unit's spikes shifted within the time the maps
+    count: the shift null's median is 1.23× the bias on the bat and 6.4–7.3×
     on the dense recordings (000582, Gardner, 000044). Only on the bat does it
     change a verdict: everywhere else every unit that passes the bias screen
-    also beats its shifts. One recording does not fit and is open: on
-    Vollan's speed-filtered data real units sit below their own shifts
-    (G-043), so shuffle verdicts there are not trusted yet.
+    also beats its shifts. On Vollan's speed-filtered data 84 % (open field)
+    and 86 % (linear track) of units beat every shift; the earlier result,
+    with real units below their shifts, was a harness bug that shifted
+    spikes out of counted time (G-043, resolved).
 - **Conclusion.** The estimate is right for what it states, the information
-  of an untuned Poisson cell. The gap is temporal structure (bursts, firing
-  locked to flights or runs), which circular shifts keep and a Poisson null
-  does not. It matters only when real information is close to that null, as
+  of an untuned Poisson cell. The gap is temporal structure, mainly bursts,
+  which circular shifts keep and a Poisson null does not (the shifts do not
+  keep firing locked to a flight's or a run's start). It matters only when real information is close to that null, as
   on the bat. A sparse-occupancy warning would be the wrong fix (the agreed
   warning plan does not apply). A second sparse 3-D recording agrees (the
-  Grieves lattice: Poisson ratios 0.94–1.00, bursty 3.0–4.7, real units'
-  shift null 2.5× the bias, 6 % pass the bias screen but fail the shifts).
+  Grieves lattice: Poisson ratios 1.00–1.01, bursty 3.3–4.7, real units'
+  shift null 2.56× the bias, 6 % pass the bias screen but fail the shifts).
 - **Recommendation.** Say in `spatial_information_bias` and in
   `classify()`/`is_*_cell()` (threshold screens) that the bias is a Poisson
   null that bursty firing exceeds, and point to the shuffle verdicts
@@ -424,6 +478,46 @@ decision 4).
 - **Change.** Decided: `Environment.from_loop` (decision 6).
 - **Module.** `environment`, `behavior`. **Changes results.** No.
 
+### 9. Environments from the stated apparatus (G-110–G-112, G-131, G-132, G-134, G-135, G-150–G-152, G-155)
+
+- **Problem.** Building the stated apparatus is the faithful path, and it
+  is not yet the easy one. Wrong results:
+  - `Environment.from_graph` drops graph edges missing from `edge_order`
+    but still counts positions on them as on the track (G-112).
+  - A sample outside a track's width splits `detect_laps`' recording, so a
+    narrow track loses most laps (G-151).
+  - `detect_laps` reports a lap on the lattice's 3-D bar graph (G-134).
+  - Border scores are -1 for most cells where the tracked head cannot
+    reach the wall (G-131).
+  - Fewer finite grid scores on a declared arena with unvisited bins
+    (G-135, cause not traced).
+
+  Silent hazards:
+  - Occupancy and rate maps drop positions outside a declared track
+    without a warning (G-155).
+  - A wrong length unit inside a declared environment collapses the
+    positions into a few bins (G-132).
+- **Evidence.** ENVIRONMENT_FIDELITY.md and the two BATCH_FAITHFUL
+  documents, on the 30 declared recordings; each gap entry gives the
+  counts.
+- **Change.**
+  - Separate the apparatus's physical width from the placement tolerance
+    (G-152; J16 is the case).
+  - Bridge laps over samples outside the track, and refuse 3-D graphs in
+    `detect_laps`.
+  - Fix or refuse `edge_order` gaps in `from_graph`.
+  - Add a border score that can reach a wall the tracked point cannot, as
+    BNT's inward lookup does, and warn when `observed_wall_fraction` is
+    small.
+  - Warn on dropped positions and on tiny coverage of a declared
+    environment.
+  - Docs:
+    - `from_samples` cannot see walls thinner than a bin (G-110).
+    - Add a recipe for climbing structures (G-111).
+    - Correct the widthless-track docstrings (G-150).
+- **Module.** `environment`, `behavior`, `encoding`. **Changes results.**
+  Yes, for laps on declared tracks and for border scores.
+
 ## Friction and error messages
 
 - **Declared geometry before boundary measures (G-005, G-016).** Border scores
@@ -486,6 +580,7 @@ is the environment's memory warning (G-061).
 | G-040 | Speed-filtered time series; sessions table shorter than the data | Leave to the loader; the masked-data warning already flags it |
 | G-041 | No ripple table (000044) | Leave to the loader (population-burst candidates) |
 | G-053 | Lost-LED code (0, 255); position sampled only at spike times | Leave to the loader; a corner code other than the origin is not detectable by check 1 |
+| G-158 | Runs of identical positions (001880 29 % of frames, 000568, 000987): lost tracking or stillness | Leave to the loader, which keeps the positions and warns with the counts; nothing in these files tells lost tracking from stillness |
 | G-054 | Video clock 23 s off the position clock | Leave to the loader; undetectable from the arrays |
 | G-055 | Repeated timestamps; spikes cover 270 of 1,504 s tracked; spike-clock alignment assumed | Refused / warned already; leave the alignment to the loader |
 | G-051 | Motion-capture heading 0.3–0.5 rad off the direction of movement, varying between windows | Leave to the loader; the frame check needs a decision (below) |
@@ -505,12 +600,13 @@ harness's `_fetch.py` (77 lines) would be the starting point.
 
 ## Next batch
 
-Planned in `.claude/docs/plans/real-data-survey-batches/` phases 2–4: nine
-small DANDI and EBRAINS NWB recordings (head direction in arenas, pixels,
-`conversion`, pose, objects, linear tracks), non-NWB archives (egocentric
-boundary cells, the Grieves 3-D lattice, water maze, Axona, MATLAB, NPY, J16)
-and CRCNS sets (including hc-11, the same session as 000044's linear track,
-and hc-13, whose untracked frames are stored as 0).
+No new recordings are planned for the survey. Next, in
+`.claude/docs/plans/real-data-survey-batches/` and
+`.claude/docs/plans/dataset-loaders/`, comes a check of each operation
+against an independent truth: the file's own values, simulations on real
+behavior and environments, published results, or naive numpy. That work
+also covers messiness, usability and visualization, and public
+`neurospatial.datasets` loaders for the best-known recordings.
 
 ## Tutorial candidates
 
@@ -532,7 +628,7 @@ and hc-13, whose untracked frames are stored as 0).
 | G-004 | Proposal 7 |
 | G-005, G-016 | Friction |
 | G-006 | Proposal 3 |
-| G-043 | Open: Vollan real units below their shifts |
+| G-043 | Resolved: a harness bug in the shift null (proposal 4) |
 | G-007, G-023 | Docs |
 | G-008, G-009, G-019, G-025, G-028, G-033–G-036, G-039–G-041 | Data quirks |
 | G-011, G-012, G-032, G-042, G-050, G-052, G-056, G-057, G-062 | Proposal 6 |
@@ -565,6 +661,14 @@ and hc-13, whose untracked frames are stored as 0).
 | G-027 | Docs |
 | G-029 | Proposal 5 |
 | G-030, G-031 | Proposal 1 |
+| G-110–G-112, G-131, G-132, G-134, G-135, G-150–G-152, G-155 | Proposal 9 |
+| G-113, G-115 | Harness: one environment per apparatus; the graph environment where a loader gives one |
+| G-114, G-116, G-117, G-130, G-153, G-154 | Data quirks (declared environments) |
+| G-133 | Friction: egocentric boundary maps in pixels need `distance_range` |
+| G-156, G-157 | Harness: fidelity study limits (`jump_links` at a hub; support reported, not judged) |
+| G-158 | Data quirk: runs of identical positions (lost tracking or stillness) are warned about, not masked |
+| G-159 | Data quirk (unconfirmed): the lattice's head samples may sit 9 cm horizontally off the authors' bars; not verified |
+| G-160 | Harness: a track's offset is read in a window narrower than 000044 linear's lateral scatter; both estimators read, not verified when they straddle |
 
 ## Decisions for the maintainer
 

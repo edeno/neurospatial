@@ -133,3 +133,35 @@ def test_readers_compare_pixels_with_pixels(tmp_path):
     )
     outcome = nwb_readers(rec, {})
     assert outcome.summary["position"] == "ok"
+
+
+def test_same_times_tolerance_is_absolute():
+    # 18,000 s into a 30 Hz session, a 0.18 s offset is five frames: the
+    # relative tolerance of np.allclose would call the clocks the same.
+    from operations import _same_times
+
+    times = 18_000.0 + np.arange(1000) / 30.0
+    assert _same_times(times, times + 1e-6)
+    assert not _same_times(times, times + 0.18)
+    assert not _same_times(times, times + 0.5 / 30.0)
+
+
+def test_readers_agree_where_the_loader_kept_samples(tmp_path):
+    # A loader that sets lost tracking to NaN (held frames) still read the
+    # same series, and the samples it set to NaN are counted; values the
+    # loader changed are a mismatch.
+    from dataclasses import replace
+
+    rec = _write(tmp_path / "masked.nwb", heading_unit="radians")
+    assert nwb_readers(rec, {}).summary["position"] == "ok"
+    masked = rec.positions.copy()
+    masked[100:130] = np.nan
+    outcome = nwb_readers(replace(rec, positions=masked), {})
+    assert outcome.status == "ok"
+    assert outcome.summary["position"] == (
+        "ok; 30 reader-finite samples the loader set to NaN"
+    )
+    moved = masked.copy()
+    moved[200] += 5.0
+    outcome = nwb_readers(replace(rec, positions=moved), {})
+    assert outcome.summary["position"].startswith("mismatch: values differ")

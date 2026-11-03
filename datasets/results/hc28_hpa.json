@@ -6,7 +6,8 @@
   "conversions": [
     "positions: rawpos LED midpoint times cmperpixel 0.65 -> cm; frames with every coordinate 0 (15.5%) -> NaN; range checked: 53.3 to 143.7 by 14.6 to 102.1 cm (largest span 90.4, expected 60-120); median 7.9 cm from the authors' interpolated pos x, y",
     "headings: not kept; heading minus movement direction above 10 cm/s (circular mean, median spread, deg): x1, y1 LED in front, lag 1 -25.5, 51.0;  x1, y1 LED in front, lag 15 -14.4, 18.8;  x2, y2 LED in front, lag 1 154.5, 51.0;  x2, y2 LED in front, lag 15 165.6, 18.8; the authors' pos dir against their smoothed x, y -21.9, 28.0; |mean| above 0.2 rad at every lag",
-    "units: 29 clustered units of day 1 epoch 4 (7 with no spikes dropped), spike times column 0 (s); areas ['CA1', 'PFC', 'iCA1']"
+    "units: 29 clustered units of day 1 epoch 4 (7 with no spikes dropped), spike times column 0 (s); areas ['CA1', 'PFC', 'iCA1']",
+    "environment: declared W-track: three parallel arms joined by a base (Jadhav et al. 2016 Supplemental Experimental Procedures: 'The W-track had dimensions of ~80 x 80 cm', '7 cm wide metal sections'); tracked point: the midpoint of two head-mounted LEDs (hc-28 rawpos x1, y1, x2, y2); physical width 7 cm (stated), 37.3% of samples beyond half of it (24% at 0-4 cm/s, 38% at 4-30 cm/s, 57% at 30-inf cm/s); placement tolerance 20.8 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: node positions fitted to the samples (fitted base 71.6 cm, arms 64.9-75.8 cm; stated about 80 x 80 cm); edges (cm): base_0-base_1 30.7; base_0-arm_0 64.9; base_1-base_2 40.9; base_1-arm_1 75.8; base_2-arm_2 72.7 (fitted to the samples); fit: median |lateral offset| 2.68 cm, worst stretch bias 0.92 cm (limit 2.5), worst unsupported share of a segment 0%, base -11% of the stated, arms -11% of the stated; track length 285.0 cm"
   ],
   "expectations": [
     {
@@ -25,11 +26,6 @@
       "detail": "expected Range(low=29.0, high=31.0), got 30.030030029981475"
     },
     {
-      "key": "position_extent_cm",
-      "passed": true,
-      "detail": "predicate"
-    },
-    {
       "key": "run_lasts_10_to_30_min",
       "passed": true,
       "detail": "predicate"
@@ -41,15 +37,41 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3978+gf04a0c138",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "4df5c3dcf6ab28e9f8bd579632cb8c51f8da1b5c"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
-  "load_warnings": [],
+  "load_warnings": [
+    {
+      "category": "RuntimeWarning",
+      "origin": "third-party",
+      "template": "invalid value encountered in oriented_envelope",
+      "example": "invalid value encountered in oriented_envelope",
+      "count": 1
+    }
+  ],
+  "load_fingerprint": {
+    "params": "aa9dbbfabb04b605f7e0eed28e701200dd8f5ce939f8cc8c2f508f9dd95d2075",
+    "positions": [
+      [
+        36447,
+        2
+      ],
+      11266
+    ],
+    "times": [
+      5865.152,
+      7080.9967,
+      36447
+    ],
+    "spike_counts": "af436697c019cc45966807d0ba8be8dd9ac5c77a81ab005a52f5a38cc9b5abec",
+    "unit_ids": "4ef4b667216e79cba41951ac906d426b788795e4080e04a5e0edd6ab8ef48285",
+    "geometry": "923b74afc7fdfa83320300b15e5b0999059437593ce899f68f99dcd3cb40a55b"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -61,55 +83,69 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.856,
-      "peak_mb": 30.3
+      "seconds": 0.234,
+      "peak_mb": 10.8
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 811.4981999999864,
-        "frac_bins_visited": 0.9901685393258427,
-        "median_s_per_visited_bin": 0.6665000000002692,
-        "max_s": 12.508999999995467
+        "total_s": 799.7879999999886,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 5.169499999998152,
+        "max_s": 24.925300000001698
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
-      "peak_mb": 8.4
+      "seconds": 0.028,
+      "peak_mb": 8.6
+    },
+    "env.declared": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 117,
+        "n_dims": 2,
+        "max_extent": 74.45443753022604,
+        "frac_samples_outside": 0.01002790939183488
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.007,
+      "peak_mb": 4.7
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 29,
-        "frac_nan_bins": 0.009831460674157303,
-        "median_peak_hz": 8.472782664376371,
-        "median_mean_hz": 0.711344195557302
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 5.7859978334175,
+        "median_mean_hz": 0.767192950782096
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.318,
-      "peak_mb": 32.7
+      "seconds": 0.555,
+      "peak_mb": 27.2
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.924612777294544,
-        "bits_per_spike_max": 3.6984317099480477,
+        "bits_per_spike_median": 0.8491615035644713,
+        "bits_per_spike_max": 3.622375616245054,
         "bits_per_spike_n_finite": 28
       },
       "note": "",
       "gap": null,
       "warnings": [],
       "seconds": 0.001,
-      "peak_mb": 1.4
+      "peak_mb": 0.2
     },
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.924612777294544,
-        "median_shifted_bits_per_spike": 0.18982384221494322,
+        "median_bits_per_spike": 0.8491615035644713,
+        "median_shifted_bits_per_spike": 0.15572107079091646,
         "frac_above_every_shift": 0.9285714285714286,
         "n_units": 28,
         "n_shifts": 4
@@ -117,8 +153,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.175,
-      "peak_mb": 9.4
+      "seconds": 0.174,
+      "peak_mb": 9.3
     },
     "cells.place_screen": {
       "status": "ok",
@@ -129,30 +165,33 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.016,
-      "peak_mb": 20.7
+      "seconds": 0.001,
+      "peak_mb": 0.6
     },
     "cells.grid_score": {
-      "status": "ok",
-      "summary": {
-        "n_finite": 0
-      },
-      "note": "",
+      "status": "n/a",
+      "summary": {},
+      "note": "grid score needs a 2-D area, not a track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.203,
-      "peak_mb": 7.0
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "cells.border_score": {
-      "status": "error",
+      "status": "n/a",
       "summary": {},
-      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "note": "border score needs a 2-D area, not a track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
-      "peak_mb": 0.5
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "rates.egocentric_boundary": {
       "status": "n/a",
       "note": "needs headings",
       "warnings": []
@@ -160,32 +199,47 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 16.035533905932738,
-        "chance_median_error": 42.05648182600625,
+        "median_error": 16.855396834169728,
+        "chance_median_error": 58.437079558756295,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.006896551724137931,
         "units": "cm",
-        "n_time_bins": 2390
+        "n_time_bins": 2390,
+        "median_error_on_declared": 16.855396834169728,
+        "n_on_declared": 2384
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 0.176,
-      "peak_mb": 31.8
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "example": "decoding_error(): 6 of 2390 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "count": 1
+        }
+      ],
+      "seconds": 0.364,
+      "peak_mb": 39.4
     },
     "io.nwb_roundtrip": {
       "status": "ok",
       "summary": {
-        "n_bins": 712
+        "n_bins": 117
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.015,
-      "peak_mb": 17.4
+      "seconds": 2.157,
+      "peak_mb": 13.0
     },
     "env.from_graph": {
-      "status": "n/a",
-      "summary": {},
-      "note": "geometry has no graph",
+      "status": "ok",
+      "summary": {
+        "n_bins": 117,
+        "n_bin_edges": 117
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
       "seconds": 0.0,
@@ -200,8 +254,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.08,
-      "peak_mb": 30.0
+      "seconds": 0.492,
+      "peak_mb": 26.8
     },
     "behavior.laps": {
       "status": "error",
@@ -209,17 +263,20 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
-      "peak_mb": 3.9
+      "seconds": 0.01,
+      "peak_mb": 4.3
     },
     "behavior.turn_sequence": {
-      "status": "n/a",
-      "summary": {},
-      "note": "geometry has no graph",
+      "status": "ok",
+      "summary": {
+        "n_turns": 99,
+        "frac_left": 0.5151515151515151
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.018,
+      "peak_mb": 4.3
     },
     "replay.compare_methods": {
       "status": "n/a",
@@ -227,8 +284,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.16,
-      "peak_mb": 3.0
+      "seconds": 0.101,
+      "peak_mb": 3.1
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -236,8 +293,17 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.021,
+      "seconds": 0.006,
       "peak_mb": 0.3
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "imaging.rates": {
       "status": "n/a",
@@ -250,6 +316,7 @@
       "warnings": []
     }
   },
+  "env_kind": "declared",
   "hazards": [
     {
       "hazard": "missing_positions_as_zero",
@@ -275,16 +342,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 811.4981999999864,
-        "frac_bins_visited": 0.9901685393258427,
-        "median_s_per_visited_bin": 0.6665000000002692,
-        "max_s": 12.508999999995467
+        "total_s": 799.7879999999886,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 5.169499999998152,
+        "max_s": 24.925300000001698
       },
       "hazard_summary": {
-        "total_s": 969.2553999999864,
+        "total_s": 727.4745999999668,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 0.5353000000004613,
-        "max_s": 175.2619000000068
+        "median_s_per_visited_bin": 4.2686999999950785,
+        "max_s": 29.083599999997205
       }
     },
     {
@@ -295,15 +362,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 29,
-        "frac_nan_bins": 0.009831460674157303,
-        "median_peak_hz": 8.472782664376371,
-        "median_mean_hz": 0.711344195557302
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 5.7859978334175,
+        "median_mean_hz": 0.767192950782096
       },
       "hazard_summary": {
         "n_units": 29,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 8.194296525213163,
-        "median_mean_hz": 0.7356767274840937
+        "median_peak_hz": 5.142454906472548,
+        "median_mean_hz": 0.8035843262402951
       }
     },
     {
@@ -333,11 +400,17 @@
     {
       "hazard": "missing_positions_as_zero",
       "op": "behavior.turn_sequence",
-      "response": "not probed",
-      "message": "the clean run was n/a",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
+      "clean_summary": {
+        "n_turns": 99,
+        "frac_left": 0.5151515151515151
+      },
+      "hazard_summary": {
+        "n_turns": 99,
+        "frac_left": 0.5151515151515151
+      }
     },
     {
       "hazard": "spike_times_in_ms",
@@ -347,13 +420,13 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 29,
-        "frac_nan_bins": 0.009831460674157303,
-        "median_peak_hz": 8.472782664376371,
-        "median_mean_hz": 0.711344195557302
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 5.7859978334175,
+        "median_mean_hz": 0.767192950782096
       },
       "hazard_summary": {
         "n_units": 29,
-        "frac_nan_bins": 0.009831460674157303,
+        "frac_nan_bins": 0.0,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
       }
@@ -362,7 +435,7 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [0.9035000000000001, 0.8742500000000002] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.01807 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9035, 0.8743] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.02",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 712,
@@ -379,13 +452,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 811.4981999999864,
-        "frac_bins_visited": 0.9901685393258427,
-        "median_s_per_visited_bin": 0.6665000000002692,
-        "max_s": 12.508999999995467
+        "total_s": 799.7879999999886,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 5.169499999998152,
+        "max_s": 24.925300000001698
       },
       "hazard_summary": null
     },
@@ -393,13 +466,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 29,
-        "frac_nan_bins": 0.009831460674157303,
-        "median_peak_hz": 8.472782664376371,
-        "median_mean_hz": 0.711344195557302
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 5.7859978334175,
+        "median_mean_hz": 0.767192950782096
       },
       "hazard_summary": null
     },
@@ -430,11 +503,17 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.turn_sequence",
-      "response": "not probed",
-      "message": "the clean run was n/a",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
+      "clean_summary": {
+        "n_turns": 99,
+        "frac_left": 0.5151515151515151
+      },
+      "hazard_summary": {
+        "n_turns": 0,
+        "frac_left": NaN
+      }
     }
   ]
 }

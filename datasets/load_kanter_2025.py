@@ -2,8 +2,9 @@
 
 What was recorded: rat 29629 ("Karri"), 29 Oct 2024, Neuropixels 2.0 probes in
 lateral entorhinal cortex (156 units) and CA1 (224 units; 125 of the 380 are
-"good", the rest "mua"), foraging in a 1 m square arena: 7.5 min empty, then
-three novel objects placed one at a time for 7.5 min each. Head position and
+"good", the rest "mua"), foraging in a 1 m square arena: 605 s empty, then
+three novel objects placed one at a time for 450, 523 and 452 s (the data
+descriptor says about 7.5 min each; the file's epochs). Head position and
 direction from OptiTrack motion capture at 120 Hz, projected onto the floor.
 
 Where it lives: EBRAINS dataset 10.25493/GTVB-FQR, CC-BY-SA-4.0, public
@@ -39,6 +40,13 @@ Analysis choices (``params``):
   fields).
 - ``dt`` 0.25 s, alternating 60 s ``train_epochs``/``test_epochs``.
 - every unit is kept, "mua" included, as for the other datasets' unit tables.
+
+Environment (``geometry["environment"]``): the 1 m square arena (50 cm
+walls) the file's epochs table states, built with
+``Environment.from_polygon`` at ``bin_size``. The stated frame ("Bottom left of
+the arena") does not hold, so centre and rotation are fitted to the samples
+(``_geometry.declared_rectangle``); the residual of their own fitted sides
+against 100 cm is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -49,6 +57,7 @@ from typing import Any
 
 import numpy as np
 from _fetch import fetch, open_nwb
+from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
     Recording,
@@ -75,11 +84,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": 380,
     "n_dims": 2,
     "sampling_rate_hz": Range(119.0, 121.0),
-    "arena_extent_cm": lambda rec: Range(90, 105).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 90-105 cm
+    # (_ARENA_CM), so one here could never fail; the span is in
+    # ``conversions``.
     "epoch_names": ["empty", "object_1", "object_2", "object_3"],
     "headings_span_the_circle": lambda rec: bool(
         np.nanmin(rec.headings) < -3.0 and np.nanmax(rec.headings) > 3.0
@@ -156,7 +163,7 @@ def load(cache: Path | None = None) -> Recording:
         msg = f"expected four novel-object epochs, got {epochs['task'].tolist()}"
         raise ValueError(msg)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="29629_2024-Oct-29_15-05-13",
         source=f"{DATASET['source']} {_PATH}",
@@ -193,6 +200,19 @@ def load(cache: Path | None = None) -> Recording:
             "epochs: the four novel-object epochs in order: empty, object 1-3"
             " (data descriptor); object positions are not in the file",
         ),
+    )
+    return with_environment(
+        rec,
+        *declared_rectangle(
+            rec.positions,
+            100.0,
+            100.0,
+            bin_size=rec.params["bin_size"],
+            units="cm",
+            name=DATASET["key"],
+            source="NWB epochs table: arena_dimensions [100, 100, 50] cm, square",
+        ),
+        tracked_point="the head, OptiTrack motion capture projected onto the floor (per the loader, from the data descriptor)",
     )
 
 

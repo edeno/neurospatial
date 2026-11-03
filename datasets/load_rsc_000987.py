@@ -15,7 +15,14 @@ radians from 0 to 2 pi. Nothing in the file says which axis is vertical, so
 the value ranges decide: x and z span about 0.5 m each and y 0.07 m (head
 height), so y is vertical, the floor is (x, z), and the values are metres
 (a mouse at a median 6 cm/s, 90th percentile 14 cm/s, read as metres). The
-loader converts to cm. ``ry``, rotation about the vertical axis, is the yaw;
+loader converts to cm. Positions and headings are kept as stored: the file
+has no NaN position or yaw sample, and its series have no description or
+comments, so nothing in it marks a yaw sample invalid. Suspect
+tracking is reported as a load warning (``_record.find_suspect_tracking``):
+runs of 11 or more identical frames (10 or more repeats: 0.4 % of the
+frames, in 22 runs of up to 1 s), which may be the motion-capture system repeating its last fix or a
+still mouse, and samples farther than 100 cm/s from the sample before them.
+``ry``, rotation about the vertical axis, is the yaw;
 of the three angles it alone tracks the direction of movement. Motion-capture
 systems with y up are right-handed, so seen from above x points East and -z
 North; the loader returns (x, -z) and ``ry`` wrapped to [-pi, pi]. Under that
@@ -36,10 +43,19 @@ Analysis choices (``params``):
 - ``bin_size`` 2.5 cm; ``analysis_epochs`` the tracked span
   (``position_time_support``).
 - ``dt`` 0.25 s and alternating 60 s ``train_epochs``/``test_epochs``.
+
+Environment: built from the samples (inferred). The file says only "square
+arena". The study's bioRxiv preprint (Mehrotra, Levenstein et al. 2023,
+10.1101/2023.09.12.557442, Methods, read) describes "removable walls (width:
+80 cm, height: 50 cm)" arranged into a square, and for the RSC dataset a
+70 cm circle as well; the samples' fitted square is 52.6 x 52.1 cm, 34 % short
+of 80 cm, so the stated size is refused (``_geometry.MAX_SIZE_RESIDUAL``)
+until a source explains the difference (G-130).
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -51,6 +67,7 @@ from _record import (
     Recording,
     alternating_blocks,
     check_expectations,
+    find_suspect_tracking,
     heading_vs_movement,
     validate_recording,
 )
@@ -150,6 +167,8 @@ def load(cache: Path | None = None) -> Recording:
         )
         raise ValueError(msg)
     positions = np.column_stack([xyz["x"], -xyz["z"]]) * 100.0
+    _, suspect = find_suspect_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    warnings.warn(suspect, UserWarning, stacklevel=1)
     headings = np.angle(np.exp(1j * yaw))
     mean, spread = heading_vs_movement(
         times[::10], positions[::10], headings[::10], min_speed=10.0
@@ -161,6 +180,9 @@ def load(cache: Path | None = None) -> Recording:
     windows = epochs[["start_time", "stop_time"]].to_numpy(dtype=float)
     train, test = alternating_blocks(times[0], times[-1], 60.0)
     return Recording(
+        geometry={
+            "tracked_point": "a motion-capture rigid body on the head (per the loader)"
+        },
         dataset=DATASET["key"],
         session="A7803-210726",
         source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",
@@ -188,8 +210,8 @@ def load(cache: Path | None = None) -> Recording:
         conversions=(
             "positions: Position/x and -Position/z (blank unit) x 100, cm; y is"
             f" vertical (span {np.ptp(xyz['y']) * 100:.1f} cm); range checked:"
-            f" {positions[:, 0].min():.1f}-{positions[:, 0].max():.1f} by"
-            f" {positions[:, 1].min():.1f}-{positions[:, 1].max():.1f} cm",
+            f" {np.nanmin(positions[:, 0]):.1f}-{np.nanmax(positions[:, 0]):.1f} by"
+            f" {np.nanmin(positions[:, 1]):.1f}-{np.nanmax(positions[:, 1]):.1f} cm",
             "headings: CompassDirection/ry (radian, 0-2 pi) wrapped to [-pi, pi];"
             " frame not verified: heading_vs_movement mean"
             f" {mean:+.2f} rad, spread {np.degrees(spread):.0f} deg (10 Hz, > 10 cm/s)",

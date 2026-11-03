@@ -11,11 +11,27 @@ streams it once and keeps ``.res.N``, ``.clu.N``, ``.whl`` and ``.xml``. The
 same recording is in hc-3 (topdir ``ec013.32``) with eight shanks; hc-2 keeps
 the four CA1 shanks.
 
-What the loader converts: as ``load_hc3_ec013_669`` (shared code there),
-except that hc-2 has no cell table, so every cluster from 2 up is a unit, as
-the hc-2 description defines them (0 artefact, 1 unsortable). The pixel
+What the loader converts: as ``load_hc3_ec013_669`` (shared code there).
+hc-2 has no cell table, so the units are hc-3's for the same recording
+(``hc3-cell.csv``, topdir ``ec013.32``): its electrodes 5-8, all CA1, are
+hc-2's shanks 1-4 (36 of hc-2's 37 clusters from 2 up are in the table at
+electrode + 4, and their firing rates in this session correlate 0.90 with
+the table's rates over the day, against -0.15 at electrode + 0); the loader
+refuses fewer than 36 of 37 matched. The one cluster the table leaves out is
+dropped; interneurons are kept and
+labelled, as in hc-3 (``params["cell_type"]``). The pixel
 scale is inferred from the 180 cm side over the larger per-axis span of the
 tracked positions.
+
+Environment (``geometry["environment"]``): the platform the hc-2 data
+description (``crcns-hc2-data-description.pdf``, read) states, "an elevated
+square platform (180 cm x 180 cm, or 120 cm x 120 cm)", 180 cm for ec013.527
+in its session table. It is declared in pixels at the inferred scale (its
+side is the larger per-axis span of the samples, so the residual of the
+longer fitted side checks only the trimming; the shorter side is the check),
+with a drop edge (``OpenArena(..., outline="drop")``), built with
+``Environment.from_polygon`` at ``bin_size``. Centre and rotation are fitted
+to the samples (``_geometry.declared_rectangle``).
 """
 
 from __future__ import annotations
@@ -24,8 +40,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from _geometry import declared_rectangle, with_environment
 from _record import Range, Recording, check_expectations, validate_recording
 from load_hc3_ec013_669 import (
+    cell_table,
     coincident_leds_as_east,
     fetch_session,
     leds_swapped,
@@ -68,6 +86,10 @@ MEMBER_DIR = "crcns/hc2/ec013.527"
 BASE = "ec013.527"
 N_SHANKS = 4
 ARENA_CM = 180.0
+# hc-3 holds the same recording under this topdir with eight shanks; its
+# electrodes 5-8 (CA1) are hc-2's shanks 1-4.
+HC3_TOPDIR = "ec013.32"
+HC3_SHANK_OFFSET = 4
 _SHA256 = {
     "clu.1": "52df2bcd6eebd92240479c089488a2f7074bcd283f42690f0544460ba4323609",
     "clu.2": "ea306a0e3ce05fd835e6719c0df1e3cd84b9f45ae7db728402251bd402a3726a",
@@ -88,21 +110,49 @@ def _largest_axis_span(positions: np.ndarray) -> float:
 
 
 def load(cache: Path | None = None) -> Recording:
-    """Fetch the session; positions in pixels, two-LED headings, every sorted cluster."""
+    """Fetch the session; positions in pixels, two-LED headings, hc-3's units."""
     files = fetch_session(
         ARCHIVE, MEMBER_DIR, BASE, _SHA256, subdir=SUBDIR, cache=cache
     )
-    return neuroscope_recording(
+    rows = [
+        row
+        for row in cell_table(HC3_TOPDIR, cache)
+        if int(row["ele"]) > HC3_SHANK_OFFSET
+    ]
+    if {row["region"] for row in rows} != {"CA1"}:
+        msg = f"hc-3 {HC3_TOPDIR} electrodes 5-8 are not all CA1; recheck the offset"
+        raise ValueError(msg)
+    units = {(int(row["ele"]) - HC3_SHANK_OFFSET, int(row["clu"])): row for row in rows}
+    rec = neuroscope_recording(
         files,
         dataset=DATASET,
         session=BASE,
         source=f"{DATASET['source']} {ARCHIVE}",
         n_shanks=N_SHANKS,
-        units=None,
+        units=units,
         apparatus_cm=ARENA_CM,
         apparatus_span_px=_largest_axis_span,
         span_px=(120.0, 300.0),
         geometry={"shape": "square", "size_cm": ARENA_CM},
+        # 36 of the 37 clusters from 2 up are in hc-3's table (see above).
+        min_matched=36 / 37,
+    )
+    side_px = ARENA_CM / rec.geometry["inferred_cm_per_pixel"]
+    return with_environment(
+        rec,
+        *declared_rectangle(
+            rec.positions,
+            side_px,
+            side_px,
+            bin_size=rec.params["bin_size"],
+            units="pixel",
+            name=DATASET["key"],
+            source="crcns-hc2-data-description.pdf: 'an elevated square platform"
+            " (180 cm x 180 cm ...)', ec013.527 180 cm; side in pixels from the"
+            " inferred scale",
+            outline="drop",
+        ),
+        tracked_point="the midpoint of two head-mounted LEDs (hc-2 .whl: two LEDs per frame)",
     )
 
 

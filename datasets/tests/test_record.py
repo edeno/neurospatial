@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 import numpy as np
@@ -158,3 +159,185 @@ def test_heading_vs_movement_refuses_a_lag_below_one(pixel_circle):
     times, positions, headings = pixel_circle
     with pytest.raises(ValueError, match="positive number of samples"):
         heading_vs_movement(times, positions, headings, min_speed=10.0, lag=0)
+
+
+def _still(n: int = 60) -> tuple[np.ndarray, np.ndarray]:
+    """``n`` frames at 10 Hz moving 1 cm a frame along x (10 cm/s).
+
+    A sub-pixel jitter of under 0.01 cm keeps the positions off a grid.
+    """
+    times = np.arange(n) / 10.0
+    jitter = np.random.default_rng(0).uniform(0.0, 0.01, (n, 2))
+    return times, np.column_stack([np.arange(n, dtype=float), np.zeros(n)]) + jitter
+
+
+def _found(times, positions, **kw):
+    from _record import find_suspect_tracking
+
+    before = positions.copy()
+    summary, message = find_suspect_tracking(
+        times, positions, min_frozen=10, max_speed=100.0, **kw
+    )
+    np.testing.assert_array_equal(positions, before)  # nothing is changed
+    return (
+        np.flatnonzero(summary["held"]).tolist(),
+        np.flatnonzero(summary["fast"]).tolist(),
+        summary,
+        message,
+    )
+
+
+def test_suspect_tracking_finds_held_runs():
+    times, positions = _still()
+    # Held for 12 frames after frame 19 (the animal walks on meanwhile, so
+    # the next fix is where it would be); a 3-frame repeat is not a run.
+    positions[20:32] = positions[19]
+    positions[45:48] = positions[44]
+    positions[48:] -= 3.0
+    held, fast, summary, message = _found(times, positions)
+    assert held == list(range(20, 32))
+    assert fast == []
+    assert summary["held_runs"] == 1
+    assert summary["longest_held_seconds"] == pytest.approx(1.2)
+    assert "1 runs of 11+ identical samples (12 repeats" in message
+
+
+@pytest.mark.parametrize(("n_identical", "runs"), [(10, 0), (11, 1)])
+def test_suspect_tracking_held_run_is_min_frozen_repeats(n_identical, runs):
+    # min_frozen=10 repeats of one value: 11 identical samples, not 10.
+    times, positions = _still()
+    positions[20 : 19 + n_identical] = positions[19]
+    held, _, summary, message = _found(times, positions)
+    assert summary["held_runs"] == runs
+    assert len(held) == (n_identical - 1) * runs
+    assert f"{runs} runs of 11+ identical samples" in message
+
+
+def test_suspect_tracking_checks_the_step_after_a_held_run():
+    times, positions = _still()
+    # Held frames 20-31, then frame 32 jumps 200 cm: from the held run's
+    # first sample (frame 19, 1.3 s earlier) that is 13 + 200 cm in 1.3 s,
+    # about 164 cm/s > 100. Frame 33 is 14 cm from frame 19 in 1.4 s.
+    positions[20:32] = positions[19]
+    positions[32, 1] += 200.0
+    held, fast, _, message = _found(times, positions)
+    assert held == list(range(20, 32))
+    assert fast == [32]
+    assert "1 samples farther than 100 cm/s" in message
+
+
+def test_suspect_tracking_counts_a_one_frame_glitch_once():
+    times, positions = _still()
+    positions[30, 1] += 50.0  # 50 cm in 0.1 s; frame 31 is 2 cm from 29 in 0.2 s
+    assert _found(times, positions)[1] == [30]
+
+
+@pytest.mark.parametrize("n_bad", [1, 2])
+def test_suspect_tracking_a_bad_first_sample_does_not_anchor_the_pass(n_bad):
+    # The first one or two samples sit 500 cm off the path (two frames agree
+    # with each other); every later sample agrees with its neighbours.
+    times, positions = _still()
+    positions[:n_bad, 0] += 500.0
+    assert _found(times, positions)[1] == list(range(n_bad))
+
+
+def test_suspect_tracking_counts_a_whole_excursion_and_not_the_return():
+    times, positions = _still()
+    # Frames 30-34 sit 80 cm off the path; from frame 29 the farthest
+    # (frame 34) is within 80.3 cm of it after 0.5 s, 161 cm/s > 100.
+    positions[30:35, 1] += 80.0
+    assert _found(times, positions)[1] == [30, 31, 32, 33, 34]
+
+
+def test_suspect_tracking_skips_input_nan_without_moving_the_anchor():
+    times, positions = _still()
+    positions[30] = np.nan
+    # Frame 31 jumps 50 cm: from frame 29 (the anchor; frame 30 is NaN) that
+    # is 50 cm in 0.2 s, 250 cm/s. Frame 32 is 3 cm from frame 29 in 0.3 s.
+    positions[31, 1] += 50.0
+    held, fast, _, _ = _found(times, positions)
+    assert held == []
+    assert fast == [31]
+
+
+@pytest.mark.parametrize(
+    ("start", "stop", "length"),
+    [(1.0, 1.3, 0.1), (0.0, 0.7, 0.1), (7674.0, 9941.0, 60.0), (0.0, 1.0, 0.5)],
+)
+def test_alternating_blocks_tile_the_span_without_slivers(start, stop, length):
+    from _record import alternating_blocks
+
+    train, test = alternating_blocks(start, stop, length)
+    blocks = np.vstack([train, test])
+    blocks = blocks[np.argsort(blocks[:, 0])]
+    widths = np.diff(blocks, axis=1).ravel()
+    assert blocks[0, 0] == start
+    assert blocks[-1, 1] == stop
+    np.testing.assert_array_equal(blocks[1:, 0], blocks[:-1, 1])
+    # Every block is a full one but the last, which is above half a block
+    # or longer than a block by less than one.
+    assert np.all(widths > 0)
+    np.testing.assert_allclose(widths[:-1], length, rtol=1e-9)
+    assert widths[-1] > 1e-6 * length
+
+
+@pytest.mark.parametrize(
+    ("change", "problem"),
+    [
+        ({"epochs": {"bad": np.array([[0.0, np.nan]])}}, "epochs['bad']"),
+        ({"events": {"pokes": np.array([1.0, np.nan])}}, "events['pokes']"),
+        ({"events": {"runs": np.array([[2.0, 1.0]])}}, "events['runs']"),
+        ({"events": {"cube": np.zeros((2, 2, 2))}}, "events['cube']"),
+    ],
+)
+def test_validation_checks_epochs_and_events(simulated_recording, change, problem):
+    with pytest.raises(ValueError, match=re.escape(problem)):
+        validate_recording(replace(simulated_recording, **change))
+
+
+@pytest.mark.parametrize("name", ["train_epochs", "test_epochs", "analysis_epochs"])
+@pytest.mark.parametrize(
+    "table", [np.array([[0.0, np.nan]]), np.array([[5.0, 1.0]]), np.zeros(3)]
+)
+def test_validation_checks_epoch_params(simulated_recording, name, table):
+    params = {**simulated_recording.params, name: table}
+    with pytest.raises(ValueError, match=re.escape(f"params[{name!r}]")):
+        validate_recording(replace(simulated_recording, params=params))
+
+
+@pytest.mark.parametrize(
+    ("train", "test", "problem"),
+    [
+        ([[10, 20], [0, 5]], [[30, 40]], "params['train_epochs'] must be sorted"),
+        ([[0, 10], [5, 20]], [[30, 40]], "params['train_epochs'] must be sorted"),
+        (
+            [[0, 10]],
+            [[5, 20]],
+            "params['train_epochs'] and params['test_epochs'] overlap",
+        ),
+        ("even laps", [[5, 20]], "params['train_epochs'] must be finite"),
+    ],
+)
+def test_validation_checks_train_and_test_are_held_out(
+    simulated_recording, train, test, problem
+):
+    params = {
+        **simulated_recording.params,
+        "train_epochs": train if isinstance(train, str) else np.array(train, float),
+        "test_epochs": np.array(test, dtype=float),
+    }
+    with pytest.raises(ValueError, match=re.escape(problem)):
+        validate_recording(replace(simulated_recording, params=params))
+
+
+def test_alternate_within_balances_each_label_in_trial_order():
+    from _record import alternate_within
+
+    labels = np.array(list("ABABABAABBC"))
+    train = alternate_within(labels)
+    # Within each label, its 1st, 3rd, ... trials train and the rest test.
+    # A at 0, 2, 4, 6, 7; B at 1, 3, 5, 8, 9; C, a single trial, trains.
+    np.testing.assert_array_equal(train, [1, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1])
+    for label, (n_train, n_test) in {"A": (3, 2), "B": (3, 2), "C": (1, 0)}.items():
+        assert train[labels == label].sum() == n_train
+        assert (~train[labels == label]).sum() == n_test

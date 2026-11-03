@@ -9,7 +9,8 @@
     "times: lattice_3d pot as stored (s)",
     "geometry['lattice_bars_cm']: lattice_3d lx, ly, lz / 10, 147 bars; config3.lattice_type 'diagonal'",
     "units: 24 tetrode/cluster fields; cluster 0 of each tetrode (5712584 spikes, unsorted) left out",
-    "headings: none; lattice.poh minus the direction of movement above 10 cm/s: in the camera's 2-D frame (lattice.pox, poy) mean -0.8 deg, spread 42.3 deg; in the 3-D frame's x, y mean -112.6 deg, spread 87.8 deg: not a heading in the positions' frame"
+    "environment: declared lattice, its 147 bars (Grieves et al. 2020 Supplementary Methods: 6 x 6 x 6 cubes, 0.97 m a side) as a graph of 343 crossings and 882 segments, every segment kept (_geometry.graph_environment); placement: the file's bars, in the positions' frame (not fitted); track_width 30.8 cm = 2 x the 99th percentile of the head's distance from the nearest bar (median 6.0, 95th percentile 10.4 cm), not the stated 10 mm tube diameter",
+    "headings: -lattice.poh (deg -> rad, wrapped): the 3-D frame's x, y are the camera's (lattice.pox, poy) mirrored in y plus a shift (RMS 3e-05 mm), so the camera azimuth turns the other way; heading minus the direction of movement above 10 cm/s: mean 0.8 deg, spread 42.3 deg (poh in the camera frame: mean -0.8, spread 42.3)"
   ],
   "expectations": [
     {
@@ -39,15 +40,33 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3972+gad3f42a0a",
+    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "c38e12c508400a71a62d69807016a1ef279d9ae3"
+    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
   },
   "load_warnings": [],
+  "load_fingerprint": {
+    "params": "0667861a90d64c2cbd6c124c8abbb308cbab87d46574128479a686bf41fd848b",
+    "positions": [
+      [
+        182099,
+        3
+      ],
+      0
+    ],
+    "times": [
+      1816.02001953125,
+      5457.97998046875,
+      182099
+    ],
+    "spike_counts": "c023712a2494523283c47fe9637bfa15154744c9ea285610c6fc173727f4cb0c",
+    "unit_ids": "cdc17e5f39d4816fc81ab1c6d828f307539d25ea6ca3ea5a55e02276e3103b08",
+    "geometry": "7eb9725c8ec58c6edf32668164e089753dba3b27a1b9a9d6ef759bea6247dc3f"
+  },
   "operations": {
     "env.from_samples": {
       "status": "ok",
@@ -59,55 +78,69 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.424,
-      "peak_mb": 91.6
+      "seconds": 1.478,
+      "peak_mb": 67.5
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 3095.6854248046875,
-        "frac_bins_visited": 0.9986573904552667,
-        "median_s_per_visited_bin": 0.229736328125,
-        "max_s": 28.23876953125
+        "total_s": 3062.5054931640625,
+        "frac_bins_visited": 0.5682539682539682,
+        "median_s_per_visited_bin": 0.6201171875,
+        "max_s": 46.359130859375
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.141,
-      "peak_mb": 64.7
+      "seconds": 49.442,
+      "peak_mb": 74.0
+    },
+    "env.declared": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 4410,
+        "n_dims": 3,
+        "max_extent": 166.14217651510526,
+        "frac_samples_outside": 0.0100000549151835
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 4.412,
+      "peak_mb": 33.6
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 24,
-        "frac_nan_bins": 0.0013426095447333088,
-        "median_peak_hz": 9.850237146598776,
-        "median_mean_hz": 0.631716804438369
+        "frac_nan_bins": 0.43174603174603177,
+        "median_peak_hz": 10.001621844794297,
+        "median_mean_hz": 0.6085613871070854
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 53.443,
-      "peak_mb": 1644.0
+      "seconds": 18.986,
+      "peak_mb": 483.7
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.7779412195833665,
-        "bits_per_spike_max": 4.602592562093754,
+        "bits_per_spike_median": 0.8620572325440465,
+        "bits_per_spike_max": 5.234890750504399,
         "bits_per_spike_n_finite": 24
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
-      "peak_mb": 13.2
+      "seconds": 0.002,
+      "peak_mb": 7.1
     },
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.7779412195833665,
-        "median_shifted_bits_per_spike": 0.5225277940162929,
+        "median_bits_per_spike": 0.8620572325440465,
+        "median_shifted_bits_per_spike": 0.604572371768239,
         "frac_above_every_shift": 0.75,
         "n_units": 24,
         "n_shifts": 4
@@ -115,79 +148,106 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.149,
-      "peak_mb": 68.0
+      "seconds": 40.551,
+      "peak_mb": 67.3
     },
     "cells.place_screen": {
       "status": "ok",
       "summary": {
-        "n_place_screen": 6,
+        "n_place_screen": 5,
         "n_units": 24
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 10.197,
-      "peak_mb": 205.9
+      "seconds": 0.456,
+      "peak_mb": 191.4
     },
     "cells.grid_score": {
-      "status": "error",
+      "status": "n/a",
       "summary": {},
-      "note": "NotImplementedError: batch_grid_scores() needs a regular 2D grid of rectangular cells, one width along each axis; this environment's RegularGrid layout has no 2D grid of rectangular cells.\nWhy: the autocorrelogram shifts the rate map one cell at a time along rows and columns, so each shift is one distance only when the cells along an axis share one width.\nFix: use spatial_autocorrelation_radial(env, firing_rate), which works on every layout; a radial profile does not test for sixfold symmetry",
+      "note": "grid score needs a 2-D area, not a track graph",
       "gap": null,
       "warnings": [],
       "seconds": 0.0,
-      "peak_mb": 1.6
+      "peak_mb": 0.0
     },
     "cells.border_score": {
-      "status": "error",
+      "status": "n/a",
       "summary": {},
-      "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
+      "note": "border score needs a 2-D area, not a track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.007,
-      "peak_mb": 6.8
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "hd.tuning": {
-      "status": "n/a",
-      "note": "needs headings",
-      "warnings": []
+      "status": "ok",
+      "summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.068,
+      "peak_mb": 30.5
     },
     "rates.egocentric_boundary": {
       "status": "n/a",
-      "note": "needs headings",
-      "warnings": []
+      "summary": {},
+      "note": "egocentric boundary maps need 2-D positions",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 82.72573518778081,
-        "chance_median_error": 76.76809470598245,
-        "chance_frac_disconnected": 0.0008333333333333334,
+        "median_error": 96.99999999999986,
+        "chance_median_error": 97.0000000000003,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.008333333333333333,
         "units": "cm",
-        "n_time_bins": 7200
+        "n_time_bins": 7200,
+        "median_error_on_declared": 96.99999999999986,
+        "n_on_declared": 7150
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 6.435,
-      "peak_mb": 951.5
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "example": "decoding_error(): 50 of 7200 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "count": 1
+        }
+      ],
+      "seconds": 55.58,
+      "peak_mb": 1895.2
     },
     "io.nwb_roundtrip": {
       "status": "ok",
       "summary": {
-        "n_bins": 8193
+        "n_bins": 4410
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.892,
-      "peak_mb": 127.6
+      "seconds": 3.771,
+      "peak_mb": 36.3
     },
     "env.from_graph": {
-      "status": "n/a",
-      "summary": {},
-      "note": "geometry has no graph",
+      "status": "ok",
+      "summary": {
+        "n_bins": 4410,
+        "n_bin_edges": 7287
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
       "seconds": 0.0,
@@ -202,26 +262,32 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.91,
-      "peak_mb": 87.9
+      "seconds": 0.756,
+      "peak_mb": 87.8
     },
     "behavior.laps": {
-      "status": "error",
-      "summary": {},
-      "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "status": "ok",
+      "summary": {
+        "n_laps": 1,
+        "n_laps_unknown": 1
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.039,
-      "peak_mb": 28.6
+      "seconds": 5.053,
+      "peak_mb": 29.2
     },
     "behavior.turn_sequence": {
-      "status": "n/a",
-      "summary": {},
-      "note": "geometry has no graph",
+      "status": "ok",
+      "summary": {
+        "n_turns": 2975,
+        "frac_left": 0.5008403361344538
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 5.224,
+      "peak_mb": 29.2
     },
     "replay.compare_methods": {
       "status": "n/a",
@@ -229,7 +295,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.121,
+      "seconds": 0.118,
       "peak_mb": 3.0
     },
     "io.nwb_readers": {
@@ -238,7 +304,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
+      "seconds": 0.007,
       "peak_mb": 0.3
     },
     "io.read_pose": {
@@ -261,7 +327,27 @@
       "warnings": []
     }
   },
+  "env_kind": "declared",
   "hazards": [
+    {
+      "hazard": "headings_in_degrees",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 360, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "hazard_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.03038577710401364,
+        "mean_vector_length_max": 0.4373300442951528,
+        "mean_vector_length_n_finite": 24
+      }
+    },
     {
       "hazard": "spike_times_in_ms",
       "op": "rates.spatial",
@@ -270,22 +356,41 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 24,
-        "frac_nan_bins": 0.0013426095447333088,
-        "median_peak_hz": 9.850237146598776,
-        "median_mean_hz": 0.631716804438369
+        "frac_nan_bins": 0.43174603174603177,
+        "median_peak_hz": 10.001621844794297,
+        "median_mean_hz": 0.6085613871070854
       },
       "hazard_summary": {
         "n_units": 24,
-        "frac_nan_bins": 0.0013426095447333088,
+        "frac_nan_bins": 0.43174603174603177,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "All 24 units are silent from 2120.4 s to 2486.5 s (366 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n162689/162743 spike_times (100%) across all neurons fell outside the position time window [1816.02, 5457.98]; spike_times.min()=7.54167 spike_times.max()=6.6972e+06. The spike times span 6.6972e+06 and reach 6.6972e+06, about 1000 times the 3641.96 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.06991557419808272,
+        "mean_vector_length_max": 0.3443900414551894,
+        "mean_vector_length_n_finite": 24
+      },
+      "hazard_summary": {
+        "n_units": 24,
+        "mean_vector_length_median": 0.7364191392799683,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 11
       }
     },
     {
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=4.0 is at least the per-axis data extent [1.5453277740478515, 1.7081422729492188, 1.4779346160888671] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0341628 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=4.0 is at least the per-axis data extent [1.545, 1.708, 1.478] in every dimension.\nWhy: this produces very few bins, and it is often a units mistake: positions in m but bin_size meant in cm, for example.\nFix: check that bin_size and positions use the same units, then use a bin_size well below the data extent, such as bin_size=0.03",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_bins": 8193,
@@ -302,13 +407,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so occupancy is zero in every bin. Fix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 3095.6854248046875,
-        "frac_bins_visited": 0.9986573904552667,
-        "median_s_per_visited_bin": 0.229736328125,
-        "max_s": 28.23876953125
+        "total_s": 3062.5054931640625,
+        "frac_bins_visited": 0.5682539682539682,
+        "median_s_per_visited_bin": 0.6201171875,
+        "max_s": 46.359130859375
       },
       "hazard_summary": null
     },
@@ -316,13 +421,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs), so the rate map is empty. Fix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=3.0, epochs).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=3.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 24,
-        "frac_nan_bins": 0.0013426095447333088,
-        "median_peak_hz": 9.850237146598776,
-        "median_mean_hz": 0.631716804438369
+        "frac_nan_bins": 0.43174603174603177,
+        "median_peak_hz": 10.001621844794297,
+        "median_mean_hz": 0.6085613871070854
       },
       "hazard_summary": null
     },
@@ -344,20 +449,29 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "not probed",
-      "message": "the clean run was error",
+      "response": "raised",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, samples out of bounds or at NaN positions).\nWhy: no sampling interval is left to analyse; rather than return a result in which the result is empty or NaN rather than a measurement, the call refuses.\nFix: check that positions use the environment's coordinates.",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
+      "clean_summary": {
+        "n_laps": 1,
+        "n_laps_unknown": 1
+      },
       "hazard_summary": null
     },
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.turn_sequence",
-      "response": "not probed",
-      "message": "the clean run was n/a",
+      "response": "silent",
+      "message": "",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
-      "hazard_summary": null
+      "clean_summary": {
+        "n_turns": 2975,
+        "frac_left": 0.5008403361344538
+      },
+      "hazard_summary": {
+        "n_turns": 0,
+        "frac_left": NaN
+      }
     }
   ]
 }

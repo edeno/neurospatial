@@ -14,21 +14,24 @@ probes, joined with the verdicts in ``verdicts.json``).
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import hashlib
 import importlib
 import importlib.metadata
 import json
 import subprocess
 import time
 import tracemalloc
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import networkx as nx
 import numpy as np
-from _calibration import captured, probe_hazards
+from _calibration import PROBE_OPS, captured, probe_hazards
 from _record import check_expectations, validate_recording
-from operations import OPERATIONS, Outcome
+from operations import OPERATIONS, Outcome, env_kind
 
 LOADERS = {
     "sargolini_000582": "load_sargolini_000582",
@@ -45,6 +48,7 @@ LOADERS = {
     "grosmark_000044_circular": "load_grosmark_000044_circular",
     "grosmark_000044_linear": "load_grosmark_000044_linear",
     "jadhav_000447": "load_jadhav_000447",
+    "jadhav_000447_familiar": "load_jadhav_000447_familiar",
     "hc11_achilles": "load_hc11_achilles",
     "hc3_ec013_669": "load_hc3_ec013_669",
     "hc2_ec013_527": "load_hc2_ec013_527",
@@ -116,10 +120,95 @@ def _versions() -> dict[str, str]:
     return versions
 
 
+def _digest(value: Any, sha: Any) -> None:
+    """Feed ``value`` to ``sha`` deterministically (callables are skipped)."""
+    if callable(value) and not isinstance(value, type):
+        return
+    if isinstance(value, np.ndarray):
+        array = np.asarray(value)
+        sha.update(f"array {array.dtype.str} {array.shape};".encode())
+        if array.dtype.kind in "biufc":
+            sha.update(np.ascontiguousarray(array).tobytes())
+        else:
+            _digest(array.tolist(), sha)
+    elif isinstance(value, Mapping):
+        sha.update(f"mapping {len(value)};".encode())
+        for key in sorted(value, key=str):
+            if callable(value[key]):
+                continue
+            _digest(str(key), sha)
+            _digest(value[key], sha)
+    elif isinstance(value, list | tuple):
+        sha.update(f"sequence {len(value)};".encode())
+        for item in value:
+            _digest(item, sha)
+    elif isinstance(value, set | frozenset):
+        _digest(sorted(value, key=repr), sha)
+    elif isinstance(value, float | np.floating):
+        sha.update(b"float " + np.float64(value).tobytes())
+    elif (
+        isinstance(value, bool | int | str | bytes | np.generic | Path) or value is None
+    ):
+        sha.update(f"{type(value).__name__} {value!r};".encode())
+    elif isinstance(value, nx.Graph):
+        _digest(
+            {
+                "nodes": sorted((str(n), d) for n, d in value.nodes(data=True)),
+                "edges": sorted(
+                    (sorted((str(u), str(v))), d) for u, v, d in value.edges(data=True)
+                ),
+            },
+            sha,
+        )
+    elif hasattr(value, "wkb"):  # a shapely geometry
+        sha.update(b"geometry " + value.wkb)
+    elif dataclasses.is_dataclass(value):
+        _digest(
+            {f.name: getattr(value, f.name) for f in dataclasses.fields(value)}, sha
+        )
+    else:
+        msg = f"no deterministic fingerprint for a {type(value).__name__}"
+        raise TypeError(msg)
+
+
+def _hash(value: Any) -> str:
+    sha = hashlib.sha256()
+    _digest(value, sha)
+    return sha.hexdigest()
+
+
+def load_fingerprint(rec: Any) -> dict[str, Any]:
+    """What a subset rerun's kept cells depend on, beyond ``conversions``.
+
+    The analysis ``params`` (arrays included), the positions' shape and NaN
+    count, the tracked time span, each unit's spike count, the unit ids and
+    the geometry's stated entries (callables, such as
+    ``geometry["environment"]``, skipped), each hashed (SHA-256) or stated.
+    """
+    times = rec.times
+    positions = rec.positions
+    return {
+        "params": _hash(dict(rec.params)),
+        "positions": None
+        if positions is None
+        else [list(np.shape(positions)), int(np.isnan(positions).sum())],
+        "times": None
+        if times is None or len(times) == 0
+        else [float(times[0]), float(times[-1]), len(times)],
+        "spike_counts": None
+        if rec.spike_times is None
+        else _hash(np.array([len(train) for train in rec.spike_times])),
+        "unit_ids": None if rec.unit_ids is None else _hash(np.asarray(rec.unit_ids)),
+        "geometry": _hash(dict(rec.geometry)),
+    }
+
+
 def run_dataset(
     key: str,
     op_ids: Sequence[str] | None = None,
     operations: tuple[Any, ...] = OPERATIONS,
+    *,
+    inferred_env: bool = False,
 ) -> dict[str, Any]:
     """Load one dataset, run the registry and the hazard probes, write its JSON."""
     module = importlib.import_module(LOADERS[key])
@@ -127,7 +216,10 @@ def run_dataset(
     if load_error is not None:
         raise load_error  # a loader that fails is a harness bug, not a table cell
     validate_recording(rec)
-    return run_recording(rec, module, op_ids, operations, load_warnings)
+    results = RESULTS / "inferred_env" if inferred_env else RESULTS
+    return run_recording(
+        rec, module, op_ids, operations, load_warnings, results, inferred_env
+    )
 
 
 def run_recording(
@@ -137,19 +229,28 @@ def run_recording(
     operations: tuple[Any, ...] = OPERATIONS,
     load_warnings: list[dict[str, Any]] | None = None,
     results: Path = RESULTS,
+    inferred_env: bool = False,
 ) -> dict[str, Any]:
     """Run ``operations`` and the hazard probes on a loaded recording.
 
     With ``op_ids``, only those operations are re-run and their entries are
     merged into the dataset's existing results file, so the other cells keep
-    their last results.
+    their last results. Only the rerun operations are probed, against their
+    fresh clean results; the other hazard rows are kept. The record keeps
+    the earlier run's ``versions``, and each rerun cell and probe row carries
+    its own. A subset run is refused when the load's ``conversions``,
+    ``env_kind`` or ``load_fingerprint`` differ from the stored record, or the
+    record has no fingerprint: the cells it keeps describe the stored load.
+    With ``inferred_env``, every operation uses the environment built from the
+    samples even when the loader declares one.
     """
     path = results / f"{rec.dataset}.json"
-    previous = (
-        json.loads(path.read_text())["operations"]
-        if op_ids is not None and path.exists()
-        else {}
+    previous_record = (
+        json.loads(path.read_text()) if op_ids is not None and path.exists() else {}
     )
+    previous = previous_record.get("operations", {})
+    versions = _versions()
+    subset = op_ids is not None
     record: dict[str, Any] = {
         "dataset": rec.dataset,
         "session": rec.session,
@@ -157,11 +258,41 @@ def run_recording(
         "license": rec.license,
         "conversions": list(rec.conversions),
         "expectations": check_expectations(rec, getattr(module, "EXPECTATIONS", {})),
-        "versions": _versions(),
+        "versions": previous_record.get("versions", versions) if subset else versions,
         "load_warnings": load_warnings or [],
+        "load_fingerprint": load_fingerprint(rec),
         "operations": dict(previous),
     }
-    cache: dict[str, Any] = {}
+    seed = {"inferred_env": True} if inferred_env else {}
+    cache: dict[str, Any] = dict(seed)
+    record["env_kind"] = env_kind(rec, cache)
+    if previous_record:
+        # The cells not rerun come from the stored load; a different load
+        # would mix two recordings in one record.
+        if "load_fingerprint" not in previous_record:
+            msg = (
+                f"{rec.dataset}: {path} was written before records kept a load"
+                " fingerprint, so a subset run cannot tell whether the load"
+                " changed; rerun the recording in full once (without --ops)"
+            )
+            raise ValueError(msg)
+        stored = previous_record["load_fingerprint"]
+        changed = [
+            key
+            for key in ("conversions", "env_kind")
+            if previous_record.get(key) != record[key]
+        ] + [
+            key
+            for key, value in json.loads(json.dumps(record["load_fingerprint"])).items()
+            if stored.get(key) != value
+        ]
+        if changed:
+            msg = (
+                f"{rec.dataset}: the load's {', '.join(changed)} differ from"
+                f" {path}, so the operations not rerun describe another load;"
+                " rerun the recording in full (without --ops)"
+            )
+            raise ValueError(msg)
     for op in operations:
         if op_ids is not None and op.op_id not in op_ids:
             continue
@@ -186,7 +317,28 @@ def run_recording(
             "seconds": round(seconds, 3),
             "peak_mb": round(peak / 1e6, 1),
         }
-    record["hazards"] = probe_hazards(module, rec, record["operations"], operations)
+        if subset:
+            record["operations"][op.op_id]["versions"] = versions
+    if not subset:
+        record["hazards"] = probe_hazards(
+            module, rec, record["operations"], operations, cache_seed=seed
+        )
+    else:
+        rerun = tuple(op_id for op_id in PROBE_OPS if op_id in op_ids)
+        fresh = probe_hazards(
+            module,
+            rec,
+            record["operations"],
+            operations,
+            probe_ops=rerun,
+            cache_seed=seed,
+            report_unreached=False,
+        )
+        for row in fresh:
+            row["versions"] = versions
+        record["hazards"] = [
+            row for row in previous_record.get("hazards", []) if row["op"] not in rerun
+        ] + fresh
     results.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2, default=_jsonable) + "\n")
     return record
@@ -213,15 +365,17 @@ def render_matrix(
     """
     cell_gaps = cell_gaps or {}
     op_ids = [op.op_id for op in OPERATIONS]
-    head = "| dataset | expectations | " + " | ".join(op_ids) + " |"
-    rule = "| --- " * (len(op_ids) + 2) + "|"
+    head = "| dataset | expectations | environment | " + " | ".join(op_ids) + " |"
+    rule = "| --- " * (len(op_ids) + 3) + "|"
     lines = [
         "# Dataset × operation matrix",
         "",
         "Generated by `datasets/run.py`; do not edit. Cells: `ok`, `wk G-###`"
         " (workaround), `miss G-###`, `err G-###` (the message is in the JSON),"
         " `–` (n/a)."
-        " `⚠N`: N distinct warning messages (see `warnings.md`).",
+        " `⚠N`: N distinct warning messages (see `warnings.md`). `environment`:"
+        " `declared` when the loader states the apparatus, `inferred` when it is"
+        " built from the samples.",
         "",
         head,
         rule,
@@ -239,15 +393,14 @@ def render_matrix(
             for op_id in op_ids
         ]
         lines.append(
-            f"| {record['dataset']} | {passed}/{len(expectations)} | "
-            + " | ".join(cells)
-            + " |"
+            f"| {record['dataset']} | {passed}/{len(expectations)} |"
+            f" {record.get('env_kind', 'inferred')} | " + " | ".join(cells) + " |"
         )
     lines += [
         "",
         "## Runtime (s) / peak traced memory (MB)",
         "",
-        head.replace(" expectations |", ""),
+        head.replace(" expectations | environment |", ""),
         "| --- " * (len(op_ids) + 1) + "|",
     ]
     for record in records:
@@ -360,6 +513,54 @@ def render_warnings(records: Sequence[dict[str, Any]], verdicts: dict[str, Any])
     return "\n".join(lines)
 
 
+def stale_verdicts(
+    records: Sequence[dict[str, Any]],
+    inferred_records: Sequence[dict[str, Any]] | None,
+    verdicts: dict[str, Any],
+) -> list[str]:
+    """Verdict entries with no result row they describe, as ``"<section>: <key>"``.
+
+    A ``cells`` (``inferred_cells``) entry needs a cell that is not ``ok``
+    in the declared (inferred) results, a ``hazards`` entry a probe row that
+    was probed (not ``not probed``), and a ``warnings`` entry a warning on
+    clean data. ``inferred_records=None`` (no ``--inferred-env`` run on this
+    machine) leaves the ``inferred_cells`` entries unchecked.
+    """
+
+    def cells(rows: Sequence[dict[str, Any]]) -> set[str]:
+        return {
+            f"{r['dataset']}/{op}"
+            for r in rows
+            for op, entry in r["operations"].items()
+            if entry["status"] != "ok"
+        }
+
+    present = {
+        "cells": cells(records),
+        "inferred_cells": cells(inferred_records or ()),
+        "hazards": {
+            hazard_key(r["dataset"], row)
+            for r in records
+            for row in r.get("hazards", [])
+            if row["response"] != "not probed"
+        },
+        "warnings": {
+            warning_key(row)
+            for r in records
+            for rows in [r["load_warnings"]]
+            + [e.get("warnings", []) for e in r["operations"].values()]
+            for row in rows
+        },
+    }
+    return [
+        f"{section}: {key}"
+        for section, entries in verdicts.items()
+        if not (section == "inferred_cells" and inferred_records is None)
+        for key in entries
+        if key not in present.get(section, set())
+    ]
+
+
 def render(results: Path = RESULTS, verdicts_path: Path = VERDICTS) -> None:
     """Regenerate ``matrix.md`` and ``warnings.md`` from every results JSON."""
     records = [json.loads(path.read_text()) for path in sorted(results.glob("*.json"))]
@@ -377,16 +578,29 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "--render-only", action="store_true", help="only regenerate the Markdown tables"
     )
+    parser.add_argument(
+        "--inferred-env",
+        action="store_true",
+        help="build every environment from the samples, even where the loader"
+        " declares the apparatus; results go to results/inferred_env/",
+    )
     args = parser.parse_args(argv)
     if not args.render_only:
         for key in args.datasets or LOADERS:
             print(f"running {key}")
-            record = run_dataset(key, args.ops)
+            record = run_dataset(key, args.ops, inferred_env=args.inferred_env)
             statuses = {
                 op: entry["status"] for op, entry in record["operations"].items()
             }
             print(f"  {statuses}")
     render()
+    inferred = RESULTS / "inferred_env"
+    if args.inferred_env or (args.render_only and any(inferred.glob("*.json"))):
+        records = [json.loads(p.read_text()) for p in sorted(inferred.glob("*.json"))]
+        verdicts = json.loads(VERDICTS.read_text())
+        (inferred / "matrix.md").write_text(
+            render_matrix(records, verdicts.get("inferred_cells"))
+        )
 
 
 if __name__ == "__main__":

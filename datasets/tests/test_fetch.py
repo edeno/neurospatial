@@ -4,6 +4,7 @@ import datetime
 import email.message
 import functools
 import hashlib
+import http.client
 import http.server
 import io
 import json
@@ -176,7 +177,7 @@ def portal(monkeypatch):
     class Opener:
         def open(self, url, data=None, timeout=None):
             state.forms.append(urllib.parse.parse_qs(data.decode()))
-            if isinstance(state.reply, Exception):
+            if isinstance(state.reply, BaseException):
                 raise state.reply
             return state.reply
 
@@ -222,7 +223,7 @@ def _raised(fetch, *args):
     """
     try:
         fetch(*args)
-    except Exception as exc:  # the test checks the type
+    except BaseException as exc:  # the test checks the type, Ctrl-C's too
         return exc
     msg = "expected an error"
     raise AssertionError(msg)
@@ -253,6 +254,11 @@ def _fetch_member(cache, member=_MEMBER):
         ),
         (_echoing_http_error, OSError),
         (lambda: urllib.error.URLError(OSError(f"refused {_USER}")), OSError),
+        # http.client errors are not URLError: the server hangs up, or
+        # reading the headers times out.
+        (lambda: http.client.RemoteDisconnected(f"closed for {_USER}"), OSError),
+        (lambda: http.client.BadStatusLine(f"{_USER}:{_PASSWORD}"), OSError),
+        (lambda: TimeoutError(f"timed out for {_USER}"), OSError),
         (
             lambda: _PortalResponse(
                 _tar_gz({_MEMBER: b"file bytes"}), "application/octet-stream"
@@ -260,7 +266,15 @@ def _fetch_member(cache, member=_MEMBER):
             ValueError,
         ),
     ],
-    ids=["login-page", "http-error", "network-error", "checksum-mismatch"],
+    ids=[
+        "login-page",
+        "http-error",
+        "network-error",
+        "remote-disconnected",
+        "bad-status-line",
+        "header-timeout",
+        "checksum-mismatch",
+    ],
 )
 def test_crcns_fetch_never_logs_credentials(
     portal, fetch, reply, error, tmp_path, capfd, caplog
@@ -281,6 +295,29 @@ def test_crcns_fetch_never_logs_credentials(
     for secret in (_USER, _PASSWORD):
         assert secret not in shown
     assert [f for f in tmp_path.rglob("*") if f.is_file()] == []
+
+
+@pytest.mark.parametrize("stop", [KeyboardInterrupt, SystemExit])
+@pytest.mark.parametrize("fetch", [_fetch_file, _fetch_member], ids=["file", "member"])
+def test_crcns_interrupt_stops_without_the_request_frames(
+    portal, fetch, stop, tmp_path
+):
+    portal.reply = stop(f"{_USER}:{_PASSWORD}")
+    raised = _raised(fetch, tmp_path)
+    assert type(raised) is stop
+    shown = _everything_shown(raised)
+    for secret in (_USER, _PASSWORD):
+        assert secret not in shown
+    assert [f for f in tmp_path.rglob("*") if f.is_file()] == []
+
+
+@pytest.mark.parametrize(("code", "status"), [(3, 3), (0, 0), (None, 1), ("x", 1)])
+def test_crcns_system_exit_keeps_an_integer_exit_code(portal, code, status, tmp_path):
+    # A message is not kept (it could hold the form), so it exits with 1.
+    portal.reply = SystemExit(f"{_USER}:{_PASSWORD}" if code == "x" else code)
+    raised = _raised(_fetch_file, tmp_path)
+    assert type(raised) is SystemExit
+    assert raised.code == status
 
 
 def test_crcns_missing_member_error_shows_no_credentials(portal, tmp_path):
