@@ -24,6 +24,17 @@
   Printing a recording shows its full summary: identity, time and epochs,
   tracking, environment, neurons, and "Watch out" (headed "Not yet checked
   by hand" for a session nobody has checked).
+- Every session is checked before it is returned. The clock check (spikes
+  within the tracked span or an untracked epoch such as sleep, events within
+  the recording, epochs within it and not overlapping within a name) and the
+  units check (largest position span within the stated range, sampling rate
+  within 1% of the stated one) refuse with `DatasetCheckError`, which names
+  the numbers and the `accept_failed_checks=("clock",)` value that loads the
+  session anyway; an accepted failure is kept in `rec.failed_checks` and
+  heads "Watch out". Samples at exactly the origin (more than 0.1%), runs of
+  11 or more identical positions, steps faster than a stated speed limit and
+  units with no spikes in the analysed epochs are reported in "Watch out"
+  with their numbers; no array is changed.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

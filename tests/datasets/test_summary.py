@@ -7,6 +7,7 @@ import dataclasses
 import numpy as np
 import pytest
 
+from neurospatial.datasets._checks import run_checks
 from neurospatial.datasets._summary import heading_coverage, summary_text
 
 LOADER_NOTE = (
@@ -34,18 +35,22 @@ Neurons     6 units (CA1)
             authors' labels: pyramidal 6
 Watch out   Not yet checked by hand. Known pitfalls and automatic findings:
   ! headings are the direction of movement, not of the head: they say nothing
-    about head scanning"""
+    about head scanning
+  ! 1 of 6 units have no spikes in the analysed epochs (the tracked span);
+    they are kept, as the file lists them, and are units['fires_in_epochs']
+    False."""
 
 SECTIONS = ("Time ", "Epochs ", "Tracking ", "Environment ", "Neurons ", "Watch out")
 
 
 @pytest.fixture
-def checked(square_recording):
+def checked(square_recording, square_stated):
     trains = list(square_recording.spike_times)
     trains[3] = np.empty(0)
-    return dataclasses.replace(
+    rec = dataclasses.replace(
         square_recording, spike_times=tuple(trains), watch_outs=(LOADER_NOTE,)
     )
+    return run_checks(rec, stated=square_stated)
 
 
 def test_summary_text(checked):
@@ -67,8 +72,8 @@ def test_verified_session_has_no_unchecked_note(checked):
     assert "Not yet checked by hand" in repr(checked)
 
 
-def test_heading_only_summary(heading_recording):
-    text = repr(heading_recording)
+def test_heading_only_summary(heading_recording, heading_stated):
+    text = repr(run_checks(heading_recording, stated=heading_stated))
     assert "heading only; no positions in this dataset" in " ".join(text.split())
     assert "Environment none: this dataset has no positions" in text
     assert "speed" not in text

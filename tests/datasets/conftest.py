@@ -2,7 +2,8 @@
 
 Three seeded sessions: a 1 m square box with positions and headings, a
 T-maze track graph, and a heading-only session with no positions (as for a
-dataset that publishes head direction alone).
+dataset that publishes head direction alone). Each passes every refusing
+check against its ``Stated`` facts.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import pytest
 
 from neurospatial.behavior import heading_from_velocity
 from neurospatial.datasets import Provenance, Recording
+from neurospatial.datasets._checks import Stated
 from neurospatial.simulation import open_field_session, tmaze_alternation_session
 
 PROVENANCE = Provenance(
@@ -110,3 +112,21 @@ def heading_recording(open_field) -> Recording:
         headings=heading_from_velocity(open_field.times, open_field.positions),
         heading_source="direction of movement of the simulated path",
     )
+
+
+@pytest.fixture
+def square_stated() -> Stated:
+    """The box: 100 Hz, a largest span between 80 and 120 cm."""
+    return Stated(sampling_rate=100.0, position_span=(80.0, 120.0))
+
+
+@pytest.fixture
+def track_stated() -> Stated:
+    """The T-maze: 500 Hz, a largest span between 80 and 120 cm."""
+    return Stated(sampling_rate=500.0, position_span=(80.0, 120.0))
+
+
+@pytest.fixture
+def heading_stated() -> Stated:
+    """The heading-only session: 100 Hz."""
+    return Stated(sampling_rate=100.0)
