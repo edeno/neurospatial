@@ -670,22 +670,22 @@
     "takigawa_7114733/missing_positions_as_zero/env.from_samples": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "The 85 % of samples off the tracks become (0, 0): one bin at the origin, extent 252 -> 300 cm. Check 1 would fire."
+      "reason": "The 85 % of samples off the tracks become (0, 0): one bin at the origin (952 -> 953 bins), extent 252 -> 272 cm. Check 1 would fire."
     },
     "takigawa_7114733/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Running time at the origin bin: total 1103 -> 1128 s, largest bin 21.5 -> 30.2 s. Check 1 would fire."
+      "reason": "Running time at the origin bin: total 1092.6 -> 1117.7 s, largest bin 26.1 -> 30.3 s. Check 1 would fire."
     },
     "takigawa_7114733/missing_positions_as_zero/rates.spatial": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Spikes during rest are binned at the origin: median peak 11.7 -> 12.5 Hz, NaN bins 2.0 -> 0.8 %. Check 1 would fire."
+      "reason": "Spikes during rest are binned at the origin: median peak 11.3 -> 12.7 Hz, NaN bins 1.8 -> 1.4 %. Check 1 would fire."
     },
     "takigawa_7114733/missing_positions_as_zero/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Jumps to and from the origin read as running: 603 -> 614 segments, 1101 -> 1130 s. Check 1 would fire."
+      "reason": "Jumps to and from the origin read as running: 604 -> 615 segments, 1092 -> 1121 s. Check 1 would fire."
     },
     "takigawa_7114733/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
@@ -710,47 +710,47 @@
     "takigawa_7114733/length_unit_off_by_100/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-014",
-      "reason": "603 -> 0 running segments; no environment built, so check 2 cannot see it."
+      "reason": "604 -> 0 running segments; no environment built, so check 2 cannot see it."
     },
     "takigawa_7114733/pixels_labelled_cm/env.from_samples": {
       "verdict": "silent",
       "gap": "G-080",
-      "reason": "Pixels called cm (x 2.35): 1000 -> 3994 bins, extent 252 -> 592 'cm' for two 2 m tracks; nothing compares the span with a stated apparatus."
+      "reason": "Pixels called cm (x 2.26 and 2.58, the tracks' own calibrations): 952 -> 3997 bins, extent 252 -> 592 'cm' for two 2 m tracks; nothing compares the span with a stated apparatus."
     },
     "takigawa_7114733/pixels_labelled_cm/env.occupancy": {
       "verdict": "silent",
       "gap": "G-080",
-      "reason": "Speeds 2.35 x too high pass the 5 cm/s gate more often: total 1103 -> 1510 s, per-bin median 0.72 -> 0.20 s."
+      "reason": "Speeds 2.3-2.6 x too high pass the 5 cm/s gate more often: total 1093 -> 1510 s, per-bin median 0.76 -> 0.20 s."
     },
     "takigawa_7114733/pixels_labelled_cm/rates.spatial": {
       "verdict": "silent",
       "gap": "G-080",
-      "reason": "Smaller effective bins and more running time: median peak 11.7 -> 25.3 Hz."
+      "reason": "Smaller effective bins and more running time: median peak 11.3 -> 25.3 Hz."
     },
     "takigawa_7114733/pixels_labelled_cm/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-080",
-      "reason": "Running time 1101 -> 1504 s (603 -> 605 segments)."
+      "reason": "Running time 1092 -> 1504 s (604 -> 605 segments)."
     },
     "olafsdottir_5566548/missing_positions_as_zero/env.from_samples": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "29 % untracked samples become (0, 0), a corner of the tracking window inside the bounding box: 556 -> 550 bins. Check 1 would fire."
+      "reason": "29 % untracked samples become (0, 0), just outside the tracked area's corner: 556 -> 566 bins. Check 1 would fire."
     },
     "olafsdottir_5566548/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Untracked time lands at the origin: total 1266 -> 1499 s, largest bin 43.9 -> 291.1 s. Check 1 would fire."
+      "reason": "Untracked time lands at the origin: total 1266 -> 1496 s, largest bin 43.9 -> 290.6 s, per-bin median 0.68 -> 0.42 s. Check 1 would fire."
     },
     "olafsdottir_5566548/missing_positions_as_zero/rates.spatial": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Spikes while untracked are binned at the origin: median peak 3.77 -> 3.12 Hz, NaN bins 1.4 -> 0.5 %. Check 1 would fire."
+      "reason": "Spikes while untracked are binned at the origin: median peak 3.77 -> 3.72 Hz, NaN bins 1.4 -> 0.5 %. Check 1 would fire."
     },
     "olafsdottir_5566548/missing_positions_as_zero/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Jumps to and from the origin read as running: 668 -> 835 segments, 1269 -> 1497 s. Check 1 would fire."
+      "reason": "Jumps to and from the origin read as running: 668 -> 833 segments, 1269 -> 1493 s. Check 1 would fire."
     },
     "olafsdottir_5566548/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",

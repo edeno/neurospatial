@@ -6,6 +6,7 @@
   "conversions": [
     "positions: raw.x, raw.y as stored; unit not stated (arbitrary)",
     "positions: range checked: farthest sample 99.5 units from the pool centre (stated radius 95, limit 1.1 x radius)",
+    "range checked: 37.1 to 223.8 by 10.0 to 196.7 units (largest span 186.8, expected 171-209)",
     "positions: 13 empty-string samples -> NaN",
     "times: each trial's raw.t (from 0) + 200 s x trial index, trials in day/trial order",
     "times: one NaN sample 0.08 s after each trial's last sample"
@@ -49,7 +50,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "e54a643f0537431314693e0eaf4c48bfc15e4133"
+    "git_commit": "1456e63118c0c3f79efeeaebd589be1ab83fdd98"
   },
   "load_warnings": [],
   "operations": {
@@ -63,7 +64,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.928,
+      "seconds": 0.988,
       "peak_mb": 38.9
     },
     "env.occupancy": {
@@ -145,7 +146,7 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.606,
+      "seconds": 0.759,
       "peak_mb": 18.3
     },
     "behavior.laps": {
@@ -154,7 +155,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.007,
       "peak_mb": 2.4
     },
     "behavior.turn_sequence": {
@@ -177,7 +178,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.603,
+      "seconds": 0.586,
       "peak_mb": 23.6
     },
     "imaging.rates": {

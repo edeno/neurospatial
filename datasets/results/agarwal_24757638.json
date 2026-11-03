@@ -47,7 +47,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "e54a643f0537431314693e0eaf4c48bfc15e4133"
+    "git_commit": "1456e63118c0c3f79efeeaebd589be1ab83fdd98"
   },
   "load_warnings": [],
   "operations": {
@@ -61,7 +61,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.066,
+      "seconds": 0.071,
       "peak_mb": 14.1
     },
     "env.occupancy": {
@@ -75,7 +75,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.111,
+      "seconds": 0.115,
       "peak_mb": 50.6
     },
     "rates.spatial": {
@@ -89,7 +89,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.459,
+      "seconds": 0.461,
       "peak_mb": 104.0
     },
     "rates.spatial_information": {
@@ -117,7 +117,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.949,
+      "seconds": 1.87,
       "peak_mb": 131.4
     },
     "cells.place_screen": {
@@ -140,7 +140,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.644,
+      "seconds": 1.613,
       "peak_mb": 7.1
     },
     "cells.border_score": {
@@ -166,14 +166,15 @@
       "status": "ok",
       "summary": {
         "median_error": 5.656854249492381,
-        "chance_median_error": 193.25483399593904,
+        "chance_median_error": 192.2842712474619,
+        "chance_frac_disconnected": 0.0,
         "units": "cm",
         "n_time_bins": 7614
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.646,
+      "seconds": 0.648,
       "peak_mb": 179.1
     },
     "io.nwb_roundtrip": {
@@ -184,8 +185,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.552,
-      "peak_mb": 9.4
+      "seconds": 2.457,
+      "peak_mb": 8.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -205,7 +206,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.089,
+      "seconds": 0.084,
       "peak_mb": 52.7
     },
     "behavior.laps": {
@@ -214,7 +215,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.032,
+      "seconds": 0.031,
       "peak_mb": 23.7
     },
     "behavior.turn_sequence": {

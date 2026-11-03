@@ -5,9 +5,9 @@
   "license": "CC-BY-4.0",
   "conversions": [
     "positions: big spot x, y (pixels) / 390 pixels per metre x 100 -> cm",
-    "positions: y flipped (y = 562 - y) to point up",
+    "positions: y flipped within the window (y = 535 - y) to point up",
     "positions: 29.0% of samples untracked (1023) -> NaN",
-    "range checked: 0.0 to 170.0 by 8.5 to 143.1 cm (largest span 170.0, expected 100-190)",
+    "range checked: 0.0 to 170.0 by 1.5 to 136.2 cm (largest span 170.0, expected 100-190)",
     "times: sample index / 50.0 hz (.pos header)",
     "spike_times: first channel's 4-byte timestamps / 96000 (timebase)",
     "units: tetrode x .cut cluster >= 1; 275202 spikes in cluster 0 (unassigned) left out"
@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "e54a643f0537431314693e0eaf4c48bfc15e4133"
+    "git_commit": "1456e63118c0c3f79efeeaebd589be1ab83fdd98"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.057,
+      "seconds": 0.064,
       "peak_mb": 6.6
     },
     "env.occupancy": {
@@ -79,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.161,
+      "seconds": 0.203,
       "peak_mb": 11.3
     },
     "rates.spatial": {
@@ -87,20 +87,20 @@
       "summary": {
         "n_units": 57,
         "frac_nan_bins": 0.014388489208633094,
-        "median_peak_hz": 3.769153956217048,
-        "median_mean_hz": 0.28376532605706684
+        "median_peak_hz": 3.769153956217345,
+        "median_mean_hz": 0.28376532605704696
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.311,
+      "seconds": 0.373,
       "peak_mb": 11.8
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.8433519763686343,
-        "bits_per_spike_max": 4.144914935084547,
+        "bits_per_spike_median": 0.8433519763686307,
+        "bits_per_spike_max": 4.144914935084695,
         "bits_per_spike_n_finite": 57
       },
       "note": "",
@@ -112,8 +112,8 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.8433519763686343,
-        "median_shifted_bits_per_spike": 0.21061578322616586,
+        "median_bits_per_spike": 0.8433519763686307,
+        "median_shifted_bits_per_spike": 0.21061578322616137,
         "frac_above_every_shift": 0.9649122807017544,
         "n_units": 57,
         "n_shifts": 4
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.938,
+      "seconds": 1.179,
       "peak_mb": 13.9
     },
     "cells.place_screen": {
@@ -133,7 +133,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.011,
+      "seconds": 0.009,
       "peak_mb": 12.6
     },
     "cells.grid_score": {
@@ -144,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.209,
+      "seconds": 0.25,
       "peak_mb": 7.6
     },
     "cells.border_score": {
@@ -170,14 +170,15 @@
       "status": "ok",
       "summary": {
         "median_error": 115.25483399593907,
-        "chance_median_error": 140.0,
+        "chance_median_error": 141.65685424949237,
+        "chance_frac_disconnected": 0.0,
         "units": "cm",
         "n_time_bins": 4543
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.336,
+      "seconds": 0.372,
       "peak_mb": 46.2
     },
     "io.nwb_roundtrip": {
@@ -188,8 +189,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.48,
-      "peak_mb": 5.3
+      "seconds": 2.945,
+      "peak_mb": 6.0
     },
     "env.from_graph": {
       "status": "n/a",
@@ -209,7 +210,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.191,
+      "seconds": 0.25,
       "peak_mb": 7.2
     },
     "behavior.laps": {
@@ -218,7 +219,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.02,
+      "seconds": 0.023,
       "peak_mb": 10.4
     },
     "behavior.turn_sequence": {
@@ -272,7 +273,7 @@
         "max_extent": 172.0
       },
       "hazard_summary": {
-        "n_bins": 550,
+        "n_bins": 566,
         "n_dims": 2,
         "max_extent": 172.0
       }
@@ -290,10 +291,10 @@
         "max_s": 43.90000000000262
       },
       "hazard_summary": {
-        "total_s": 1498.819999999997,
-        "frac_bins_visited": 0.9945454545454545,
-        "median_s_per_visited_bin": 0.5999999999997598,
-        "max_s": 291.07999999999697
+        "total_s": 1496.4399999999973,
+        "frac_bins_visited": 0.9946996466431095,
+        "median_s_per_visited_bin": 0.4199999999998454,
+        "max_s": 290.5599999999972
       }
     },
     {
@@ -305,14 +306,14 @@
       "clean_summary": {
         "n_units": 57,
         "frac_nan_bins": 0.014388489208633094,
-        "median_peak_hz": 3.769153956217048,
-        "median_mean_hz": 0.28376532605706684
+        "median_peak_hz": 3.769153956217345,
+        "median_mean_hz": 0.28376532605704696
       },
       "hazard_summary": {
         "n_units": 57,
-        "frac_nan_bins": 0.005454545454545455,
-        "median_peak_hz": 3.1234672170186673,
-        "median_mean_hz": 0.2808912048716059
+        "frac_nan_bins": 0.00530035335689046,
+        "median_peak_hz": 3.7190508406780114,
+        "median_mean_hz": 0.3026884711804635
       }
     },
     {
@@ -326,8 +327,8 @@
         "running_s": 1269.060000000001
       },
       "hazard_summary": {
-        "n_segments": 835,
-        "running_s": 1496.62
+        "n_segments": 833,
+        "running_s": 1493.0000000000005
       }
     },
     {
@@ -357,8 +358,8 @@
       "clean_summary": {
         "n_units": 57,
         "frac_nan_bins": 0.014388489208633094,
-        "median_peak_hz": 3.769153956217048,
-        "median_mean_hz": 0.28376532605706684
+        "median_peak_hz": 3.769153956217345,
+        "median_mean_hz": 0.28376532605704696
       },
       "hazard_summary": {
         "n_units": 57,
@@ -412,8 +413,8 @@
       "clean_summary": {
         "n_units": 57,
         "frac_nan_bins": 0.014388489208633094,
-        "median_peak_hz": 3.769153956217048,
-        "median_mean_hz": 0.28376532605706684
+        "median_peak_hz": 3.769153956217345,
+        "median_mean_hz": 0.28376532605704696
       },
       "hazard_summary": {
         "n_units": 57,
@@ -500,8 +501,8 @@
       "clean_summary": {
         "n_units": 57,
         "frac_nan_bins": 0.014388489208633094,
-        "median_peak_hz": 3.769153956217048,
-        "median_mean_hz": 0.28376532605706684
+        "median_peak_hz": 3.769153956217345,
+        "median_mean_hz": 0.28376532605704696
       },
       "hazard_summary": {
         "n_units": 57,
@@ -588,14 +589,14 @@
       "clean_summary": {
         "n_units": 57,
         "frac_nan_bins": 0.014388489208633094,
-        "median_peak_hz": 3.769153956217048,
-        "median_mean_hz": 0.28376532605706684
+        "median_peak_hz": 3.769153956217345,
+        "median_mean_hz": 0.28376532605704696
       },
       "hazard_summary": {
         "n_units": 57,
         "frac_nan_bins": 0.014388489208633094,
-        "median_peak_hz": 3.769153956217183,
-        "median_mean_hz": 0.2837653260570606
+        "median_peak_hz": 3.7691539562171177,
+        "median_mean_hz": 0.283765326057065
       }
     },
     {

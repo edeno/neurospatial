@@ -8,7 +8,7 @@
     "range checked: -15.8 to 138.8 by -66.9 to 104.0 by -20.2 to 127.6 cm (largest span 170.8, expected 120-200)",
     "times: lattice_3d pot as stored (s)",
     "units: 24 tetrode/cluster fields; cluster 0 of each tetrode (5712584 spikes, unsorted) left out",
-    "headings: none (lattice.poh is in the overhead camera's frame, not the 3-D frame)"
+    "headings: none; lattice.poh minus the direction of movement above 10 cm/s: in the camera's 2-D frame (lattice.pox, poy) mean -0.8 deg, spread 42.3 deg; in the 3-D frame's x, y mean -112.6 deg, spread 87.8 deg: not a heading in the positions' frame"
   ],
   "expectations": [
     {
@@ -44,7 +44,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "e54a643f0537431314693e0eaf4c48bfc15e4133"
+    "git_commit": "1456e63118c0c3f79efeeaebd589be1ab83fdd98"
   },
   "load_warnings": [],
   "operations": {
@@ -58,7 +58,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.274,
+      "seconds": 1.456,
       "peak_mb": 58.2
     },
     "env.occupancy": {
@@ -72,7 +72,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.14,
+      "seconds": 0.168,
       "peak_mb": 64.7
     },
     "rates.spatial": {
@@ -86,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 40.009,
+      "seconds": 47.453,
       "peak_mb": 1640.0
     },
     "rates.spatial_information": {
@@ -99,7 +99,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
+      "seconds": 0.006,
       "peak_mb": 13.2
     },
     "rates.information_vs_shifts": {
@@ -114,7 +114,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.932,
+      "seconds": 1.139,
       "peak_mb": 68.0
     },
     "cells.place_screen": {
@@ -126,7 +126,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.611,
+      "seconds": 6.071,
       "peak_mb": 205.9
     },
     "cells.grid_score": {
@@ -161,14 +161,15 @@
       "status": "ok",
       "summary": {
         "median_error": 82.72573518778081,
-        "chance_median_error": 76.48382345852053,
+        "chance_median_error": 76.76809470598245,
+        "chance_frac_disconnected": 0.0008333333333333334,
         "units": "cm",
         "n_time_bins": 7200
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 6.121,
+      "seconds": 7.021,
       "peak_mb": 950.9
     },
     "io.nwb_roundtrip": {
@@ -179,7 +180,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.924,
+      "seconds": 6.53,
       "peak_mb": 118.5
     },
     "env.from_graph": {
@@ -200,7 +201,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.112,
+      "seconds": 0.109,
       "peak_mb": 66.7
     },
     "behavior.laps": {
@@ -209,7 +210,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.036,
+      "seconds": 0.039,
       "peak_mb": 28.6
     },
     "behavior.turn_sequence": {

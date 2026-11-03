@@ -51,7 +51,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "e54a643f0537431314693e0eaf4c48bfc15e4133"
+    "git_commit": "1456e63118c0c3f79efeeaebd589be1ab83fdd98"
   },
   "load_warnings": [],
   "operations": {
@@ -65,7 +65,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.142,
+      "seconds": 0.144,
       "peak_mb": 41.2
     },
     "env.occupancy": {
@@ -79,7 +79,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.355,
+      "seconds": 1.934,
       "peak_mb": 189.4
     },
     "rates.spatial": {
@@ -93,7 +93,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.62,
+      "seconds": 2.259,
       "peak_mb": 189.4
     },
     "rates.spatial_information": {
@@ -121,7 +121,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 10.177,
+      "seconds": 10.164,
       "peak_mb": 197.4
     },
     "cells.place_screen": {
@@ -144,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.643,
+      "seconds": 0.685,
       "peak_mb": 13.6
     },
     "cells.border_score": {
@@ -171,13 +171,14 @@
       "summary": {
         "median_error": 5.656854249492381,
         "chance_median_error": 112.56854249492382,
+        "chance_frac_disconnected": 0.0,
         "units": "cm",
         "n_time_bins": 2783
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.612,
+      "seconds": 2.78,
       "peak_mb": 189.5
     },
     "io.nwb_roundtrip": {
@@ -188,7 +189,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.602,
+      "seconds": 2.606,
       "peak_mb": 6.7
     },
     "env.from_graph": {
@@ -200,7 +201,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.014,
       "peak_mb": 0.4
     },
     "behavior.segment_by_velocity": {
@@ -212,7 +213,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.203,
+      "seconds": 2.306,
       "peak_mb": 197.2
     },
     "behavior.laps": {
