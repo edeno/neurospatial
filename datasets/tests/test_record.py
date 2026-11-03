@@ -295,3 +295,28 @@ def test_validation_checks_epoch_params(simulated_recording, name, table):
     params = {**simulated_recording.params, name: table}
     with pytest.raises(ValueError, match=re.escape(f"params[{name!r}]")):
         validate_recording(replace(simulated_recording, params=params))
+
+
+@pytest.mark.parametrize(
+    ("train", "test", "problem"),
+    [
+        ([[10, 20], [0, 5]], [[30, 40]], "params['train_epochs'] must be sorted"),
+        ([[0, 10], [5, 20]], [[30, 40]], "params['train_epochs'] must be sorted"),
+        (
+            [[0, 10]],
+            [[5, 20]],
+            "params['train_epochs'] and params['test_epochs'] overlap",
+        ),
+        ("even laps", [[5, 20]], "params['train_epochs'] must be finite"),
+    ],
+)
+def test_validation_checks_train_and_test_are_held_out(
+    simulated_recording, train, test, problem
+):
+    params = {
+        **simulated_recording.params,
+        "train_epochs": train if isinstance(train, str) else np.array(train, float),
+        "test_epochs": np.array(test, dtype=float),
+    }
+    with pytest.raises(ValueError, match=re.escape(problem)):
+        validate_recording(replace(simulated_recording, params=params))

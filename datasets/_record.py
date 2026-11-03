@@ -135,12 +135,29 @@ def validate_recording(rec: Recording) -> None:
             problems.append(
                 f"epochs[{name!r}] must be finite (n, 2) rows with stop >= start"
             )
-    problems.extend(
-        f"params[{name!r}] must be finite (n, 2) rows with stop >= start"
-        for name in ("train_epochs", "test_epochs", "analysis_epochs")
-        if name in rec.params
-        and not _is_interval_table(np.asarray(rec.params[name], dtype=float))
-    )
+    tables = {}
+    for name in ("train_epochs", "test_epochs", "analysis_epochs"):
+        if name not in rec.params:
+            continue
+        try:
+            table = np.asarray(rec.params[name], dtype=float)
+        except (TypeError, ValueError):
+            table = np.empty(0)
+        if not _is_interval_table(table):
+            problems.append(
+                f"params[{name!r}] must be finite (n, 2) rows with stop >= start"
+            )
+        elif name != "analysis_epochs":
+            tables[name] = table
+            if np.any(np.diff(table[:, 0]) < 0) or np.any(table[1:, 0] < table[:-1, 1]):
+                problems.append(f"params[{name!r}] must be sorted, without overlaps")
+    if len(tables) == 2:
+        both = intersect_intervals(tables["train_epochs"], tables["test_epochs"])
+        if len(both):
+            problems.append(
+                f"params['train_epochs'] and params['test_epochs'] overlap"
+                f" ({len(both)} intersections, from {both[0, 0]:g} s)"
+            )
     for name, table in rec.events.items():
         table = np.asarray(table, dtype=float)
         if not (
