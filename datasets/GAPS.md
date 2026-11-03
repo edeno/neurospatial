@@ -1356,12 +1356,17 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   `pov`'s median of 11.7 is a climbing rat's speed in cm/s, so positions
   are mm. The head direction `lattice.poh` is the azimuth in the overhead
   camera's 2-D frame: against `lattice.pox/poy` heading minus movement has
-  mean −0.8° and spread 42°, against the 3-D frame's x, y the mean is
-  −113°. Each tetrode's cluster 0 field holds only `spike_times`
+  mean −0.8° and spread 42°. The 3-D frame's x, y are that frame mirrored in
+  y and shifted, sample by sample (`lattice_3d.pox = lattice.pox + 165.6`,
+  `lattice_3d.poy = 1039.6 − lattice.poy` mm, RMS 3e-5 mm), not rotated, so
+  `−poh` is the heading in the positions' frame (mean +0.8°, spread 42°).
+  An earlier reading, that the frame was rotated and the azimuth not
+  usable, compared `poh` itself with the 3-D frame (mean −113°). Each tetrode's cluster 0 field holds only `spike_times`
   (0.68–1.5 million spikes, 5.7 million in all), the unsorted remainder.
   The zip uses Deflate64, which Python's `zipfile` cannot inflate.
 - Harness workaround: the loader divides by 10 with the speed-ratio check,
-  leaves out headings and cluster 0, and `_fetch` inflates Deflate64 with
+  returns `−poh` as the heading after checking the mirror and the heading
+  against movement, leaves out cluster 0, and `_fetch` inflates Deflate64 with
   `inflate64` and checks the CRC-32
 - Proposed change: none
 - Status: won't fix (data quirk)

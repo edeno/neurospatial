@@ -33,12 +33,15 @@ What the loader converts:
   kept in ``geometry["lattice_bars_cm"]``, shape (147, 2, 3); the loader
   checks there are 147 bars (7 x 7 per axis), each 97.0 cm (the paper's
   Supplementary Methods: 0.97 m a side).
-- Head direction is not used. ``sdata.lattice.poh`` (degrees) is the azimuth
-  in the overhead camera's 2-D frame: against the 2-D positions
-  (``sdata.lattice.pox/poy``) heading minus movement direction has mean
-  -0.8° and spread 42°, but against the 3-D frame's x, y the mean is -113°:
-  the lattice frame is rotated from the camera's, so the azimuth is not a
-  heading in the positions' frame.
+- Headings: ``-sdata.lattice.poh`` in radians. ``poh`` (degrees) is the
+  azimuth in the overhead camera's 2-D frame (``sdata.lattice.pox/poy``):
+  against those positions heading minus movement direction has mean -0.8°
+  and spread 42°. The 3-D frame's x, y are the camera's mirrored in y and
+  shifted (``pox3 = pox + 165.6``, ``poy3 = 1039.6 - poy`` mm, sample by
+  sample; the loader checks it), so in the positions' frame the azimuth turns
+  the other way and ``-poh`` is the heading (mean and spread in
+  ``conversions``; the loader refuses |mean| over 0.2 rad or a spread over
+  45°).
 
 Analysis choices (``params``): ``bin_size`` 4 cm, close to the authors' 3-D
 rate maps (33 x 35 x 39 bins over the volume); ``min_speed`` 3 cm/s;
@@ -118,6 +121,11 @@ _TUBE_CM = 1.0
 _N_CUBES = 6
 _BIN_SIZE = 4.0
 RUNNING_CM_S = 10.0
+# The survey's rule for a heading in the positions' frame: heading minus the
+# direction of movement has |mean| at most 0.2 rad and a spread under 45 deg.
+_HEADING_MEAN_RAD = 0.2
+_HEADING_SPREAD_RAD = np.radians(45.0)
+_MIRROR_RMS_MM = 0.01
 
 
 def _vector(group: Any, name: str) -> np.ndarray:
@@ -175,13 +183,31 @@ def load(cache: Path | None = None) -> Recording:
         )
         raise ValueError(msg)
     span = checked_span(positions, *_SPAN_CM)
-    # The azimuth against the camera's 2-D frame and against the 3-D frame.
+    # The 3-D frame's x, y are the camera's mirrored in y: x3 = x + a and
+    # y3 = b - y, sample by sample. So the camera azimuth, negated, is the
+    # heading in the positions' frame.
+    shift = stored[:, :2] - camera * np.array([1.0, -1.0])
+    both = np.isfinite(shift).all(axis=1)
+    mirror_rms = float(np.sqrt(np.mean((shift[both] - np.median(shift[both], 0)) ** 2)))
+    if mirror_rms > _MIRROR_RMS_MM:
+        msg = (
+            f"lattice_3d pox/poy against lattice pox/poy: RMS {mirror_rms:.3g} mm"
+            " from a y-mirror plus a shift; recheck the frames"
+        )
+        raise ValueError(msg)
+    headings = np.angle(np.exp(-1j * azimuth))
     in_camera = heading_vs_movement(
         times, camera / _MM_PER_CM, azimuth, min_speed=RUNNING_CM_S
     )
     in_lattice = heading_vs_movement(
-        times, positions[:, :2], azimuth, min_speed=RUNNING_CM_S
+        times, positions[:, :2], headings, min_speed=RUNNING_CM_S
     )
+    if abs(in_lattice[0]) > _HEADING_MEAN_RAD or in_lattice[1] > _HEADING_SPREAD_RAD:
+        msg = (
+            f"-lattice.poh against movement: mean {np.degrees(in_lattice[0]):.1f},"
+            f" spread {np.degrees(in_lattice[1]):.1f} deg; not a heading, recheck"
+        )
+        raise ValueError(msg)
     lattice = np.array([[times[0], times[-1]]])
     train, test = alternating_blocks(times[0], times[-1], 60.0)
     graph = lattice_graph(bars_cm, _N_CUBES)
@@ -204,6 +230,7 @@ def load(cache: Path | None = None) -> Recording:
         times=times,
         positions=positions,
         position_units="cm",
+        headings=headings,
         spike_times=tuple(spikes),
         unit_ids=np.asarray(ids),
         epochs={"lattice": lattice},
@@ -253,13 +280,13 @@ def load(cache: Path | None = None) -> Recording:
             f" {width:.1f} cm = 2 x the 99th percentile of the head's distance from"
             f" the nearest bar (median {reach_pct[0]:.1f}, 95th percentile"
             f" {reach_pct[1]:.1f} cm), not the stated 10 mm tube diameter",
-            "headings: none; lattice.poh minus the direction of movement above"
-            f" {RUNNING_CM_S:g} cm/s: in the camera's 2-D frame (lattice.pox, poy)"
-            f" mean {np.degrees(in_camera[0]):.1f} deg, spread"
-            f" {np.degrees(in_camera[1]):.1f} deg; in the 3-D frame's x, y mean"
-            f" {np.degrees(in_lattice[0]):.1f} deg, spread"
-            f" {np.degrees(in_lattice[1]):.1f} deg: not a heading in the positions'"
-            " frame",
+            "headings: -lattice.poh (deg -> rad, wrapped): the 3-D frame's x, y"
+            " are the camera's (lattice.pox, poy) mirrored in y plus a shift (RMS"
+            f" {mirror_rms:.1g} mm), so the camera azimuth turns the other way;"
+            f" heading minus the direction of movement above {RUNNING_CM_S:g} cm/s:"
+            f" mean {np.degrees(in_lattice[0]):.1f} deg, spread"
+            f" {np.degrees(in_lattice[1]):.1f} deg (poh in the camera frame: mean"
+            f" {np.degrees(in_camera[0]):.1f}, spread {np.degrees(in_camera[1]):.1f})",
         ),
     )
 
