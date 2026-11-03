@@ -584,7 +584,17 @@ Answered 2026-11-02.
    (samples exactly at the origin): yes, after more recordings confirm it,
    including the start-of-track case. The rule for replay events too short to
    score: no.
-5. **Laps in open arenas (proposal 2).** Not yet decided.
+5. **Laps (proposal 2), decided 2026-11-03.** `detect_laps`'s template
+   methods go: `method="auto"` (first circuit as template, 80 % overlap)
+   finds 1 of 97 laps on the 000044 circular track and 1 of about 107 on the
+   hc-18 train, and gives false laps in open arenas and on a W-track;
+   `method="reference"` uses the same matching. A start region drawn across
+   the track (`method="region"`) finds 96–97 of 97. So: remove `auto` and
+   `reference`; require `start_region=` except on loop environments
+   (`Environment.from_loop` or a cyclic track graph), where a lap is one full
+   wrap of progress along the loop; and stop silently dropping laps that cross
+   a tracking gap longer than `max_gap` (86 of 97 with the default 1 s).
+   Laps in open arenas exist only if the user draws a start region.
 6. **New capabilities.** Plan NWB reader coverage (6) and periodic 1-D tracks
    (8). Loop tracks get a factory, `Environment.from_loop(length=, bin_size=,
    track_width=)`, that builds a cyclic track graph laid out on a circle of
@@ -615,10 +625,8 @@ Answered 2026-11-02.
   linearized track is a real place, and the circular track's file puts 0.23 %
   of samples exactly there. With that restriction it fires on no clean
   recording and catches all 18 silent missing-as-zero probes.
-- **Decision 5, laps in open arenas.** Still open. New rows: Gardner's box is
-  refused, Vollan's box gives 0 (1 when its gaps are closed), the 000447
-  W-track gives 1. The bigger problem is G-037: on a real loop the defaults
-  find 1 of about 100 laps.
+- **Decision 5, laps.** Decided (above): the template methods go; laps need a
+  start region except on loop environments.
 
 ### New questions from the third batch
 
