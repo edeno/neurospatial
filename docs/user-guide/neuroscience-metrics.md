@@ -1046,9 +1046,19 @@ fields.
 | A fast first look at a rate map I already have | `rate_result.is_place_cell()`, `rates.classify()`, `count_place_cells(rates)` | `bool`, bool array, `int` | Screen (fixed cutoff, no shuffle) |
 | Is it a place, grid or border cell? | `spatial_cell_type_significance(env, spike_times, times, positions)` | `CellTypeSignificanceResult` | Verdict |
 | A fast label for every neuron | `rates.label_cell_types()` | array of strings | Screen |
+| Place candidates when the border score is unavailable (no measured walls) | `rates.summary_table()["is_place"]` | nullable bool column | Screen; border cells are not excluded |
 
 `is_place_cell(..., criterion="threshold")` is the same fast screen on raw
-arrays. The other cell types follow the same pattern: `is_head_direction_cell`,
+arrays. The place answers do not all ask the same question.
+`is_place_cell`, `classify()` and the `is_place_cell` column of
+`place_cell_significance` test spatial information alone. The `is_place`
+column of `summary_table()` and of `spatial_cell_type_significance` also
+excludes units shown to be grid or border cells, but a grid or border test
+that could not be scored does not block it: without measured walls a True is
+a place-or-border candidate. So a grid cell that passes information is True
+for `classify()` and False for `is_place`, and a unit with too few spikes to
+estimate its information bias is False for `classify()` and `<NA>` for
+`is_place`. The other cell types follow the same pattern: `is_head_direction_cell`,
 `is_object_vector_cell`, `is_egocentric_object_vector_cell` and
 `is_spatial_view_cell` are verdicts, and their result classes carry screens.
 Report a verdict, not a screen, as evidence that a neuron is a given cell type.
@@ -1180,10 +1190,11 @@ p-value is `(1 + k) / (1 + n)` over the `n` finite null scores. When
 `1 / (1 + n)` is not below `alpha` the test cannot reject, and
 `spatial_cell_type_significance` labels the unit `"undetermined"` rather than
 `"unclassified"`; its `summary_table()` reports `n` as
-`<statistic>_n_finite_null`. With `correction="holm"` the cutoff is stricter:
-a unit's three tests need `3 / (1 + n) < alpha` at Holm's first step, so with
-39 shuffles (smallest p 0.025) every test is undetermined under Holm although
-each passes uncorrected.
+`<statistic>_n_finite_null`. Its `is_place` column stays defined when only the
+grid or border test is undetermined. With `correction="holm"` the cutoff is
+stricter: a unit's three tests need `3 / (1 + n) < alpha` at Holm's first step,
+so with 39 shuffles (smallest p 0.025) every test is undetermined under Holm
+although each passes uncorrected.
 The cost is about `n_shuffles` plural-map recomputes; significance rejects
 `method="glm"` because pooled REML couples units. Neither a significant polar
 association nor a chosen cutoff distinguishes an object-vector cell from a

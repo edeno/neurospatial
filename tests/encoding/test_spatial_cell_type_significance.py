@@ -91,6 +91,7 @@ def test_result_layout_and_table(significance_recording):
         *(f"{name}_null_percentile" for name in STATISTICS),
         *(f"{name}_n_finite_null" for name in STATISTICS),
         *(f"passes_{name}" for name in STATISTICS),
+        "is_place",
         "cell_type",
     ]
     assert table.attrs["null_percentile"] == 90.0
@@ -181,6 +182,25 @@ def test_missing_walls_leave_border_undetermined(ou_2min_env, ou_2min, noise_tra
     labels = result.label_cell_types()
     np.testing.assert_array_equal(labels, ["undetermined", "undetermined"])
     assert result.summary_table()["passes_border_score"].isna().all()
+
+
+def test_is_place_without_walls():
+    """Without walls the labels are undetermined; is_place keeps the place test."""
+    from neurospatial.simulation import open_field_session
+
+    session = open_field_session(duration=300.0, n_place_cells=3, rng=0)
+    env = Environment.from_samples(session.positions, bin_size=2.0, units="cm")
+    result = spatial_cell_type_significance(
+        env, session.spike_times, session.times, session.positions, n_shuffles=19, rng=0
+    )
+    assert "border_score" in result.unavailable_metrics
+    # 19 shuffles: smallest p is 0.05, which passes alpha=0.1.
+    table = result.summary_table(alpha=0.1)
+    assert table["passes_border_score"].isna().all()
+    assert table["cell_type"].tolist() == ["undetermined"] * 3
+    assert table["is_place"].tolist() == [True] * 3
+    # At alpha=0.05 the place test cannot reject, so is_place is unknown.
+    assert result.summary_table()["is_place"].isna().all()
 
 
 def test_rejects_glm(significance_recording):
