@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import datetime
+import email.message
 import functools
 import hashlib
 import http.server
 import io
 import json
+import logging
+import tarfile
 import threading
+import traceback
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import _fetch
 import numpy as np
@@ -135,3 +142,136 @@ def test_open_nwb_reads_local_and_http(tmp_path):
             server.shutdown()
     np.testing.assert_array_equal(positions(str(path)), xy)
     np.testing.assert_array_equal(remote, xy)
+
+
+_USER, _PASSWORD = "dummy-user-7f3a", "dummy-secret-91c2"
+
+
+class _PortalResponse(io.BytesIO):
+    """A portal response: a body and a Content-Type header."""
+
+    def __init__(self, body: bytes, content_type: str) -> None:
+        super().__init__(body)
+        self.headers = email.message.Message()
+        self.headers["Content-Type"] = content_type
+
+
+def _tar_gz(members: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name, payload in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def portal(monkeypatch):
+    """Dummy credentials and a stubbed portal; ``portal.reply`` sets its answer."""
+    monkeypatch.setenv("CRCNS_USERNAME", _USER)
+    monkeypatch.setenv("CRCNS_PASSWORD", _PASSWORD)
+    state = SimpleNamespace(reply=None, forms=[])
+
+    class Opener:
+        def open(self, url, data=None, timeout=None):
+            state.forms.append(urllib.parse.parse_qs(data.decode()))
+            if isinstance(state.reply, Exception):
+                raise state.reply
+            return state.reply
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: Opener())
+    return state
+
+
+def _echoing_http_error():
+    # A server error whose status text and body repeat the login.
+    return urllib.error.HTTPError(
+        _fetch.CRCNS_PORTAL,
+        403,
+        f"Forbidden for {_USER}:{_PASSWORD}",
+        email.message.Message(),
+        io.BytesIO(f"user {_USER} password {_PASSWORD}".encode()),
+    )
+
+
+@pytest.mark.parametrize(
+    ("reply", "error"),
+    [
+        (
+            lambda: _PortalResponse(
+                f"<html>Logged in as {_USER}. Wrong password.</html>".encode(),
+                "text/html; charset=UTF-8",
+            ),
+            PermissionError,
+        ),
+        (_echoing_http_error, OSError),
+        (lambda: urllib.error.URLError(OSError(f"refused {_USER}")), OSError),
+        (
+            lambda: _PortalResponse(b"file bytes", "application/octet-stream"),
+            ValueError,
+        ),
+    ],
+    ids=["login-page", "http-error", "network-error", "checksum-mismatch"],
+)
+def test_crcns_fetch_never_logs_credentials(
+    portal, reply, error, tmp_path, capfd, caplog
+):
+    caplog.set_level(logging.DEBUG)
+    portal.reply = reply()
+    with pytest.raises(error) as raised:
+        _fetch.fetch_crcns(
+            "hc-31/data/resSave.mat", sha256="0" * 64, subdir="crcns", cache=tmp_path
+        )
+    # The credentials were sent, by name from the environment ...
+    assert portal.forms[0]["username"] == [_USER]
+    assert portal.forms[0]["password"] == [_PASSWORD]
+    assert portal.forms[0]["fn"] == ["hc-31/data/resSave.mat"]
+    # ... and appear nowhere a user or a log would see them.
+    out, err = capfd.readouterr()
+    shown = "".join(traceback.format_exception(raised.value)) + out + err + caplog.text
+    assert "hc-31/data/resSave.mat" in shown
+    for secret in (_USER, _PASSWORD):
+        assert secret not in shown
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ or raised.value.__context__ is None
+    assert list((tmp_path / "crcns").iterdir()) == []
+
+
+def test_crcns_fetch_requires_the_account_variables(monkeypatch, tmp_path):
+    monkeypatch.delenv("CRCNS_USERNAME", raising=False)
+    monkeypatch.delenv("CRCNS_PASSWORD", raising=False)
+    with pytest.raises(KeyError, match="CRCNS_USERNAME and CRCNS_PASSWORD"):
+        _fetch.fetch_crcns("hc-11/x.mat", sha256="0" * 64, subdir="c", cache=tmp_path)
+
+
+def test_crcns_tar_members_extracts_only_the_pinned_members(portal, tmp_path):
+    members = {"s/s.whl": b"1 2 3 4\n", "s/s.eeg": b"\0" * 100, "s/s.res.1": b"20\n"}
+    portal.reply = _PortalResponse(_tar_gz(members), "application/octet-stream")
+    pins = {
+        name: hashlib.sha256(members[name]).hexdigest()
+        for name in ("s/s.whl", "s/s.res.1")
+    }
+    paths = _fetch.fetch_crcns_tar_members(
+        "hc-3/top/s.tar.gz", pins, subdir="crcns", cache=tmp_path
+    )
+    assert {name: p.read_bytes() for name, p in paths.items()} == {
+        name: members[name] for name in pins
+    }
+    assert sorted(p.name for p in (tmp_path / "crcns").iterdir()) == [
+        "s.res.1",
+        "s.whl",
+    ]
+    portal.reply = urllib.error.URLError("offline")  # cached copies need no network
+    assert (
+        _fetch.fetch_crcns_tar_members(
+            "hc-3/top/s.tar.gz", pins, subdir="crcns", cache=tmp_path
+        )
+        == paths
+    )
+    assert len(portal.forms) == 1
+    portal.reply = _PortalResponse(_tar_gz(members), "application/octet-stream")
+    with pytest.raises(FileNotFoundError, match=r"no member\(s\) \['s/absent'\]"):
+        _fetch.fetch_crcns_tar_members(
+            "hc-3/top/s.tar.gz", {"s/absent": "0" * 64}, subdir="crcns", cache=tmp_path
+        )
