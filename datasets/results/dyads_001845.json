@@ -6,7 +6,8 @@
   "conversions": [
     "positions: read_position(position_name='processing/behavior/processed_position/head'), cm; range checked: 3.0-94.6 by 26.8-151.5 cm; 37.9% NaN, kept",
     "processing/behavior/processed_position/tail_end labelled cm reaches [522. 908.]: pixels, not used",
-    "events: behavioral_events timestamps by name; epochs: reward_well_visits"
+    "events: behavioral_events timestamps by name; epochs: reward_well_visits",
+    "environment: inferred; the W-maze: three parallel arms joined by a base fit (Shukla et al. 2026 Methods: 'elevated W-shaped mazes (80 x 80 cm) with ~7-cm-wide track sections'; node positions fitted to the samples (fitted base 91.6 cm, arms 80.4-93.9 cm; stated 80 x 80 cm); edges (cm): base_0-base_1 44.9; base_0-arm_0 83.4; base_1-base_2 46.7; base_1-arm_1 80.4; base_2-arm_2 93.9) was refused: 80% of a segment has no sample within a bin (limit 25%); tracked point: the DeepLabCut 'head' keypoint as processed by the authors (processed_position/head); on the refused layout, physical width 7 cm (stated), 6.1% of samples beyond half of it (0% at 0-4 cm/s, 16% at 4-30 cm/s, 16% at 30-inf cm/s)"
   ],
   "expectations": [
     {
@@ -36,13 +37,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3971+g9ce92cfa4",
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "0b491a15706eb244e5dc719a0680c61053d331d9"
+    "git_commit": "bed5be9ceb43cd86a8ff283e43f1ee06e3c61a74"
   },
   "load_warnings": [
     {
@@ -71,8 +72,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.018,
-      "peak_mb": 0.6
+      "seconds": 0.261,
+      "peak_mb": 7.3
     },
     "env.occupancy": {
       "status": "ok",
@@ -85,8 +86,17 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.004,
       "peak_mb": 0.5
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "rates.spatial": {
       "status": "n/a",
@@ -123,6 +133,11 @@
       "note": "needs headings, spike_times",
       "warnings": []
     },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
     "decode.position": {
       "status": "n/a",
       "note": "needs spike_times",
@@ -151,8 +166,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.004,
-      "peak_mb": 0.6
+      "seconds": 0.533,
+      "peak_mb": 19.0
     },
     "behavior.laps": {
       "status": "error",
@@ -160,7 +175,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.005,
       "peak_mb": 3.4
     },
     "behavior.turn_sequence": {
@@ -202,13 +217,13 @@
           "count": 1
         }
       ],
-      "seconds": 1.886,
-      "peak_mb": 4.5
+      "seconds": 2.086,
+      "peak_mb": 6.1
     },
     "io.read_pose": {
-      "status": "error",
+      "status": "n/a",
       "summary": {},
-      "note": "ValueError: Pose bodypart 'PoseEstimationSeriesBody' timestamps must be finite and strictly increasing.\nFix: correct the source time axis before reading.",
+      "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [
         {
@@ -226,8 +241,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.876,
-      "peak_mb": 4.6
+      "seconds": 2.881,
+      "peak_mb": 21.1
     },
     "imaging.rates": {
       "status": "n/a",
@@ -240,6 +255,7 @@
       "warnings": []
     }
   },
+  "env_kind": "inferred",
   "hazards": [
     {
       "hazard": "missing_positions_as_zero",

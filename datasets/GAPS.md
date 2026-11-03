@@ -1754,12 +1754,17 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   random sample pairs (seeded) the path through its bins is a median 0.66 x
   the distance along the authors' corridors (5th percentile 0.28). Nothing in
   the samples shows the walls: 0.05 % of links have no sample within a bin of
-  their midpoint (2.4 % none within half a bin), because the mouse came close
-  to both sides of every wall. The track-graph environment the driver also
-  builds (`from_graph`, 350 bins) follows the corridors.
-- Harness workaround: none (`env.occupancy` and the other operations that
-  take `_env` use the sample-built grid; `laps` and `turn_sequence` use the
-  graph)
+  their midpoint (2.4 % none within half a bin). That test cannot find a
+  wall thinner than a bin at all: when every bin holds a sample a link's
+  midpoint is at most about 1.4 bins from one (a U of two 10 cm corridors
+  behind a 0.5-3 cm wall merges with no far link). Against the stated
+  layout the links show it: 795 of the grid's links (8.1 %) join bins more
+  than 3 x the link (plus both bins' offsets) apart along the corridors
+  (`studies/environment_fidelity.py` `jump_links`). The track-graph
+  environment the driver also builds (`from_graph`, 350 bins) follows the
+  corridors.
+- Harness workaround: the loader declares the graph (one chosen cell wide),
+  so every operation uses it (`BATCH_FAITHFUL_TRACKS.md`)
 - Proposed change: say in the `from_samples` docs that it cannot see walls
   thinner than a bin, and point mazes to `from_graph` or to declared walls
   (`arena=` with walls, which close the links they cross); in the harness,
@@ -2114,4 +2119,242 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
 - Proposed change: trace in neurospatial how `grid_score` handles a
   smoothed map with NaN bins inside the arena, and say in its docs when a
   score is NaN rather than low
+- Status: open
+
+## G-150: The track factories say a track without a width is located by nearest-track projection, but `bin_at` refuses it
+
+- Datasets: every declared track whose source states no width (figure8_000552,
+  grosmark_000044_linear, grosmark_000044_circular, vollan_lt,
+  aeryjones_000165, gonzalez_001695, hafting_2008_nird, hc31_anm190422,
+  hc18_train261, takigawa_7114733, agarwal_24757638, giocomo_001701)
+- Operation / step: env.declared, env.occupancy and every operation that
+  places positions on a declared track
+- Kind: docs
+- Evidence: `Environment.from_graph` documents `track_width` as optional:
+  "When omitted, the physical footprint stays unknown and the existing
+  nearest-track lookup remains available"
+  (`src/neurospatial/environment/core.py:4024`); `linear_track` and `maze`
+  say "bin_at() remains nearest-track projection when width is unknown"
+  (lines 3742 and 3898). On the declared figure-8 built without a width,
+  `env.bin_at(positions)` raises `NotImplementedError: Positions cannot be
+  assigned to the bins of a track built without track_width`
+  (`geometry/_lookup.py:554`, `require_track_width`), and so do
+  `occupancy`, `detect_laps` and `graph_turn_sequence`. The refusal is the
+  safer behaviour and its message says what to do (G-016 records it); the
+  three docstrings promise the opposite.
+- Harness workaround: every declared track is built with a placement
+  tolerance measured from the samples (`_tracks.declared_geometry`: twice
+  the samples' 99th percentile distance from the graph, at least the
+  physical width and one bin), recorded in `conversions` as a tolerance, not
+  a width (G-152)
+- Proposed change: correct the three docstrings: without `track_width` the
+  track has bins and geometry but positions cannot be placed on it; say how
+  to measure a width when none is stated
+- Status: open
+
+## G-151: A sample outside a track's width splits `detect_laps`' recording, so a narrow track loses most laps
+
+- Datasets: figure8_000552, hc18_train261, grosmark_000044_circular
+- Operation / step: behavior.laps (`detect_laps(..., method="region")`)
+- Kind: wrong-result
+- Evidence: the declared figure-8 (fitted graph, start region across the
+  centre bar), 21 trials in the file. `detect_laps(method="region")` with the
+  maze epoch finds, by track width (share of tracked samples outside it):
+  6.6 cm (5.0 %) 2 laps; 10 cm (1.5 %) 14; 15 cm (0.7 %) 18; 30 cm (0 %) 20,
+  alternating clockwise and counter-clockwise, as the task does; `max_gap`
+  None changes none of these. The Notes say why: "A position outside the
+  environment is observed but not located, so an interval with a sample
+  there is not observed and splits the recording", and no lap spans a split.
+  Head tracking leaves the footprint of a narrow track for a frame or two
+  routinely, so a width that is the apparatus's (or a 95th percentile)
+  removes most laps without a warning. hc-18's train circuit (declared loop,
+  travel epochs, about 107 laps by the unwrapped angle, G-037): at the
+  measured 35 px width (1.0 % of travel samples outside) 31 laps, 33 with
+  `max_gap=None`; at 60 px (0 % outside) 92 and 97; at 120 px 93 and 99.
+- Harness workaround: the placement tolerance is twice the 99th percentile
+  sample distance (1 % outside by construction), not the 95th
+- Proposed change: treat a position outside the environment like a missing
+  one, bridged up to `max_gap`, or warn with the share of the recording lost
+  to splits
+- Status: open
+
+## G-152: One `track_width` is both the track's physical width and the placement tolerance, and head tracking leaves the physical width
+
+- Datasets: j16_23020757, hc28_hpa, hc3_ec013_669, jadhav_000447_familiar,
+  valero_000568, shipley_30902972, rosenberg_labyrinth, jadhav_000447,
+  olafsdottir_5566548, dyads_001845
+- Operation / step: env.declared and every operation on a declared track
+- Kind: missing-feature
+- What `track_width` controls (read in `src/`, checked on a two-segment
+  track at widths 6 and 30 cm): only which positions are placed
+  (`TrackArena.contains`, and so `bin_at`, `occupancy` and every operation
+  that bins positions) and the footprint (`TrackArena` capsules, used by
+  `combine`'s component lookup and saved by the codecs). The bins, their
+  measure (lengths), connectivity, smoothing kernels, and the occupancy and
+  rates of the samples it places are the same at both widths.
+- Evidence: the share of tracked samples farther than half the stated (or,
+  for the labyrinth, chosen) physical width from the declared track,
+  `environment_fit["outside_physical_width"]`, split by speed
+  (stopped < `min_speed` <= moving < 30 cm/s <= fast): J16 63.8 % (6.5 cm;
+  87 / 64 / 35 %), hc-28 37.3 % (7 cm; 24 / 38 / 57 %), hc-3 26.3 % (7 cm;
+  19 / 34 / 15 %), 000447's familiar W-track 13.0 % (7 cm; 2 / 32 / 26 %),
+  000568 12.4 % (6.35 cm; 12 / 14 / 9 %), Shipley 0.7 % (10 cm arms; 1 / 0
+  / 1 %), the labyrinth 4.6 % (one cell; 17.9 % at the paper's 0.75 cell);
+  on the three refused layouts (G-153), 000447's novel W-track 35.8 % (7 cm;
+  22 / 50 / 44 %), the Z-track 7.6 % (10 cm; 30 / 9 / 7 %) and 001845 6.1 %
+  (7 cm; 0 / 16 / 16 %). The pattern differs: on J16 and the Z-track the
+  head is off the track most while stopped, on the W-tracks and hc-3 while
+  moving, which fits swings at the turns more than posture at the wells. None of
+  these is misplacement: the worst straight stretch of each track has its
+  samples a median 0.03-1.81 (units of each file) to one side, under one
+  bin. The tracked point is a head-mounted LED (or keypoint) above an
+  unwalled track: the head swings past the edge, and a 2-D camera projects
+  a raised head outward.
+- J16 in detail (the authors' graph, 6.5 cm hallways): on each corridor the
+  samples' median signed lateral offset is -1.3 to +1.8 cm, so the graph is
+  placed right; the "bias" earlier read as about 3 cm was the median
+  |offset| (4.2 cm), not a bias. Only 13.1 % of samples are more than 10 cm
+  off; on every corridor the 95th percentile |offset| is 15-18 cm. It is
+  not parallax: a uniform scale about a fitted centre comes out at 1.024 and
+  leaves 57.2 % outside (63.7 % before) with worse per-edge offsets, and the
+  best single translation ((-1.25, +2.00) cm) leaves 50.4 %; with another
+  fit (truncated squared distance, (-1.46, +1.54) cm) the median distance
+  falls only from 4.2 to 3.4 cm and two corridors' offsets grow to 2.6-2.7
+  cm. It depends on speed: below 4 cm/s 89.5 % are beyond the half-width
+  (4.2 % more than 10 cm off), 4-10 cm/s 65.5 %, 10-30 cm/s 62.7 % (32.0 %
+  more than 10 cm off), above 30 cm/s 33.6 %; while running, 61 % of
+  samples in the junction-end tenth of each edge are outside, 34 % mid-edge.
+  This is the tracked head moving about a correct graph, through stopped
+  head posture and swings at turns, not the reward ports (an earlier
+  reading). No shift or scale is applied.
+- Harness workaround: every declared track is built with a placement
+  tolerance measured from the samples (twice their 99th percentile distance
+  from the track, at least the physical width and a bin, so it places 99 %
+  of them by construction), and the stated
+  physical width is recorded apart (`geometry["declared_physical_width"]`)
+  with the share beyond it reported as a tracking measure, not judged
+- Proposed change: separate the apparatus's width from how far off it a
+  position may be placed (a `reach=` or tolerance on the track, the
+  footprint keeping the physical width), so a declared track can state its
+  floor and still place head-tracked positions; J16 is the case for it
+- Status: open
+
+## G-153: Several mazes' fitted layouts disagree with the stated dimensions
+
+- Datasets: olafsdottir_5566548, jadhav_000447, dyads_001845, hc28_hpa,
+  jadhav_000447_familiar, shipley_30902972
+- Operation / step: the loaders' declared environments
+- Kind: data-quirk
+- Evidence: the layout fitted to the samples (node positions; topology and
+  width from the source) against the source's dimensions, the base and the
+  mean arm of a W against its stated 80 cm footprint, each section of the
+  Z, each radial arm's reach (`_tracks.declared_geometry`, refused beyond
+  `_geometry.MAX_SIZE_RESIDUAL`, 15 %). The Z-track's sections are 165, 204
+  and 159 cm against the stated 190, 220 and 190 (Olafsdottir et al. 2016,
+  Online Methods; -13 %, -7 % and -16 %, not one scale), so it is refused:
+  either the file's `pixels_per_metre` 390 is off or the stated lengths are
+  not centreline lengths; neither can be checked here. 000447's novel
+  W-track has a 93.5 cm base and arms of 87.1-105.1 cm (mean +19 %; the
+  longest is 1.31 x 80 cm), against Tang et al. 2023's "~80 x 80 cm", and is
+  refused; its familiar W-track, described with the same size, has a 79.0
+  cm base and arms of 80.7-89.4 cm (+6 %) and is kept, so the two mazes are
+  not the same size in this file's frame. hc-28's W-track has a 71.6 cm base
+  and arms of 64.9-75.8 cm (-11 %, kept). 001845's W-maze (base 91.6 cm,
+  arms 80.4-93.9 cm) is refused for its thinly sampled base (80 % of a base
+  segment has no sample within a bin in 123 s of pose, G-116), not its size.
+  Shipley's radial maze agrees: centre to arm end 86.9-95.5 cm against the
+  stated 80 cm arm plus a 12.35 cm platform radius (92.35 cm; -6 % to +3 %).
+- Harness workaround: a refused layout stays inferred; a kept one uses the
+  fitted lengths, which are the samples' frame, and states the comparison in
+  `conversions`
+- Proposed change: none in neurospatial
+- Status: open
+
+## G-154: 000044's circular linearized coordinate leaves out the reward area
+
+- Datasets: grosmark_000044_circular
+- Operation / step: params['linearized'] (G-039, G-021)
+- Kind: data-quirk
+- Evidence: a robust circle fit to the samples with a linearized coordinate
+  gives a centre (47.3, 50.5) cm and a radius of 49.9 cm, the paper's "1 m in
+  diameter" circular maze (Grosmark & Buzsaki 2016, Supplementary
+  Materials; 314 cm round). The coordinate runs 0-290 cm and its ends are 27
+  cm apart in the camera. The 28.3 % of tracked samples without a
+  coordinate are on the track too (their radius 40-58 cm, 5th-95th
+  percentile). The coordinate starts at -1.5 degrees (east of the centre)
+  and increases counter-clockwise to 290 cm at -30 degrees; in the 30 degree
+  sector between its end and its zero 90-97 % of samples have no coordinate
+  (23,000 samples, 27 % of all tracked ones): about 26 cm of arc where the rat
+  spends much of its time, matching the paper's "predetermined 30 cm reward
+  area". So the file's
+  "on track" share (72 %, G-039) is the share outside the reward area, and
+  the 290 cm coordinate is the loop minus that area; the 134 cm extent of the
+  samples is the head leaning off a 1 m circle.
+- Harness workaround: the declared environment is the stated 1 m circle
+  centred on the samples, a closed loop that includes the reward area
+- Proposed change: none
+- Status: open
+
+## G-155: Occupancy and rate maps drop positions outside a declared track without a warning
+
+- Datasets: takigawa_7114733, shipley_30902972, hafting_2008_nird,
+  grosmark_000044_circular, j16_23020757 (hazard probes and the first run of
+  this batch)
+- Operation / step: env.occupancy, rates.spatial, behavior.laps
+- Kind: silent-hazard
+- Evidence: `env.occupancy` and `compute_spatial_rates` leave out every
+  position the declared environment cannot place, with no warning. With
+  J16's track built at the stated 6.5 cm (this batch's first run) that was
+  63.8 % of the samples, occupancy 423.6 s against 802 s on the grid; at
+  the placement tolerance the loaders now use, 1 % (792 s). Only
+  `decoding_error` says that "time bins have a decoded or actual position
+  outside the environment", and `detect_laps` warns when most positions are
+  outside ("720604 of 776429 positions with finite coordinates (93%) are
+  outside the environment" on hc-18, whose default count spans the
+  sleep-box sessions). The hazard probes show the same silence when
+  positions are wrong: pixels read as cm (`pixels_labelled_cm`) leave 5.96
+  of 1,069 s on Takigawa's tracks and 33 of 1,344 s on Shipley's maze,
+  Hafting's track with positions / 100 keeps 0.24 of 650 s, and on 000044's
+  circle untracked samples moved to (0, 0) fall outside the loop and cut its
+  laps by region from 65 to 15 (G-151), each with no warning of its own. An
+  environment built from the samples cannot show this (every sample has a
+  bin by construction); a declared one can, which makes the share outside
+  the first check of a declared apparatus.
+- Harness workaround: `env.declared` reports `frac_samples_outside`, and the
+  tracks are built with a placement tolerance (G-152)
+- Proposed change: give `occupancy` and `compute_spatial_rates` the warning
+  `detect_laps` has, at a lower share (a few percent of the analysed
+  samples), naming the share and the fix (the frame, the units or the track
+  width)
+- Status: open
+
+## G-156: The fidelity study's `jump_links` flags links inside an open hub, where the arms' corridors overlap
+
+- Datasets: none in this batch (no radial maze has an independent layout);
+  a synthetic 8-arm star (the probe below)
+- Operation / step: studies/environment_fidelity.py `jump_links`
+- Kind: harness-limitation
+- Evidence: `jump_links` projects each bin centre onto the nearest segment
+  of the stated layout and calls a link a jump when the distance along the
+  layout between its two bins is more than 3 x the link plus both bins'
+  offsets. At a hub the arms' corridors overlap (8 arms 10 cm wide overlap
+  out to 5 / tan(22.5 deg) = 12 cm from the centre), so two neighbouring
+  bins there project onto different arms and are a detour through the hub
+  apart along the layout. On 8 arms of 70 x 10 cm sampled uniformly, with
+  `Environment.from_samples` at 2.5 cm, 128 of 3,504 links are flagged, all
+  within 17.4 cm of the centre (72 within 12 cm); 6 arms give 35 of 2,679;
+  a sampled 8 cm platform at the hub changes nothing (128). None joins
+  corridors through a wall. The probe: arms at angles 2 pi k / n from the
+  origin, samples uniform 0-70 cm along and +/-5 cm across each, the
+  reference a star of n segments from (0, 0), counting `jump_links` and the
+  radius of each flagged link's midpoint.
+- Harness workaround: none; only references with an open hub are affected
+  and none of this batch's judged references has one (the labyrinth's and
+  Takigawa's are corridors; on J16's graph, whose junctions join three
+  edges, no link is flagged). A radial or star maze judged against an independent
+  layout would need the hub drawn as a platform polygon, or links inside
+  the overlap of two corridors excused, which needs the corridor width.
+- Proposed change: harness only (not neurospatial); give `Reference` an
+  optional corridor width and excuse links whose bins both lie within half
+  of it of a shared node
 - Status: open

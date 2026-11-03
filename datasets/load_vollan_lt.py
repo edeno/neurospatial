@@ -1,8 +1,8 @@
 """Vollan et al. 2025 rat MEC units on a linear track (EBRAINS 10.25493/R5FR-EDG).
 
 What was recorded: rat 27764, Neuropixels in medial entorhinal cortex (389
-units, 84 of them in the authors' one grid module), running a linear track
-about 2.2 m long. Head position and head direction come from an OptiTrack
+units, 84 of them in the authors' one grid module), running a 200 cm linear
+track (the head positions span about 2.1 m). Head position and head direction come from an OptiTrack
 motion-capture system at 100 Hz.
 
 Where it lives: EBRAINS dataset "Left-right-alternating theta sweeps in the
@@ -35,6 +35,12 @@ What the loader converts:
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` None (the
 data are already speed-filtered); ``dt`` 0.25 s and alternating 60 s
 train/test blocks for decoding.
+
+Declared environment (``geometry["environment"]``): the 200 cm linear track
+of Vollan et al. 2025 (Methods) as a one-edge graph along the samples'
+principal axis, centred on them; the paper states no width, so the track is
+built with a placement tolerance measured from the samples. The fit is in
+``conversions``.
 """
 
 from __future__ import annotations
@@ -53,6 +59,12 @@ from _record import (
     checked_span,
     heading_vs_movement,
     validate_recording,
+)
+from _tracks import (
+    declared_geometry,
+    straight_placement,
+    straight_track,
+    with_declared,
 )
 
 DATASET = {
@@ -235,6 +247,9 @@ def to_recording(
     )
 
 
+TRACK_CM = 200.0
+
+
 def load(cache: Path | None = None) -> Recording:
     """Fetch the linear-track file; positions in cm, headings in radians, spikes."""
     path = fetch(
@@ -244,13 +259,31 @@ def load(cache: Path | None = None) -> Recording:
         subdir=SUBDIR,
         cache=cache,
     )
-    return to_recording(
+    rec = to_recording(
         read_session(path),
         dataset=DATASET,
         file=_FILE,
         session="27764_1 linear_track",
         span_cm=(190.0, 240.0),
     )
+    graph, fit = straight_track(rec.positions, TRACK_CM)
+    entries, line = declared_geometry(
+        graph,
+        rec.positions,
+        times=rec.times,
+        kind=f"straight track {TRACK_CM:g} cm",
+        source="Vollan et al. 2025 Methods: 'a 200 cm linear track'; width not stated",
+        bin_size=rec.params["bin_size"],
+        physical_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placement=straight_placement(fit, "cm"),
+        placed_by="samples' principal axis",
+        stated_lengths={"length": (fit["samples_span"], TRACK_CM)},
+        tracked_point="the head, OptiTrack motion capture (per the loader, from the dataset's documentation)",
+        speed_thresholds=(5.0, 30.0),
+    )
+    return with_declared(rec, entries, line)
 
 
 def times_rebuilt_from_dt(rec: Recording) -> Recording:

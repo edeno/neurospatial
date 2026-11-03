@@ -32,6 +32,14 @@ Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s;
 ``dt`` 0.25 s, even and odd trials train and test the decoder;
 ``region`` CA1 for shanks 1-32, else mPFC; ``is_interneuron`` from
 ``Clu.isIntern``.
+
+Declared environment (``geometry["environment"]``): the 3-arm maze as three
+parallel arms joined by a base, the layout the samples show, its node
+positions fitted to them; the wheel beside the base is not part of the
+graph. Agarwal et al. 2026 (Methods) call it "the 2.13m-long maze" without
+saying what that spans, and no source read here states a width, so the
+track is built with a placement tolerance measured from the samples
+(``_tracks.declared_geometry``).
 """
 
 from __future__ import annotations
@@ -49,6 +57,14 @@ from _record import (
     checked_span,
     heading_vs_movement,
     validate_recording,
+)
+from _tracks import (
+    arms_text,
+    declared_geometry,
+    edge_lengths,
+    fitted_maze,
+    parallel_arm_candidates,
+    with_declared,
 )
 
 DATASET = {
@@ -81,6 +97,7 @@ _SHA256 = "069a22de30a5c35c71dcde19d76e2480118aad2c3f59ed810dc56701cf187ce4"
 _LFP_HZ = 1250.0
 _KEEP_EVERY = 25
 _SPAN_CM = (150.0, 260.0)
+_FIT_CAP_CM = 10.0
 _CA1_SHANKS = 32
 RUNNING_CM_S = 10.0
 
@@ -128,7 +145,7 @@ def load(cache: Path | None = None) -> Recording:
         ]
     )
     shank = np.asarray(clu.shank, dtype=int)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="rec02",
         source=_URL,
@@ -165,6 +182,26 @@ def load(cache: Path | None = None) -> Recording:
             f" ({int(np.sum(shank <= _CA1_SHANKS))} units), mPFC above",
         ),
     )
+    graph = fitted_maze(parallel_arm_candidates(positions), positions, cap=_FIT_CAP_CM)
+    entries, line = declared_geometry(
+        graph,
+        positions,
+        times=times,
+        kind="3-arm maze: three parallel arms joined by a base",
+        source="Figshare 24757638 description (3-arm maze and a wheel); Agarwal et"
+        " al. 2026 Methods: 'The 2.13m-long maze' (what the length spans is not"
+        " stated); width not stated",
+        bin_size=4.0,
+        physical_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placed_by="fitted to the samples",
+        placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')});"
+        f" edges (cm): {edge_lengths(graph)}",
+        tracked_point="not stated (the file's Track xMM, yMM)",
+        speed_thresholds=(5.0, 30.0),
+    )
+    return with_declared(rec, entries, line)
 
 
 def untracked_as_origin(rec: Recording) -> Recording:

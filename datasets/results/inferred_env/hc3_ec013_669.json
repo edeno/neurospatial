@@ -1,0 +1,594 @@
+{
+  "dataset": "hc3_ec013_669",
+  "session": "ec013.38/ec013.669",
+  "source": "https://crcns.org/data-sets/hc/hc-3 hc-3/ec013.38/ec013.669.tar.gz",
+  "license": "CRCNS terms of use (account required; cite the data set)",
+  "conversions": [
+    "times: .whl row k at k * 512 / 20000 s (31184 frames)",
+    "positions: midpoint of the two LEDs where both are tracked (93.9% of frames), -1 -> NaN; video pixels as stored; range checked: 60.4 to 297.0 by 23.0 to 207.7 pixel (largest span 236.6, expected 150-400)",
+    "scale: 0.870 cm per pixel inferred from the stated 250 cm apparatus; used only for bin_size 2.87 px and min_speed 4.60 px/s",
+    "headings: first LED in front (back-to-front angle minus movement direction above 10 cm/s: circular mean 6.2 deg, median spread 17.8 deg; the other order gives -173.8 deg); 5.1% of tracked frames have both LEDs at one point -> NaN; frame of the stored pixel axes (y direction unstated)",
+    "spikes: .res samples / 20000 Hz; 72 units kept of 77 clusters >= 2 (the cell table's units; 53 listed units have no spikes in this session)",
+    "environment: declared straight track 250 x 7 cm (Mizuseki et al. 2012 Behavioral Testing: 'the linear track (250 x 7 cm2)'; in pixels at the inferred scale, which comes from the same 250 cm); tracked point: the midpoint of two head-mounted LEDs (hc-3 .whl: two LEDs per frame); physical width 8.04355 pixel (stated), 26.3% of samples beyond half of it (19% at 0-4.59631 pixel/s, 34% at 4.59631-34.4723 pixel/s, 15% at 34.4723-inf pixel/s); placement tolerance 29.3 pixel (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: along the samples' principal axis at 36.9 deg, centred between their 0.5th and 99.5th percentiles along it (span 280.3 pixel); 0.1% of samples lie beyond the ends (samples' principal axis); fit: median |lateral offset| 2.13 pixel, worst stretch bias 0.03 pixel (limit 2.87), worst unsupported share of a segment 0%; track length 287.3 pixel"
+  ],
+  "expectations": [
+    {
+      "key": "n_units",
+      "passed": false,
+      "detail": "expected Range(low=100, high=125), got 72"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=38.5, high=39.5), got 39.0625000000043"
+    },
+    {
+      "key": "duration_s",
+      "passed": true,
+      "detail": "expected Range(low=780.0, high=800.0), got 798.2848"
+    },
+    {
+      "key": "track_long_axis_px",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "has_headings",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "3337409671746cf93c7ce7d8c7d4b460cee0e9dc"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 540,
+        "n_dims": 2,
+        "max_extent": 238.21000000000004
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        }
+      ],
+      "seconds": 0.045,
+      "peak_mb": 2.6
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 535.4495999999999,
+        "frac_bins_visited": 0.9962962962962963,
+        "median_s_per_visited_bin": 0.4095999999999833,
+        "max_s": 17.382400000000242
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.022,
+      "peak_mb": 3.9
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "rates.spatial": {
+      "status": "ok",
+      "summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.003703703703703704,
+        "median_peak_hz": 2.9923020433933427,
+        "median_mean_hz": 0.45478873752256477
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.149,
+      "peak_mb": 9.0
+    },
+    "rates.spatial_information": {
+      "status": "ok",
+      "summary": {
+        "bits_per_spike_median": 0.6657216910502396,
+        "bits_per_spike_max": 6.254378708798846,
+        "bits_per_spike_n_finite": 69
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 2.6
+    },
+    "rates.information_vs_shifts": {
+      "status": "ok",
+      "summary": {
+        "median_bits_per_spike": 0.6657216910502396,
+        "median_shifted_bits_per_spike": 0.09681422640318545,
+        "frac_above_every_shift": 0.8985507246376812,
+        "n_units": 69,
+        "n_shifts": 4
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.191,
+      "peak_mb": 6.5
+    },
+    "cells.place_screen": {
+      "status": "ok",
+      "summary": {
+        "n_place_screen": 27,
+        "n_units": 72
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.006,
+      "peak_mb": 12.0
+    },
+    "cells.grid_score": {
+      "status": "ok",
+      "summary": {
+        "n_finite": 0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.435,
+      "peak_mb": 26.8
+    },
+    "cells.border_score": {
+      "status": "error",
+      "summary": {},
+      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.001,
+      "peak_mb": 0.5
+    },
+    "hd.tuning": {
+      "status": "ok",
+      "summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.2225843789122641,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 71
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.049,
+      "peak_mb": 6.2
+    },
+    "rates.egocentric_boundary": {
+      "status": "error",
+      "summary": {},
+      "note": "ValueError: compute_boundary_vector_rates: distance_range is required because env.units='pixel' is not a known length unit.\nWhy: the default 0-50 cm range cannot be converted to coordinates of unknown scale\nFix: pass distance_range=(0.0, max_distance) and distance_bin_size in the units of positions, or an env with units='cm' (or 'mm', 'm')",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "decode.position": {
+      "status": "ok",
+      "summary": {
+        "median_error": 12.176378772032358,
+        "chance_median_error": 113.93465140422641,
+        "chance_frac_disconnected": 0.0,
+        "frac_actual_outside": 0.0,
+        "units": "pixel",
+        "n_time_bins": 1507,
+        "median_error_on_declared": 12.176378772032358,
+        "n_on_declared": 1412
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 1
+        }
+      ],
+      "seconds": 0.098,
+      "peak_mb": 15.2
+    },
+    "io.nwb_roundtrip": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 540
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "example": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).",
+          "count": 2
+        }
+      ],
+      "seconds": 2.416,
+      "peak_mb": 5.2
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "ok",
+      "summary": {
+        "n_segments": 208,
+        "running_s": 525.44
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.019,
+      "peak_mb": 3.3
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.014,
+      "peak_mb": 9.9
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "summary": {},
+      "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.nwb_readers": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "env_kind": "inferred",
+  "hazards": [
+    {
+      "hazard": "headings_in_degrees",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "compute_directional_rates: headings look like degrees (largest magnitude 180, all within \u00b1360, and consecutive values differ by up to 360, more than the \u03c0 a continuous radian angle can step) but are read as radians, which wraps them into meaningless directions. Convert with np.radians(headings) or pass angle_unit=\"deg\".",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.2225843789122641,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 71
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.06031425071633523,
+        "mean_vector_length_max": 0.9986303717480125,
+        "mean_vector_length_n_finite": 71
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_bins": 540,
+        "n_dims": 2,
+        "max_extent": 238.21000000000004
+      },
+      "hazard_summary": {
+        "n_bins": 540,
+        "n_dims": 2,
+        "max_extent": 298.48
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 535.4495999999999,
+        "frac_bins_visited": 0.9962962962962963,
+        "median_s_per_visited_bin": 0.4095999999999833,
+        "max_s": 17.382400000000242
+      },
+      "hazard_summary": {
+        "total_s": 543.488,
+        "frac_bins_visited": 0.9944444444444445,
+        "median_s_per_visited_bin": 0.40960000000013963,
+        "max_s": 17.766400000000086
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.003703703703703704,
+        "median_peak_hz": 2.9923020433933427,
+        "median_mean_hz": 0.45478873752256477
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.005555555555555556,
+        "median_peak_hz": 3.204646090067488,
+        "median_mean_hz": 0.46000076068760926
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 208,
+        "running_s": 525.44
+      },
+      "hazard_summary": {
+        "n_segments": 211,
+        "running_s": 533.7088000000001
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "rates.spatial",
+      "response": "warned",
+      "message": "Environment.units='pixel' is not in the standard registry ['cm', 'm', 'mm', 'pixels', 'px']. Free-form strings are allowed but may not be interpreted by tools that consume `units` (e.g., scale bars, simulate_trajectory_ou unit checks).\n144147/144238 spike_times (100%) across all neurons fell outside the position time window [0, 798.285]; spike_times.min()=4.25 spike_times.max()=798298. The spike times span 798294 and reach 798298, about 1000 times the 798.285 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.003703703703703704,
+        "median_peak_hz": 2.9923020433933427,
+        "median_mean_hz": 0.45478873752256477
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.003703703703703704,
+        "median_peak_hz": 0.0,
+        "median_mean_hz": 0.0
+      }
+    },
+    {
+      "hazard": "spike_times_in_ms",
+      "op": "hd.tuning",
+      "response": "warned",
+      "message": "144147/144238 spike_times (100%) across all neurons fell outside the position time window [0, 798.285]; spike_times.min()=4.25 spike_times.max()=798298. The spike times span 798294 and reach 798298, about 1000 times the 798.285 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.2225843789122641,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 71
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.5112046956422829,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 15
+      }
+    },
+    {
+      "hazard": "coincident_leds_as_east",
+      "op": "hd.tuning",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.2225843789122641,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 71
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.2381334966746945,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 71
+      }
+    },
+    {
+      "hazard": "leds_swapped",
+      "op": "hd.tuning",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.2225843789122641,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 71
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "mean_vector_length_median": 0.222584378912264,
+        "mean_vector_length_max": 1.0,
+        "mean_vector_length_n_finite": 71
+      }
+    },
+    {
+      "hazard": "whl_minus_one_kept",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 1,
+      "clean_summary": {
+        "n_bins": 540,
+        "n_dims": 2,
+        "max_extent": 238.21000000000004
+      },
+      "hazard_summary": {
+        "n_bins": 553,
+        "n_dims": 2,
+        "max_extent": 298.48
+      }
+    },
+    {
+      "hazard": "whl_minus_one_kept",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 535.4495999999999,
+        "frac_bins_visited": 0.9962962962962963,
+        "median_s_per_visited_bin": 0.4095999999999833,
+        "max_s": 17.382400000000242
+      },
+      "hazard_summary": {
+        "total_s": 543.488,
+        "frac_bins_visited": 0.9927667269439421,
+        "median_s_per_visited_bin": 0.4096000000001254,
+        "max_s": 19.66080000000023
+      }
+    },
+    {
+      "hazard": "whl_minus_one_kept",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.003703703703703704,
+        "median_peak_hz": 2.9923020433933427,
+        "median_mean_hz": 0.45478873752256477
+      },
+      "hazard_summary": {
+        "n_units": 72,
+        "frac_nan_bins": 0.007233273056057866,
+        "median_peak_hz": 3.4707018482368333,
+        "median_mean_hz": 0.4584820231298817
+      }
+    },
+    {
+      "hazard": "whl_minus_one_kept",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 208,
+        "running_s": 525.44
+      },
+      "hazard_summary": {
+        "n_segments": 211,
+        "running_s": 533.7088000000001
+      }
+    },
+    {
+      "hazard": "whl_minus_one_kept",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "whl_minus_one_kept",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}

@@ -29,6 +29,14 @@ Analysis choices (``params``): maps, decoding and laps use the travel
 epochs only (``analysis_epochs``); no speed threshold, because the train,
 not the rat, moves the position; ``bin_size`` 5 px; ``dt`` 0.25 s with
 alternating 60 s train/test blocks inside the travel epochs.
+
+Declared environment (``geometry["environment"]``): the train's circuit as
+a closed loop (a cyclic graph, every edge kept) through the travel samples'
+median position in each of 72 angular sectors; the data set states no shape
+or size, so the loop is the samples' own and the width is measured from
+them. ``geometry["lap_start_region"]`` cuts the loop at its westmost point,
+an arbitrary cut: a lap count does not depend on where a loop is cut, up to
+one lap.
 """
 
 from __future__ import annotations
@@ -47,6 +55,13 @@ from _record import (
     checked_span,
     intersect_intervals,
     validate_recording,
+)
+from _tracks import (
+    cut_region,
+    declared_geometry,
+    loop_centreline,
+    polyline_graph,
+    with_declared,
 )
 from load_hc3_ec013_669 import fetch_session
 
@@ -80,6 +95,7 @@ SUBDIR = "crcns_hc18"
 ARCHIVE = "hc-18/data/Train-261-20140617.tar.gz"
 BASE = "Train-261-20140617"
 N_SHANKS = 8
+_LOOP_POINTS = 72
 _SHA256 = {
     "clu.1": "a6def5c7f5ccc6edf44069e6d3e95776fa1ace0001f2fc66340611a485c22509",
     "clu.2": "664fbaa3f28c52e5de4a1e9237881d2808476241918374b348a167194b57aaca",
@@ -152,7 +168,7 @@ def load(cache: Path | None = None) -> Recording:
     blocks = blocks[np.argsort(blocks[:, 0])]
     in_travel = intersect_intervals(blocks, travel)
     block_index = np.searchsorted(blocks[:, 0], in_travel[:, 0], side="right") - 1
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session=BASE,
         source=f"{DATASET['source']} {ARCHIVE}",
@@ -188,6 +204,39 @@ def load(cache: Path | None = None) -> Recording:
             f" ({len(travel)}, {np.sum(np.diff(travel, axis=1)):.0f} s)",
         ),
     )
+    in_travel_samples = np.zeros(len(times), dtype=bool)
+    for start, stop in travel:
+        in_travel_samples |= (times >= start) & (times < stop)
+    travel_xy = np.where(in_travel_samples[:, None], positions, np.nan)
+    centreline = loop_centreline(travel_xy, n_points=_LOOP_POINTS)
+    graph = polyline_graph(centreline, closed=True)
+    west = int(np.argmin(centreline[:, 0]))
+    region = cut_region(
+        "west_cut",
+        centreline[west],
+        centreline[(west + 1) % _LOOP_POINTS] - centreline[west - 1],
+        half_length=5.0,
+        half_width=40.0,
+    )
+    entries, line = declared_geometry(
+        graph,
+        travel_xy,
+        times=times,
+        kind=f"closed circuit as a {_LOOP_POINTS}-segment loop",
+        source="hc-18: a model train on a closed circuit (no shape or size stated)",
+        bin_size=5.0,
+        physical_width=None,
+        units="pixel",
+        name=DATASET["key"],
+        placed_by="fitted to the samples",
+        placement="the travel samples' median radius in each of"
+        f" {_LOOP_POINTS} equal angular sectors around their centre; lap cut"
+        " (geometry['lap_start_region']) at the loop's westmost point, a stated"
+        " cut, not a start the source names",
+        tracked_point="one head LED (hc-18, per the loader)",
+        speed_thresholds=(),
+    )
+    return with_declared(rec, {**entries, "lap_start_region": region}, line)
 
 
 def clock_assumed_20khz(rec: Recording) -> Recording:

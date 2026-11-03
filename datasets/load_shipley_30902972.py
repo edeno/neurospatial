@@ -34,6 +34,16 @@ What the loader converts:
 Analysis choices (``params``): ``bin_size`` 3 cm; ``min_speed`` 3 cm/s
 (mouse running); ``analysis_epochs`` the 11 maze trials; even and odd trials
 train and test the decoder at ``dt`` 0.25 s.
+
+Declared environment (``geometry["environment"]``): the radial maze (Shipley
+et al. 2026, Methods: eight 80 x 10 cm arms on an octagonal centre platform
+24.7 cm across) as a star of eight arms from one centre node, fitted to the
+maze trials' samples and each arm then refitted to its own samples (an arm
+leaves the platform's edge, so it need not point exactly at the centre),
+with the stated 10 cm arm width as the physical width (the track is built
+with a placement tolerance measured from the samples); the platform is
+represented by the short
+segments joining the arms to one centre node. The fit is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -51,6 +61,13 @@ from _record import (
     check_expectations,
     checked_span,
     validate_recording,
+)
+from _tracks import (
+    declared_geometry,
+    fitted_maze,
+    radial_arms,
+    star_candidates,
+    with_declared,
 )
 
 DATASET = {
@@ -88,6 +105,11 @@ _FILES = {
 }
 _SAMPLING_HZ = 30000.0
 _SPAN_CM = (140.0, 220.0)
+_ARM_WIDTH_CM = 10.0
+# Centre to arm end: an 80 cm arm from the edge of a 24.7 cm platform.
+_ARM_REACH_CM = 80.0 + 24.7 / 2
+_PLATFORM_CM = 20.0
+_FIT_CAP_CM = 10.0
 _MAX_RESIDUAL_S = 0.05
 
 
@@ -142,6 +164,16 @@ def position_times(
     return times, np.asarray(rates), worst
 
 
+def _extent_centre(positions: np.ndarray) -> np.ndarray:
+    """Middle of the samples' extent (0.5th to 99.5th percentile per axis).
+
+    Eight arms of equal length put the maze's centre there; the densest
+    point is a reward well, where the mouse waits longest.
+    """
+    low, high = np.nanpercentile(positions, [0.5, 99.5], axis=0)
+    return 0.5 * (low + high)
+
+
 def load(cache: Path | None = None) -> Recording:
     """Fetch m4005's 2020-09-26 session; positions in cm, good units' spikes."""
     from scipy.io import loadmat
@@ -180,7 +212,7 @@ def load(cache: Path | None = None) -> Recording:
     windows = np.column_stack([times[starts], times[ends - 1]])
     maze = np.array([not n.startswith("S") for n in names])
     maze_trials = windows[maze]
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="m4005_2020-09-26",
         source=f"{DATASET['source']} {_FOLDER}",
@@ -211,6 +243,43 @@ def load(cache: Path | None = None) -> Recording:
             "headings: none (pos.dir equals dir_disp, the displacement direction)",
         ),
     )
+    in_maze = np.zeros(len(times), dtype=bool)
+    for start, stop in maze_trials:
+        in_maze |= (times >= start) & (times <= stop)
+    maze_xy = np.where(in_maze[:, None], positions, np.nan)
+    star = fitted_maze(
+        star_candidates(maze_xy, 8, _extent_centre(maze_xy)), maze_xy, cap=_FIT_CAP_CM
+    )
+    graph = radial_arms(star, maze_xy, min_radius=_PLATFORM_CM, window=_FIT_CAP_CM)
+    centre = np.asarray(graph.nodes["centre"]["pos"])
+    reach = {
+        f"arm {k}": float(
+            np.linalg.norm(np.asarray(graph.nodes[f"arm_{k}"]["pos"]) - centre)
+        )
+        for k in range(8)
+    }
+    entries, line = declared_geometry(
+        graph,
+        maze_xy,
+        times=times,
+        kind="8-arm radial maze: eight arms joined at a centre",
+        source="Shipley et al. 2026 Methods: '80cm x 10cm arms connected by an"
+        " octagonal centre platform (24.7cm diameter, 10cm sides)'",
+        bin_size=3.0,
+        physical_width=_ARM_WIDTH_CM,
+        units="cm",
+        name=DATASET["key"],
+        placed_by="fitted to the samples",
+        stated_lengths={k: (v, _ARM_REACH_CM) for k, v in reach.items()},
+        placement="a star fitted to the maze trials' samples, then each arm the"
+        " principal axis of its own samples beyond the platform, joined to the"
+        f" centre; centre to arm end {min(reach.values()):.1f}-"
+        f"{max(reach.values()):.1f} cm (stated 80 cm arms from a 24.7 cm platform:"
+        f" {_ARM_REACH_CM:g} cm)",
+        tracked_point="one tracking LED (per the loader; trialData.pos)",
+        speed_thresholds=(3.0, 30.0),
+    )
+    return with_declared(rec, entries, line)
 
 
 def clock_from_header_rate(rec: Recording) -> Recording:

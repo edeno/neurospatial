@@ -27,21 +27,25 @@ What the loader converts:
   offsets of 325-465 s. Multi-unit channels are weakly tuned, so the scan
   cannot name the right offset either. The spike at 0.0 is dropped from each
   train; the late fragment is kept.
-- Length unit: positions are labelled centimeters, but the tracked span is
-  35 by 6 (1st-99th percentile) and the 90th percentile speed 6.6 per s:
-  short and slow for a mouse linear track in cm, and the paper is not at
-  hand to state the track length, so the unit is not confirmed and the
-  loader returns ``position_units="arbitrary"``.
+- Length unit: positions are labelled centimeters. The tracked span is 35
+  by 6 (1st-99th percentile) and Aery Jones et al. 2021 (Cell Reports
+  37:110159, Methods, read in the PMC9069800 full text) state "a 36 cm
+  linear track", so the label is right: cm. The
+  90th percentile speed is 6.6 cm/s.
 
 Analysis choices (``params``):
 
-- ``bin_size`` 1 (35 bins along the track); no ``min_speed`` (no speed is
-  defensible without a length unit).
+- ``bin_size`` 1 cm (35 bins along the track); no ``min_speed`` (the mouse
+  is slow on this short track, and the paper gives no threshold).
 - ``analysis_epochs``: 0 to 269.6 s, the continuous spike recording (ended
   by the first silence of every channel longer than 10 s); rates over the
   whole tracking would divide the spikes of 270 s by 1,504 s of occupancy.
 - ``dt`` 0.25 s, alternating 60 s ``train_epochs``/``test_epochs`` inside
   that span.
+- Declared environment (``geometry["environment"]``): the stated 36 cm
+  track as a one-edge graph along the samples' principal axis, centred on
+  them; the paper states no width, so the track is built with a placement
+  tolerance measured from the samples.
 """
 
 from __future__ import annotations
@@ -59,6 +63,7 @@ from _record import (
     check_expectations,
     validate_recording,
 )
+from _tracks import declared_geometry, straight_placement, straight_track
 
 DATASET = {
     "key": "aeryjones_000165",
@@ -88,6 +93,7 @@ _ASSET_ID = "fd219159-b8ee-4bb3-933b-581245af0317"
 # All channels silent for longer than this ends the continuous spike recording.
 _SILENCE_S = 10.0
 _SHA256 = "58d883df3f383bacd3db293f59a8ac61f322d148a516ec5e34799ce78657efa3"
+_TRACK_CM = 36.0
 
 
 def load(cache: Path | None = None) -> Recording:
@@ -134,6 +140,24 @@ def load(cache: Path | None = None) -> Recording:
         raise ValueError(msg)
     covered = np.array([[times[0], block_end]])
     train, test = alternating_blocks(times[0], block_end, 60.0)
+    graph, fit = straight_track(positions, _TRACK_CM)
+    declared, declared_line = declared_geometry(
+        graph,
+        positions,
+        times=times,
+        kind=f"straight track {_TRACK_CM:g} cm",
+        source="Aery Jones et al. 2021, Cell Reports 37:110159 (PMC9069800), Methods:"
+        " 'a 36 cm linear track'; width not stated",
+        bin_size=1.0,
+        physical_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placement=straight_placement(fit, "cm"),
+        placed_by="samples' principal axis",
+        stated_lengths={"length": (fit["samples_span"], _TRACK_CM)},
+        tracked_point="not stated",
+        speed_thresholds=(4.0, 30.0),
+    )
     return Recording(
         dataset=DATASET["key"],
         session="Sumac06_LinearTrack",
@@ -141,10 +165,11 @@ def load(cache: Path | None = None) -> Recording:
         license=DATASET["license"],
         times=times,
         positions=positions,
-        position_units="arbitrary",
+        position_units="cm",
         spike_times=tuple(trains),
         unit_ids=np.asarray(units.unit_ids),
         epochs={"spikes_recorded": covered},
+        geometry=declared,
         params={
             "bin_size": 1.0,
             "dt": 0.25,
@@ -160,9 +185,8 @@ def load(cache: Path | None = None) -> Recording:
             "spike_times: ASSUMED on the tracking clock with offset 0 (every channel"
             " has a spike at exactly 0.0 s; the LFP starts at 0); a constant-offset"
             " scan of 1-D Skaggs information ranks offset 0 11th of 247",
-            "positions: read_position, labelled cm; range checked (1st-99th"
-            f" percentile span {span[0]:.1f} by {span[1]:.1f}): too short for a"
-            " mouse linear track in cm to confirm the label, kept as arbitrary units",
+            "positions: read_position, cm; range checked (1st-99th percentile"
+            f" span {span[0]:.1f} by {span[1]:.1f}), against the paper's 36 cm track",
             f"spike_times: read_units (32 channel multi-unit trains); the spike at"
             f" exactly 0.0 s dropped from {starts_at_zero} trains; spikes end at"
             f" {last_spike:.1f} s of {times[-1]:.0f} s tracked; every channel is silent"
@@ -171,6 +195,7 @@ def load(cache: Path | None = None) -> Recording:
             f" {pooled[-1] - pooled[silences[0] + 1]:.1f} s",
             f"params['analysis_epochs']: 0 to {block_end:.1f} s, the end of the"
             " continuous spike recording",
+            declared_line,
         ),
     )
 

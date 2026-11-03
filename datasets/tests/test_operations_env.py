@@ -224,3 +224,189 @@ def test_declared_circle_refuses_a_far_stated_centre():
         declared_circle(
             points, 100.0, bin_size=2.0, units="cm", name="p", source="t", centre=(0, 0)
         )
+
+
+def test_one_verdict_judges_an_outline_by_its_walls():
+    # A declared 100 cm box: samples filling it have no misfit; the same
+    # samples moved 8 cm past one wall are misfit evidence, and their share
+    # beyond the outline is reported, not judged.
+    import shapely
+    from _geometry import judge_declared
+
+    box = Environment.from_polygon(
+        shapely.box(0, 0, 100, 100), bin_size=2.5, units="cm"
+    )
+    rng = np.random.default_rng(2)
+    samples = rng.uniform(1, 99, (20000, 2))
+    times = np.arange(len(samples)) / 30.0
+    inside = judge_declared(box, times, samples)
+    assert inside["kind"] == "outline"
+    assert inside["misfit"] == []
+    assert inside["outside"] == 0.0
+    moved = judge_declared(box, times, samples + np.array([8.0, 0.0]))
+    assert moved["outside"] == pytest.approx(0.08, abs=0.01)
+    assert any("beyond one side" in reason for reason in moved["misfit"])
+
+
+@pytest.mark.parametrize(
+    ("side", "misfit"), [(110.0, False), (130.0, True), (150.0, True)]
+)
+def test_an_outline_larger_than_its_samples_is_misfit(side, misfit):
+    # Samples span 98 cm of a box declared `side` cm across, centred on them.
+    # No sample reaches past a wall, so only the extent shows the scale error:
+    # The middle 99 % spans 97 cm: 97/110 is -12 %, within the size tolerance;
+    # 97/130 is -25 %.
+    import shapely
+    from _geometry import judge_declared
+
+    half = side / 2
+    box = Environment.from_polygon(
+        shapely.box(50 - half, 50 - half, 50 + half, 50 + half),
+        bin_size=2.5,
+        units="cm",
+    )
+    samples = np.random.default_rng(2).uniform(1, 99, (20000, 2))
+    judged = judge_declared(box, np.arange(len(samples)) / 30.0, samples)
+    assert judged["fit"]["max_side_bias"] < 0
+    flagged = any("of the outline's side" in reason for reason in judged["misfit"])
+    assert flagged is misfit
+
+
+def test_one_verdict_judges_a_track_by_its_stretches():
+    from _geometry import graph_environment, judge_declared
+    from _tracks import polyline_graph
+
+    track = graph_environment(
+        polyline_graph(np.array([[0.0, 0.0], [100.0, 0.0]]), closed=False),
+        bin_size=2.5,
+        track_width=30.0,
+        units="cm",
+        name="track",
+    )
+    rng = np.random.default_rng(3)
+    on = np.column_stack([rng.uniform(0, 100, 5000), rng.normal(0, 3.0, 5000)])
+    times = np.arange(len(on)) / 30.0
+    good = judge_declared(track, times, on, physical_width=6.0, speed_thresholds=(4.0,))
+    assert good["kind"] == "track"
+    assert good["misfit"] == []
+    assert good["outside"] == pytest.approx(0.32, abs=0.03)  # 2 x P(N(0, 3) > 3)
+    assert good["outside_by_speed"]["all"] == good["outside"]
+    beside = judge_declared(track, times, on + np.array([0.0, 5.0]), physical_width=6.0)
+    assert any("to one side" in reason for reason in beside["misfit"])
+
+
+def _box_env(side=100.0):
+    import shapely
+
+    return Environment.from_polygon(
+        shapely.box(0, 0, side, side), bin_size=2.5, units="cm"
+    )
+
+
+def test_an_outline_side_the_samples_never_reach_is_misfit():
+    # A U-shaped probe: samples fill the box but keep 20 cm off its top wall
+    # (a box drawn over a region the animal never entered); every other wall
+    # is reached. The top side is unsupported over its whole length.
+    from _geometry import judge_declared
+
+    rng = np.random.default_rng(4)
+    samples = rng.uniform(1, 99, (20000, 2))
+    times = np.arange(len(samples)) / 30.0
+    reached = judge_declared(_box_env(), times, samples)
+    assert reached["fit"]["max_side_unsupported"] == 0.0
+    assert reached["misfit"] == []
+    probe = samples[samples[:, 1] < 80]
+    judged = judge_declared(_box_env(), times[: len(probe)], probe)
+    assert judged["fit"]["max_side_unsupported"] == pytest.approx(1.0)
+    assert any("of a side has no sample" in reason for reason in judged["misfit"])
+
+
+def test_outline_sides_split_a_square_at_corners_and_keep_a_circle_whole():
+    import shapely
+    from _geometry import outline_sides
+
+    square = np.asarray(shapely.box(0, 0, 10, 10).exterior.coords)
+    assert len(outline_sides(square)) == 4
+    circle = np.asarray(shapely.Point(0, 0).buffer(10, quad_segs=16).exterior.coords)
+    sides = outline_sides(circle)
+    assert len(sides) == 1
+    assert len(sides[0]) == len(circle)
+
+
+def test_a_circle_with_one_arc_never_reached_is_misfit():
+    # A 100 cm circle whose samples leave out a 90-degree sector: a quarter of
+    # its one wall has no sample near it.
+    import shapely
+    from _geometry import judge_declared
+
+    env = Environment.from_polygon(
+        shapely.Point(0, 0).buffer(50, quad_segs=16), bin_size=2.5, units="cm"
+    )
+    rng = np.random.default_rng(7)
+    r = 49 * np.sqrt(rng.uniform(0, 1, 20000))
+    theta = rng.uniform(0, 2 * np.pi, 20000)
+    disc = np.column_stack([r * np.cos(theta), r * np.sin(theta)])
+    times = np.arange(len(disc)) / 30.0
+    assert judge_declared(env, times, disc)["misfit"] == []
+    sector = disc[theta < 1.5 * np.pi]
+    judged = judge_declared(env, times[: len(sector)], sector)
+    assert judged["fit"]["max_side_unsupported"] > 0.15
+    assert any("of a side has no sample" in reason for reason in judged["misfit"])
+
+
+@pytest.mark.parametrize(
+    ("residual", "misfit"), [(-0.04, False), (-0.14, False), (-0.3, True)]
+)
+def test_an_outline_is_judged_on_its_stated_size(residual, misfit):
+    # The stated size against the samples' own fitted size (the loader's
+    # residual): 15 % short is the limit.
+    from _geometry import judge_declared
+
+    samples = np.random.default_rng(2).uniform(1, 99, (20000, 2))
+    judged = judge_declared(
+        _box_env(),
+        np.arange(len(samples)) / 30.0,
+        samples,
+        stated_residuals={"a": residual},
+    )
+    assert judged["fit"]["size_residual_a"] == residual
+    assert any("a -30% of the stated" in r for r in judged["misfit"]) is misfit
+
+
+@pytest.mark.parametrize(("offset", "misfit"), [(0.05, False), (0.2, True)])
+def test_an_outline_is_judged_on_its_stated_centre(offset, misfit):
+    from _geometry import judge_declared
+
+    samples = np.random.default_rng(2).uniform(1, 99, (20000, 2))
+    judged = judge_declared(
+        _box_env(), np.arange(len(samples)) / 30.0, samples, centre_offset=offset
+    )
+    assert any("from the stated centre" in r for r in judged["misfit"]) is misfit
+
+
+def test_samples_outside_a_room_are_reported_not_judged():
+    # A 3-D room tiled by voxels; 5 % of the samples sit 1 m past one wall
+    # (a perch in the room's frame): reported, with the speed split, but
+    # only a stated size judges a room.
+    from _geometry import judge_declared
+
+    rng = np.random.default_rng(8)
+    inside = rng.uniform([0, 0, 0], [5, 5, 2], (19000, 3))
+    perch = np.column_stack(
+        [rng.normal(2.5, 0.01, 1000), np.full(1000, 6.0), np.full(1000, 1.0)]
+    )
+    samples = np.vstack([inside, perch])
+    times = np.arange(len(samples)) / 100.0
+    room = Environment.from_samples(
+        samples[:2],
+        bin_size=0.25,
+        dimension_ranges=[(0, 5), (0, 5), (0, 2)],
+        infer_active_bins=False,
+    )
+    judged = judge_declared(room, times, samples, speed_thresholds=(0.5,))
+    assert judged["kind"] == "room"
+    assert judged["outside"] == pytest.approx(0.05, abs=0.001)
+    assert judged["misfit"] == []
+    assert set(judged["outside_by_speed"]) >= {"all"}
+    wrong = judge_declared(room, times, samples, stated_residuals={"room_y": 0.4})
+    assert any("room_y +40% of the stated" in r for r in wrong["misfit"])

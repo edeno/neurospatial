@@ -39,6 +39,12 @@ What the loader converts:
 Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s;
 ``analysis_epochs`` the two track exposures; ``dt`` 0.25 s, with alternating
 60 s train/test blocks inside the track exposures.
+
+Declared environment (``geometry["environment"]``): the two tracks as one
+graph of two components, each the authors' centreline (simplified to within
+0.5 cm, which keeps its length) as a path of segments, every edge kept.
+Tirole et al. 2022 state no track width, so the track is built with a
+placement tolerance measured from the samples.
 """
 
 from __future__ import annotations
@@ -56,6 +62,12 @@ from _record import (
     check_expectations,
     intersect_intervals,
     validate_recording,
+)
+from _tracks import (
+    declared_geometry,
+    polyline_graph,
+    simplify_polyline,
+    with_declared,
 )
 
 DATASET = {
@@ -88,6 +100,7 @@ _FILES = {
     "RAT5_SESS1_extracted_position.mat": "85472dfc7b3c9c560e1c951e9f81759c7da221c948b01ece7d1437eb50bdcb46",
 }
 _TRACK_EXTENT_CM = (170.0, 205.0)
+_SIMPLIFY_CM = 0.5
 _CENTRELINE_MAX_MEDIAN_CM = 10.0
 _TRACK_M = 2.0
 
@@ -148,7 +161,7 @@ def load(cache: Path | None = None) -> Recording:
     spikes = tuple(spike_times[ids == unit] for unit in conversion[:, 0])
     tracks = np.vstack([epochs["track_1"], epochs["track_2"]])
     blocks = alternating_blocks(times[0], times[-1], 60.0)
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session="RAT5_SESS1",
         source=f"{DATASET['source']} RAT5_SESS1_extracted_*.mat",
@@ -194,6 +207,31 @@ def load(cache: Path | None = None) -> Recording:
             "unit_ids: id_conversion column 2 (1000 x tetrode + cluster)",
         ),
     )
+    import networkx as nx
+
+    graph = nx.Graph()
+    for k, centreline in enumerate(centrelines, start=1):
+        points = simplify_polyline(centreline, _SIMPLIFY_CM)
+        names = [f"track{k}_{i}" for i in range(len(points))]
+        graph = nx.compose(graph, polyline_graph(points, closed=False, names=names))
+    entries, line = declared_geometry(
+        graph,
+        positions,
+        times=times,
+        kind="two tracks, each the authors' centreline as a path (two components)",
+        source="file: track_mask_x, track_mask_y (each track's centreline); Tirole"
+        " et al. 2022: 'two novel linear tracks (2 m)'; width not stated",
+        bin_size=4.0,
+        physical_width=None,
+        units="cm",
+        name=DATASET["key"],
+        placement=f"the centrelines in cm, simplified to within"
+        f" {_SIMPLIFY_CM:g} cm ({graph.number_of_edges()} segments)",
+        placed_by="authors' centrelines",
+        tracked_point="not stated",
+        speed_thresholds=(5.0, 30.0),
+    )
+    return with_declared(rec, entries, line)
 
 
 def check_centreline(centreline: np.ndarray, on_track: np.ndarray, k: int) -> None:

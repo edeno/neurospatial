@@ -36,6 +36,14 @@ Analysis choices (``params``):
 - ``bin_size`` 0.25 cells for 2-D environments (4 bins per corridor width);
   ``graph_bin_size`` 0.5 cells along the track graph.
 - ``min_speed`` 1 cell/s: about one corridor width per second.
+
+Declared environment (``geometry["environment"]``): the track graph rebuilt
+from the repository's ``NewMaze`` (every edge, 0.5-cell bins along it) with a
+physical width chosen as one cell, the corridor pitch, so a corridor ends at
+the wall it shares with its neighbour; the paper's corridors are 1-1/8
+inches wide on a 1.5 inch grid (0.75 of a cell). 4.6 % of nose samples lie
+beyond half a cell (17.9 % beyond half the paper's corridor); the track is
+built with a placement tolerance measured from the samples.
 """
 
 from __future__ import annotations
@@ -49,6 +57,7 @@ from typing import Any, ClassVar
 import numpy as np
 from _fetch import fetch
 from _record import Range, Recording, check_expectations, validate_recording
+from _tracks import declared_geometry, with_declared
 
 DATASET = {
     "key": "rosenberg_labyrinth",
@@ -215,7 +224,7 @@ def load(cache: Path | None = None) -> Recording:
             np.asarray(traj.fr)[:, 1] / _FRAME_RATE,
         ]
     )
-    return Recording(
+    rec = Recording(
         dataset=DATASET["key"],
         session=_MOUSE,
         source=_URL,
@@ -238,6 +247,28 @@ def load(cache: Path | None = None) -> Recording:
             "geometry['graph']: rebuilt from NewMaze (MM_Maze_Utils.py) plus an entrance node",
         ),
     )
+    entries, line = declared_geometry(
+        rec.geometry["graph"],
+        rec.positions,
+        times=rec.times,
+        kind="binary-tree labyrinth, the repository's track graph",
+        source="Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py):"
+        " corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)'"
+        " on a 1.5 inch grid",
+        bin_size=rec.params["graph_bin_size"],
+        physical_width=rec.geometry["track_width"],
+        width_kind="chosen",
+        width_note="the corridor pitch, so a corridor's footprint ends at the wall"
+        " it shares with its neighbour; the paper's corridors are 1-1/8 in on a"
+        " 1.5 in grid, 0.75 cell, at which 18% of nose samples fall outside",
+        units=None,
+        name=DATASET["key"],
+        placement="the maze cells of the repository's own alignment",
+        placed_by="authors' graph",
+        tracked_point="the nose (the repository's trajectory keypoints)",
+        speed_thresholds=(1.0,),
+    )
+    return with_declared(rec, entries, line)
 
 
 def _image_y_down(rec: Recording) -> Recording:

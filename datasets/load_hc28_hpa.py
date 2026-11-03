@@ -41,6 +41,15 @@ What the loader converts:
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s, as
 for the other tracks; ``dt`` 0.25 s with alternating 60 s train/test blocks.
+
+Declared environment (``geometry["environment"]``): the W-track (Jadhav et
+al. 2016, Supplemental Experimental Procedures: about 80 x 80 cm, 7 cm wide
+sections) as a graph of three parallel arms joined by a base, its six node
+positions fitted to the samples (``_tracks.parallel_arm_candidates``,
+``fit_nodes``). The stated 7 cm is recorded as the physical width, with the
+share of the head samples beyond it; the track is built with a placement
+tolerance measured from the samples, because the LEDs on the headstage swing
+past the edge of an unwalled track. The fit is in ``conversions``.
 """
 
 from __future__ import annotations
@@ -60,6 +69,17 @@ from _record import (
     heading_vs_movement,
     validate_recording,
 )
+from _tracks import (
+    arms_text,
+    declared_geometry,
+    edge_lengths,
+    fitted_maze,
+    parallel_arm_candidates,
+    parallel_arm_lengths,
+)
+
+TRACK_WIDTH_CM = 7.0
+FIT_CAP_CM = 10.0
 
 DATASET = {
     "key": "hc28_hpa",
@@ -173,6 +193,31 @@ def load(cache: Path | None = None) -> Recording:
             ids.append(f"{t}.{u}")
             areas.append(str(getattr(np.atleast_1d(tetinfo)[t - 1], "area", "")))
     train, test = alternating_blocks(times[0], times[-1], 60.0)
+    graph = fitted_maze(parallel_arm_candidates(positions), positions, cap=FIT_CAP_CM)
+    declared, declared_line = declared_geometry(
+        graph,
+        positions,
+        times=times,
+        kind="W-track: three parallel arms joined by a base",
+        source="Jadhav et al. 2016 Supplemental Experimental Procedures: 'The"
+        " W-track had dimensions of ~80 x 80 cm', '7 cm wide metal sections'",
+        bin_size=2.5,
+        physical_width=TRACK_WIDTH_CM,
+        units="cm",
+        name=DATASET["key"],
+        placed_by="fitted to the samples",
+        stated_lengths=dict(
+            zip(
+                ("base", "arms"),
+                ((x, 80.0) for x in parallel_arm_lengths(graph)),
+                strict=True,
+            )
+        ),
+        placement=f"node positions fitted to the samples ({arms_text(graph, 'cm')};"
+        f" stated about 80 x 80 cm); edges (cm): {edge_lengths(graph)}",
+        tracked_point="the midpoint of two head-mounted LEDs (hc-28 rawpos x1, y1, x2, y2)",
+        speed_thresholds=(4.0, 30.0),
+    )
     return Recording(
         dataset=DATASET["key"],
         session="HPa day 1 epoch 4 (wtr1)",
@@ -184,7 +229,7 @@ def load(cache: Path | None = None) -> Recording:
         spike_times=tuple(trains),
         unit_ids=np.asarray(ids),
         epochs={"run": np.array([[times[0], times[-1]]])},
-        geometry={"shape": "W-track", "cm_per_pixel": cm_per_px},
+        geometry={"shape": "W-track", "cm_per_pixel": cm_per_px, **declared},
         params={
             "bin_size": 2.5,
             "min_speed": 4.0,
@@ -210,6 +255,7 @@ def load(cache: Path | None = None) -> Recording:
             f"units: {len(trains)} clustered units of day 1 epoch {EPOCH} ({n_empty} with"
             " no spikes dropped), spike times"
             f" column 0 (s); areas {sorted(set(areas))}",
+            declared_line,
         ),
     )
 

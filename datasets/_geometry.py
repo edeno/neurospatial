@@ -14,7 +14,8 @@ on them. ``graph_edge_order`` lists every edge.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import itertools
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from functools import partial
 from typing import Any
@@ -25,6 +26,10 @@ from numpy.typing import NDArray
 
 # A stated size more than this share away from the samples' own fitted size
 # is refused: the stated apparatus, the unit or the session is then wrong.
+# One tolerance for every size (lengths, diameters, sides, the samples'
+# reach past a track's end or short of a wall), shared by the arena and
+# track loaders: it allows "about" in stated sizes ("~80 x 80 cm") and a head
+# that leans past a track's end, and is not tuned to any recording.
 MAX_SIZE_RESIDUAL = 0.15
 # A stated centre farther than this share of the radius from the samples'
 # centre is refused: the positions are then in another frame or unit.
@@ -400,3 +405,315 @@ def distance_to_segments(
             np.einsum("psd,psd->ps", nearest, nearest).min(1)
         )
     return out
+
+
+def sample_speeds(
+    times: NDArray[np.float64], positions: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    """Speed at each sample, the mean of the steps to and from it (NaN where untracked).
+
+    Units are the positions' per second.
+    """
+    times = np.asarray(times, dtype=float)
+    positions = np.asarray(positions, dtype=float).reshape(len(times), -1)
+    step = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
+    padded = np.concatenate([[np.nan], step, [np.nan]])
+    pair = np.vstack([padded[:-1], padded[1:]])
+    finite = np.isfinite(pair)
+    count = finite.sum(axis=0)
+    total = np.where(finite, pair, 0.0).sum(axis=0)
+    return np.where(count > 0, total / np.maximum(count, 1), np.nan)
+
+
+def share_by_speed(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    flag: NDArray[np.bool_],
+    thresholds: Sequence[float],
+) -> dict[str, float]:
+    """Share of tracked samples with ``flag`` in each speed band.
+
+    ``flag`` has one entry per tracked sample (finite position); the bands
+    are below ``thresholds[0]``, between consecutive thresholds and above
+    the last, in the positions' units per second. Keys are ``"all"`` and
+    ``"<lo>-<hi>"``; a band with no sample is left out.
+    """
+    tracked = (
+        np.isfinite(np.asarray(positions, dtype=float))
+        .reshape(len(times), -1)
+        .all(axis=1)
+    )
+    speed = sample_speeds(times, positions)[tracked]
+    flag = np.asarray(flag, dtype=bool)
+    out = {"all": float(np.mean(flag))}
+    edges = [0.0, *thresholds, np.inf]
+    for low, high in itertools.pairwise(edges):
+        band = (speed >= low) & (speed < high)
+        if band.any():
+            out[f"{low:g}-{high:g}"] = float(np.mean(flag[band]))
+    return out
+
+
+# A declared environment's misfit, judged by kind (``judge_declared``): its
+# samples consistently to one side of a track stretch or beyond a wall, by
+# more than this many bins.
+MAX_SIDE_BIAS_BINS = 1.0
+OUTER_QUANTILE = 0.95
+# A wall with no sample within ``WALL_SUPPORT_BINS`` bins over more than this
+# share of its length: part of the apparatus the animal never came near
+# (both values set after seeing the data; their sensitivity is not measured).
+WALL_SUPPORT_BINS = 3.0
+MAX_UNSUPPORTED_SIDE = 0.15
+# Consecutive outline edges turning less than this at their shared vertex
+# are one side: a circle drawn as a polygon is one wall, a square four.
+SIDE_TURN_DEGREES = 10.0
+
+
+def judge_declared(
+    env: Any,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    physical_width: float | None = None,
+    speed_thresholds: Sequence[float] = (),
+    stated_residuals: Mapping[str, float] | None = None,
+    centre_offset: float | None = None,
+    bin_size: float | None = None,
+) -> dict[str, Any]:
+    """One verdict for any declared environment: misfit evidence, and tracking.
+
+    Misfit is judged by the environment's kind:
+
+    - a track graph (``TrackArena``): the worst straight stretch's median
+      signed lateral offset (over ``_tracks.MIN_PIECE_BINS`` bins, limit one
+      bin) and segments with no sample within a bin over more than
+      ``_tracks.MAX_UNSUPPORTED`` of their length (``_tracks.edge_fit``);
+    - an outline (a polygonal domain): per side, how far the samples nearest
+      it reach past it (their ``OUTER_QUANTILE`` signed distance, positive
+      beyond the wall; limit ``MAX_SIDE_BIAS_BINS`` bins: an outline moved off
+      its samples has them run past one wall), the samples' extent across the
+      outline (they may fall short of a wall, but not by more than
+      ``MAX_SIZE_RESIDUAL`` of the side: an outline drawn too large), and the
+      share of each side (``outline_sides``) with no sample within
+      ``WALL_SUPPORT_BINS`` bins (limit ``MAX_UNSUPPORTED_SIDE``: a wall the
+      animal never came near);
+    - a room or other box without an outline (a 3-D grid): the samples'
+      reach past its bounds is reported, not judged (a bat perching in a
+      corner of the room's frame, G-025); only stated sizes judge it;
+    - a track, also how far its samples reach past its free ends
+      (``end_overshoot``, summed over the ends, limit ``MAX_SIZE_RESIDUAL``
+      of the track's length: a track drawn too short);
+    - any: a stated length or size off by more than ``MAX_SIZE_RESIDUAL``
+      (``stated_residuals``: label -> fitted / stated - 1), and the samples'
+      centre farther from a stated centre than ``MAX_CENTRE_OFFSET`` of the
+      radius (``centre_offset``, that distance over the stated radius).
+
+    The share of tracked samples beyond the physical apparatus (outside half
+    of ``physical_width`` on a track, outside the outline or the room) is
+    reported as a
+    tracking measure, not judged: a head-mounted LED above an unwalled track
+    swings past its edge, and a 2-D camera projects a raised head outward.
+    It is split by speed (``speed_thresholds``, the positions' units per
+    second) to show whether it comes from stopped posture or movement.
+
+    ``bin_size`` is the nominal bin the environment was built with (its
+    bins along a graph's edges can be shorter); by default the median bin's
+    length, or its measure's root for a grid or outline.
+
+    Returns ``{"kind", "misfit": [reasons], "fit": {...}, "outside": share or
+    None, "outside_by_speed": {...}}``.
+    """
+    from _tracks import edge_fit, misfit_reasons, segment_distance
+
+    positions = np.asarray(positions, dtype=float)
+    tracked = np.isfinite(positions).all(axis=1)
+    samples = positions[tracked]
+    arena = env.arena
+    is_track = type(arena).__name__ == "TrackArena"
+    # A track's bin measure is a length; a grid's or outline's an area or volume.
+    if bin_size is None:
+        measure = float(np.median(np.asarray(env.bin_sizes)))
+        bin_size = measure if is_track else measure ** (1 / env.n_dims)
+    out: dict[str, Any] = {
+        "misfit": [],
+        "fit": {},
+        "outside": None,
+        "outside_by_speed": {},
+    }
+    beyond = None
+    if is_track:
+        out["kind"] = "track"
+        segments = np.asarray(arena.as_track().segments, dtype=float)
+        graph = _segments_graph(segments)
+        fit = edge_fit(graph, samples, tolerance=bin_size)
+        fit["max_edge_bias_limit"] = bin_size
+        for key, value in (stated_residuals or {}).items():
+            fit[f"size_residual_{key}"] = value
+        out["fit"] = fit
+        out["misfit"] = misfit_reasons(fit, bin_size)
+        if fit["end_overshoot"] > MAX_SIZE_RESIDUAL:
+            out["misfit"].append(
+                f"samples reach {fit['end_overshoot']:.0%} of the track's length"
+                f" past its free ends (limit {MAX_SIZE_RESIDUAL:.0%})"
+            )
+        if physical_width is not None:
+            nodes = segments.reshape(-1, segments.shape[2])
+            edges = np.arange(len(nodes)).reshape(-1, 2)
+            beyond = segment_distance(samples, nodes, edges) > physical_width / 2
+    else:
+        polygon = (
+            arena.polygonal_domain() if hasattr(arena, "polygonal_domain") else None
+        )
+        if polygon is None and getattr(env, "grid_edges", None) is not None:
+            out["kind"] = "room"
+            edges = [np.asarray(e, dtype=float) for e in env.grid_edges]
+            low = np.array([e[0] for e in edges])
+            high = np.array([e[-1] for e in edges])
+            beyond = np.asarray(env.bin_at(samples)) < 0
+            reach = np.quantile(
+                np.maximum(np.maximum(low - samples, samples - high), 0.0),
+                0.995,
+                axis=0,
+            )
+            out["fit"] = {
+                "room_size": (high - low).tolist(),
+                "samples_extent": (
+                    np.quantile(samples, 0.995, axis=0)
+                    - np.quantile(samples, 0.005, axis=0)
+                ).tolist(),
+                "max_reach_past_bounds": float(reach.max()),
+            }
+            for key, value in (stated_residuals or {}).items():
+                out["fit"][f"size_residual_{key}"] = value
+                if abs(value) > MAX_SIZE_RESIDUAL:
+                    out["misfit"].append(f"{key} {value:+.0%} of the stated")
+        elif polygon is None:
+            out["kind"] = "unknown"
+        else:
+            import shapely
+            from scipy.spatial import cKDTree
+
+            out["kind"] = "outline"
+            ring = np.asarray(polygon.exterior.coords)
+            points = shapely.points(samples)
+            beyond = ~shapely.contains_xy(polygon, samples[:, 0], samples[:, 1])
+            sides = [shapely.LineString([a, b]) for a, b in itertools.pairwise(ring)]
+            dist = np.column_stack([shapely.distance(side, points) for side in sides])
+            nearest = np.argmin(dist, axis=1)
+            signed = np.where(beyond, 1.0, -1.0) * dist[np.arange(len(dist)), nearest]
+            biases = []
+            for k in range(len(sides)):
+                mine = nearest == k
+                if mine.sum() >= 10:
+                    # How far the outermost samples reach past this wall.
+                    biases.append(float(np.quantile(signed[mine], OUTER_QUANTILE)))
+            tree = cKDTree(samples)
+            unsupported = []
+            for side in outline_sides(ring):
+                points = _points_along(side, bin_size / 2)
+                unsupported.append(
+                    float(np.mean(tree.query(points)[0] > WALL_SUPPORT_BINS * bin_size))
+                )
+            # Samples may fall short of a wall but not reach past it: the
+            # samples' extent (0.5th to 99.5th percentile) along each axis of
+            # the outline's minimum rotated rectangle, over its side.
+            with np.errstate(
+                divide="ignore", invalid="ignore"
+            ):  # GEOS on axis-aligned hulls
+                rectangle = polygon.minimum_rotated_rectangle
+            corners = np.asarray(rectangle.exterior.coords)[:3]
+            shortfall = []
+            for side in (corners[1] - corners[0], corners[2] - corners[1]):
+                length = float(np.linalg.norm(side))
+                along = samples @ (side / length)
+                low, high = np.quantile(along, [0.005, 0.995])
+                shortfall.append(float((high - low) / length - 1))
+            fit = {
+                "max_side_bias": max(biases) if biases else float("nan"),
+                "max_side_bias_limit": MAX_SIDE_BIAS_BINS * bin_size,
+                "max_side_unsupported": max(unsupported) if unsupported else 0.0,
+                "size_residual_extent": min(shortfall),
+            }
+            for key, value in (stated_residuals or {}).items():
+                fit[f"size_residual_{key}"] = value
+            out["fit"] = fit
+            if fit["size_residual_extent"] < -MAX_SIZE_RESIDUAL:
+                out["misfit"].append(
+                    f"samples span {fit['size_residual_extent']:+.0%} of the"
+                    f" outline's side (limit -{MAX_SIZE_RESIDUAL:.0%})"
+                )
+            if fit["max_side_bias"] > fit["max_side_bias_limit"]:
+                out["misfit"].append(
+                    f"samples reach {fit['max_side_bias']:.3g} beyond one side of the"
+                    f" outline (limit {fit['max_side_bias_limit']:.3g})"
+                )
+            if fit["max_side_unsupported"] > MAX_UNSUPPORTED_SIDE:
+                out["misfit"].append(
+                    f"{fit['max_side_unsupported']:.0%} of a side has no sample within"
+                    f" {WALL_SUPPORT_BINS:g} bins (limit {MAX_UNSUPPORTED_SIDE:.0%})"
+                )
+            for key, value in (stated_residuals or {}).items():
+                if abs(value) > MAX_SIZE_RESIDUAL:
+                    out["misfit"].append(f"{key} {value:+.0%} of the stated")
+    if centre_offset is not None:
+        out["fit"]["centre_offset_share"] = centre_offset
+        if centre_offset > MAX_CENTRE_OFFSET:
+            out["misfit"].append(
+                f"samples' centre {centre_offset:.0%} of the radius from the stated"
+                f" centre (limit {MAX_CENTRE_OFFSET:.0%})"
+            )
+    if beyond is not None:
+        out["outside"] = float(np.mean(beyond))
+        out["outside_by_speed"] = share_by_speed(
+            times, positions, beyond, speed_thresholds
+        )
+    return out
+
+
+def outline_sides(ring: NDArray[np.float64]) -> list[NDArray[np.float64]]:
+    """An outline's sides: runs of edges turning less than ``SIDE_TURN_DEGREES``.
+
+    ``ring`` is the closed exterior, shape (n_vertices + 1, 2). Each side is
+    its vertices in order, shape (n_side_vertices, 2); a ring with no corner
+    (a circle drawn as a polygon) is one side.
+    """
+    vertices = np.asarray(ring, dtype=float)[:-1]
+    step = np.roll(vertices, -1, axis=0) - vertices
+    heading = np.arctan2(step[:, 1], step[:, 0])
+    # Turn at vertex k, between the edge ending there and the edge leaving it.
+    turn = np.abs(np.angle(np.exp(1j * (heading - np.roll(heading, 1)))))
+    corners = np.flatnonzero(turn >= np.radians(SIDE_TURN_DEGREES))
+    if not len(corners):
+        return [np.vstack([vertices, vertices[:1]])]
+    sides = []
+    for start, stop in zip(corners, np.roll(corners, -1), strict=True):
+        index = np.arange(start, stop + (len(vertices) if stop <= start else 0) + 1)
+        sides.append(vertices[index % len(vertices)])
+    return sides
+
+
+def _points_along(polyline: NDArray[np.float64], step: float) -> NDArray[np.float64]:
+    """Points along ``polyline`` (shape (n, 2)) at most ``step`` apart, ends included."""
+    pieces = []
+    for a, b in itertools.pairwise(polyline):
+        n = max(int(np.ceil(np.linalg.norm(b - a) / step)), 1)
+        pieces.append(a + np.linspace(0, 1, n, endpoint=False)[:, None] * (b - a))
+    return np.vstack([*pieces, polyline[-1:]])
+
+
+def _segments_graph(segments: NDArray[np.float64]) -> Any:
+    """A graph of the segments, joining endpoints that coincide."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    names: dict[tuple[float, ...], int] = {}
+    for a, b in segments:
+        ends = []
+        for point in (a, b):
+            key = tuple(np.round(point, 9))
+            if key not in names:
+                names[key] = len(names)
+                graph.add_node(names[key], pos=tuple(float(v) for v in point))
+            ends.append(names[key])
+        graph.add_edge(*ends)
+    return graph

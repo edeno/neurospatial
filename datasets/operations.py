@@ -262,9 +262,16 @@ def _one_dimensional(rec: Recording) -> bool:
     return rec.positions is not None and rec.positions.shape[1] == 1
 
 
+def _on_track(rec: Recording, cache: dict[str, Any]) -> bool:
+    """Whether the analysis environment is a track graph (positions along a track)."""
+    return bool(_env(rec, cache).is_linearized_track)
+
+
 def grid_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
     if _one_dimensional(rec):
         return Outcome("n/a", note="grid score needs 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome("n/a", note="grid score needs a 2-D area, not a track graph")
     scores = _rates(rec, cache).grid_scores().scores
     return Outcome("ok", _finite_stats(scores))
 
@@ -272,6 +279,8 @@ def grid_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
 def border_scores(rec: Recording, cache: dict[str, Any]) -> Outcome:
     if _one_dimensional(rec):
         return Outcome("n/a", note="border score needs 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome("n/a", note="border score needs a 2-D area, not a track graph")
     scores = _rates(rec, cache).border_scores().scores
     return Outcome("ok", _finite_stats(scores))
 
@@ -300,15 +309,16 @@ def hd_tuning(rec: Recording, cache: dict[str, Any]) -> Outcome:
 
 def chance_errors(
     env: Any, actual: np.ndarray, *, seed: int
-) -> tuple[np.ndarray, float]:
+) -> tuple[np.ndarray, float, float]:
     """Chance decoding errors: each true position against a shuffled other one.
 
-    The true positions at the decoded times are permuted (seeded) within
-    each connected part of the environment's bin graph, and each pair's
-    distance is measured as ``error_against`` measures by default
-    (geodesic, along the bin graph). A permutation across parts would put
-    pairs an infinite path apart; their share under one global permutation
-    is returned alongside.
+    True positions the environment cannot place (``bin_at`` -1, outside a
+    declared track) are left out, and their share is returned. The others
+    are permuted (seeded) within each connected part of the environment's
+    bin graph, and each pair's distance is measured as ``error_against``
+    measures by default (geodesic, along the bin graph). A permutation
+    across parts would put pairs an infinite path apart; their share under
+    one global permutation of the placed positions is returned alongside.
 
     Parameters
     ----------
@@ -319,10 +329,12 @@ def chance_errors(
 
     Returns
     -------
-    errors : ndarray, shape (n,)
-        Geodesic distance of each within-part pair.
+    errors : ndarray, shape (n_placed,)
+        Geodesic distance of each within-part pair of placed positions.
     frac_disconnected : float
-        Share of pairs in different parts under a global permutation.
+        Share of placed pairs in different parts under a global permutation.
+    frac_outside : float
+        Share of ``actual`` the environment cannot place.
     """
     import networkx as nx
 
@@ -333,14 +345,18 @@ def chance_errors(
     for label, part in enumerate(nx.connected_components(env.connectivity)):
         part_of_bin[list(part)] = label
     bins = np.asarray(env.bin_at(actual))
-    part = np.where(bins >= 0, part_of_bin[np.clip(bins, 0, None)], -1)
-    frac_disconnected = float(np.mean(part != part[rng.permutation(len(part))]))
+    placed = bins >= 0
+    frac_outside = float(np.mean(~placed)) if len(bins) else 0.0
+    actual, part = actual[placed], part_of_bin[bins[placed]]
+    frac_disconnected = (
+        float(np.mean(part != part[rng.permutation(len(part))])) if len(part) else 0.0
+    )
     shuffled = actual.copy()
     for label in np.unique(part):
         members = np.flatnonzero(part == label)
         shuffled[members] = actual[members[rng.permutation(len(members))]]
     errors = decoding_error(env, shuffled, actual, metric="geodesic")
-    return np.asarray(errors, dtype=float), frac_disconnected
+    return np.asarray(errors, dtype=float), frac_disconnected, frac_outside
 
 
 def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
@@ -365,19 +381,29 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
             for column in np.asarray(rec.positions).T
         ]
     )
-    chance, disconnected = chance_errors(
-        result.env, actual[np.isfinite(actual).all(axis=1)], seed=0
-    )
-    return Outcome(
-        "ok",
-        {
-            "median_error": float(np.nanmedian(error)),
-            "chance_median_error": float(np.nanmedian(chance)),
-            "chance_frac_disconnected": disconnected,
-            "units": str(rec.position_units),
-            "n_time_bins": int(result.n_time_bins),
-        },
-    )
+    finite = np.isfinite(actual).all(axis=1)
+    chance, disconnected, outside = chance_errors(result.env, actual[finite], seed=0)
+    summary: dict[str, float | int | str] = {
+        "median_error": float(np.nanmedian(error)),
+        "chance_median_error": float(np.nanmedian(chance)),
+        "chance_frac_disconnected": disconnected,
+        "frac_actual_outside": outside,
+        "units": str(rec.position_units),
+        "n_time_bins": int(result.n_time_bins),
+    }
+    if "environment" in rec.geometry:
+        # The same time bins in both runs: those whose true position the
+        # declared environment places, so declared and inferred errors are
+        # medians over the same samples.
+        on_declared = np.zeros(len(actual), dtype=bool)
+        on_declared[finite] = (
+            np.asarray(rec.geometry["environment"]().bin_at(actual[finite])) >= 0
+        )
+        summary["median_error_on_declared"] = float(
+            np.nanmedian(np.asarray(error, dtype=float)[on_declared])
+        )
+        summary["n_on_declared"] = int(on_declared.sum())
+    return Outcome("ok", summary)
 
 
 def nwb_roundtrip(rec: Recording, cache: dict[str, Any]) -> Outcome:
@@ -429,9 +455,14 @@ def _graph_env(rec: Recording, cache: dict[str, Any]) -> Any | None:
     edges that close cycles, which ``Environment.from_graph`` would otherwise
     drop without a word.
     ``geometry["track_width"]``, when the source states it, is the corridor
-    width.
+    width. A declared environment that is a track graph is the graph
+    environment, whether or not the loader also gives ``geometry["graph"]``.
     """
 
+    if env_kind(rec, cache) == "declared" and _env(rec, cache).is_linearized_track:
+        # The declared track: the loader's graph with its width, or a graph it
+        # fitted to a stated layout.
+        return _env(rec, cache)
     graph = rec.geometry.get("graph")
     if graph is None:
         return None
@@ -474,19 +505,42 @@ def segment_by_velocity(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     )
 
 
+def _lap_counts(found: Any, prefix: str) -> dict[str, int]:
+    directions = list(found.intervals_table()["direction"]) if len(found.start) else []
+    return {
+        f"n_{prefix}": len(directions),
+        **{f"n_{prefix}_{d}": directions.count(d) for d in sorted(set(directions))},
+    }
+
+
 def laps(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    """Laps with ``detect_laps``' defaults and, where the loader states one, by start region.
+
+    ``geometry["lap_start_region"]`` is a ``Region`` drawn across the loop
+    (where the source puts the start, or a stated cut); the second count is
+    ``method="region"`` with it added to the environment's regions, inside
+    ``params["analysis_epochs"]``. The default count keeps its earlier call
+    (no epochs), so it stays comparable with recordings not rerun.
+    """
     from neurospatial.behavior import detect_laps
 
     env = _graph_env(rec, cache) or _env(rec, cache)
+    summary: dict[str, float | int | str] = {}
+    region = rec.geometry.get("lap_start_region")
+    if region is not None:
+        with_start = env.with_regions({**env.regions, region.name: region})
+        found = detect_laps(
+            with_start,
+            rec.times,
+            rec.positions,
+            method="region",
+            start_region=region.name,
+            epochs=rec.params.get("analysis_epochs"),
+        )
+        summary.update(_lap_counts(found, "laps_region"))
     found = detect_laps(env, rec.times, rec.positions)
-    directions = list(found.intervals_table()["direction"]) if len(found.start) else []
-    return Outcome(
-        "ok",
-        {
-            "n_laps": len(directions),
-            **{f"n_{d}": directions.count(d) for d in sorted(set(directions))},
-        },
-    )
+    summary = {**_lap_counts(found, "laps"), **summary}
+    return Outcome("ok", summary)
 
 
 def turn_sequence(rec: Recording, cache: dict[str, Any]) -> Outcome:
@@ -532,7 +586,14 @@ def replay_compare_methods(rec: Recording, cache: dict[str, Any]) -> Outcome:
         )
     dt = rec.params["replay_dt"]
     positions, status, gap, note = rec.positions, "ok", None, ""
-    if positions.shape[1] > 1 and "linearized" in rec.params:
+    declared_track = env_kind(rec, cache) == "declared" and bool(
+        _env(rec, cache).is_linearized_track
+    )
+    if declared_track:
+        # The declared track graph gives the position along the track.
+        env = _env(rec, cache)
+        note = "decoded on the declared track graph"
+    elif positions.shape[1] > 1 and "linearized" in rec.params:
         # Replay scores need a position along a track; a track recorded in 2-D
         # is decoded on the file's own linearized coordinate instead.
         from neurospatial import Environment
@@ -871,6 +932,10 @@ def egocentric_boundary(rec: Recording, cache: dict[str, Any]) -> Outcome:
 
     if rec.positions.shape[1] != 2:
         return Outcome("n/a", note="egocentric boundary maps need 2-D positions")
+    if _on_track(rec, cache):
+        return Outcome(
+            "n/a", note="egocentric boundary maps need a 2-D area, not a track graph"
+        )
     rates = compute_boundary_vector_rates(
         _env(rec, cache),
         list(rec.spike_times or ()),
