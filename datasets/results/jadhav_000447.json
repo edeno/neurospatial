@@ -1,11 +1,13 @@
 {
   "dataset": "jadhav_000447",
-  "session": "JDS-NFN-AM2",
+  "session": "JDS-NFN-AM2 novel W-track",
   "source": "https://dandiarchive.org/dandiset/000447/0.250724.2224 sub-JDS-NFN-AM2/sub-JDS-NFN-AM2_behavior+ecephys.nwb (asset b048bd0a-48a4-4d19-ad96-fd879666bca5)",
   "license": "CC-BY-4.0",
   "conversions": [
     "positions: Position/SpatialSeries columns 0, 1 (cm); range checked: 14.8 to 130.9 by 0.1 to 106.2 cm (largest span 116.1, expected 80-200); column 2 is speed in cm/s (median ratio 0.57 to the speed from x, y while moving, r = 0.71), dropped",
-    "epochs: trials table rows as trials, split by trajectory_type (1 inbound, 0 outbound); 'epoch intervals' as run"
+    "epochs: trials table rows as trials, split by trajectory_type (1 inbound, 0 outbound); 'epoch intervals' as run",
+    "maze: the novel W-track, run epochs [1, 3]; positions outside them -> NaN (67.7% of samples kept); 55 of 104 trajectories inside them",
+    "environment: declared W-track: three parallel arms joined by a base (Tang, Shin & Jadhav 2023 STAR Methods: 'the W-maze (~80 x 80 cm with ~7-cm wide tracks)'); track width 7 cm (stated); placement: node positions fitted to this maze's samples (fitted base 92.6 cm, arms 84.8-101.4 cm; stated about 80 x 80 cm); edges (cm): base_0-base_1 49.6; base_0-arm_0 101.4; base_1-base_2 42.9; base_1-arm_1 84.8; base_2-arm_2 92.3; fit: samples a median 2.12 cm from the track (95th percentile 12.02), track length 371.1 cm, 64.1% of samples within half the track width"
   ],
   "expectations": [
     {
@@ -25,13 +27,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "5a814f34e6bc76b02adf2a7749506ef330b074b9"
+    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
   },
   "load_warnings": [
     {
@@ -40,113 +42,135 @@
       "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
       "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
       "count": 1
+    },
+    {
+      "category": "RuntimeWarning",
+      "origin": "third-party",
+      "template": "invalid value encountered in oriented_envelope",
+      "example": "invalid value encountered in oriented_envelope",
+      "count": 1
     }
   ],
   "operations": {
     "env.from_samples": {
       "status": "ok",
       "summary": {
-        "n_bins": 1465,
+        "n_bins": 1172,
         "n_dims": 2,
-        "max_extent": 117.49999999999999
+        "max_extent": 110.0
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.269,
-      "peak_mb": 6.4
+      "seconds": 0.12,
+      "peak_mb": 6.1
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 1242.830400000019,
-        "frac_bins_visited": 0.9979522184300341,
-        "median_s_per_visited_bin": 0.5985166666650912,
-        "max_s": 9.122199999997065
+        "total_s": 440.52166666666926,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 2.068599999999151,
+        "max_s": 19.333333333328937
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.049,
-      "peak_mb": 10.7
+      "seconds": 0.076,
+      "peak_mb": 9.8
+    },
+    "env.declared": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 150,
+        "n_dims": 2,
+        "max_extent": 99.00402543859799,
+        "frac_samples_outside": 0.35854099085815394
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.029,
+      "peak_mb": 5.9
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 57,
-        "frac_nan_bins": 0.0020477815699658703,
-        "median_peak_hz": 10.025152311907847,
-        "median_mean_hz": 1.3431464932154913
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 7.31844741587034,
+        "median_mean_hz": 1.3828338447156865
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.611,
-      "peak_mb": 56.7
+      "seconds": 0.142,
+      "peak_mb": 12.9
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.5939733881139898,
-        "bits_per_spike_max": 1.8841960074698527,
+        "bits_per_spike_median": 0.5467958918213056,
+        "bits_per_spike_max": 2.095197537008976,
         "bits_per_spike_n_finite": 57
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
-      "peak_mb": 5.6
+      "seconds": 0.001,
+      "peak_mb": 0.6
     },
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.40109704244757727,
-        "median_shifted_bits_per_spike": 0.4305498726430993,
-        "frac_above_every_shift": 0.09090909090909091,
-        "n_units": 11,
+        "median_bits_per_spike": 0.4760435179942872,
+        "median_shifted_bits_per_spike": 0.3400321551318488,
+        "frac_above_every_shift": 0.1,
+        "n_units": 10,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.406,
-      "peak_mb": 14.8
+      "seconds": 0.505,
+      "peak_mb": 15.7
     },
     "cells.place_screen": {
       "status": "ok",
       "summary": {
-        "n_place_screen": 31,
+        "n_place_screen": 30,
         "n_units": 57
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.068,
-      "peak_mb": 88.0
+      "seconds": 0.004,
+      "peak_mb": 1.0
     },
     "cells.grid_score": {
-      "status": "ok",
-      "summary": {
-        "median": -0.349465376478982,
-        "max": 0.2148566809306265,
-        "n_finite": 50
-      },
-      "note": "",
+      "status": "n/a",
+      "summary": {},
+      "note": "grid score needs a 2-D area, not a track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.418,
-      "peak_mb": 11.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "cells.border_score": {
-      "status": "error",
+      "status": "n/a",
       "summary": {},
-      "note": "NotImplementedError: Physical boundaries are unknown: this environment's outline was inferred from positions, bins or a mask, not declared as a wall or drop edge, and it has no named walls. Declare what the outline is: Environment.from_polygon(outline, bin_size) for a walled arena, or arena=OpenArena(outline, outline='drop') for an elevated track or platform (MaskArena(..., outline=...) for a mask). Boundary-based rate maps also need bin support at the measured boundaries; attaching an arena does not extend bins or supply missing observations. Alternatively, explicitly choose boundary_source='analysis' to use retained bin edges as an approximation.",
+      "note": "border score needs a 2-D area, not a track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
-      "peak_mb": 1.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings",
+      "warnings": []
+    },
+    "rates.egocentric_boundary": {
       "status": "n/a",
       "note": "needs headings",
       "warnings": []
@@ -154,32 +178,44 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 36.03553390593274,
-        "chance_median_error": 57.26440980478542,
+        "median_error": 9.965218086057401,
+        "chance_median_error": 112.73088479390822,
+        "chance_frac_disconnected": 0.4734959349593496,
         "units": "cm",
-        "n_time_bins": 5100
+        "n_time_bins": 3075
       },
       "note": "",
       "gap": null,
-      "warnings": [],
-      "seconds": 0.435,
-      "peak_mb": 125.8
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "neurospatial",
+          "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "example": "decoding_error(): 601 of 3075 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
+          "count": 2
+        }
+      ],
+      "seconds": 0.202,
+      "peak_mb": 19.3
     },
     "io.nwb_roundtrip": {
       "status": "ok",
       "summary": {
-        "n_bins": 1465
+        "n_bins": 150
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.721,
-      "peak_mb": 13.4
+      "seconds": 2.214,
+      "peak_mb": 2.5
     },
     "env.from_graph": {
-      "status": "n/a",
-      "summary": {},
-      "note": "geometry has no graph",
+      "status": "ok",
+      "summary": {
+        "n_bins": 150,
+        "n_bin_edges": 150
+      },
+      "note": "",
       "gap": null,
       "warnings": [],
       "seconds": 0.0,
@@ -188,35 +224,35 @@
     "behavior.segment_by_velocity": {
       "status": "ok",
       "summary": {
-        "n_segments": 535,
-        "running_s": 1264.3808666666719
+        "n_segments": 453,
+        "running_s": 926.7388000000024
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.04,
-      "peak_mb": 10.7
+      "seconds": 0.034,
+      "peak_mb": 10.5
     },
     "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.034,
+      "peak_mb": 5.2
+    },
+    "behavior.turn_sequence": {
       "status": "ok",
       "summary": {
-        "n_laps": 1,
-        "n_clockwise": 1
+        "n_turns": 226,
+        "frac_left": 0.584070796460177
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.053,
-      "peak_mb": 10.0
-    },
-    "behavior.turn_sequence": {
-      "status": "n/a",
-      "summary": {},
-      "note": "geometry has no graph",
-      "gap": null,
-      "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 0.047,
+      "peak_mb": 5.2
     },
     "replay.compare_methods": {
       "status": "n/a",
@@ -245,8 +281,25 @@
           "count": 1
         }
       ],
-      "seconds": 10.457,
-      "peak_mb": 31.4
+      "seconds": 11.62,
+      "peak_mb": 31.3
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the file has no PoseEstimation",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "DeprecationWarning",
+          "origin": "third-party",
+          "template": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "example": "The 'manufacturer' field is deprecated. Instead, use DeviceModel.manufacturer and link to that DeviceModel from this Device.",
+          "count": 1
+        }
+      ],
+      "seconds": 3.686,
+      "peak_mb": 27.2
     },
     "imaging.rates": {
       "status": "n/a",
@@ -259,22 +312,117 @@
       "warnings": []
     }
   },
+  "env_kind": "declared",
   "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 1172,
+        "n_dims": 2,
+        "max_extent": 110.0
+      },
+      "hazard_summary": {
+        "n_bins": 1185,
+        "n_dims": 2,
+        "max_extent": 125.0
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 440.52166666666926,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 2.068599999999151,
+        "max_s": 19.333333333328937
+      },
+      "hazard_summary": {
+        "total_s": 440.52166666666926,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 2.068599999999151,
+        "max_s": 19.333333333328937
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "rates.spatial",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_units": 57,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 7.31844741587034,
+        "median_mean_hz": 1.3828338447156865
+      },
+      "hazard_summary": {
+        "n_units": 57,
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 7.31844741587034,
+        "median_mean_hz": 1.3828338447156865
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 453,
+        "running_s": 926.7388000000024
+      },
+      "hazard_summary": {
+        "n_segments": 453,
+        "running_s": 926.7994000000026
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_turns": 226,
+        "frac_left": 0.584070796460177
+      },
+      "hazard_summary": {
+        "n_turns": 226,
+        "frac_left": 0.584070796460177
+      }
+    },
     {
       "hazard": "spike_times_in_ms",
       "op": "rates.spatial",
       "response": "warned",
-      "message": "All 57 units are silent from 10745.8 s to 11691.4 s (946 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n322424/322424 spike_times (100%) across all neurons fell outside the position time window [2322.5, 11691.4]; spike_times.min()=2.32251e+06 spike_times.max()=1.16914e+07. The spike times span 9.36884e+06 and reach 1.16914e+07, about 1000 times the 9368.85 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
+      "message": "All 57 units are silent from 10745.8 s to 11691.3 s (946 s) while position is tracked. If the electrophysiology was not recording then, pass spike_window=(start, stop) so that time is excluded from occupancy.\n322424/322424 spike_times (100%) across all neurons fell outside the position time window [2322.5, 11691.4]; spike_times.min()=2.32251e+06 spike_times.max()=1.16914e+07. The spike times span 9.36884e+06 and reach 1.16914e+07, about 1000 times the 9368.85 s of times: if spike_times are in milliseconds, divide them by 1000. Check that spike_times and times share units (both seconds). Dropped spikes do not contribute. Set warn_on_drop=False to suppress this warning.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 57,
-        "frac_nan_bins": 0.0020477815699658703,
-        "median_peak_hz": 10.025152311907847,
-        "median_mean_hz": 1.3431464932154913
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 7.31844741587034,
+        "median_mean_hz": 1.3828338447156865
       },
       "hazard_summary": {
         "n_units": 57,
-        "frac_nan_bins": 0.0020477815699658703,
+        "frac_nan_bins": 0.0,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
       }
@@ -283,12 +431,12 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "bin_size=2.5 is at least the per-axis data extent [1.160716021351598, 1.0613520130309406] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0232143 (in the same units as positions), or choose a size below the data extent",
+      "message": "bin_size=2.5 is at least the per-axis data extent [1.0885758008927777, 1.031340053361222] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0217715 (in the same units as positions), or choose a size below the data extent",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_bins": 1465,
+        "n_bins": 1172,
         "n_dims": 2,
-        "max_extent": 117.49999999999999
+        "max_extent": 110.0
       },
       "hazard_summary": {
         "n_bins": 4,
@@ -300,13 +448,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bin. Fix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 1242.830400000019,
-        "frac_bins_visited": 0.9979522184300341,
-        "median_s_per_visited_bin": 0.5985166666650912,
-        "max_s": 9.122199999997065
+        "total_s": 440.52166666666926,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 2.068599999999151,
+        "max_s": 19.333333333328937
       },
       "hazard_summary": null
     },
@@ -314,13 +462,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty. Fix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty. Fix: pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second; check that epochs overlap `times` (same clock, seconds).",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 57,
-        "frac_nan_bins": 0.0020477815699658703,
-        "median_peak_hz": 10.025152311907847,
-        "median_mean_hz": 1.3431464932154913
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 7.31844741587034,
+        "median_mean_hz": 1.3828338447156865
       },
       "hazard_summary": null
     },
@@ -331,8 +479,8 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_segments": 535,
-        "running_s": 1264.3808666666719
+        "n_segments": 453,
+        "running_s": 926.7388000000024
       },
       "hazard_summary": {
         "n_segments": 0,
@@ -342,37 +490,40 @@
     {
       "hazard": "length_unit_off_by_100",
       "op": "behavior.laps",
-      "response": "raised",
-      "message": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
-      "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 1,
-        "n_clockwise": 1
-      },
-      "hazard_summary": null
-    },
-    {
-      "hazard": "length_unit_off_by_100",
-      "op": "behavior.turn_sequence",
       "response": "not probed",
-      "message": "the clean run was n/a",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
       "clean_summary": {},
       "hazard_summary": null
     },
     {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_turns": 226,
+        "frac_left": 0.584070796460177
+      },
+      "hazard_summary": {
+        "n_turns": 0,
+        "frac_left": NaN
+      }
+    },
+    {
       "hazard": "speed_read_as_a_dimension",
       "op": "env.from_samples",
       "response": "warned",
-      "message": "Creating large grid with shape (48, 44, 118) (249,216 bins). Estimated memory usage: 338.4 MB.\nWhy: allocating this grid may consume substantial memory.\nFix: increase bin_size; this grid has 249,216 bins. For example, use bin_size=2.0 in the same units as positions, and check that positions has shape (n_samples, n_dims)",
+      "message": "Creating large grid with shape (45, 43, 118) (228,330 bins). Estimated memory usage: 310.1 MB.\nWhy: allocating this grid may consume substantial memory.\nFix: increase bin_size; this grid has 228,330 bins. For example, use bin_size=2.0 in the same units as positions, and check that positions has shape (n_samples, n_dims)",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_bins": 1465,
+        "n_bins": 1172,
         "n_dims": 2,
-        "max_extent": 117.49999999999999
+        "max_extent": 110.0
       },
       "hazard_summary": {
-        "n_bins": 18375,
+        "n_bins": 13206,
         "n_dims": 3,
         "max_extent": 292.5
       }
@@ -380,40 +531,30 @@
     {
       "hazard": "speed_read_as_a_dimension",
       "op": "env.occupancy",
-      "response": "silent",
-      "message": "",
+      "response": "raised",
+      "message": "ValueError: Environment.occupancy got positions with shape (80087, 3), but this environment's bins are 2-D, so positions needs shape (n_positions, 2).\nWhy: each row is one position, with one column per coordinate of env.bin_centers.\nFix: pass an array of shape (n_positions, 2), one row per position",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 1242.830400000019,
-        "frac_bins_visited": 0.9979522184300341,
-        "median_s_per_visited_bin": 0.5985166666650912,
-        "max_s": 9.122199999997065
+        "total_s": 440.52166666666926,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 2.068599999999151,
+        "max_s": 19.333333333328937
       },
-      "hazard_summary": {
-        "total_s": 2006.9330666666974,
-        "frac_bins_visited": 0.9979319727891156,
-        "median_s_per_visited_bin": 0.04016666666666424,
-        "max_s": 61.703666666661775
-      }
+      "hazard_summary": null
     },
     {
       "hazard": "speed_read_as_a_dimension",
       "op": "rates.spatial",
-      "response": "silent",
-      "message": "",
+      "response": "raised",
+      "message": "InputError: Invalid times/positions passed to compute_spatial_rates():\n- Got positions with shape (80087, 3), but this environment's bins are 2-D, so positions needs shape (n_positions, 2).\nWhy: each interval [times[k], times[k+1]) is weighted by its duration, so mis-shaped, unsorted or repeated timestamps give wrong numbers.\nFix: pass times as a sorted 1-D array of numeric timestamps in seconds, without repeats, with one numeric positions row per timestamp.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 57,
-        "frac_nan_bins": 0.0020477815699658703,
-        "median_peak_hz": 10.025152311907847,
-        "median_mean_hz": 1.3431464932154913
+        "frac_nan_bins": 0.0,
+        "median_peak_hz": 7.31844741587034,
+        "median_mean_hz": 1.3828338447156865
       },
-      "hazard_summary": {
-        "n_units": 57,
-        "frac_nan_bins": 0.002068027210884354,
-        "median_peak_hz": 100.50251256277917,
-        "median_mean_hz": 1.3300117206436268
-      }
+      "hazard_summary": null
     },
     {
       "hazard": "speed_read_as_a_dimension",
@@ -422,33 +563,33 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_segments": 535,
-        "running_s": 1264.3808666666719
+        "n_segments": 453,
+        "running_s": 926.7388000000024
       },
       "hazard_summary": {
-        "n_segments": 686,
-        "running_s": 1830.295899999995
+        "n_segments": 465,
+        "running_s": 1331.0192666666635
       }
     },
     {
       "hazard": "speed_read_as_a_dimension",
       "op": "behavior.laps",
-      "response": "raised",
-      "message": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "response": "not probed",
+      "message": "the clean run was error",
       "repeated_clean_warnings": 0,
-      "clean_summary": {
-        "n_laps": 1,
-        "n_clockwise": 1
-      },
+      "clean_summary": {},
       "hazard_summary": null
     },
     {
       "hazard": "speed_read_as_a_dimension",
       "op": "behavior.turn_sequence",
-      "response": "not probed",
-      "message": "the clean run was n/a",
+      "response": "raised",
+      "message": "ValueError: graph_turn_sequence(): positions have 3 coordinate(s) per sample; the environment has 2.",
       "repeated_clean_warnings": 0,
-      "clean_summary": {},
+      "clean_summary": {
+        "n_turns": 226,
+        "frac_left": 0.584070796460177
+      },
       "hazard_summary": null
     }
   ]

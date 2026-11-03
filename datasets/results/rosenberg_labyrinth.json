@@ -7,7 +7,8 @@
     "positions: maze cells = 15 * nose keypoint - 0.5 (the repository's alignment)",
     "positions: y flipped to point up (y = 14 - y)",
     "times: frames / 30 s; bouts concatenated",
-    "geometry['graph']: rebuilt from NewMaze (MM_Maze_Utils.py) plus an entrance node"
+    "geometry['graph']: rebuilt from NewMaze (MM_Maze_Utils.py) plus an entrance node",
+    "environment: declared binary-tree labyrinth, the repository's track graph (Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py): corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)' on a 1.5 inch grid); track width 1 units (stated); placement: the maze cells of the repository's own alignment (not fitted); fit: samples a median 0.21 units from the track (95th percentile 0.49), track length 175.0 units, 95.4% of samples within half the track width"
   ],
   "expectations": [
     {
@@ -32,13 +33,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev3926+gdb0cce880",
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "86cc76379e61efbd03439179c53989d1a066f368"
   },
   "load_warnings": [],
   "operations": {
@@ -52,22 +53,36 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.251,
-      "peak_mb": 18.3
+      "seconds": 2.566,
+      "peak_mb": 41.3
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 4807.666666666693,
-        "frac_bins_visited": 0.9744604316546762,
-        "median_s_per_visited_bin": 0.8999999999996362,
-        "max_s": 28.99999999997908
+        "total_s": 4722.000000000071,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 9.616666666664514,
+        "max_s": 133.7333333333154
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.206,
-      "peak_mb": 32.5
+      "seconds": 5.478,
+      "peak_mb": 34.9
+    },
+    "env.declared": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 350,
+        "n_dims": 2,
+        "max_extent": 14.0,
+        "frac_samples_outside": 0.04560205586076815
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 2.435,
+      "peak_mb": 36.0
     },
     "rates.spatial": {
       "status": "n/a",
@@ -104,6 +119,11 @@
       "note": "needs headings, spike_times",
       "warnings": []
     },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
     "decode.position": {
       "status": "n/a",
       "note": "needs spike_times",
@@ -123,7 +143,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.064,
+      "seconds": 0.149,
       "peak_mb": 0.8
     },
     "behavior.segment_by_velocity": {
@@ -135,8 +155,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.218,
-      "peak_mb": 16.1
+      "seconds": 3.266,
+      "peak_mb": 34.1
     },
     "behavior.laps": {
       "status": "error",
@@ -144,7 +164,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 1.449,
+      "seconds": 5.449,
       "peak_mb": 32.2
     },
     "behavior.turn_sequence": {
@@ -156,7 +176,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.014,
+      "seconds": 3.92,
       "peak_mb": 32.2
     },
     "replay.compare_methods": {
@@ -170,8 +190,17 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
-      "peak_mb": 0.0
+      "seconds": 2.982,
+      "peak_mb": 23.0
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.319,
+      "peak_mb": 3.5
     },
     "imaging.rates": {
       "status": "n/a",
@@ -184,6 +213,7 @@
       "warnings": []
     }
   },
+  "env_kind": "declared",
   "hazards": [
     {
       "hazard": "missing_positions_as_zero",
@@ -209,16 +239,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 4807.666666666693,
-        "frac_bins_visited": 0.9744604316546762,
-        "median_s_per_visited_bin": 0.8999999999996362,
-        "max_s": 28.99999999997908
+        "total_s": 4722.000000000071,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 9.616666666664514,
+        "max_s": 133.7333333333154
       },
       "hazard_summary": {
-        "total_s": 5115.26666666666,
-        "frac_bins_visited": 0.9748201438848921,
-        "median_s_per_visited_bin": 0.9000000000014552,
-        "max_s": 183.43333333327246
+        "total_s": 4953.400000000025,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 9.616666666664514,
+        "max_s": 188.09999999994488
       }
     },
     {
@@ -284,16 +314,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 4807.666666666693,
-        "frac_bins_visited": 0.9744604316546762,
-        "median_s_per_visited_bin": 0.8999999999996362,
-        "max_s": 28.99999999997908
+        "total_s": 4722.000000000071,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 9.616666666664514,
+        "max_s": 133.7333333333154
       },
       "hazard_summary": {
-        "total_s": 4807.666666666693,
-        "frac_bins_visited": 0.9744604316546762,
-        "median_s_per_visited_bin": 0.8999999999996362,
-        "max_s": 28.99999999997908
+        "total_s": 4722.000000000071,
+        "frac_bins_visited": 1.0,
+        "median_s_per_visited_bin": 9.616666666664514,
+        "max_s": 133.7333333333154
       }
     },
     {
