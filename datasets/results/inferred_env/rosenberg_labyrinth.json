@@ -1,0 +1,364 @@
+{
+  "dataset": "rosenberg_labyrinth",
+  "session": "B1",
+  "source": "https://raw.githubusercontent.com/markusmeister/Rosenberg-2021-Repository/9bac88c85a79be683d7a78ca02fdd929b200899b/outdata%20-%20tf%20files%20only/B1-tf",
+  "license": "MIT",
+  "conversions": [
+    "positions: maze cells = 15 * nose keypoint - 0.5 (the repository's alignment)",
+    "positions: y flipped to point up (y = 14 - y)",
+    "times: frames / 30 s; bouts concatenated",
+    "geometry['graph']: rebuilt from NewMaze (MM_Maze_Utils.py) plus an entrance node",
+    "environment: declared binary-tree labyrinth, the repository's track graph (Rosenberg et al. 2021 repository NewMaze (MM_Maze_Utils.py): corridors one cell apart; the paper: 'corridors (1-1/8 inches wide)' on a 1.5 inch grid); track width 1 units (stated); placement: the maze cells of the repository's own alignment (not fitted); fit: samples a median 0.21 units from the track (95th percentile 0.49), track length 175.0 units, 95.4% of samples within half the track width"
+  ],
+  "expectations": [
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": true,
+      "detail": "expected Range(low=29.9, high=30.1), got 30.000000000436557"
+    },
+    {
+      "key": "maze_has_127_nodes",
+      "passed": false,
+      "detail": "predicate"
+    },
+    {
+      "key": "maze_has_63_junctions",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "3d36167b1ba831b2e91eeaf2e9a7d70761613da2"
+  },
+  "load_warnings": [],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 1.059,
+      "peak_mb": 41.3
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 4807.666666666693,
+        "frac_bins_visited": 0.9744604316546762,
+        "median_s_per_visited_bin": 0.8999999999996362,
+        "max_s": 28.99999999997908
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.277,
+      "peak_mb": 32.5
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "rates.spatial": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.place_screen": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.grid_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.border_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_roundtrip": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "env.from_graph": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 350,
+        "n_bin_edges": 412
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.079,
+      "peak_mb": 0.8
+    },
+    "behavior.segment_by_velocity": {
+      "status": "ok",
+      "summary": {
+        "n_segments": 2637,
+        "running_s": 4959.700000000007
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.977,
+      "peak_mb": 34.1
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 2.192,
+      "peak_mb": 32.2
+    },
+    "behavior.turn_sequence": {
+      "status": "ok",
+      "summary": {
+        "n_turns": 4415,
+        "frac_left": 0.5001132502831257
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 1.594,
+      "peak_mb": 32.2
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_readers": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.749,
+      "peak_mb": 23.0
+    },
+    "io.read_pose": {
+      "status": "n/a",
+      "summary": {},
+      "note": "params has no nwb_source (not an NWB dataset)",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.087,
+      "peak_mb": 3.5
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "env_kind": "inferred",
+  "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      },
+      "hazard_summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 4807.666666666693,
+        "frac_bins_visited": 0.9744604316546762,
+        "median_s_per_visited_bin": 0.8999999999996362,
+        "max_s": 28.99999999997908
+      },
+      "hazard_summary": {
+        "total_s": 5115.26666666666,
+        "frac_bins_visited": 0.9748201438848921,
+        "median_s_per_visited_bin": 0.9000000000014552,
+        "max_s": 183.43333333327246
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 2637,
+        "running_s": 4959.700000000007
+      },
+      "hazard_summary": {
+        "n_segments": 2936,
+        "running_s": 5202.199999999965
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_turns": 4415,
+        "frac_left": 0.5001132502831257
+      },
+      "hazard_summary": {
+        "n_turns": 4604,
+        "frac_left": 0.5006516072980017
+      }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      },
+      "hazard_summary": {
+        "n_bins": 2780,
+        "n_dims": 2,
+        "max_extent": 15.0
+      }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 4807.666666666693,
+        "frac_bins_visited": 0.9744604316546762,
+        "median_s_per_visited_bin": 0.8999999999996362,
+        "max_s": 28.99999999997908
+      },
+      "hazard_summary": {
+        "total_s": 4807.666666666693,
+        "frac_bins_visited": 0.9744604316546762,
+        "median_s_per_visited_bin": 0.8999999999996362,
+        "max_s": 28.99999999997908
+      }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 2637,
+        "running_s": 4959.700000000007
+      },
+      "hazard_summary": {
+        "n_segments": 2637,
+        "running_s": 4959.700000000007
+      }
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "image_y_down",
+      "op": "behavior.turn_sequence",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_turns": 4415,
+        "frac_left": 0.5001132502831257
+      },
+      "hazard_summary": {
+        "n_turns": 4415,
+        "frac_left": 0.4998867497168743
+      }
+    }
+  ]
+}

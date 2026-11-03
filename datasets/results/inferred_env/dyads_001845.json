@@ -1,0 +1,463 @@
+{
+  "dataset": "dyads_001845",
+  "session": "FXM110-ses-15-rc100",
+  "source": "https://dandiarchive.org/dandiset/001845/0.260526.1807 sub-FXM110/sub-FXM110_ses-15-rc100_behavior.nwb (asset 65a0aa61-cda8-4353-886c-ee950558d930)",
+  "license": "CC0-1.0",
+  "conversions": [
+    "positions: read_position(position_name='processing/behavior/processed_position/head'), cm; range checked: 3.0-94.6 by 26.8-151.5 cm; 37.9% NaN, kept",
+    "processing/behavior/processed_position/tail_end labelled cm reaches [522. 908.]: pixels, not used",
+    "events: behavioral_events timestamps by name; epochs: reward_well_visits",
+    "environment: declared W-maze: three parallel arms joined by a base (Shukla et al. 2026 Methods: 'elevated W-shaped mazes (80 x 80 cm) with ~7-cm-wide track sections'); track width 7 cm (stated); placement: node positions fitted to the samples (fitted base 91.6 cm, arms 80.4-93.9 cm; stated 80 x 80 cm); edges (cm): base_0-base_1 45.0; base_0-arm_0 83.4; base_1-base_2 46.6; base_1-arm_1 80.4; base_2-arm_2 93.9; fit: samples a median 0.27 cm from the track (95th percentile 4.03), track length 349.3 cm, 93.9% of samples within half the track width"
+  ],
+  "expectations": [
+    {
+      "key": "behavior_only",
+      "passed": true,
+      "detail": "predicate"
+    },
+    {
+      "key": "n_dims",
+      "passed": true,
+      "detail": "expected 2, got 2"
+    },
+    {
+      "key": "sampling_rate_hz",
+      "passed": false,
+      "detail": "expected Range(low=29.0, high=31.0), got 28.571428571454557"
+    },
+    {
+      "key": "position_nan_fraction",
+      "passed": true,
+      "detail": "expected Range(low=0.28, high=0.4), got 0.3794716565767749"
+    },
+    {
+      "key": "centimetres",
+      "passed": true,
+      "detail": "predicate"
+    }
+  ],
+  "versions": {
+    "neurospatial": "0.6.1.dev4090+g67d0b5233",
+    "numpy": "2.3.4",
+    "scipy": "1.16.3",
+    "pynwb": "3.1.2",
+    "pynapple": "0.11.3",
+    "opexebo": "0.7.2",
+    "git_commit": "9cc1f56dd0afd9af3b172b2827939026715fb752"
+  },
+  "load_warnings": [
+    {
+      "category": "UserWarning",
+      "origin": "third-party",
+      "template": "Schema conflict(s) detected in namespace 'ndx-optogenetics': \n ndx-optogenetics defines ExcitationSource.model as a link to ExcitationSourceModel while the core schema defines it as a link to DeviceModel. ExcitationSourceModel is not a subtype of DeviceModel. \nndx-optogenetics defines OpticalFiber.model as a link to OpticalFiberModel while the core schema defines it as a link to DeviceModel. OpticalFiberModel is not a subtype of DeviceModel.  \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+      "example": "Schema conflict(s) detected in namespace 'ndx-optogenetics': \n ndx-optogenetics defines ExcitationSource.model as a link to ExcitationSourceModel while the core schema defines it as a link to DeviceModel. ExcitationSourceModel is not a subtype of DeviceModel. \nndx-optogenetics defines OpticalFiber.model as a link to OpticalFiberModel while the core schema defines it as a link to DeviceModel. OpticalFiberModel is not a subtype of DeviceModel.  \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+      "count": 1
+    },
+    {
+      "category": "UserWarning",
+      "origin": "third-party",
+      "template": "Schema conflict(s) detected in namespace 'ndx-franklab-novela': \n ndx-franklab-novela defines CameraDevice.model as an attribute (dtype: text) while the core schema defines it as a link to DeviceModel. \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+      "example": "Schema conflict(s) detected in namespace 'ndx-franklab-novela': \n ndx-franklab-novela defines CameraDevice.model as an attribute (dtype: text) while the core schema defines it as a link to DeviceModel. \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+      "count": 1
+    }
+  ],
+  "operations": {
+    "env.from_samples": {
+      "status": "ok",
+      "summary": {
+        "n_bins": 245,
+        "n_dims": 2,
+        "max_extent": 125.00000000000001
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.018,
+      "peak_mb": 0.6
+    },
+    "env.occupancy": {
+      "status": "ok",
+      "summary": {
+        "total_s": 30.57299999999998,
+        "frac_bins_visited": 0.9959183673469387,
+        "median_s_per_visited_bin": 0.06600000000003092,
+        "max_s": 1.6850000000000591
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.005,
+      "peak_mb": 0.5
+    },
+    "env.declared": {
+      "status": "n/a",
+      "summary": {},
+      "note": "the loader declares no apparatus",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "rates.spatial": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.spatial_information": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "rates.information_vs_shifts": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.place_screen": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.grid_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "cells.border_score": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "hd.tuning": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
+    "rates.egocentric_boundary": {
+      "status": "n/a",
+      "note": "needs headings, spike_times",
+      "warnings": []
+    },
+    "decode.position": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_roundtrip": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "env.from_graph": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "behavior.segment_by_velocity": {
+      "status": "ok",
+      "summary": {
+        "n_segments": 10,
+        "running_s": 30.866999999999962
+      },
+      "note": "",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.004,
+      "peak_mb": 0.6
+    },
+    "behavior.laps": {
+      "status": "error",
+      "summary": {},
+      "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.006,
+      "peak_mb": 3.4
+    },
+    "behavior.turn_sequence": {
+      "status": "n/a",
+      "summary": {},
+      "note": "geometry has no graph",
+      "gap": null,
+      "warnings": [],
+      "seconds": 0.0,
+      "peak_mb": 0.0
+    },
+    "replay.compare_methods": {
+      "status": "n/a",
+      "note": "needs spike_times",
+      "warnings": []
+    },
+    "io.nwb_readers": {
+      "status": "error",
+      "summary": {
+        "position": "raised ValueError",
+        "head_direction": "absent (file has none)",
+        "units": "absent (file has none)"
+      },
+      "note": "position: ValueError: Found 6 Position series candidates: ['processing/behavior/processed_position/body', 'processing/behavior/processed_position/head', 'processing/behavior/processed_position/neck', 'processing/behavior/processed_position/nose', 'processing/behavior/processed_position/tail_base', 'processing/behavior/processed_position/tail_end'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/processed_position/body'.",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "third-party",
+          "template": "Schema conflict(s) detected in namespace 'ndx-optogenetics': \n ndx-optogenetics defines ExcitationSource.model as a link to ExcitationSourceModel while the core schema defines it as a link to DeviceModel. ExcitationSourceModel is not a subtype of DeviceModel. \nndx-optogenetics defines OpticalFiber.model as a link to OpticalFiberModel while the core schema defines it as a link to DeviceModel. OpticalFiberModel is not a subtype of DeviceModel.  \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+          "example": "Schema conflict(s) detected in namespace 'ndx-optogenetics': \n ndx-optogenetics defines ExcitationSource.model as a link to ExcitationSourceModel while the core schema defines it as a link to DeviceModel. ExcitationSourceModel is not a subtype of DeviceModel. \nndx-optogenetics defines OpticalFiber.model as a link to OpticalFiberModel while the core schema defines it as a link to DeviceModel. OpticalFiberModel is not a subtype of DeviceModel.  \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+          "count": 1
+        },
+        {
+          "category": "UserWarning",
+          "origin": "third-party",
+          "template": "Schema conflict(s) detected in namespace 'ndx-franklab-novela': \n ndx-franklab-novela defines CameraDevice.model as an attribute (dtype: text) while the core schema defines it as a link to DeviceModel. \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+          "example": "Schema conflict(s) detected in namespace 'ndx-franklab-novela': \n ndx-franklab-novela defines CameraDevice.model as an attribute (dtype: text) while the core schema defines it as a link to DeviceModel. \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+          "count": 1
+        }
+      ],
+      "seconds": 1.94,
+      "peak_mb": 5.0
+    },
+    "io.read_pose": {
+      "status": "error",
+      "summary": {},
+      "note": "ValueError: Pose bodypart 'PoseEstimationSeriesBody' timestamps must be finite and strictly increasing.\nFix: correct the source time axis before reading.",
+      "gap": null,
+      "warnings": [
+        {
+          "category": "UserWarning",
+          "origin": "third-party",
+          "template": "Schema conflict(s) detected in namespace 'ndx-optogenetics': \n ndx-optogenetics defines ExcitationSource.model as a link to ExcitationSourceModel while the core schema defines it as a link to DeviceModel. ExcitationSourceModel is not a subtype of DeviceModel. \nndx-optogenetics defines OpticalFiber.model as a link to OpticalFiberModel while the core schema defines it as a link to DeviceModel. OpticalFiberModel is not a subtype of DeviceModel.  \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+          "example": "Schema conflict(s) detected in namespace 'ndx-optogenetics': \n ndx-optogenetics defines ExcitationSource.model as a link to ExcitationSourceModel while the core schema defines it as a link to DeviceModel. ExcitationSourceModel is not a subtype of DeviceModel. \nndx-optogenetics defines OpticalFiber.model as a link to OpticalFiberModel while the core schema defines it as a link to DeviceModel. OpticalFiberModel is not a subtype of DeviceModel.  \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+          "count": 1
+        },
+        {
+          "category": "UserWarning",
+          "origin": "third-party",
+          "template": "Schema conflict(s) detected in namespace 'ndx-franklab-novela': \n ndx-franklab-novela defines CameraDevice.model as an attribute (dtype: text) while the core schema defines it as a link to DeviceModel. \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+          "example": "Schema conflict(s) detected in namespace 'ndx-franklab-novela': \n ndx-franklab-novela defines CameraDevice.model as an attribute (dtype: text) while the core schema defines it as a link to DeviceModel. \nThis may cause compatibility issues. Please update the extension version if possible or install an older version of the core schema that is compatible.",
+          "count": 1
+        }
+      ],
+      "seconds": 1.8,
+      "peak_mb": 5.1
+    },
+    "imaging.rates": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    },
+    "imaging.rates_workaround": {
+      "status": "n/a",
+      "note": "needs activity",
+      "warnings": []
+    }
+  },
+  "env_kind": "inferred",
+  "hazards": [
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 245,
+        "n_dims": 2,
+        "max_extent": 125.00000000000001
+      },
+      "hazard_summary": {
+        "n_bins": 248,
+        "n_dims": 2,
+        "max_extent": 152.5
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 30.57299999999998,
+        "frac_bins_visited": 0.9959183673469387,
+        "median_s_per_visited_bin": 0.06600000000003092,
+        "max_s": 1.6850000000000591
+      },
+      "hazard_summary": {
+        "total_s": 31.319999999999823,
+        "frac_bins_visited": 0.9919354838709677,
+        "median_s_per_visited_bin": 0.0654999999999859,
+        "max_s": 3.812999999999647
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 10,
+        "running_s": 30.866999999999962
+      },
+      "hazard_summary": {
+        "n_segments": 14,
+        "running_s": 32.009000000000015
+      }
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "missing_positions_as_zero",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.from_samples",
+      "response": "warned",
+      "message": "bin_size=2.5 is at least the per-axis data extent [0.9163053414026172, 1.2467127629453743] in every dimension.\nWhy: this produces very few bins and may indicate a units mismatch.\nFix: use bin_size=0.0249343 (in the same units as positions), or choose a size below the data extent",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 245,
+        "n_dims": 2,
+        "max_extent": 125.00000000000001
+      },
+      "hazard_summary": {
+        "n_bins": 4,
+        "n_dims": 2,
+        "max_extent": 2.5
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "env.occupancy",
+      "response": "raised",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin. Fix: 147 of 3633 sampling intervals lie in gaps across missing samples (non-finite rows) longer than max_gap=1.0 s; raise max_gap above the longest gap that should be bridged (the longest is 2.89 s), or pass max_gap=None to disable gap gating; check that min_speed=4.0 is in the positions' length units per second.",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 30.57299999999998,
+        "frac_bins_visited": 0.9959183673469387,
+        "median_s_per_visited_bin": 0.06600000000003092,
+        "max_s": 1.6850000000000591
+      },
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 10,
+        "running_s": 30.866999999999962
+      },
+      "hazard_summary": {
+        "n_segments": 0,
+        "running_s": 0.0
+      }
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "length_unit_off_by_100",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "unconverted_keypoint",
+      "op": "env.from_samples",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_bins": 245,
+        "n_dims": 2,
+        "max_extent": 125.00000000000001
+      },
+      "hazard_summary": {
+        "n_bins": 1062,
+        "n_dims": 2,
+        "max_extent": 730.0
+      }
+    },
+    {
+      "hazard": "unconverted_keypoint",
+      "op": "env.occupancy",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "total_s": 30.57299999999998,
+        "frac_bins_visited": 0.9959183673469387,
+        "median_s_per_visited_bin": 0.06600000000003092,
+        "max_s": 1.6850000000000591
+      },
+      "hazard_summary": {
+        "total_s": 80.60700000000008,
+        "frac_bins_visited": 0.9971751412429378,
+        "median_s_per_visited_bin": 0.03499999999996817,
+        "max_s": 2.0330000000000155
+      }
+    },
+    {
+      "hazard": "unconverted_keypoint",
+      "op": "behavior.segment_by_velocity",
+      "response": "silent",
+      "message": "",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {
+        "n_segments": 10,
+        "running_s": 30.866999999999962
+      },
+      "hazard_summary": {
+        "n_segments": 27,
+        "running_s": 81.56699999999978
+      }
+    },
+    {
+      "hazard": "unconverted_keypoint",
+      "op": "behavior.laps",
+      "response": "not probed",
+      "message": "the clean run was error",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    },
+    {
+      "hazard": "unconverted_keypoint",
+      "op": "behavior.turn_sequence",
+      "response": "not probed",
+      "message": "the clean run was n/a",
+      "repeated_clean_warnings": 0,
+      "clean_summary": {},
+      "hazard_summary": null
+    }
+  ]
+}
