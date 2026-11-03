@@ -312,3 +312,70 @@ def intersect_intervals(
     stop = np.minimum(a[:, None, 1], b[None, :, 1])
     keep = stop > start
     return np.column_stack([start[keep], stop[keep]])
+
+
+def mask_lost_tracking(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    min_frozen: int,
+    max_speed: float,
+    units: str = "cm",
+) -> tuple[NDArray[np.float64], str]:
+    """Set held and bridged tracking to NaN, by a stated rule.
+
+    A tracker that loses the animal often keeps reporting the last fix
+    (identical samples) and then joins it to the next fix with a straight
+    line or a jump. On positions with sub-pixel values, an animal at rest
+    still moves the estimate, so identical samples are a held value:
+
+    - frozen: a sample identical in every coordinate to the one before it,
+      in a run of at least ``min_frozen`` such repeats; the run's first
+      sample (the last real fix) is kept;
+    - fast: a sample reached from the previous one (after the frozen ones
+      are removed) faster than ``max_speed`` (``units`` per second), a
+      speed the animal cannot run; each such step removes its later sample.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+    positions : ndarray, shape (n_time, n_dims)
+    min_frozen : int
+        Repeats of one value, in frames, from which a run counts as held.
+    max_speed : float
+        Fastest believable step, ``units`` per second.
+    units : str
+        Length unit of ``positions``, for the ``conversions`` line.
+
+    Returns
+    -------
+    positions : ndarray, shape (n_time, n_dims)
+        A copy with the frozen and fast samples set to NaN.
+    line : str
+        The rule and its counts, for ``conversions``.
+    """
+    positions = np.array(positions, dtype=float)
+    repeat = np.r_[False, np.all(np.diff(positions, axis=0) == 0, axis=1)]
+    edges = np.diff(np.r_[0, repeat.astype(np.int8), 0])
+    starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    long_runs = stops - starts >= min_frozen
+    frozen = np.zeros(len(positions), dtype=bool)
+    for start, stop in zip(starts[long_runs], stops[long_runs], strict=True):
+        frozen[start:stop] = True
+    longest = (
+        float(np.max(times[stops[long_runs] - 1] - times[starts[long_runs] - 1]))
+        if long_runs.any()
+        else 0.0
+    )
+    positions[frozen] = np.nan
+    with np.errstate(invalid="ignore", divide="ignore"):
+        speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
+    fast = np.r_[False, speed > max_speed]
+    positions[fast] = np.nan
+    line = (
+        f"tracking: {int(frozen.sum())} samples repeating the one before in runs of"
+        f" {min_frozen}+ frames ({int(long_runs.sum())} runs, longest held"
+        f" {longest:.1f} s) and {int(fast.sum())} samples reached faster than"
+        f" {max_speed:g} {units}/s set to NaN (held, then bridged, tracking)"
+    )
+    return positions, line

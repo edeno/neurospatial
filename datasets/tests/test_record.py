@@ -158,3 +158,28 @@ def test_heading_vs_movement_refuses_a_lag_below_one(pixel_circle):
     times, positions, headings = pixel_circle
     with pytest.raises(ValueError, match="positive number of samples"):
         heading_vs_movement(times, positions, headings, min_speed=10.0, lag=0)
+
+
+def test_mask_lost_tracking_removes_held_runs_and_bridges():
+    from _record import mask_lost_tracking
+
+    rng = np.random.default_rng(0)
+    times = np.arange(300) / 30.0
+    positions = np.cumsum(rng.normal(0, 0.3, (300, 2)), axis=0)
+    # Held for 20 frames after frame 99, then a jump of 50 cm in one frame.
+    positions[100:120] = positions[99]
+    positions[120:] += 50.0
+    # A short repeat (3 frames) is kept: below the run length.
+    positions[200:203] = positions[199]
+    masked, line = mask_lost_tracking(times, positions, min_frozen=10, max_speed=100.0)
+    lost = ~np.isfinite(masked).all(axis=1)
+    assert np.flatnonzero(lost).tolist() == list(range(100, 120))
+    assert np.isfinite(positions).all()  # the input is not changed
+    assert "20 samples" in line
+    assert "1 runs" in line
+    # A one-frame jump between two real fixes removes the later fix.
+    jumped = np.cumsum(rng.normal(0, 0.3, (300, 2)), axis=0)
+    jumped[150:] += 50.0
+    masked, line = mask_lost_tracking(times, jumped, min_frozen=10, max_speed=100.0)
+    assert np.flatnonzero(~np.isfinite(masked).all(axis=1)).tolist() == [150]
+    assert "1 samples reached faster than 100 cm/s" in line
