@@ -290,6 +290,8 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
         {
             "median_error": float(np.nanmedian(error)),
             "chance_median_error": float(np.nanmedian(chance)),
+            # Pairs in disconnected parts of the environment are inf apart.
+            "chance_frac_disconnected": float(np.mean(np.isinf(chance))),
             "units": str(rec.position_units),
             "n_time_bins": int(result.n_time_bins),
         },
