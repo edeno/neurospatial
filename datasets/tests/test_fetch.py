@@ -177,7 +177,7 @@ def portal(monkeypatch):
     class Opener:
         def open(self, url, data=None, timeout=None):
             state.forms.append(urllib.parse.parse_qs(data.decode()))
-            if isinstance(state.reply, Exception):
+            if isinstance(state.reply, BaseException):
                 raise state.reply
             return state.reply
 
@@ -223,7 +223,7 @@ def _raised(fetch, *args):
     """
     try:
         fetch(*args)
-    except Exception as exc:  # the test checks the type
+    except BaseException as exc:  # the test checks the type, Ctrl-C's too
         return exc
     msg = "expected an error"
     raise AssertionError(msg)
@@ -292,6 +292,20 @@ def test_crcns_fetch_never_logs_credentials(
     out, err = capfd.readouterr()
     shown = _everything_shown(raised) + out + err + caplog.text
     assert "hc-31/data/resSave.mat" in shown
+    for secret in (_USER, _PASSWORD):
+        assert secret not in shown
+    assert [f for f in tmp_path.rglob("*") if f.is_file()] == []
+
+
+@pytest.mark.parametrize("stop", [KeyboardInterrupt, SystemExit])
+@pytest.mark.parametrize("fetch", [_fetch_file, _fetch_member], ids=["file", "member"])
+def test_crcns_interrupt_stops_without_the_request_frames(
+    portal, fetch, stop, tmp_path
+):
+    portal.reply = stop(f"{_USER}:{_PASSWORD}")
+    raised = _raised(fetch, tmp_path)
+    assert type(raised) is stop
+    shown = _everything_shown(raised)
     for secret in (_USER, _PASSWORD):
         assert secret not in shown
     assert [f for f in tmp_path.rglob("*") if f.is_file()] == []

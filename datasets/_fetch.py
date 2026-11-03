@@ -225,13 +225,16 @@ def _crcns_open(path: str) -> Any:
     that hangs up or times out) names only ``path`` and the status or the
     error's type, and is raised outside the handler so that it carries no
     chained exception: the request's frames hold the password and the
-    portal's pages can echo the account name.
+    portal's pages can echo the account name. A ``KeyboardInterrupt`` or
+    ``SystemExit`` during the request is raised again as a fresh exception
+    of the same type, without those frames.
     """
     _crcns_require_account()
     opener = urllib.request.build_opener(
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
     )
     failure = None
+    stopped: type[BaseException] | None = None
     try:
         response = opener.open(CRCNS_PORTAL, data=_crcns_login_form(path), timeout=300)
     except urllib.error.HTTPError as exc:
@@ -239,8 +242,15 @@ def _crcns_open(path: str) -> Any:
         failure = f"failed with HTTP {exc.code}"
     except urllib.error.URLError as exc:
         failure = f"failed: {type(exc.reason).__name__}"
-    except Exception as exc:  # any error's frames hold the form
-        failure = f"failed: {type(exc).__name__}"
+    except BaseException as exc:  # any error's frames hold the form, Ctrl-C's too
+        if isinstance(exc, KeyboardInterrupt | SystemExit):
+            stopped = type(exc)
+        else:
+            failure = f"failed: {type(exc).__name__}"
+    if stopped is not None:
+        # A fresh one, raised outside the handler, so Ctrl-C still stops the
+        # run without the request's frames.
+        raise stopped
     if failure is not None:
         msg = f"CRCNS download of {path} {failure}"
         raise OSError(msg)
