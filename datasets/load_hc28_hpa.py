@@ -98,11 +98,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_dims": 2,
     "n_units": Range(10, 120),
     "sampling_rate_hz": Range(29.0, 31.0),
-    "position_extent_cm": lambda rec: Range(60, 120).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 60-120 cm
+    # (checked_span), so one here could never fail; the span is in
+    # ``conversions``.
     "run_lasts_10_to_30_min": lambda rec: Range(600, 1800).contains(
         float(rec.times[-1] - rec.times[0])
     ),

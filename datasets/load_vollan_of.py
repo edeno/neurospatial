@@ -72,11 +72,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": 644,
     "n_dims": 2,
     "sampling_rate_hz": Range(99.0, 101.0),
-    "position_extent_cm": lambda rec: Range(130, 160).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 130-160 cm
+    # (checked_span), so one here could never fail; the span is in
+    # ``conversions``.
     "headings_span_the_circle": lambda rec: bool(
         np.nanmin(rec.headings) < -3.0 and np.nanmax(rec.headings) > 3.0
     ),

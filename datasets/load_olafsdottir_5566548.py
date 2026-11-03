@@ -95,9 +95,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": Range(10, 150),
     "sampling_rate_hz": Range(49.9, 50.1),
     "duration_s": Range(2270.0, 2280.0),
-    "inside_the_tracking_window_cm": lambda rec: Range(0.0, 190.0).contains(
-        rec.geometry["position_span_cm"]
-    ),
+    # No extent expectation: the loader refuses a span outside 100-190 cm
+    # (checked_span), so one here could never fail; the span is in
+    # ``conversions``.
     "one_led_no_heading": lambda rec: rec.headings is None,
 }
 

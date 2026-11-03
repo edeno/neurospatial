@@ -98,11 +98,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_dims": 2,
     "sampling_rate_hz": Range(38.5, 39.5),
     "duration_s": Range(780.0, 800.0),
-    "track_long_axis_px": lambda rec: Range(100, 720).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 150-400 px
+    # (checked_span), inside the 100-720 px once expected here, so that
+    # expectation could never fail; the span is in ``conversions``.
     "has_headings": lambda rec: rec.headings is not None
     and bool(np.mean(np.isfinite(rec.headings)) > 0.5),
 }

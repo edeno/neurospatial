@@ -83,11 +83,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": 380,
     "n_dims": 2,
     "sampling_rate_hz": Range(119.0, 121.0),
-    "arena_extent_cm": lambda rec: Range(90, 105).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 90-105 cm
+    # (_ARENA_CM), so one here could never fail; the span is in
+    # ``conversions``.
     "epoch_names": ["empty", "object_1", "object_2", "object_3"],
     "headings_span_the_circle": lambda rec: bool(
         np.nanmin(rec.headings) < -3.0 and np.nanmax(rec.headings) > 3.0

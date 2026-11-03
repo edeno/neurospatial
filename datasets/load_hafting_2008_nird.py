@@ -69,9 +69,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_dims": 2,
     "sampling_rate_hz": Range(49.0, 51.0),
     "duration_s": Range(1190.0, 1210.0),
-    "track_length_cm": lambda rec: Range(300.0, 340.0).contains(
-        float(rec.geometry["position_span_cm"][0])
-    ),
+    # No extent expectation: the loader refuses a span outside 300-340 cm
+    # (checked_span), so one here could never fail; the span is in
+    # ``conversions``.
 }
 
 _ZIP = (

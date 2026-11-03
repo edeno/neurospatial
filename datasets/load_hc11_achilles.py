@@ -76,11 +76,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": 137,
     "n_dims": 2,
     "sampling_rate_hz": Range(38.0, 40.0),
-    "position_extent_cm": lambda rec: Range(150, 260).contains(
-        float(
-            np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
-        )
-    ),
+    # No extent expectation: the loader refuses a span outside 150-260 cm
+    # (checked_span), so one here could never fail; the span is in
+    # ``conversions``.
     "has_pre_maze_post": lambda rec: {"pre", "maze", "post"} <= set(rec.epochs),
     "pre_s": lambda rec: Range(18070, 18090).contains(_epoch_s("pre")(rec)),
     "maze_s": lambda rec: Range(2058, 2078).contains(_epoch_s("maze")(rec)),
