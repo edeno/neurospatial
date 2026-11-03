@@ -229,10 +229,11 @@ def edge_fit(
     - ``max_unsupported``: the largest per-segment share of points along it
       with no sample within ``tolerance``: a segment where the animal never
       was.
-    - ``max_end_overshoot``: the largest share of a segment's length by which
-      its samples reach past its free ends (their ``REACH_QUANTILE`` reach,
-      summed over the segment's free ends): a track drawn shorter than the
-      samples, which the lateral and support measures do not see.
+    - ``end_overshoot``: how far the samples reach past the track's free ends
+      (each end's ``REACH_QUANTILE`` reach, summed over the ends), as a share
+      of the track's total length: a track drawn shorter than its samples,
+      which the lateral and support measures do not see. ``max_end_reach``
+      is the largest single end's reach, in the positions' units.
     """
     from scipy.spatial import cKDTree
 
@@ -253,24 +254,26 @@ def edge_fit(
     for u, v in edges:
         points = nodes[u] + steps[:, None] * (nodes[v] - nodes[u])
         unsupported.append(float(np.mean(tree.query(points)[0] > tolerance)))
-    # How far the samples reach past a segment's free ends (nodes of degree
-    # one), as a share of its length: a track drawn shorter than the samples.
+    # How far the samples reach past the track's free ends (nodes of degree
+    # one), summed over the ends, as a share of the track's length: a track
+    # drawn shorter than its samples. Summed over the whole track, not per
+    # segment, so a dead end drawn as a short segment (a cell of the
+    # labyrinth) is not judged on its own length.
     degree = np.bincount(edges.ravel(), minlength=len(nodes))
-    overshoot = 0.0
+    lengths = np.linalg.norm(nodes[edges[:, 1]] - nodes[edges[:, 0]], axis=1)
+    reaches = []
     for k, (u, v) in enumerate(edges):
         mine = segment == k
-        if not mine.any():
-            continue
-        reach = 0.0
         for free, past in (
             (degree[u] == 1, -along[mine]),
             (degree[v] == 1, along[mine] - 1),
         ):
-            if free:
-                reach += float(np.quantile(np.clip(past, 0, None), REACH_QUANTILE))
-        overshoot = max(overshoot, reach)
+            if free and mine.any():
+                share = np.quantile(np.clip(past, 0, None), REACH_QUANTILE)
+                reaches.append(float(share * lengths[k]))
     return {
-        "max_end_overshoot": overshoot,
+        "end_overshoot": float(np.sum(reaches) / np.sum(lengths)),
+        "max_end_reach": max(reaches, default=0.0),
         "median_abs_lateral": float(np.median(np.abs(lateral[inside])))
         if inside.any()
         else float("nan"),

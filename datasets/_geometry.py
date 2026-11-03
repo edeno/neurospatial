@@ -247,8 +247,8 @@ def judge_declared(
       ``MAX_SIZE_RESIDUAL`` of the side: an outline drawn too large), and the
       share of each side with no sample within three bins (reported);
     - a track, also how far its samples reach past its free ends
-      (``max_end_overshoot``, limit ``MAX_SIZE_RESIDUAL`` of the segment: a
-      track drawn too short);
+      (``end_overshoot``, summed over the ends, limit ``MAX_SIZE_RESIDUAL``
+      of the track's length: a track drawn too short);
     - either: a stated length or size off by more than ``MAX_SIZE_RESIDUAL``
       (``stated_residuals``: label -> fitted / stated - 1).
 
@@ -294,9 +294,9 @@ def judge_declared(
             fit[f"size_residual_{key}"] = value
         out["fit"] = fit
         out["misfit"] = misfit_reasons(fit, bin_size)
-        if fit["max_end_overshoot"] > MAX_SIZE_RESIDUAL:
+        if fit["end_overshoot"] > MAX_SIZE_RESIDUAL:
             out["misfit"].append(
-                f"samples reach {fit['max_end_overshoot']:.0%} of a segment's length"
+                f"samples reach {fit['end_overshoot']:.0%} of the track's length"
                 f" past its free ends (limit {MAX_SIZE_RESIDUAL:.0%})"
             )
         if physical_width is not None:
