@@ -368,7 +368,7 @@ class LayoutNotBuiltError(RuntimeError, NeurospatialError):
         super().__init__(
             _format_error(
                 msg,
-                fix="call build() on the layout first, or create the environment with a factory such as Environment.from_samples(positions, bin_size=2.0).",
+                fix='call build() on the layout first, or create the environment with a factory such as Environment.from_samples(positions, bin_size=2.0, units="cm").',
             )
         )
         self.layout_name = layout_name
