@@ -19,7 +19,6 @@ from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.behavior import (
     Trial,
     compute_decision_analysis,
-    compute_step_lengths,
     compute_vte_session,
     detect_laps,
     distance_to_boundary,
@@ -28,6 +27,7 @@ from neurospatial.behavior import (
     graph_turn_sequence,
     mean_square_displacement,
     path_progress,
+    step_lengths,
     trajectory_similarity,
 )
 from neurospatial.decoding import decoding_error
@@ -36,10 +36,10 @@ from neurospatial.encoding import (
     compute_boundary_vector_rate,
     compute_directional_place_fields,
     compute_egocentric_rate,
-    compute_field_emd,
     compute_object_vector_rate,
     compute_spatial_rates,
     compute_view_rate,
+    field_emd,
     field_shape_metrics,
     field_shift_distance,
     place_cell_significance,
@@ -47,7 +47,7 @@ from neurospatial.encoding import (
     spatial_autocorrelation,
 )
 from neurospatial.ops import (
-    compute_egocentric_distance,
+    egocentric_distance,
     geodesic_rbf_basis,
     map_probabilities,
     resample_field,
@@ -133,14 +133,14 @@ def _polar_regions_env(env: Environment) -> Environment:
             "resample_field(target_env=...)",
         ),
         (
-            lambda env: compute_egocentric_distance(
+            lambda env: egocentric_distance(
                 np.array([[10.0, 0.0]]),
                 np.array([0.0]),
                 np.array([[20.0, 0.0]]),
                 metric="geodesic",
                 env=env,
             ),
-            "compute_egocentric_distance(metric='geodesic')",
+            "egocentric_distance(metric='geodesic')",
         ),
         (
             lambda env: map_probabilities(
@@ -170,10 +170,10 @@ def _polar_regions_env(env: Environment) -> Environment:
             "rate_map_centroid(method='euclidean')",
         ),
         (
-            lambda env: compute_field_emd(
+            lambda env: field_emd(
                 env, _rates(env), _rates(env)[::-1], metric="euclidean"
             ),
-            "compute_field_emd(metric='euclidean')",
+            "field_emd(metric='euclidean')",
         ),
         (
             lambda env: select_basis_centers(env, n_centers=3, rng=0),
@@ -319,10 +319,8 @@ def _polar_regions_env(env: Environment) -> Environment:
             "compute_vte_session()",
         ),
         (
-            lambda env: compute_step_lengths(
-                _POLAR_POSITIONS, metric="geodesic", env=env
-            ),
-            "compute_step_lengths(metric='geodesic')",
+            lambda env: step_lengths(_POLAR_POSITIONS, metric="geodesic", env=env),
+            "step_lengths(metric='geodesic')",
         ),
         (
             lambda env: mean_square_displacement(
@@ -447,9 +445,7 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
         lambda env: rate_map_centroid(
             env, _rates(env), np.arange(4), method="geodesic"
         ),
-        lambda env: compute_field_emd(
-            env, _rates(env), _rates(env)[::-1], metric="geodesic"
-        ),
+        lambda env: field_emd(env, _rates(env), _rates(env)[::-1], metric="geodesic"),
         lambda env: select_basis_centers(
             env, n_centers=3, method="farthest_point", rng=0
         ),

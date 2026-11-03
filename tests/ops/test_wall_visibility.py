@@ -10,8 +10,8 @@ from shapely.geometry import LineString, Point, Polygon, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.ops.visibility import (
-    compute_viewed_location,
-    compute_viewshed,
+    viewed_location,
+    viewshed,
     visible_cues,
 )
 
@@ -31,13 +31,13 @@ def test_physical_wall_hit_is_exact_and_independent_of_analysis_crop():
     crop = env.subset(mask=env.bin_centers[:, 0] < 4)
     for e in (env, crop, Environment.from_dict(crop.to_dict())):
         np.testing.assert_allclose(
-            compute_viewed_location(
+            viewed_location(
                 [[2.5, 4.5]], [0.0], env=e, method="ray_cast", max_distance=30
             ),
             [[5, 4.5]],
         )
     np.testing.assert_allclose(
-        compute_viewed_location(
+        viewed_location(
             [[2.5, 4.5]],
             [0.0],
             env=crop,
@@ -54,9 +54,9 @@ def test_unknown_footprint_requires_explicit_analysis_mode():
         np.ones((10, 10), dtype=bool), grid_edges=(np.arange(11.0),) * 2
     )
     with pytest.raises(NotImplementedError, match="Physical boundaries"):
-        compute_viewed_location([[2.5, 4.5]], [0.0], env=env, method="ray_cast")
+        viewed_location([[2.5, 4.5]], [0.0], env=env, method="ray_cast")
     np.testing.assert_allclose(
-        compute_viewed_location(
+        viewed_location(
             [[2.5, 4.5]], [0.0], env=env, method="ray_cast", boundary_source="analysis"
         ),
         [[10, 4.5]],
@@ -66,22 +66,20 @@ def test_unknown_footprint_requires_explicit_analysis_mode():
 def test_no_hit_outside_nonfinite_and_origin_on_wall():
     env = room()
     assert np.isnan(
-        compute_viewed_location(
-            [[2.5, 4.5]], [0.0], env=env, method="ray_cast", max_distance=1
-        )
+        viewed_location([[2.5, 4.5]], [0.0], env=env, method="ray_cast", max_distance=1)
     ).all()
     assert np.isnan(
-        compute_viewed_location([[-1, 4.5]], [0.0], env=env, method="ray_cast")
+        viewed_location([[-1, 4.5]], [0.0], env=env, method="ray_cast")
     ).all()
     assert np.isnan(
-        compute_viewed_location(
+        viewed_location(
             [[np.nan, 4.5], [2.5, 4.5]], [0.0, np.inf], env=env, method="ray_cast"
         )
     ).all()
     # On the internal wall: looking along it is a zero-distance contact;
     # looking away from it sees the room on that side.
     np.testing.assert_allclose(
-        compute_viewed_location(
+        viewed_location(
             [[5, 4.5], [5, 4.5], [5, 4.5]],
             [np.pi / 2, 0.0, np.pi],
             env=env,
@@ -125,7 +123,7 @@ def test_observer_on_outer_wall_sees_the_room_it_faces(source, restore):
     if restore:
         env = Environment.from_dict(env.to_dict())
     origins, headings, expected, observer_side = wall_observer_rays()
-    hits = compute_viewed_location(
+    hits = viewed_location(
         origins, headings, env=env, method="ray_cast", boundary_source=source
     )
     np.testing.assert_allclose(hits, expected, atol=1e-12)
@@ -152,7 +150,7 @@ def test_rotated_observer_on_wall_sees_the_opposite_wall():
     # Rotation rounds exact along-wall rays to either side of the wall.
     origins, headings, expected, _ = (values[:-2] for values in wall_observer_rays())
     mapped = origins @ matrix[:2, :2].T + matrix[:2, 2]
-    hits = compute_viewed_location(mapped, headings + a, env=env, method="ray_cast")
+    hits = viewed_location(mapped, headings + a, env=env, method="ray_cast")
     np.testing.assert_allclose(
         hits, expected @ matrix[:2, :2].T + matrix[:2, 2], atol=1e-9
     )
@@ -161,16 +159,16 @@ def test_rotated_observer_on_wall_sees_the_opposite_wall():
 @pytest.mark.parametrize("source", ["physical", "analysis"])
 def test_viewshed_and_cues_from_an_observer_on_the_wall(source):
     env = Environment.from_polygon(box(0, 0, 10, 10), bin_size=1.0)
-    on_wall = compute_viewshed(
+    on_wall = viewshed(
         env, np.array([0.0, 4.5]), 0.0, fov=np.pi, boundary_source=source
     )
-    near_wall = compute_viewshed(
+    near_wall = viewshed(
         env, np.array([1e-9, 4.5]), 0.0, fov=np.pi, boundary_source=source
     )
     assert on_wall.n_visible_bins > 50
     np.testing.assert_array_equal(on_wall.visible_bins, near_wall.visible_bins)
     # Facing out through the wall exposes no cell.
-    outward = compute_viewshed(
+    outward = viewshed(
         env, np.array([0.0, 4.5]), np.pi, fov=np.pi / 2, boundary_source=source
     )
     assert outward.n_visible_bins == 0
@@ -204,7 +202,7 @@ def test_cues_and_viewed_bins_are_occluded_by_internal_wall():
     cues = np.array([[3.5, 4.5], [5.0, 4.5], [7.5, 4.5]])
     visible, _, _ = visible_cues(env, observer, 0.0, cues)
     np.testing.assert_array_equal(visible, [True, True, False])
-    result = compute_viewshed(env, observer, 0.0)
+    result = viewshed(env, observer, 0.0)
     assert np.all(env.bin_centers[result.visible_bins, 0] < 5)
 
 
@@ -281,7 +279,7 @@ def test_first_hole_and_doorway_hits_and_analysis_mode_propagation():
         mask, grid_edges=(np.arange(11.0),) * 2, arena=OpenArena(domain)
     )
     np.testing.assert_allclose(
-        compute_viewed_location([[2.5, 4.5]], [0.0], env=env, method="ray_cast"),
+        viewed_location([[2.5, 4.5]], [0.0], env=env, method="ray_cast"),
         [[4, 4.5]],
     )
     doorway = Environment.from_grid_mask(
@@ -293,7 +291,7 @@ def test_first_hole_and_doorway_hits_and_analysis_mode_propagation():
         ),
     )
     np.testing.assert_allclose(
-        compute_viewed_location([[2.5, 4.5]], [0.0], env=doorway, method="ray_cast"),
+        viewed_location([[2.5, 4.5]], [0.0], env=doorway, method="ray_cast"),
         [[10, 4.5]],
     )
     from neurospatial.encoding.view import compute_view_rate
@@ -337,7 +335,7 @@ def test_wall_cue_visibility_survives_frame_rounding(offset):
     visible, _, _ = visible_cues(env, points[0], a, points[1:])
     np.testing.assert_array_equal(visible, [True, False])
     # Standing on the internal wall and facing away from it views the far wall.
-    hits = compute_viewed_location(
+    hits = viewed_location(
         points[[1, 1]], np.array([a, a + np.pi]), env=env, method="ray_cast"
     )
     source = (hits - matrix[:2, 2]) @ np.linalg.inv(matrix[:2, :2]).T
@@ -363,7 +361,7 @@ def test_rotated_angular_sweep_cannot_encode_or_see_through_wall():
         env, np.tile(point, (72, 1)), headings, gaze_model="ray_cast"
     )
     assert np.all((bins < 50) & (bins >= 0))
-    assert np.all(compute_viewshed(env, point, a).visible_bins < 50)
+    assert np.all(viewshed(env, point, a).visible_bins < 50)
 
 
 def test_wall_bin_lookup_keeps_transformed_subset_and_clipped_owner_maps():
@@ -470,7 +468,7 @@ def test_cells_clipped_to_a_curved_or_slanted_wall_own_every_hit(name):
     candidates = rng.uniform(polygon.bounds[:2], polygon.bounds[2:], (1500, 2))
     origins = candidates[env.arena.contains(candidates)][:600]
     headings = rng.uniform(-np.pi, np.pi, len(origins))
-    hits = compute_viewed_location(
+    hits = viewed_location(
         origins, headings, env=env, method="ray_cast", max_distance=300
     )
     np.testing.assert_allclose(
@@ -558,7 +556,7 @@ def test_joined_rooms_keep_their_separating_wall_for_rays_and_cues(restore):
     if restore:
         env = Environment.from_dict(env.to_dict())
     np.testing.assert_allclose(
-        compute_viewed_location([[2.5, 2.5]], [0.0], env=env, method="ray_cast"),
+        viewed_location([[2.5, 2.5]], [0.0], env=env, method="ray_cast"),
         [[5.0, 2.5]],
     )
     visible, _, _ = visible_cues(env, np.array([2.5, 2.5]), 0.0, np.array([[7.5, 2.5]]))
@@ -639,7 +637,7 @@ def test_unowned_physical_wall_hit_refuses_view_encoding_without_fabricating_rat
     positions = np.tile([50.0, 50.0], (3, 1))
     # The physical hit is known even though the rate map has no cells there.
     np.testing.assert_allclose(
-        compute_viewed_location(positions, np.zeros(3), env=env, method="ray_cast"),
+        viewed_location(positions, np.zeros(3), env=env, method="ray_cast"),
         np.tile([100.0, 50.0], (3, 1)),
     )
     args = (

@@ -2043,7 +2043,7 @@ def left_gaze_cell():
     """
     from shapely.geometry import box
 
-    from neurospatial.ops.visibility import compute_viewed_location
+    from neurospatial.ops.visibility import viewed_location
     from neurospatial.simulation import generate_poisson_spikes
 
     env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
@@ -2051,7 +2051,7 @@ def left_gaze_cell():
     times = np.arange(0, 600, 1 / 30)
     positions = rng.uniform(5, 95, (len(times), 2))
     headings = rng.uniform(-np.pi, np.pi, len(times))
-    viewed = compute_viewed_location(
+    viewed = viewed_location(
         positions,
         headings,
         method="ray_cast",

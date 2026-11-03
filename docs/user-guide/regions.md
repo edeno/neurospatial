@@ -127,7 +127,7 @@ centimeters and flips the y axis. The lower-level readers take any
 import json
 from pathlib import Path
 
-from neurospatial.ops.transforms import simple_scale
+from neurospatial.ops import simple_scale
 from neurospatial.regions import load_labelme_json, plot_regions
 
 Path("arena.json").write_text(

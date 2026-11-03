@@ -109,6 +109,7 @@ class PlusMazeDims(MazeDims):
 
 def make_plus_maze(
     dims: PlusMazeDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:

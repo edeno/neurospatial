@@ -30,7 +30,7 @@ place-field and posterior shifts) are in :mod:`neurospatial.replay`.
 Imports
 -------
 >>> from neurospatial.stats.shuffle import shuffle_time_bins
->>> from neurospatial.stats import shuffle_time_bins, compute_shuffle_pvalue
+>>> from neurospatial.stats import shuffle_time_bins, shuffle_pvalue
 
 Examples
 --------
@@ -445,7 +445,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
     ----------
     z_score : float
         Standard score of the observed score against the null scores, from
-        :func:`compute_shuffle_zscore`: (observed - mean(null)) / std(null)
+        :func:`shuffle_zscore`: (observed - mean(null)) / std(null)
         over the defined null scores. NaN if they have zero variance, fewer
         than two are defined, or a null score is infinite.
     n_shuffles : int
@@ -477,8 +477,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
 
     See Also
     --------
-    compute_shuffle_pvalue : Compute Monte Carlo p-value from null distribution.
-    compute_shuffle_zscore : Compute z-score from null distribution.
+    shuffle_pvalue : Compute Monte Carlo p-value from null distribution.
+    shuffle_zscore : Compute z-score from null distribution.
     """
 
     observed_score: float
@@ -538,7 +538,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         shuffle_type : str
             Name of the shuffle method (e.g., "time_bins", "cell_identity").
         alternative : {"greater", "less", "two-sided"}, default="greater"
-            Direction of the test, as for :func:`compute_shuffle_pvalue`.
+            Direction of the test, as for :func:`shuffle_pvalue`.
         statistic : str or None, default=None
             Name of the score.
         statistic_units : str or None, default=None
@@ -547,8 +547,8 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         Returns
         -------
         ShuffleTestResult
-            The p-value of :func:`compute_shuffle_pvalue` and the z-score of
-            :func:`compute_shuffle_zscore`, over the defined null scores.
+            The p-value of :func:`shuffle_pvalue` and the z-score of
+            :func:`shuffle_zscore`, over the defined null scores.
 
         Raises
         ------
@@ -569,9 +569,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         null = np.asarray(null_scores, dtype=np.float64)
         undefined = np.isnan(null)
         defined = null[~undefined]
-        p_value = compute_shuffle_pvalue(
-            observed_score, defined, alternative=alternative
-        )
+        p_value = shuffle_pvalue(observed_score, defined, alternative=alternative)
         return cls(
             observed_score=observed_score,
             null_scores=null,
@@ -704,7 +702,7 @@ class ShuffleTestResult(ResultMixin, ReadOnlyArraysMixin):
         return ax
 
 
-def compute_shuffle_pvalue(
+def shuffle_pvalue(
     observed: float,
     null_scores: NDArray[np.float64],
     *,
@@ -772,21 +770,21 @@ def compute_shuffle_pvalue(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.stats.shuffle import compute_shuffle_pvalue
+    >>> from neurospatial.stats.shuffle import shuffle_pvalue
 
     >>> # Observed score higher than all null values
     >>> observed = 10.0
     >>> null = np.array([1.0, 2.0, 3.0, 4.0])
-    >>> compute_shuffle_pvalue(observed, null, alternative="greater")
+    >>> shuffle_pvalue(observed, null, alternative="greater")
     0.2
 
     >>> # Two-sided test
-    >>> compute_shuffle_pvalue(observed, null, alternative="two-sided")
+    >>> shuffle_pvalue(observed, null, alternative="two-sided")
     0.4
 
     See Also
     --------
-    compute_shuffle_zscore : Compute z-score from null distribution.
+    shuffle_zscore : Compute z-score from null distribution.
     ShuffleTestResult : Container for shuffle test results.
     """
     if not np.isfinite(observed):
@@ -797,7 +795,7 @@ def compute_shuffle_pvalue(
         )
         raise ValueError(msg)
     validate_choice(
-        alternative, _ALTERNATIVES, name="alternative", owner="compute_shuffle_pvalue()"
+        alternative, _ALTERNATIVES, name="alternative", owner="shuffle_pvalue()"
     )
 
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
@@ -877,7 +875,7 @@ def _tail_p_values(k_greater: Any, k_less: Any, n: Any, alternative: str) -> Any
     return np.minimum(2.0 * np.minimum(p_greater, p_less), 1.0)
 
 
-def compute_shuffle_zscore(
+def shuffle_zscore(
     observed: float,
     null_scores: NDArray[np.float64],
 ) -> float:
@@ -904,7 +902,7 @@ def compute_shuffle_zscore(
     -----
     Undefined (NaN) null scores are left out of the mean and standard
     deviation, with a warning giving how many, as
-    :func:`compute_shuffle_pvalue` leaves them out of the p-value.
+    :func:`shuffle_pvalue` leaves them out of the p-value.
 
     The z-score indicates how many standard deviations the observed value
     is from the mean of the null distribution. Positive values indicate
@@ -922,21 +920,21 @@ def compute_shuffle_zscore(
     Examples
     --------
     >>> import numpy as np
-    >>> from neurospatial.stats.shuffle import compute_shuffle_zscore
+    >>> from neurospatial.stats.shuffle import shuffle_zscore
 
     >>> null = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
     >>> observed = 5.0
-    >>> z = compute_shuffle_zscore(observed, null)
+    >>> z = shuffle_zscore(observed, null)
     >>> bool(np.isclose(z, (5.0 - 3.0) / np.std(null)))
     True
 
     >>> # Zero variance returns NaN
-    >>> compute_shuffle_zscore(5.0, np.array([3.0, 3.0, 3.0]))
+    >>> shuffle_zscore(5.0, np.array([3.0, 3.0, 3.0]))
     nan
 
     See Also
     --------
-    compute_shuffle_pvalue : Compute Monte Carlo p-value from null distribution.
+    shuffle_pvalue : Compute Monte Carlo p-value from null distribution.
     ShuffleTestResult : Container for shuffle test results.
     """
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
@@ -953,7 +951,7 @@ def compute_shuffle_zscore(
 
 
 def _shuffle_zscore(observed: float, null_scores: NDArray[np.float64]) -> float:
-    """:func:`compute_shuffle_zscore` without its warning, for callers that warn."""
+    """:func:`shuffle_zscore` without its warning, for callers that warn."""
     null_scores = np.asarray(null_scores, dtype=np.float64).ravel()
     null_scores = null_scores[~np.isnan(null_scores)]
     if null_scores.size < 2 or np.isinf(null_scores).any():

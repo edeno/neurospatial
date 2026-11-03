@@ -1654,11 +1654,11 @@ class TestFieldShiftDistance:
 
 
 class TestComputeFieldEMD:
-    """Test compute_field_emd function."""
+    """Test field_emd function."""
 
     def test_emd_identical_distributions(self):
         """Test EMD is zero for identical distributions."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1669,7 +1669,7 @@ class TestComputeFieldEMD:
         firing_rate = np.exp(-0.05 * np.linalg.norm(centers - [0, 0], axis=1) ** 2)
 
         # EMD of distribution with itself should be zero
-        emd = compute_field_emd(env, firing_rate, firing_rate, metric="euclidean")
+        emd = field_emd(env, firing_rate, firing_rate, metric="euclidean")
         assert_allclose(emd, 0.0, atol=1e-10)
 
     def test_emd_uniform_distributions(self):
@@ -1680,7 +1680,7 @@ class TestComputeFieldEMD:
         This is the baseline case: no spatial structure means no difference
         to measure.
         """
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20
@@ -1691,21 +1691,21 @@ class TestComputeFieldEMD:
         firing_rate_2 = np.ones(env.n_bins) * 5.0
 
         # EMD should be zero (identical after normalization)
-        emd = compute_field_emd(
+        emd = field_emd(
             env, firing_rate_1, firing_rate_2, metric="euclidean", normalize=True
         )
         assert_allclose(emd, 0.0, atol=1e-10)
 
         # Also test with different uniform rates (still identical after normalization)
         firing_rate_3 = np.ones(env.n_bins) * 10.0  # Different uniform rate
-        emd_different_rates = compute_field_emd(
+        emd_different_rates = field_emd(
             env, firing_rate_1, firing_rate_3, metric="euclidean", normalize=True
         )
         assert_allclose(emd_different_rates, 0.0, atol=1e-10)
 
     def test_emd_euclidean_metric(self):
         """Test EMD with Euclidean metric."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1725,13 +1725,13 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 1.0
 
         # EMD should be positive
-        emd = compute_field_emd(env, field1, field2, metric="euclidean")
+        emd = field_emd(env, field1, field2, metric="euclidean")
         assert emd > 0
         assert not np.isnan(emd)
 
     def test_emd_geodesic_metric(self):
         """Test EMD with geodesic metric."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         # Create denser sampling for better connectivity
@@ -1750,13 +1750,13 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 1.0
 
         # EMD should be positive
-        emd = compute_field_emd(env, field1, field2, metric="geodesic")
+        emd = field_emd(env, field1, field2, metric="geodesic")
         assert emd > 0
         assert not np.isnan(emd)
 
     def test_emd_normalization(self):
         """Test that normalization works correctly."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1774,7 +1774,7 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 10.0  # Different total mass
 
         # Should work with normalize=True
-        emd_normalized = compute_field_emd(
+        emd_normalized = field_emd(
             env, field1, field2, metric="euclidean", normalize=True
         )
         assert emd_normalized > 0
@@ -1782,11 +1782,11 @@ class TestComputeFieldEMD:
 
         # Should fail with normalize=False (unequal mass)
         with pytest.raises(ValueError, match="equal total mass"):
-            compute_field_emd(env, field1, field2, metric="euclidean", normalize=False)
+            field_emd(env, field1, field2, metric="euclidean", normalize=False)
 
     def test_emd_is_in_environment_distance_units(self):
         """Moving a whole field 20 cm costs exactly 20 cm."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         x, y = np.meshgrid(np.arange(0.5, 60.0), np.arange(0.5, 30.0))
         env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
@@ -1798,12 +1798,12 @@ class TestComputeFieldEMD:
         field_2 = np.zeros(env.n_bins)
         field_2[shifted[field_1 > 0]] = field_1[field_1 > 0]
 
-        emd = compute_field_emd(env, field_1, field_2)
+        emd = field_emd(env, field_1, field_2)
         assert emd == pytest.approx(20.0, rel=1e-9)
 
     def test_emd_compares_bins_finite_in_both_maps(self):
         """Unsampled (NaN) bins are left out, not filled with zero rate."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         x, y = np.meshgrid(np.arange(0.5, 60.0), np.arange(0.5, 30.0))
         env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
@@ -1819,13 +1819,13 @@ class TestComputeFieldEMD:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            emd = compute_field_emd(env, map_1, map_2)
+            emd = field_emd(env, map_1, map_2)
         # On the bins both sessions sampled the maps are identical.
         assert emd == pytest.approx(0.0, abs=1e-12)
 
     def test_emd_all_zeros(self):
         """Test EMD with all-zero distributions."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1835,12 +1835,12 @@ class TestComputeFieldEMD:
         field1 = np.zeros(env.n_bins)
         field2 = np.zeros(env.n_bins)
 
-        emd = compute_field_emd(env, field1, field2, metric="euclidean")
+        emd = field_emd(env, field1, field2, metric="euclidean")
         assert np.isnan(emd)
 
     def test_emd_single_bin(self):
         """Test EMD with single non-zero bin."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1853,12 +1853,12 @@ class TestComputeFieldEMD:
         field2[10] = 1.0
 
         # EMD should be zero (same bin)
-        emd = compute_field_emd(env, field1, field2, metric="euclidean")
+        emd = field_emd(env, field1, field2, metric="euclidean")
         assert_allclose(emd, 0.0, atol=1e-10)
 
     def test_emd_dimension_mismatch_raises_error(self):
         """Test EMD raises error with mismatched dimensions."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1868,11 +1868,11 @@ class TestComputeFieldEMD:
         field2 = np.ones(env.n_bins + 10)  # Wrong size
 
         with pytest.raises(ValueError, match="same length"):
-            compute_field_emd(env, field1, field2, metric="euclidean")
+            field_emd(env, field1, field2, metric="euclidean")
 
     def test_emd_invalid_metric_raises_error(self):
         """Test EMD raises error with invalid metric."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1882,11 +1882,11 @@ class TestComputeFieldEMD:
         field2 = np.ones(env.n_bins)
 
         with pytest.raises(ValueError, match="metric must be"):
-            compute_field_emd(env, field1, field2, metric="invalid")
+            field_emd(env, field1, field2, metric="invalid")
 
     def test_emd_wrong_n_bins_raises_error(self):
         """Test EMD raises error when arrays don't match env.n_bins."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1897,11 +1897,11 @@ class TestComputeFieldEMD:
         field2 = np.ones(50)
 
         with pytest.raises(ValueError, match=r"match env.n_bins"):
-            compute_field_emd(env, field1, field2, metric="euclidean")
+            field_emd(env, field1, field2, metric="euclidean")
 
     def test_emd_sparse_fields(self):
         """Test EMD with sparse fields (few non-zero bins)."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1917,13 +1917,13 @@ class TestComputeFieldEMD:
             field2[15:20] = np.array([0.1, 0.2, 0.3, 0.2, 0.1])
 
             # EMD should be positive (different locations)
-            emd = compute_field_emd(env, field1, field2, metric="euclidean")
+            emd = field_emd(env, field1, field2, metric="euclidean")
             assert emd > 0
             assert not np.isnan(emd)
 
     def test_emd_euclidean_vs_geodesic_open_field(self):
         """Test that Euclidean and geodesic EMD are similar in open field."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         # Dense sampling for good connectivity
@@ -1942,8 +1942,8 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 1.0
 
         # Compute both
-        emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
-        emd_geodesic = compute_field_emd(env, field1, field2, metric="geodesic")
+        emd_euclidean = field_emd(env, field1, field2, metric="euclidean")
+        emd_geodesic = field_emd(env, field1, field2, metric="geodesic")
 
         # In open field, should be similar (within 20%)
         # Note: They won't be identical due to discretization effects
@@ -1953,7 +1953,7 @@ class TestComputeFieldEMD:
 
     def test_emd_symmetry(self):
         """Test that EMD is symmetric: EMD(p, q) == EMD(q, p)."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         data = rng.standard_normal((500, 2)) * 20  # Reduced from 1000 for faster tests
@@ -1971,15 +1971,15 @@ class TestComputeFieldEMD:
         field2[dist_from_center2 < 5] = 1.0
 
         # Compute EMD in both directions
-        emd_forward = compute_field_emd(env, field1, field2, metric="euclidean")
-        emd_reverse = compute_field_emd(env, field2, field1, metric="euclidean")
+        emd_forward = field_emd(env, field1, field2, metric="euclidean")
+        emd_reverse = field_emd(env, field2, field1, metric="euclidean")
 
         # Should be identical (symmetric property of EMD)
         assert_allclose(emd_forward, emd_reverse, rtol=1e-10)
 
     def test_emd_geodesic_respects_barriers(self):
         """Test that geodesic EMD > Euclidean EMD when barriers present."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         # Create L-shaped environment with barrier in middle
         # This creates a non-convex environment where geodesic != Euclidean
@@ -2010,8 +2010,8 @@ class TestComputeFieldEMD:
         field2[dist_from_corner2 < 3] = 1.0
 
         # Compute both EMDs
-        emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
-        emd_geodesic = compute_field_emd(env, field1, field2, metric="geodesic")
+        emd_euclidean = field_emd(env, field1, field2, metric="euclidean")
+        emd_geodesic = field_emd(env, field1, field2, metric="geodesic")
 
         # Geodesic should be larger (needs to go around the corner)
         # Euclidean distance ~ sqrt((17.5-2.5)^2 + (2.5-17.5)^2) ~ 21.2
@@ -2036,18 +2036,18 @@ class TestComputeFieldEMD:
 
     def test_emd_geodesic_is_inf_when_mass_must_cross_rooms(self, two_rooms):
         """No path carries mass between disconnected rooms: EMD is inf."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         env, left = two_rooms
         field_1 = left.astype(float)
         field_2 = (~left).astype(float)
 
-        assert compute_field_emd(env, field_1, field_2, metric="geodesic") == np.inf
-        assert np.isfinite(compute_field_emd(env, field_1, field_2, metric="euclidean"))
+        assert field_emd(env, field_1, field_2, metric="geodesic") == np.inf
+        assert np.isfinite(field_emd(env, field_1, field_2, metric="euclidean"))
 
     def test_emd_geodesic_moves_mass_within_each_room(self, two_rooms):
         """With the same mass in each room, mass moves only inside rooms."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        from neurospatial.encoding._field_metrics import field_emd
 
         env, _ = two_rooms
         centers = env.bin_centers
@@ -2058,7 +2058,7 @@ class TestComputeFieldEMD:
             field_2[env.bin_at(np.array([[room_x + 6.0, 5.0]]))] = 1.0
         assert np.all(centers[field_1 > 0, 1] == centers[field_2 > 0, 1])
 
-        emd = compute_field_emd(env, field_1, field_2, metric="geodesic")
+        emd = field_emd(env, field_1, field_2, metric="geodesic")
         assert emd == pytest.approx(6.0)
 
 
@@ -2537,11 +2537,11 @@ class TestFieldShiftDistanceEdgeCases:
 
 
 class TestComputeFieldEMDEdgeCases:
-    """Test edge cases in compute_field_emd function."""
+    """Test edge cases in field_emd function."""
 
     def test_compute_field_emd_both_zero(self):
-        """Test compute_field_emd returns 0 when both distributions are all zeros (unnormalized)."""
-        from neurospatial.encoding._field_metrics import compute_field_emd
+        """Test field_emd returns 0 when both distributions are all zeros (unnormalized)."""
+        from neurospatial.encoding._field_metrics import field_emd
 
         rng = np.random.default_rng(42)
         positions = rng.standard_normal((1000, 2)) * 10
@@ -2551,7 +2551,7 @@ class TestComputeFieldEMDEdgeCases:
         firing_rate_2 = np.zeros(env.n_bins)
 
         # Use normalize=False since zero mass with normalize=True returns NaN
-        result = compute_field_emd(env, firing_rate_1, firing_rate_2, normalize=False)
+        result = field_emd(env, firing_rate_1, firing_rate_2, normalize=False)
         assert result == 0.0
 
 

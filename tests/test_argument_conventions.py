@@ -31,6 +31,52 @@ def _required_positional(parameters):
     ]
 
 
+# ``compute_*`` takes raw recordings, so it has ``times`` or ``spike_times`` among
+# its positional parameters. A function that derives a quantity from other
+# arrays is a bare noun (``field_emd``, ``step_lengths``).
+COMPUTE_WITHOUT_TIMES = {
+    # Takes the position and theta phase of each spike, recorded together: the
+    # raw per-spike recording, with no sample clock to pass.
+    "compute_phase_precession",
+}
+
+
+def test_compute_prefix_rule():
+    raw = {"times", "spike_times"}
+    offenders = [
+        function.__name__
+        for function, parameters in public_functions()
+        if function.__name__.startswith("compute_")
+        and function.__name__ not in COMPUTE_WITHOUT_TIMES
+        and not raw
+        & {
+            p.name
+            for p in parameters.values()
+            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        }
+    ]
+    assert not offenders, (
+        f"compute_* functions without times or spike_times positionally: {offenders}. "
+        "Drop the prefix if they derive a quantity from arrays."
+    )
+
+
+def test_compute_prefix_allowlist_is_current():
+    """Each allowlisted function exists and would fail the rule without its entry."""
+    raw = {"times", "spike_times"}
+    functions = {
+        function.__name__: parameters for function, parameters in public_functions()
+    }
+    assert set(functions) >= COMPUTE_WITHOUT_TIMES
+    for name in COMPUTE_WITHOUT_TIMES:
+        positional = {
+            p.name
+            for p in functions[name].values()
+            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        }
+        assert not raw & positional, f"{name} now takes times; drop its allowlist entry"
+
+
 def test_times_before_positions():
     offenders = []
     for function, parameters in public_functions():
@@ -57,7 +103,7 @@ def test_no_spike_trains_parameter_name():
 def test_physical_smoothing_width_is_named_bandwidth():
     """A physical kernel width is ``bandwidth`` on every public function.
 
-    ``neurospatial.ops`` primitives (``compute_diffusion_kernels``,
+    ``neurospatial.ops`` primitives (``diffusion_kernels``,
     ``geodesic_rbf_basis``) are covered along with the analysis functions.
     """
     offenders = [
@@ -93,7 +139,7 @@ def test_env_is_first():
 FREE_FUNCTION_OPTIONAL_DATA = {
     # Heading samples; needed only when distances are measured in the
     # animal's frame.
-    ("compute_boundary_distances", "headings"),
+    ("boundary_distances", "headings"),
     ("compute_boundary_vector_rate", "headings"),
     ("compute_boundary_vector_rates", "headings"),
     # Reward locations; read from the tracked positions at the reward times
@@ -147,6 +193,21 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # The video or region the annotation works on.
     ("annotate_track_graph", "video_path"),
     ("validate_annotations", "boundary"),
+}
+
+
+# Maze builders take their dimensions positionally; ``dims=None`` selects the
+# published dimensions. Every other argument is an option.
+FREE_FUNCTION_OPTIONAL_DATA |= {
+    (name, "dims")
+    for name in (
+        *("make_barnes_maze", "make_cheeseboard_maze", "make_crossword_maze"),
+        *("make_hamlet_maze", "make_hampton_court_maze", "make_honeycomb_maze"),
+        *("make_linear_track", "make_plus_maze", "make_radial_arm_maze"),
+        *("make_rat_hexmaze", "make_repeated_t_maze", "make_repeated_y_maze"),
+        *("make_small_hex_maze", "make_square_maze", "make_sungod_maze"),
+        *("make_t_maze", "make_w_maze", "make_watermaze", "make_y_maze"),
+    )
 }
 
 
@@ -251,6 +312,12 @@ REQUIRED_DATA_ARGUMENTS = {
     # The variable sampled with the trajectory that the rates are binned by.
     ("compute_tuning_curve", "values"),
     ("compute_tuning_curves", "values"),
+    # The geometry the maze helpers build from; ``width`` is keyword-only.
+    ("make_buffered_line", "end"),
+    ("make_corridor_polygon", "end"),
+    ("make_circular_arena", "center"),
+    ("make_circular_arena", "radius"),
+    ("union_polygons", "polygons"),
 }
 
 

@@ -142,13 +142,8 @@ Edge color and width are configured on the `Skeleton` (`edge_color`, `edge_width
 
 **Important:** Each keypoint can have **independent timestamps** for per-keypoint interpolation:
 
-```python
-# Per-keypoint temporal alignment (advanced)
-from neurospatial.animation.overlays import _convert_overlays_to_data
-
-# Use conversion funnel for per-keypoint interpolation
-# (Handled automatically by animate_fields)
-```
+`animate_fields` interpolates each keypoint onto the animation clock; you do
+not call anything extra.
 
 ### Head Direction Overlay
 

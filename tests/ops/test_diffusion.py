@@ -32,7 +32,7 @@ from neurospatial.ops.diffusion import (
     _raw_heat_operator,
     diffusion_kernel,
 )
-from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
+from neurospatial.ops.smoothing import apply_kernel, diffusion_kernels
 
 # --- a-priori sigma-recovery tolerances (relative) -------------------------
 # Cartesian/hex/graph are K-orthogonal regular lattices whose finite-volume
@@ -357,11 +357,9 @@ def test_density_integrates_to_one(polar_env):
 
 
 def test_low_level_average_row_stochastic(polar_env):
-    """compute_diffusion_kernels(..., mode='average') returns row-stochastic H."""
+    """diffusion_kernels(..., mode='average') returns row-stochastic H."""
     graph_fv, volumes = face_graph(polar_env._binning)
-    kernel = compute_diffusion_kernels(
-        graph_fv, volumes=volumes, bandwidth=5.0, mode="average"
-    )
+    kernel = diffusion_kernels(graph_fv, volumes=volumes, bandwidth=5.0, mode="average")
     row_sums = kernel.sum(axis=1)
     np.testing.assert_allclose(row_sums, 1.0, atol=1e-9)
 
@@ -490,18 +488,14 @@ def test_compute_diffusion_kernels_missing_A_raises():
     g = _valid_graph()
     del g.edges[0, 1]["A"]
     with pytest.raises(ValueError, match=r"missing 'A'"):
-        compute_diffusion_kernels(
-            g, volumes=np.ones(3), bandwidth=1.0, mode="transition"
-        )
+        diffusion_kernels(g, volumes=np.ones(3), bandwidth=1.0, mode="transition")
 
 
 def test_compute_diffusion_kernels_A_zero_no_edge():
     """An A=0 edge carries no diffusion weight (no raise; edge simply dropped)."""
     g = _valid_graph()
     g.edges[0, 1]["A"] = 0.0
-    kernel = compute_diffusion_kernels(
-        g, volumes=np.ones(3), bandwidth=1.0, mode="transition"
-    )
+    kernel = diffusion_kernels(g, volumes=np.ones(3), bandwidth=1.0, mode="transition")
     # Bin 0 is now only linked (via A) through bin 1's other edge? No: 0-1 has
     # A=0, so bin 0 is isolated -> its column is a delta (no smoothing out).
     assert kernel[0, 0] == pytest.approx(1.0, abs=1e-12)
@@ -515,7 +509,7 @@ def test_compute_diffusion_kernels_rejects_bad_inputs():
     # --- sigma: non-finite or <= 0 ---
     for bad_sigma in (np.nan, np.inf, 0.0, -1.0):
         with pytest.raises(ValueError, match=r"bandwidth must be finite and > 0"):
-            compute_diffusion_kernels(
+            diffusion_kernels(
                 _valid_graph(),
                 volumes=base_volumes,
                 bandwidth=bad_sigma,
@@ -524,7 +518,7 @@ def test_compute_diffusion_kernels_rejects_bad_inputs():
 
     # --- volumes: wrong shape ---
     with pytest.raises(ValueError, match=r"volumes must have shape"):
-        compute_diffusion_kernels(
+        diffusion_kernels(
             _valid_graph(), volumes=np.ones(4), bandwidth=1.0, mode="transition"
         )
     # --- volumes: non-finite / non-positive ---
@@ -535,7 +529,7 @@ def test_compute_diffusion_kernels_rejects_bad_inputs():
         np.array([1.0, -1.0, 1.0]),
     ):
         with pytest.raises(ValueError, match=r"volumes must be finite"):
-            compute_diffusion_kernels(
+            diffusion_kernels(
                 _valid_graph(), volumes=bad_volumes, bandwidth=1.0, mode="transition"
             )
 
@@ -543,46 +537,40 @@ def test_compute_diffusion_kernels_rejects_bad_inputs():
     g_gappy = _valid_graph()
     g_gappy = nx.relabel_nodes(g_gappy, {2: 5})
     with pytest.raises(ValueError, match=r"contiguous integer labels"):
-        compute_diffusion_kernels(
+        diffusion_kernels(
             g_gappy, volumes=base_volumes, bandwidth=1.0, mode="transition"
         )
     # --- node labels: float ---
     g_float = nx.relabel_nodes(_valid_graph(), {i: float(i) for i in range(3)})
     with pytest.raises(ValueError, match=r"contiguous integer labels"):
-        compute_diffusion_kernels(
+        diffusion_kernels(
             g_float, volumes=base_volumes, bandwidth=1.0, mode="transition"
         )
     # --- node labels: bool (2-node graph so labels are {False, True}) ---
     g_bool = _valid_graph(2)
     g_bool = nx.relabel_nodes(g_bool, {0: False, 1: True})
     with pytest.raises(ValueError, match=r"contiguous integer labels"):
-        compute_diffusion_kernels(
-            g_bool, volumes=np.ones(2), bandwidth=1.0, mode="transition"
-        )
+        diffusion_kernels(g_bool, volumes=np.ones(2), bandwidth=1.0, mode="transition")
 
     # --- distance: missing / non-finite / non-positive ---
     g_no_d = _valid_graph()
     del g_no_d.edges[0, 1]["distance"]
     with pytest.raises(ValueError, match=r"missing 'A' and/or 'distance'"):
-        compute_diffusion_kernels(
+        diffusion_kernels(
             g_no_d, volumes=base_volumes, bandwidth=1.0, mode="transition"
         )
     for bad_d in (np.nan, np.inf, 0.0, -1.0):
         g = _valid_graph()
         g.edges[0, 1]["distance"] = bad_d
         with pytest.raises(ValueError, match=r"invalid distance"):
-            compute_diffusion_kernels(
-                g, volumes=base_volumes, bandwidth=1.0, mode="transition"
-            )
+            diffusion_kernels(g, volumes=base_volumes, bandwidth=1.0, mode="transition")
 
     # --- A: negative / NaN / inf ---
     for bad_a in (-1.0, np.nan, np.inf):
         g = _valid_graph()
         g.edges[0, 1]["A"] = bad_a
         with pytest.raises(ValueError, match=r"invalid face measure"):
-            compute_diffusion_kernels(
-                g, volumes=base_volumes, bandwidth=1.0, mode="transition"
-            )
+            diffusion_kernels(g, volumes=base_volumes, bandwidth=1.0, mode="transition")
 
 
 # ===========================================================================

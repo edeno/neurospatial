@@ -218,6 +218,7 @@ class HamletDims(MazeDims):
 
 def make_hamlet_maze(
     dims: HamletDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:
@@ -343,7 +344,7 @@ def make_hamlet_maze(
         union_polygons(blocks)
     )
     exits = [
-        make_corridor_polygon((0.0, 0.0), tuple(end), dims.corridor_width)
+        make_corridor_polygon((0.0, 0.0), tuple(end), width=dims.corridor_width)
         for end in _agora_exits(dims, ring)
     ]
     floor = single_floor(union_polygons([alleys, agora, *exits, *houses]), dims)

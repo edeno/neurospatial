@@ -207,3 +207,8 @@ __all__ = [  # noqa: RUF022 (organized by category, not alphabetically)
     "reactivation_detection_rates",
     "simulated_reactivation_session",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)

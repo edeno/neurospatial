@@ -4,8 +4,8 @@
   "source": "https://dandiarchive.org/dandiset/000044/0.261005.2101 sub-Achilles/sub-Achilles_ses-Achilles-11012013_behavior+ecephys.nwb (asset 080a847a-5211-4101-bc05-fd45b7e77dbd)",
   "license": "CC-BY-4.0",
   "conversions": [
-    "positions: read_position CircularMazePosition/CircularMazeSpatialSeries, m times 100 -> cm",
-    "params['linearized']: CircularMazeLinearizedPosition, m times 100 -> cm; 0.23% of finite samples are exactly 0",
+    "positions: read_position CircularMazePosition/CircularMazeSpatialSeries, m times 100 -> cm; range checked: -16.6 to 112.8 by -17.7 to 116.1 cm (largest span 133.7, expected 100-160); 72% of tracked samples are on the track (linearized coordinate defined)",
+    "params['linearized']: CircularMazeLinearizedPosition, m times 100 -> cm, 0 to 290 cm; 0.23% of finite samples are exactly 0",
     "epochs: intervals/epochs labels without 'Epoch', lower case; sleep states from processing/behavior/states",
     "events['candidate_events']: first 200 of 2010 population bursts in POST non-REM (rule in population_bursts); the file has no ripple table"
   ],
@@ -43,7 +43,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "5a814f34e6bc76b02adf2a7749506ef330b074b9"
   },
   "load_warnings": [],
   "operations": {
@@ -57,7 +57,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.128,
+      "seconds": 0.132,
       "peak_mb": 8.7
     },
     "env.occupancy": {
@@ -71,7 +71,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.05,
+      "seconds": 0.054,
       "peak_mb": 11.7
     },
     "rates.spatial": {
@@ -85,7 +85,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.81,
+      "seconds": 0.847,
       "peak_mb": 272.9
     },
     "rates.spatial_information": {
@@ -98,7 +98,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.003,
       "peak_mb": 10.8
     },
     "rates.information_vs_shifts": {
@@ -113,8 +113,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.017,
-      "peak_mb": 336.0
+      "seconds": 2.051,
+      "peak_mb": 335.7
     },
     "cells.place_screen": {
       "status": "ok",
@@ -125,7 +125,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.052,
+      "seconds": 0.058,
       "peak_mb": 98.1
     },
     "cells.grid_score": {
@@ -138,7 +138,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.644,
+      "seconds": 0.66,
       "peak_mb": 15.9
     },
     "cells.border_score": {
@@ -166,7 +166,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.691,
+      "seconds": 0.751,
       "peak_mb": 272.8
     },
     "io.nwb_roundtrip": {
@@ -177,8 +177,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.414,
-      "peak_mb": 15.4
+      "seconds": 2.528,
+      "peak_mb": 15.5
     },
     "env.from_graph": {
       "status": "n/a",
@@ -198,7 +198,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.048,
+      "seconds": 0.051,
       "peak_mb": 9.1
     },
     "behavior.laps": {
@@ -210,7 +210,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.061,
+      "seconds": 0.062,
       "peak_mb": 10.8
     },
     "behavior.turn_sequence": {
@@ -235,8 +235,8 @@
       "note": "decoded on params['linearized'], the file's track coordinate",
       "gap": "G-038",
       "warnings": [],
-      "seconds": 511.209,
-      "peak_mb": 363.7
+      "seconds": 628.961,
+      "peak_mb": 363.8
     },
     "io.nwb_readers": {
       "status": "error",
@@ -248,8 +248,8 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/CircularMazeLinearizedPosition/CircularMazeLinearizedTimeSeries', 'processing/behavior/CircularMazePosition/CircularMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/CircularMazeLinearizedPosition/CircularMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 27.082,
-      "peak_mb": 319.0
+      "seconds": 180.853,
+      "peak_mb": 319.1
     },
     "imaging.rates": {
       "status": "n/a",

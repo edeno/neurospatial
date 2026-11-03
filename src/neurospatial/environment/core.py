@@ -2949,8 +2949,8 @@ class Environment(Generic[_C]):
         fix="transform the allocentric positions, then compute egocentric "
         "distance and angle from them",
         example="shifted = positions + np.array([10.0, 0.0]); np.stack("
-        "[neurospatial.ops.compute_egocentric_distance(shifted, headings, "
-        "object_positions), neurospatial.ops.compute_egocentric_bearing(shifted, "
+        "[neurospatial.ops.egocentric_distance(shifted, headings, "
+        "object_positions), neurospatial.ops.egocentric_bearing(shifted, "
         "headings, object_positions)], axis=-1)",
     )
     def apply_transform(
@@ -6686,7 +6686,7 @@ class Environment(Generic[_C]):
         --------
         neurospatial.ops.diffusion.diffusion_kernel :
             Lower-level function operating directly on an environment.
-        neurospatial.ops.smoothing.compute_diffusion_kernels :
+        neurospatial.ops.smoothing.diffusion_kernels :
             Graph-level primitive with explicit face measures.
 
         Notes

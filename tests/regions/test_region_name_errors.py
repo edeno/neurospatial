@@ -15,7 +15,7 @@ from neurospatial.behavior import (
     decision_region_entry_time,
     region_reward_field,
 )
-from neurospatial.encoding import compute_region_coverage
+from neurospatial.encoding import region_coverage
 from neurospatial.regions import regions_containing_points
 
 
@@ -79,8 +79,8 @@ def _lookups(env: Environment, folder: Path) -> dict[str, tuple[Any, Any, str]]:
             "rewrd",
             "pass region='reward'",
         ),
-        "compute_region_coverage": (
-            lambda value: compute_region_coverage(env, bins, regions=value),
+        "region_coverage": (
+            lambda value: region_coverage(env, bins, regions=value),
             ["rewrd"],
             "pass regions=['reward']",
         ),
@@ -133,7 +133,7 @@ _CALLS = [
     "Regions.remove",
     "Regions.update_region",
     "region_reward_field",
-    "compute_region_coverage",
+    "region_coverage",
     "decision_region_entry_time",
     "compute_decision_analysis",
     "regions_containing_points",

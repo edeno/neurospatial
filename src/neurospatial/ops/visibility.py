@@ -15,23 +15,23 @@ Common Use Cases
 Which Function Should I Use?
 ----------------------------
 **Computing viewed location from gaze direction?**
-    Use ``compute_viewed_location()`` with method="ray_cast" for the first
+    Use ``viewed_location()`` with method="ray_cast" for the first
     wall along the gaze, or method="fixed_distance" for a point at a fixed
     distance that stops at a nearer wall.
 
 **Need full visibility analysis from a position?**
-    Use ``compute_viewshed()`` to get the visible bins and cues. A bin is
+    Use ``viewshed()`` to get the visible bins and cues. A bin is
     visible when its center is inside the field of view with a clear line of
     sight.
 
 **Just need a binary visibility mask?**
-    Use ``compute_view_field()`` for a simple bool array of visible bins.
+    Use ``view_field()`` for a simple bool array of visible bins.
 
 **Check if specific cues are visible?**
     Use ``visible_cues()`` for line-of-sight checks to cue positions.
 
 **Analyze visibility along a trajectory?**
-    Use ``compute_viewshed_trajectory()`` or ``visibility_occupancy()``.
+    Use ``viewshed_trajectory()`` or ``visibility_occupancy()``.
 
 What Blocks the View
 --------------------
@@ -104,10 +104,10 @@ if TYPE_CHECKING:
 __all__ = [
     "FieldOfView",
     "ViewshedResult",
-    "compute_view_field",
-    "compute_viewed_location",
-    "compute_viewshed",
-    "compute_viewshed_trajectory",
+    "view_field",
+    "viewed_location",
+    "viewshed",
+    "viewshed_trajectory",
     "visibility_occupancy",
     "visible_cues",
 ]
@@ -593,14 +593,14 @@ class ViewshedResult(ReadOnlyArraysMixin):
                     f"{env.n_bins}.",
                     why="Why: visible bin indices only name bin centers in the "
                     "environment the viewshed was computed in.",
-                    fix="pass the environment given to compute_viewshed",
+                    fix="pass the environment given to viewshed",
                 )
             )
         return env.bin_centers[self.visible_bins]
 
 
 @reads_pynapple_samples
-def compute_viewed_location(
+def viewed_location(
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
     *,
@@ -675,13 +675,13 @@ def compute_viewed_location(
     >>> import numpy as np
     >>> from shapely.geometry import box
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.visibility import compute_viewed_location
+    >>> from neurospatial.ops.visibility import viewed_location
 
     Fixed distance method:
 
     >>> positions = np.array([[0.0, 0.0]])
     >>> headings = np.array([0.0])  # Facing East
-    >>> viewed = compute_viewed_location(
+    >>> viewed = viewed_location(
     ...     positions, headings, method="fixed_distance", view_distance=10.0
     ... )
     >>> np.allclose(viewed[0], [10.0, 0.0])
@@ -690,14 +690,14 @@ def compute_viewed_location(
     The first wall along the gaze, however far away:
 
     >>> env = Environment.from_polygon(box(0, 0, 300, 300), bin_size=10.0)
-    >>> compute_viewed_location(
+    >>> viewed_location(
     ...     np.array([[10.0, 150.0]]), np.array([0.0]), method="ray_cast", env=env
     ... )
     array([[300., 150.]])
 
     A fixed-distance gaze stops at a nearer wall instead of passing through it:
 
-    >>> compute_viewed_location(
+    >>> viewed_location(
     ...     np.array([[295.0, 150.0]]),
     ...     np.array([0.0]),
     ...     method="fixed_distance",
@@ -794,12 +794,12 @@ def gaze_points(
 ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
     """Viewed points, and which of them lie on a wall.
 
-    The arguments are those of :func:`compute_viewed_location`.
+    The arguments are those of :func:`viewed_location`.
 
     Returns
     -------
     viewed : NDArray[np.float64], shape (n_time, 2)
-        As returned by :func:`compute_viewed_location`.
+        As returned by :func:`viewed_location`.
     at_wall : NDArray[np.bool_], shape (n_time,)
         True where the gaze stopped at a wall: every finite ray-cast point,
         and each fixed-distance point a nearer wall cut short.
@@ -813,7 +813,7 @@ def gaze_points(
     if method == "ray_cast" and env is None:
         raise ValueError(
             _format_error(
-                "compute_viewed_location(): method='ray_cast' needs env.",
+                "viewed_location(): method='ray_cast' needs env.",
                 why="Why: ray casting stops the gaze at the first wall, and the "
                 "walls come from the environment",
                 fix="pass the env the positions were recorded in, or "
@@ -821,7 +821,7 @@ def gaze_points(
             )
         )
     _check_pose(
-        "compute_viewed_location()",
+        "viewed_location()",
         positions,
         headings,
         why="each sample's gaze starts at its position and points along its heading.",
@@ -832,7 +832,7 @@ def gaze_points(
         if gaze_offsets.shape != headings.shape:
             raise ValueError(
                 _format_error(
-                    "compute_viewed_location() needs one gaze offset per "
+                    "viewed_location() needs one gaze offset per "
                     f"heading, shape {headings.shape}; got {gaze_offsets.shape}.",
                     fix="pass gaze_offsets with the same length as headings",
                 )
@@ -842,7 +842,7 @@ def gaze_points(
         method,
         view_distance,
         units=getattr(env, "units", None),
-        context="compute_viewed_location()",
+        context="viewed_location()",
         argument="method",
     )
 
@@ -896,7 +896,7 @@ def gaze_points(
     return viewed, np.all(np.isfinite(viewed), axis=1)
 
 
-def compute_viewshed(
+def viewshed(
     env: BinningConsumer,
     position: NDArray[np.float64],
     heading: float,
@@ -953,12 +953,12 @@ def compute_viewshed(
     >>> import numpy as np
     >>> from shapely.geometry import box
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.visibility import compute_viewshed
+    >>> from neurospatial.ops.visibility import viewshed
     >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0)
-    >>> result = compute_viewshed(env, np.array([50.0, 50.0]), heading=0.0)
+    >>> result = viewshed(env, np.array([50.0, 50.0]), heading=0.0)
     >>> result.visibility_fraction  # an open box: every bin is in view
     1.0
-    >>> ahead = compute_viewshed(env, np.array([50.0, 50.0]), 0.0, fov=np.pi)
+    >>> ahead = viewshed(env, np.array([50.0, 50.0]), 0.0, fov=np.pi)
     >>> bool(np.all(env.bin_centers[ahead.visible_bins, 0] > 50.0))  # East
     True
     """
@@ -970,7 +970,7 @@ def compute_viewshed(
         position,
         heading,
         fov=_field_of_view(fov),
-        cue_positions=_cue_array(cue_positions, "compute_viewshed"),
+        cue_positions=_cue_array(cue_positions, "viewshed"),
         boundary_source=boundary_source,
         clear=_sight_lines(binning, arena, boundary_source, indexes),
         indexes=indexes,
@@ -1006,7 +1006,7 @@ def _observer(position: NDArray[np.float64]) -> NDArray[np.float64]:
             _format_error(
                 f"The observer position needs shape (2,); got {position.shape}.",
                 fix="pass one (x, y) position; for a trajectory use "
-                "compute_viewshed_trajectory",
+                "viewshed_trajectory",
             )
         )
     return position
@@ -1104,7 +1104,7 @@ def _viewshed(
     clear: Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]],
     indexes: LookupIndexes,
 ) -> ViewshedResult:
-    """Compute one viewshed; see :func:`compute_viewshed`.
+    """Compute one viewshed; see :func:`viewshed`.
 
     ``fov`` and ``cue_positions`` are already resolved, ``clear`` comes from
     :func:`_sight_lines`, and ``indexes`` keeps the locator's search
@@ -1177,12 +1177,12 @@ def _require_observation(
             "tracking frame), and reporting nothing visible from it would read "
             "missing data as occlusion.",
             fix="call it only for observed frames, or use "
-            "compute_viewshed_trajectory, which keeps missing frames missing",
+            "viewshed_trajectory, which keeps missing frames missing",
         )
     )
 
 
-def compute_view_field(
+def view_field(
     env: BinningConsumer,
     position: NDArray[np.float64],
     heading: float,
@@ -1194,7 +1194,7 @@ def compute_view_field(
 
     A bin is visible when the direction to its center lies inside the field
     of view and the straight line to its center crosses no wall, as in
-    :func:`compute_viewshed`.
+    :func:`viewshed`.
 
     Parameters
     ----------
@@ -1222,25 +1222,23 @@ def compute_view_field(
     ValueError
         If ``position`` or ``heading`` is not finite: a missing observation
         has no view field, and an all-False mask would read it as nothing
-        visible. ``compute_viewshed_trajectory`` keeps missing frames missing.
+        visible. ``viewshed_trajectory`` keeps missing frames missing.
 
     Examples
     --------
     >>> import numpy as np
     >>> from shapely.geometry import box
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops.visibility import compute_view_field
+    >>> from neurospatial.ops.visibility import view_field
     >>> env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=10.0)
-    >>> facing_north = compute_view_field(
+    >>> facing_north = view_field(
     ...     env, np.array([50.0, 50.0]), heading=np.pi / 2, fov=np.pi / 2
     ... )
     >>> bool(np.all(env.bin_centers[facing_north, 1] > 50.0))
     True
     """
-    _require_observation("compute_view_field", position, heading)
-    result = compute_viewshed(
-        env, position, heading, fov=fov, boundary_source=boundary_source
-    )
+    _require_observation("view_field", position, heading)
+    result = viewshed(env, position, heading, fov=fov, boundary_source=boundary_source)
     return np.asarray(result.visibility_map == 1.0)
 
 
@@ -1345,7 +1343,7 @@ def visible_cues(
 
 
 @reads_pynapple_samples
-def compute_viewshed_trajectory(
+def viewshed_trajectory(
     env: BinningConsumer,
     positions: NDArray[np.float64],
     headings: NDArray[np.float64],
@@ -1356,7 +1354,7 @@ def compute_viewshed_trajectory(
 ) -> list[ViewshedResult]:
     """Compute viewshed at each point along a trajectory.
 
-    Each frame is :func:`compute_viewshed` from that frame's position and
+    Each frame is :func:`viewshed` from that frame's position and
     heading; the walls are built once for the whole trajectory.
 
     Parameters
@@ -1396,7 +1394,7 @@ def compute_viewshed_trajectory(
     positions = np.asarray(positions, dtype=np.float64)
     headings = np.asarray(headings, dtype=np.float64)
     _check_pose(
-        "compute_viewshed_trajectory()",
+        "viewshed_trajectory()",
         positions,
         headings,
         why="each sample's gaze starts at its position and points along its heading.",
@@ -1405,7 +1403,7 @@ def compute_viewshed_trajectory(
     binning, arena = env.binning, env.arena
     indexes = CallIndexes()
     fov_obj = _field_of_view(fov)
-    cues = _cue_array(cue_positions, "compute_viewshed_trajectory")
+    cues = _cue_array(cue_positions, "viewshed_trajectory")
     clear = _sight_lines(binning, arena, boundary_source, indexes)
     return [
         _viewshed(
@@ -1442,7 +1440,7 @@ def visibility_occupancy(
     every bin visible from sample ``k`` (its position and heading), the same
     start-sample rule :meth:`Environment.occupancy` uses. The last sample has
     no interval and adds no time. Visibility is decided per bin as in
-    :func:`compute_viewshed`: the bin center is inside the field of view
+    :func:`viewshed`: the bin center is inside the field of view
     with a clear line of sight.
 
     Parameters

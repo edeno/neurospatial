@@ -4,7 +4,7 @@
   "source": "https://doi.org/10.25493/R5FR-EDG sharing_v4/navigation/lt/27764_1.mat",
   "license": "CC-BY-SA-4.0",
   "conversions": [
-    "positions: x, y in m relative to the arena centre, times 100 -> cm",
+    "positions: x, y in m relative to the arena centre, times 100 -> cm; range checked: -18.6 to 18.6 by -108.1 to 108.1 cm (largest span 216.2, expected 190-240)",
     "headings: hd in [-pi, pi] rad, kept; minus the direction of movement above 10 cm/s: circular mean -2.2 deg, median spread 21.6 deg",
     "times: t as stored; speed-filtered at 5 cm/s by the authors, so 132 gaps longer than 2 dt (longest 332.4 s)",
     "sessions: ['linear_track_1'] [[7227.0, 7486.0]]; 55.0% of samples lie outside the listed sessions and are kept",
@@ -49,7 +49,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "f42704cae2e89cb25fd8a78f954b02557e459e15"
+    "git_commit": "5a814f34e6bc76b02adf2a7749506ef330b074b9"
   },
   "load_warnings": [],
   "operations": {
@@ -85,7 +85,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.005,
+      "seconds": 0.006,
       "peak_mb": 3.8
     },
     "rates.spatial": {
@@ -107,7 +107,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.152,
+      "seconds": 0.156,
       "peak_mb": 12.3
     },
     "rates.spatial_information": {
@@ -143,7 +143,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.267,
+      "seconds": 0.271,
       "peak_mb": 18.1
     },
     "cells.place_screen": {
@@ -155,7 +155,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.01,
       "peak_mb": 14.5
     },
     "cells.grid_score": {
@@ -166,7 +166,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.58,
+      "seconds": 1.724,
       "peak_mb": 4.3
     },
     "cells.border_score": {
@@ -197,7 +197,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.103,
+      "seconds": 0.101,
       "peak_mb": 15.8
     },
     "decode.position": {
@@ -226,7 +226,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.11,
+      "seconds": 0.099,
       "peak_mb": 14.9
     },
     "io.nwb_roundtrip": {
@@ -237,7 +237,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.24,
+      "seconds": 2.253,
       "peak_mb": 9.4
     },
     "env.from_graph": {
@@ -272,7 +272,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.007,
+      "seconds": 0.008,
       "peak_mb": 3.8
     },
     "behavior.turn_sequence": {

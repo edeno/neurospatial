@@ -23,7 +23,7 @@ from neurospatial.binning import (
     RectilinearLocator,
     SpatialBins,
 )
-from neurospatial.ops.egocentric import compute_egocentric_distance
+from neurospatial.ops.egocentric import egocentric_distance
 
 
 def _times(positions: np.ndarray) -> np.ndarray:
@@ -182,9 +182,9 @@ def test_geodesic_egocentric_distance_names_itself_on_a_volume():
     positions = np.full((4, 2), 5.0)
     with pytest.raises(
         ValueError,
-        match=r"^compute_egocentric_distance\(metric='geodesic'\) got positions "
+        match=r"^egocentric_distance\(metric='geodesic'\) got positions "
         r"with shape \(4, 2\)[\s\S]*bins are 3-D",
     ):
-        compute_egocentric_distance(
+        egocentric_distance(
             positions, None, np.array([[1.0, 1.0]]), metric="geodesic", env=volume
         )

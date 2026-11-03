@@ -13,8 +13,8 @@ from shapely.geometry import LineString, Polygon, box
 from neurospatial import Environment
 from neurospatial.arena import OpenArena
 from neurospatial.behavior import (
-    compute_step_lengths,
     shortest_path_length,
+    step_lengths,
     traveled_path_length,
 )
 
@@ -654,7 +654,7 @@ class TestStraightLinesFromPositionsStayInside:
         paths = environment_paths(env, call="test")
         lengths = [
             shortest_path_length(env, p, q),
-            compute_step_lengths(self.L_POINTS, metric="geodesic", env=env)[0],
+            step_lengths(self.L_POINTS, metric="geodesic", env=env)[0],
             paths.to_point(p[None, :], q)[0],
             paths.pairwise(self.L_POINTS).between(np.array([0]), np.array([1]))[0],
         ]

@@ -95,7 +95,7 @@ from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.distance import distance_field
-from neurospatial.ops.egocentric import compute_egocentric_bearing
+from neurospatial.ops.egocentric import egocentric_bearing
 from neurospatial.simulation.models.base import (
     _check_angle,
     _check_metric,
@@ -273,7 +273,7 @@ class ObjectVectorCellModel:
     --------
     PlaceCellModel : Gaussian place fields
     BoundaryVectorCellModel : Wall-distance and direction tuned cells
-    compute_egocentric_bearing : Compute bearing to targets
+    egocentric_bearing : Compute bearing to targets
     """
 
     env: Environment = field(repr=False)
@@ -522,7 +522,7 @@ class ObjectVectorCellModel:
                 bearings = np.arctan2(delta[:, :, 1], delta[:, :, 0])
             else:
                 assert headings is not None
-                bearings = compute_egocentric_bearing(
+                bearings = egocentric_bearing(
                     positions, headings, self.object_positions
                 )
             # von Mises tuning with peak 1 at θ_pref, exp(κ (cos(θ - θ_pref) - 1)),

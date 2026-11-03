@@ -13,7 +13,7 @@ coordinates are the cartesian `(x, y)` or `(x, y, z)` of physical
 space; an allocentric bearing is measured against compass directions
 (east is the standard zero in neurospatial). Contrast with
 [*egocentric*](#egocentric). See
-[`ops.egocentric.allocentric_to_egocentric`](api/index.md) and
+[`ops.allocentric_to_egocentric`](api/index.md) and
 [specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes).
 
 ### Bayesian decoding
@@ -42,11 +42,21 @@ identifies bins by integer index throughout; see
 **nodes** when the graph view is more relevant — e.g. when computing
 geodesic distances.
 
-### Cell (graph)
+### Bin cell
 
-Synonym for *bin* in graph contexts. neurospatial uses "cell" only
-when interfacing with libraries that prefer the graph vocabulary; the
-canonical term in the public API is *bin*.
+Synonym for *bin* in graph and grid contexts, such as a cell of a
+regular grid. It is not a neuron: for neurons this documentation says
+*unit*, *neuron* or *place cell*. The canonical term in the public API
+is *bin*.
+
+### dt
+
+The width of a time bin, in seconds. `dt=` is used wherever activity is
+counted in time bins: `decode_session` and `decode_position` (the
+decoding bin), `peri_event_histogram` and `BayesianDecoder`. `decode_session`,
+`BayesianDecoder` and `peri_event_histogram` default to 0.025 s;
+`decode_position` requires `dt=`. Spatial,
+angular and distance bin widths are called `bin_size`.
 
 ### Egocentric
 
@@ -59,6 +69,22 @@ which compass direction it's currently facing. See
 [specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes), and
 [specialized recipes](user-guide/neuroscience-metrics.md#specialized-tuning-recipes).
 
+### Epoch
+
+A stretch of time to analyze, such as a running bout, a session or one
+trial. Pass `epochs=` to a rate-map, tuning or decoding function to
+restrict it to those windows; each window is half-open, `[start, stop)`,
+in seconds on the same clock as `times`. An epoch is an *interval* used
+as a selector. See [`Intervals`](api/index.md).
+
+### Event-triggered
+
+Anything aligned to event times rather than to the clock: a *peri-event
+time histogram* (PSTH) of spikes around reward deliveries, or a signal
+averaged around ripples. The events can be stimuli, behavior or detected
+events. See [`peri_event_histogram`](api/index.md) and
+[`07_peri_event_analysis`](examples/07_peri_event_analysis.ipynb).
+
 ### Field
 
 A scalar quantity defined per bin: shape `(n_bins,)` for single-time
@@ -66,6 +92,21 @@ quantities, `(n_time, n_bins)` for time-varying. Place fields,
 boundary fields, occupancy maps, and decoded posteriors are all
 fields. See
 [`compute_spatial_rate`](api/index.md) which returns a *rate field*.
+
+### Interval
+
+A half-open time window `[start, stop)` in seconds, such as a lap, a trial
+or a row of a task log. An `Intervals` table holds many of them with stable
+ids and named fields (outcome, direction, region) and works anywhere an
+*epoch* is accepted. Detectors such as `detect_laps` and `detect_trials`
+return intervals.
+
+### Lap
+
+One circuit of a loop, or one pass along a linear track, found by
+`detect_laps`. A lap is a time interval with a direction (clockwise or
+counter-clockwise on a loop; increasing or decreasing on a linear track)
+and an overlap score against the template lap. Contrast with *trial*.
 
 ### Linearization
 
@@ -75,6 +116,18 @@ The 1D coordinate respects topological adjacency on the track even
 when bins are far apart in 2D space. See
 [`Environment.to_linear`](api/index.md) and
 [`03_trajectories_and_behavior`](examples/03_trajectories_and_behavior.ipynb).
+
+### `max_gap`
+
+The longest stretch of missing tracking, in seconds, that is bridged: the
+interval between the valid samples on either side still counts as time the
+animal spent somewhere. With the default `time_allocation="start"` the
+interval is charged to the bin it started in; `"linear"` spreads it along
+the straight line between the two samples. A longer gap is treated as a
+tracking loss: it is left out of occupancy and its spikes are not counted. The default is 1.0 s, chosen for video and
+DeepLabCut tracking. Choose a value longer than routine dropped frames and
+shorter than a real loss, such as the animal being picked up. `None`
+bridges every gap.
 
 ### Object-vector cell (OVC)
 
@@ -118,12 +171,30 @@ Detected via thresholding + connected-component analysis; quantified
 by location, size, peak rate, and information content. See
 [`detect_place_fields`](api/index.md).
 
+### Posterior
+
+In decoding, the probability that the animal was in each bin given the
+spikes in one time bin, as probability mass per bin. A `DecodingResult` has
+one posterior row per time bin, shape `(n_time_bins, n_bins)`; each row
+sums to 1. The default prior is uniform over space, and the MAP bin and
+credible region rank bins by density (mass divided by bin size). See
+*Bayesian decoding*.
+
+### PSTH
+
+Peri-stimulus (peri-event) time histogram: firing rate as a function of
+time relative to a set of events such as reward delivery, a stimulus or a
+ripple, averaged over events. `peri_event_histogram(spike_times,
+event_times, window, dt=...)` returns the rate in each time bin relative
+to the event. See *Event-triggered*.
+
 ### Rate map
 
 The spatial firing-rate field for one neuron: shape `(n_bins,)` in
 units of Hz. Built from spike counts ÷ occupancy, optionally smoothed
-via graph diffusion or Gaussian KDE. The phrase "place field" refers
-to a thresholded subset of the rate map.
+via graph diffusion or Gaussian KDE. A *place field*
+is a thresholded region of the rate map, not the whole map: `compute_spatial_rate`
+returns a rate map and `detect_place_fields` finds the fields in it.
 
 ### Shuffle significance
 
@@ -144,10 +215,24 @@ screen's cutoff.
 
 Anything indexed by spike times rather than time bins. A
 *spike-triggered average* of position gives the animal's expected
-location at the moment each spike fired; a *spike-triggered
-event-aligned histogram* (PSTH) does the analogous slicing around
-event times. See [`peri_event_histogram`](api/index.md) and
-[`07_peri_event_analysis`](examples/07_peri_event_analysis.ipynb).
+location at the moment each spike fired.
+
+### Spike window (`spike_window`)
+
+The time during which the electrophysiology was recording. Intervals
+outside it are left out of occupancy and their spikes are not counted.
+The default, `None`, assumes spikes were recorded whenever position was;
+pass it when tracking started before, or continued after, the spike
+recording. The result records the window applied and whether it was
+assumed.
+
+### Trial
+
+One run of a task, such as leaving the start arm and arriving at a goal
+arm, found by `detect_trials` or built from a task log with
+`Intervals.from_arrays`. A trial is a time interval with an outcome
+(`reached`, `returned` or `censored`) and the regions it started from and
+ended in. Contrast with *lap*.
 
 ### Tuning curve
 

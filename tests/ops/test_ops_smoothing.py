@@ -2,7 +2,7 @@
 still work through the ``neurospatial.ops.smoothing`` module after the
 ops reorganization.
 
-The functional / numerical coverage for ``compute_diffusion_kernels``
+The functional / numerical coverage for ``diffusion_kernels``
 and ``apply_kernel`` lives in ``tests/ops/test_kernels.py`` (richer
 edge cases: density vs. transition mode, mass conservation, impulse
 spreading, bandwidth limits, disconnected components, large-graph

@@ -13,7 +13,7 @@ Field Comparison Metrics
 ------------------------
 field_stability : Correlation between two firing rate maps.
 field_shift_distance : Distance between field centroids across sessions.
-compute_field_emd : Earth Mover's Distance between rate distributions.
+field_emd : Earth Mover's Distance between rate distributions.
 in_out_field_ratio : Ratio of in-field to out-of-field firing rate.
 rate_map_coherence : Spatial coherence of a firing rate map.
 """
@@ -45,7 +45,7 @@ __all__ = [
     # Field comparison
     "field_stability",
     "field_shift_distance",
-    "compute_field_emd",
+    "field_emd",
     "in_out_field_ratio",
     "rate_map_coherence",
 ]
@@ -1136,7 +1136,7 @@ def field_shift_distance(
     return float(env_a.distance_between(bins=centroid_bins))
 
 
-def compute_field_emd(
+def field_emd(
     env: Environment,
     firing_rate_a: NDArray[np.float64],
     firing_rate_b: NDArray[np.float64],
@@ -1269,7 +1269,7 @@ def compute_field_emd(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.encoding._field_metrics import compute_field_emd
+    >>> from neurospatial.encoding._field_metrics import field_emd
     >>>
     >>> from shapely.geometry import box
     >>>
@@ -1281,7 +1281,7 @@ def compute_field_emd(
     >>> field2 = np.exp(-0.1 * np.linalg.norm(env.bin_centers - [4, 0], axis=1) ** 2)
     >>>
     >>> # The EMD is the distance the field moved, by either metric here
-    >>> emd_euclidean = compute_field_emd(env, field1, field2, metric="euclidean")
+    >>> emd_euclidean = field_emd(env, field1, field2, metric="euclidean")
     >>> print(f"Euclidean EMD: {emd_euclidean:.1f} cm")
     Euclidean EMD: 4.0 cm
     """
@@ -1303,7 +1303,7 @@ def compute_field_emd(
     if metric == "euclidean":
         require_cartesian(
             env.coordinate_system,
-            "compute_field_emd(metric='euclidean')",
+            "field_emd(metric='euclidean')",
             why="Its ground distance is the straight line between bin centers.",
             fix=(
                 "use metric='geodesic', whose ground distance follows physical graph "
@@ -1384,7 +1384,7 @@ def compute_field_emd(
     )
     if log["result_code"] != 1:  # 1: optimal
         msg = (
-            f"compute_field_emd(metric='euclidean'): the transport solver stopped "
+            f"field_emd(metric='euclidean'): the transport solver stopped "
             f"before the optimum ({log['warning']}).\n"
             "Fix: use metric='geodesic', or coarser bins."
         )
@@ -1428,7 +1428,7 @@ def _graph_transport_cost(
     from neurospatial.ops.distance import _bin_adjacency
 
     adjacency = _bin_adjacency(
-        env.connectivity, weight="distance", operation="compute_field_emd()"
+        env.connectivity, weight="distance", operation="field_emd()"
     )
     n_bins = adjacency.shape[0]
     supply = np.zeros(n_bins)

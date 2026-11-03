@@ -122,7 +122,7 @@ import numpy as np
 
 from neurospatial import Environment, compute_spatial_rates
 from neurospatial.ops import estimate_transform
-from neurospatial.ops.transforms import AffineND
+from neurospatial.ops import AffineND
 
 mask = np.ones((3, 3), dtype=bool)
 mask[1, 1] = False
@@ -182,7 +182,7 @@ is available.
 ```python
 import numpy as np
 from neurospatial import Environment
-from neurospatial.ops.transforms import AffineND
+from neurospatial.ops import AffineND
 
 x = np.linspace(0., 10., 101)
 positions = np.column_stack((x, 2. + np.sin(x)))

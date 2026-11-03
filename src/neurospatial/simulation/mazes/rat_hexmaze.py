@@ -150,6 +150,7 @@ class RatHexmazeDims(MazeDims):
 
 def make_rat_hexmaze(
     dims: RatHexmazeDims | None = None,
+    *,
     bin_size: float = 2.0,
     include_track: bool = True,
 ) -> MazeEnvironments:
@@ -265,7 +266,7 @@ def make_rat_hexmaze(
 
     def corridor(u: str, v: str) -> Polygon:
         return make_buffered_line(
-            graph.nodes[u]["pos"], graph.nodes[v]["pos"], dims.corridor_width
+            graph.nodes[u]["pos"], graph.nodes[v]["pos"], width=dims.corridor_width
         )
 
     modules = {

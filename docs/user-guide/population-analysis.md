@@ -21,10 +21,10 @@ which also bins the spike counts.
 | Question | Functions | Import from |
 | --- | --- | --- |
 | Rate maps for every unit | `compute_spatial_rates` | `neurospatial` or `neurospatial.encoding` |
-| How much of the environment is covered, and by how many place cells? | `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
-| Does the map change between conditions? | `population_vector_correlation`, `rate_map_correlations`, `field_overlap` | `neurospatial.encoding` (defined in `neurospatial.encoding.population`) |
+| How much of the environment is covered, and by how many place cells? | `population_coverage`, `plot_population_coverage`, `field_density_map`, `count_place_cells` | `neurospatial.encoding` |
+| Does the map change between conditions? | `population_vector_correlation`, `rate_map_correlations`, `field_overlap` | `neurospatial.encoding` |
 | Spike counts in time bins | `bin_spikes_in_time` | `neurospatial.decoding` |
-| Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `assembly_reactivation`, `explained_variance_reactivation` | `neurospatial.reactivation` (defined in `neurospatial.reactivation.assemblies`) |
+| Which cells fire together, and does that pattern return during rest? | `pairwise_correlations`, `detect_assemblies`, `marchenko_pastur_threshold`, `assembly_activation`, `assembly_reactivation`, `explained_variance_reactivation` | `neurospatial.reactivation` |
 | What position does the population encode? | `decode_position`, `decode_session`, `BayesianDecoder` | `neurospatial.decoding` |
 
 ## How much of the track does the population cover?

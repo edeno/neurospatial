@@ -17,8 +17,8 @@ from neurospatial import Environment
 from neurospatial.arena import MaskArena, OpenArena
 from neurospatial.encoding import border_score, compute_boundary_vector_rate
 from neurospatial.geometry import boundary_geometry, line_of_sight_clear
-from neurospatial.ops import compute_boundary_distances
-from neurospatial.ops.visibility import compute_viewed_location
+from neurospatial.ops import boundary_distances
+from neurospatial.ops.visibility import viewed_location
 from neurospatial.simulation import (
     BorderCellModel,
     BoundaryVectorCellModel,
@@ -55,7 +55,7 @@ def test_gaze_passes_clear_walls_and_drops_and_stops_at_opaque_walls(
     env = platform_with_walls
     observer = np.array([[10.0, 50.0], [10.0, 50.0]])
     east, west = 0.0, np.pi
-    viewed = compute_viewed_location(
+    viewed = viewed_location(
         observer, np.array([east, west]), method="ray_cast", env=env
     )
     # East: through the glass at x=30 onto the board at x=70.
@@ -71,7 +71,7 @@ def test_gaze_passes_clear_walls_and_drops_and_stops_at_opaque_walls(
 
 
 def test_movement_stops_at_every_boundary(platform_with_walls):
-    distances, directions = compute_boundary_distances(
+    distances, directions = boundary_distances(
         platform_with_walls,
         np.array([[10.0, 50.0]]),
         direction_frame="allocentric",
@@ -93,7 +93,7 @@ def test_a_clear_stretch_of_a_walled_outline_lets_the_gaze_out():
             wall_kinds={"window": "transparent_wall"},
         )
     )
-    viewed = compute_viewed_location(
+    viewed = viewed_location(
         np.array([[50.0, 50.0], [50.0, 90.0]]),
         np.zeros(2),
         method="ray_cast",

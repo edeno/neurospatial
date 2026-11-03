@@ -61,7 +61,7 @@ from neurospatial.ops.basis import (
 # Distance and direction to walls
 from neurospatial.ops.boundary_vectors import (
     boundary_directions,
-    compute_boundary_distances,
+    boundary_distances,
     nearest_boundary,
 )
 
@@ -110,8 +110,8 @@ from neurospatial.ops.distance import (
 # Egocentric operations
 from neurospatial.ops.egocentric import (
     allocentric_to_egocentric,
-    compute_egocentric_bearing,
-    compute_egocentric_distance,
+    egocentric_bearing,
+    egocentric_distance,
     egocentric_to_allocentric,
 )
 
@@ -145,7 +145,7 @@ from neurospatial.ops.normalize import (
 from neurospatial.ops.smoothing import _gaussian_kernel as _gaussian_kernel
 
 # Smoothing operations
-from neurospatial.ops.smoothing import apply_kernel, compute_diffusion_kernels
+from neurospatial.ops.smoothing import apply_kernel, diffusion_kernels
 
 # Transform operations
 from neurospatial.ops.transforms import (
@@ -174,10 +174,10 @@ from neurospatial.ops.transforms import (
 from neurospatial.ops.visibility import (
     FieldOfView,
     ViewshedResult,
-    compute_view_field,
-    compute_viewed_location,
-    compute_viewshed,
-    compute_viewshed_trajectory,
+    view_field,
+    viewed_location,
+    viewshed,
+    viewshed_trajectory,
     visibility_occupancy,
     visible_cues,
 )
@@ -195,7 +195,7 @@ __all__ = [
     "resample_field",
     # Boundary vectors
     "boundary_directions",
-    "compute_boundary_distances",
+    "boundary_distances",
     "nearest_boundary",
     # Calculus
     "divergence",
@@ -209,8 +209,8 @@ __all__ = [
     "pairwise_distances",
     # Egocentric
     "allocentric_to_egocentric",
-    "compute_egocentric_bearing",
-    "compute_egocentric_distance",
+    "egocentric_bearing",
+    "egocentric_distance",
     "egocentric_to_allocentric",
     # Feature sampling
     "SpatialFeatureResult",
@@ -226,7 +226,7 @@ __all__ = [
     # Smoothing
     "KernelMode",
     "apply_kernel",
-    "compute_diffusion_kernels",
+    "diffusion_kernels",
     # Transforms - Core classes
     "AffineND",
     "SpatialTransform",
@@ -255,10 +255,10 @@ __all__ = [
     # Visibility
     "FieldOfView",
     "ViewshedResult",
-    "compute_view_field",
-    "compute_viewed_location",
-    "compute_viewshed",
-    "compute_viewshed_trajectory",
+    "view_field",
+    "viewed_location",
+    "viewshed",
+    "viewshed_trajectory",
     "visibility_occupancy",
     "visible_cues",
     # Basis functions
@@ -270,3 +270,8 @@ __all__ = [
     "select_basis_centers",
     "spatial_basis",
 ]
+
+
+def __dir__() -> list[str]:
+    """List the public names, so ``dir()`` shows what the documentation teaches."""
+    return sorted(__all__)
