@@ -62,12 +62,27 @@ HTTP byte range (`_fetch.open_nwb`), about a minute per file.
 | `grosmark_000044_circular` | Rat CA1 on a 1 m circular track with sleep before and after (DANDI 000044) | streamed from 9.2 GB | CC-BY-4.0 |
 | `grosmark_000044_linear` | Rat CA1 on a 1.6 m linear track with sleep before and after (DANDI 000044) | streamed from 8.7 GB | CC-BY-4.0 |
 | `jadhav_000447` | Rat CA1 and PFC units on a W-track (DANDI 000447) | streamed from 5.1 GB | CC-BY-4.0 |
+| `hc11_achilles` | Rat CA1 on a 1.6 m linear track, sleep before and after; the session of `grosmark_000044_linear` (CRCNS hc-11) | 38.5 MB from a 277.5 MB archive | CRCNS terms |
+| `hc3_ec013_669` | Rat CA1 and entorhinal units on a 250 cm linear track, two LEDs (CRCNS hc-3) | 5 MB from a 233.8 MB archive | CRCNS terms |
+| `hc2_ec013_527` | Rat CA1 units in a 180 cm open field, two LEDs (CRCNS hc-2) | 6 MB from a 211.8 MB archive | CRCNS terms |
+| `hc28_hpa` | Rat CA1 and PFC units on a W-track, untracked frames stored as 0 (CRCNS hc-28) | 30 MB from a 2.8 GB archive | CRCNS terms |
+| `hc31_anm190422` | Rat CA1 units on a 48 m track, position in inches (CRCNS hc-31) | 166.8 MB | CRCNS terms |
+| `hc18_train261` | Rat CA1 units while carried on a model train (CRCNS hc-18) | 175 MB from a 6.5 GB archive | CRCNS terms |
 
 NWB loaders set `params["nwb_source"]` to the cached file, or to the URL of a
 file read by byte range. The `io.nwb_readers`
 operation then runs neurospatial's position, head-direction and unit readers
 on it with default arguments and compares what they return with the loader's
 range-checked arrays.
+
+CRCNS loaders (`hc*`) need a free crcns.org account. They read it from the
+`CRCNS_USERNAME` and `CRCNS_PASSWORD` environment variables and never print,
+log or store either value (`_fetch.fetch_crcns`). CRCNS serves `.tar.gz`
+archives, which cannot be read by byte range: `_fetch.fetch_crcns_tar_members`
+streams an archive once and keeps only the pinned members, so the first load
+of `hc28_hpa` or `hc18_train261` reads the whole 2.8 or 6.5 GB archive (about
+3-10 min). CRCNS terms: cite the data set and its paper; some labs ask to be
+consulted about authorship (see each loader's `DATASET["license"]`).
 
 ## Studies
 
@@ -80,6 +95,8 @@ operation cells; each writes to `results/studies/`:
 - `information_bias_null.py`: `spatial_information_bias` against simulated
   untuned Poisson and bursty cells on each recording's own occupancy, and
   real units against 100 circular shifts.
+- `hc11_vs_000044.py`: the same session from CRCNS hc-11 and DANDI 000044,
+  unit by unit, sample by sample.
 
 ## Read the results
 
