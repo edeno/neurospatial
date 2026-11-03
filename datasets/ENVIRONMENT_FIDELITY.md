@@ -233,3 +233,19 @@ The Escher staircase's layout (no dimensions in the dandiset, Knierim et al.
 be separated, G-053), Gardner's and Hafting's stated sizes (sources not
 read), and 000405, 001695, 001880, 000003 and Shipley's arm lengths (no
 source read).
+
+## Declared environments (open arenas and 3-D)
+
+The open-arena and 3-D loaders now declare the stated apparatus
+(`geometry["environment"]`), and the study measures that environment, with
+the samples-built one beside it against the same outline, bars or room
+(table "Declared against samples-built environments" in
+[`results/studies/environment_fidelity.md`](results/studies/environment_fidelity.md)).
+Every declared environment matches: 000582, 002030, 000405 (1.5 x 1.3 m,
+Gonzalez & Giocomo 2024), Gardner (1.5 m, Gardner et al. 2022), Vollan's
+open field (a 150 cm circle, G-114), Kanter, the water maze and hc-2 cover
+their stated outline fully with no holes; the lattice's bar graph gives
+0.95 x the distance along the bars (voxels 0.77); the bat's room has no
+voxel outside `r_lim`. 000987 (stated 80 cm walls, samples 52 cm, G-130),
+001880, 000003 and Hafting stay built from the samples. Sources, residuals
+and what changed in the analyses: [BATCH_FAITHFUL_ARENAS.md](BATCH_FAITHFUL_ARENAS.md).
