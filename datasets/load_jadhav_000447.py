@@ -21,7 +21,9 @@ are per-trial ``params`` (well numbers, not times).
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s, as
 for the other tracks; ``dt`` 0.25 s; trajectories alternate between training
-and testing the decoder.
+and testing the decoder within each start and end well pair (consecutive
+trajectories alternate direction and side arm, so even and odd ones would
+split them by direction).
 
 Two apparatus, two recordings. The file's run epochs are on two W-tracks
 (the dandiset description: a novel W-track in runs 1 and 3, a familiar one
@@ -52,6 +54,7 @@ from _fetch import dandi_stream_url, open_nwb
 from _record import (
     Range,
     Recording,
+    alternate_within,
     check_expectations,
     checked_span,
     validate_recording,
@@ -184,6 +187,12 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
             f" (centre well {centre}); recheck the mapping"
         )
         raise ValueError(msg)
+    # Trajectories alternate inbound and outbound, and between the side arms:
+    # train and test alternate within each start and end well pair, so both
+    # hold every direction and arm.
+    train = alternate_within(
+        np.array([f"{a}-{b}" for a, b in zip(start_well, end_well, strict=True)])
+    )
     graph = fitted_maze(parallel_arm_candidates(positions), positions, cap=FIT_CAP_CM)
     declared, declared_line = declared_geometry(
         graph,
@@ -236,8 +245,8 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
             "min_speed": 4.0,
             "dt": 0.25,
             "analysis_epochs": maze_runs,
-            "train_epochs": windows[::2],
-            "test_epochs": windows[1::2],
+            "train_epochs": windows[train],
+            "test_epochs": windows[~train],
             "nwb_source": source,
             "readers_used": ("units",),
         },
@@ -252,7 +261,8 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
             " inbound rows start at a side well and the"
             f" {int((from_side & correct).sum())} correct ones end at the centre);"
             " 'epoch intervals' as run;"
-            " params trial_start_well, trial_end_well, trial_correct per trial",
+            " params trial_start_well, trial_end_well, trial_correct per trial;"
+            " train/test alternate within each start-end well pair",
             f"maze: the {maze} W-track, run epochs"
             f" {[i + 1 for i in MAZE_RUNS[maze]]}; positions outside them -> NaN"
             f" ({in_maze.mean():.1%} of samples kept); {int(mine.sum())} of"

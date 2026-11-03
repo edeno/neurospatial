@@ -262,6 +262,33 @@ def alternating_blocks(
     return blocks[::2], blocks[1::2]
 
 
+def alternate_within(labels: NDArray[Any]) -> NDArray[np.bool_]:
+    """Trials alternating between train and test within each label, in order.
+
+    On an alternation task consecutive trials run different arms or
+    directions, so even and odd trials would split them by arm; alternating
+    within each label (arm, direction, start and end well) puts every label
+    in both halves.
+
+    Parameters
+    ----------
+    labels : ndarray, shape (n_trials,)
+        Any hashable per-trial label, in trial order.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_trials,)
+        True for the train trials (the 1st, 3rd, ... of each label), False
+        for the test trials.
+    """
+    labels = np.asarray(labels)
+    train = np.zeros(len(labels), dtype=bool)
+    for label in np.unique(labels):
+        mine = np.flatnonzero(labels == label)
+        train[mine[::2]] = True
+    return train
+
+
 def heading_vs_movement(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
