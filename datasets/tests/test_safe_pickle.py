@@ -74,3 +74,54 @@ def test_restricted_npz_refuses_exploit_before_running_it(tmp_path):
     with pytest.raises(pickle.UnpicklingError, match="system"):
         read_npz(path)
     assert not sentinel.exists()
+
+
+@pytest.mark.parametrize(
+    "module", ["load_gardner_2022_grid", "load_rosenberg_labyrinth"]
+)
+def test_unpickler_refuses_ndarray_from_raw_bytes(module):
+    # REDUCE numpy.ndarray((1,), "O", buffer=<8 bytes>) would read the bytes as
+    # an object pointer; the stream may only pass ndarray to _reconstruct.
+    unpickler = getattr(
+        __import__(module),
+        "_SpikeUnpickler" if "gardner" in module else "_TrajUnpickler",
+    )
+
+    def text(value):
+        raw = value.encode()
+        return pickle.SHORT_BINUNICODE + bytes([len(raw)]) + raw
+
+    blob = (
+        pickle.PROTO
+        + b"\x04"
+        + text("numpy")
+        + text("ndarray")
+        + pickle.STACK_GLOBAL
+        + pickle.MARK
+        + pickle.BININT1
+        + b"\x01"
+        + pickle.TUPLE
+        + text("O")
+        + pickle.SHORT_BINBYTES
+        + b"\x08"
+        + id(os.system).to_bytes(8, "little")
+        + pickle.TUPLE3
+        + pickle.REDUCE
+        + pickle.STOP
+    )
+    with pytest.raises((pickle.UnpicklingError, TypeError)):
+        unpickler(io.BytesIO(blob)).load()
+
+
+def test_unpickler_still_reads_numpy_arrays():
+    from load_gardner_2022_grid import _SpikeUnpickler
+
+    holder = np.empty((), dtype=object)
+    holder[()] = {0: np.array([0.5, 1.5])}
+    # np.save writes object arrays with protocol 3; protocol 5 uses _frombuffer,
+    # which the allow-list refuses.
+    for protocol in (3, 4):
+        out = _SpikeUnpickler(
+            io.BytesIO(pickle.dumps(holder, protocol=protocol))
+        ).load()
+        np.testing.assert_array_equal(out[()][0], [0.5, 1.5])
