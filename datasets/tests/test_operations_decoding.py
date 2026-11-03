@@ -71,3 +71,29 @@ def test_positions_outside_a_declared_track_are_not_a_part():
     assert disconnected == 0.0
     assert len(errors) == 2000
     assert np.all(np.isfinite(errors))
+
+
+def test_decoding_error_over_the_declared_samples_in_both_runs(simulated_recording):
+    # Declare the left half of the 100 cm box: both runs report the error over
+    # the same time bins, those whose true position the declared half places.
+    from dataclasses import replace
+
+    import shapely
+    from operations import decode_position
+
+    from neurospatial import Environment
+
+    half = Environment.from_polygon(
+        shapely.box(0, 0, 50, 100), bin_size=2.5, units="cm"
+    )
+    rec = replace(simulated_recording, geometry={"environment": lambda: half})
+    with pytest.warns(UserWarning, match="outside the environment"):
+        declared = decode_position(rec, {}).summary
+    inferred = decode_position(rec, {"inferred_env": True}).summary
+    assert declared["n_on_declared"] == inferred["n_on_declared"]
+    assert 0.3 < declared["n_on_declared"] / declared["n_time_bins"] < 0.7
+    assert declared["frac_actual_outside"] == pytest.approx(
+        1 - declared["n_on_declared"] / declared["n_time_bins"], abs=0.02
+    )
+    assert inferred["frac_actual_outside"] == 0.0
+    assert np.isfinite(inferred["median_error_on_declared"])
