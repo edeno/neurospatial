@@ -13,7 +13,11 @@ What the loader converts: ``Position/SpatialSeries`` has three columns under
 the unit ``"centimeters; centimeters/second"``: x and y in cm, then speed in
 cm/s (its values match the speed computed from x and y; see
 ``conversions``). The loader keeps x and y. Trajectories become epochs
-(``trials``, ``inbound``, ``outbound``) and their wells ``events``.
+(``trials``, ``inbound``, ``outbound``); ``trajectory_type`` 1 is inbound,
+checked against the wells (the outbound ones, 0, start at the middle arm's
+well; inbound ones start at a side well, and the correct ones end at the
+middle). Their start and end wells and correctness
+are per-trial ``params`` (well numbers, not times).
 
 Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s, as
 for the other tracks; ``dt`` 0.25 s; trajectories alternate between training
@@ -88,6 +92,25 @@ TRACK_WIDTH_CM = 7.0
 FIT_CAP_CM = 10.0
 
 
+def _position_at(times: np.ndarray, positions: np.ndarray, t: float) -> np.ndarray:
+    """The last tracked position at or before ``t``."""
+    tracked = np.flatnonzero(np.isfinite(positions).all(axis=1) & (times <= t))
+    return positions[tracked[-1]] if tracked.size else np.full(2, np.nan)
+
+
+def _centre_well(wells: np.ndarray, ends: np.ndarray) -> int:
+    """The well whose trial ends lie between the other two wells' (the W's middle arm)."""
+    labels = np.unique(wells)
+    places = np.array([np.nanmedian(ends[wells == w], axis=0) for w in labels])
+    if len(labels) != 3:
+        msg = f"expected three wells, got {labels}"
+        raise ValueError(msg)
+    # Along the line through the two farthest-apart wells, the centre is between.
+    pairs = [(0, 1), (0, 2), (1, 2)]
+    a, b = max(pairs, key=lambda p: np.linalg.norm(places[p[0]] - places[p[1]]))
+    return int(labels[({0, 1, 2} - {a, b}).pop()])
+
+
 def load(cache: Path | None = None) -> Recording:
     """Stream the session; the novel W-track's runs, x, y in cm, spikes, trajectories."""
     del cache  # read by byte range: nothing is cached
@@ -140,6 +163,27 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
     trials = trials[mine]
     windows = all_windows[mine]
     inbound = trials["trajectory_type"].to_numpy() == 1
+    start_well = trials["start_well"].to_numpy(dtype=int)
+    end_well = trials["end_well"].to_numpy(dtype=int)
+    # trajectory_type 1 is inbound (a side well back to the centre well), 0
+    # outbound (from the centre). Checked against the wells: the centre well
+    # lies between the other two (the W's middle arm); every outbound row
+    # starts there; inbound rows start at a side well, and the correct ones
+    # end at the centre.
+    correct = trials["correct"].to_numpy() == 1
+    ends = np.array([_position_at(times, positions, t) for t in windows[:, 1]])
+    centre = _centre_well(end_well, ends)
+    from_side = inbound & (start_well != centre)
+    if not (
+        np.all(start_well[~inbound] == centre)
+        and from_side.sum() >= 0.9 * inbound.sum()
+        and np.all(end_well[from_side & correct] == centre)
+    ):
+        msg = (
+            "trajectory_type no longer matches inbound/outbound against the wells"
+            f" (centre well {centre}); recheck the mapping"
+        )
+        raise ValueError(msg)
     graph = fitted_maze(parallel_arm_candidates(positions), positions, cap=FIT_CAP_CM)
     declared, declared_line = declared_geometry(
         graph,
@@ -182,13 +226,12 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
             "inbound": windows[inbound],
             "outbound": windows[~inbound],
         },
-        events={
-            "start_well": trials["start_well"].to_numpy(dtype=float),
-            "end_well": trials["end_well"].to_numpy(dtype=float),
-            "correct": trials["correct"].to_numpy(dtype=float),
-        },
         geometry=declared,
         params={
+            # Per trial, in the order of epochs["trials"]; not times, so not events.
+            "trial_start_well": start_well,
+            "trial_end_well": end_well,
+            "trial_correct": trials["correct"].to_numpy(dtype=bool),
             "bin_size": 2.5,
             "min_speed": 4.0,
             "dt": 0.25,
@@ -203,7 +246,13 @@ def load_maze(maze: str, dataset: dict[str, str]) -> Recording:
             f" is speed in cm/s (median ratio {scale:.2f} to the speed from x, y while"
             f" moving, r = {agreement:.2f}), dropped",
             "epochs: trials table rows as trials, split by trajectory_type"
-            " (1 inbound, 0 outbound); 'epoch intervals' as run",
+            " (1 inbound, 0 outbound; checked: the centre well is"
+            f" {centre}, between the others, all {int((~inbound).sum())} outbound"
+            f" rows start there, {int(from_side.sum())} of {int(inbound.sum())}"
+            " inbound rows start at a side well and the"
+            f" {int((from_side & correct).sum())} correct ones end at the centre);"
+            " 'epoch intervals' as run;"
+            " params trial_start_well, trial_end_well, trial_correct per trial",
             f"maze: the {maze} W-track, run epochs"
             f" {[i + 1 for i in MAZE_RUNS[maze]]}; positions outside them -> NaN"
             f" ({in_maze.mean():.1%} of samples kept); {int(mine.sum())} of"
