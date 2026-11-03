@@ -276,8 +276,13 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
     >>> fields = detect_place_fields(env, rate, bandwidth=0.0)
     >>> fields.n_fields
     1
-    >>> list(fields.to_dataframe().columns[:5])
+    >>> list(fields.fields_table().columns[:5])
     ['unit_id', 'field', 'n_bins', 'area', 'peak_rate']
+    >>> table = fields.to_dataframe()  # one row per field bin
+    >>> list(table.columns)
+    ['unit_id', 'field', 'bin', 'bin_center_x', 'firing_rate']
+    >>> len(table) == fields.total_bins
+    True
     """
 
     fields: Sequence[NDArray[np.int64]]
@@ -385,8 +390,11 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         """Unit of each table column: Hz, env units, measure units or none."""
         length = self.env.units or ""
         units = {
+            "field": "",
+            "bin": "",
             "n_bins": "",
             "area": _measure_units(self.env),
+            "firing_rate": "Hz",
             "peak_rate": "Hz",
             "mean_rate": "Hz",
             "n_fields": "",
@@ -398,13 +406,60 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
                 "rad"
                 if name.endswith("angle")
                 else length
-                if name.startswith("centroid_")
+                if name.startswith(("centroid_", "bin_center_"))
                 else "",
             )
             for name in columns
         }
 
     def to_dataframe(self) -> pd.DataFrame:
+        """One row per field bin: which field each bin belongs to, and its rate.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns ``unit_id`` (``<NA>`` without one), ``field`` (0 for the
+            field with the highest peak), ``bin`` (the bin index),
+            ``bin_center_x``, ``bin_center_y``, ... (environment units;
+            ``bin_center_distance`` and ``bin_center_angle`` (rad) on a polar
+            environment) and ``firing_rate`` (Hz). Rows follow the fields in
+            order, then each field's bins. No rows when no field was
+            detected. ``df.attrs`` holds ``units`` (per column), ``bandwidth``
+            and ``excluded_reason``. :meth:`fields_table` has one row per
+            field.
+        """
+        import pandas as pd
+
+        from neurospatial._results import _coord_dim_names
+
+        names = [f"bin_center_{name}" for name in _coord_dim_names(self.env)]
+        bins = (
+            np.concatenate(self.fields) if self.fields else np.empty(0, dtype=np.int64)
+        )
+        field = np.repeat(
+            np.arange(len(self.fields), dtype=np.int64),
+            [len(f) for f in self.fields],
+        )
+        centers = np.asarray(self.env.bin_centers, dtype=np.float64)[bins]
+        columns = ["unit_id", "field", "bin", *names, "firing_rate"]
+        df = pd.DataFrame(
+            {
+                "unit_id": pd.Series([self._table_unit_id()] * len(bins), dtype=object),
+                "field": field,
+                "bin": bins,
+                **{name: centers[:, i] for i, name in enumerate(names)},
+                "firing_rate": self.firing_rate[bins],
+            },
+            columns=columns,
+        )
+        df.attrs.update(
+            units=self._columns_units(columns[1:]),
+            bandwidth=self.bandwidth,
+            excluded_reason=self.excluded_reason,
+        )
+        return df
+
+    def fields_table(self) -> pd.DataFrame:
         """One row per detected field, with its size, rates and centroid.
 
         Returns
@@ -424,6 +479,7 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             not a position). No
             rows when no field was detected. ``df.attrs`` holds
             ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
+            :meth:`to_dataframe` has one row per field bin.
         """
         import pandas as pd
 
@@ -5818,8 +5874,8 @@ def detect_place_fields(
         peak rate, with the map, its bandwidth and unit, and
         ``excluded_reason``, which says whether the ``max_mean_rate`` filter
         excluded the map. The result is iterable, indexable and sized like a
-        list of fields; ``to_dataframe()`` tabulates each field's size, rates
-        and centroid.
+        list of fields; ``fields_table()`` tabulates each field's size, rates
+        and centroid, and ``to_dataframe()`` lists each field's bins.
 
     Raises
     ------
