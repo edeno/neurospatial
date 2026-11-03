@@ -207,3 +207,6 @@ session.nwb
 # Development architecture checks
 .import_linter_cache/
 coverage.json
+
+# The samples-built rerun is regenerated locally; only its matrix is committed.
+datasets/results/inferred_env/*.json

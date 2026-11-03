@@ -344,9 +344,10 @@ def test_every_verdict_describes_a_result_row():
     def records(folder):
         return [json.loads(p.read_text()) for p in sorted(folder.glob("*.json"))]
 
+    # The inferred run's JSON is not committed; check it only where it exists.
     stale = stale_verdicts(
         records(RESULTS),
-        records(RESULTS / "inferred_env"),
+        records(RESULTS / "inferred_env") or None,
         json.loads(VERDICTS.read_text()),
     )
     assert stale == []

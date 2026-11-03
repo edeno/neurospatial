@@ -173,7 +173,9 @@ operation cells; each writes to `results/studies/`:
    driver analyses it (`env_kind` "declared" in the matrix);
    `run.py --inferred-env` reruns on samples-built environments into
    `results/inferred_env/` for comparison
-   (`studies/declared_vs_inferred.py`).
+   (`studies/declared_vs_inferred.py`). Only that run's `matrix.md` is
+   committed; its per-recording JSON is regenerated locally (run
+   `--inferred-env` before rerunning the comparison study).
 4. Run the driver, give every non-`ok` cell and every new warning or hazard row
    a gap entry or verdict, and commit the results.
 

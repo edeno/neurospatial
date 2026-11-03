@@ -515,7 +515,7 @@ def render_warnings(records: Sequence[dict[str, Any]], verdicts: dict[str, Any])
 
 def stale_verdicts(
     records: Sequence[dict[str, Any]],
-    inferred_records: Sequence[dict[str, Any]],
+    inferred_records: Sequence[dict[str, Any]] | None,
     verdicts: dict[str, Any],
 ) -> list[str]:
     """Verdict entries with no result row they describe, as ``"<section>: <key>"``.
@@ -523,7 +523,8 @@ def stale_verdicts(
     A ``cells`` (``inferred_cells``) entry needs a cell that is not ``ok``
     in the declared (inferred) results, a ``hazards`` entry a probe row that
     was probed (not ``not probed``), and a ``warnings`` entry a warning on
-    clean data.
+    clean data. ``inferred_records=None`` (no ``--inferred-env`` run on this
+    machine) leaves the ``inferred_cells`` entries unchecked.
     """
 
     def cells(rows: Sequence[dict[str, Any]]) -> set[str]:
@@ -536,7 +537,7 @@ def stale_verdicts(
 
     present = {
         "cells": cells(records),
-        "inferred_cells": cells(inferred_records),
+        "inferred_cells": cells(inferred_records or ()),
         "hazards": {
             hazard_key(r["dataset"], row)
             for r in records
@@ -554,6 +555,7 @@ def stale_verdicts(
     return [
         f"{section}: {key}"
         for section, entries in verdicts.items()
+        if not (section == "inferred_cells" and inferred_records is None)
         for key in entries
         if key not in present.get(section, set())
     ]
@@ -593,7 +595,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"  {statuses}")
     render()
     inferred = RESULTS / "inferred_env"
-    if args.inferred_env or (args.render_only and inferred.is_dir()):
+    if args.inferred_env or (args.render_only and any(inferred.glob("*.json"))):
         records = [json.loads(p.read_text()) for p in sorted(inferred.glob("*.json"))]
         verdicts = json.loads(VERDICTS.read_text())
         (inferred / "matrix.md").write_text(
