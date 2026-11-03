@@ -623,6 +623,14 @@ class TestComputeVTEIndex:
         # 0.0 * 2.0 + 1.0 * 0.5 = 0.5
         assert result == 0.5
 
+    def test_a_zero_weighted_score_does_not_enter(self):
+        """A missing z-score with weight 0 leaves the index to the other one."""
+        from neurospatial.behavior.vte import vte_index
+
+        assert vte_index(np.nan, 0.5, head_sweep_weight=0.0) == 0.5
+        assert vte_index(2.0, np.nan, head_sweep_weight=1.0) == 2.0
+        assert np.isnan(vte_index(np.nan, 0.5, head_sweep_weight=0.5))
+
 
 # =============================================================================
 # Test classify_vte()
@@ -1787,18 +1795,15 @@ def test_session_trial_without_duration_has_no_samples_and_no_warning(
     assert statuses.count("ok") == 2
 
 
-def test_speed_only_index_classifies_straight_runs():
-    """head_sweep_weight=0 asks for a speed-only index, so straight runs at
-    different speeds are classified, with no head-sweep warning.
+def _straight_runs():
+    """Six straight eastward approaches to "center" at 10-60 cm/s.
 
-    Six straight approaches at 10-60 cm/s: the speed z-scores are those of
-    six evenly spaced values, (2.5 - k) / sqrt(35 / 12) for trial k, negated
-    so the slowest trial scores highest.
+    Returns the positional arguments of ``compute_vte_session``, its keyword
+    arguments, and each trial's sample count.
     """
     from shapely.geometry import box
 
     from neurospatial import Environment
-    from neurospatial.behavior.vte import compute_vte_session
 
     env = Environment.from_polygon(box(0, 0, 100, 10), bin_size=2.0, units="cm")
     regions = Regions()
@@ -1819,10 +1824,25 @@ def test_speed_only_index_classifies_straight_runs():
         "window_duration": 0.5,
         "min_speed": 5.0,
     }
+    return args, kwargs, [t.size for t in times]
+
+
+# Speed z-scores of the six straight runs: those of six evenly spaced values,
+# (2.5 - k) / sqrt(35 / 12) for trial k, negated so the slowest scores highest.
+_STRAIGHT_RUN_SPEED_Z = (2.5 - np.arange(6)) / np.sqrt(35 / 12)
+
+
+def test_speed_only_index_classifies_straight_runs():
+    """head_sweep_weight=0 asks for a speed-only index, so straight runs at
+    different speeds are classified, with no head-sweep warning.
+    """
+    from neurospatial.behavior.vte import compute_vte_session
+
+    args, kwargs, _ = _straight_runs()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         result = compute_vte_session(*args, head_sweep_weight=0.0, **kwargs)
-    expected = (2.5 - np.arange(6)) / np.sqrt(35 / 12)
+    expected = _STRAIGHT_RUN_SPEED_Z
     index = np.array([t.vte_index for t in result.trial_results])
     assert_allclose(index, expected, rtol=1e-6)
     assert [t.is_vte for t in result.trial_results] == list(expected >= 0.5)
@@ -1831,3 +1851,27 @@ def test_speed_only_index_classifies_straight_runs():
     with pytest.warns(UserWarning, match="No variation in head sweep"):
         weighted = compute_vte_session(*args, head_sweep_weight=0.5, **kwargs)
     assert all(t.is_vte is None for t in weighted.trial_results)
+
+
+def test_speed_only_index_needs_no_headings():
+    """A trial with no heading has no head sweep, which a speed-only index
+    does not use: it is scored and classified by its speed alone."""
+    from neurospatial.behavior.vte import compute_vte_session
+
+    args, kwargs, n_samples = _straight_runs()
+    headings = np.zeros(sum(n_samples))  # eastward, as the runs go
+    headings[: n_samples[0]] = np.nan  # the slowest trial has no heading
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_vte_session(
+            *args, headings=headings, head_sweep_weight=0.0, **kwargs
+        )
+    first = result.trial_results[0]
+    assert first.status == "ok"
+    assert np.isnan(first.head_sweep_magnitude)
+    index = np.array([t.vte_index for t in result.trial_results])
+    assert_allclose(index, _STRAIGHT_RUN_SPEED_Z, rtol=1e-6)
+    assert first.is_vte is True  # the slowest trial, z = 1.46 >= 0.5
+    assert [t.is_vte for t in result.trial_results] == list(
+        _STRAIGHT_RUN_SPEED_Z >= 0.5
+    )

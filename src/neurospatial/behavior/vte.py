@@ -1002,7 +1002,11 @@ def vte_index(
     Returns
     -------
     float
-        Combined VTE index; NaN when either z-score is NaN.
+        Combined VTE index; NaN when a z-score it weights is NaN. A z-score
+        with weight 0 does not enter: with ``head_sweep_weight=0`` the index
+        is the speed z-score alone, even for a trial with no head-sweep
+        measure (no headings), and with ``head_sweep_weight=1`` it is the
+        head-sweep z-score alone.
 
     Raises
     ------
@@ -1016,10 +1020,17 @@ def vte_index(
     1.0
     >>> vte_index(2.0, 0.0, head_sweep_weight=1.0)  # Head sweep only
     2.0
+    >>> vte_index(float("nan"), 0.5, head_sweep_weight=0.0)  # No headings
+    0.5
     """
     head_sweep_weight = _validated_head_sweep_weight(
         head_sweep_weight, call="vte_index"
     )
+    # 0 * NaN is NaN: a term with no weight is left out, not multiplied.
+    if head_sweep_weight == 0.0:
+        return z_speed_inv
+    if head_sweep_weight == 1.0:
+        return z_head_sweep
     return head_sweep_weight * z_head_sweep + (1 - head_sweep_weight) * z_speed_inv
 
 
@@ -1473,7 +1484,9 @@ def compute_vte_session(
     was observed (see :func:`normalize_vte_scores`). A trial whose window has
     no observed movement heading (the animal stayed slower than
     ``min_speed``) has a NaN head sweep, so its VTE index is NaN and it is
-    not classified rather than scored as "no head sweep".
+    not classified rather than scored as "no head sweep". With
+    ``head_sweep_weight=0`` the index is speed alone, so such a trial is
+    still scored and classified by its speed.
 
     Examples
     --------
