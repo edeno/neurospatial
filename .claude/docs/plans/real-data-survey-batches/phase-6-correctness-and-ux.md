@@ -323,6 +323,71 @@ colour range, NaN colour).
 - **Matrix coverage:** a column for check coverage: share of operations with
   a check, by domain.
 
+## Budget
+
+The phase must not take much longer than the earlier ones. The limits below
+come from measurements taken when this was written.
+
+**Measured.**
+
+- **The driver today:** about 60 min of compute for the operations on 37
+  recordings, serially, before probes and data loading. The largest costs are
+  `replay.compare_methods` (27 min, mostly 000044 circular and linear) and
+  `rates.egocentric_boundary` (8 min).
+- **Shuffle cell verdicts:** about 2–3 ms per unit per shuffle. Vollan's 644
+  units at the default 1000 shuffles take about 29 min, for one cell type on
+  one environment.
+- **Peak memory:** at most 3.7 GB per recording (Gardner); the median is
+  0.13 GB. The machine has 18 cores and 64 GB.
+- **Agent time in phase 5:** 1.7–2.3 h of wall time per agent, then 20–40
+  min per review-fix round.
+
+**Limits.**
+
+| Item | Limit | Why |
+| --- | --- | --- |
+| Shuffle verdicts in the survey | at most 50 units per recording (seeded sample), 200 shuffles, declared environment only | ≈ 27 s per cell type per recording instead of up to 29 min. The full 1000 runs only in the published-result reproductions |
+| Planted units | 30 per recording, on a seeded 10-min slice of the real path | enough to score detection and centre error |
+| Ladder rungs 1–3 | one recording per apparatus kind: square, circle, linear, loop, W, radial or star, labyrinth, lattice, 3-D room (9). Rung 4 on every recording | the rungs test kinds of apparatus, not each file |
+| Simulated sessions | 10 min each | |
+| `--inferred-env` run | only operations that take an environment | the I/O and reader operations don't change |
+| Hazard probes | not on shuffle verdicts, replay or animation | these are the slow operations, and the probes ask about warnings, not results |
+| Replay | at most 200 candidate events per recording | about a quarter of today's compute |
+| LFP | one channel, one 10-min streamed slice | |
+| Animation exports | one 10 s slice per apparatus kind (9) | |
+| Published-result reproductions | 3 papers, one result each | open-ended otherwise |
+| Interactive viewers | 30 min to get off-screen rendering working, then "ran only" | headless GPU is a known time sink |
+
+**Parallel driver.** `run.py` gets a `-j` option that runs recordings in
+separate processes, 8 at a time. That fits even if all 8 peaked like Gardner.
+Domain agents share the machine, so only one agent runs the driver at a time
+(earlier work saw overlapping runs starve the CPU).
+
+**Targets.**
+
+- **A full driver rerun** of every operation, the probes and ladder rungs 1–4
+  on all recordings: under 1 h wall time with `-j 8`. Before launching, each
+  domain times one recording, and the agent extrapolates. If the
+  extrapolation exceeds the target, the limits above are tightened and the
+  change is stated.
+- **Agent time:**
+  - 6a takes 2–3 h, with three agents over loader groups;
+  - 6b–6f take 2–3 h each in parallel, plus one review-fix round;
+  - 6g takes about 1 h.
+
+  That is about one long working day of wall time.
+- **Timeboxes.** Each domain agent gets a 3 h timebox and its required
+  checks in priority order. When the timebox runs out, it stops and reports
+  what is done and what is left; it does not keep going.
+
+**The likely overruns:**
+
+- 6a: 37 loaders re-read for their truth, with CRCNS and DANDI fetches;
+- the published reproductions;
+- the headless viewers.
+
+The limits above cap each of these.
+
 ## How it ships
 
 One PR for the whole phase, from one integration branch. The tasks run in
@@ -384,9 +449,8 @@ time with whatever is easiest to score.
   found mid-phase is logged as a gap; a harness workaround for it is a UX
   finding, not a silent fix.
 - **Compute.** Many more operations × about 37 recordings × two environment
-  kinds × probes × shuffles. Mitigation: the one-recording timing first;
-  sample units for the 1000-shuffle verdicts where the full set would not
-  fit, and say so.
+  kinds × probes × shuffles. Mitigation: the limits and the parallel driver
+  in [Budget](#budget), and the one-recording timing before each full run.
 - **Triage time.** Deciding whether the library, the data or the authors'
   convention is at fault takes the maintainer's time. Mitigation: every
   `disagrees` comes with its evidence, its likely cause, and what was ruled
