@@ -830,7 +830,9 @@ def read_pose_operation(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     else:
         span = np.nanmax(xy, axis=0) - np.nanmin(xy, axis=0)
         bin_size = float(span.max()) / POSE_BINS_PER_SPAN
-    env = Environment.from_samples(xy, bin_size=bin_size, name=f"{rec.dataset}-pose")
+    env = Environment.from_samples(
+        xy, bin_size=bin_size, units=pose_units, name=f"{rec.dataset}-pose"
+    )
     if rec.spike_times is not None:
         compute_spatial_rates(env, list(rec.spike_times), times, xy)
         summary["fed"] = "compute_spatial_rates"
