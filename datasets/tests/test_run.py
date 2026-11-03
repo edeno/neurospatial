@@ -245,3 +245,38 @@ def test_subset_run_stamps_only_the_cells_it_reran(simulated_recording, tmp_path
     kept = [h for h in partial["hazards"] if h["op"] == "env.from_samples"]
     assert kept
     assert all("versions" not in h for h in kept)
+
+
+def test_every_verdict_describes_a_result_row():
+    # Each verdicts.json entry must match a row of the committed results
+    # with that status: a non-ok cell, a probed hazard row, a clean warning.
+    from run import RESULTS, VERDICTS, stale_verdicts
+
+    def records(folder):
+        return [json.loads(p.read_text()) for p in sorted(folder.glob("*.json"))]
+
+    stale = stale_verdicts(
+        records(RESULTS),
+        records(RESULTS / "inferred_env"),
+        json.loads(VERDICTS.read_text()),
+    )
+    assert stale == []
+
+
+def test_stale_verdicts_finds_entries_without_their_row():
+    from run import stale_verdicts
+
+    record = {
+        "dataset": "d",
+        "load_warnings": [],
+        "operations": {"a": {"status": "ok"}, "b": {"status": "error"}},
+        "hazards": [
+            {"hazard": "h", "op": "a", "response": "not probed"},
+            {"hazard": "h", "op": "b", "response": "silent"},
+        ],
+    }
+    verdicts = {
+        "cells": {"d/a": {"gap": "G-1"}, "d/b": {"gap": "G-2"}},
+        "hazards": {"d/h/a": {"verdict": "x"}, "d/h/b": {"verdict": "y"}},
+    }
+    assert stale_verdicts([record], [], verdicts) == ["cells: d/a", "hazards: d/h/a"]

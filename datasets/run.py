@@ -413,6 +413,52 @@ def render_warnings(records: Sequence[dict[str, Any]], verdicts: dict[str, Any])
     return "\n".join(lines)
 
 
+def stale_verdicts(
+    records: Sequence[dict[str, Any]],
+    inferred_records: Sequence[dict[str, Any]],
+    verdicts: dict[str, Any],
+) -> list[str]:
+    """Verdict entries with no result row they describe, as ``"<section>: <key>"``.
+
+    A ``cells`` (``inferred_cells``) entry needs a cell that is not ``ok``
+    in the declared (inferred) results, a ``hazards`` entry a probe row that
+    was probed (not ``not probed``), and a ``warnings`` entry a warning on
+    clean data.
+    """
+
+    def cells(rows: Sequence[dict[str, Any]]) -> set[str]:
+        return {
+            f"{r['dataset']}/{op}"
+            for r in rows
+            for op, entry in r["operations"].items()
+            if entry["status"] != "ok"
+        }
+
+    present = {
+        "cells": cells(records),
+        "inferred_cells": cells(inferred_records),
+        "hazards": {
+            hazard_key(r["dataset"], row)
+            for r in records
+            for row in r.get("hazards", [])
+            if row["response"] != "not probed"
+        },
+        "warnings": {
+            warning_key(row)
+            for r in records
+            for rows in [r["load_warnings"]]
+            + [e.get("warnings", []) for e in r["operations"].values()]
+            for row in rows
+        },
+    }
+    return [
+        f"{section}: {key}"
+        for section, entries in verdicts.items()
+        for key in entries
+        if key not in present.get(section, set())
+    ]
+
+
 def render(results: Path = RESULTS, verdicts_path: Path = VERDICTS) -> None:
     """Regenerate ``matrix.md`` and ``warnings.md`` from every results JSON."""
     records = [json.loads(path.read_text()) for path in sorted(results.glob("*.json"))]
