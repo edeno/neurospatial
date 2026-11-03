@@ -96,34 +96,53 @@ def fetch(
 _DEFLATE64 = 9
 
 
+_DEFLATE64_CHUNK = 64 << 10  # 64 KiB in; Deflate64 expands at most ~1000x
+
+
 def _copy_deflate64(
     archive: zipfile.ZipFile, info: zipfile.ZipInfo, out: IO[bytes]
 ) -> None:
-    """Inflate a Deflate64 member, which ``zipfile`` cannot read, and check its CRC-32."""
+    """Inflate a Deflate64 member, which ``zipfile`` cannot read, and check it.
+
+    The local header must name the same member as the central directory, the
+    output may not exceed the size the directory states, and its CRC-32 must
+    match.
+    """
     import inflate64
 
     stream = archive.fp
     assert stream is not None
     stream.seek(info.header_offset)
     header = stream.read(30)
-    if header[:4] != b"PK\x03\x04":
+    if len(header) < 30 or header[:4] != b"PK\x03\x04":
         msg = f"{info.filename}: no local file header at offset {info.header_offset}"
         raise zipfile.BadZipFile(msg)
     name_length, extra_length = struct.unpack("<HH", header[26:30])
-    stream.seek(info.header_offset + 30 + name_length + extra_length)
+    name = stream.read(name_length)
+    if name.decode("utf-8" if info.flag_bits & 0x800 else "cp437") != info.filename:
+        msg = f"local header names {name!r}, not {info.filename!r}"
+        raise zipfile.BadZipFile(msg)
+    stream.seek(extra_length, 1)
     inflater = inflate64.Inflater()
-    crc, left = 0, info.compress_size
+    crc, left, written = 0, info.compress_size, 0
     while left:
-        chunk = stream.read(min(left, 4 << 20))
+        chunk = stream.read(min(left, _DEFLATE64_CHUNK))
         if not chunk:
             msg = f"{info.filename}: archive ended {left} bytes early"
             raise zipfile.BadZipFile(msg)
         left -= len(chunk)
         data = inflater.inflate(chunk)
+        written += len(data)
+        if written > info.file_size:
+            msg = f"{info.filename}: inflates past its stated {info.file_size} bytes"
+            raise zipfile.BadZipFile(msg)
         crc = zlib.crc32(data, crc)
         out.write(data)
-    if crc != info.CRC:
-        msg = f"{info.filename}: CRC-32 {crc:08x} does not match the archive's {info.CRC:08x}"
+    if written != info.file_size or crc != info.CRC:
+        msg = (
+            f"{info.filename}: inflated {written} of {info.file_size} bytes, CRC-32"
+            f" {crc:08x} against the archive's {info.CRC:08x}"
+        )
         raise zipfile.BadZipFile(msg)
 
 

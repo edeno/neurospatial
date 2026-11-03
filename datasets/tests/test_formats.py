@@ -152,3 +152,58 @@ def test_deflate64_member_is_inflated_and_crc_checked(tmp_path):
             subdir="d64b",
             cache=tmp_path / "c",
         )
+
+
+def test_deflate64_member_with_a_different_local_name_is_refused(tmp_path):
+    inflate64 = pytest.importorskip("inflate64")
+    import _fetch
+
+    payload = b"lattice " * 1000
+    deflater = inflate64.Deflater()
+    compressed = deflater.deflate(payload) + deflater.flush()
+    crc = zlib.crc32(payload)
+
+    def entry(signature: bytes, name: bytes, *, central: bool) -> bytes:
+        sizes = (crc, len(compressed), len(payload), len(name))
+        if central:
+            return (
+                struct.pack(
+                    "<4sHHHHHHIIIHHHHHII",
+                    signature,
+                    21,
+                    21,
+                    0,
+                    9,
+                    0,
+                    0,
+                    *sizes,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                )
+                + name
+            )
+        return struct.pack("<4sHHHHHIIIHH", signature, 21, 0, 9, 0, 0, *sizes, 0) + name
+
+    local = entry(b"PK\x03\x04", b"evil.mat", central=False)
+    central = entry(b"PK\x01\x02", b"good.mat", central=True)
+    end = struct.pack(
+        "<4sHHHHIIH",
+        b"PK\x05\x06",
+        0,
+        0,
+        1,
+        1,
+        len(central),
+        len(local) + len(compressed),
+        0,
+    )
+    archive = tmp_path / "renamed.zip"
+    archive.write_bytes(local + compressed + central + end)
+    with pytest.raises(zipfile.BadZipFile, match="local header names"):
+        _fetch.fetch_zip_member(
+            str(archive), "good.mat", sha256="0" * 64, subdir="r", cache=tmp_path / "c"
+        )
