@@ -995,8 +995,12 @@ def measure_env(
     out["thin_bins"] = float(np.mean(counts < THIN_BIN_SAMPLES))
     first, second = sample_pairs(len(samples), rng)
     straight = np.linalg.norm(samples[first] - samples[second], axis=1)
-    keep = (straight >= MIN_PAIR_BINS * bin_size) & (
-        part[bins[first]] == part[bins[second]]
+    # A declared environment leaves some samples outside (bin -1): skip them.
+    inside = (bins[first] >= 0) & (bins[second] >= 0)
+    keep = (
+        inside
+        & (straight >= MIN_PAIR_BINS * bin_size)
+        & (part[bins[first]] == part[bins[second]])
     )
     first, second, straight = first[keep], second[keep], straight[keep]
     geo = geodesics(graph, bins[first], bins[second])

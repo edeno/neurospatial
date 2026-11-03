@@ -320,3 +320,31 @@ def test_merged_replaces_only_the_rerun_datasets_and_their_views():
         "b",
     ]
     assert merged(previous, [{"dataset": "c"}], ("c",))[-1] == {"dataset": "c"}
+
+
+def test_geodesic_pairs_skip_samples_outside_a_declared_track():
+    # An L-shaped track, 6 cm wide; a third of the samples sit 20 cm off it.
+    from _geometry import graph_environment
+    from _tracks import polyline_graph
+    from studies.environment_fidelity import measure_env
+
+    rng = np.random.default_rng(2)
+    graph = polyline_graph(
+        np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]]), closed=False
+    )
+    env = graph_environment(
+        graph, bin_size=2.5, track_width=6.0, units="cm", name="L", root=None
+    )
+    t = rng.uniform(0, 200, 6000)
+    on = np.where(
+        (t < 100)[:, None],
+        np.column_stack([t, np.zeros_like(t)]),
+        np.column_stack([np.full_like(t, 100.0), t - 100]),
+    )
+    off = on[:3000] + np.array([0.0, 20.0])
+    samples = np.vstack([on, off])
+    out = measure_env(env, samples, np.random.default_rng(0))
+    # Pairs on the track: the path along it over the straight line, 1 on one
+    # arm and up to sqrt(2) across the corner; never below 1.
+    assert out["geodesic_ratio_median"] >= 1.0
+    assert out["geodesic_ratio_p95"] <= 1.5
