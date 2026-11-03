@@ -810,6 +810,14 @@ class PeriEventResult(_PeriEventExports, ResultMixin, ReadOnlyArraysMixin):
 
     """
 
+    _repr_units = MappingProxyType(
+        {
+            "peak_rate": "Hz",
+            "peak_latency": "s",
+            "baseline_rate": "Hz",
+        }
+    )
+
     histogram: NDArray[np.float64]
     sem: NDArray[np.float64]
     n_events: int
@@ -1089,6 +1097,13 @@ class PopulationPeriEventResult(_PeriEventExports, ResultMixin, UnitSelectionMix
     >>> pop_rate = result.mean_firing_rate
 
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "mean_peak_rate": "Hz",
+            "population_peak_latency": "s",
+        }
+    )
 
     histograms: NDArray[np.float64]
     sem: NDArray[np.float64]

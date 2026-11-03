@@ -18,6 +18,7 @@ References
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -75,6 +76,12 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
     epochs : NDArray[np.float64] or None, shape (n_epochs, 2)
         Normalized half-open ``[start, stop)`` windows that were applied.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "max_lag": "s",
+        }
+    )
 
     lags: NDArray[np.float64]
     msd: NDArray[np.float64]
@@ -248,6 +255,12 @@ class CumulativeDistanceResult(_RunPathMixin, ReadOnlyArraysMixin, ResultMixin):
     epochs : NDArray[np.float64] or None, shape (n_epochs, 2)
         Normalized half-open ``[start, stop)`` windows that were applied.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "observed_duration": "s",
+        }
+    )
 
     step_lengths: NDArray[np.float64]
     run_distance: NDArray[np.float64]

@@ -19,11 +19,11 @@ from __future__ import annotations
 
 import operator
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import fields
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -1017,6 +1017,45 @@ class ResultMixin:
     Empty(...)
     """
 
+    #: Physical unit of each ``summary()`` key, written after the key's value
+    #: in the repr and the HTML table (``peak_firing_rate()=11.25 Hz``).
+    #: ``{units}`` stands for the result's coordinate unit
+    #: (:meth:`_repr_coordinate_units`), so a key that needs it shows no unit
+    #: when the coordinate unit is unknown. Keys not listed (counts, scores,
+    #: correlations, probabilities, labels) show none. ``summary()`` values
+    #: stay plain numbers.
+    _repr_units: ClassVar[Mapping[str, str]] = MappingProxyType({})
+
+    def _repr_coordinate_units(self) -> str | None:
+        """Unit of the result's positions and distances; None when unknown.
+
+        The result's ``units`` attribute when it records one (the
+        environment's length unit).
+        """
+        units = getattr(self, "units", None)
+        return units if isinstance(units, str) and units else None
+
+    def _repr_unit(self, key: str) -> str:
+        """The unit shown after ``key``'s value; ``""`` for none or unknown."""
+        unit = self._repr_units.get(key, "")
+        if "{units}" not in unit:
+            return unit
+        coordinate = self._repr_coordinate_units()
+        return unit.replace("{units}", coordinate) if coordinate else ""
+
+    def _repr_value(self, key: str, value: Any) -> str:
+        """``value`` formatted for the repr, then its unit when it is finite.
+
+        A missing (NaN) or infinite value shows no unit
+        (``decoded_duration=nan``).
+        """
+        text = _format_summary_value(value)
+        unit = self._repr_unit(key)
+        number = isinstance(value, int | float | np.integer | np.floating)
+        if unit and number and not isinstance(value, bool) and np.isfinite(value):
+            return f"{text} {unit}"
+        return text
+
     def _summary_for_repr(self) -> dict[str, Any] | str:
         """``summary()``, or a short note when it cannot be shown."""
         try:
@@ -1033,10 +1072,12 @@ class ResultMixin:
         which the default dataclass repr dumps in full -- a wall of numbers when
         a user simply types the result at a REPL. This shows the class name and
         the headline scalars instead (e.g.
-        ``SpatialRateResult(n_bins=121, peak_firing_rate()=18.48, ...)``).
+        ``SpatialRateResult(n_bins=121, peak_firing_rate()=18.48 Hz, ...)``).
         Each name reads back from the result: ``name=`` is an attribute
         (``result.name``), ``name()=`` a method to call (``result.name()``),
-        and ``name[key]=`` an entry of a mapping attribute. A ``__repr__``
+        and ``name[key]=`` an entry of a mapping attribute. A number is
+        followed by its unit from :attr:`_repr_units`; the value read back
+        is the plain number. A ``__repr__``
         must never raise: a result without ``summary()`` shows
         ``ClassName(...)``, and a failing ``summary()`` names its error.
         """
@@ -1047,8 +1088,7 @@ class ResultMixin:
         if not summary:
             return f"{name}(...)"
         parts = ", ".join(
-            f"{self._repr_key(k)}={_format_summary_value(v)}"
-            for k, v in summary.items()
+            f"{self._repr_key(k)}={self._repr_value(k, v)}" for k, v in summary.items()
         )
         return f"{name}({parts})"
 
@@ -1062,8 +1102,8 @@ class ResultMixin:
 
         Jupyter renders this instead of ``__repr__`` when a result is a cell's
         last expression, giving a scannable metric table rather than a wall of
-        array values. Falls back to the plain repr when ``summary()`` is
-        unavailable or fails.
+        array values, each number followed by its unit as in the repr. Falls
+        back to the plain repr when ``summary()`` is unavailable or fails.
         """
         import html
 
@@ -1072,7 +1112,7 @@ class ResultMixin:
             return f"<pre>{html.escape(repr(self))}</pre>"
         rows = "".join(
             f"<tr><th style='text-align:right'>{html.escape(self._repr_key(k))}</th>"
-            f"<td style='text-align:left'>{html.escape(_format_summary_value(v))}</td></tr>"
+            f"<td style='text-align:left'>{html.escape(self._repr_value(k, v))}</td></tr>"
             for k, v in summary.items()
         )
         return (

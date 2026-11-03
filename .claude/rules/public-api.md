@@ -86,8 +86,10 @@ Each terminal verb means the same thing on every result class:
   written, and the repr says how: `name=` is a non-callable attribute,
   `name()=` a method that needs no argument (`spatial_information()=2.807`),
   `name[key]=` an entry of a mapping attribute and `a.b=` an attribute of an
-  attribute (`observed.score`). Give a summary value its own property (`n_units`,
-  `n_bins`, `total_occupancy`) rather than a key nothing else exposes; counts
+  attribute (`observed.score`). Declare each physical summary key's unit in
+  `_repr_units`; show a coordinate unit only when the result records it.
+  Give a summary value its own property (`n_units`, `n_bins`,
+  `total_occupancy`) rather than a key nothing else exposes; counts
   that depend on a method's options (`n_place` at a default `alpha`) stay out
   of the repr. `test_repr_names_are_accessible` checks every public result.
 - Population `plot(idx=None, *, ax=None)`: with no unit, results with one

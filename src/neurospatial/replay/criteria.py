@@ -14,6 +14,7 @@ direction or track).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -148,6 +149,23 @@ class TrajectoryMetrics(ReadOnlyArraysMixin, ResultMixin):
     --------
     trajectory_metrics : Function that produces this result.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "duration": "s",
+            "track_length": "{units}",
+            "max_map_jump": "{units}",
+            "max_mean_jump": "{units}",
+            "mean_mean_jump": "{units}",
+            "map_range": "{units}",
+            "mean_range": "{units}",
+            "start_to_end_map_distance": "{units}",
+            "start_to_end_mean_distance": "{units}",
+            "map_path_length": "{units}",
+            "dispersion": "{units}",
+            "mean_spread": "{units}",
+        }
+    )
 
     map_bins: NDArray[np.int64]
     map_positions: NDArray[np.float64]

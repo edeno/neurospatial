@@ -21,6 +21,7 @@ import functools
 import itertools
 import math
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -143,6 +144,13 @@ class SpikeWordsResult(ReadOnlyArraysMixin, ResultMixin):
     --------
     spike_words : Function that produces this result.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "max_isi": "s",
+            "word_gap": "s",
+        }
+    )
 
     intervals: NDArray[np.float64]
     word_ids: NDArray[np.intp]
@@ -640,6 +648,12 @@ class MatchingIndexResult(ReadOnlyArraysMixin, ResultMixin):
     --------
     sequence_matching_index : Function that produces this result.
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "bandwidth": "s",
+        }
+    )
 
     score: float
     match_probability: float

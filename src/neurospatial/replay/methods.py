@@ -1499,6 +1499,13 @@ class ReplayDetectionResult(ResultMixin):
         finds no segment has a verdict.
     """
 
+    _repr_units = MappingProxyType(
+        {
+            "segment_start_time": "s",
+            "segment_end_time": "s",
+        }
+    )
+
     method: str
     is_replay: bool
     score: float

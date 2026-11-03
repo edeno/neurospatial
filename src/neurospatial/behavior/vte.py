@@ -69,6 +69,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 import numpy as np
@@ -201,6 +202,14 @@ class VTETrialResult(ResultMixin):
     >>> result.head_sweep_magnitude, result.mean_speed, result.is_vte
     (nan, nan, None)
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "window_start": "s",
+            "window_end": "s",
+            "head_sweep_magnitude": "rad",
+        }
+    )
 
     head_sweep_magnitude: float
     z_head_sweep: float | None
@@ -353,6 +362,15 @@ class VTESessionResult(ResultMixin):
     >>> session.trials_table()["status"].tolist()
     ['ok', 'ok', 'too_few_samples']
     """
+
+    _repr_units = MappingProxyType(
+        {
+            "mean_head_sweep": "rad",
+            "std_head_sweep": "rad",
+            "mean_speed": "{units}/s",
+            "std_speed": "{units}/s",
+        }
+    )
 
     trial_results: tuple[VTETrialResult, ...]
     interval_ids: NDArray[np.int64] = None  # type: ignore[assignment]
