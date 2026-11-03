@@ -438,15 +438,17 @@ def _graph_env(rec: Recording, cache: dict[str, Any]) -> Any | None:
     edges that close cycles, which ``Environment.from_graph`` would otherwise
     drop without a word.
     ``geometry["track_width"]``, when the source states it, is the corridor
-    width. Without ``geometry["graph"]``, a declared environment that is a
-    track graph is the graph environment.
+    width. A declared environment that is a track graph is the graph
+    environment, whether or not the loader also gives ``geometry["graph"]``.
     """
 
+    if env_kind(rec, cache) == "declared" and _env(rec, cache).is_linearized_track:
+        # The declared track: the loader's graph with its width, or a graph it
+        # fitted to a stated layout.
+        return _env(rec, cache)
     graph = rec.geometry.get("graph")
     if graph is None:
-        # A declared track (a graph the loader fitted to a stated layout).
-        env = _env(rec, cache) if env_kind(rec, cache) == "declared" else None
-        return env if env is not None and env.is_linearized_track else None
+        return None
     if "graph_env" not in cache:
         cache["graph_env"] = graph_environment(
             graph,
