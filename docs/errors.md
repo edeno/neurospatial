@@ -57,7 +57,9 @@ Warnings also use concrete fixes. A `bin_size` that covers every data axis warns
 what is wrong, why it matters, and how to fix the call:
 
 ```text
-InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0), so the rate map is empty. Fix: the median sampling interval is 33.33 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 33.33, or pass max_gap=None to disable gap gating.
+InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0).
+Why: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.
+Fix: the median sampling interval is 33.33 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 33.33, or pass max_gap=None to disable gap gating.
 ```
 
 The common causes:

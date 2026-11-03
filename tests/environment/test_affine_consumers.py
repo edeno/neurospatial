@@ -117,7 +117,7 @@ def test_linear_counts_and_dwell_share_affine_holes_entry_exit_and_gaps(linear, 
         atol=2e-6,
     )
     # A gate shorter than every 4 s interval excludes them all: refused.
-    with pytest.raises(InputError, match=r"excluded ALL.*probably not in seconds"):
+    with pytest.raises(InputError, match=r"excluded ALL[\s\S]*probably not in seconds"):
         child.occupancy(times, mapping(points), time_allocation="linear", max_gap=1.0)
 
 

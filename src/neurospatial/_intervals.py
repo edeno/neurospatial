@@ -1859,7 +1859,9 @@ def excluded_intervals_message(
             # nothing is wrong with the clock, and the empty result is the
             # answer, so say what happened without raising.
             return empty_selection_message(empty, result)
-        refusal = _all_excluded_message(gates, dt, samples=samples, result=result)
+        refusal = _all_excluded_message(
+            gates, dt, samples=samples, result=result, raised=raise_if_empty
+        )
         if raise_if_empty:
             raise InputError(refusal)
         return refusal
@@ -2134,19 +2136,30 @@ def _all_excluded_message(
     *,
     samples: Literal["positions", "headings", "values"],
     result: str,
+    raised: bool,
 ) -> str:
-    """The message for a selection that excludes every interval."""
+    """The message for a selection that excludes every interval.
+
+    ``raised`` says whether the message is raised: then the call returns no
+    ``result``, and the message says it refuses.
+    """
     times, max_gap, sample_valid = gates.times, gates.max_gap, gates.sample_valid
     min_speed, break_before = gates.min_speed, gates.break_before
+    consequence = (
+        f"; rather than return a result in which {result}, the call refuses"
+        if raised
+        else f", so {result}"
+    )
     if sample_valid is not None and not gap_endpoints(sample_valid)[2].any():
         # No interval has an observed sample on each side: the missing samples
         # leave nothing to gate, whatever the gates are.
         n_observed = int(np.count_nonzero(sample_valid))
-        return (
+        return _format_error(
             "Interval filtering excluded ALL trajectory intervals: only "
-            f"{n_observed} of {times.size} samples are observed, and an interval "
-            f"needs an observed sample on each side, so {result}. Fix: "
-            f"{_HEADINGS_FIX if samples == 'headings' else _SAMPLES_FIX}."
+            f"{n_observed} of {times.size} samples are observed.",
+            why="an interval needs an observed sample on each side, and no "
+            f"sampling interval is left to analyse{consequence}.",
+            fix=f"{_HEADINGS_FIX if samples == 'headings' else _SAMPLES_FIX}.",
         )
 
     n_long, n_rounded, slow_clock = _gap_excess(times, dt, max_gap)
@@ -2220,7 +2233,8 @@ def _all_excluded_message(
     if not fixes:
         fixes.append("check that the samples are finite, observed values")
     active = f" (active gate(s) {', '.join(named)})" if named else ""
-    return (
-        f"Interval filtering excluded ALL trajectory intervals{active}, so "
-        f"{result}. Fix: {'; '.join(fixes)}."
+    return _format_error(
+        f"Interval filtering excluded ALL trajectory intervals{active}.",
+        why=f"no sampling interval is left to analyse{consequence}.",
+        fix=f"{'; '.join(fixes)}.",
     )

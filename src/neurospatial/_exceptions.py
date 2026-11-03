@@ -106,7 +106,9 @@ class InputError(ValueError, NeurospatialError):
     ...     )
     ... except InputError as exc:
     ...     print(exc)
-    Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0), so the rate map is empty. Fix: the median sampling interval is 10 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 10, or pass max_gap=None to disable gap gating.
+    Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0).
+    Why: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.
+    Fix: the median sampling interval is 10 s, longer than max_gap=1.0 s, so `times` are probably not in seconds: convert times to seconds, raise max_gap above 10, or pass max_gap=None to disable gap gating.
     """
 
 
