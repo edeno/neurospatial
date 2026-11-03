@@ -19,6 +19,10 @@ What the loader converts:
   the track and scaled it to its 320 cm length, so the values are cm. The
   span is range checked against 300-340 cm.
 - ``post`` and ``ts`` are seconds from the start of the recording; kept.
+- The sessions are joined with no gap on the clock: between 599.98 and
+  600.00 s the LED moves 282 cm, from where session 11 ended to where 12
+  began. Each session is an epoch, and ``analysis_epochs`` are the two
+  sessions without the joining interval.
 
 Analysis choices (``params``): ``bin_size`` 4 cm; ``min_speed`` 5 cm/s
 (running); ``dt`` 0.25 s and alternating 60 s train/test blocks. The track
@@ -83,6 +87,8 @@ _FILES = {
 }
 _SPAN_CM = (300.0, 340.0)
 _HALF_LENGTH_CM = 160.0
+# A step longer than this between consecutive 50 Hz samples is not movement.
+_JOIN_MIN_CM = 100.0
 
 
 def _read(kind: str, cache: Path | None) -> dict[str, Any]:
@@ -114,6 +120,19 @@ def load(cache: Path | None = None) -> Recording:
     times = np.asarray(pos["post"], dtype=float)
     positions = np.column_stack([pos["posx"], pos["posy"]]).astype(float)
     span = checked_span(positions, *_SPAN_CM)
+    # The two sessions are joined with no gap on the clock: the one step
+    # between them is the 2.8 m jump from where session 11 ended to where 12
+    # began. Each session is its own epoch, and the joining interval is in
+    # neither.
+    step = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+    join = int(np.argmax(step))
+    if step[join] < _JOIN_MIN_CM or join + 1 != len(times) // 2:
+        msg = (
+            f"largest step {step[join]:.0f} cm after sample {join} of {len(times)};"
+            " expected one jump between two equal sessions, recheck"
+        )
+        raise ValueError(msg)
+    sessions = np.array([[times[0], times[join]], [times[join + 1], times[-1]]])
     cells = [name for name in _FILES if name != "POS"]
     spikes = tuple(
         np.sort(np.asarray(_read(c, cache)["ts"], float).ravel()) for c in cells
@@ -149,6 +168,7 @@ def load(cache: Path | None = None) -> Recording:
         position_units="cm",
         spike_times=spikes,
         unit_ids=np.asarray(cells),
+        epochs={"session_11": sessions[:1], "session_12": sessions[1:]},
         geometry={
             "graph": graph,
             "graph_root": "west",
@@ -159,6 +179,7 @@ def load(cache: Path | None = None) -> Recording:
             "bin_size": 4.0,
             "min_speed": 5.0,
             "dt": 0.25,
+            "analysis_epochs": sessions,
             "train_epochs": train,
             "test_epochs": test,
         },
@@ -167,6 +188,10 @@ def load(cache: Path | None = None) -> Recording:
             " -160 to 160 on the 320 cm track)",
             span,
             "times, spike_times: post and ts as stored (s)",
+            f"epochs: session_11 {sessions[0, 0]:.2f}-{sessions[0, 1]:.2f} s and"
+            f" session_12 {sessions[1, 0]:.2f}-{sessions[1, 1]:.2f} s, split at the"
+            f" {step[join]:.0f} cm step between them (no gap on the clock); the"
+            " analysis epochs leave the joining interval out",
             "unit_ids: tetrode and cluster from the file names",
             declared_line,
         ),
