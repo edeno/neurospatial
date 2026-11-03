@@ -1,6 +1,6 @@
 # Real-data survey batches Implementation Plan
 
-**Status:** Phases 1–3 merged (#268, #269, #271); phase 4 (#273) and the environment-fidelity study (#274) open; phase 5 next.
+**Status:** Phases 1–4 merged (#268, #269, #271, #273) and the environment-fidelity study (#274); phase 5 in progress.
 
 Extend the `datasets/` survey harness from eight recordings to most of the
 open-dataset catalog, in four batches. The first batch is the one the
