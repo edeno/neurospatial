@@ -35,10 +35,14 @@ Analysis choices (``params``):
   decoding.
 - ``dt`` 0.25 s, as for the 2-D datasets.
 
-Environment (``geometry["environment"]``): the room, every 0.2 m voxel inside
-``r_lim`` (``Environment.from_samples`` with ``dimension_ranges`` set to it and
-``infer_active_bins=False``), so the environment holds the air the bat could
-fly through, not only the voxels it visited. Forli et al. 2025 (Methods, read
+Environment (``geometry["environment"]``): the room, every voxel of a grid
+that tiles ``r_lim`` exactly (``Environment.from_samples`` with
+``dimension_ranges`` set to it and ``infer_active_bins=False``), so the
+environment holds the air the bat could fly through, not only the voxels it
+visited. Each axis has a whole number of cells close to ``bin_size`` (29 x
+26 x 11 cells of 0.2 x 0.2 x 0.209 m): with 0.2 m cells on every axis the 2.3 m
+height is 11.5 cells and the grid would reach 5 cm past the floor and the
+ceiling. Forli et al. 2025 (Methods, read
 from Zotero's full-text cache) flew four bats in "an indoor flight room
 (... 5.6 m x 5.2 m x 2.5 m)" and two in an outdoor enclosure 10.1 m long;
 ``r_lim`` (5.8 x 5.2 x 2.3 m; "boundaries of the room" in ``NP_Bat_Demo.m``)
@@ -213,10 +217,14 @@ def load(cache: Path | None = None) -> Recording:
     )
     neural_flights = _clip(flight_windows, recorded)
     positions = np.asarray(behavior["r"], dtype=float)
+    # A whole number of cells close to _BIN_SIZE on each axis, so the grid
+    # tiles r_lim exactly.
+    n_cells = np.floor(np.ptp(room, axis=1) / _BIN_SIZE + 0.5)
+    room_bins = np.ptp(room, axis=1) / n_cells
     environment = partial(
         Environment.from_samples,
         positions,
-        bin_size=_BIN_SIZE,
+        bin_size=tuple(float(b) for b in room_bins),
         dimension_ranges=[tuple(bounds) for bounds in room],
         infer_active_bins=False,
         units="m",
@@ -253,9 +261,10 @@ def load(cache: Path | None = None) -> Recording:
             "epochs['neural_recording']: first to last spike of any unit",
             "params flights: flights clipped to the neural recording",
             "unit_ids: probe<n>-<kilosort cluster id>",
-            "environment: declared room, every voxel inside r_lim"
+            "environment: declared room, every voxel of a grid tiling r_lim"
             f" {np.ptp(room, axis=1).round(2).tolist()} m (NP_Bat_Demo.m: 'boundaries"
-            f" of the room'); {_outside(positions, room):.2%} of tracked samples lie"
+            f" of the room') exactly: {n_cells.astype(int).tolist()} cells of"
+            f" {room_bins.round(3).tolist()} m; {_outside(positions, room):.2%} of tracked samples lie"
             " outside it; Forli et al. 2025 Methods state 5.6 x 5.2 x 2.5 m: that"
             " size centred on r_lim in x and y, from r_lim's floor in z, leaves"
             f" {_outside(positions, paper):.2%} outside; placement: the file's frame"
