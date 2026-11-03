@@ -1922,8 +1922,11 @@ def measure_declared(
         positions,
         physical_width=rec.geometry.get("declared_physical_width"),
         speed_thresholds=speed_thresholds(rec),
+        # A circle's one residual is its diameter's (``declared_circle``).
         stated_residuals={
-            k.removeprefix("size_residual_"): v
+            (
+                "diameter" if k == "size_residual" else k.removeprefix("size_residual_")
+            ): v
             for k, v in fit.items()
             if k.startswith("size_residual")
         },
