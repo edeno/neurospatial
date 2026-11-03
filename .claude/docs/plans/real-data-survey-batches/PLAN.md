@@ -31,5 +31,5 @@ For agent invocation, **load only the slice you need**:
   - [phase-3-archive-formats.md](phase-3-archive-formats.md) — non-NWB archives: egocentric boundary cells, 3-D lattice, water maze, Axona, MATLAB, NPY, track-graph `.npz`
   - [phase-4-crcns.md](phase-4-crcns.md) — CRCNS hippocampal sets behind an account, including a same-session cross-check against DANDI 000044
   - [phase-5-faithful-environments.md](phase-5-faithful-environments.md) — every loader declares its apparatus (outline, track graph, bars, room) so environments are built from stated geometry, compared with the samples-built ones
-  - [phase-6-correctness-and-ux.md](phase-6-correctness-and-ux.md) — every operation checked against a truth outside the code (file, paper, naive numpy, invariant); encoding, behavior, events, regions and visualization coverage; real-data messiness inventory and probes; the documented path on real data; decoding kept as one metric among several
+  - [phase-6-correctness.md](phase-6-correctness.md) — cut to one simulation check per domain (maintainer, 2026-11-03): planted cells on the real path, simulated behavior in each declared environment, planted environment misfits, and the visualization checks; a full rerun first
 - [appendix.md](appendix.md) — per-dataset access details verified at planning time, and what is still unverified

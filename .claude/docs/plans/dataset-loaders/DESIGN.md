@@ -310,7 +310,7 @@ maintainer expects some to be hard.
 1. **Wrong data.** Every conversion is stated with its source. Every number
    the student sees is checked against the file, the paper, an independent
    computation, or planted truth. These are the checks of the survey's
-   phase 6 (`.claude/docs/plans/real-data-survey-batches/phase-6-correctness-and-ux.md`).
+   phase 6 (`.claude/docs/plans/real-data-survey-batches/phase-6-correctness.md`).
    A conversion without evidence does not ship.
 2. **Misaligned times.** Each loader proves one clock:
    - spikes lie within the tracked span;
