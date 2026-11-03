@@ -1775,7 +1775,8 @@ def compute_view_rate(
         Physical smoothing length in environment units; None is 0 (no
         smoothing) for ``method="binned"``, and 5 cm converted to declared
         metric units, or 2.5 median graph-edge lengths for unspecified or
-        custom units, for the kernel methods.
+        custom units, for the kernel methods; the units-free default warns
+        with its resolved value.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
@@ -2048,7 +2049,8 @@ def compute_view_rates(
         Physical smoothing length in environment units; None is 0 (no
         smoothing) for ``method="binned"``, and 5 cm converted to declared
         metric units, or 2.5 median graph-edge lengths for unspecified or
-        custom units, for the kernel methods.
+        custom units, for the kernel methods; the units-free default warns
+        with its resolved value.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included.
     n_jobs : int, default=1
@@ -2381,7 +2383,8 @@ def is_spatial_view_cell(
         Physical smoothing length in environment units; None is 0 (no
         smoothing) for ``method="binned"``, and 5 cm converted to declared
         metric units, or 2.5 median graph-edge lengths for unspecified or
-        custom units, for the kernel methods.
+        custom units, for the kernel methods; the units-free default warns
+        with its resolved value.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included. Bins with
         view occupancy below this threshold are set to NaN.
@@ -2701,7 +2704,8 @@ def spatial_view_cell_significance(
         Physical smoothing length in environment units; None is 0 (no
         smoothing) for ``method="binned"``, and 5 cm converted to declared
         metric units, or 2.5 median graph-edge lengths for unspecified or
-        custom units, for the kernel methods.
+        custom units, for the kernel methods; the units-free default warns
+        with its resolved value.
     min_occupancy : float, default=0.0
         Minimum view occupancy (seconds) for a bin to be included.
     n_jobs : int, default=1

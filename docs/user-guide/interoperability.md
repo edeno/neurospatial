@@ -271,7 +271,8 @@ results default to `analysis_settings=None`.
 
 Spatial and view smoothing, and smoothed object-vector maps, share a physical
 bandwidth default: 5 cm converted to declared metric units, or 2.5 median
-graph-edge lengths for unspecified/custom units. Object-vector results inherit
+graph-edge lengths for unspecified/custom units, which warns with the
+resolved value. Object-vector results inherit
 the supplied environment's distance units; their angles remain radians.
 Directional smoothing keeps its explicit angular bandwidth, and object-vector
 `method="binned"` applies no smoothing. Supply explicit distance ranges and gaze

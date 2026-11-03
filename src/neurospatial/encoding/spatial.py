@@ -4073,8 +4073,9 @@ default="diffusion_kde"
         Smoothing bandwidth in environment units; ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
-        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
-        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``; the
+        units-free default warns with its resolved value. Larger values smooth
+        more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; bins below the
@@ -4455,8 +4456,9 @@ default="diffusion_kde"
         Smoothing bandwidth in environment units; ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
-        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
-        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``; the
+        units-free default warns with its resolved value. Larger values smooth
+        more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; ``0.0`` masks
@@ -5416,7 +5418,8 @@ def compute_directional_place_fields(
         Smoothing bandwidth in environment units (e.g., cm); ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         or 2.5 median graph-edge lengths for unspecified or custom units for
-        the kernel methods.
+        the kernel methods; the units-free default warns with its resolved
+        value.
     min_occupancy : float, default=0.0
         Minimum occupancy threshold in seconds. Bins below this threshold are
         set to NaN.
@@ -6153,7 +6156,7 @@ def has_place_field(
         Smoothing bandwidth in environment units; None is 0 (no smoothing)
         for ``method="binned"``, and 5 cm in declared metric units or 2.5
         median graph-edge lengths for unspecified or custom units for the
-        kernel methods.
+        kernel methods; the units-free default warns with its resolved value.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -6487,8 +6490,9 @@ def is_place_cell(
         Smoothing bandwidth in environment units; ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
-        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
-        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``; the
+        units-free default warns with its resolved value. Larger values smooth
+        more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; bins below the
@@ -6907,8 +6911,9 @@ def place_cell_significance(
         Smoothing bandwidth in environment units; ``None`` is 0 (no
         smoothing) for ``method="binned"``, and 5 cm in declared metric units
         (0.05 m / 50 mm) or 2.5 median graph-edge lengths for unspecified or
-        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``. Larger
-        values smooth more; an explicit value smooths ``"binned"`` maps too.
+        custom units for ``"diffusion_kde"`` and ``"gaussian_kde"``; the
+        units-free default warns with its resolved value. Larger values smooth
+        more; an explicit value smooths ``"binned"`` maps too.
         Mutually exclusive with ``method="glm"``.
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; ``0.0`` masks
@@ -8065,7 +8070,8 @@ def spatial_cell_type_significance(
     bandwidth : float or None, default=None
         Smoothing bandwidth in environment units; None is 0 (no smoothing)
         for ``method="binned"``, and 5 cm in metric units or 2.5 median
-        graph-edge lengths otherwise for the kernel methods.
+        graph-edge lengths otherwise for the kernel methods; the units-free
+        default warns with its resolved value.
     min_occupancy : float, default=0.0
         Seconds a bin must be occupied to count; ``0.0`` masks nothing.
     speed : ndarray, shape (n_samples,), optional

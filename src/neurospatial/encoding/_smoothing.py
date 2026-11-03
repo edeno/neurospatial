@@ -86,8 +86,9 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
 
     The default is 5 cm in declared metric units. For unspecified, pixel or
     custom units, it is 2.5 median graph-edge lengths (or bin widths when no
-    edges exist). Polar environments use physical graph lengths and radial
-    extent; their angular coordinate never enters a length comparison.
+    edges exist), and a warning states the resolved value. Polar environments
+    use physical graph lengths and radial extent; their angular coordinate
+    never enters a length comparison.
     An explicit value is always in environment coordinates; a positive one
     below a quarter of the median bin length warns, since it barely smooths
     and is usually in other units (metres on a cm environment).
@@ -107,6 +108,7 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
             if lengths.size == 0:
                 lengths = env.coordinate_system.fallback_lengths(env)
             bandwidth = 2.5 * float(np.median(lengths))
+            _warn_unitless_default_bandwidth(env, bandwidth)
     # Point bins built from_bins without declared ranges have no known
     # extent; the warning below needs one.
     ranges = (
@@ -125,6 +127,31 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
             stacklevel=_external_stacklevel(),
         )
     return float(bandwidth)
+
+
+def _warn_unitless_default_bandwidth(env: Any, bandwidth: float) -> None:
+    """Warn that ``bandwidth=None`` fell back to 2.5 median bin spacings.
+
+    Without metric ``env.units`` the 5 cm default cannot be converted, so the
+    resolved length depends on the bin size the environment was built with.
+    """
+    reason = (
+        "env.units is unset"
+        if env.units is None
+        else f"env.units={env.units!r} is not a metric unit"
+    )
+    warnings.warn(
+        _format_error(
+            f"bandwidth=None resolved to {bandwidth:.3g} environment units, "
+            f"2.5 times the median bin spacing, because {reason}.",
+            why="the 5 cm default needs metric units, so the smoothing length "
+            "follows the bin size instead.",
+            fix='build the environment with units="cm" (or "m", "mm") for the '
+            "5 cm default, or pass bandwidth= explicitly in environment units.",
+        ),
+        UserWarning,
+        stacklevel=_external_stacklevel(),
+    )
 
 
 def _warn_if_below_bin_length(env: Any, bandwidth: float) -> None:

@@ -1301,3 +1301,61 @@ def test_oversized_bandwidth_warning_points_at_caller(case):
     caught = [w for w in record if "spans the environment" in str(w.message)]
     assert len(caught) == 1
     assert caught[0].filename == __file__
+
+
+@pytest.fixture(scope="module")
+def walk_session() -> tuple[NDArray[np.float64], ...]:
+    """A 100 s random walk in a 100 x 100 box with 200 uniform spikes."""
+    rng = np.random.default_rng(0)
+    times = np.arange(0.0, 100.0, 0.02)
+    positions = np.cumsum(rng.normal(0.0, 1.0, (times.size, 2)), axis=0) % 100.0
+    spike_times = np.sort(np.random.default_rng(1).uniform(0.0, 100.0, 200))
+    return spike_times, times, positions
+
+
+@pytest.mark.parametrize(
+    ("units", "reason"),
+    [(None, "env.units is unset"), ("px", "env.units='px' is not a metric unit")],
+)
+def test_default_bandwidth_without_metric_units_warns(walk_session, units, reason):
+    """The bin-spacing fallback is announced with its value and the fix."""
+    from neurospatial import compute_spatial_rate
+
+    spike_times, times, positions = walk_session
+    env = Environment.from_samples(positions, bin_size=5.0, units=units)
+    with pytest.warns(UserWarning, match="bandwidth=None resolved") as record:
+        result = compute_spatial_rate(env, spike_times, times, positions)
+    (caught,) = [w for w in record if "bandwidth=None" in str(w.message)]
+    message = str(caught.message)
+    assert "resolved to 12.5 environment units" in message
+    assert "2.5 times the median bin spacing" in message
+    assert reason in message
+    assert 'units="cm"' in message
+    assert "bandwidth=" in message.split("Fix:")[1]
+    assert caught.filename == __file__
+    # The warning announces the fallback; it does not change the value.
+    assert result.bandwidth == pytest.approx(12.5)
+
+
+@pytest.mark.parametrize(
+    ("units", "kwargs"),
+    [
+        ("cm", {}),
+        ("m", {}),
+        (None, {"bandwidth": 12.5}),
+        (None, {"method": "binned"}),
+    ],
+    ids=["cm", "m", "explicit-bandwidth", "binned"],
+)
+def test_default_bandwidth_is_silent_when_announced(walk_session, units, kwargs):
+    """Metric units, an explicit bandwidth or unsmoothed binning do not warn."""
+    import warnings
+
+    from neurospatial import compute_spatial_rate
+
+    spike_times, times, positions = walk_session
+    scale = 0.01 if units == "m" else 1.0
+    env = Environment.from_samples(positions * scale, bin_size=5.0 * scale, units=units)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compute_spatial_rate(env, spike_times, times, positions * scale, **kwargs)

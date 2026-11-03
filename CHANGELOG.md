@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### The units-free default bandwidth warns
+
+**Changed**
+
+- `bandwidth=None` on an environment without metric `units` (unset, `"px"`
+  or a custom unit) resolves to 2.5 times the median bin spacing, not 5 cm,
+  so `Environment.from_samples(positions, bin_size=5.0)` smoothed with 12.5
+  silently. The kernel methods of spatial and view rate maps and the
+  decoders built on them now warn with the resolved value and the
+  fix: build the environment with `units="cm"` (or `"m"`, `"mm"`) for the
+  5 cm default, or pass `bandwidth=` in environment units. The value is
+  unchanged. Metric units, an explicit bandwidth and `method="binned"`
+  without a bandwidth stay silent.
+
 ### Spike times in milliseconds warn with `epochs`
 
 **Fixed**
