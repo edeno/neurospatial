@@ -215,10 +215,11 @@ Twenty-two track and maze loaders now declare their apparatus as a track
 graph (`geometry["environment"]`, [BATCH_FAITHFUL_TRACKS.md](BATCH_FAITHFUL_TRACKS.md)),
 and the study measures that environment beside the samples-built one,
 against the same samples and the same independent reference (table
-"Declared environments" in the results). The rows above for figure8_000552
-(now the camera positions, with `_linearized` the old 1-D view) and
-jadhav_000447 (now the novel W-track; the familiar one is
-jadhav_000447_familiar) are from that rerun. In short:
+"Declared environments" in the results). The table above is from the
+first run; in the rerun's results file figure8_000552 is the camera
+positions (the old 1-D row is `figure8_000552_linearized`) and
+jadhav_000447 is the novel W-track (the familiar one is
+jadhav_000447_familiar). In short:
 
 - Every declared track is one connected part (Takigawa's two tracks two
   parts, as stated) with no link through a wall or a gap: the labyrinth's
