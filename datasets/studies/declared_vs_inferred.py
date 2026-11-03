@@ -8,10 +8,10 @@ depend on the environment: bins, occupancy, spatial information, place
 screen, decoding error and its chance level, laps (default and by start
 region), turns and replay detection rates, with each cell's status when it is
 not ``ok``. Decoding error is the median geodesic error along each run's own
-environment (the declared track, or the samples' grid); "the declared
-track's samples" restricts both runs to the time bins whose true position
-the declared environment places, so the two are medians over the same
-samples.
+environment (the declared track, or the samples' grid); "time bins with
+an error in both runs" restricts both runs to the time bins that both the
+declared and the samples-built decode give an error for (each run makes
+both decodes), so the two are medians over the same time bins.
 
 Writes ``results/studies/declared_vs_inferred.md``. Run after both driver
 runs: ``uv run --group datasets python datasets/studies/declared_vs_inferred.py``.
@@ -46,7 +46,7 @@ MEASURES: tuple[tuple[str, str, str, str], ...] = (
     (
         "decode.position",
         "median_error_on_declared",
-        "decode error (time bins both environments place)",
+        "decode error (time bins with an error in both runs)",
         ".1f",
     ),
     ("decode.position", "frac_actual_outside", "true positions outside", ".1%"),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from operations import chance_errors
@@ -73,8 +75,8 @@ def test_positions_outside_a_declared_track_are_not_a_part():
     assert np.all(np.isfinite(errors))
 
 
-def _left_half_median(rec, env, *, warns):
-    """Decode with `env` and take the median error over true x < 50 cm."""
+def _decode_errors(rec, env):
+    """An independent decode with ``env``: per-time-bin errors and true x."""
     from neurospatial.decoding import BayesianDecoder
 
     p, spikes = rec.params, list(rec.spike_times)
@@ -82,21 +84,21 @@ def _left_half_median(rec, env, *, warns):
         spikes, rec.times, rec.positions, epochs=p["train_epochs"]
     )
     result = decoder.predict(spikes, rec.times, epochs=p["test_epochs"])
-    if warns:
-        with pytest.warns(UserWarning, match="outside the environment"):
-            error = result.error_against(rec.times, rec.positions)
-    else:
-        error = result.error_against(rec.times, rec.positions)
+    with warnings.catch_warnings():
+        # The samples-side environment leaves out x > 70 cm, and says so.
+        warnings.filterwarnings("ignore", "decoding_error", UserWarning)
+        error = np.asarray(result.error_against(rec.times, rec.positions), float)
     true_x = np.interp(result.times, rec.times, np.asarray(rec.positions)[:, 0])
-    left = true_x < 50.0
-    return np.nanmedian(np.asarray(error, dtype=float)[left]), int(left.sum())
+    return error, true_x
 
 
-def test_decoding_error_over_the_declared_samples_in_both_runs(simulated_recording):
-    # Declare the left half of the 100 cm box. Both runs must report the
-    # error over the time bins whose true position lies in that half; the
-    # count and both medians are recomputed here from the geometry (x < 50 cm)
-    # and an independent decode, not from the operation's mask.
+def test_decoding_error_over_the_same_time_bins_in_both_runs(simulated_recording):
+    # The declared box is the whole 100 cm arena; the samples-built side
+    # (seeded in the cache, as a grid built from samples that never reach
+    # x > 70 cm would be) covers x <= 70 cm only. Both runs must report the
+    # error over the same time bins, those with an error in both runs, and
+    # each run's median over them. The count and medians are recomputed here
+    # from independent decodes, not from the operation's mask.
     from dataclasses import replace
 
     import shapely
@@ -104,24 +106,36 @@ def test_decoding_error_over_the_declared_samples_in_both_runs(simulated_recordi
 
     from neurospatial import Environment
 
-    half = Environment.from_polygon(
-        shapely.box(0, 0, 50, 100), bin_size=2.5, units="cm"
+    declared_env = Environment.from_polygon(
+        shapely.box(0, 0, 100, 100), bin_size=2.5, units="cm"
     )
-    rec = replace(simulated_recording, geometry={"environment": lambda: half})
+    samples_env = Environment.from_polygon(
+        shapely.box(0, 0, 70, 100), bin_size=2.5, units="cm"
+    )
+    rec = replace(simulated_recording, geometry={"environment": lambda: declared_env})
+    declared = decode_position(rec, {"samples_env": samples_env}).summary
     with pytest.warns(UserWarning, match="outside the environment"):
-        declared = decode_position(rec, {}).summary
-    cache = {"inferred_env": True}
-    inferred = decode_position(rec, cache).summary
+        inferred = decode_position(
+            rec, {"samples_env": samples_env, "inferred_env": True}
+        ).summary
 
-    declared_median, expected = _left_half_median(rec, half, warns=True)
-    inferred_median, _ = _left_half_median(rec, cache["env"], warns=False)
-    assert 0.3 < expected / declared["n_time_bins"] < 0.7
-    for run in (declared, inferred):
-        assert run["n_on_declared"] == pytest.approx(expected, rel=0.01)
+    declared_error, true_x = _decode_errors(rec, declared_env)
+    inferred_error, _ = _decode_errors(rec, samples_env)
+    both = np.isfinite(declared_error) & np.isfinite(inferred_error)
+    # The geometry: an error wherever the true x is inside the 70 cm side,
+    # none a bin spacing or more past it (decoding_error measures a position
+    # within about one bin spacing of an edge from its nearest bin).
+    assert np.isfinite(declared_error).all()
+    assert both[true_x <= 70.0].all()
+    assert not both[true_x >= 72.5].any()
+    expected = int(both.sum())
+    assert 0.5 < expected / len(true_x) < 0.9
+    assert declared["n_on_declared"] == expected
+    assert inferred["n_on_declared"] == expected
     assert declared["median_error_on_declared"] == pytest.approx(
-        declared_median, rel=0.02
+        np.median(declared_error[both]), rel=1e-12
     )
     assert inferred["median_error_on_declared"] == pytest.approx(
-        inferred_median, rel=0.02
+        np.median(inferred_error[both]), rel=1e-12
     )
-    assert inferred["frac_actual_outside"] == 0.0
+    assert declared["n_time_bins"] == inferred["n_time_bins"] == len(true_x)

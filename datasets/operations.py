@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as dt
 import tempfile
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,7 @@ from typing import Any, Literal
 import numpy as np
 from _geometry import graph_environment
 from _record import Recording
+from numpy.typing import NDArray
 
 Status = Literal["ok", "workaround", "missing", "error", "n/a"]
 
@@ -403,22 +405,28 @@ def chance_errors(
     return np.asarray(errors, dtype=float), frac_disconnected, frac_outside
 
 
-def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
+def _decode(rec: Recording, env: Any) -> tuple[Any, NDArray[np.float64]]:
+    """Fit on ``train_epochs``, decode ``test_epochs``; the result and its errors."""
     from neurospatial.decoding import BayesianDecoder
 
-    train, test = rec.params.get("train_epochs"), rec.params.get("test_epochs")
-    if train is None or test is None:
-        return Outcome("n/a", note="params has no train_epochs/test_epochs")
     spikes = list(rec.spike_times or ())
-    decoder = BayesianDecoder(_env(rec, cache), dt=rec.params["dt"]).fit(
+    decoder = BayesianDecoder(env, dt=rec.params["dt"]).fit(
         spikes,
         rec.times,
         rec.positions,
         min_speed=rec.params.get("min_speed"),
-        epochs=train,
+        epochs=rec.params["train_epochs"],
     )
-    result = decoder.predict(spikes, rec.times, epochs=test)
-    error = result.error_against(rec.times, rec.positions)
+    result = decoder.predict(spikes, rec.times, epochs=rec.params["test_epochs"])
+    error = np.asarray(result.error_against(rec.times, rec.positions), dtype=float)
+    return result, error
+
+
+def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
+    train, test = rec.params.get("train_epochs"), rec.params.get("test_epochs")
+    if train is None or test is None:
+        return Outcome("n/a", note="params has no train_epochs/test_epochs")
+    result, error = _decode(rec, _env(rec, cache))
     actual = np.column_stack(
         [
             np.interp(result.times, rec.times, column)
@@ -436,20 +444,27 @@ def decode_position(rec: Recording, cache: dict[str, Any]) -> Outcome:
         "n_time_bins": int(result.n_time_bins),
     }
     if "environment" in rec.geometry:
-        # The same time bins in both runs: those whose true position both the
-        # declared and the samples-built environment place, so declared and
-        # inferred errors are medians over the same samples (a bin whose
-        # decoded error is NaN in this run is left out of this run's median).
-        on_both = np.zeros(len(actual), dtype=bool)
-        on_both[finite] = (
-            np.asarray(rec.geometry["environment"]().bin_at(actual[finite])) >= 0
-        ) & (np.asarray(_samples_env(rec, cache).bin_at(actual[finite])) >= 0)
-        values = np.asarray(error, dtype=float)[on_both]
-        values = values[np.isfinite(values)]
+        # The same time bins in both runs (declared and --inferred-env): each
+        # run also decodes with the other run's environment and keeps the
+        # time bins with an error in both, so a true position either
+        # environment cannot place, or a bin either decode leaves undecoded,
+        # is left out of both medians. The other decode's warnings belong to
+        # the other run's record, which makes the same decode.
+        if env_kind(rec, cache) == "declared":
+            other_env = _samples_env(rec, cache)
+        else:
+            other_env = rec.geometry["environment"]()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            other, other_error = _decode(rec, other_env)
+        if not np.array_equal(other.times, result.times):
+            msg = "the declared and samples-built decodes have different time bins"
+            raise AssertionError(msg)
+        shared = ~np.isnan(error) & ~np.isnan(other_error)
         summary["median_error_on_declared"] = (
-            float(np.median(values)) if len(values) else float("nan")
+            float(np.median(error[shared])) if shared.any() else float("nan")
         )
-        summary["n_on_declared"] = int(on_both.sum())
+        summary["n_on_declared"] = int(shared.sum())
     return Outcome("ok", summary)
 
 
