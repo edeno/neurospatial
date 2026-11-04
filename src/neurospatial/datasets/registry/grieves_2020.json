@@ -1,0 +1,1065 @@
+{
+  "dataset": "grieves_2020",
+  "paper": "Grieves et al. (2020)",
+  "paper_citation": "Grieves RM, Jedidi-Ayoub S, Mishchanchuk K, Liu A, Renaudineau S, Jeffery KJ (2020). The place-cell representation of volumetric space in rats. Nature Communications 11:789. https://doi.org/10.1038/s41467-020-14611-7",
+  "species": "rat",
+  "brain_regions": [
+    "CA1"
+  ],
+  "apparatus": "cubic climbing lattice, 0.97 m a side (6 x 6 x 6 cubes of 150 mm tubes), aligned or tilted onto a vertex, between square arena sessions",
+  "license": "CC0",
+  "archive": {
+    "name": "UCL Research Data Repository 9926477 (version 1)",
+    "url": "https://doi.org/10.5522/04/9926477.v1",
+    "citation": "Grieves, Roddy; Jedidi-Ayoub, Selim; Mishchanchuk, Karyna; Liu, Anyi; Renaudineau, Sophie; Jeffery, Kate (2020). Place-cell representation of volumetric space in rats. University College London. Dataset. https://doi.org/10.5522/04/9926477.v1"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 50.0,
+      "basis": "stated",
+      "source": "each session file's position_srate_hz (50) and config.srate (50); the Supplementary Methods of Grieves et al. 2020 state that the cameras tracked the LEDs 'at a 25Hz sampling frequency', which the files' 0.02 s steps do not match"
+    },
+    "position_span": {
+      "value": [
+        77.6,
+        201.6
+      ],
+      "basis": "stated",
+      "source": "the Supplementary Methods of Grieves et al. 2020: a 6 x 6 x 6 cubic maze, 0.97 m a side, aligned or 'rotated (45 deg around its Z-axis and 54.74 deg around its X-axis)' to stand on a vertex, 0.97 x sqrt(3) = 1.68 m tall; the largest span of the tracked positions must lie between 80% of the side (77.6 cm) and 120% of the tilted height (201.6 cm)"
+    },
+    "speed_limit": {
+      "value": 393.0,
+      "basis": "stated",
+      "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is the headstage's LEDs, which swing faster than the body, and no source read states head speed"
+    }
+  },
+  "sessions": [
+    {
+      "session": "750_16032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 11,
+      "members": [
+        {
+          "path": "750_16032017.mat",
+          "sha256": "a2a291c7780fb116c2b2050527d9a122525c3524cca03fdd242fb219d89ae652",
+          "size_bytes": 88694404
+        }
+      ]
+    },
+    {
+      "session": "770_01032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 17,
+      "members": [
+        {
+          "path": "770_01032017.mat",
+          "sha256": "3b9e1532465dce12c72f11665ed7e50f34f5d7436c972a93e3b72d5eca67927f",
+          "size_bytes": 274067955
+        }
+      ]
+    },
+    {
+      "session": "770_14032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 8,
+      "members": [
+        {
+          "path": "770_14032017.mat",
+          "sha256": "56117c38610c2aba2aafa79430330d0f71e1d59f8816f471e7d3dedab3fec186",
+          "size_bytes": 85819139
+        }
+      ]
+    },
+    {
+      "session": "775_18112016",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 10,
+      "members": [
+        {
+          "path": "775_18112016.mat",
+          "sha256": "3e136e0c94cb47f50ef2e430b2d70cf6d0576edcf77f39c4f6925ce0f79a89f9",
+          "size_bytes": 91469340
+        }
+      ]
+    },
+    {
+      "session": "775_25102016",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 24,
+      "members": [
+        {
+          "path": "775_25102016.mat",
+          "sha256": "2159feaf5e3cf620b0a87acf1a16e5ca9629610ac4122bb24e39ea11801c5daf",
+          "size_bytes": 177707734
+        }
+      ]
+    },
+    {
+      "session": "775_27102016",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 35,
+      "members": [
+        {
+          "path": "775_27102016.mat",
+          "sha256": "4b91e305ef3e0519e684b5aae0a97eadb079573ed5abd0b5ee8e4353185df050",
+          "size_bytes": 213259723
+        }
+      ]
+    },
+    {
+      "session": "775_28102016",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 27,
+      "members": [
+        {
+          "path": "775_28102016.mat",
+          "sha256": "0f7c2fa7e871b6cacc16d6b56680f92e683a0b03681e002086144ebaa0ade405",
+          "size_bytes": 203371915
+        }
+      ]
+    },
+    {
+      "session": "850_13032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 16,
+      "members": [
+        {
+          "path": "850_13032017.mat",
+          "sha256": "6fa4a9f1c43dec6eb4a162c78cc4c94665d924473e185740d642279227b8cefd",
+          "size_bytes": 94893703
+        }
+      ]
+    },
+    {
+      "session": "850_15032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 8,
+      "members": [
+        {
+          "path": "850_15032017.mat",
+          "sha256": "ab8160c2e0a4055a878d1a1f78889375e3434fec2c1a9c861c5527f3f721313f",
+          "size_bytes": 102212141
+        }
+      ]
+    },
+    {
+      "session": "851_11042017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 7,
+      "members": [
+        {
+          "path": "851_11042017.mat",
+          "sha256": "706b56580a5394e2d5579ada6631a84f86b7819dda47759a1ce2e4a5efc179b8",
+          "size_bytes": 91343875
+        }
+      ]
+    },
+    {
+      "session": "851_13042017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 13,
+      "members": [
+        {
+          "path": "851_13042017.mat",
+          "sha256": "7e338bbc42b9824decc122a45a2a4f54a4fe60be6d119422479a193467ce12da",
+          "size_bytes": 137854642
+        }
+      ]
+    },
+    {
+      "session": "851_22032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 9,
+      "members": [
+        {
+          "path": "851_22032017.mat",
+          "sha256": "547af1e6baa79a4fe159425a61aa061c2ae049f65a23ed299d257e7c20d4b3e2",
+          "size_bytes": 135221417
+        }
+      ]
+    },
+    {
+      "session": "851_23032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 13,
+      "members": [
+        {
+          "path": "851_23032017.mat",
+          "sha256": "b539071420e24be5bd44c697271db42795ee0864bd91f45e1cbbb59f79d784a3",
+          "size_bytes": 130718671
+        }
+      ]
+    },
+    {
+      "session": "851_26032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 20,
+      "members": [
+        {
+          "path": "851_26032017.mat",
+          "sha256": "5a0f3ead329c4592e16e942c9b9a5d4d718145228aa8b77bd60c10b26393d184",
+          "size_bytes": 176935111
+        }
+      ]
+    },
+    {
+      "session": "852_10082017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 14,
+      "members": [
+        {
+          "path": "852_10082017.mat",
+          "sha256": "efdf4467861c1399a6de6a3b33fda6ba22f116dd2b45277dd619afb0f06bb80a",
+          "size_bytes": 83356249
+        }
+      ]
+    },
+    {
+      "session": "852_11082017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 10,
+      "members": [
+        {
+          "path": "852_11082017.mat",
+          "sha256": "72753d24b69c4c49f459dde56cd6137b7028a805207043d22bc03f3adc885cb7",
+          "size_bytes": 145011322
+        }
+      ]
+    },
+    {
+      "session": "852_12042017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 8,
+      "members": [
+        {
+          "path": "852_12042017.mat",
+          "sha256": "b06d9a96dea6236cee0b2bbef9c938165bcce2787737eac74fd633d9d121be2f",
+          "size_bytes": 92355730
+        }
+      ]
+    },
+    {
+      "session": "852_13032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 9,
+      "members": [
+        {
+          "path": "852_13032017.mat",
+          "sha256": "d5b29f3b8e4548543d1b3afdd83d9cebbecbc154d2ef9cca42b336178ad0ab3a",
+          "size_bytes": 85147107
+        }
+      ]
+    },
+    {
+      "session": "852_16032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 33,
+      "members": [
+        {
+          "path": "852_16032017.mat",
+          "sha256": "558de1a556978be38f8938a7cdb34df84dbbefa2e7f31932ef754c50c0e2b665",
+          "size_bytes": 268669165
+        }
+      ]
+    },
+    {
+      "session": "852_17032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 16,
+      "members": [
+        {
+          "path": "852_17032017.mat",
+          "sha256": "afa797b204d3af202fc1b79c3c8494ff6cefcd8db05ccf36a05df9a89583597a",
+          "size_bytes": 122030367
+        }
+      ]
+    },
+    {
+      "session": "852_17082017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 8,
+      "members": [
+        {
+          "path": "852_17082017.mat",
+          "sha256": "2a82b1326a39f05afc9ab1074297ce08f5251956440639873c813a2cdc14a445",
+          "size_bytes": 106483446
+        }
+      ]
+    },
+    {
+      "session": "852_20032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 23,
+      "members": [
+        {
+          "path": "852_20032017.mat",
+          "sha256": "5793bd359cde06282b813116e7027669b4df7a0d9193b210fa7839fd57ef3daa",
+          "size_bytes": 196731885
+        }
+      ]
+    },
+    {
+      "session": "852_20042017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 7,
+      "members": [
+        {
+          "path": "852_20042017.mat",
+          "sha256": "4c9c2000fc232271ee82e3013afa68683aadc16bebdfa2d38624d71e4faa2fac",
+          "size_bytes": 90983831
+        }
+      ]
+    },
+    {
+      "session": "852_22032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 22,
+      "members": [
+        {
+          "path": "852_22032017.mat",
+          "sha256": "9cbab602b21d7bf91e87ff0dc8aad62ac08e275dd7738a4d4a68555cb2ffe1d9",
+          "size_bytes": 197599710
+        }
+      ]
+    },
+    {
+      "session": "852_23032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 10,
+      "members": [
+        {
+          "path": "852_23032017.mat",
+          "sha256": "9f16e14c93ff9e7051d003271892e64d13a0f2e3f3eb628fffd77add2028379b",
+          "size_bytes": 100680417
+        }
+      ]
+    },
+    {
+      "session": "852_25072017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 9,
+      "members": [
+        {
+          "path": "852_25072017.mat",
+          "sha256": "81a07be5f5d5a62247b1d25ef296bea3da218e025efe95b18c5aa1f7f2e174d6",
+          "size_bytes": 102822835
+        }
+      ]
+    },
+    {
+      "session": "852_27032017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 12,
+      "members": [
+        {
+          "path": "852_27032017.mat",
+          "sha256": "f605c99aa941d036625a276b67bd516ad1f04440e21229fb4768e577ffbc9bf7",
+          "size_bytes": 113471540
+        }
+      ]
+    },
+    {
+      "session": "852_31072017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 5,
+      "members": [
+        {
+          "path": "852_31072017.mat",
+          "sha256": "b7704ba42526da78a39bacc93c0863be6153a191b522f9dd1314b2cdbbd73f81",
+          "size_bytes": 73074946
+        }
+      ]
+    },
+    {
+      "session": "853_13022017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 12,
+      "members": [
+        {
+          "path": "853_13022017.mat",
+          "sha256": "afb92ed201e54825b193776f0653b2865ec55be0df44cf5bb94d142a8da730a4",
+          "size_bytes": 71753764
+        }
+      ]
+    },
+    {
+      "session": "853_14022017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 13,
+      "members": [
+        {
+          "path": "853_14022017.mat",
+          "sha256": "280d57b9a0dbd5793509b34c855e6f11c671803c4c6d39ec1a73d913252b3e43",
+          "size_bytes": 94274365
+        }
+      ]
+    },
+    {
+      "session": "853_16022017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 20,
+      "members": [
+        {
+          "path": "853_16022017.mat",
+          "sha256": "8679eb33e44884cbee9a10d1284c359a9799f859c63f5992e443880e547f8b25",
+          "size_bytes": 164596162
+        }
+      ]
+    },
+    {
+      "session": "894_09012018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 16,
+      "members": [
+        {
+          "path": "894_09012018.mat",
+          "sha256": "2a5514ddc6b650d7b2bd11609b5dbf51652d404af6fd192718ac593771e7ab4d",
+          "size_bytes": 315458413
+        }
+      ]
+    },
+    {
+      "session": "894_18012018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 25,
+      "members": [
+        {
+          "path": "894_18012018.mat",
+          "sha256": "07940dfb265942cfad0d43cc3c647f35b83ea1b4bb1624762ba58d5f5a7db885",
+          "size_bytes": 282928916
+        }
+      ]
+    },
+    {
+      "session": "894_21122017",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 26,
+      "members": [
+        {
+          "path": "894_21122017.mat",
+          "sha256": "c1efc8c8bcf59b931736fc010168444242283868e6a96a93de2fd3178bd674aa",
+          "size_bytes": 356978082
+        }
+      ]
+    },
+    {
+      "session": "896_09012018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 38,
+      "members": [
+        {
+          "path": "896_09012018.mat",
+          "sha256": "e3c5136282d6ec60faa94e8832d61456fffbe067348a9f4ca75f7b68628d3e5d",
+          "size_bytes": 461380118
+        }
+      ]
+    },
+    {
+      "session": "896_11012018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 37,
+      "members": [
+        {
+          "path": "896_11012018.mat",
+          "sha256": "fd71d1d2570f70864df723249602b5beaaef41b74025c572852f665a3478acca",
+          "size_bytes": 388229053
+        }
+      ]
+    },
+    {
+      "session": "896_12012018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 31,
+      "members": [
+        {
+          "path": "896_12012018.mat",
+          "sha256": "368259c5b6a5f74addede4782b3df36166fe4c339551dc234b4935b76d15d67f",
+          "size_bytes": 351792221
+        }
+      ]
+    },
+    {
+      "session": "896_16012018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 34,
+      "members": [
+        {
+          "path": "896_16012018.mat",
+          "sha256": "f9cac0016dcc95b19988c1333b3be870317fda31302e1c8dcc2175d2a3ee4eca",
+          "size_bytes": 385486685
+        }
+      ]
+    },
+    {
+      "session": "896_19012018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 56,
+      "members": [
+        {
+          "path": "896_19012018.mat",
+          "sha256": "c1c9ae72cec4f3e021dcbfb433cb55bfd0511dfd5a04ebf7fd7ebcea8662cc31",
+          "size_bytes": 309216163
+        }
+      ]
+    },
+    {
+      "session": "923_17042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 4,
+      "members": [
+        {
+          "path": "923_17042018.mat",
+          "sha256": "64b15ae3b1fb4175cf58278bcfaa073d762329ba18fda74588ca0bd1cda16ba5",
+          "size_bytes": 104797468
+        }
+      ]
+    },
+    {
+      "session": "923_26042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 5,
+      "members": [
+        {
+          "path": "923_26042018.mat",
+          "sha256": "a73d09ae87e7c251d837c14ff86120a067da79c984608ec98148f3b23895a328",
+          "size_bytes": 86822064
+        }
+      ]
+    },
+    {
+      "session": "924_16042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 3,
+      "members": [
+        {
+          "path": "924_16042018.mat",
+          "sha256": "cf84b32d29c07007c12a5a2daed429bff87df26054fe38cb8d3f1d3aa6de516f",
+          "size_bytes": 76440591
+        }
+      ]
+    },
+    {
+      "session": "924_25042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 2,
+      "members": [
+        {
+          "path": "924_25042018.mat",
+          "sha256": "b5441ae9e616b981d6ee8b32294aad75c8e6a4060ec72eda4ce5e93b81a61640",
+          "size_bytes": 65758979
+        }
+      ]
+    },
+    {
+      "session": "926_05042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 12,
+      "members": [
+        {
+          "path": "926_05042018.mat",
+          "sha256": "9ca808968277725f342e27282ae37ee97e0610d3f9d3dece8f14b1770be96fed",
+          "size_bytes": 266953104
+        }
+      ]
+    },
+    {
+      "session": "926_06042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": true,
+      "default": true,
+      "n_units": 24,
+      "verification": "Checked by hand on 2026-11-04 against the file, the record's Summary data readme.m and the paper (Grieves et al. 2020, Nature Communications 11:789, main text on Europe PMC, PMC7005894, and its Supplementary Information). Files: the zip's MD5 and size are those the repository publishes (4edb9c35..., 11,972,048,328 bytes); its SHA-256 was computed from one full download; the member 926_06042018.mat (431,370,988 bytes) is pinned by its own SHA-256, which the survey's copy and a fresh extraction (CRC-32 checked) share. Time: the lattice part's 182,099 samples every 0.02 s (position_srate_hz 50), 1816.02 to 5457.98 s, inside part_config's lattice row [1816, 5458] s, between square1 [0, 1816] and square2 [5458, 6698] (session_names 180406a_square, 180406b_lattice, 180406c_square); the sorted units' spikes run from 0.0075 to 6697.2 s, inside the three parts. Units: 24 sorted clusters on 6 tetrodes once the 6 cluster-0 fields (5,712,584 spikes) are left out; the 9 sessions of rat 926 then hold 295 units, the number Supplementary Table 1 gives. Space: the stored positions' speed is 10.03 times pov (median ratio; pov median 11.7); 147 bars of 970, config3.lat_size 970 x 970 x 970 and lattice_type 'diagonal' (the tilted lattice); the positions span 154.5 x 170.8 x 147.8 cm, every sample inside the authors' 35 x 39 x 33 grid of 5 cm voxels and 24.9% outside the bars' convex hull. Heading: lattice_3d.pox, poy are lattice.pox, poy mirrored in y and shifted by (-165.64, 1039.6) mm, sample by sample, so the heading is -poh; heading minus movement above 10 cm/s has circular mean 0.8 deg and median absolute deviation 42.3 deg; 26.7% of poh samples are exactly 0 deg. The overview figure and three animation frames were looked at.",
+      "members": [
+        {
+          "path": "926_06042018.mat",
+          "sha256": "fd0f62bc04c588d56b8810b98e250588e22c37684d39c4db3809ad491a8c8aa5",
+          "size_bytes": 431370988
+        }
+      ]
+    },
+    {
+      "session": "926_09042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 42,
+      "members": [
+        {
+          "path": "926_09042018.mat",
+          "sha256": "267f96369c820a8defbe8643960521838ea658b9a96168fab55ceb8d57889861",
+          "size_bytes": 676194956
+        }
+      ]
+    },
+    {
+      "session": "926_10042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 46,
+      "members": [
+        {
+          "path": "926_10042018.mat",
+          "sha256": "6f5dcca348230e11ae9c93da76edaa85193fac6b3b13c5bc8963d6a48207d24f",
+          "size_bytes": 707667368
+        }
+      ]
+    },
+    {
+      "session": "926_11042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 55,
+      "members": [
+        {
+          "path": "926_11042018.mat",
+          "sha256": "32982ae47affbd56e652f5feed472005cb27aaf27f8eed6f8dc9fdb10b54ee94",
+          "size_bytes": 453480971
+        }
+      ]
+    },
+    {
+      "session": "926_13042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 46,
+      "members": [
+        {
+          "path": "926_13042018.mat",
+          "sha256": "69a8d7d62f89e681d44c98471f241ecbd7820a17ed1bbb5bb67a1d79a240bb36",
+          "size_bytes": 685311124
+        }
+      ]
+    },
+    {
+      "session": "926_16042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 23,
+      "members": [
+        {
+          "path": "926_16042018.mat",
+          "sha256": "acf668ff0df41f83bfef3409088eeff764d2cdaadde67c39023a20e5ed8a0920",
+          "size_bytes": 389417721
+        }
+      ]
+    },
+    {
+      "session": "926_17042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 26,
+      "members": [
+        {
+          "path": "926_17042018.mat",
+          "sha256": "d52eb667f5bb79356bad40284d1a0110cf2052011d2294961578290bdc28eae8",
+          "size_bytes": 434013667
+        }
+      ]
+    },
+    {
+      "session": "926_24042018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 21,
+      "members": [
+        {
+          "path": "926_24042018.mat",
+          "sha256": "56ad0bb66db1ad593ee77076ac263d9d6f9078dded11dc241726fbce285f7497",
+          "size_bytes": 349791526
+        }
+      ]
+    },
+    {
+      "session": "951_12092018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 12,
+      "members": [
+        {
+          "path": "951_12092018.mat",
+          "sha256": "89911522da9c1e95f14bad632706995ecfd5b34c23770d722c00c9438ad79cba",
+          "size_bytes": 127880957
+        }
+      ]
+    },
+    {
+      "session": "951_13092018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 7,
+      "members": [
+        {
+          "path": "951_13092018.mat",
+          "sha256": "745858f1acef0e09b15974f401d8b96725a247ad07faec6475d5188fc01ed6db",
+          "size_bytes": 108911787
+        }
+      ]
+    },
+    {
+      "session": "951_18092018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 7,
+      "members": [
+        {
+          "path": "951_18092018.mat",
+          "sha256": "392d6e5459fe8c84387e947133e0644d07e9fccd98d62817c28cf62f3a4d358e",
+          "size_bytes": 111805025
+        }
+      ]
+    },
+    {
+      "session": "951_20092018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 6,
+      "members": [
+        {
+          "path": "951_20092018.mat",
+          "sha256": "556f4a74271933f3d9ed180fd536a70534e38bd0093ab82a6265808a2cc79ced",
+          "size_bytes": 87972895
+        }
+      ]
+    },
+    {
+      "session": "951_24092018",
+      "archive": "UCL RDR 9926477",
+      "url": "https://ndownloader.figshare.com/files/17989991",
+      "file_name": "Summary data.zip",
+      "sha256": "dc0793e3f884dbff88b8d0c11eafae1827e0d4becbfc2f051dfdca785d2f6d8d",
+      "size_bytes": 11972048328,
+      "verified": false,
+      "default": false,
+      "n_units": 11,
+      "members": [
+        {
+          "path": "951_24092018.mat",
+          "sha256": "28651075c6d67f1b5370310ec7b437f0165aa1480bb2f3ca7ed5e93d4036d049",
+          "size_bytes": 134331610
+        }
+      ]
+    }
+  ]
+}
