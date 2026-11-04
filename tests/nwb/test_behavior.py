@@ -1104,3 +1104,60 @@ def test_missing_position_error_names_every_searched_location(empty_nwb):
 
     with pytest.raises(KeyError, match="Searched: processing/\\* and acquisition"):
         read_position(empty_nwb)
+
+
+def test_read_position_reads_a_bare_time_series_named_by_path(empty_nwb, tmp_path):
+    """A TimeSeries in acquisition, outside any Position container, read by path.
+
+    The layout of a tutorial file that stores a linearized position as a
+    plain TimeSeries named "position": never chosen unless its path is
+    passed, and the error without it names the path to pass.
+    """
+    from pynwb import NWBHDF5IO, TimeSeries
+
+    from neurospatial.io.nwb import read_position
+
+    times = 100.0 + np.arange(6) * 0.0256
+    values = np.array([5.4, 6.0, 7.5, 9.0, 160.0, 165.3])
+    empty_nwb.add_acquisition(
+        TimeSeries(name="position", data=values, timestamps=times, unit="cm")
+    )
+    empty_nwb.add_acquisition(
+        TimeSeries(name="theta_phase", data=np.zeros(6), timestamps=times, unit="rad")
+    )
+    path = tmp_path / "bare.nwb"
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with NWBHDF5IO(str(path), "r") as io:
+        nwbfile = io.read()
+        pos = read_position(nwbfile, position_name="acquisition/position")
+        for kwargs in ({}, {"position_name": "position"}):
+            with pytest.raises(KeyError) as caught:
+                read_position(nwbfile, **kwargs)
+            assert (
+                "['acquisition/position', 'acquisition/theta_phase']; to read one "
+                "of them, pass position_name= with its path" in str(caught.value)
+            )
+    np.testing.assert_array_equal(pos.times, times)
+    np.testing.assert_array_equal(pos.positions, values)
+    assert pos.units == "cm"
+    assert pos.frame is None
+
+
+def test_read_head_direction_reads_a_bare_time_series_named_by_path(empty_nwb):
+    from pynwb import TimeSeries
+
+    from neurospatial.io.nwb import read_head_direction
+
+    angles = np.array([0.0, 90.0, 180.0])
+    empty_nwb.add_acquisition(
+        TimeSeries(
+            name="head_direction",
+            data=angles,
+            timestamps=np.arange(3) / 30.0,
+            unit="degrees",
+        )
+    )
+    heading = read_head_direction(empty_nwb, compass_name="acquisition/head_direction")
+    np.testing.assert_allclose(heading.headings, np.radians(angles))
+    assert heading.frame is None

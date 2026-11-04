@@ -55,7 +55,10 @@ def read_position(
     position_name : str, optional
         Name of the SpatialSeries within a Position container, or its full
         path such as ``"processing/behavior/Position/position"``. Required
-        when the search finds more than one series.
+        when the search finds more than one series. The full path of a
+        TimeSeries stored outside any Position container, such as
+        ``"acquisition/position"``, reads that series; it is never chosen
+        without being named.
     columns : sequence of int, optional
         Indices of the spatial columns of a 2-D series, in the order to
         return them, for a series that also stores non-spatial values, for
@@ -197,7 +200,7 @@ def read_position(
         timestamps,
         positions,
         unit,
-        frame=spatial_series.reference_frame,
+        frame=getattr(spatial_series, "reference_frame", None),
     )
 
 
@@ -372,8 +375,9 @@ def _get_spatial_series(
 
     Returns
     -------
-    SpatialSeries
-        The selected series.
+    SpatialSeries or TimeSeries
+        The selected series: a TimeSeries outside any container of
+        ``container_type`` only when ``series_name`` is its full path.
 
     Raises
     ------
@@ -382,10 +386,29 @@ def _get_spatial_series(
     ValueError
         If more than one series matches.
     """
+    from pynwb import TimeSeries
+
+    bare = [
+        (path, series)
+        for path, series in _find_containers_by_type(nwbfile, TimeSeries)
+        if processing_module is None
+        or path.startswith(f"processing/{processing_module}/")
+    ]
+    if series_name is not None:
+        for path, series in bare:
+            if path == series_name:
+                logger.debug("Reading %s series at '%s'", type_name, path)
+                return series
     fix = (
         f"store the {type_name} container in processing/behavior, or pass "
         "processing_module= with the module that holds it."
     )
+    if bare:
+        fix += (
+            f" The file has TimeSeries outside any {type_name} container: "
+            f"{[path for path, _ in bare]}; to read one of them, pass "
+            f"{keyword}= with its path."
+        )
     found = _find_containers_by_type(nwbfile, container_type)
     if processing_module is not None:
         if processing_module not in nwbfile.processing:
@@ -453,7 +476,10 @@ def read_head_direction(
         Name of the SpatialSeries within a CompassDirection container, or its
         full path such as
         ``"processing/behavior/CompassDirection/head_direction"``. Required
-        when the search finds more than one series.
+        when the search finds more than one series. The full path of a
+        TimeSeries stored outside any CompassDirection container, such as
+        ``"acquisition/head_direction"``, reads that series; it is never
+        chosen without being named.
 
     Returns
     -------
@@ -528,7 +554,7 @@ def read_head_direction(
     return NWBHeadDirection(
         timestamps_from_series(spatial_series),
         angles,
-        frame=spatial_series.reference_frame,
+        frame=getattr(spatial_series, "reference_frame", None),
     )
 
 

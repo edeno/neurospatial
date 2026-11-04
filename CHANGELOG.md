@@ -125,6 +125,13 @@
   declared environment is the room the file's `r_lim` bounds, every voxel
   active; 3.7% of samples, nearly all at rest, lie past its -y bound and are
   kept. Needs `mat-io`, so Python 3.11 or later.
+- `io.nwb.read_position(..., position_name=)` and
+  `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
+  any Position or CompassDirection container when given its full path, as in
+  `read_position(nwbfile, position_name="acquisition/position")` for the
+  NeMoS tutorial file of Grosmark & Buzsáki (2016). Such a series is never
+  chosen without being named; the error for a file with no container lists
+  these series' paths.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 
