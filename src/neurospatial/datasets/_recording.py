@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import cached_property
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -1136,3 +1136,135 @@ def heading_vs_movement(
     mean = circular_mean(diff)
     spread = float(np.median(np.abs(wrap_angle(diff - mean))))
     return mean, spread
+
+
+class ClippedEpochs(NamedTuple):
+    """A file's epochs clipped to the recording, and how to report the clip.
+
+    Attributes
+    ----------
+    epochs : dict of str to ndarray, shape (n, 2)
+        Each named epoch's rows within the recording; a name whose every row
+        lies outside it is left out.
+    conversion : Conversion or None
+        The inferred ``Conversion`` naming each clipped or dropped row with
+        its numbers; None when no row reached past the recording.
+    watch_out : str or None
+        The matching "Watch out" entry; None when no row was clipped.
+    """
+
+    epochs: dict[str, NDArray[np.float64]]
+    conversion: Conversion | None
+    watch_out: str | None
+
+
+def clip_epochs_to_recording(
+    epochs: Mapping[str, NDArray[np.float64]],
+    times: NDArray[np.float64],
+    spike_times: tuple[NDArray[np.float64], ...],
+    *,
+    source: str,
+) -> ClippedEpochs:
+    """Clip a file's epoch rows to the recording, the span the clock check uses.
+
+    The recording runs from the earlier of the first sample and the first
+    spike to the later of the last sample and the last spike, the span the
+    clock check compares epochs with. A row reaching past it is clipped to
+    it, and a row wholly outside it is dropped, so a file that lists a
+    session longer than the data it holds (a session table written before
+    the data were truncated, an epoch ending after the last spike) gives
+    epochs on the data's clock instead of a refusal. An edge within one
+    sampling interval of the recording is left as stored: that is the
+    sample grid, not an overhang. Positions and spikes are not changed.
+
+    Parameters
+    ----------
+    epochs : Mapping[str, ndarray]
+        Named (n, 2) rows in seconds, as the file states them.
+    times : ndarray, shape (n_time,)
+        Sample times in seconds, increasing.
+    spike_times : tuple of ndarray
+        One array of spike times per unit, on the clock of ``times``.
+    source : str
+        Where the rows come from, for the evidence, for example
+        ``"the file's epochs table"``.
+
+    Returns
+    -------
+    ClippedEpochs
+        The epochs, and the ``Conversion`` and watch-out describing every
+        clipped or dropped row, both None when none was.
+
+    Examples
+    --------
+    >>> times = np.arange(0.0, 10.0, 0.5)
+    >>> clipped = clip_epochs_to_recording(
+    ...     {"run": np.array([[0.0, 15.0]]), "sleep": np.array([[20.0, 30.0]])},
+    ...     times,
+    ...     (np.array([1.0, 9.8]),),
+    ...     source="a table",
+    ... )
+    >>> {name: rows.tolist() for name, rows in clipped.epochs.items()}
+    {'run': [[0.0, 9.8]]}
+    >>> print(clipped.watch_out)  # doctest: +NORMALIZE_WHITESPACE
+    2 epoch rows reach past the recording, 0 to 9.8 s (its first and last
+    sample or spike), and are clipped to it: epochs['run'] [0, 15] s ends 5.2 s
+    after it, now [0, 9.8] s; epochs['sleep'] [20, 30] s lies wholly outside
+    it, dropped. Positions and spikes are as stored.
+    """
+    spikes = np.concatenate([np.empty(0), *spike_times])
+    start = float(min(times[0], spikes.min())) if spikes.size else float(times[0])
+    stop = float(max(times[-1], spikes.max())) if spikes.size else float(times[-1])
+    # One sampling interval, with room for its float rounding.
+    grid = float(np.median(np.diff(times))) * (1 + 1e-6)
+    kept: dict[str, NDArray[np.float64]] = {}
+    changed: list[str] = []
+    for name, table in epochs.items():
+        rows = np.asarray(table, dtype=np.float64).reshape(-1, 2)
+        out = []
+        for a, b in rows:
+            early, late = start - a, b - stop
+            if b <= start or a >= stop:
+                changed.append(
+                    f"epochs[{name!r}] [{a:.6g}, {b:.6g}] s lies wholly outside "
+                    "it, dropped"
+                )
+                continue
+            c = start if early > grid else a
+            d = stop if late > grid else b
+            out.append((c, d))
+            if (c, d) != (a, b):
+                past = [
+                    text
+                    for over, text in (
+                        (early, f"starts {early:.3g} s before it"),
+                        (late, f"ends {late:.3g} s after it"),
+                    )
+                    if over > grid
+                ]
+                changed.append(
+                    f"epochs[{name!r}] [{a:.6g}, {b:.6g}] s {' and '.join(past)}, "
+                    f"now [{c:.6g}, {d:.6g}] s"
+                )
+        if out:
+            kept[name] = np.array(out, dtype=np.float64)
+    if not changed:
+        return ClippedEpochs(kept, None, None)
+    span = f"{start:.6g} to {stop:.6g} s"
+    rows_text = "; ".join(changed)
+    n = len(changed)
+    watch_out = (
+        f"{n} epoch {'row reaches' if n == 1 else 'rows reach'} past the recording, "
+        f"{span} (its first and last sample or spike), and "
+        f"{'is' if n == 1 else 'are'} clipped to it: {rows_text}. Positions and "
+        "spikes are as stored."
+    )
+    conversion = Conversion(
+        f"epochs: rows reaching past the recording ({span}) clipped to it, rows "
+        "wholly outside it dropped",
+        "inferred",
+        f"{source} lists them so: {rows_text}. The recording is the span the "
+        "clock check compares epochs with, its first and last sample or spike; "
+        "an edge within one sampling interval of it is kept as stored",
+    )
+    return ClippedEpochs(kept, conversion, watch_out)

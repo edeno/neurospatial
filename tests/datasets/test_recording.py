@@ -250,3 +250,60 @@ def test_nwb_unit_table_refuses_a_missing_column():
     assert regions == ("CA1", "CA3")
     with pytest.raises(ValueError, match=r"no column \['cell_type'\]"):
         nwb_unit_table(units, region_column="location", label_column="cell_type")
+
+
+class TestClipEpochsToRecording:
+    """Epoch rows past the recording are clipped to it, and reported once."""
+
+    TIMES = np.arange(10.0, 20.0, 0.1)  # samples 10.0 to 19.9 s
+
+    def _clip(self, epochs, spikes):
+        from neurospatial.datasets._recording import clip_epochs_to_recording
+
+        return clip_epochs_to_recording(
+            epochs, self.TIMES, spikes, source="the file's table"
+        )
+
+    def test_rows_inside_are_unchanged_and_nothing_is_reported(self):
+        rows = np.array([[10.0, 12.0], [15.0, 19.9]])
+        clipped = self._clip({"run": rows}, (np.array([10.5, 19.0]),))
+        np.testing.assert_array_equal(clipped.epochs["run"], rows)
+        assert clipped.conversion is None
+        assert clipped.watch_out is None
+
+    def test_an_edge_within_one_sample_interval_is_kept_as_stored(self):
+        rows = np.array([[9.95, 19.95]])
+        clipped = self._clip({"run": rows}, (np.array([12.0]),))
+        np.testing.assert_array_equal(clipped.epochs["run"], rows)
+        assert clipped.watch_out is None
+
+    def test_the_recording_ends_at_the_last_spike_past_the_samples(self):
+        """An epoch with spikes but no samples survives, clipped to the last spike."""
+        clipped = self._clip(
+            {"square": np.array([[25.0, 40.0]]), "run": np.array([[5.0, 19.9]])},
+            (np.array([10.2, 26.0, 31.5]),),
+        )
+        np.testing.assert_array_equal(clipped.epochs["square"], [[25.0, 31.5]])
+        # The first sample (10.0) starts the recording: run starts 5 s early.
+        np.testing.assert_array_equal(clipped.epochs["run"], [[10.0, 19.9]])
+        assert clipped.watch_out == (
+            "2 epoch rows reach past the recording, 10 to 31.5 s (its first and "
+            "last sample or spike), and are clipped to it: epochs['square'] "
+            "[25, 40] s ends 8.5 s after it, now [25, 31.5] s; epochs['run'] "
+            "[5, 19.9] s starts 5 s before it, now [10, 19.9] s. Positions and "
+            "spikes are as stored."
+        )
+        assert clipped.conversion.basis == "inferred"
+        assert clipped.conversion.evidence.startswith("the file's table lists them so")
+
+    def test_a_row_wholly_outside_is_dropped_with_its_name(self):
+        clipped = self._clip(
+            {"before": np.array([[0.0, 9.0]]), "run": np.array([[11.0, 30.0]])},
+            (np.array([12.0]),),
+        )
+        assert list(clipped.epochs) == ["run"]
+        np.testing.assert_allclose(clipped.epochs["run"], [[11.0, 19.9]])
+        assert "epochs['before'] [0, 9] s lies wholly outside it, dropped" in (
+            clipped.watch_out
+        )
+        assert clipped.watch_out.startswith("2 epoch rows reach past the recording")
