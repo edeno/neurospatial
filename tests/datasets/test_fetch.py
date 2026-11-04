@@ -49,6 +49,21 @@ def test_fetch_verifies_and_caches(source, tmp_path, monkeypatch):
     assert fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache) == first
 
 
+def test_fetch_gives_up_on_a_stalled_server(source, tmp_path, monkeypatch):
+    """The download's urlopen has a timeout, so a stalled server cannot hang it."""
+    url, digest = source
+    opened = urllib.request.urlopen
+    timeouts = []
+
+    def recording(url, *args, **kwargs):
+        timeouts.append(kwargs.get("timeout"))
+        return opened(url, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request, "urlopen", recording)
+    fetch(url, "data.bin", sha256=digest, subdir="demo", cache=tmp_path / "cache")
+    assert timeouts == [_fetch.TIMEOUT]
+
+
 def test_fetch_refuses_mismatched_existing_file(source, tmp_path):
     url, digest = source
     existing = tmp_path / "cache" / "demo" / "data.bin"
@@ -123,7 +138,8 @@ def test_missing_extra_names_the_install(monkeypatch, tmp_path, module):
 def test_dandi_stream_url_refuses_changed_digest(monkeypatch):
     published = {"digest": {"dandi:sha2-256": "b" * 64}}
 
-    def api(url):
+    def api(url, *, timeout):
+        assert timeout == _fetch.TIMEOUT  # a stalled server cannot hang the load
         return io.BytesIO(json.dumps(published).encode())
 
     monkeypatch.setattr(urllib.request, "urlopen", api)

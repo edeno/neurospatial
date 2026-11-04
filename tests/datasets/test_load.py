@@ -195,8 +195,25 @@ def test_missing_extra_names_the_install(synthetic, monkeypatch, without_pynwb):
         load(DATASET, cache=synthetic.cache)
 
 
+def test_load_logs_the_size_and_url_before_a_download(synthetic, caplog):
+    """A download is announced at WARNING, shown by default; a cached load is not."""
+    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
+        load(DATASET, "s1", cache=synthetic.cache)
+    (record,) = caplog.records
+    assert record.levelno == logging.WARNING
+    url = synthetic.files["s1"].as_uri()
+    assert record.getMessage() == (
+        f"Downloading {DATASET} session s1: 200 B from {url} into "
+        f"{synthetic.cache / DATASET}"
+    )
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
+        load(DATASET, "s1", cache=synthetic.cache)
+    assert not caplog.records
+
+
 def test_fetch_all_downloads_every_session(synthetic, caplog):
-    with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
+    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
         paths = fetch_all(DATASET, cache=synthetic.cache)
     assert [path.name for path in paths] == ["s1.bin", "clock_off.bin"]
     assert all(
@@ -204,7 +221,7 @@ def test_fetch_all_downloads_every_session(synthetic, caplog):
     )
     assert "2 sessions, 1.1 kB in all; 2 to download (1.1 kB)" in caplog.text
     caplog.clear()
-    with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
+    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
         assert fetch_all(DATASET, cache=synthetic.cache) == paths
     assert "0 to download (0 B)" in caplog.text
 
@@ -287,12 +304,12 @@ def test_zip_member_with_another_checksum_is_refused(synthetic, zipped):
 def test_fetch_all_counts_zip_members(synthetic, zipped, caplog):
     used = sum(len(zipped.members[name]) for name in zipped.used)
     files = sum(path.stat().st_size for path in synthetic.files.values())
-    with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
+    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
         paths = fetch_all(DATASET, cache=synthetic.cache)
     assert paths[-1] == synthetic.cache / DATASET / "zipped"
     assert f"3 sessions, {_load._size(files + used)} in all" in caplog.text
     caplog.clear()
-    with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
+    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
         fetch_all(DATASET, cache=synthetic.cache)
     assert "0 to download (0 B)" in caplog.text
 

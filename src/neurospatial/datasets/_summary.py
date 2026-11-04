@@ -1,7 +1,7 @@
 """The text printed for a loaded recording: what it is and what to watch for.
 
 Six sections, in this order: identity (paper, animal, session, apparatus,
-archive, license, citation), time (duration, clock, sampling rate, epochs),
+archive, license, the file's size and URL, citation), time (duration, clock, sampling rate, epochs),
 tracking (what was tracked, tracked share, longest gap, speed, head-direction
 coverage), environment, neurons, and "Watch out", which is always printed in
 full. The ranges are computed from the arrays; the rest comes from the
@@ -92,14 +92,24 @@ def _labelled(label: str, lines: list[str]) -> list[str]:
 
 
 def _identity(rec: Recording) -> list[str]:
+    from neurospatial.datasets._load import _size
+
     regions = ", ".join(rec.brain_regions) or "brain region not stated"
     citation = textwrap.shorten(rec.citation, width=_WIDTH - 22, placeholder=" ...")
     lines = [
         f"{rec.paper}, {rec.animal}, session {rec.session} ({rec.dataset})",
         f"{rec.apparatus}; {regions}. {rec.provenance.archive}, {rec.license}",
+        f"Source: a {_size(rec.provenance.size_bytes)} file at {rec.provenance.url}",
         f"Cite: {citation} -> rec.citation",
     ]
-    return [wrapped for line in lines for wrapped in textwrap.wrap(line, _WIDTH)]
+    # A URL is never broken across lines, so it can be copied whole.
+    return [
+        wrapped
+        for line in lines
+        for wrapped in textwrap.wrap(
+            line, _WIDTH, break_long_words=False, break_on_hyphens=False
+        )
+    ]
 
 
 def _time(rec: Recording) -> list[str]:

@@ -291,10 +291,12 @@ keep the data on a disk with room:
 export NEUROSPATIAL_DATA_DIR=/data/neurospatial
 ```
 
-A file is downloaded once, and a download whose checksum differs from the
-pinned one is refused and removed. A cached file whose checksum differs is
-never overwritten: loading raises `FileExistsError` and asks you to move it
-aside.
+A file is downloaded once. Before it starts, `load` logs a warning (shown by
+default) with the download's size and URL, and the summary's `Source` line
+gives the file's size and URL afterwards. A download whose checksum differs
+from the pinned one is refused and removed. A cached file whose checksum
+differs is never overwritten: loading raises `FileExistsError` and asks you to
+move it aside.
 
 Sizes differ a great deal. `catalog()["size_bytes"]` is what loading the
 session downloads: from 3.7 MB (a Sargolini session) to 9.2 GB (a
@@ -310,9 +312,9 @@ Grosmark DANDI session, most of it LFP). Two ways to keep it small:
   read by byte range for the five members the loader needs (260 MB).
 
 `fetch_all(dataset)` downloads every session of a dataset (it returns the
-list of paths). It logs the total size first and refuses to start if the
-cache's disk has less free space than that. For `grosmark_2016` that total is
-about 66 GB.
+list of paths). It logs the total size first, as a warning, and refuses to
+start if the cache's disk has less free space than that. For `grosmark_2016`
+that total is about 66 GB.
 
 ## CRCNS credentials
 

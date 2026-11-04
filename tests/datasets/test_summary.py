@@ -18,6 +18,7 @@ LOADER_NOTE = (
 EXPECTED = """\
 Synthetic et al. (2026), simulated rat s1, session square (synthetic_2026)
 simulated apparatus; CA1. Synthetic 0, CC0-1.0
+Source: a 1.02 kB file at file:///synthetic/session.npz
 Cite: Synthetic A, Simulated B (2026) A simulated session. ... -> rec.citation
 Time        60 s from the first to the last sample, in seconds on the
               simulation's clock, from 0 s; position sampled at 100 Hz
@@ -63,6 +64,20 @@ def test_summary_text(checked):
     assert starts == sorted(starts)
     assert text.splitlines()[0].startswith("Synthetic et al. (2026)")
     assert "Watch out" in text.splitlines()[starts[-1]]
+
+
+def test_summary_keeps_a_long_url_on_one_line(checked):
+    """The file's URL is printed whole, so it can be copied."""
+    url = "https://api.dandiarchive.org/api/assets/" + "0123abcd-" * 8 + "/download/"
+    rec = dataclasses.replace(
+        checked,
+        provenance=dataclasses.replace(
+            checked.provenance, url=url, size_bytes=5_430_000_000
+        ),
+    )
+    lines = repr(rec).splitlines()
+    assert "Source: a 5.43 GB file at" in lines
+    assert url in lines
 
 
 def test_verified_session_has_no_unchecked_note(checked):

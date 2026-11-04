@@ -34,6 +34,9 @@ from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import IO, Any
 
+#: Seconds to wait for a connection or a read before giving up.
+TIMEOUT = 300
+
 
 def _default_cache() -> Path:
     """The per-user cache: ``%LOCALAPPDATA%\\neurospatial\\datasets`` on Windows, else ``~/.cache/neurospatial/datasets``."""
@@ -114,7 +117,7 @@ def fetch(
         return found
 
     def write(tmp: IO[bytes]) -> None:
-        with urllib.request.urlopen(url) as response:
+        with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
             shutil.copyfileobj(response, tmp)
 
     return _install(_download_to_temp(dest, write), dest, sha256)
@@ -262,7 +265,9 @@ def _crcns_open(path: str) -> Any:
     failure = None
     stopped: BaseException | None = None
     try:
-        response = opener.open(CRCNS_PORTAL, data=_crcns_login_form(path), timeout=300)
+        response = opener.open(
+            CRCNS_PORTAL, data=_crcns_login_form(path), timeout=TIMEOUT
+        )
     except urllib.error.HTTPError as exc:
         exc.close()
         failure = f"failed with HTTP {exc.code}"
@@ -376,7 +381,7 @@ def dandi_stream_url(asset_id: str, *, sha256: str) -> str:
     downloading it.
     """
     url = f"https://api.dandiarchive.org/api/assets/{asset_id}/"
-    with urllib.request.urlopen(url) as response:
+    with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
         published = json.load(response)["digest"]["dandi:sha2-256"]
     if published != sha256:
         msg = (
