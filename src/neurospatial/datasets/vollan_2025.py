@@ -44,8 +44,11 @@ What the loader converts:
 - ``epochs``: each listed session's ``validTimeRanges``, under its name,
   clipped to the recording (the first to the last sample or spike): the
   authors truncated awake sessions to a whole number of 100 s, so a listed
-  session can end after the data, and in two files a listed session lies
-  wholly before them and gives no epoch (``clip_epochs_to_recording``).
+  session can end after the data (``clip_epochs_to_recording``). In two
+  files (``of_25843_5``, ``of_26820_2``) the listed darkness session lies
+  wholly before the samples, by more than the recording's length; that is
+  no truncation, so the row is kept as listed and the clock check refuses
+  the session (load it with ``accept_failed_checks=("clock",)``).
 
 The declared environment, by the file's session type:
 

@@ -71,7 +71,7 @@ membership and gives each module's grid scores and spacing.
 | times: `t` as stored, with gaps | stated | "All timeseries data has been 'speed-filtered' to discard samples when the animal's locomotion speed was below 5 cm/s" (`mat_files.md`). The gaps are kept; rebuilding times from `dt` would move every later sample. |
 | units: every area, both Kilosort labels; `cellType`, `acorrCluId` and `isGrid` as `label`, `module` and `is_grid` | stated | `mat_files.md` describes each field; each module's `unitIds` list the units whose `acorrCluId` is its index. |
 | epochs: each listed session's `validTimeRanges`, under its name | stated | `mat_files.md`: sessions, "list of individual sessions (time epochs) included". |
-| epochs: rows past the recording (its first to last sample or spike) clipped to it, rows wholly outside it dropped | inferred | The Methods truncate awake sessions "to the nearest multiple of 100 s ... by trimming the last part of the behaviour session", so a listed session can end after the data. Every clipped or dropped row is in the `Conversion` and under "Watch out". An edge within the clock check's slack (1% of the recording, at most 10 s) is kept as stored. |
+| epochs: rows past the recording (its first to last sample or spike) clipped to it, rows wholly outside it dropped | inferred | The Methods truncate awake sessions "to the nearest multiple of 100 s ... by trimming the last part of the behaviour session", so a listed session can end after the data. Every clipped or dropped row is in the `Conversion` and under "Watch out". An edge within the clock check's slack (1% of the recording, at most 10 s) is kept as stored, and so is a row more than the recording's own length outside it, which the clock check refuses. |
 | environment: the box, the circle or the track, placed on the samples | inferred | The Methods state the sizes; the files state no placement. The box sits on the samples' minimum rotated rectangle, the circle on their minimum bounding circle, the track along their principal axis. |
 
 The arena follows the file's session type. `open_field` is the Methods'
@@ -103,7 +103,10 @@ The sampling rate (100 Hz) is stated: `dt` is "0.0100 sampling time interval
   session holds no samples at all (`of_25843_5`, `of_26820_2`: the darkness
   sessions are listed before the samples begin). Epochs are clipped to the
   recording, and a listed session wholly outside it gives no epoch; the
-  summary gives every clipped row with its numbers. No sample or spike is
+  summary gives every clipped row with its numbers. A row more than the
+  recording's own length outside it is no truncation and is kept as
+  listed, so the clock check refuses `of_25843_5` and `of_26820_2`; load
+  them with `accept_failed_checks=("clock",)`. No sample or spike is
   dropped.
 - **The circular arena is inferred.** See above. For the default session the
   samples fill 81% of their minimum rectangle and 94% of their minimum circle.

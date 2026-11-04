@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 import pytest
 
-from neurospatial.datasets import load, vollan_2025
+from neurospatial.datasets import DatasetCheckError, load, vollan_2025
 from neurospatial.datasets._checks import run_checks
 
 DEFAULT = "of_26018_2"
@@ -267,7 +267,10 @@ def test_hippocampus_only_file_has_no_modules(tmp_path, session_entry):
     assert any(t.startswith("The file holds no grid modules") for t in rec.watch_outs)
 
 
-def test_a_session_table_off_the_samples_gives_no_epoch(tmp_path, session_entry):
+def test_a_session_table_just_before_the_samples_gives_no_epoch(
+    tmp_path, session_entry
+):
+    """The listed session ends 10 s before the first sample, within a recording length."""
     times = _speed_filtered(30_000, seed=14)
     path = tmp_path / "of.mat"
     _write_session(
@@ -280,6 +283,25 @@ def test_a_session_table_off_the_samples_gives_no_epoch(tmp_path, session_entry)
     text = " ".join(rec.watch_outs)
     assert "100.0% of the samples lie outside every listed session" in text
     assert "s lies wholly outside it, dropped" in text
+
+
+def test_a_session_table_a_recording_length_before_the_samples_is_refused(
+    tmp_path, session_entry
+):
+    """As in of_25843_5 and of_26820_2: the listed session ends where the samples begin."""
+    times = _speed_filtered(30_000, seed=14)
+    length = times[-1] - times[0]
+    listed = [[times[0] - 2.0 * length, times[0] - 0.01]]
+    path = tmp_path / "of.mat"
+    _write_session(path, times, _walk_m(times.size, seed=15), listed=listed)
+    entry = session_entry("vollan_2025")
+    rec = vollan_2025.load_session(entry, path)
+    np.testing.assert_allclose(rec.epochs["open_field_1"], listed)
+    with pytest.raises(DatasetCheckError, match="no epoch holds a tracking sample"):
+        run_checks(rec, stated=entry.info.stated)
+    accepted = run_checks(rec, stated=entry.info.stated, accept_failed_checks=("clock",))
+    assert accepted.failed_checks == ("clock",)
+    np.testing.assert_allclose(accepted.epochs["open_field_1"], listed)
 
 
 def test_an_arena_off_the_files_centre_is_reported(tmp_path, session_entry):

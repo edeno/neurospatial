@@ -266,6 +266,9 @@
   grid scores and spacing are in `params`. The arena follows the session
   type: the stated 150 cm box, the 150 cm circle (inferred for the lit and
   dark sessions), or the 200 cm track along the samples' principal axis.
+  Two files, `of_25843_5` and `of_26820_2`, list their darkness session
+  wholly before the samples, by more than the recording's length, and load
+  only with `accept_failed_checks=("clock",)`.
 - `gardner_2022`: Gardner et al. (2022) rat medial entorhinal cortex grid
   modules in a 1.5 m open field, the four recordings of Figshare 16764508
   (CC0), two members of a 320 MB zip read by byte range per recording. The
@@ -332,7 +335,11 @@
   they overhang by more than the clock check allows; a row wholly outside is
   dropped. The cut is an inferred `Conversion` listing each row, and a
   watch-out. Four Kanter sessions, two Grieves sessions and Vollan's
-  sessions truncated to a multiple of 100 s load this way.
+  sessions truncated to a multiple of 100 s load this way. A row that
+  overhangs by more than the recording's own length is not a truncation and
+  is left as listed for the clock check, which refuses it: Vollan's
+  `of_25843_5` and `of_26820_2`, whose darkness session lies wholly before
+  the samples, load only with `accept_failed_checks=("clock",)`.
 - A session whose loader sets `params["max_gap"]` (Vollan's speed-filtered
   times) uses it for the summary's speed, the overview's occupancy and
   travel direction, and the scene's overlays, so printing it no longer
