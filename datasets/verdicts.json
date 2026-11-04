@@ -413,9 +413,9 @@
       "reason": "Warned on the declared track: 8414280/8414607 spike_times (100%) across all neurons fell outside the position time window [18079.5, 20147]; spike_times.min()=36.15 spike_times.max()=3.48611e+07; median mean hz 1.13 Hz -> 0 Hz; median peak rate 4.66 Hz -> 0 Hz (clean -> hazard)"
     },
     "grosmark_000044_linear/length_unit_off_by_100/env.from_samples": {
-      "verdict": "caught",
-      "gap": null,
-      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [1.984679032278987, 2.20088829509912] in every dimension."
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "Positions /100 give a 2.0 by 2.2 cm extent, just above the 2 cm bin of grosmark_2016's params: 5 bins (1530 clean) and no warning. At the survey's former 2.5 cm bin the bin was at least the extent and it warned."
     },
     "grosmark_000044_linear/length_unit_off_by_100/env.occupancy": {
       "verdict": "caught",

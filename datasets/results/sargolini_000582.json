@@ -1,12 +1,19 @@
 {
   "dataset": "sargolini_000582",
   "session": "sub-10884_ses-03080402",
-  "source": "https://dandiarchive.org/dandiset/000582/0.251111.2151 sub-10884/sub-10884_ses-03080402_behavior+ecephys.nwb",
+  "source": "https://api.dandiarchive.org/api/assets/49d80982-99f4-4e17-a553-498fc9a4688f/download/",
   "license": "CC-BY-4.0",
   "conversions": [
-    "positions: cm = read_position metres x 100 (file stores cm, conversion=0.01)",
-    "headings: none; the file has one LED (SpatialSeriesLED1)",
-    "environment: declared square (100 x 100, NWB session_description: 'a 1 x 1 meter enclosure'); placement fitted: centre_x 0.332, centre_y -0.12, rotation_rad 0.00355, samples_side_a 99.9, samples_side_b 97.4, size_residual_a -0.000663, size_residual_b -0.0258"
+    "positions: cm = SpatialSeriesLED1 in m (read_position applies the file's conversion) x 100 [stated: the file's SpatialSeriesLED1: unit 'meters', conversion 0.01]",
+    "environment: the stated 100 x 100 cm square centred at (0, 0) cm, sides along the file's x and y; the samples' range against the stated side: x 98.04 cm, -2.0%, y 100 cm, +0.0% [inferred: the file states no origin or rotation (reference frame '(0,0) is not known.'); the centre is the midrange of the tracked samples, x -49.02 to 49.02 cm and y -50 to 50 cm]",
+    "survey-only params['nwb_source']: the cached NWB file the session was read from",
+    "survey-only params['readers_used']: the io.nwb readers the public loader calls"
+  ],
+  "watch_outs": [
+    "The first of the 30000 position samples, at 0 s, is NaN (not tracked); it is kept as NaN.",
+    "No headings: the file stores only the first LED (SpatialSeriesLED1), though its session_description says two are given, so head direction, and the paper's head-direction and conjunctive cells, cannot be found from it.",
+    "The authors smoothed the positions with a moving mean filter to remove tracking jitter (the authors' readme, readme_sargolini2006.txt, NIRD doi:10.11582/2014.00003), so speeds and held-sample counts are those of smoothed positions.",
+    "The positions are centred on their own midrange ((max + min) / 2 is (0, 0) cm) and their longer axis spans exactly 100 cm, the side of the box: the coordinates were centred and scaled to the box before publication, so they do not show where the walls were, and the span cannot reveal a scale error."
   ],
   "expectations": [
     {
@@ -36,17 +43,17 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+    "neurospatial": "0.6.1.dev4209+g91bd4c200.d20261104",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
+    "git_commit": "2ff13395a8946ce27c6a56f06abd29419f5d5578"
   },
   "load_warnings": [],
   "load_fingerprint": {
-    "params": "3d57376a258e5a8f05b0d3ae64291e22643f783d3c2575e02b68dffbae4b0a7a",
+    "params": "92871bd27577cdd02aaf17a3e94a7c1d0bcde066fa1b7f2049cafaf91c2f08b5",
     "positions": [
       [
         30000,
@@ -61,7 +68,7 @@
     ],
     "spike_counts": "a5640f21dfbea43531be462021914a1df9f0a528ac5d3742df0ba43b7539cb79",
     "unit_ids": "a8d78592f509e595e26d06a5849bef2641b09fa4ba864b87ae0e812bc8baa6f3",
-    "geometry": "85c5b3a6ac7f7ddcee00eb41124f35b2521dc2e997f5e20d0971ecae920ad9f5"
+    "geometry": "aeb5efa5960ce01ebbf6f10876426cc597a568fb895ec80f17c15b5911462646"
   },
   "operations": {
     "env.from_samples": {
@@ -74,56 +81,56 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.147,
+      "seconds": 0.112,
       "peak_mb": 5.9
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
         "total_s": 599.96,
-        "frac_bins_visited": 0.8575890068707058,
+        "frac_bins_visited": 0.860625,
         "median_s_per_visited_bin": 0.2800000000002001,
-        "max_s": 10.520000000000437
+        "max_s": 9.5
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.169,
-      "peak_mb": 8.3
+      "seconds": 0.018,
+      "peak_mb": 3.8
     },
     "env.declared": {
       "status": "ok",
       "summary": {
-        "n_bins": 1601,
+        "n_bins": 1600,
         "n_dims": 2,
-        "max_extent": 100.0,
+        "max_extent": 97.5,
         "frac_samples_outside": 0.0
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.017,
+      "seconds": 0.016,
       "peak_mb": 4.2
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.1424109931292942,
-        "median_peak_hz": 7.760849812585338,
-        "median_mean_hz": 0.9267649261391575
+        "frac_nan_bins": 0.139375,
+        "median_peak_hz": 8.049630851765635,
+        "median_mean_hz": 0.9564961978102171
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.91,
-      "peak_mb": 69.2
+      "seconds": 1.011,
+      "peak_mb": 65.0
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.9449936447265366,
-        "bits_per_spike_max": 1.593895582480509,
+        "bits_per_spike_median": 0.9547902687812779,
+        "bits_per_spike_max": 1.5954412119232373,
         "bits_per_spike_n_finite": 6
       },
       "note": "",
@@ -135,8 +142,8 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.9449936447265366,
-        "median_shifted_bits_per_spike": 0.33420661377104843,
+        "median_bits_per_spike": 0.9547902687812779,
+        "median_shifted_bits_per_spike": 0.3371748681669563,
         "frac_above_every_shift": 1.0,
         "n_units": 6,
         "n_shifts": 4
@@ -144,7 +151,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.156,
+      "seconds": 0.157,
       "peak_mb": 3.9
     },
     "cells.place_screen": {
@@ -156,33 +163,33 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.037,
-      "peak_mb": 90.3
+      "seconds": 0.045,
+      "peak_mb": 90.5
     },
     "cells.grid_score": {
       "status": "ok",
       "summary": {
-        "median": 0.3005402714976676,
-        "max": 0.8693050166524058,
+        "median": 0.293282160696398,
+        "max": 0.8896350765261499,
         "n_finite": 6
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.035,
-      "peak_mb": 8.5
+      "seconds": 0.036,
+      "peak_mb": 8.1
     },
     "cells.border_score": {
       "status": "ok",
       "summary": {
-        "median": -0.5132609746193602,
-        "max": 0.3856425810299372,
+        "median": -0.41392028300993206,
+        "max": 0.43223437256842084,
         "n_finite": 6
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.093,
+      "seconds": 0.091,
       "peak_mb": 2.8
     },
     "hd.tuning": {
@@ -198,31 +205,31 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 64.31980515339464,
+        "median_error": 64.92640687119285,
         "chance_median_error": 56.21320343559643,
         "chance_frac_disconnected": 0.0,
         "frac_actual_outside": 0.0,
         "units": "cm",
         "n_time_bins": 1199,
-        "median_error_on_declared": 64.31980515339464,
+        "median_error_on_declared": 64.92640687119285,
         "n_on_declared": 1199
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.624,
-      "peak_mb": 66.1
+      "seconds": 0.615,
+      "peak_mb": 65.4
     },
     "io.nwb_roundtrip": {
       "status": "ok",
       "summary": {
-        "n_bins": 1601
+        "n_bins": 1600
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.443,
-      "peak_mb": 14.4
+      "seconds": 2.441,
+      "peak_mb": 14.3
     },
     "env.from_graph": {
       "status": "n/a",
@@ -239,8 +246,8 @@
       "note": "params has no min_speed",
       "gap": null,
       "warnings": [],
-      "seconds": 0.548,
-      "peak_mb": 21.4
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "behavior.laps": {
       "status": "error",
@@ -248,8 +255,8 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.02,
-      "peak_mb": 3.7
+      "seconds": 0.018,
+      "peak_mb": 3.8
     },
     "behavior.turn_sequence": {
       "status": "n/a",
@@ -266,8 +273,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.1,
-      "peak_mb": 3.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "ok",
@@ -279,8 +286,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.22,
-      "peak_mb": 3.7
+      "seconds": 0.209,
+      "peak_mb": 3.6
     },
     "io.read_pose": {
       "status": "n/a",
@@ -288,8 +295,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.932,
-      "peak_mb": 12.2
+      "seconds": 0.926,
+      "peak_mb": 12.3
     },
     "imaging.rates": {
       "status": "n/a",
@@ -329,15 +336,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 599.96,
-        "frac_bins_visited": 0.8575890068707058,
+        "frac_bins_visited": 0.860625,
         "median_s_per_visited_bin": 0.2800000000002001,
-        "max_s": 10.520000000000437
+        "max_s": 9.5
       },
       "hazard_summary": {
         "total_s": 599.98,
-        "frac_bins_visited": 0.8575890068707058,
+        "frac_bins_visited": 0.860625,
         "median_s_per_visited_bin": 0.2800000000002001,
-        "max_s": 10.520000000000437
+        "max_s": 9.5
       }
     },
     {
@@ -348,15 +355,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.1424109931292942,
-        "median_peak_hz": 7.760849812585338,
-        "median_mean_hz": 0.9267649261391575
+        "frac_nan_bins": 0.139375,
+        "median_peak_hz": 8.049630851765635,
+        "median_mean_hz": 0.9564961978102171
       },
       "hazard_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.1424109931292942,
-        "median_peak_hz": 7.760849812585326,
-        "median_mean_hz": 0.9267466935998303
+        "frac_nan_bins": 0.139375,
+        "median_peak_hz": 8.049630851765631,
+        "median_mean_hz": 0.9564787473060311
       }
     },
     {
@@ -394,13 +401,13 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.1424109931292942,
-        "median_peak_hz": 7.760849812585338,
-        "median_mean_hz": 0.9267649261391575
+        "frac_nan_bins": 0.139375,
+        "median_peak_hz": 8.049630851765635,
+        "median_mean_hz": 0.9564961978102171
       },
       "hazard_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.1424109931292942,
+        "frac_nan_bins": 0.139375,
         "median_peak_hz": 0.0,
         "median_mean_hz": 0.0
       }
@@ -430,15 +437,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "total_s": 599.96,
-        "frac_bins_visited": 0.8575890068707058,
+        "frac_bins_visited": 0.860625,
         "median_s_per_visited_bin": 0.2800000000002001,
-        "max_s": 10.520000000000437
+        "max_s": 9.5
       },
       "hazard_summary": {
         "total_s": 599.96,
-        "frac_bins_visited": 0.0006246096189881324,
-        "median_s_per_visited_bin": 599.96,
-        "max_s": 599.96
+        "frac_bins_visited": 0.0025,
+        "median_s_per_visited_bin": 151.67000000000007,
+        "max_s": 163.2199999999998
       }
     },
     {
@@ -449,15 +456,15 @@
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.1424109931292942,
-        "median_peak_hz": 7.760849812585338,
-        "median_mean_hz": 0.9267649261391575
+        "frac_nan_bins": 0.139375,
+        "median_peak_hz": 8.049630851765635,
+        "median_mean_hz": 0.9564961978102171
       },
       "hazard_summary": {
         "n_units": 6,
-        "frac_nan_bins": 0.9993753903810119,
-        "median_peak_hz": 0.9058937262484164,
-        "median_mean_hz": 0.9058937262484164
+        "frac_nan_bins": 0.9975,
+        "median_peak_hz": 0.9609429044531212,
+        "median_mean_hz": 0.9059269274187175
       }
     },
     {
