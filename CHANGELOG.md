@@ -2,6 +2,317 @@
 
 ## [Unreleased]
 
+### Dataset loaders
+
+#### Loading and cataloguing
+
+- New `neurospatial.datasets` module and `datasets` install extra
+  (`pip install 'neurospatial[datasets]'`). Downloads are cached in
+  `$NEUROSPATIAL_DATA_DIR`, else `~/.cache/neurospatial/datasets`
+  (`%LOCALAPPDATA%\neurospatial\datasets` on Windows). The survey harness's
+  download code moved into the package; the survey's default cache is no longer
+  the repository's `data/datasets/`. A user guide (`user-guide/datasets.md`)
+  and one page per dataset (`docs/datasets/`) say what was recorded, the
+  conversions and their basis, the pitfalls, the worked result and how to
+  cite.
+- `neurospatial.datasets.load(dataset, session=None, *, cache=None,
+  stream=False, accept_failed_checks=())` fetches one session (the
+  dataset's default when `session` is None), verifies its SHA-256, reads it
+  and runs the checks. A verified file's digest, size and modification time
+  are recorded under the cache's `.verified/` directory, so later loads hash
+  it again only when its size or time changes; `stream=True` reads a DANDI file by byte range after
+  checking the archive still publishes the pinned SHA-256. Without the
+  `datasets` extra it says how to install it before downloading anything.
+  `catalog()` lists every session of every dataset (dataset, session,
+  species, brain regions, apparatus, unit count where known, whether it is
+  checked by hand, the default, license as the archive states it, archive,
+  size and citation) without downloading. `fetch_all(dataset, *,
+  cache=None)` downloads every session, giving the total size first and
+  refusing to start when the cache's disk lacks the room. Before each
+  download, `load` and `fetch_all` issue a
+  `neurospatial.datasets.DownloadWarning` (a `UserWarning`, shown by default
+  and attributed to your call) with its size, URL and cache directory;
+  `warnings.simplefilter("ignore", DownloadWarning)` silences it. A
+  whole-file download or a DANDI checksum request gives up after 300 s
+  without data. The summary's `Source` line gives the file's size and URL.
+  Each dataset's
+  sessions, checksums and stated facts are in
+  `neurospatial/datasets/registry/<dataset>.json`;
+  `scripts/build_dataset_registry.py` fills a DANDI registry from a pinned
+  published version. It lists only NWB files as sessions, only those of the
+  registry's `archive.variant` where a dandiset publishes each session more
+  than once (DANDI 000568: `-no-raw-data`, dropped from the session id), and
+  lists the files in a folder named after an NWB file's stem, the videos its
+  ImageSeries name, under the session's `videos`, keeping the hand-set
+  `landmarks` and `led_fit` of each, but only while their `video_sha256` is
+  the video's own. A session whose file has a new SHA-256 is reset to
+  unverified (its `verified`, `n_units` and `verification` cleared, its
+  `default` kept), and the reset is printed.
+- A registry session may come from a second archive, with its own license
+  as that archive states it ("not stated" where it states none) and its own
+  data citation; `scripts/build_dataset_registry.py` keeps such rows. A
+  session read from members of a remote zip fetches only those members, by
+  byte range, each verified against its own SHA-256, into
+  `<cache>/<dataset>/<session>/`; `catalog()`'s
+  `size_bytes` is what loading a session downloads. A dataset that needs `mat-io`
+  says on Python 3.10 that it installs only on Python 3.11 or later.
+
+#### The recording and its checks
+
+- `neurospatial.datasets.Recording` holds a loaded session as the arrays
+  analyses take (`times`, `positions`, `headings`, `spike_times`, `epochs`,
+  `events`, ...), the unit table (`units`, indexed by `unit_id`, with
+  `n_spikes` and `fires_in_epochs`), every conversion the loader applied
+  (`Conversion(text, basis, evidence)`, `basis` `"stated"` or `"inferred"`,
+  evidence required when inferred), where the file came from (`Provenance`)
+  and the session's pitfalls (`watch_outs`). Its arrays are read-only. Bad
+  shapes, unsorted times, repeated unit ids and headings outside [−π, π] raise
+  `InputError` naming each field. `summary()` gives `n_units`, `duration`,
+  `n_dims`, `sampling_rate`, `tracked_fraction`, `longest_gap`,
+  `median_speed`, `speed_p95` and `verified`, each also a property.
+  Printing a recording shows its full summary: identity, time and epochs,
+  tracking, environment, neurons, and "Watch out" (headed "Not yet checked
+  by hand" for a session nobody has checked).
+- Every session is checked before it is returned. The clock check (spikes
+  within the tracked span or an untracked epoch such as sleep, events within
+  the recording, epochs within it and not overlapping within a name; "within"
+  allows 1% of the span, at most 10 s, at the edges of the tracked span and
+  of each stretch of untracked epochs, rows that close together forming one
+  stretch) and the
+  units check (largest position span within the stated range, sampling rate
+  within 1% of the stated one) refuse with `DatasetCheckError`, which names
+  the numbers and the `accept_failed_checks=("clock",)` value that loads the
+  session anyway; an accepted failure is kept in `rec.failed_checks` and
+  heads "Watch out". Only a value a source states refuses: each sampling
+  rate and position span the dataset gives is marked stated (with its
+  source) or inferred from the files (with its evidence), and a session
+  that disagrees with an inferred value loads with a watch-out naming the
+  evidence. Samples at exactly the origin (more than 0.1%), runs of 11 or
+  more identical positions, steps faster than a stated speed limit, tracked
+  samples outside the environment and units with no spikes in the analysed
+  epochs are reported in "Watch out" with their numbers; no array is
+  changed. On a declared track, samples outside its footprint are reported
+  as tracking spread (a tracked head swings past the edge), not as misfit.
+  Where the track's width was sized from the same samples, which
+  `rec.track_width_quantile` records (0.99 on the `comrie_2026`,
+  `valero_2022` and Grosmark circle tracks, 0.95 on Grosmark's linear
+  tracks), the finding says the share holds by construction (about 1 %, or
+  5 %) and measures nothing. On any environment the outside share is split into stopped and moving
+  samples at `params["min_speed"]` where the dataset sets it.
+
+#### Looking at a session
+
+- `Recording.plot_overview(*, fig=None)` draws six panels: the environment with
+  the path, occupancy (never-visited bins drawn as missing), speed with
+  `params["min_speed"]` marked, head direction beside heading minus direction of
+  travel, units per brain region with spikes per unit, and the first 60 s of
+  position with the spike raster. A panel the dataset has no data for says "not
+  in this dataset". `Recording.animation(*, time_range=None, trail_length=None,
+  video=False)` returns an `Animation` of the session: occupancy over the
+  environment with the path, headings, spike raster, events and epochs on top,
+  from the first 60 s of tracking by default (30 frames a second when tracking
+  is faster), to open with `.show()` or write with `.export()`. A session
+  without positions raises `InputError`.
+- `Recording.video` is a `VideoSource` where the dataset publishes the session's
+  camera video, None otherwise: the file (asset id or URL, SHA-256 and size from
+  the registry), one time per frame and a pixel-to-cm `VideoCalibration`, each
+  with its basis as a `Conversion`. `VideoSource.fetch(*, cache=None)` downloads
+  the video once, verified, beside the session's NWB file at the path that file
+  names. `Recording.animation(..., video=True)` fetches it and draws the frames
+  below the data through the calibration, occupancy at most half opaque and
+  see-through where it is low, so the frames show through every bin; a track
+  session, whose bins are drawn along the track, is drawn over its video on a
+  2-D grid covering the track's footprint, with the track as the along-track
+  panel. Frame times are the video's own timestamps, unless the video and the
+  position series hold the same frames on two clocks (equal counts, position
+  times an offset and rate of the video's to within half a frame); then the
+  position times are used, as an inferred `Conversion`, and the offset is a
+  watch-out; when the counts differ and the video's own span is more than a
+  frame off the positions', that is a watch-out too. The calibration comes from
+  a transform the file states, else a least-squares fit from the file's pixel
+  tracking to its positions, else landmarks placed by hand and kept in the
+  registry, else a robust fit of the LED detected in the video to the positions
+  (a Huber affine, then least squares over the detections within 5 cm of it),
+  run once by `scripts/fit_video_led_calibration.py` and kept in the registry
+  keyed to the video's SHA-256 (method, affine, frame size, frames used, median
+  and 90th-percentile residuals in cm and px, outlier share, and the residual at
+  frame-to-sample lags). A fit from pixel tracking or landmarks with a
+  root-mean-square residual over one bin, or an LED fit with a median residual
+  over one bin, is refused. Without a calibration, or without a video,
+  `animation(video=True)` raises `InputError` naming the four sources tried; the
+  frames are never stretched over the environment's extent.
+
+#### The datasets
+
+- `comrie_2026`: Comrie et al. (2026) rat j16, run epoch 02_r1 of the spatial
+  bandit maze, 203 hippocampal units (Zenodo 23020757, CC-BY-4.0), checked
+  by hand. Positions are cm (inferred: the graph's edges match the stated
+  53 cm hallways and the file's head_speed matches the positions' speed
+  in correlation and in scale, its median-speed ratio within a factor of 2
+  of the 1.26 measured on the file),
+  500 Hz, on the Unix clock. The declared environment is the authors' track
+  graph with every edge, in the file's own edge order and 15 cm spacing, so
+  `env.to_linear` reproduces the file's linearized position; its
+  `track_width` is a placement tolerance measured from the samples (36.9 cm),
+  not the 6.5 cm hallway width, beyond half of which 64% of head samples lie
+  (79% of those below `params["min_speed"]`, the preprint's 10 cm/s
+  locomotion threshold). `head_orientation` is 13° off the direction of
+  movement, so it is kept in `params["head_orientation"]`, not used as
+  headings.
+- `grosmark_2016`: Grosmark & Buzsáki (2016) rat CA1 on a novel maze between
+  two sleeps. A session is one archive file, one maze. The default,
+  `Achilles_10252013`, is the OSF `hu5ma` file NeMoS's place-cell tutorial
+  downloads (license not stated on OSF), checked by hand against DANDI
+  000044's copy of the same session: the same 137 units and spike times,
+  positions on DANDI's sample times. Its position is 1-D, the head's distance
+  along the linear maze's axis on the track only (a projection of DANDI's 2-D
+  positions, not DANDI's rescaled linearized position), and the declared
+  environment is the stated 1.6 m stem as a 1-D track. The file has no
+  epochs, so `pre`, `maze` and `post` are DANDI's (an inferred
+  `Conversion`), and `maze_before_track` covers the 111 s before its first
+  position sample, when the rat was off the track. The eight files of DANDI
+  000044 (version 0.261005.2101, CC-BY-4.0, 5 to 9 GB each; load them with
+  `stream=True`) are the other sessions: 2-D positions in cm, the authors'
+  linearized position in `rec.linearized`, the PRE/MAZE/POST epochs and the
+  sleep states. Their declared environment is the stated linear maze (reward
+  area, stem, reward area) as a straight track along the line the linearized
+  position traces, or the stated 1 m circle as a closed loop centred by a
+  robust fit, each with a placement tolerance measured from the samples. The
+  paper states tracking at 39.69 Hz; the files sample at 39.06 Hz. On the
+  circle, `rec.linearized` increases counter-clockwise while the rat runs
+  clockwise, so it decreases along a run.
+- `peyrache_2015`: Peyrache et al. (2015) mouse anterior thalamus
+  head-direction cells. The default, `Mouse32-140822`, is the OSF `jb2gd` file
+  pynapple's and NeMoS's head-direction tutorials download (license not
+  stated on OSF), checked by hand: 49 units (31 in ADn), head direction at
+  39 Hz during the wake epoch, and the wake, sleep, slow-wave and REM epochs.
+  It has no positions, so `rec.env` is None. Its heading frame is not stated
+  anywhere read, so the package frame is assumed (an inferred `Conversion`).
+  DANDI 000056 holds the dataset's other sessions in a raw-pixel layout
+  this loader does not read, so they are not listed.
+- `sargolini_2006`, Sargolini et al. (2006) rat medial
+  entorhinal cortex in a 1 m box, all 118 sessions of DANDI 000582 (version
+  0.251111.2151, CC-BY-4.0). The default, `sub-10073_ses-17010302` (the
+  session pynapple's DANDI tutorial streams, 8 units), and
+  `sub-10884_ses-03080402` are checked by hand. Positions are cm, from the
+  first tracking LED; there are no headings, because the files hold one LED or
+  do not say which of two is at the front. The declared environment is the
+  stated 100 cm square at the samples' midrange, with 2.5 cm bins; how far
+  the samples' range on each axis falls short of or past 100 cm is in its
+  `Conversion`. The 50 Hz rate is inferred from the files' timestamps, so a
+  session at another rate loads with a watch-out. A session spanning more
+  than 120 cm is refused by the units check: of the 12 sessions opened, two
+  1200 s sessions span about 1.5 m and 2 m, and no source read states their
+  box.
+- `forli_2025`: Forli et al. (2025) Egyptian fruit bat dorsal hippocampus
+  during free flight, the demo session `Dataset_3_14543_240419` of Zenodo
+  15738988 (CC-BY-4.0), checked by hand: 289 units on three Neuropixels
+  probes, 3-D positions in metres (inferred from the room's size and the
+  flight threshold) at 120 Hz, 38 flights. Only the five needed members of
+  the 3.3 GB zip are fetched (260 MB). Putative duplicate units are pooled
+  and spikes within 1 ms dropped, as the record's `NP_Bat_Demo.m` does. The
+  declared environment is the room the file's `r_lim` bounds, every voxel
+  active; 3.7% of samples (0.1% of them in the file's flights) lie past its -y
+  bound and are kept; a watch-out gives the stopped and the moving share of
+  them at the 0.5 m/s flight threshold. Needs `mat-io`, so Python 3.11 or later.
+- `valero_2022`: Valero et al. (2022) mouse CA1 units on a 110 cm x 6.35 cm
+  linear track, the 28 DANDI 000568 files without raw voltage (version
+  0.230705.1633, CC-BY-4.0), the first dataset with video: each session's `.avi`
+  is `rec.video`, fetched only on request. The default,
+  `sub-fCamk2_ses-fCamk2-201014-sess3` (35 units), is checked by hand. Positions
+  are cm as stored, every 1/30 s; the declared environment is the stated track
+  as a one-edge graph along the samples' principal axis, with a placement
+  tolerance measured from the samples. The video's own timestamps are 22.55 to
+  23.12 s earlier than the position timestamps for the same 67,131 frames; the
+  video follows the position clock, on which the units' spatial information is
+  highest. The file states no pixel size and stores no pixel tracking, so the
+  default session's video is calibrated by an LED fit (median residual 0.95 cm,
+  90th percentile 9.80 cm, over 2,238 frames, 17.2% of detections more than 5 cm
+  off and left out), and a watch-out says the overlay is aligned with the
+  tracking by construction: it does not check the tracking or the declared
+  track, and the track is not visible in the video. Another watch-out says the
+  scene shows the video mirrored from the raw file, since the file's y grows
+  down the camera's rows. Every session also carries a watch-out that baseline
+  and optogenetic stimulation runs are interleaved, which the loader cannot
+  separate: the stimulus group is empty in 26 of the 28 files, and the two that
+  store optogenetic series (`sub-fCamk1_ses-fCamk1-200827-sess9`, `-200901-sess12`)
+  are named in it. Other sessions refuse
+  `animation(video=True)` until the fit is run for them. All 28 sessions load;
+  one (`sub-fCamk2_ses-fCamk2-201013-sess2`, an epoch ending 50 s after the
+  recording) only with `accept_failed_checks=("clock",)`. The epochs holding
+  position samples are the rows of `track` (two in the 16 sessions that run the
+  track twice), the others `epoch_<k>`, and each track epoch's stretches before
+  its first and after its last sample are `track_before_tracking` and
+  `track_after_tracking`. A session whose video is split across two files has
+  `rec.video` None. The session scene's epoch panel shows only the epochs its
+  window meets.
+
+#### Worked results
+
+- Each dataset module's `WORKED_RESULT` records a finding of its paper
+  reproduced on the default session with public neurospatial functions,
+  with the quote, the parameters, our number and every parameter that could
+  not be matched; `tests/datasets/test_worked_results.py` (`realdata`)
+  recomputes each one, a level B property against a null computed on the
+  same pipeline. `peyrache_2015` (level A, a number): 20 of 31 ADn units
+  (65%) are head-direction cells by the paper's criteria, against its 71%.
+  `grosmark_2016` (level B, a property): 50% of directional rate-map peaks
+  lie within 20 cm of a stem end, against at most 36.5% with shifted spikes.
+  `comrie_2026` (a sanity property, not a finding of the preprint): 92% of
+  held-out running time bins decode to the rat's own track segment, against
+  35% for always naming the most visited segment and at most 29% with
+  shifted spikes. `forli_2025`, `sargolini_2006` and `valero_2022` say why
+  no result is possible yet (the bat's place cells need 1-D flight-path
+  fields; Sargolini's paper and Valero's methods could not be read, and
+  Valero's files hold no cell types or stimulation times); the bat's 3-D
+  attempt (15% of flight-active units stable, against the paper's 71%) is
+  kept in its record.
+
+#### Readers, overlays and tests
+
+- `io.nwb.read_position(..., position_name=)` and
+  `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
+  any Position or CompassDirection container when given its full path, as in
+  `read_position(nwbfile, position_name="acquisition/position")` for the
+  NeMoS tutorial file of Grosmark & Buzsáki (2016). Such a series is never
+  chosen without being named; the error for a file with no container lists
+  these series' paths. For `read_position` only the series whose unit is a
+  length or pixel unit are listed, and naming a series with another unit, such
+  as `acquisition/theta_phase` in radians, raises `InputError` that names it,
+  since reading it would bin a phase or a speed as a spatial coordinate. For
+  `read_head_direction` only angles in radians or degrees and `(n, 2)`
+  direction vectors without a length unit are listed or read; an `(n, 2)`
+  series in cm is a position and raises `InputError`.
+- `io.nwb.read_intervals(..., interval_name=)` reads a TimeIntervals table
+  kept in a processing module by its path, as in
+  `read_intervals(nwbfile, interval_name="processing/behavior/states")` for
+  the sleep states of DANDI 000044; the error for an unknown name lists
+  these paths too.
+- A video file whose container reports more frames than it decodes (as the
+  AVI files of DANDI 000568 report one frame more) gives `VideoOverlay` its
+  real frame count, so frame times of that length are accepted; up to 16
+  trailing frames are probed when the file is opened.
+- The position, bodypart and object-vector overlays warn about coordinates
+  outside the environment only beyond its arena's domain as well as its bins'
+  cells: on a track, whose cells span the centerline alone, a tracked head
+  within the track's width is no longer reported outside.
+- `env.plot()` draws a track graph whose nodes have 1-D positions (one
+  coordinate per node) along the x axis, at y = 0; it raised `IndexError`
+  before, so `rec.plot_overview()` failed on the `grosmark_2016` default.
+- `AnimationField(..., max_opacity=1.0)` caps how opaque a field is drawn
+  (0 to 1) in the Matplotlib, napari and fastplotlib views, on top of the
+  see-through rule over a video below, so the video shows through every
+  bin; the along-track panel stays opaque.
+- The `realdata` pytest marker selects tests that download public sessions;
+  they are deselected by default (`pytest -m realdata` runs them).
+- `data/load_bandit_data.py` and its command line are removed. The
+  real-data tutorial (`examples/04_real_data_analysis`) loads the J16
+  recording with `neurospatial.datasets.load("comrie_2026")`, which caches
+  the file under `$NEUROSPATIAL_DATA_DIR` or `~/.cache/neurospatial/datasets`
+  instead of `data/`, and takes the track graph, edge order and edge spacing
+  from `rec.env.binning.linearization`; its analysis outputs are unchanged.
+  `scripts/profile_napari_animation.py` loads it the same way.
+
 ### Fixes from the review of the result contract, warnings and simulators
 
 **Breaking**

@@ -72,7 +72,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch_zip_member
 from _geometry import distance_to_segments, graph_environment, lattice_graph
 from _record import (
     Range,
@@ -83,6 +82,8 @@ from _record import (
     heading_vs_movement,
     validate_recording,
 )
+
+from neurospatial.datasets._fetch import fetch_zip_member
 
 DATASET = {
     "key": "grieves_2020_lattice",

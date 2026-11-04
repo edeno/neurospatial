@@ -1,6 +1,6 @@
 # Error Reference
 
-**Last Updated**: 2026-11-02
+**Last Updated**: 2026-11-03
 
 This reference explains common errors and how to correct their inputs. Environment errors use the codes below; other validation errors name the calling function and offending argument or shape.
 
@@ -37,6 +37,7 @@ Concrete exceptions inherit their standard Python type first, followed by `Neuro
 | `IncompatibleEnvironmentError` | `ValueError` | Incompatible dimensions or decoding model bins |
 | `LayoutNotBuiltError` | `RuntimeError` | Access to layout geometry before `build()` |
 | `CartesianOnlyError` | `TypeError` | An operation that reads positions as Cartesian `(x, y)` called on a polar environment |
+| `DatasetCheckError` | `ValueError` | A dataset session whose spikes, events or epochs disagree with its tracking clock (`"clock"`), or whose position span or sampling rate disagrees with the stated apparatus (`"units"`). The message names each failed check with its numbers and the `accept_failed_checks=` value that loads the session anyway, keeping the failure in `rec.failed_checks`. Import it from `neurospatial.datasets` |
 
 Two kinds of environment cannot run some analyses, and each kind has one error type:
 

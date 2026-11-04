@@ -7,12 +7,13 @@ data from pynwb.behavior containers.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._units import _UNIT_SPELLINGS, declared_units
 from neurospatial.io.nwb._adapters import (
@@ -27,7 +28,7 @@ from neurospatial.io.nwb._core import _find_containers_by_type, _require_pynwb, 
 from neurospatial.io.nwb._holders import NWBHeadDirection, NWBPosition
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from pynwb import NWBFile
     from pynwb.behavior import SpatialSeries
@@ -55,7 +56,10 @@ def read_position(
     position_name : str, optional
         Name of the SpatialSeries within a Position container, or its full
         path such as ``"processing/behavior/Position/position"``. Required
-        when the search finds more than one series.
+        when the search finds more than one series. The full path of a
+        TimeSeries stored outside any Position container, such as
+        ``"acquisition/position"``, reads that series; it is never chosen
+        without being named.
     columns : sequence of int, optional
         Indices of the spatial columns of a 2-D series, in the order to
         return them, for a series that also stores non-spatial values, for
@@ -91,6 +95,11 @@ def read_position(
     ------
     KeyError
         If no Position container found, or if specified position_name not found.
+    InputError
+        If ``position_name`` is the path of a TimeSeries outside any Position
+        container whose unit is not a length or pixel unit (a phase in
+        radians, say). The search lists only such series with a length or
+        pixel unit.
     ValueError
         If more than one Position series matches (pass ``position_name=``),
         ``lazy=True`` and the series declares a non-identity ``conversion``
@@ -168,6 +177,7 @@ def read_position(
         processing_module,
         position_name,
         "position_name",
+        bare=_BARE_POSITION,
     )
 
     shape = np.shape(spatial_series.data)
@@ -197,11 +207,49 @@ def read_position(
         timestamps,
         positions,
         unit,
-        frame=spatial_series.reference_frame,
+        frame=getattr(spatial_series, "reference_frame", None),
     )
 
 
 _SPATIAL_UNITS = frozenset(_UNIT_SPELLINGS.values())
+
+
+@dataclass(frozen=True)
+class _BareRule:
+    """Which TimeSeries outside a behavior container a reader takes.
+
+    Parameters
+    ----------
+    accepts : callable
+        Whether a series can be read as the container's kind.
+    wanted : str
+        What an accepted series is, for the fix of a refusal.
+    why : str
+        Why a refused series is not read.
+    """
+
+    accepts: Callable[[Any], bool]
+    wanted: str
+    why: str
+
+
+_BARE_POSITION = _BareRule(
+    accepts=lambda series: declared_units(series.unit) in _SPATIAL_UNITS,
+    wanted="a series whose unit is a length (m, cm, mm) or pixels",
+    why="reading it would bin a quantity such as a phase or a speed as a "
+    "spatial coordinate.",
+)
+
+
+def _reads_as_head_direction(series: Any) -> bool:
+    """Angles in radians or degrees, or (n, 2) vectors without a length unit."""
+    shape = np.shape(series.data)
+    if len(shape) == 2 and shape[1] == 2:
+        return declared_units(series.unit) not in _SPATIAL_UNITS
+    unit = str(series.unit).strip().lower() if series.unit is not None else ""
+    one_angle = len(shape) == 1 or (len(shape) == 2 and shape[1] == 1)
+    return one_angle and unit in _RADIANS_PER_ANGLE_UNIT
+
 
 # pynwb's placeholders for an empty description and comments.
 _NWB_TEXT_DEFAULTS = frozenset({"", "no description", "no comments"})
@@ -350,6 +398,8 @@ def _get_spatial_series(
     processing_module: str | None,
     series_name: str | None,
     keyword: str,
+    *,
+    bare: _BareRule | None = None,
 ) -> SpatialSeries:
     """
     Get the one SpatialSeries of a behavior container type.
@@ -369,11 +419,15 @@ def _get_spatial_series(
         ``"processing/behavior/Position/position"``.
     keyword : str
         The reader argument that takes ``series_name``.
+    bare : _BareRule, optional
+        Which TimeSeries outside any container can be read, and are listed;
+        None accepts any.
 
     Returns
     -------
-    SpatialSeries
-        The selected series.
+    SpatialSeries or TimeSeries
+        The selected series: a TimeSeries outside any container of
+        ``container_type`` only when ``series_name`` is its full path.
 
     Raises
     ------
@@ -381,11 +435,55 @@ def _get_spatial_series(
         If the module, a container or the named series is missing.
     ValueError
         If more than one series matches.
+    InputError
+        If ``series_name`` is the path of a TimeSeries outside any container
+        that ``bare`` refuses.
     """
+    from pynwb import TimeSeries
+
+    outside = [
+        (path, series)
+        for path, series in _find_containers_by_type(nwbfile, TimeSeries)
+        if processing_module is None
+        or path.startswith(f"processing/{processing_module}/")
+    ]
+    plausible = [
+        (path, series)
+        for path, series in outside
+        if bare is None or bare.accepts(series)
+    ]
+    if series_name is not None:
+        for path, series in outside:
+            if path == series_name:
+                if bare is not None and not bare.accepts(series):
+                    shape = np.shape(series.data)
+                    raise InputError(
+                        _format_error(
+                            f"{series_name!r} is a TimeSeries of shape {shape} "
+                            f"with unit {series.unit!r}, so it is not a "
+                            f"{type_name.lower()}.",
+                            why=bare.why,
+                            fix=f"pass the path of {bare.wanted}"
+                            + (
+                                f"; the file has {[p for p, _ in plausible]}."
+                                if plausible
+                                else "; the file has none outside a "
+                                f"{type_name} container."
+                            ),
+                        )
+                    )
+                logger.debug("Reading %s series at '%s'", type_name, path)
+                return series
     fix = (
         f"store the {type_name} container in processing/behavior, or pass "
         "processing_module= with the module that holds it."
     )
+    if plausible:
+        fix += (
+            f" The file has TimeSeries outside any {type_name} container: "
+            f"{[path for path, _ in plausible]}; to read one of them, pass "
+            f"{keyword}= with its path."
+        )
     found = _find_containers_by_type(nwbfile, container_type)
     if processing_module is not None:
         if processing_module not in nwbfile.processing:
@@ -453,7 +551,10 @@ def read_head_direction(
         Name of the SpatialSeries within a CompassDirection container, or its
         full path such as
         ``"processing/behavior/CompassDirection/head_direction"``. Required
-        when the search finds more than one series.
+        when the search finds more than one series. The full path of a
+        TimeSeries stored outside any CompassDirection container, such as
+        ``"acquisition/head_direction"``, reads that series; it is never
+        chosen without being named.
 
     Returns
     -------
@@ -476,6 +577,11 @@ def read_head_direction(
         spelling (pynwb's
         default ``"meters"`` included) for angle data, or the data is
         neither ``(n_samples,)`` nor ``(n_samples, 2)``.
+    InputError
+        If ``compass_name`` is the path of a TimeSeries outside any
+        CompassDirection container that is neither angles in radians or
+        degrees nor ``(n_samples, 2)`` vectors without a length unit (a
+        position in cm, say). The search lists only such series.
     ImportError
         If pynwb is not installed.
 
@@ -504,6 +610,7 @@ def read_head_direction(
         processing_module,
         compass_name,
         "compass_name",
+        bare=_BARE_HEAD_DIRECTION,
     )
 
     raw = data_from_series(spatial_series)
@@ -528,7 +635,7 @@ def read_head_direction(
     return NWBHeadDirection(
         timestamps_from_series(spatial_series),
         angles,
-        frame=spatial_series.reference_frame,
+        frame=getattr(spatial_series, "reference_frame", None),
     )
 
 
@@ -536,6 +643,14 @@ _RADIANS_PER_ANGLE_UNIT = {
     **dict.fromkeys(["radians", "radian", "rad", "rads"], 1.0),
     **dict.fromkeys(["degrees", "degree", "deg", "degs"], np.pi / 180),
 }
+
+_BARE_HEAD_DIRECTION = _BareRule(
+    accepts=_reads_as_head_direction,
+    wanted="a series of angles in radians or degrees, shape (n_samples,), or "
+    "of (n_samples, 2) direction vectors without a length unit",
+    why="a series in another unit is not an angle, and (n_samples, 2) values "
+    "in a length unit are positions, whose arctan2 is not a head direction.",
+)
 
 
 def _radians_per_unit(series: SpatialSeries) -> float:

@@ -356,6 +356,50 @@ def test_one_see_through_rule_fades_from_the_color_floor_in_every_view(env):
     scene.close()
 
 
+@pytest.mark.parametrize("below", [True, False])
+def test_max_opacity_caps_every_bin_as_rendered(env, below):
+    """A field's max_opacity caps the alpha the renderer draws each bin with.
+
+    Over a video the cap applies on top of the see-through rule, so even the
+    peak bin lets the frame show through; without one it caps every bin.
+    The track panel stays opaque.
+    """
+    from matplotlib.collections import QuadMesh
+
+    from neurospatial.environment._fastplotlib import ColorScale, perceived_alpha
+
+    times = [0.0, 0.1, 0.2]
+    values = np.array([[0.0, 1.0, 2.0, 4.0]] * 3)
+    scene = Animation(
+        env,
+        AnimationField(values, times, vmin=0, vmax=4, max_opacity=0.4),
+        overlays=[_Video(_below_video(times))] if below else None,
+    )
+    scale = PreparedScene(scene).field_scales["field"]
+    assert scale.max_opacity == 0.4
+    scene.render_frame(0.1, dpi=30)
+    (mesh,) = [
+        artist
+        for ax in scene._renderer.figure.axes
+        if ax.get_title() == "field"
+        for artist in ax.collections
+        if isinstance(artist, QuadMesh)
+    ]
+    drawn = mesh.get_facecolors()[:, 3]
+    assert drawn.max() == pytest.approx(0.4, abs=0.01)
+    if below:  # the see-through rule still fades the lowest bin out
+        assert drawn.min() == pytest.approx(0.0, abs=0.01)
+    else:
+        np.testing.assert_allclose(drawn, 0.4, atol=0.01)
+    lut = ColorScale(
+        scale.cmap, scale.vmin, scale.vmax, "lightgray", max_opacity=0.4
+    ).lut[1:, 3]
+    np.testing.assert_allclose(lut, perceived_alpha(0.4), atol=1e-6)
+    with pytest.raises(ValueError, match="max_opacity"):
+        AnimationField(values, times, max_opacity=1.5)
+    scene.close()
+
+
 def test_colorbars_mark_the_ends_that_sampled_values_pass(env):
     track = Environment.linear_track(endpoints=[[0.0, 1.0], [2.0, 1.0]], bin_size=1.0)
     values = np.array([[-1.0, 0.5, 0.5, 3.0], [0.2, 0.4, 0.6, 0.8]])

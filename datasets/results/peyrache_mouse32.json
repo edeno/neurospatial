@@ -1,12 +1,21 @@
 {
   "dataset": "peyrache_mouse32",
   "session": "Mouse32-140822",
-  "source": "https://osf.io/jb2gd",
-  "license": "unstated on OSF; the source dandiset 000056 is CC-BY-4.0",
+  "source": "https://osf.io/jb2gd/download",
+  "license": "not stated",
   "conversions": [
-    "headings: wrapped from [0, 2pi) to [-pi, pi] with neurospatial.stats.wrap_angle",
-    "headings: reference frame unstated in the file; not rotated",
-    "epochs: wake/sleep from the epochs table tags; sws/rem from their tables"
+    "headings: ry wrapped from [0, 2\u03c0) to [-\u03c0, \u03c0] (neurospatial.stats.wrap_angle) [stated: the file's ry: unit 'radian', values 3.52e-05 to 6.28]",
+    "headings: allocentric, 0 = East and counter-clockwise, the package convention; not rotated or mirrored [inferred: assumed: the file's reference_frame is empty, the paper says only that heading is the orientation of two LEDs (the Methods of Peyrache et al. 2015, PMC4376557), and with no positions in the file heading cannot be compared with the direction of movement]",
+    "epochs: 'wake' and 'sleep' from the tags of the epochs table; 'sws' and 'rem' from their own tables [stated: the file's intervals: epochs (3 rows tagged wake or sleep), sws and rem]",
+    "survey-only params['nwb_source']: the cached NWB file the session was read from",
+    "survey-only params['readers_used']: the io.nwb readers the public loader calls"
+  ],
+  "watch_outs": [
+    "18 of the 49 units have location 'thalamus', not 'adn'; the pynapple tutorial keeps the 31 'adn' units (unit ids 4 to 34) for head-direction analyses, so select units['brain_region'] == 'adn' to match it.",
+    "This session is not in DANDI 000056 (which holds Mouse32-140820), so the OSF file is its only public copy and cannot be cross-checked against a second archive.",
+    "No positions: the file has head direction only, so there is no environment (the paper's 53 x 46 cm arena is not in it) and no speed; spatial maps and decoding of position are not possible.",
+    "The heading frame is assumed, not stated: 0 = East and counter-clockwise (the package convention). Tuning-curve shapes, widths and decoding error do not depend on it; absolute preferred directions, and comparing them with another session's or a cue's, do.",
+    "Head direction has 49 gaps longer than 1 s (121.7 s in all, the longest 8.55 s), where the file has no sample. Spikes in a gap have no heading; nothing is filled in."
   ],
   "expectations": [
     {
@@ -26,13 +35,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+    "neurospatial": "0.6.1.dev4209+g91bd4c200.d20261104",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "2c384bd5c1f379782df4aa8e38b384ae08565442"
+    "git_commit": "2ff13395a8946ce27c6a56f06abd29419f5d5578"
   },
   "load_warnings": [
     {
@@ -43,6 +52,18 @@
       "count": 9
     }
   ],
+  "load_fingerprint": {
+    "params": "9e0a23d3eb6d6ca5982e591a6943e37385ffc2f18727b498a8f799a67d899c76",
+    "positions": null,
+    "times": [
+      8812.416,
+      10771.277,
+      71478
+    ],
+    "spike_counts": "0c88faff1636c23a48a8e9efb6eb2b9fb1b05ecd1733fdcdf75941aaadfbb381",
+    "unit_ids": "c8b6d11c261161f5135db3479d07fbc3272686070b9a6a913235ace211de9280",
+    "geometry": "d20b6bc07a4d4c0fb832dadd2f17abb1a7634226c8b3f2f5679f345cdd032139"
+  },
   "operations": {
     "env.from_samples": {
       "status": "n/a",
@@ -100,8 +121,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.174,
-      "peak_mb": 154.7
+      "seconds": 0.179,
+      "peak_mb": 154.8
     },
     "rates.egocentric_boundary": {
       "status": "n/a",
@@ -161,7 +182,7 @@
           "count": 9
         }
       ],
-      "seconds": 0.558,
+      "seconds": 0.536,
       "peak_mb": 106.0
     },
     "io.read_pose": {
@@ -178,7 +199,7 @@
           "count": 9
         }
       ],
-      "seconds": 0.42,
+      "seconds": 0.416,
       "peak_mb": 0.4
     },
     "imaging.rates": {

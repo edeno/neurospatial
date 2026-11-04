@@ -865,3 +865,30 @@ def test_read_intervals_leaves_out_columns_that_cannot_be_fields(empty_nwb):
     assert trials.goal.tolist() == ["a", "b"]
     assert trials.xy.tolist() == [((1, 2),), ((3, 4),)]
     assert "start" not in trials.fields
+
+
+def test_read_intervals_reads_a_table_in_a_processing_module(empty_nwb, tmp_path):
+    """Sleep states kept in processing/behavior, as DANDI 000044 stores them."""
+    from pynwb import NWBHDF5IO
+    from pynwb.epoch import TimeIntervals
+
+    from neurospatial.io.nwb import read_intervals
+
+    states = TimeIntervals(name="states", description="sleep states")
+    states.add_column(name="label", description="the state")
+    for start, stop, label in ((0.0, 10.0, "Awake"), (10.0, 25.0, "Non-REM")):
+        states.add_row(start_time=start, stop_time=stop, label=label)
+    module = empty_nwb.create_processing_module("behavior", "behavior")
+    module.add(states)
+    path = tmp_path / "states.nwb"
+    with NWBHDF5IO(str(path), "w") as io:
+        io.write(empty_nwb)
+    with NWBHDF5IO(str(path), "r") as io:
+        nwbfile = io.read()
+        table = read_intervals(nwbfile, interval_name="processing/behavior/states")
+        with pytest.raises(KeyError) as caught:
+            read_intervals(nwbfile, interval_name="states")
+    np.testing.assert_array_equal(table.start, [0.0, 10.0])
+    np.testing.assert_array_equal(table.stop, [10.0, 25.0])
+    assert table.label.tolist() == ["Awake", "Non-REM"]
+    assert "Available intervals: ['processing/behavior/states']" in str(caught.value)

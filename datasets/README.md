@@ -11,22 +11,33 @@ package and is not run by the test suite or CI.
 Each `load_<dataset>.py` also works on its own as an example of bringing a
 recording into neurospatial: it fetches the files, reads them (with
 neurospatial's NWB readers where they work), converts units and frames, and
-explains every analysis choice in its docstring.
+explains every analysis choice in its docstring. The keys whose datasets
+`neurospatial.datasets` loads (`j16_23020757`, `sargolini_000582`,
+`peyrache_mouse32`, `yartsev_bat_demo`, `valero_000568`,
+`grosmark_000044_linear` and `grosmark_000044_circular`) are adapters: they
+call `neurospatial.datasets.load(...)`, take its analysis choices, and convert
+with `_record.from_public`; what only the survey adds is listed in each
+record's `conversions` as `survey-only`, and the public watch-outs are kept in
+its `watch_outs`. Their downloads go to `<cache>/<dataset id>/` (for example
+`comrie_2026/`), not `<cache>/<survey key>/`.
 
 ## Run it
 
 ```bash
 uv sync --group datasets --extra nwb --extra pynapple
-MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python datasets/run.py
-MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python datasets/reference_checks.py
+MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple \
+    python datasets/run.py
+MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple \
+    python datasets/reference_checks.py
 ```
 
-`run.py --datasets KEY ... --ops OP_ID ...` runs a subset; `run.py --render-only`
-rebuilds the Markdown tables from the JSON results. A subset run keeps the
-other cells of the stored record, so it is refused when the load differs
-from the stored one: its `conversions`, `env_kind` or `load_fingerprint`
-(hashes of `params` and the geometry's stated entries, the positions' shape
-and NaN count, the tracked span, each unit's spike count and the unit ids).
+`run.py --datasets KEY ... --ops OP_ID ...` runs a subset;
+`run.py --render-only` rebuilds the Markdown tables from the JSON results. A
+subset run keeps the other cells of the stored record, so it is refused when
+the load differs from the stored one: its `conversions`, `env_kind` or
+`load_fingerprint` (hashes of `params` and the geometry's stated entries, the
+positions' shape and NaN count, the tracked span, each unit's spike count and
+the unit ids).
 Records written before the fingerprint have none; each needs one full rerun
 (without `--ops`) before `--ops` works on it. One loader alone:
 `uv run --group datasets --extra nwb python datasets/load_sargolini_000582.py`.
@@ -39,20 +50,23 @@ uv run --group datasets --extra nwb --extra pynapple pytest datasets/tests -n 0
 
 ## Downloads
 
-Files are downloaded once into `data/datasets/` (git-ignored) or into
+Files are downloaded once into `~/.cache/neurospatial/datasets/`
+(`%LOCALAPPDATA%\neurospatial\datasets` on Windows) or into
 `$NEUROSPATIAL_DATA_DIR` when it is set, and every file is checked against a
 pinned SHA-256. A file whose checksum does not match is never overwritten. Data
 are not redistributed here; each loader records the dataset's license.
 Zip members are read by HTTP byte range; Deflate64 members (Grieves 2020),
 which Python's `zipfile` cannot inflate, are inflated with `inflate64` and
-CRC-checked. The labyrinth's trajectories and Gardner's spike trains are Python pickles;
-their loaders read them with restricted unpicklers that resolve only the
-globals and dtypes those files hold, and refuse every other one (Gardner's
-loader also lists a pickle's imports from its opcodes before unpickling).
+CRC-checked. The labyrinth's trajectories and Gardner's spike trains are
+Python pickles; their loaders read them with restricted unpicklers that
+resolve only the globals and dtypes those files hold, and refuse every other
+one (Gardner's loader also lists a pickle's imports from its opcodes before
+unpickling).
 
-Multi-GB DANDI files (000044, 000447, 000003) are not downloaded: the loader checks the
-SHA-256 DANDI publishes for the asset, then reads the few datasets it needs by
-HTTP byte range (`_fetch.open_nwb`), about a minute per file.
+Multi-GB DANDI files (000044, 000447, 000003) are not downloaded: the loader
+checks the SHA-256 DANDI publishes for the asset, then reads the few datasets
+it needs by HTTP byte range (`neurospatial.datasets._fetch.open_nwb`), about a
+minute per file.
 
 | Dataset | What it is | Size | License |
 | --- | --- | --- | --- |
@@ -105,12 +119,13 @@ occupancy, for a behavior-only file).
 
 CRCNS loaders (`hc*`) need a free crcns.org account. They read it from the
 `CRCNS_USERNAME` and `CRCNS_PASSWORD` environment variables and never print,
-log or store either value (`_fetch.fetch_crcns`). CRCNS serves `.tar.gz`
-archives, which cannot be read by byte range: `_fetch.fetch_crcns_tar_members`
-streams an archive once and keeps only the pinned members, so the first load
-of `hc28_hpa` or `hc18_train261` reads the whole 2.8 or 6.5 GB archive (about
-3-10 min). CRCNS terms: cite the data set and its paper; some labs ask to be
-consulted about authorship (see each loader's `DATASET["license"]`).
+log or store either value (`neurospatial.datasets._fetch.fetch_crcns`). CRCNS
+serves `.tar.gz` archives, which cannot be read by byte range:
+`neurospatial.datasets._fetch.fetch_crcns_tar_members` streams an archive once
+and keeps only the pinned members, so the first load of `hc28_hpa` or
+`hc18_train261` reads the whole 2.8 or 6.5 GB archive (about 3-10 min). CRCNS
+terms: cite the data set and its paper; some labs ask to be consulted about
+authorship (see each loader's `DATASET["license"]`).
 
 ## Studies
 
@@ -159,9 +174,10 @@ operation cells; each writes to `results/studies/`:
    in `run.py:LOADERS`, and commit before loading any data, so the
    expectations are not tuned to the result.
 2. Implement `load(cache=None) -> Recording` (see `_record.py`): fetch with
-   `_fetch.fetch` and a pinned SHA-256, try neurospatial's readers first, walk
-   the whole NWB file before deciding something is missing, check every stored
-   unit against the value ranges, and list every conversion.
+   `neurospatial.datasets._fetch.fetch` and a pinned SHA-256, try
+   neurospatial's readers first, walk the whole NWB file before deciding
+   something is missing, check every stored unit against the value ranges,
+   and list every conversion.
 3. Add `HAZARDS` for any quirk the loader corrects, so the driver can check
    whether neurospatial would have caught it.
    Where a source states the apparatus, declare it in

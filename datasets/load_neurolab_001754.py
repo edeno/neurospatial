@@ -42,7 +42,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_asset_url, fetch, open_nwb
 from _record import (
     Range,
     Recording,
@@ -50,6 +49,8 @@ from _record import (
     check_expectations,
     validate_recording,
 )
+
+from neurospatial.datasets._fetch import dandi_asset_url, fetch, open_nwb
 
 DATASET = {
     "key": "neurolab_001754",

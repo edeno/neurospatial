@@ -1,17 +1,32 @@
 {
   "dataset": "j16_23020757",
-  "session": "j16 20210710 02_r1",
+  "session": "j1620210710_02_r1_figure04_inputs",
   "source": "https://zenodo.org/api/records/23020757/files/j1620210710_02_r1_figure04_inputs.npz/content",
   "license": "CC-BY-4.0",
   "conversions": [
-    "positions: head_position_x, head_position_y as stored (cm, inferred)",
-    "range checked: 30.1 to 232.7 by 33.3 to 222.9 cm (largest span 202.6, expected 150-260)",
-    "positions: unit checked: head_speed vs |step| / dt correlation 0.93, medians 6.39 and 8.04 cm/s",
-    "times: position_time as stored (Unix epoch seconds)",
-    "spike_times: spike_times split at spike_offsets; 203 units, 21 with no spikes",
-    "headings: head_orientation not used; minus the direction of movement above 10 cm/s: circular mean 13.1 deg, median spread 20.4 deg (frame check: |mean| <= 0.2 rad = 11.5 deg)",
-    "geometry['graph']: track_nodes, track_node_positions, track_edges, track_edge_distance",
-    "environment: declared the authors' track graph (10 nodes, 9 corridors) (file: track_nodes, track_edges; Comrie et al. 2026 STAR Methods: 'Hallways were 6.5 cm wide and linear track segments were each 53 cm long'); tracked point: the head (the file's head_position; how it was tracked is not stated); physical width 6.5 cm (stated), 63.8% of samples beyond half of it (87% at 0-4 cm/s, 64% at 4-30 cm/s, 35% at 30-inf cm/s); placement tolerance 36.9 cm (track_width: twice the samples' 99% quantile distance from the track, at least the physical width and one bin; a tracked head swings past an unwalled track's edge, so 1.0% of samples are dropped by construction); placement: the file's node positions (authors' graph); fit: median |lateral offset| 2.73 cm, worst stretch bias 1.81 cm (limit 2), worst unsupported share of a segment 0%; track length 488.5 cm"
+    "positions: head_position_x and head_position_y as stored, in cm [inferred: the file states no unit. Its head_speed matches |step| / dt of the stored positions (correlation 0.93; medians 6.39 and 8.04 per s, a factor of 1.26, within a factor of 2 of the 1.26 measured on the pinned file), so both are in one unit; the track graph's edges, in that unit, are 51.7 to 57.4 long against the 53 cm hallways, and the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567 says positions were converted from pixels to cm]",
+    "spike_times: spike_times split at spike_offsets into 203 units, 21 with no spikes [stated: the Zenodo record: 'the spike times of 203 units, 870,018 spikes (spike_times, split into units by spike_offsets)']",
+    "environment: Environment.from_graph on the file's track_nodes, track_node_positions, track_edges and track_edge_distance, edges in the file's linear_edge_order, linear_edge_spacing 15 cm [stated: the file's track graph; the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567: nodes at the reward ports and hallway intersections, 15 cm gaps between edges in 1-D; edge lengths 51.7 to 57.4 cm against the stated 53 cm; env.to_linear reproduces the file's linear_position to 0 cm]",
+    "environment: track_width 36.9 cm, a placement tolerance, not the 6.5 cm hallway width: twice the samples' 99% quantile distance from the graph [inferred: the tracked head's distance from the graph: median 4.23 cm, 99% quantile 18.4 cm; 1.0% of samples lie beyond the tolerance, by construction, and fall in no bin. Each edge's samples sit a median -1.09 to +3.10 cm to one side of it over the whole edge, inside the 3.25 cm half-width of a hallway, and -1.49 to +1.53 cm on its middle 60%, inside one 2 cm bin. The ends are left out of the second figure because the head's posture while stopped at a reward port or junction, and samples of a neighbouring hallway near a junction, shift the median there; that window was chosen after seeing the whole-edge figure. Neither figure puts an edge's samples beyond its hallway, so the graph is not drawn beside them. track_width decides only which samples are placed, not the bins, their lengths or connectivity]",
+    "survey-only geometry['declared_from']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_graph']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_physical_width']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_physical_width_kind']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_track_width']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_track_width_kind']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_speed_thresholds']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['environment_fit']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['graph']: the authors' track graph from the file (track_nodes, track_edges), the declared environment's linearization graph",
+    "survey-only geometry['graph_root']: the node a graph environment of geometry['graph'] is walked from"
+  ],
+  "watch_outs": [
+    "The units are the authors' spike sorting of this one run epoch; the raw recording is DANDI 001942, which does not hold this sorting (the Zenodo record), so these units cannot be matched to another epoch's.",
+    "No headings: the file's head_orientation (from the front and back LEDs) minus the direction of movement above 10 cm/s has a circular mean of +13.1 degrees (median spread 20.4 degrees): the head's direction with a constant offset, from the LEDs' mounting or the rat's head posture, which the file cannot tell apart. It is kept in params['head_orientation'] (radians, [-\u03c0, \u03c0]); subtract the offset only if it is the mounting.",
+    "63.8% of tracked head samples lie farther than half the 6.5 cm hallway width from the track graph: 79.3% of stopped (below 10 cm/s) samples and 43.6% of moving samples. This is tracking spread, not misfit: the head-mounted LEDs swing past the hallways' walls (3 cm high, the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567) and a raised head projects outward, while each edge's samples are centred on it (see the environment's conversions). The positions are kept as stored.",
+    "Positions are the authors' smoothed, interpolated head positions, upsampled to 500 Hz from a 30 frames/s camera (the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567), about 16 samples per video frame, so speeds and held-sample counts are those of smoothed, interpolated positions, not of raw tracking.",
+    "944 runs of 11 or more identical position samples (10 or more repeats of the sample before; 16879 repeats, 2.38% of samples, 33.8 s in all, the longest 0.2 s). Positions are kept as stored. A held run is lost tracking if the tracker repeated its last fix, or the animal holding still; check before analysing stops (wells, ripples). No speed limit is stated for this dataset, so fast steps are not counted.",
+    "7094 tracked position samples of 709321 (1.00%) lie outside the declared environment (env.bin_at gives -1): about 1% by construction, since the track's width was set from these samples' 99% quantile distance from the track, so the share measures neither the tracking nor the fit; 1.1% of stopped (below 10 cm/s) samples and 0.8% of moving samples are outside. They are kept as stored and fall in no bin.",
+    "21 of 203 units have no spikes in the analysed epochs (the tracked span); they are kept, as the file lists them, and are units['fires_in_epochs'] False."
   ],
   "expectations": [
     {
@@ -46,17 +61,17 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+    "neurospatial": "0.6.1.dev4209+g91bd4c200.d20261104",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
+    "git_commit": "a23d931e22318e662f3a1a1a39687f24ad31d28d"
   },
   "load_warnings": [],
   "load_fingerprint": {
-    "params": "a272514e52d58c516efae98fe8f98984260479fec8282232bfcaa1a5328519da",
+    "params": "eedc27cab70153603ccb98b535f5f3c52b2af18ddaaf1510a7db4e39d6579695",
     "positions": [
       [
         709321,
@@ -71,7 +86,7 @@
     ],
     "spike_counts": "1920f3c54d6557be53ad59806288bfc572b5bc0844254ad07a4f1d228aa7d60d",
     "unit_ids": "1502c5deb3389c17afe5e0df46042fd8574c1fa0b10f597b190c0b2b1656badb",
-    "geometry": "d92f7c4caaa8f0aaf8938d24bff2abc647cca920983bed1ccdc5d9cd6e4671b0"
+    "geometry": "a875c9dc0634ce1ace76d4bf45c5f793fb955df9c8c65d80d85768b78bb966e6"
   },
   "operations": {
     "env.from_samples": {
@@ -84,22 +99,22 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.321,
-      "peak_mb": 52.6
+      "seconds": 0.1,
+      "peak_mb": 41.2
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 792.0917177200317,
+        "total_s": 611.701783657074,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 1.0329999923706055,
-        "max_s": 102.63996076583862
+        "median_s_per_visited_bin": 1.019999384880066,
+        "max_s": 47.061981439590454
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.88,
-      "peak_mb": 189.8
+      "seconds": 1.89,
+      "peak_mb": 189.4
     },
     "env.declared": {
       "status": "ok",
@@ -112,7 +127,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.205,
+      "seconds": 0.206,
       "peak_mb": 108.3
     },
     "rates.spatial": {
@@ -120,21 +135,21 @@
       "summary": {
         "n_units": 203,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 2.3941063917038505,
-        "median_mean_hz": 0.20386078196137264
+        "median_peak_hz": 2.5809498943685263,
+        "median_mean_hz": 0.20301517561539775
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.694,
-      "peak_mb": 193.6
+      "seconds": 2.911,
+      "peak_mb": 196.7
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 2.051796905180722,
-        "bits_per_spike_max": 8.004073607406577,
-        "bits_per_spike_n_finite": 166
+        "bits_per_spike_median": 2.0232024075781885,
+        "bits_per_spike_max": 7.633958824779554,
+        "bits_per_spike_n_finite": 161
       },
       "note": "",
       "gap": null,
@@ -145,22 +160,22 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 2.051796905180722,
-        "median_shifted_bits_per_spike": 0.4952029774580539,
-        "frac_above_every_shift": 0.8975903614457831,
-        "n_units": 166,
+        "median_bits_per_spike": 2.0232024075781885,
+        "median_shifted_bits_per_spike": 0.5191542077961595,
+        "frac_above_every_shift": 0.8757763975155279,
+        "n_units": 161,
         "n_shifts": 4
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 8.875,
-      "peak_mb": 197.0
+      "seconds": 8.857,
+      "peak_mb": 196.9
     },
     "cells.place_screen": {
       "status": "ok",
       "summary": {
-        "n_place_screen": 71,
+        "n_place_screen": 73,
         "n_units": 203
       },
       "note": "",
@@ -200,19 +215,19 @@
     "decode.position": {
       "status": "ok",
       "summary": {
-        "median_error": 1.9796620175662782,
+        "median_error": 3.959324035132456,
         "chance_median_error": 109.94098722359004,
         "chance_frac_disconnected": 0.0,
         "frac_actual_outside": 0.010420409629895796,
         "units": "cm",
         "n_time_bins": 2783,
-        "median_error_on_declared": 1.9796620175662782,
+        "median_error_on_declared": 3.959324035132456,
         "n_on_declared": 2783
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.525,
+      "seconds": 4.55,
       "peak_mb": 195.9
     },
     "io.nwb_roundtrip": {
@@ -223,8 +238,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.214,
-      "peak_mb": 13.6
+      "seconds": 2.812,
+      "peak_mb": 20.4
     },
     "env.from_graph": {
       "status": "ok",
@@ -241,14 +256,14 @@
     "behavior.segment_by_velocity": {
       "status": "ok",
       "summary": {
-        "n_segments": 290,
-        "running_s": 811.1057088375092
+        "n_segments": 240,
+        "running_s": 662.72376537323
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.199,
-      "peak_mb": 218.5
+      "seconds": 1.708,
+      "peak_mb": 197.2
     },
     "behavior.laps": {
       "status": "error",
@@ -256,7 +271,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.227,
+      "seconds": 0.229,
       "peak_mb": 97.0
     },
     "behavior.turn_sequence": {
@@ -268,7 +283,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.251,
+      "seconds": 0.224,
       "peak_mb": 97.0
     },
     "replay.compare_methods": {
@@ -277,8 +292,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.103,
-      "peak_mb": 3.1
+      "seconds": 0.105,
+      "peak_mb": 3.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -286,7 +301,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
+      "seconds": 0.007,
       "peak_mb": 0.3
     },
     "io.read_pose": {
@@ -295,7 +310,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 0.0
     },
     "imaging.rates": {
@@ -320,8 +335,8 @@
       "clean_summary": {
         "n_units": 203,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 2.3941063917038505,
-        "median_mean_hz": 0.20386078196137264
+        "median_peak_hz": 2.5809498943685263,
+        "median_mean_hz": 0.20301517561539775
       },
       "hazard_summary": {
         "n_units": 203,
@@ -351,13 +366,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "env.occupancy",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=10.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=10.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 792.0917177200317,
+        "total_s": 611.701783657074,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 1.0329999923706055,
-        "max_s": 102.63996076583862
+        "median_s_per_visited_bin": 1.019999384880066,
+        "max_s": 47.061981439590454
       },
       "hazard_summary": null
     },
@@ -365,13 +380,13 @@
       "hazard": "length_unit_off_by_100",
       "op": "rates.spatial",
       "response": "raised",
-      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
+      "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=10.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which the rate map is empty, the call refuses.\nFix: check that min_speed=10.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
         "n_units": 203,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 2.3941063917038505,
-        "median_mean_hz": 0.20386078196137264
+        "median_peak_hz": 2.5809498943685263,
+        "median_mean_hz": 0.20301517561539775
       },
       "hazard_summary": null
     },
@@ -382,8 +397,8 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "n_segments": 290,
-        "running_s": 811.1057088375092
+        "n_segments": 240,
+        "running_s": 662.72376537323
       },
       "hazard_summary": {
         "n_segments": 0,

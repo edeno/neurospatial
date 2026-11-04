@@ -6,61 +6,54 @@ track "110 cm long, 6.35 cm wide", per the series description), tracked at
 30 Hz by an overhead camera. The file also holds 49 ripples, sleep states
 and up/down states.
 
-Where it lives: DANDI 000568, version 0.230705.1633, CC-BY-4.0; a
-"no-raw-data" file of 5.8 MB.
+The session is read by ``neurospatial.datasets.load("valero_2022",
+"sub-fCamk2_ses-fCamk2-201014-sess3")``, whose module
+(``neurospatial/datasets/valero_2022.py``) and docs page give the file, the
+conversions (the position timestamps, not the video's, which run 22.55-23.12
+s earlier), the declared track (the stated 110 cm as a one-edge graph along
+the samples' principal axis) and the watch-outs, among them the held runs
+that may be lost tracking. ``_record.from_public`` converts it to the
+survey's record.
 
-What the loader converts: nothing changes units (cm). Positions are read with
-``read_position``. The video ``ImageSeries`` timestamps run 22.55-23.12 s earlier
-than the position timestamps for the same 67,131 frames; the position
-timestamps are the ones aligned with the spikes: the mean spatial information
-of the 35 units peaks at that alignment (1.09 bits/spike) and drops to 0.81
-with the video timestamps and to at most 0.85 at any shift of 5-40 s in either
-direction (checked once while writing this loader). The track runs along y
-(0.5-116.5 cm); x spans 4-21 cm, wider than the 6.35 cm track, as the LED
-moves with the head. Positions are kept as stored. Suspect tracking is
-reported as a load warning (``_record.find_suspect_tracking``): 46 runs of 11
-or more identical frames (10 or more repeats; the longest held 6 s), which may be a tracker
-repeating its last fix or a still mouse, and samples farther than 100 cm/s
-from the sample before them (the 99.9th percentile of this file's steps is
-218 cm/s, from jumps after held frames).
+Analysis choices are the public loader's ``params``: ``bin_size`` 2.5 cm,
+``dt`` 0.25 s and alternating 60 s train/test blocks of the tracked span.
 
-Analysis choices (``params``):
-
-- ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s.
-- ``dt`` 0.25 s, alternating 60 s ``train_epochs``/``test_epochs`` over the
-  track epoch (the file has no trial table).
-- ``replay_dt`` 0.02 s; ``events["ripples"]``: the 24 ripples inside the
-  tracked track epoch.
-- Declared environment (``geometry["environment"]``): the stated 110 cm by
-  6.35 cm track as a one-edge graph along the samples' principal axis,
-  centred on them (``_tracks.straight_track``); the fit is in ``conversions``.
+Survey-only: ``params["min_speed"]`` 4 cm/s (in place of the public None),
+which ``behavior.segment_by_velocity`` needs; ``params["replay_dt"]`` 0.02
+s; ``events["ripples"]``, the ripples inside the tracked track epoch, which
+replay is decoded on (the public ``ripples``, every ripple of the session,
+are ``events["all_ripples"]``); ``params["nwb_source"]`` and
+``params["readers_used"]``, for the ``io.nwb_readers`` operation and the
+``video_timestamps`` hazard; the declared track's facts the environment
+fidelity study reads (``_tracks.public_track_facts``: placed along the
+samples' principal axis, the stated 110 cm by 6.35 cm, the samples' span
+against the stated length).
 """
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_asset_url, fetch, open_nwb
 from _record import (
     Range,
     Recording,
-    alternating_blocks,
+    SurveyOnly,
     check_expectations,
-    find_suspect_tracking,
+    from_public,
+    public_file,
     validate_recording,
 )
-from _tracks import declared_geometry, straight_placement, straight_track
+from _tracks import public_track_facts
+
+from neurospatial.datasets._fetch import open_nwb
 
 DATASET = {
     "key": "valero_000568",
-    "title": "Valero et al. (2022), mouse fCamk2 session 3, CA1 units on a linear track",
-    "source": "https://dandiarchive.org/dandiset/000568/0.230705.1633",
-    "license": "CC-BY-4.0",
-    "download_size": "5.8 MB",
+    "public": "valero_2022",
+    "session": "sub-fCamk2_ses-fCamk2-201014-sess3",
 }
 
 # Pre-registered from the dataset catalog and the file's description
@@ -79,129 +72,74 @@ EXPECTATIONS: dict[str, Any] = {
 }
 
 
-_PATH = (
-    "sub-fCamk2/"
-    "sub-fCamk2_ses-fCamk2-201014-sess3-no-raw-data_behavior+ecephys+image.nwb"
-)
-_ASSET_ID = "48f2daa0-752b-4de5-932a-6e4682478493"
-_SHA256 = "17bc28bed791fad03b3a87702a77f2f8c74ca5daac0a8e8dbc742df3506b1790"
-# The track is 110 cm; the tracked span along it must lie here (cm).
-_TRACK_CM = (100.0, 130.0)
-_LENGTH_CM, _WIDTH_CM = 110.0, 6.35
-
-
-def _windows(table: object) -> np.ndarray:
-    frame = table.to_dataframe()  # type: ignore[attr-defined]
-    return frame[["start_time", "stop_time"]].to_numpy(dtype=float)
-
-
 def load(cache: Path | None = None) -> Recording:
-    """Fetch the session; positions in cm, spikes, epochs, ripples."""
-    from neurospatial.io.nwb import read_position, read_units
+    """The session from ``neurospatial.datasets``; positions in cm, ripples."""
+    from neurospatial.datasets import load as load_public
+    from neurospatial.datasets import valero_2022
 
-    path = fetch(
-        dandi_asset_url(_ASSET_ID),
-        Path(_PATH).name,
-        sha256=_SHA256,
-        subdir=DATASET["key"],
-        cache=cache,
-    )
-    with open_nwb(str(path)) as nwbfile:
-        position = read_position(nwbfile)
-        units = read_units(nwbfile)
-        video_times = np.asarray(
-            nwbfile.acquisition["ImageSeriesTrackingVideo1"].timestamps[:],
-            dtype=float,
-        )
-        epochs = nwbfile.epochs.to_dataframe()
-        ripples = _windows(nwbfile.processing["ecephys"]["RippleTimeIntervals"])
-        states = nwbfile.processing["behavior"]["SleepStates"].to_dataframe()
-
-    positions = np.asarray(position.positions, dtype=float)
-    times = np.asarray(position.times, dtype=float)
-    span = np.ptp(positions, axis=0)
-    offset = times - video_times
-    if (
-        position.units != "cm"
-        or not _TRACK_CM[0] <= span.max() <= _TRACK_CM[1]
-        or not 22.5 <= offset.min() <= offset.max() <= 23.2
-    ):
-        msg = (
-            f"position unit {position.units!r}, span {span.round(1)}, position minus"
-            f" video timestamps {offset.min():.3f}-{offset.max():.3f} s; recheck"
-        )
-        raise ValueError(msg)
-    _, suspect = find_suspect_tracking(times, positions, min_frozen=10, max_speed=100.0)
-    warnings.warn(suspect, UserWarning, stacklevel=1)
-    windows = epochs[["start_time", "stop_time"]].to_numpy(dtype=float)
-    track = windows[(windows[:, 0] <= times[0]) & (windows[:, 1] >= times[-1])]
-    on_track = (ripples[:, 0] >= times[0]) & (ripples[:, 1] <= times[-1])
-    train, test = alternating_blocks(times[0], times[-1], 60.0)
-    graph, fit = straight_track(positions, _LENGTH_CM)
-    declared, declared_line = declared_geometry(
-        graph,
-        positions,
-        times=times,
-        kind=f"straight track {_LENGTH_CM:g} cm",
-        source="NWB series description '110 cm long, 6.35 cm wide'",
-        bin_size=2.5,
-        physical_width=_WIDTH_CM,
-        units="cm",
-        name=DATASET["key"],
-        placement=straight_placement(fit, "cm"),
-        placed_by="samples' principal axis",
-        stated_lengths={"length": (fit["samples_span"], _LENGTH_CM)},
-        tracked_point="not stated",
-        speed_thresholds=(4.0, 30.0),
-    )
-    return Recording(
-        dataset=DATASET["key"],
-        session="fCamk2_201014_sess3",
-        source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",
-        license=DATASET["license"],
-        times=times,
-        positions=positions,
-        position_units="cm",
-        spike_times=tuple(np.asarray(s, dtype=float) for s in units.spike_times),
-        unit_ids=np.asarray(units.unit_ids),
-        epochs={
-            "track": track,
-            **{
-                str(label).lower(): states.loc[
-                    states["label"] == label, ["start_time", "stop_time"]
-                ].to_numpy(dtype=float)
-                for label in sorted(states["label"].unique())
-            },
-        },
-        events={"ripples": ripples[on_track], "all_ripples": ripples},
-        geometry={
-            "track_length_cm": _LENGTH_CM,
-            "track_width_cm": _WIDTH_CM,
-            **declared,
-        },
+    rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
+    source = public_file(DATASET["public"], DATASET["session"], cache=cache)
+    ripples = rec.events["ripples"]
+    on_track = (ripples[:, 0] >= rec.times[0]) & (ripples[:, 1] <= rec.times[-1])
+    return from_public(
+        rec,
+        key=DATASET["key"],
         params={
-            "bin_size": 2.5,
-            "min_speed": 4.0,
-            "dt": 0.25,
-            "replay_dt": 0.02,
-            "train_epochs": train,
-            "test_epochs": test,
-            "nwb_source": str(path),
-            "readers_used": ("position", "units"),
+            "replay_dt": SurveyOnly(0.02, "the replay decoding bin"),
+            "min_speed": SurveyOnly(
+                4.0,
+                "the survey's running threshold, 4 cm/s, which"
+                " behavior.segment_by_velocity needs; no source read states one",
+            ),
+            "nwb_source": SurveyOnly(
+                source, "the cached NWB file the session was read from"
+            ),
+            "readers_used": SurveyOnly(
+                ("position", "units"), "the io.nwb readers the public loader calls"
+            ),
         },
-        conversions=(
-            f"positions: read_position, cm; range checked: {np.nanmin(positions[:, 0]):.1f}-"
-            f"{np.nanmax(positions[:, 0]):.1f} by {np.nanmin(positions[:, 1]):.1f}-"
-            f"{np.nanmax(positions[:, 1]):.1f} cm (track 110 cm along y)",
-            "times: position timestamps, not the video timestamps"
-            f" ({offset.min():.2f}-{offset.max():.2f} s earlier for the same"
-            " frames); spatial information peaks at the position timestamps",
-            f"events['ripples']: the {int(on_track.sum())} of {len(ripples)}"
-            " RippleTimeIntervals rows inside the track tracking",
-            "epochs: the epoch holding the tracking as track; SleepStates by label",
-            declared_line,
-        ),
+        events={
+            "ripples": SurveyOnly(
+                ripples[on_track],
+                f"the {int(on_track.sum())} of {len(ripples)} ripples inside the"
+                " tracking, so replay is decoded where the rate maps were fitted",
+            ),
+            "all_ripples": SurveyOnly(np.array(ripples), "every ripple of the session"),
+        },
+        geometry={
+            **public_track_facts(
+                rec,
+                declared_from="samples' principal axis",
+                physical_width=valero_2022.WIDTH,
+                speed_thresholds=(4.0, 30.0),
+                stated_lengths={
+                    "length": (samples_span(rec.env, rec.positions), valero_2022.LENGTH)
+                },
+            ),
+            "track_length_cm": SurveyOnly(
+                valero_2022.LENGTH, "the stated length ('110 cm long')"
+            ),
+            "track_width_cm": SurveyOnly(
+                valero_2022.WIDTH, "the stated width ('6.35 cm wide')"
+            ),
+        },
     )
+
+
+def samples_span(env: Any, positions: np.ndarray) -> float:
+    """The tracked samples' span along the declared track, cm.
+
+    Between their 0.5th and 99.5th percentiles along it, as the public loader
+    centres the track (``valero_2022.END_QUANTILES``).
+    """
+    from neurospatial.datasets import valero_2022
+
+    graph = env.binning.linearization.graph
+    start, end = (np.asarray(graph.nodes[n]["pos"]) for n in ("start", "end"))
+    axis = (end - start) / np.linalg.norm(end - start)
+    tracked = positions[np.isfinite(positions).all(axis=1)]
+    low, high = np.quantile((tracked - start) @ axis, valero_2022.END_QUANTILES)
+    return float(high - low)
 
 
 def _video_timestamps(rec: Recording) -> Recording:

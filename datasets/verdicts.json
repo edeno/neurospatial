@@ -70,7 +70,7 @@
     "sargolini_000582/missing_positions_as_zero/env.occupancy": {
       "verdict": "undetectable",
       "gap": null,
-      "reason": "One NaN sample in 30000 becomes (0, 0), the box centre; total occupancy 599.8 to 599.9 s, per-bin medians unchanged."
+      "reason": "One NaN sample in 30000 becomes (0, 0), the box centre; total occupancy 599.96 to 599.98 s, per-bin medians unchanged."
     },
     "sargolini_000582/missing_positions_as_zero/rates.spatial": {
       "verdict": "undetectable",
@@ -90,12 +90,12 @@
     "sargolini_000582/length_unit_off_by_100/env.occupancy": {
       "verdict": "silent",
       "gap": "G-132",
-      "reason": "Positions 100 times too small fall in the centre of the declared 1 m box: occupancy piles into 1 of 1601 bins (600 s), no warning. The from_samples warning that caught this does not run when the environment is declared."
+      "reason": "Positions 100 times too small fall in the centre of the declared 1 m box: occupancy piles into 4 of 1600 bins (600 s), no warning. The from_samples warning that caught this does not run when the environment is declared."
     },
     "sargolini_000582/length_unit_off_by_100/rates.spatial": {
       "verdict": "silent",
       "gap": "G-132",
-      "reason": "Same collapse into the centre of the declared 1 m box: 99.9% of bins NaN, no warning (the bandwidth warning needs a 5 cm environment, which a declared one is not)."
+      "reason": "Same collapse into the centre of the declared 1 m box: 99.75% of bins NaN, no warning (the bandwidth warning needs a 5 cm environment, which a declared one is not)."
     },
     "peyrache_mouse32/headings_in_degrees/hd.tuning": {
       "verdict": "caught",
@@ -340,7 +340,7 @@
     "grosmark_000044_circular/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "No warning on the declared track: most occupied bin 56.5 s -> 55.1 s; median occupancy per visited bin 9.37 s -> 9.01 s; occupancy 1.71e+03 s -> 1.65e+03 s (clean -> hazard)"
+      "reason": "No warning on the declared track: most occupied bin 48.5 s -> 46.9 s; median occupancy per visited bin 8.23 s -> 7.88 s; occupancy 1.62e+03 s -> 1.57e+03 s (clean -> hazard)"
     },
     "grosmark_000044_circular/missing_positions_as_zero/rates.spatial": {
       "verdict": "no effect",
@@ -350,7 +350,7 @@
     "grosmark_000044_circular/missing_positions_as_zero/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Jumps to and from the origin read as running: 633 -> 657 segments. Check 1 would fire."
+      "reason": "Jumps to and from the origin read as running: 670 -> 702 segments. Check 1 would fire."
     },
     "grosmark_000044_circular/missing_positions_as_zero/behavior.laps": {
       "verdict": "silent",
@@ -360,22 +360,22 @@
     "grosmark_000044_circular/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Warned on the declared track: All 104 units are silent from 19848.5 s to 19949.3 s (101 s) while position is tracked; median mean hz 1.17 Hz -> 0.000227 Hz; median peak rate 5.27 Hz -> 0.00551 Hz (clean -> hazard)"
+      "reason": "Warned on the declared track: All 104 units are silent from 19848.5 s to 19949.3 s (101 s) while position is tracked; median mean hz 1.19 Hz -> 0.000214 Hz; median peak rate 5.27 Hz -> 0.00504 Hz (clean -> hazard)"
     },
     "grosmark_000044_circular/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
       "gap": null,
-      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [1.2937265917602998, 1.3372093023255813] in every dimension."
+      "reason": "New warning: bin_size=2.0 is at least the per-axis data extent [1.294, 1.337] in every dimension."
     },
     "grosmark_000044_circular/length_unit_off_by_100/env.occupancy": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bin; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
+      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs), so occupancy is zero in every bin; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
     },
     "grosmark_000044_circular/length_unit_off_by_100/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
+      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs), so the rate map is empty; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
     },
     "grosmark_000044_circular/length_unit_off_by_100/behavior.segment_by_velocity": {
       "verdict": "silent",
@@ -395,7 +395,7 @@
     "grosmark_000044_linear/missing_positions_as_zero/env.occupancy": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "No warning on the declared track: occupancy 981 s -> 1.08e+03 s (clean -> hazard)"
+      "reason": "No warning on the declared track: occupancy 903 s -> 1.01e+03 s (clean -> hazard)"
     },
     "grosmark_000044_linear/missing_positions_as_zero/rates.spatial": {
       "verdict": "no effect",
@@ -405,27 +405,27 @@
     "grosmark_000044_linear/missing_positions_as_zero/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-017",
-      "reason": "Jumps to and from the origin read as running: 522 -> 574 segments. Check 1 would fire."
+      "reason": "Jumps to and from the origin read as running: 514 -> 570 segments. Check 1 would fire."
     },
     "grosmark_000044_linear/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Warned on the declared track: 8414280/8414607 spike_times (100%) across all neurons fell outside the position time window [18079.5, 20147]; spike_times.min()=36.15 spike_times.max()=3.48611e+07; median mean hz 1.13 Hz -> 0 Hz; median peak rate 4.66 Hz -> 0 Hz (clean -> hazard)"
+      "reason": "Warned on the declared track: 8414280/8414607 spike_times (100%) across all neurons fell outside the position time window [18079.5, 20147]; spike_times.min()=36.15 spike_times.max()=3.48611e+07; median mean hz 1.13 Hz -> 0 Hz; median peak rate 4.67 Hz -> 0 Hz (clean -> hazard)"
     },
     "grosmark_000044_linear/length_unit_off_by_100/env.from_samples": {
-      "verdict": "caught",
-      "gap": null,
-      "reason": "New warning: bin_size=2.5 is at least the per-axis data extent [1.984679032278987, 2.20088829509912] in every dimension."
+      "verdict": "silent",
+      "gap": "G-014",
+      "reason": "Positions /100 give a 2.0 by 2.2 cm extent, just above the 2 cm bin of grosmark_2016's params: 5 bins (1530 clean) and no warning. At the survey's former 2.5 cm bin the bin was at least the extent and it warned."
     },
     "grosmark_000044_linear/length_unit_off_by_100/env.occupancy": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so occupancy is zero in every bin; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
+      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs), so occupancy is zero in every bin; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
     },
     "grosmark_000044_linear/length_unit_off_by_100/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0, epochs), so the rate map is empty; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
+      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=5.0, epochs), so the rate map is empty; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
     },
     "grosmark_000044_linear/length_unit_off_by_100/behavior.segment_by_velocity": {
       "verdict": "silent",
@@ -1295,27 +1295,27 @@
     "j16_23020757/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Warned on the declared track: All 203 units are silent from 1625935757.7 s to 1625937176.3 s (1419 s) while position is tracked; median mean hz 0.204 Hz -> 0 Hz; median peak rate 2.39 Hz -> 0 Hz (clean -> hazard)"
+      "reason": "Warned on the declared track: All 203 units are silent from 1625935757.7 s to 1625937176.3 s (1419 s) while position is tracked; median mean hz 0.203 Hz -> 0 Hz; median peak rate 2.58 Hz -> 0 Hz (clean -> hazard)"
     },
     "j16_23020757/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
       "gap": null,
-      "reason": "New warning: bin_size=4.0 is at least the per-axis data extent [2.0263053303199383, 1.8961499132812527] in every dimension. Why: this produces very few bins and may indicate"
+      "reason": "New warning: bin_size=4.0 is at least the per-axis data extent [2.026, 1.896] in every dimension: 4 bins instead of 545."
     },
     "j16_23020757/length_unit_off_by_100/env.occupancy": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so occupancy is zero in every bin; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
+      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=10.0), so occupancy is zero in every bin; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
     },
     "j16_23020757/length_unit_off_by_100/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0), so the rate map is empty; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
+      "reason": "Raised on the declared track: InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=10.0), so the rate map is empty; the run fails loudly, but the message blames the interval gates and names the length units only among its fixes"
     },
     "j16_23020757/length_unit_off_by_100/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-014",
-      "reason": "290 -> 0 running segments; no environment built, so check 2 cannot see it."
+      "reason": "240 -> 0 running segments; no environment built, so check 2 cannot see it."
     },
     "rsc_000987/headings_in_degrees/hd.tuning": {
       "verdict": "caught",
@@ -1490,12 +1490,12 @@
     "valero_000568/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Warned on the declared track: All 35 units are silent from 9301.0 s to 9392.3 s (91 s) while position is tracked; median mean hz 0.543 Hz -> 0 Hz; median peak rate 1.25 Hz -> 0 Hz (clean -> hazard)"
+      "reason": "Warned on the declared track: All 35 units are silent from 9777.5 s to 9912.2 s (135 s) while position is tracked; median mean hz 0.549 Hz -> 0 Hz; median peak rate 1.25 Hz -> 0 Hz (clean -> hazard)"
     },
     "valero_000568/length_unit_off_by_100/env.from_samples": {
       "verdict": "caught",
       "gap": null,
-      "reason": "Warns that bin_size=2.5 is at least the 0.17 x 1.16 extent: 4 bins instead of 186."
+      "reason": "Warns that bin_size=2.5 is at least the 0.17 x 1.16 extent: 4 bins instead of 190."
     },
     "valero_000568/length_unit_off_by_100/env.occupancy": {
       "verdict": "caught",
@@ -1510,7 +1510,7 @@
     "valero_000568/length_unit_off_by_100/behavior.segment_by_velocity": {
       "verdict": "silent",
       "gap": "G-014",
-      "reason": "0 segments instead of 445; no environment built, so check 2 cannot see it."
+      "reason": "0 segments instead of 458; no environment built, so check 2 cannot see it."
     },
     "valero_000568/video_timestamps/env.from_samples": {
       "verdict": "no effect",
@@ -1525,12 +1525,12 @@
     "valero_000568/video_timestamps/rates.spatial": {
       "verdict": "undetectable",
       "gap": "G-054",
-      "reason": "No warning on the declared track: median mean hz 0.543 Hz -> 0.607 Hz; median peak rate 1.25 Hz -> 0.903 Hz (clean -> hazard)"
+      "reason": "No warning on the declared track: median mean hz 0.549 Hz -> 0.624 Hz; median peak rate 1.25 Hz -> 0.892 Hz (clean -> hazard)"
     },
     "valero_000568/video_timestamps/behavior.segment_by_velocity": {
       "verdict": "no effect",
       "gap": null,
-      "reason": "Speeds barely depend on the shift: 445 segments both ways, running 985.2 -> 987.3 s."
+      "reason": "Speeds barely depend on the shift: 458 segments both ways, running 1001.6 -> 1002.6 s."
     },
     "aeryjones_000165/spike_times_in_ms/rates.spatial": {
       "verdict": "caught",
@@ -1815,7 +1815,7 @@
     "grosmark_000044_circular/length_unit_off_by_100/behavior.turn_sequence": {
       "verdict": "silent",
       "gap": "G-014",
-      "reason": "No warning on the declared track: frac left 0.0694 -> nan; turns 1355 -> 0 (clean -> hazard)"
+      "reason": "No warning on the declared track: frac left 0.0741 -> nan; turns 1404 -> 0 (clean -> hazard)"
     },
     "hc18_train261/missing_positions_as_zero/behavior.turn_sequence": {
       "verdict": "no effect",

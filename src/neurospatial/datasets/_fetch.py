@@ -3,7 +3,12 @@
 Every file is pinned by SHA-256. A file is written to a temporary name in its
 destination directory and renamed only after its digest matches, so an
 interrupted or corrupted download never leaves a file the loaders would trust.
-An existing file with a different digest is never overwritten. Files too
+An existing file with a different digest is never overwritten. Each verified
+file gets a record, ``<cache>/.verified/<subdir>/<name>.verified``, of its
+digest, size and modification time; a later fetch trusts a file whose size
+and modification time still match its record without hashing it again, and
+hashes any other. The records sit apart from the files, so a session's
+directory holds only its files and keeps its modification time. Files too
 large to download (multi-GB DANDI assets) are read by HTTP byte range instead,
 pinned by the SHA-256 DANDI publishes for them.
 
@@ -22,6 +27,7 @@ import json
 import os
 import shutil
 import struct
+import sys
 import tarfile
 import tempfile
 import urllib.error
@@ -30,15 +36,36 @@ import urllib.request
 import zipfile
 import zlib
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
-DEFAULT_CACHE = Path(__file__).resolve().parent.parent / "data" / "datasets"
+#: Seconds to wait for a connection or a read before giving up.
+TIMEOUT = 300
+
+
+def _default_cache() -> Path:
+    """The per-user cache: ``%LOCALAPPDATA%\\neurospatial\\datasets`` on Windows, else ``~/.cache/neurospatial/datasets``."""
+    platform = sys.platform  # a variable, so mypy checks both branches on any OS
+    if platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "neurospatial" / "datasets"
+    return Path.home() / ".cache" / "neurospatial" / "datasets"
 
 
 def cache_root(cache: Path | None = None) -> Path:
-    """Return the cache directory: ``cache``, ``$NEUROSPATIAL_DATA_DIR`` or ``data/datasets``."""
-    root = Path(cache or os.environ.get("NEUROSPATIAL_DATA_DIR", DEFAULT_CACHE))
+    """Return the cache directory, created if absent.
+
+    The first of ``cache``, ``$NEUROSPATIAL_DATA_DIR`` and the per-user
+    default: ``%LOCALAPPDATA%\\neurospatial\\datasets`` on Windows,
+    ``~/.cache/neurospatial/datasets`` elsewhere.
+    """
+    if cache is not None:
+        root = Path(cache)
+    elif env := os.environ.get("NEUROSPATIAL_DATA_DIR"):
+        root = Path(env)
+    else:
+        root = _default_cache()
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -52,54 +79,150 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _existing(dest: Path, sha256: str) -> Path | None:
+#: The directory, under the cache root, of the verified files' records.
+VERIFIED = ".verified"
+
+
+@dataclass(frozen=True)
+class _Target:
+    """Where a file is cached, and where the record of its verification is."""
+
+    path: Path
+    record: Path
+
+
+def _target(cache: Path | None, subdir: str, name: str) -> _Target:
+    """The cache location of file ``name`` in ``subdir``, and of its record."""
+    root = cache_root(cache)
+    return _Target(root / subdir / name, root / VERIFIED / subdir / f"{name}.verified")
+
+
+def _stat_record(sha256: str, stat: os.stat_result) -> dict[str, Any]:
+    """What a record holds: the file's digest, size and modification time."""
+    return {"sha256": sha256, "st_size": stat.st_size, "st_mtime_ns": stat.st_mtime_ns}
+
+
+def _write_record(target: _Target, sha256: str) -> None:
+    """Record that ``target.path``, as it is now, has SHA-256 ``sha256``."""
+    record = _stat_record(sha256, target.path.stat())
+    # A cache that cannot be written to (a shared, read-only one) keeps no
+    # records; its files are hashed on every load, as without records.
+    with contextlib.suppress(OSError):
+        target.record.parent.mkdir(parents=True, exist_ok=True)
+        partial = target.record.with_name(f"{target.record.name}.{os.getpid()}")
+        partial.write_text(json.dumps(record))
+        partial.replace(target.record)
+
+
+def _recorded(target: _Target, sha256: str, stat: os.stat_result) -> bool:
+    """Whether the record shows the file, at this size and time, has ``sha256``."""
+    try:
+        record = json.loads(target.record.read_text())
+    except (OSError, ValueError):  # no record, or a record cut short
+        return False
+    return bool(record == _stat_record(sha256, stat))
+
+
+def _existing(target: _Target, sha256: str) -> Path | None:
+    """The cached file if it is there and has ``sha256``; None if it is not there.
+
+    A file whose record matches its size and modification time is trusted;
+    any other is hashed, and recorded when it matches.
+    """
+    dest = target.path
     if not dest.exists():
         return None
+    if _recorded(target, sha256, dest.stat()):
+        return dest
     if file_sha256(dest) != sha256:
         msg = (
             f"{dest} exists with a different SHA-256 from the pinned file. "
             "Move it aside to download again; it will not be overwritten."
         )
         raise FileExistsError(msg)
+    _write_record(target, sha256)
     return dest
 
 
-def _install(tmp: Path, dest: Path, sha256: str) -> Path:
-    actual = file_sha256(tmp)
+def _install(tmp: Path, actual: str, target: _Target, sha256: str) -> Path:
+    """Rename the download ``tmp``, whose SHA-256 is ``actual``, into the cache.
+
+    Refuses, and removes ``tmp``, when ``actual`` is not the pinned
+    ``sha256``; records the installed file's verification otherwise.
+    """
+    dest = target.path
     if actual != sha256:
         tmp.unlink()
-        msg = f"{dest.name}: downloaded SHA-256 {actual} does not match the pinned {sha256}."
-        raise ValueError(msg)
+        from neurospatial._exceptions import _format_error
+
+        raise ValueError(
+            _format_error(
+                f"{dest.name}: downloaded SHA-256 {actual} does not match the "
+                f"pinned {sha256}; the download was removed.",
+                why="the file was cut short or changed in transit, or the "
+                "archive now serves a different file, which the loader was not "
+                "checked against.",
+                fix="load again to retry the download; if it fails again with "
+                "the same SHA-256, the archive's file changed: report it, and do "
+                "not update the pin until the session is checked again.",
+            )
+        )
     tmp.replace(dest)
+    _write_record(target, sha256)
     return dest
 
 
-def _download_to_temp(dest: Path, write: Callable[[IO[bytes]], None]) -> Path:
+class _HashingWriter:
+    """A binary file that hashes, with SHA-256, every byte written to it."""
+
+    def __init__(self, stream: IO[bytes]) -> None:
+        self._stream = stream
+        self._digest = hashlib.sha256()
+
+    def write(self, data: bytes) -> int:
+        """Hash ``data`` and write it."""
+        self._digest.update(data)
+        return self._stream.write(data)
+
+    def hexdigest(self) -> str:
+        """The hex SHA-256 of everything written."""
+        return self._digest.hexdigest()
+
+
+def _download_to_temp(
+    dest: Path, write: Callable[[_HashingWriter], None]
+) -> tuple[Path, str]:
+    """Write a download to a temporary file beside ``dest``, hashing it as it goes.
+
+    Returns the temporary file and its hex SHA-256; on any error the
+    temporary file is removed.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as tmp:
         tmp_path = Path(tmp.name)
+        hashing = _HashingWriter(tmp)
         try:
-            write(tmp)
+            write(hashing)
         except BaseException:
             tmp.close()
             tmp_path.unlink(missing_ok=True)
             raise
-    return tmp_path
+    return tmp_path, hashing.hexdigest()
 
 
 def fetch(
     url: str, name: str, *, sha256: str, subdir: str, cache: Path | None = None
 ) -> Path:
     """Return a verified local copy of ``url``, downloading it once."""
-    dest = cache_root(cache) / subdir / name
-    if (found := _existing(dest, sha256)) is not None:
+    target = _target(cache, subdir, name)
+    if (found := _existing(target, sha256)) is not None:
         return found
 
-    def write(tmp: IO[bytes]) -> None:
-        with urllib.request.urlopen(url) as response:
+    def write(tmp: _HashingWriter) -> None:
+        with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
             shutil.copyfileobj(response, tmp)
 
-    return _install(_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(target.path, write), target, sha256)
 
 
 _DEFLATE64 = 9
@@ -109,7 +232,7 @@ _DEFLATE64_CHUNK = 64 << 10  # 64 KiB in; Deflate64 expands at most ~1000x
 
 
 def _copy_deflate64(
-    archive: zipfile.ZipFile, info: zipfile.ZipInfo, out: IO[bytes]
+    archive: zipfile.ZipFile, info: zipfile.ZipInfo, out: _HashingWriter
 ) -> None:
     """Inflate a Deflate64 member, which ``zipfile`` cannot read, and check it.
 
@@ -117,8 +240,11 @@ def _copy_deflate64(
     output may not exceed the size the directory states, and its CRC-32 must
     match.
     """
-    import inflate64
+    from neurospatial._optional import require_optional
 
+    inflate64 = require_optional(
+        "inflate64", extra="datasets", purpose="reading Deflate64 zip members"
+    )
     stream = archive.fp
     assert stream is not None
     stream.seek(info.header_offset)
@@ -163,13 +289,16 @@ def fetch_zip_member(
     Deflate64 members (compression method 9), which ``zipfile`` cannot read,
     are inflated with ``inflate64``.
     """
-    import fsspec
+    from neurospatial._optional import require_optional
 
-    dest = cache_root(cache) / subdir / Path(member).name
-    if (found := _existing(dest, sha256)) is not None:
+    fsspec = require_optional(
+        "fsspec", extra="datasets", purpose="reading zip members by byte range"
+    )
+    target = _target(cache, subdir, Path(member).name)
+    if (found := _existing(target, sha256)) is not None:
         return found
 
-    def write(tmp: IO[bytes]) -> None:
+    def write(tmp: _HashingWriter) -> None:
         with (
             fsspec.open(url, "rb", block_size=4 << 20) as remote,
             zipfile.ZipFile(remote) as archive,
@@ -181,7 +310,7 @@ def fetch_zip_member(
             with archive.open(info) as source:
                 shutil.copyfileobj(source, tmp)
 
-    return _install(_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(target.path, write), target, sha256)
 
 
 CRCNS_PORTAL = "https://portal.nersc.gov/project/crcns/download/index.php"
@@ -238,7 +367,9 @@ def _crcns_open(path: str) -> Any:
     failure = None
     stopped: BaseException | None = None
     try:
-        response = opener.open(CRCNS_PORTAL, data=_crcns_login_form(path), timeout=300)
+        response = opener.open(
+            CRCNS_PORTAL, data=_crcns_login_form(path), timeout=TIMEOUT
+        )
     except urllib.error.HTTPError as exc:
         exc.close()
         failure = f"failed with HTTP {exc.code}"
@@ -274,15 +405,15 @@ def fetch_crcns(
     path: str, *, sha256: str, subdir: str, cache: Path | None = None
 ) -> Path:
     """Return a verified local copy of the CRCNS file ``path``, downloading it once."""
-    dest = cache_root(cache) / subdir / Path(path).name
-    if (found := _existing(dest, sha256)) is not None:
+    target = _target(cache, subdir, Path(path).name)
+    if (found := _existing(target, sha256)) is not None:
         return found
 
-    def write(tmp: IO[bytes]) -> None:
+    def write(tmp: _HashingWriter) -> None:
         with _crcns_open(path) as response:
             shutil.copyfileobj(response, tmp)
 
-    return _install(_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(target.path, write), target, sha256)
 
 
 def fetch_crcns_tar_members(
@@ -303,15 +434,14 @@ def fetch_crcns_tar_members(
     if len(set(names)) != len(names):
         msg = f"members of {path} share a base name, which is how they are stored: {sorted(members)}"
         raise ValueError(msg)
-    root = cache_root(cache) / subdir
     found: dict[str, Path] = {}
-    missing: dict[str, tuple[Path, str]] = {}
+    missing: dict[str, tuple[_Target, str]] = {}
     for member, digest in members.items():
-        dest = root / Path(member).name
-        if (cached := _existing(dest, digest)) is not None:
+        target = _target(cache, subdir, Path(member).name)
+        if (cached := _existing(target, digest)) is not None:
             found[member] = cached
         else:
-            missing[member] = (dest, digest)
+            missing[member] = (target, digest)
     if not missing:
         return found
     with (
@@ -325,12 +455,15 @@ def fetch_crcns_tar_members(
             if source is None:
                 msg = f"{path}: member {info.name} is not a regular file"
                 raise ValueError(msg)
-            dest, digest = missing.pop(info.name)
+            target, digest = missing.pop(info.name)
+            stream: IO[bytes] = source
 
-            def write(tmp: IO[bytes], source: IO[bytes] = source) -> None:
-                shutil.copyfileobj(source, tmp)
+            def write(tmp: _HashingWriter, stream: IO[bytes] = stream) -> None:
+                shutil.copyfileobj(stream, tmp)
 
-            found[info.name] = _install(_download_to_temp(dest, write), dest, digest)
+            found[info.name] = _install(
+                *_download_to_temp(target.path, write), target, digest
+            )
             if not missing:
                 break
     if missing:
@@ -351,7 +484,7 @@ def dandi_stream_url(asset_id: str, *, sha256: str) -> str:
     downloading it.
     """
     url = f"https://api.dandiarchive.org/api/assets/{asset_id}/"
-    with urllib.request.urlopen(url) as response:
+    with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
         published = json.load(response)["digest"]["dandi:sha2-256"]
     if published != sha256:
         msg = (
@@ -365,15 +498,19 @@ def dandi_stream_url(asset_id: str, *, sha256: str) -> str:
 @contextlib.contextmanager
 def open_nwb(source: str) -> Iterator[Any]:
     """Yield the NWBFile at a local path, or at an http(s) URL read by byte range."""
-    import pynwb
+    from neurospatial._optional import require_optional
 
+    pynwb = require_optional("pynwb", extra="datasets", purpose="reading NWB files")
     if not source.startswith(("https://", "http://")):
         with pynwb.NWBHDF5IO(source, "r", load_namespaces=True) as io:
             yield io.read()
         return
-    import fsspec
-    import h5py
-
+    fsspec = require_optional(
+        "fsspec", extra="datasets", purpose="reading NWB files by byte range"
+    )
+    h5py = require_optional(
+        "h5py", extra="datasets", purpose="reading NWB files by byte range"
+    )
     with (
         fsspec.open(
             source, "rb", block_size=4 << 20, cache_type="blockcache"

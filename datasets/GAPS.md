@@ -2064,9 +2064,10 @@ data-quirk, false-alarm, silent-hazard. Results referred to below are in
   extent") and by `compute_spatial_rates` ("bandwidth=5 spans the
   environment"). With the stated arena declared, neither runs: the
   environment is the right size and the positions shrink into its centre.
-  Occupancy piles into 1 of 1601 bins on 000582 (600 s), 2 of 3601 on
+  Occupancy piles into 4 of 1600 bins on 000582 (600 s), 2 of 3601 on
   Gardner, 2 of 1601 on Kanter, 4 of 2828 on Vollan's open field, and
-  `compute_spatial_rates` returns maps 99.9 % NaN, with no warning. Positions
+  `compute_spatial_rates` returns maps 99.75 % (000582) to 99.9 % NaN, with
+  no warning. Positions
   read as mm on 000405 (x 0.1) cover 1.3 % of the declared 1.5 x 1.3 m field,
   again silent. Where the shrunk positions leave the declared outline (the
   002030 circle sits at 10-105 cm), occupancy raises ("Interval filtering

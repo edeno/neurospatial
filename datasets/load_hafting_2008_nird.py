@@ -42,7 +42,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch_zip_member
 from _record import (
     Range,
     Recording,
@@ -52,6 +51,8 @@ from _record import (
     validate_recording,
 )
 from _tracks import declared_geometry
+
+from neurospatial.datasets._fetch import fetch_zip_member
 
 DATASET = {
     "key": "hafting_2008_nird",

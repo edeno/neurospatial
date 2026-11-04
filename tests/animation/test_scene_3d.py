@@ -90,6 +90,23 @@ def test_3d_grid_draws_only_active_cells_and_distinguishes_missing(env3d):
     scene.close()
 
 
+def test_3d_field_is_drawn_no_more_opaque_than_max_opacity(env3d):
+    """Every observed cell's faces carry the field's max_opacity, in each frame."""
+    values = np.array([[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, np.nan]] * 2)
+    scene = Animation(
+        env3d, AnimationField(values, [5.0, 6.0], vmin=0, vmax=6, max_opacity=0.3)
+    )
+    for time in (5.0, 6.0):
+        scene.render_frame(time, dpi=30)
+        cells = scene._renderer.figure.axes[0].collections[0]
+        # Faces are depth-sorted when drawn, so count them rather than index.
+        alpha = np.round(cells.get_facecolor()[:, 3], 6)
+        values_shown, counts = np.unique(alpha, return_counts=True)
+        # Seven observed cells at 0.3; the missing one in translucent gray.
+        assert dict(zip(values_shown, counts, strict=True)) == {0.3: 42, 0.4: 6}
+    scene.close()
+
+
 @pytest.mark.parametrize(
     ("overlay", "match"),
     [

@@ -641,6 +641,9 @@ uv run pytest
 # Napari GUI tests (requires napari/Qt display support)
 uv run pytest -n 0 -m "napari and not slow"
 
+# Public-dataset tests: download sessions into $NEUROSPATIAL_DATA_DIR
+uv run --extra datasets pytest -m realdata tests/datasets -n 0
+
 # Specific test file
 uv run pytest tests/test_environment.py
 

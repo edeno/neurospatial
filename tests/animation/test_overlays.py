@@ -1200,6 +1200,38 @@ class TestValidateBounds:
         ]
         assert len(runtime_warnings) == 0
 
+    @pytest.mark.parametrize(("offset", "warns"), [(4.0, False), (30.0, True)])
+    def test_track_positions_within_its_width_are_inside(self, offset, warns):
+        """A head tracked beside a straight track's centerline, within its width, fits.
+
+        The track's bins span its centerline only (x = 0 here); its arena adds
+        the 10 cm width, where a tracked head swings.
+        """
+        import warnings
+
+        import networkx as nx
+
+        from neurospatial import Environment
+
+        graph = nx.Graph()
+        graph.add_node("a", pos=(0.0, 0.0))
+        graph.add_node("b", pos=(0.0, 100.0))
+        graph.add_edge("a", "b", distance=100.0)
+        env = Environment.from_graph(
+            graph, [("a", "b")], bin_size=2.5, units="cm", track_width=10.0
+        )
+        y = np.linspace(1.0, 99.0, 200)
+        positions = np.column_stack([np.where(np.arange(200) % 2, offset, -offset), y])
+        overlay = PositionOverlay(positions, np.linspace(0.0, 10.0, 200))
+        frame_times = np.linspace(0.0, 10.0, 20)
+        if warns:
+            with pytest.warns(UserWarning, match="outside environment bounds"):
+                overlay.convert_to_data(frame_times, 20, env)
+            return
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            overlay.convert_to_data(frame_times, 20, env)
+
 
 class TestValidateSkeletonConsistency:
     """Test _validate_skeleton_consistency() function."""

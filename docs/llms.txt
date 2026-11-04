@@ -72,6 +72,7 @@ required.
 - `binning`: Build an environment from your own bins with :meth:`Environment.from_bins`.
 - `compute_spatial_rate`: Compute spatial firing rate map for one neuron.
 - `compute_spatial_rates`: Compute spatial firing rate maps for multiple neurons.
+- `datasets`: Public spatial neuroscience datasets, downloaded once and checked.
 - `decode_position`: Decode position from a precomputed spike-count matrix and rate maps.
 - `decode_session`: Encode, bin, and decode in one call.
 - `decoding`: Bayesian decoding subpackage for population neural analysis.
@@ -255,6 +256,18 @@ required.
 - `TrackLinearization` (class): Owned track geometry and its absolute linear coordinate system.
 - `TransformedLocator` (class): Find bins of affinely mapped cells by mapping points back to them.
 - `TriangleShapes` (class): Mesh points ``(n_points, 2)`` and active triangles ``(n_bins, 3)``.
+
+### neurospatial.datasets
+
+- `Conversion` (class): One change a loader made to the file's values, and why it is right.
+- `DatasetCheckError` (class): Raised when a loaded session fails a check that refuses the load.
+- `DownloadWarning` (class): Issued before a session's file is downloaded: its size, URL and cache.
+- `Provenance` (class): Where a session's file came from and when it was fetched.
+- `Recording` (class): One session of a public dataset, as the arrays analyses take.
+- `VideoSource` (class): A session's camera video: where it is, its frame times and its calibration.
+- `catalog`: List every session of every dataset, one row each.
+- `fetch_all`: Download every session of a dataset into the cache.
+- `load`: Load one session of a public dataset, checked, as the arrays analyses take.
 
 ### neurospatial.decoding
 

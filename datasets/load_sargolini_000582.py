@@ -3,30 +3,23 @@
 What was recorded: six units from layer III of medial entorhinal cortex in a
 Long Evans rat running for 600 s in a 1 m × 1 m enclosure (session
 ``sub-10884_ses-03080402``, the session pynapple's null-distribution tutorial
-uses). Position comes from one tracking LED at 50 Hz.
+uses), one tracking LED at 50 Hz.
 
-Where it lives: DANDI 000582, published version 0.251111.2151, one 15.9 MB NWB
-file, CC-BY-4.0.
+The session is read by ``neurospatial.datasets.load("sargolini_2006",
+"sub-10884_ses-03080402")``, whose module
+(``neurospatial/datasets/sargolini_2006.py``) and docs page give the file,
+the conversions (positions in cm), the declared 100 cm square (placed at the
+samples' midrange, the file's axes kept) and the watch-outs.
+``_record.from_public`` converts it to the survey's record.
 
-What the loader converts: ``read_position`` returns metres (the file stores cm
-with ``conversion=0.01``); positions are multiplied by 100 to give cm. The file
-has a single LED, so head direction cannot be computed and ``headings`` is None.
+Analysis choices are the public loader's ``params``: ``bin_size`` 2.5 cm,
+``dt`` 0.25 s, no speed filter, alternating 60 s train/test blocks.
 
-Analysis choices (``params``):
-
-- ``bin_size`` 2.5 cm: 40 bins across the 100 cm box, the binning of the
-  pynapple reference table.
-- ``dt`` 0.25 s: open-field decoding bin. On the harness's simulated open field
-  the default 25 ms bin gives a median error near 30 cm and 250 ms about 9 cm.
-- ``min_speed`` None: no speed filter, as in the pynapple reference.
-- ``train_epochs``/``test_epochs``: alternating 60 s blocks of the session, so
-  decoding is always tested on held-out time.
-
-Environment (``geometry["environment"]``): the 1 m x 1 m enclosure the file's
-``session_description`` states, built with ``Environment.from_polygon`` at
-``bin_size``. Its centre and rotation are fitted to the samples
-(``_geometry.declared_rectangle``); the residual of the samples' own fitted
-sides against 100 cm is in ``conversions``.
+Survey-only: ``params["nwb_source"]`` (the cached file) and
+``params["readers_used"]``, for the ``io.nwb_readers`` operation; the
+declared box's facts the environment fidelity study reads (placed at the
+samples' midrange, the stated square, the file's ``session_description``,
+each axis's range against the stated side).
 """
 
 from __future__ import annotations
@@ -35,22 +28,20 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_asset_url, fetch
-from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
     Recording,
-    alternating_blocks,
+    SurveyOnly,
     check_expectations,
+    from_public,
+    public_file,
     validate_recording,
 )
 
 DATASET = {
     "key": "sargolini_000582",
-    "title": "Sargolini et al. 2006, rat MEC grid and conjunctive cells, 1 m box",
-    "source": "https://dandiarchive.org/dandiset/000582/0.251111.2151",
-    "license": "CC-BY-4.0",
-    "download_size": "15.9 MB",
+    "public": "sargolini_2006",
+    "session": "sub-10884_ses-03080402",
 }
 
 # Pre-registered from the dataset description and pynapple's tutorial, before
@@ -63,77 +54,48 @@ EXPECTATIONS: dict[str, Any] = {
     "position_max": Range((0.0, 0.0), (55.0, 55.0)),
 }
 
-_PATH = "sub-10884/sub-10884_ses-03080402_behavior+ecephys.nwb"
-_ASSET_ID = "49d80982-99f4-4e17-a553-498fc9a4688f"
-_BIN_SIZE = 2.5
-_SHA256 = "89e1a1030565030d69bc061058403da8161ccaf103f20bdfeca56c37f4881501"
-
 
 def load(cache: Path | None = None) -> Recording:
-    """Fetch the session and return it as a ``Recording`` (positions in cm)."""
-    import pynwb
+    """The session from ``neurospatial.datasets``; positions in cm."""
+    from neurospatial.datasets import load as load_public
+    from neurospatial.datasets import sargolini_2006
+    from neurospatial.datasets._fetch import open_nwb
 
-    from neurospatial.io.nwb import read_position, read_units
-
-    path = fetch(
-        dandi_asset_url(_ASSET_ID),
-        Path(_PATH).name,
-        sha256=_SHA256,
-        subdir=DATASET["key"],
-        cache=cache,
-    )
-    with pynwb.NWBHDF5IO(path, "r", load_namespaces=True) as io:
-        nwbfile = io.read()
-        position = read_position(nwbfile)
-        units = read_units(nwbfile)
+    rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
+    source = public_file(DATASET["public"], DATASET["session"], cache=cache)
+    with open_nwb(source) as nwbfile:
         description = nwbfile.session_description
-
-    if position.units != "m":
-        msg = f"expected read_position to return metres, got {position.units!r}"
-        raise ValueError(msg)
-    times = np.asarray(position.times, dtype=float)
-    positions = np.asarray(position.positions, dtype=float) * 100.0
-    train, test = alternating_blocks(times[0], times[-1], 60.0)
-    environment = declared_rectangle(
-        positions,
-        100.0,
-        100.0,
-        bin_size=_BIN_SIZE,
-        units="cm",
-        name=DATASET["key"],
-        source="NWB session_description: 'a 1 x 1 meter enclosure'",
-    )
-    rec = Recording(
-        dataset=DATASET["key"],
-        session="sub-10884_ses-03080402",
-        source=f"{DATASET['source']} {_PATH}",
-        license=DATASET["license"],
-        times=times,
-        positions=positions,
-        position_units="cm",
-        spike_times=tuple(
-            np.asarray(spikes, dtype=float) for spikes in units.spike_times
-        ),
-        unit_ids=np.asarray(units.unit_ids),
-        geometry={"shape": "square", "size_cm": 100.0, "description": description},
-        params={
-            "bin_size": _BIN_SIZE,
-            "dt": 0.25,
-            "min_speed": None,
-            "train_epochs": train,
-            "test_epochs": test,
-            "nwb_source": str(path),
-            "readers_used": ("position", "units"),
-        },
-        conversions=(
-            "positions: cm = read_position metres x 100 (file stores cm, conversion=0.01)",
-            "headings: none; the file has one LED (SpatialSeriesLED1)",
-        ),
-    )
-    return with_environment(
+    tracked = rec.positions[np.isfinite(rec.positions).all(axis=1)]
+    spans = np.ptp(tracked, axis=0)
+    why = "the declared box's facts the environment fidelity study reads"
+    return from_public(
         rec,
-        *environment,
-        tracked_point="one tracking LED (the file's single LED series, SpatialSeriesLED1)",
+        key=DATASET["key"],
+        geometry={
+            "declared_from": SurveyOnly(
+                "fitted to the samples", f"{why}: placed at the samples' midrange"
+            ),
+            "shape": SurveyOnly("square", f"{why}: the stated shape"),
+            "size_cm": SurveyOnly(sargolini_2006.SIDE, f"{why}: the stated side"),
+            "description": SurveyOnly(
+                description, f"{why}: the file's session_description"
+            ),
+            "environment_fit": SurveyOnly(
+                {
+                    f"size_residual_{axis}": float(span / sargolini_2006.SIDE - 1)
+                    for axis, span in zip("xy", spans, strict=True)
+                },
+                f"{why}: the samples' range on each axis against the stated side",
+            ),
+        },
+        params={
+            "nwb_source": SurveyOnly(
+                source, "the cached NWB file the session was read from"
+            ),
+            "readers_used": SurveyOnly(
+                ("position", "units"), "the io.nwb readers the public loader calls"
+            ),
+        },
     )
 
 

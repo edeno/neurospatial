@@ -2,49 +2,26 @@
 
 What was recorded: rat j16 on 2021-07-10, run epoch ``02_r1`` of the
 spatial-bandit task of Comrie et al. (2026), with 203 spike-sorted
-hippocampal units. Head position, velocity and orientation are sampled at
-500 Hz; the file also holds the linearized position and the track graph the
-authors used to linearize it (10 nodes, 9 corridors: three arms of two
-branches each, joined at a centre).
+hippocampal units, the head position at 500 Hz, the authors' linearized
+position and their track graph (10 nodes, 9 corridors).
 
-Where it lives: Zenodo record 23020757 (CC BY 4.0), one ``.npz`` of numeric
-and string arrays, 75.1 MB. The record states it has no pickled objects; it
-is read with ``np.load(..., allow_pickle=False)``, which refuses any object
-array instead of unpickling it.
+The session is read by ``neurospatial.datasets.load("comrie_2026")``, whose
+module (``neurospatial/datasets/comrie_2026.py``) and docs page give the
+file, the conversions, the declared track and the watch-outs, for example
+why ``head_orientation`` is not used as the heading. ``_record.from_public``
+converts it to the survey's record.
 
-What the loader converts:
+Analysis choices are the public loader's ``params``: ``bin_size`` 4 cm,
+``graph_bin_size`` 2 cm, ``min_speed`` 10 cm/s (the preprint's locomotion
+threshold; this survey used 4 cm/s before the preprint was read, and no
+expectation depends on it), ``dt`` 0.25 s and alternating 60 s train/test
+blocks. ``params["linearized"]`` is the file's ``linear_position``.
 
-- Nothing in scale. The record does not state the position unit. It is cm:
-  the Frank lab's convention, the maze spans about 2 m, and the file's
-  ``head_speed`` matches the speed of the stored positions (|step| / dt) in
-  the same units per second. The span is range checked.
-- Times stay as stored, in seconds of the Unix epoch (about 1.6e9 s);
-  float64 resolves them to about 0.2 µs.
-- Spike trains are cut from ``spike_times`` at ``spike_offsets``. 21 of the
-  203 units have no spikes in this epoch; they are kept as empty trains, as
-  the file lists them.
-- ``head_orientation`` (radians, [-π, π]) is not used as head direction:
-  heading minus the direction of movement while running has a circular mean
-  of +13° (0.23 rad), with the same sign on each of the nine corridors,
-  beyond the 0.2 rad frame check. The spread (20°) says it is the head's
-  direction; the constant offset is either the headstage mounting or the
-  rat's head posture, and the file cannot tell which.
-  ``params["head_orientation"]`` keeps it for comparison.
-- The track graph: nodes at ``track_node_positions``, edges
-  ``track_edges`` with ``track_edge_distance`` as each edge's ``distance``.
-
-Analysis choices (``params``): ``bin_size`` 4 cm; ``graph_bin_size`` 2 cm
-along the track; ``min_speed`` 4 cm/s (running); ``dt`` 0.25 s and
-alternating 60 s train/test blocks for decoding; ``linearized`` is the
-file's ``linear_position`` (cm along the authors' edge order, with 15 cm
-gaps between edges).
-
-Declared environment (``geometry["environment"]``): the authors' track graph
-from the file, every edge kept. The 6.5 cm hallway width Comrie et al. 2026
-(STAR Methods) state is recorded as the physical width; about 64 % of head
-samples lie beyond half of it, spread a few centimetres off every corridor
-and most when the rat is stopped or turning (G-152), so the track is built
-with a placement tolerance measured from the samples (``conversions``).
+Survey-only: ``geometry["graph"]``, the authors' track graph (the declared
+environment's linearization graph), which the expectations count, and
+``geometry["graph_root"]``; the declared track's facts the environment
+fidelity study reads (``_tracks.public_track_facts``: declared from the
+authors' graph, the 6.5 cm stated hallway width, the placement tolerance).
 """
 
 from __future__ import annotations
@@ -53,24 +30,20 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch
 from _record import (
     Range,
     Recording,
-    alternating_blocks,
+    SurveyOnly,
     check_expectations,
-    checked_span,
-    heading_vs_movement,
+    from_public,
     validate_recording,
 )
-from _tracks import declared_geometry, with_declared
+from _tracks import public_track_facts
 
 DATASET = {
     "key": "j16_23020757",
-    "title": "Rat j16, 2021-07-10, run epoch 02_r1, hippocampal units in a spatial bandit maze",
-    "source": "https://doi.org/10.5281/zenodo.23020757",
-    "license": "CC-BY-4.0",
-    "download_size": "75.1 MB",
+    "public": "comrie_2026",
+    "session": "j1620210710_02_r1_figure04_inputs",
 }
 
 # Pre-registered from the catalog (203 units, 870,018 spikes, 709,321
@@ -90,111 +63,35 @@ EXPECTATIONS: dict[str, Any] = {
     ),
 }
 
-_NAME = "j1620210710_02_r1_figure04_inputs.npz"
-_URL = f"https://zenodo.org/api/records/23020757/files/{_NAME}/content"
-_SHA256 = "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3"
-_SPAN_CM = (150.0, 260.0)
-_HALLWAY_CM = 6.5
-RUNNING_CM_S = 10.0
-
-
-def track_graph(arrays: dict[str, np.ndarray]) -> Any:
-    """The authors' track graph: node ``pos`` in cm, edge ``distance`` in cm."""
-    import networkx as nx
-
-    graph = nx.Graph()
-    for node, xy in zip(
-        arrays["track_nodes"], arrays["track_node_positions"], strict=True
-    ):
-        graph.add_node(int(node), pos=(float(xy[0]), float(xy[1])))
-    for (a, b), distance in zip(
-        arrays["track_edges"], arrays["track_edge_distance"], strict=True
-    ):
-        graph.add_edge(int(a), int(b), distance=float(distance))
-    return graph
-
 
 def load(cache: Path | None = None) -> Recording:
-    """Fetch the epoch's arrays; positions in cm, spikes in s, the track graph."""
-    path = fetch(_URL, _NAME, sha256=_SHA256, subdir=DATASET["key"], cache=cache)
-    with np.load(path, allow_pickle=False) as arrays:
-        z = {name: arrays[name] for name in arrays.files}
-    times = z["position_time"]
-    positions = np.column_stack(
-        [z["position/head_position_x"], z["position/head_position_y"]]
-    )
-    span = checked_span(positions, *_SPAN_CM)
-    step_speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
-    stored_speed = z["position/head_speed"][1:]
-    agreement = float(np.corrcoef(step_speed, stored_speed)[0, 1])
-    if agreement < 0.8:
-        msg = f"head_speed no longer matches the positions' speed (r = {agreement:.2f})"
-        raise ValueError(msg)
-    orientation = z["position/head_orientation"]
-    offset, spread = heading_vs_movement(
-        times, positions, orientation, min_speed=RUNNING_CM_S
-    )
-    offsets = z["spike_offsets"]
-    spikes = tuple(
-        np.asarray(z["spike_times"][offsets[i] : offsets[i + 1]], dtype=float)
-        for i in range(len(offsets) - 1)
-    )
-    train, test = alternating_blocks(times[0], times[-1], 60.0)
-    rec = Recording(
-        dataset=DATASET["key"],
-        session="j16 20210710 02_r1",
-        source=_URL,
-        license=DATASET["license"],
-        times=times,
-        positions=positions,
-        position_units="cm",
-        spike_times=spikes,
-        unit_ids=np.arange(len(spikes)),
-        geometry={"graph": track_graph(z), "graph_root": 9},
-        params={
-            "bin_size": 4.0,
-            "graph_bin_size": 2.0,
-            "min_speed": 4.0,
-            "dt": 0.25,
-            "train_epochs": train,
-            "test_epochs": test,
-            "linearized": z["position/linear_position"],
-            "head_orientation": orientation,
+    """The session from ``neurospatial.datasets``; positions in cm, the track graph."""
+    from neurospatial.datasets import comrie_2026
+    from neurospatial.datasets import load as load_public
+
+    rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
+    return from_public(
+        rec,
+        key=DATASET["key"],
+        geometry={
+            # The authors' graph: the study must not take geometry["graph"]
+            # as a reference independent of the declared track.
+            **public_track_facts(
+                rec,
+                declared_from="authors' graph",
+                physical_width=comrie_2026.HALLWAY_WIDTH,
+                speed_thresholds=(rec.params["min_speed"], 30.0),
+            ),
+            "graph": SurveyOnly(
+                rec.env.binning.linearization.graph,
+                "the authors' track graph from the file (track_nodes,"
+                " track_edges), the declared environment's linearization graph",
+            ),
+            "graph_root": SurveyOnly(
+                9, "the node a graph environment of geometry['graph'] is walked from"
+            ),
         },
-        conversions=(
-            "positions: head_position_x, head_position_y as stored (cm, inferred)",
-            span,
-            "positions: unit checked: head_speed vs |step| / dt correlation"
-            f" {agreement:.2f}, medians {np.median(stored_speed):.2f} and"
-            f" {np.median(step_speed):.2f} cm/s",
-            "times: position_time as stored (Unix epoch seconds)",
-            f"spike_times: spike_times split at spike_offsets; {len(spikes)} units,"
-            f" {sum(len(s) == 0 for s in spikes)} with no spikes",
-            "headings: head_orientation not used; minus the direction of movement"
-            f" above {RUNNING_CM_S:g} cm/s: circular mean {np.degrees(offset):.1f} deg,"
-            f" median spread {np.degrees(spread):.1f} deg (frame check: |mean| <="
-            " 0.2 rad = 11.5 deg)",
-            "geometry['graph']: track_nodes, track_node_positions, track_edges,"
-            " track_edge_distance",
-        ),
     )
-    entries, line = declared_geometry(
-        rec.geometry["graph"],
-        positions,
-        times=times,
-        kind="the authors' track graph (10 nodes, 9 corridors)",
-        source="file: track_nodes, track_edges; Comrie et al. 2026 STAR Methods:"
-        " 'Hallways were 6.5 cm wide and linear track segments were each 53 cm long'",
-        bin_size=rec.params["graph_bin_size"],
-        physical_width=_HALLWAY_CM,
-        units="cm",
-        name=DATASET["key"],
-        placement="the file's node positions",
-        placed_by="authors' graph",
-        tracked_point="the head (the file's head_position; how it was tracked is not stated)",
-        speed_thresholds=(4.0, 30.0),
-    )
-    return with_declared(rec, entries, line)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,39 @@
+{
+  "dataset": "peyrache_2015",
+  "paper": "Peyrache et al. (2015)",
+  "paper_citation": "Peyrache A, Lacroix MM, Petersen PC, Buzs\u00e1ki G (2015). Internally organized mechanisms of the head direction sense. Nature Neuroscience 18, 569\u2013575. https://doi.org/10.1038/nn.3968",
+  "species": "mouse",
+  "brain_regions": [
+    "anterior thalamus (antero-dorsal nucleus)"
+  ],
+  "apparatus": "53 x 46 cm open arena, between two sleep sessions",
+  "license": "not stated",
+  "archive": {
+    "name": "OSF jb2gd",
+    "url": "https://osf.io/jb2gd/",
+    "citation": "Viejo, Guillaume (2023) Pynapple-files: NWB files to be used for the pynapple and GLM package documentation. OSF. https://osf.io/tkzr7/"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 39.0,
+      "basis": "stated",
+      "source": "Peyrache et al. 2015, Methods (PMC4376557): 'The LED locations were detected online and resampled at 39 Hz by the acquisition system'"
+    },
+    "position_span": null,
+    "speed_limit": null
+  },
+  "sessions": [
+    {
+      "session": "Mouse32-140822",
+      "archive": "OSF jb2gd",
+      "url": "https://osf.io/jb2gd/download",
+      "file_name": "Mouse32-140822.nwb",
+      "sha256": "1a919a033305b8f58b5c3e217577256183b14ed5b436d9c70989dee6dafe0f35",
+      "size_bytes": 36589592,
+      "verified": true,
+      "default": true,
+      "n_units": 49,
+      "verification": "Checked by hand on 2026-11-03 against the file, its OSF metadata, pynapple's head-direction tutorial (which downloads this file) and the paper's Methods (author manuscript, PMC4376557). File: its SHA-256 is the one OSF publishes for jb2gd. Units: 49, of which 31 have location 'adn' (unit ids 4 to 34) and 18 'thalamus'; the tutorial prints 49 units and selects the same 31 ADn units, a second reader of the same file. Time: head direction every 0.0256 s (39.06 Hz; the paper states 39 Hz) from 8812.4 to 10771.3 s, inside the wake epoch [8812.3, 10771.3) s, which lasts 32.6 minutes (the paper: 30 to 45 minutes of foraging); sleep before and after, 2.4 h and 3.1 h (the paper: sleep sessions of about 2 hours, so these run longer); spikes from 0.0015 to 22025.0 s, inside the epochs; 49 gaps longer than 1 s, the longest 8.55 s. Heading: ry from 0 to 2\u03c0 rad; the frame is stated nowhere read. The file holds no x/y position."
+    }
+  ]
+}

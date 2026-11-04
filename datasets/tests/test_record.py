@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 from _record import (
     Range,
+    SurveyOnly,
     check_expectations,
+    from_public,
     heading_vs_movement,
     validate_recording,
 )
@@ -341,3 +343,112 @@ def test_alternate_within_balances_each_label_in_trial_order():
     for label, (n_train, n_test) in {"A": (3, 2), "B": (3, 2), "C": (1, 0)}.items():
         assert train[labels == label].sum() == n_train
         assert (~train[labels == label]).sum() == n_test
+
+
+def _public_recording(env_kind):
+    """A neurospatial.datasets Recording of a simulated 60 s open-field session."""
+    import pandas as pd
+
+    from neurospatial.datasets import Conversion, Provenance, Recording
+    from neurospatial.simulation import open_field_session
+
+    session = open_field_session(duration=60.0, n_place_cells=4, rng=0)
+    n_units = len(session.spike_times)
+    return Recording(
+        dataset="synthetic_2026",
+        session="s1",
+        paper="Synthetic et al. (2026)",
+        animal="simulated rat",
+        apparatus="1 m box",
+        brain_regions=("CA1",),
+        license="CC0-1.0",
+        citation="Synthetic (2026)",
+        provenance=Provenance(
+            archive="Synthetic 0",
+            url="https://example.org/s1.nwb",
+            sha256="0" * 64,
+            size_bytes=1,
+            neurospatial_version="0.0",
+            fetched_at="2026-11-04T00:00:00+00:00",
+        ),
+        clock="the simulation's clock",
+        times=session.times,
+        spike_times=tuple(session.spike_times),
+        units=pd.DataFrame(
+            {"brain_region": "CA1", "label": None},
+            index=pd.Index([f"u{k}" for k in range(n_units)], name="unit_id"),
+        ),
+        env=session.env,
+        env_kind=env_kind,
+        env_source="the simulated 1 m box",
+        positions=session.positions,
+        position_units="cm",
+        tracking="the simulated head",
+        linearized=session.positions[:, 0],
+        epochs={"run": np.array([[0.0, 60.0]])},
+        events={"rewards": np.array([1.0, 2.0])},
+        params={"bin_size": 2.5, "dt": 0.25, "min_speed": 5.0},
+        conversions=(Conversion("positions: as stored, cm", "stated", "the file"),),
+        watch_outs=("A pitfall with its numbers.",),
+    )
+
+
+def test_from_public_maps_each_field_and_labels_survey_additions():
+    public = _public_recording("declared")
+    rec = from_public(
+        public,
+        key="synthetic_survey",
+        params={
+            "replay_dt": SurveyOnly(0.02, "the replay bin"),
+            "min_speed": SurveyOnly(4.0, "the survey's threshold"),
+        },
+        events={"candidate_events": SurveyOnly(np.array([[3.0, 3.1]]), "bursts")},
+        geometry={
+            "declared_from": SurveyOnly("fitted to the samples", "the placement"),
+            "tracked_point": SurveyOnly("an LED", "the survey's wording"),
+        },
+    )
+    validate_recording(rec)
+    assert rec.dataset == "synthetic_survey"
+    assert rec.session == "s1"
+    assert rec.source == "https://example.org/s1.nwb"
+    assert rec.unit_ids.tolist() == list(public.units.index)
+    np.testing.assert_array_equal(rec.positions, public.positions)
+    assert rec.positions.flags.writeable
+    for got, stored in zip(rec.spike_times, public.spike_times, strict=True):
+        np.testing.assert_array_equal(got, stored)
+    np.testing.assert_array_equal(rec.params["linearized"], public.linearized)
+    assert rec.geometry["environment"]() is public.env
+    assert rec.geometry["declared_from"] == "fitted to the samples"
+    assert rec.geometry["tracked_point"] == "an LED"
+    assert rec.params["replay_dt"] == 0.02
+    assert rec.params["min_speed"] == 4.0
+    assert set(rec.events) == {"rewards", "candidate_events"}
+    assert rec.watch_outs == ("A pitfall with its numbers.",)
+    assert rec.conversions == (
+        "positions: as stored, cm [stated: the file]",
+        "survey-only params['replay_dt']: the replay bin",
+        "survey-only params['min_speed'] (replaces the public loader's):"
+        " the survey's threshold",
+        "survey-only events['candidate_events']: bursts",
+        "survey-only geometry['declared_from']: the placement",
+        "survey-only geometry['tracked_point'] (replaces the public loader's):"
+        " the survey's wording",
+    )
+
+
+def test_from_public_needs_declared_from_for_a_declared_environment():
+    # The fidelity study tells an independent reference from the geometry a
+    # track was declared from by it, so a declared environment needs it.
+    with pytest.raises(ValueError, match="needs 'declared_from'"):
+        from_public(_public_recording("declared"), key="synthetic_survey")
+
+
+def test_from_public_maps_activity_kind():
+    public = _public_recording("inferred")
+    imaged = replace(
+        public, activity=np.ones((len(public.times), 2)), activity_times=public.times
+    )
+    with pytest.raises(ValueError, match="activity_kind is needed"):
+        from_public(imaged, key="s")
+    assert from_public(imaged, key="s", activity_kind="dff").activity_kind == "dff"

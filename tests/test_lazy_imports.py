@@ -33,6 +33,7 @@ _EXPECTED_SUBMODULES = (
     "annotation",
     "animation",
     "io",
+    "datasets",
 )
 
 # Each headline export must load and cache its canonical owner on demand.
@@ -179,6 +180,22 @@ def test_environment_import_loads_no_plotting_or_table_libraries() -> None:
         "loaded = [m for m in ('matplotlib', 'mpl_toolkits', 'pandas') "
         "if m in sys.modules]\n"
         "print(','.join(loaded))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == ""
+
+
+def test_datasets_import_needs_no_extra() -> None:
+    """Importing ``neurospatial.datasets`` loads none of the extra's libraries."""
+    import subprocess
+
+    code = (
+        "import sys\n"
+        "import neurospatial.datasets, neurospatial.datasets._fetch\n"
+        "libs = ('pynwb', 'hdmf', 'fsspec', 'h5py', 'inflate64', 'matio', 'pandas')\n"
+        "print(','.join(m for m in libs if m in sys.modules))\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=True

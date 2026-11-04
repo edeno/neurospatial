@@ -772,8 +772,7 @@ def nwb_readers(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     agreement is reported as "ok (loader used this reader)": it shows the
     reader is consistent, not that it read the file correctly.
     """
-    from _fetch import open_nwb
-
+    from neurospatial.datasets._fetch import open_nwb
     from neurospatial.io.nwb import read_head_direction, read_position, read_units
     from neurospatial.stats import wrap_angle
 
@@ -877,9 +876,8 @@ def read_pose_operation(rec: Recording, _cache: dict[str, Any]) -> Outcome:
     recording's when the pose shares its unit, else 1/50 of the keypoint's
     largest span. A reader error other than "not found" propagates.
     """
-    from _fetch import open_nwb
-
     from neurospatial import Environment
+    from neurospatial.datasets._fetch import open_nwb
     from neurospatial.encoding import compute_spatial_rates
     from neurospatial.io.nwb import read_pose
 

@@ -1,33 +1,37 @@
 # Example Data
 
 The public J16 recording used by the real-data tutorial is downloaded on demand.
-Data files are not committed to this repository; this README and
-`load_bandit_data.py` are tracked.
+Data files are not committed to this repository; this README is tracked.
 
-## Downloading the J16 bandit dataset
+## The J16 bandit dataset
 
 [Tutorial 04: real-data analysis](../examples/04_real_data_analysis.ipynb) uses the
 recording from rat J16, July 10, 2021, run epoch `02_r1`, on a spatial-bandit
-maze task.
+maze task. It is the `comrie_2026` dataset of `neurospatial.datasets`:
 
-From the repository root, download the published file with:
+```python
+from neurospatial.datasets import load
 
-```bash
-uv run python data/load_bandit_data.py
+rec = load("comrie_2026")  # Verify the cached file or download it once.
+print(rec)  # Attribution, clock, tracking, environment, units, watch-outs.
+
+rec.times          # Unix timestamps in seconds, (n_time,)
+rec.positions      # Head position in cm, (n_time, 2)
+rec.spike_times    # Per-unit spike-time arrays, on the clock of rec.times
+rec.linearized     # Position along the linearized track in cm
+rec.env            # The authors' track graph as an Environment, 2 cm bins
+track = rec.env.binning.linearization
+track.graph, track.edge_order, track.edge_spacing  # NetworkX graph, edges, 15 cm
+rec.params["head_orientation"]  # The file's head orientation, radians
 ```
 
-This saves `data/j1620210710_02_r1_figure04_inputs.npz` (about 75 MB) and
-verifies its SHA-256. A verified cached copy is reused without downloading.
-An existing file with a different checksum is left untouched; move it aside
-before fetching the published copy. To choose another directory:
-
-```bash
-uv run python data/load_bandit_data.py --data-path /path/to/recordings
-```
-
-The tutorial fetches and verifies the file when run, so its first run needs an
-internet connection. Download it in advance to run offline. Browsing the
-rendered documentation does not download data.
+The first call saves `j1620210710_02_r1_figure04_inputs.npz` (about 75 MB)
+into `~/.cache/neurospatial/datasets/comrie_2026/` (or under the folder
+`NEUROSPATIAL_DATA_DIR` names) and verifies its SHA-256. A verified cached
+copy is reused without downloading, so run the call once in advance to work
+offline. An existing file with a different checksum is left untouched; move it
+aside before fetching the published copy. Browsing the rendered documentation
+does not download data.
 
 | Published input | Value |
 | --- | --- |
@@ -38,36 +42,21 @@ rendered documentation does not download data.
 | Data license | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 
 The archive contains numeric and string arrays, loaded with
-`np.load(..., allow_pickle=False)`. It replaces the five pickle/joblib files
-previously used by these examples; those files are not needed.
+`np.load(..., allow_pickle=False)`.
 
-### Loading J16 data
-
-```python
-from data.load_bandit_data import fetch_bandit_data, load_neural_recording_from_files
-
-fetch_bandit_data("data/")  # Verify the cached file or download it once.
-data = load_neural_recording_from_files("data/", "j1620210710_02_r1")
-
-position_info = data["position_info"]          # pandas DataFrame
-spike_times = data["spike_times"]              # Per-unit spike-time arrays
-track_graph = data["track_graph"]              # NetworkX graph
-linear_edge_order = data["linear_edge_order"]  # Ordered track edges
-linear_edge_spacing = data["linear_edge_spacing"]  # 15 cm
-```
-
-`load_neural_recording_from_files` reads the local NPZ and returns the same
-dictionary keys as the earlier loader. Fetching is explicit; importing the
-helper does not download anything. Use the same directory in both calls if
-you chose a custom download location.
+`rec.headings` is None: the file's `head_orientation` is kept in
+`rec.params["head_orientation"]` instead, because minus the direction of
+movement while running it has a circular mean of about +13 degrees, a
+constant offset from the LEDs' mounting or the rat's head posture that the
+file cannot tell apart (see the watch-outs in `print(rec)`).
 
 ### Recording contents and units
 
 The published file contains 709,321 position samples spanning approximately
-1,418.6 seconds (23.6 minutes), sampled at 500 Hz. The position DataFrame has
-Unix timestamps in seconds as its index and these columns:
+1,418.6 seconds (23.6 minutes), sampled at 500 Hz, on Unix timestamps in
+seconds. Its position arrays, `position/<name>` in the file, are:
 
-| Columns | Meaning and units |
+| Names | Meaning and units |
 | --- | --- |
 | `head_position_x`, `head_position_y` | Head position in cm |
 | `head_orientation` | Head direction in radians |
@@ -106,14 +95,14 @@ CC BY 4.0 license.
 
 The local J16 video `20210710_j16_02_r1.1.mp4` used by some video-overlay
 demonstrations is **not** part of the Zenodo archive. It is not downloaded
-by this helper and has no public download provided here. The place-field
+by `neurospatial.datasets` and has no public download provided here. The place-field
 and path-progression analyses do not require it.
 
 ## Separate local example: Arthur session (2022-03-24)
 
 The following describes optional Trodes tracking data from rat Arthur on
 March 24, 2022. These files are separate from the public J16 archive and
-are not provided or downloaded by `load_bandit_data.py`.
+are not provided or downloaded by `neurospatial.datasets`.
 
 - `arthur20220324_position_info.parquet`: camera tracking (73,450 frames,
   approximately 40 minutes).

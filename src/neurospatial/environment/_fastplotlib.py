@@ -126,6 +126,8 @@ class ColorScale:
         at or below ``vmin``, every value is opaque), so what is drawn
         below, such as a video, shows where values are low. Missing bins
         keep ``nan_color``. None: every value is opaque.
+    max_opacity : float, default=1.0
+        Every value's opacity (as perceived) is scaled by this.
     """
 
     cmap: str | Colormap
@@ -133,6 +135,7 @@ class ColorScale:
     vmax: float
     nan_color: str | None
     opaque_from: float | None = None
+    max_opacity: float = 1.0
 
     @cached_property
     def lut(self) -> NDArray[np.float32]:
@@ -143,18 +146,21 @@ class ColorScale:
         colormap = colormaps[self.cmap] if isinstance(self.cmap, str) else self.cmap
         missing = (0.0, 0.0, 0.0, 0.0) if self.nan_color is None else self.nan_color
         colors = colormap(np.linspace(0.0, 1.0, _N_COLORS))
-        if self.opaque_from is not None:
+        if self.opaque_from is not None or self.max_opacity < 1:
             from neurospatial.animation._style import see_through_alpha
 
             # The animation views' see-through rule, blended in linear light.
-            colors[:, 3] *= perceived_alpha(
-                see_through_alpha(
+            opacity = (
+                np.ones(_N_COLORS)
+                if self.opaque_from is None
+                else see_through_alpha(
                     np.linspace(self.vmin, self.vmax, _N_COLORS),
                     self.vmin,
                     self.vmax,
                     self.opaque_from,
                 )
             )
+            colors[:, 3] *= perceived_alpha(opacity * self.max_opacity)
         return np.vstack([to_rgba(missing), colors]).astype(np.float32)
 
     @cached_property
@@ -404,7 +410,11 @@ class FieldGraphic:
         if self._volume:
             alpha_mode = "weighted_blend"  # order-independent: no depth sort
         else:
-            see_through = scale.nan_color is None or scale.opaque_from is not None
+            see_through = (
+                scale.nan_color is None
+                or scale.opaque_from is not None
+                or scale.max_opacity < 1
+            )
             alpha_mode = "blend" if see_through else "solid"
         if cells is not None:
             style = {

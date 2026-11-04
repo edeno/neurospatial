@@ -410,6 +410,37 @@ def test_three_dimensional_grid_keeps_plot_field_refusal():
         plt.close(figure)
 
 
+def test_plot_draws_a_track_with_one_dimensional_node_positions_along_x():
+    """A graph whose nodes hold 1-D positions is drawn along x, at y = 0."""
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_node("start", pos=(10.0,))
+    graph.add_node("end", pos=(170.0,))
+    graph.add_edge("start", "end", distance=160.0)
+    env = Environment.from_graph(graph, [("start", "end")], bin_size=2.0, units="cm")
+    assert env.bin_centers.shape == (80, 1)
+
+    figure, axes = plt.subplots()
+    try:
+        env.plot(ax=axes)
+        from matplotlib.collections import PathCollection
+
+        offsets = np.concatenate(
+            [
+                collection.get_offsets()
+                for collection in axes.collections
+                if isinstance(collection, PathCollection)
+            ]
+        )
+        np.testing.assert_array_equal(offsets[:, 1], 0.0)
+        np.testing.assert_allclose(
+            [offsets[:, 0].min(), offsets[:, 0].max()], [10.0, 170.0]
+        )
+    finally:
+        plt.close(figure)
+
+
 @pytest.mark.parametrize("drawing", ["triangles", "outline"])
 def test_plot_helpers_draw_every_multipolygon_component(drawing):
     """An outline with separated arenas draws each exterior and one legend label."""

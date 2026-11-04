@@ -54,7 +54,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch_zip_member
 from _record import (
     Range,
     Recording,
@@ -69,6 +68,8 @@ from _tracks import (
     star_candidates,
     with_declared,
 )
+
+from neurospatial.datasets._fetch import fetch_zip_member
 
 DATASET = {
     "key": "shipley_30902972",

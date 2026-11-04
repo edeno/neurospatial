@@ -24,8 +24,9 @@
 # distinguish changes in firing rate from uneven time spent along the maze.
 #
 # **You will need:** Spike times, position samples and a maze layout, all
-# supplied with this example. The first download needs an internet connection
-# and about 75 MB of disk space. No previous notebook variables are needed.
+# loaded by `neurospatial.datasets`. The first download needs an internet
+# connection and about 75 MB of disk space. No previous notebook variables are
+# needed.
 #
 # **Estimated time**: 25-30 minutes
 #
@@ -42,10 +43,11 @@
 # trials or the animal's intended goal. Unit numbers below are array indices
 # within this archive.
 # See the [data guide](https://github.com/edeno/neurospatial/blob/main/data/README.md)
-# for study attribution, CC BY 4.0 licensing and preprocessing details.
+# for study attribution, CC BY 4.0 licensing and preprocessing details;
+# `print(recording)` after loading shows them too, with the session's known
+# pitfalls.
 
 # %% jupyter={"source_hidden": true}
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -56,50 +58,43 @@ from matplotlib.patches import Circle
 
 from neurospatial import Environment, Regions
 from neurospatial.behavior import detect_region_visits, detect_trials, path_progress
+from neurospatial.datasets import load
 from neurospatial.encoding import compute_spatial_rates
 
 _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
-_root = next(
-    path
-    for path in (_here, *_here.parents)
-    if (path / "data" / "load_bandit_data.py").exists()
-)
-sys.path.insert(0, str(_root / "examples"))
+if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
+    _here = _here / "examples"
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
 from _style import apply_style
 
 apply_style(figsize=(10, 5))
-_spec = importlib.util.spec_from_file_location(
-    "load_bandit_data", _root / "data" / "load_bandit_data.py"
-)
-if _spec is None or _spec.loader is None:
-    raise ImportError("Could not import the recording helper from data/.")
-_loader = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_loader)
 
 # %% [markdown]
 # ## 1. Load spikes and position on the same clock
 #
-# The first run downloads about 75 MB. Later runs verify and reuse the cached
-# file. For offline work, run `uv run python data/load_bandit_data.py` beforehand.
+# `load("comrie_2026")` downloads the archive's file (about 75 MB) on the first
+# run, into `~/.cache/neurospatial/datasets` or the folder
+# `NEUROSPATIAL_DATA_DIR` names, and checks its SHA-256. Later runs reuse the
+# cached file offline; run the cell once beforehand to work offline. The loader
+# also checks that spikes and positions share one clock and that the positions
+# are in centimeters.
+#
 # Both measurements use the recording clock. Subtract the first tracking time
 # from both so that plots start at zero without shifting spikes relative to
 # position. A gap longer than 0.5 s will separate observed stretches of movement.
 
 # %%
-archive = _loader.fetch_bandit_data(_root / "data")
-recording = _loader.load_neural_recording_from_files(
-    _root / "data", "j1620210710_02_r1"
-)
-tracking = recording["position_info"]
-origin = float(tracking.index[0])
-times = tracking.index.to_numpy(dtype=float) - origin
-positions = tracking[["head_position_x", "head_position_y"]].to_numpy()
-spike_times = [train - origin for train in recording["spike_times"]]
+recording = load("comrie_2026")
+origin = float(recording.times[0])
+times = recording.times - origin
+positions = recording.positions
+spike_times = [train - origin for train in recording.spike_times]
 unit_ids = np.arange(len(spike_times))
 spike_counts = np.array([len(train) for train in spike_times])
 max_gap = 0.5  # seconds; do not join movement or assign spikes across longer gaps
 recording_window = (float(times[0]), float(times[-1]))
-print(f"Loaded verified recording: {archive.name}")
+print(f"Loaded verified recording: {recording.dataset}, {recording.session}")
 print(f"{len(times):,} samples, {len(unit_ids)} units, {times[-1] / 60:.1f} minutes")
 print(f"Tracking gaps > {max_gap:g} s: {np.count_nonzero(np.diff(times) > max_gap)}")
 
@@ -119,14 +114,21 @@ print(f"Tracking gaps > {max_gap:g} s: {np.count_nonzero(np.diff(times) > max_ga
 # the measured corridor width plus the tracking error, then check where the
 # excluded samples are, as below. This archive does not record the maze's
 # width, so we first measure how far the tracked head is from the centerline.
+#
+# The loaded recording already holds the authors' track graph as an
+# environment, `recording.env`, with a placement width the loader measured from
+# the samples (its `conversions` say how). Here we take the graph, its edge
+# order and the 15 cm spacing between segments from it, and choose the width
+# ourselves.
 
 # %%
-graph = recording["track_graph"]
+track = recording.env.binning.linearization
+graph = track.graph
 endpoint_nodes = sorted(node for node in graph if graph.degree(node) == 1)
 centerline_only = Environment.from_graph(
     graph,
-    edge_order=recording["linear_edge_order"],
-    edge_spacing=recording["linear_edge_spacing"],
+    edge_order=track.edge_order,
+    edge_spacing=track.edge_spacing,
     bin_size=2.0,
 )
 # to_linear projects every position onto the centerline, however far off it.
@@ -162,8 +164,8 @@ print(f"Farthest head position from the centerline: {off_centerline.max():.1f} c
 # %%
 env = Environment.from_graph(
     graph,
-    edge_order=recording["linear_edge_order"],
-    edge_spacing=recording["linear_edge_spacing"],
+    edge_order=track.edge_order,
+    edge_spacing=track.edge_spacing,
     bin_size=2.0,
     track_width=41.0,  # cm; reaches the reward wells past the arm ends
     name="J16 maze",

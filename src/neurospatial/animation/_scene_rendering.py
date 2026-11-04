@@ -243,19 +243,25 @@ class SceneRenderer:
         scale = self.prepared.field_scales[name]
         low, high = scale.vmin, scale.vmax
         cmaps: dict[bool, Any] = {False: scale.cmap}
-        if scale.opaque_from is not None:
+        if scale.opaque_from is not None or scale.max_opacity < 1:
+            from dataclasses import replace
+
             from matplotlib.colors import ListedColormap
 
-            # Low values fade out so a video below shows through them.
+            # Low values fade out so a video below shows through them, and
+            # no value is more opaque than the field's max_opacity.
             cmaps[True] = ListedColormap(scale.colors())
+            if scale.max_opacity < 1:
+                cmaps[False] = ListedColormap(replace(scale, opaque_from=None).colors())
         if env.n_dims == 3:
+            # No video is drawn below a 3-D field, so only max_opacity applies.
             cells, faces = self._field3d(
-                ax, self.prepared.field_sample(field, time), scale.cmap, low, high
+                ax, self.prepared.field_sample(field, time), cmaps[False], low, high
             )
 
             def update3d(time: float) -> None:
                 colors = _cell_colors(
-                    self.prepared.field_sample(field, time), scale.cmap, low, high
+                    self.prepared.field_sample(field, time), cmaps[False], low, high
                 )
                 cells.set_facecolor(np.repeat(colors, faces, axis=0))
 

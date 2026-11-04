@@ -548,6 +548,33 @@ def plot_triangles(
     return ax
 
 
+def _on_plane(points: Any) -> NDArray[np.float64]:
+    """Points as ``(n_points, 2)`` plane coordinates; a 1-D track lies at y = 0.
+
+    Parameters
+    ----------
+    points : array-like, shape (n_points, 1) or (n_points, 2)
+        Coordinates of a track's nodes, bin centers or bin edges.
+
+    Returns
+    -------
+    ndarray of float64, shape (n_points, 2)
+    """
+    array = np.asarray(points, dtype=np.float64).reshape(len(points), -1)
+    if array.shape[1] == 1:
+        return np.column_stack([array[:, 0], np.zeros(len(array))])
+    return array
+
+
+def _positions_on_plane(graph: nx.Graph) -> dict[Any, NDArray[np.float64]]:
+    """Each node's ``pos`` as a 2-D point; 1-D positions are drawn at y = 0."""
+    positions = nx.get_node_attributes(graph, "pos")
+    if not positions:
+        return {}
+    points = _on_plane(list(positions.values()))
+    return dict(zip(positions, points, strict=True))
+
+
 def plot_track(
     ax: Axes | None = None,
     *,
@@ -559,13 +586,16 @@ def plot_track(
     grid_edges: tuple[NDArray[np.float64], ...] | None,
     figsize: tuple[float, float] = (7, 7),
 ) -> Axes:
-    """Draw the track graph, active bin centers and projected linear bin edges."""
+    """Draw the track graph, active bin centers and projected linear bin edges.
+
+    A track whose nodes have 1-D positions is drawn along the x axis, at y = 0.
+    """
     import matplotlib.pyplot as plt
 
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
     ax.set_title(f"{title} Layout")
-    original_node_pos = nx.get_node_attributes(linearization.graph, "pos")
+    original_node_pos = _positions_on_plane(linearization.graph)
     nx.draw_networkx_nodes(
         linearization.graph,
         original_node_pos,
@@ -578,13 +608,13 @@ def plot_track(
         ax.plot(pos[:, 0], pos[:, 1], color="gray", zorder=-1, label="original edges")
     for node_id, pos in original_node_pos.items():
         ax.text(pos[0], pos[1], str(node_id), ha="center", va="center", zorder=10)
-    bin_node_pos = nx.get_node_attributes(connectivity, "pos")
+    bin_node_pos = _positions_on_plane(connectivity)
     nx.draw_networkx_nodes(
         connectivity, bin_node_pos, ax=ax, node_size=30, node_color="black"
     )
-    _draw_connections(ax, bin_centers, pairs, colors="black", zorder=-1)
+    _draw_connections(ax, _on_plane(bin_centers), pairs, colors="black", zorder=-1)
     if grid_edges is not None:
-        edge_points = linearization.linear_to_nd(grid_edges[0])
+        edge_points = _on_plane(linearization.linear_to_nd(grid_edges[0]))
         ax.plot(
             edge_points[:, 0],
             edge_points[:, 1],

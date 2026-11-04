@@ -198,6 +198,8 @@ class FieldScale:
         rises from zero at ``vmin`` to one at this value, the typical
         frame's peak (``vmax`` at the latest). None draws every value
         opaque.
+    max_opacity : float
+        The field's ``max_opacity``: every opacity is scaled by it.
     """
 
     cmap: str
@@ -206,6 +208,7 @@ class FieldScale:
     label: str
     extend: tuple[bool, bool] = (False, False)
     opaque_from: float | None = None
+    max_opacity: float = 1.0
 
     @property
     def extend_name(self) -> str:
@@ -227,7 +230,12 @@ class FieldScale:
         from neurospatial.animation._style import field_colors
 
         return field_colors(
-            self.cmap, self.vmin, self.vmax, self.opaque_from, n_colors=n_colors
+            self.cmap,
+            self.vmin,
+            self.vmax,
+            self.opaque_from,
+            n_colors=n_colors,
+            max_opacity=self.max_opacity,
         )
 
 
@@ -276,6 +284,7 @@ def field_scale(
         label,
         (bool(np.any(lows < vmin)), bool(np.any(highs > vmax))),
         (peak if peak > 0 else 1.0) if see_through else None,
+        field.max_opacity,
     )
 
 
@@ -402,7 +411,7 @@ class PreparedScene:
             }
             self.track_scales = {
                 name: (
-                    replace(scale, opaque_from=None)
+                    replace(scale, opaque_from=None, max_opacity=1.0)
                     if self.projection is None
                     else field_scale(
                         scene.fields[name],

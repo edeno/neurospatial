@@ -56,7 +56,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch, open_nwb
 from _geometry import declared_rectangle, with_environment
 from _record import (
     Range,
@@ -66,6 +65,8 @@ from _record import (
     heading_vs_movement,
     validate_recording,
 )
+
+from neurospatial.datasets._fetch import fetch, open_nwb
 
 DATASET = {
     "key": "kanter_2025",

@@ -1264,6 +1264,60 @@ def straight_placement(fit: Mapping[str, float], units: str) -> str:
     )
 
 
+def public_track_facts(
+    rec: Any,
+    *,
+    declared_from: str,
+    physical_width: float | None,
+    speed_thresholds: Sequence[float],
+    stated_lengths: Mapping[str, tuple[float, float]] | None = None,
+) -> dict[str, Any]:
+    """The ``declared_*`` geometry facts of a public dataset's declared track.
+
+    The entries ``declared_geometry`` gives a survey loader's track, for a
+    track ``neurospatial.datasets`` declared (``rec`` is its Recording):
+    the graph and placement tolerance of ``rec.env``, the stated physical
+    width (``"stated"``, or None when no source states one), the speed bands
+    of the share of samples beyond it, where the placement comes from
+    (``declared_from``, one of ``PLACED_BY``), and ``environment_fit``: the
+    misfit evidence of ``edge_fit`` on ``rec.positions`` and each stated
+    length's residual (``stated_lengths``: label -> (the samples', stated)).
+
+    Returns
+    -------
+    dict of str to SurveyOnly
+        Each fact labelled survey-only, for ``from_public(geometry=...)``.
+    """
+    from _record import SurveyOnly
+
+    if declared_from not in PLACED_BY:
+        msg = f"declared_from must be one of {PLACED_BY}, not {declared_from!r}"
+        raise ValueError(msg)
+    graph = rec.env.binning.linearization.graph
+    # One bin along the track: the graph's bin where a 2-D grid has its own.
+    bin_size = rec.params.get("graph_bin_size", rec.params["bin_size"])
+    fit = edge_fit(graph, np.asarray(rec.positions), tolerance=bin_size)
+    fit["max_edge_bias_limit"] = MAX_EDGE_BIAS_BINS * bin_size
+    for key, (fitted, stated) in (stated_lengths or {}).items():
+        fit[f"size_residual_{key}"] = fitted / stated - 1
+    facts = {
+        "declared_from": declared_from,
+        "declared_graph": graph,
+        "declared_physical_width": physical_width,
+        "declared_physical_width_kind": None if physical_width is None else "stated",
+        "declared_track_width": float(rec.env.arena.width),
+        "declared_track_width_kind": "placement tolerance",
+        "declared_speed_thresholds": tuple(speed_thresholds),
+        "environment_fit": fit,
+    }
+    why = (
+        "the declared track's facts the environment fidelity study reads, from"
+        " the public environment (its graph and track_width) and the stated"
+        " apparatus"
+    )
+    return {name: SurveyOnly(value, why) for name, value in facts.items()}
+
+
 def with_declared(rec: Any, entries: Mapping[str, Any], line: str) -> Any:
     """``rec`` with the declared-geometry ``entries`` and their ``conversions`` line."""
     from dataclasses import replace
@@ -1273,28 +1327,6 @@ def with_declared(rec: Any, entries: Mapping[str, Any], line: str) -> Any:
         geometry={**rec.geometry, **entries},
         conversions=(*rec.conversions, line),
     )
-
-
-def fit_circle_centre(
-    positions: NDArray[np.float64], *, scale: float
-) -> tuple[NDArray[np.float64], float]:
-    """Centre and radius of a circle through the samples (robust least squares).
-
-    The residual is each sample's distance from the centre minus the radius,
-    with a soft-L1 loss of scale ``scale`` so samples off the ring count less.
-    """
-    from scipy.optimize import least_squares
-
-    samples = tracked(positions)
-    start = 0.5 * (samples.min(axis=0) + samples.max(axis=0))
-    radius = float(np.median(np.linalg.norm(samples - start, axis=1)))
-    fit = least_squares(
-        lambda x: np.linalg.norm(samples - x[:2], axis=1) - x[2],
-        [*start, radius],
-        loss="soft_l1",
-        f_scale=scale,
-    )
-    return np.asarray(fit.x[:2]), float(fit.x[2])
 
 
 def circle_points(

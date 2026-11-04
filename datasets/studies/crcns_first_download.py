@@ -29,7 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from _fetch import _crcns_open, cache_root
+from neurospatial.datasets._fetch import _crcns_open, cache_root
 
 
 class _Hashing:

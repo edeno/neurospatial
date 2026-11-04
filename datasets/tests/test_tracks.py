@@ -11,7 +11,6 @@ from _tracks import (
     cut_region,
     declared_geometry,
     figure8_candidates,
-    fit_circle_centre,
     graph_arrays,
     graph_from_points,
     graph_residual,
@@ -167,15 +166,12 @@ def test_star_x_and_z_fits_recover_their_layouts():
     assert node_error(fitted, z_track) < 3.0
 
 
-def test_loop_centreline_and_circle_fit_recover_a_ring():
+def test_loop_centreline_recovers_a_ring():
     angle = RNG.uniform(0, 2 * np.pi, 20000)
     radius = 50.0 + RNG.normal(0, 3.0, angle.size)
     points = np.column_stack([radius * np.cos(angle) + 40, radius * np.sin(angle) - 5])
     centreline = loop_centreline(points, n_points=72)
     assert np.linalg.norm(centreline - [40, -5], axis=1) == pytest.approx(50.0, abs=1.5)
-    centre, fitted = fit_circle_centre(points, scale=3.0)
-    assert centre == pytest.approx([40.0, -5.0], abs=0.5)
-    assert fitted == pytest.approx(50.0, abs=0.5)
 
 
 def _declare(graph, points, **kwargs):

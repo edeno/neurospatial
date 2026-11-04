@@ -494,6 +494,23 @@ NWB (Neurodata Without Borders) read / write integration.
 - `environment_from_position()`: Build an environment directly from
   the position channel of an NWB file
 
+### [neurospatial.datasets](neurospatial/datasets/index.md)
+
+Loaders for published spatial neuroscience datasets, requiring
+`neurospatial[datasets]` to load. See [Public Datasets](../user-guide/datasets.md).
+
+**Key Functions and Classes:**
+
+- `catalog()`: One row per session of every dataset, without downloading
+- `load()`, `fetch_all()`: Download, verify, check and read a session; download
+  every session of a dataset
+- `Recording`, `Conversion`, `Provenance`, `VideoSource`: A loaded session, each
+  conversion applied (with its basis), where the file came from, and a session's
+  camera video
+- `DatasetCheckError`: Raised when a session fails the clock or units check
+- `DownloadWarning`: Issued before a session's file is downloaded, with its
+  size, URL and cache directory
+
 ### [neurospatial.simulation](neurospatial/simulation/index.md) <span style="color: #4CAF50;">v0.2.0+</span>
 
 Generate synthetic spatial data, neural activity, and spike trains for testing and validation.

@@ -10,10 +10,13 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial.stats import circular_mean, wrap_angle
 
 POSITION_UNITS = {"cm", "m", "pixel", "arbitrary"}
 
@@ -53,6 +56,9 @@ class Recording:
         ``train_epochs``, ``test_epochs``, ``replay_dt``, ``nwb_source``).
     conversions : tuple of str
         Every transformation the loader applied, one line each.
+    watch_outs : tuple of str
+        The pitfalls ``neurospatial.datasets`` reports for a session it
+        loaded (``from_public``); empty for the survey's own loaders.
     """
 
     dataset: str
@@ -73,6 +79,168 @@ class Recording:
     geometry: Mapping[str, Any] = field(default_factory=dict)
     params: Mapping[str, Any] = field(default_factory=dict)
     conversions: tuple[str, ...] = ()
+    watch_outs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SurveyOnly:
+    """A field the survey adds to a public dataset's session, and why.
+
+    ``from_public`` records each one in ``conversions`` as a line starting
+    ``survey-only``, so a result can be traced to what the public loader
+    gives and what the survey chose on top of it.
+    """
+
+    value: Any
+    why: str
+
+
+def from_public(
+    rec: Any,
+    *,
+    key: str,
+    params: Mapping[str, SurveyOnly] | None = None,
+    events: Mapping[str, SurveyOnly] | None = None,
+    geometry: Mapping[str, SurveyOnly] | None = None,
+    activity_kind: str | None = None,
+) -> Recording:
+    """The survey's ``Recording`` of a session ``neurospatial.datasets.load`` returned.
+
+    Where the two records name or shape a field differently, it is mapped
+    here, in one place:
+
+    - ``dataset`` is the survey ``key`` (the results file's name);
+      ``source`` is the file's URL (``rec.provenance.url``);
+    - ``unit_ids`` is the index of ``rec.units``;
+    - ``params["linearized"]`` is ``rec.linearized``, where the file has one;
+    - ``geometry["environment"]`` returns ``rec.env`` when it is declared
+      from the stated apparatus; an environment inferred from the samples is
+      left out, so the driver builds its own from the samples.
+      ``geometry["tracked_point"]`` is ``rec.tracking``;
+    - ``activity_kind``, which the public record does not hold, is given here
+      for imaging activity (``"dff"``, ``"binned_rate"``);
+    - each ``Conversion`` becomes one line, ``"<text> [<basis>: <evidence>]"``;
+    - ``watch_outs`` are kept as they are.
+
+    Arrays are copied, writable. ``params``, ``events`` and ``geometry`` add
+    the survey's own fields to the public ones, each with a ``survey-only``
+    line in ``conversions`` saying why, and whether it replaces a public
+    value.
+
+    Parameters
+    ----------
+    rec : neurospatial.datasets.Recording
+    key : str
+        The survey's dataset key, for example ``"j16_23020757"``.
+    params, events, geometry : mapping of str to SurveyOnly, optional
+    activity_kind : str, optional
+        What ``rec.activity`` holds; required when it is not None.
+
+    Returns
+    -------
+    Recording
+
+    Raises
+    ------
+    ValueError
+        If the environment is declared and ``geometry`` gives no
+        ``declared_from`` (the environment fidelity study needs it to tell an
+        independent reference from the geometry the track was declared
+        from), or ``rec.activity`` is given without ``activity_kind``.
+    """
+
+    def copied(value: Any) -> Any:
+        return np.array(value) if isinstance(value, np.ndarray) else value
+
+    def merged(
+        field_name: str,
+        public: Mapping[str, Any],
+        extra: Mapping[str, SurveyOnly] | None,
+    ) -> tuple[dict[str, Any], list[str]]:
+        out = {name: copied(value) for name, value in public.items()}
+        lines = []
+        for name, added in (extra or {}).items():
+            replaced = " (replaces the public loader's)" if name in out else ""
+            out[name] = added.value
+            lines.append(f"survey-only {field_name}[{name!r}]{replaced}: {added.why}")
+        return out, lines
+
+    declared = rec.env is not None and rec.env_kind == "declared"
+    if declared and "declared_from" not in (geometry or {}):
+        msg = (
+            f"{key}: the environment is declared, so geometry needs"
+            " 'declared_from' (one of _tracks.PLACED_BY), which the environment"
+            " fidelity study judges the reference's independence by"
+        )
+        raise ValueError(msg)
+    if rec.activity is not None and activity_kind is None:
+        msg = f"{key}: rec.activity is given, so activity_kind is needed"
+        raise ValueError(msg)
+    public_params = dict(rec.params)
+    if rec.linearized is not None:
+        public_params["linearized"] = rec.linearized
+    # A public Recording always says what was tracked (it refuses an empty
+    # ``tracking``), so ``tracked_point`` is always a stated string.
+    public_geometry: dict[str, Any] = {"tracked_point": rec.tracking}
+    if declared:
+        env = rec.env
+        public_geometry["environment"] = lambda: env
+    all_params, param_lines = merged("params", public_params, params)
+    all_events, event_lines = merged("events", rec.events, events)
+    all_geometry, geometry_lines = merged("geometry", public_geometry, geometry)
+    return Recording(
+        dataset=key,
+        session=rec.session,
+        source=rec.provenance.url,
+        license=rec.license,
+        times=copied(rec.times),
+        positions=copied(rec.positions),
+        position_units=rec.position_units,
+        headings=copied(rec.headings),
+        spike_times=tuple(np.array(train) for train in rec.spike_times),
+        unit_ids=rec.units.index.to_numpy(),
+        activity=copied(rec.activity),
+        activity_times=copied(rec.activity_times),
+        activity_kind=activity_kind,
+        epochs={name: np.array(table) for name, table in rec.epochs.items()},
+        events=all_events,
+        geometry=all_geometry,
+        params=all_params,
+        conversions=(
+            *(f"{c.text} [{c.basis}: {c.evidence}]" for c in rec.conversions),
+            *param_lines,
+            *event_lines,
+            *geometry_lines,
+        ),
+        watch_outs=tuple(rec.watch_outs),
+    )
+
+
+def public_file(
+    dataset: str, session: str, *, cache: Path | None = None, stream: bool = False
+) -> str:
+    """The file ``neurospatial.datasets.load`` reads for a session, for ``nwb_source``.
+
+    Parameters
+    ----------
+    dataset, session : str
+        The public dataset id and the archive's session id.
+    cache : Path, optional
+        The cache directory, as for ``neurospatial.datasets.load``.
+    stream : bool, default False
+        Give the URL the session is read from by byte range (a DANDI asset)
+        instead of the cached file.
+
+    Returns
+    -------
+    str
+        The cached, checksum-verified path, or the byte-range URL after
+        DANDI's published SHA-256 is checked.
+    """
+    from neurospatial.datasets._load import _session_entry, _stream_url, fetch_session
+
+    entry = _session_entry(dataset, session)
+    return _stream_url(entry) if stream else str(fetch_session(entry, cache=cache))
 
 
 def _is_interval_table(table: NDArray[np.float64]) -> bool:
@@ -353,9 +521,9 @@ def heading_vs_movement(
     moving = np.arctan2(step[:, 1], step[:, 0])
     start = headings[:-lag]
     running = (speed > min_speed) & np.isfinite(start)
-    diff = np.angle(np.exp(1j * (start[running] - moving[running])))
-    mean = float(np.angle(np.mean(np.exp(1j * diff))))
-    spread = float(np.median(np.abs(np.angle(np.exp(1j * (diff - mean))))))
+    diff = wrap_angle(start[running] - moving[running])
+    mean = circular_mean(diff)
+    spread = float(np.median(np.abs(wrap_angle(diff - mean))))
     return mean, spread
 
 

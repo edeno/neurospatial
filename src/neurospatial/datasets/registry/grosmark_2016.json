@@ -1,0 +1,145 @@
+{
+  "dataset": "grosmark_2016",
+  "paper": "Grosmark & Buzs\u00e1ki (2016)",
+  "paper_citation": "Grosmark AD, Buzs\u00e1ki G (2016). Diversity in neural firing dynamics supports both rigid and learned hippocampal sequences. Science 351, 1440\u20131443. https://doi.org/10.1126/science.aad1935",
+  "species": "rat",
+  "brain_regions": [
+    "dorsal hippocampus CA1"
+  ],
+  "apparatus": "one novel maze per session, between two sleep sessions in the home cage: a 1.9 m wooden linear maze (1.6 m stem), a 2.3 m metal linear maze (2 m stem) or a 1 m diameter wooden circular maze",
+  "license": "CC-BY-4.0",
+  "archive": {
+    "dandiset": "000044",
+    "version": "0.261005.2101",
+    "url": "https://dandiarchive.org/dandiset/000044/0.261005.2101",
+    "citation": "Grosmark, Andres D.; Buzs\u00e1ki, Gy\u00f6rgy (2026) Diversity in neural firing dynamics supports both rigid and learned hippocampal sequences (Version 0.261005.2101) [Data set]. DANDI Archive. https://doi.org/10.48324/dandi.000044/0.261005.2101"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 39.0626,
+      "basis": "stated",
+      "source": "the rate attribute of each DANDI 000044 file's position series (39.0626 Hz); the OSF file's timestamps step 0.0256 s. The Supplementary Materials' Methods state LED tracking 'at 39.69 Hz', 1.6% faster, which no file matches"
+    },
+    "position_span": {
+      "value": [
+        80.0,
+        276.0
+      ],
+      "basis": "stated",
+      "source": "the Supplementary Materials' Methods of Grosmark & Buzs\u00e1ki 2016: a 1 m diameter circular maze, a 1.9 m and a 2.3 m linear maze; the largest span of the tracked positions must lie between 80% of the smallest maze (80 cm) and 120% of the largest (276 cm)"
+    },
+    "speed_limit": null
+  },
+  "sessions": [
+    {
+      "session": "Achilles_10252013",
+      "archive": "OSF hu5ma",
+      "url": "https://osf.io/hu5ma/download",
+      "file_name": "Achilles_10252013.nwb",
+      "sha256": "42857015aad4c2f7f6f3d4022611a69bc86d714cf465183ce30955731e614990",
+      "size_bytes": 765002640,
+      "verified": true,
+      "default": true,
+      "n_units": 137,
+      "license": "not stated",
+      "data_citation": "Balzani, Edoardo; Broderick, William F; Viejo, Guillaume (2024) NeMoS Tutorial: datasets for the NeMoS tutorials. OSF. https://osf.io/5crqj/",
+      "verification": "Checked by hand on 2026-11-03 against the file, its OSF metadata, NeMoS's place-cell tutorial (which downloads this file), the paper's Supplementary Materials, and DANDI 000044's copy of the session (sub-Achilles_ses-Achilles-10252013, read by byte range). File: its SHA-256 is the one OSF publishes for hu5ma. Units: 137 (120 pE, 17 pI; 65 lCA1, 72 rCA1), with the same ids, regions, cell types and 8,414,607 spike times, unit by unit, as DANDI's copy. Time: 12,847 position samples every 0.0256 s (39.06 Hz; the paper states 39.69 Hz) from 18,190.9 to 20,143.2 s, each a DANDI sample time to 5e-8 s, inside DANDI's maze epoch [18,079.5, 20,147.0) s; spikes from 0.036 to 34,861.1 s, inside DANDI's PRE, MAZE and POST epochs. Space: the position is the head's distance along the track's axis in cm (33.10 + 0.99975 x - 0.02299 y of DANDI's 2-D positions in cm, residuals at most 0.07 cm), 5.4 to 165.3 cm, a span of 159.9 cm against the stated 1.6 m stem. Trials: 84, each starting and stopping at a position sample. The file holds no epochs; the loader takes DANDI's."
+    },
+    {
+      "session": "sub-Achilles_ses-Achilles-10252013",
+      "archive": "DANDI 000044",
+      "asset_path": "sub-Achilles/sub-Achilles_ses-Achilles-10252013_behavior+ecephys.nwb",
+      "asset_id": "c0ac352b-9da5-44b0-b73d-41a9ee3c3b1d",
+      "sha256": "ff10511d44d53f634c82331f345f6839574b8926ba037bde94988adfd70c0ef3",
+      "size_bytes": 8737996640,
+      "verified": false,
+      "default": false,
+      "n_units": 137,
+      "verification": ""
+    },
+    {
+      "session": "sub-Achilles_ses-Achilles-11012013",
+      "archive": "DANDI 000044",
+      "asset_path": "sub-Achilles/sub-Achilles_ses-Achilles-11012013_behavior+ecephys.nwb",
+      "asset_id": "080a847a-5211-4101-bc05-fd45b7e77dbd",
+      "sha256": "aed03b46d70d5a0cbf334ea034b3de6b16a6d2bbd5219530b95c97477356b157",
+      "size_bytes": 9189448944,
+      "verified": false,
+      "default": false,
+      "n_units": 104,
+      "verification": ""
+    },
+    {
+      "session": "sub-Buddy_ses-Buddy-06272013",
+      "archive": "DANDI 000044",
+      "asset_path": "sub-Buddy/sub-Buddy_ses-Buddy-06272013_behavior+ecephys.nwb",
+      "asset_id": "185b8a36-d671-4688-ba05-9e89a902c486",
+      "sha256": "a88825bef47991f41f63ed8ebf5a7a6b392ce235e9e0ea22c22088c11fa3b20e",
+      "size_bytes": 5237763329,
+      "verified": false,
+      "default": false,
+      "n_units": 68,
+      "verification": ""
+    },
+    {
+      "session": "sub-Cicero_ses-Cicero-09012014",
+      "archive": "DANDI 000044",
+      "asset_path": "sub-Cicero/sub-Cicero_ses-Cicero-09012014_behavior+ecephys.nwb",
+      "asset_id": "97252767-5e90-45cf-a1b8-8cbff2f2a3a3",
+      "sha256": "0e2fe45a2b043c5c28fe772e5d27cb4e410b4d2afc56df36347e35ff9b32e7c4",
+      "size_bytes": 8681539968,
+      "verified": false,
+      "default": false,
+      "n_units": 73,
+      "verification": ""
+    },
+    {
+      "session": "sub-Cicero_ses-Cicero-09102014",
+      "archive": "DANDI 000044",
+      "asset_path": "sub-Cicero/sub-Cicero_ses-Cicero-09102014_behavior+ecephys.nwb",
+      "asset_id": "d6b8092b-94e2-4e37-8660-86f9e856aec8",
+      "sha256": "1e9c1c62b307be02f684ef992595256dc3efbb43cad5cdc0399316063c37c482",
+      "size_bytes": 9122402839,
+      "verified": false,
+      "default": false,
+      "n_units": 105,
+      "verification": ""
+    },
+    {
+      "session": "sub-Cicero_ses-Cicero-09172014",
+      "archive": "DANDI 000044",
+      "asset_path": "sub-Cicero/sub-Cicero_ses-Cicero-09172014_behavior+ecephys.nwb",
+      "asset_id": "d9a1e010-af4a-4fba-812d-66e2d1a71e35",
+      "sha256": "93e00321cec009ff5e8f2851d1bc35a87b43edc816d9bd7e21621f18f4629286",
+      "size_bytes": 8357225247,
+      "verified": false,
+      "default": false,
+      "n_units": 72,
+      "verification": ""
+    },
+    {
+      "session": "sub-Gatsby_ses-Gatsby-08022013",
+      "archive": "DANDI 000044",
+      "asset_path": "sub-Gatsby/sub-Gatsby_ses-Gatsby-08022013_behavior+ecephys.nwb",
+      "asset_id": "93569d6c-781f-4422-938e-e935a62863de",
+      "sha256": "88db268fb66b7e592591099bf3ef1cc8e7845e903c180c4c05bfb919fecd41ea",
+      "size_bytes": 7943576286,
+      "verified": false,
+      "default": false,
+      "n_units": 80,
+      "verification": ""
+    },
+    {
+      "session": "sub-Gatsby_ses-Gatsby-08282013",
+      "archive": "DANDI 000044",
+      "asset_path": "sub-Gatsby/sub-Gatsby_ses-Gatsby-08282013_behavior+ecephys.nwb",
+      "asset_id": "402f78e1-9e7d-486c-8822-93d538ed6ccc",
+      "sha256": "927e80767a882042d4c311b4ca6c46b409f04a901da825d5d36631b5d66d57c8",
+      "size_bytes": 8439011642,
+      "verified": false,
+      "default": false,
+      "n_units": 51,
+      "verification": ""
+    }
+  ]
+}

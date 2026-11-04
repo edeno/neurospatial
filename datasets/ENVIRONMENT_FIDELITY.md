@@ -79,7 +79,7 @@ principal axis) is reported but does not judge.
 
 | Dataset | Kind | Bins | Dims | Components (1 % of bins or more) | Holes (bins) | Sparse / thin bins | Unsupported / far links | Corner links | Geodesic / straight (median, p95) | On-track samples / bins | Env / track (median, p5) | Outline: covered / centres outside / wall gap / hull over rectangle, circle | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| sargolini_000582 | open | 1399 | 2 | 1 (1) | 72 (136) | 6% / 14% | 7.6% / 0.10% | 12 | 1.06, 1.12 | – | – | 86% / 0% / 1.3 / 0.99, 0.64 | mismatch: bins cover 86% of the stated square (94% with holes filled) |
+| sargolini_000582 | open | 1399 | 2 | 1 (1) | 72 (136) | 6% / 14% | 7.6% / 0.10% | 12 | 1.06, 1.12 | – | – | 91% / 0% / 1.3 / 0.99, 0.64 | matches |
 | figure8_000552 | track | 667 | 2 | 3 (1) | 7 (806) | 6% / 13% | 3.4% / 0.00% | 6 | 1.21, 1.68 | – | – | – | matches |
 | figure8_000552_linearized | track | 112 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.04 | – | – | – | mismatch: loop ends 222 apart along the bins, 3 in the camera |
 | rosenberg_labyrinth | track | 2780 | 2 | 1 (1) | 41 (185) | 4% / 10% | 2.4% / 0.05% | 8 | 1.08, 1.76 | 95% / 99% | 0.66, 0.28 | – | mismatch: 795 links join places far apart along the track (through a wall or gap); geodesic 0.66 x the distance along the track |
@@ -90,10 +90,10 @@ principal axis) is reported but does not judge.
 | gardner_2022_grid | open | 3463 | 2 | 1 (1) | 0 (0) | 0% / 0% | 0.1% / 0.00% | 0 | 1.06, 1.10 | – | – | 96% / 0% / 1.6 / 0.99, 0.65 | matches |
 | vollan_lt | track | 556 | 2 | 1 (1) | 11 (34) | 7% / 7% | 3.5% / 0.06% | 3 | 1.04, 1.13 | 57% / 58% (assumed width) | 1.04, 1.00 | – | mismatch: 2 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
 | vollan_of | open | 2041 | 2 | 1 (1) | 131 (297) | 9% / 8% | 8.4% / 0.12% | 17 | 1.07, 1.13 | – | – | 75% / 0% / 4.3 / 0.81, 0.94 | mismatch: bins cover 75% of the stated circle (83% with holes filled) |
-| grosmark_000044_circular | track | 1547 | 2 | 2 (1) | 17 (609) | 2% / 11% | 1.9% / 0.02% | 10 | 1.09, 1.40 | 69% / 43% (assumed width) | 0.93, 0.83 | – | matches |
-| grosmark_000044_circular_linearized | track | 117 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.03 | – | – | – | mismatch: loop ends 290 apart along the bins, 27 in the camera |
-| grosmark_000044_linear | track | 1096 | 2 | 21 (3) | 13 (49) | 5% / 26% | 3.8% / 0.06% | 11 | 1.04, 1.12 | 13% / 27% (assumed width) | 1.19, 1.06 | – | mismatch: 3 parts with 1% of the bins or more, apparatus has 1; 1 loop-sized hole (1% of the bins or more), apparatus has 0 loops |
-| grosmark_000044_linear_linearized | track | 65 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.05 | – | – | – | not verified: no stated fact independent of the samples checks it |
+| grosmark_000044_circular | track | 2318 | 2 | 2 (1) | 38 (1013) | 3% / 17% | 2.3% / 0.04% | 14 | 1.09, 1.39 | 69% / 43% (assumed width) | 0.94, 0.83 | – | matches |
+| grosmark_000044_circular_linearized | track | 146 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.03 | – | – | – | mismatch: loop ends 290 apart along the bins, 26 in the camera |
+| grosmark_000044_linear | track | 1530 | 2 | 35 (2) | 23 (98) | 5% / 28% | 3.5% / 0.00% | 21 | 1.04, 1.13 | 13% / 28% (assumed width) | 1.19, 1.06 | – | mismatch: 2 parts with 1% of the bins or more, apparatus has 1; 2 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
+| grosmark_000044_linear_linearized | track | 81 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.04 | – | – | – | not verified: no stated fact independent of the samples checks it |
 | jadhav_000447 | track | 1172 | 2 | 1 (1) | 20 (81) | 3% / 19% | 2.2% / 0.00% | 5 | 1.19, 4.35 | – | – | – | mismatch: 2 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
 | jadhav_000447_familiar | track | 788 | 2 | 1 (1) | 21 (140) | 5% / 33% | 3.3% / 0.00% | 8 | 2.53, 4.87 | – | – | – | mismatch: 8 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
 | hc11_achilles | None | 1096 | 2 | 21 (3) | 13 (49) | 5% / 26% | 3.8% / 0.06% | 11 | 1.04, 1.12 | 13% / 27% (assumed width) | 1.19, 1.06 | – | not verified: no source read here states the geometry |
@@ -195,7 +195,7 @@ distance along the authors' graph). The failures are of three kinds:
   percentile up to 4.9). 001754's three apparatus, 000003's open field and
   maze, and 000044's pre-track excursion are merged the same way (G-113).
 - Samples that are not on the track. 000044's linear track: 84 % of samples
-  are at the two reward ends or before the run, so only 27 % of the bins lie
+  are at the two reward ends or before the run, so only 28 % of the bins lie
   on a 10 cm wide stem (G-039); the Z-track's tracking jumps add a sparse
   second diagonal and a second part (G-117); 001845's 123 s of head
   positions leave its W in three parts (G-116). Takigawa's two tracks are two
@@ -206,9 +206,9 @@ distance along the authors' graph). The failures are of three kinds:
 
 **1-D inputs.** The figure-8's linearized position and 000044's circular
 coordinate are covered without gaps (bins over range 1.01), but each loop's
-two ends are 222 and 290 cm apart along the bins while they sit 3 and 27 cm
+two ends are 222 and 290 cm apart along the bins while they sit 3 and 26 cm
 apart in the camera (G-021). 000044's circular coordinate does not quite
-close (27 cm). J16's linearized position, laid out with 15 cm gaps between
+close (26 cm). J16's linearized position, laid out with 15 cm gaps between
 corridors, gives a 1-D environment in 9 parts with no junction (G-115). The
 figure-8's camera positions give the right 2-D shape: one main part with its
 two loops as holes (806 bins in 7 holes, the largest 445).
@@ -356,24 +356,30 @@ is to misfits of known size is not measured here: that is the survey's
 simulation ladder (phase 6, rungs 2-3, planted misfits). Of the 20
 declared tracks:
 
-- 11 match, and the frame offset passes on each. On a stated size against the samples' own: Vollan's linear
-  track +5.5 %, 000568 +5.1 %, 000165 -1.6 %, the 000044 circle's diameter
-  -0.2 % (its worst stretch 2.38 cm to one side, against a 2.5 cm limit:
-  close to it), 000447's familiar W-track (base -1.2 %, arms +6.5 %),
+- 10 match, and the frame offset passes on each. On a stated size against the samples' own: Vollan's linear
+  track +5.5 %, 000568 +5.1 %, 000165 -1.6 %, 000447's familiar W-track (base -1.2 %, arms +6.5 %),
   hc-28's W-track (base -10.5 %, arms -11.1 %, within the 15 %), 001845's
   W-maze (base +14 %, arms +7 %: close to the limit) and Shipley's eight
   arms (-5.9 to +3.4 %). On the authors' geometry or the file's coordinate
   as stated: J16's graph, hc-31's track coordinate (length +0.3 %),
   and Takigawa's centrelines. Their frame offsets are
-  0.42 bin or less by either estimator (refitted: the 000044 circle
-  1.04 cm, hc-28 0.90 cm, Takigawa 1.59 cm of a 4 cm bin); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
+  0.42 bin or less by either estimator (refitted: hc-28 0.90 cm,
+  Takigawa 1.59 cm of a 4 cm bin); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
   one piece reads nothing, and the stated length, the stretch bias and the
   reach past the ends judge them.
+- The 000044 circle is a mismatch: its worst stretch's samples lie 2.50 cm
+  to one side of it, against a one-bin limit of 2.0 cm. Its diameter is
+  -0.2 % of the stated 1 m and its frame offset passes (1.21 cm refitted,
+  0.85 cm in one step). The verdict flipped from matches with the public
+  loader's 2 cm bin, not with the data: the limit is one bin, and a judged
+  stretch is 20 bins (40 cm, not 50 cm); against the 2.5 cm bin before,
+  its worst stretch read 2.38 cm.
 - 000044's linear track is not verified: its frame offset depends on the
-  estimator. Refitted, it is 3.22 cm across the track (2.95 cm with any
-  one of its 3 pieces left out, 1.18 bins); in one step 1.35 cm (0.50
-  bin). Its samples scatter from -12 to +25 cm across it (5th-95th
-  percentile), far wider than the 7.5 cm window the offset is read in, and
+  estimator. Refitted, it is 3.81 cm across the track (3.63 cm with any
+  one of its 3 pieces left out, 1.81 bins of 2 cm); in one step 1.00 cm
+  (0.90 cm judged, 0.45 bin). Its samples scatter from -12 to +25 cm across
+  it (5th-95th percentile), far wider than the 6 cm (3-bin) window the
+  offset is read in, and
   the refitted window follows the heavier side (G-160). It matched on the
   file's linearized coordinate before.
 - The labyrinth is not verified: its corridors lie 1 cell apart, and the
@@ -412,8 +418,8 @@ declared tracks:
   chosen; 12.8 % at the paper's 0.75 cell; 4.6 % and 17.9 % before its dead
   ends reached their walls), Shipley 0.7 % of the judged samples. On J16
   the graph is placed right (median signed offset -1.3 to +1.8 cm per
-  corridor) and the share falls from 87 %
-  stopped to 35 % above 30 cm/s (G-152).
+  corridor) and the share falls from 80 % below 10 cm/s (the preprint's
+  running speed) to 35 % above 30 cm/s (G-152).
 - Against their own geometry the declared environments measure only their
   binning: the labyrinth's path along its bins is 0.96 x the distance along
   the graph it was built from (0.95 before the dead ends were extended),
@@ -493,8 +499,8 @@ the vertical part, raised by a head held above the bars, is reported.
 Eight of the ten declared arenas and 3-D environments match; the bat's
 room is a mismatch and the lattice is not verified:
 
-- On the stated size against the samples' own: 000582 (sides -0.1 % and
-  -2.6 %), 002030 (diameter +0.0 %), 000405 (-6.9 %, -6.3 %), Gardner
+- On the stated size against the samples' own: 000582 (sides x -2 % and
+  y +0 %, of the public loader's square at the samples' midrange), 002030 (diameter +0.0 %), 000405 (-6.9 %, -6.3 %), Gardner
   (-1.9 %, -2.4 %), Vollan's 150 cm circle (diameter -4.0 %, centre 2.2 %
   of the radius off; the samples' extent -14.9 % of the outline, just
   inside the 15 %), Kanter (-2.1 %, -2.3 %), hc-2's platform (+0.0 %,

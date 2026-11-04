@@ -56,7 +56,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import fetch_crcns, fetch_crcns_tar_members
 from _formats import (
     neuroscope_rates,
     read_res_clu,
@@ -79,6 +78,8 @@ from _tracks import (
     straight_track,
     with_declared,
 )
+
+from neurospatial.datasets._fetch import fetch_crcns, fetch_crcns_tar_members
 
 DATASET = {
     "key": "hc3_ec013_669",

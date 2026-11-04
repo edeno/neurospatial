@@ -24,6 +24,7 @@ from neurospatial._validation import validate_finite
 from neurospatial.io.nwb._adapters import events_table_to_dataframe, missing_error
 from neurospatial.io.nwb._core import (
     _clear_for_write,
+    _find_containers_by_type,
     _get_or_create_processing_module,
     _require_ndx_events,
     _require_pynwb,
@@ -259,6 +260,8 @@ def read_intervals(
         - "epochs" : Epoch intervals (predefined)
         - "invalid_times" : Invalid time periods (predefined)
         - Custom names for user-defined interval tables
+        - The path of a table stored in a processing module, such as
+          ``"processing/behavior/states"``
 
     Returns
     -------
@@ -295,6 +298,7 @@ def read_intervals(
 
     # Verify pynwb is installed
     _require_pynwb()
+    from pynwb.epoch import TimeIntervals
 
     # The predefined tables have their own attributes; a file read from disk
     # also lists them in nwbfile.intervals, so each name is kept once.
@@ -309,6 +313,9 @@ def read_intervals(
     }
     for name, table in nwbfile.intervals.items():
         tables.setdefault(name, table)
+    # Some files keep a table, such as sleep states, in a processing module.
+    for path, table in _find_containers_by_type(nwbfile, TimeIntervals):
+        tables.setdefault(path, table)
 
     if interval_name not in tables:
         msg = (

@@ -325,6 +325,40 @@ class TestVideoReaderErrorHandling:
         assert "reports 5 frames" in message
         assert "Fix:" in message
 
+    @pytest.mark.parametrize("extra", [1, 3])
+    def test_reader_counts_only_frames_that_decode(
+        self, tiny_video_path: Path, monkeypatch, extra
+    ):
+        """A container that reports more frames than it holds gives the real count.
+
+        Some AVI files report one frame more than their stream decodes;
+        their frame times then match the decodable frames, not the report.
+        """
+        import cv2
+
+        first = _VideoReader(tiny_video_path)[0]
+        real_capture = cv2.VideoCapture
+
+        class OverstatingCapture:
+            def __init__(self, path):
+                self._capture = real_capture(path)
+
+            def get(self, prop):
+                value = self._capture.get(prop)
+                return value + extra if prop == cv2.CAP_PROP_FRAME_COUNT else value
+
+            def __getattr__(self, name):
+                return getattr(self._capture, name)
+
+        monkeypatch.setattr(cv2, "VideoCapture", OverstatingCapture)
+        reader = _VideoReader(tiny_video_path)
+
+        assert reader.n_frames == 5
+        np.testing.assert_array_equal(reader[0], first)
+        assert reader[4][0, 0, 0] == pytest.approx(200, abs=10)
+        with pytest.raises(IndexError):
+            reader[5]
+
     @pytest.mark.parametrize(
         "crop",
         [

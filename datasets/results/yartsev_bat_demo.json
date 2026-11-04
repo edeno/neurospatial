@@ -4,14 +4,25 @@
   "source": "https://zenodo.org/records/15738988/files/Demo_Session.zip?download=1",
   "license": "CC-BY-4.0",
   "conversions": [
-    "spike_times: spikeTimes_usec (global clock) / 1e6",
-    "spike_times: merges_Dataset_*.mat groups pooled and sorted under the first id",
-    "spike_times: in every unit, a spike within 1 ms of its predecessor dropped",
-    "epochs['flight']: times at the 1-based sample indices f_smp (all 38)",
-    "epochs['neural_recording']: first to last spike of any unit",
-    "params flights: flights clipped to the neural recording",
-    "unit_ids: probe<n>-<kilosort cluster id>",
-    "environment: declared room, every voxel of a grid tiling r_lim [5.8, 5.2, 2.3] m (NP_Bat_Demo.m: 'boundaries of the room') exactly: [29, 26, 11] cells of [0.2, 0.2, 0.209] m; 3.66% of tracked samples lie outside it; Forli et al. 2025 Methods state 5.6 x 5.2 x 2.5 m: that size centred on r_lim in x and y, from r_lim's floor in z, leaves 3.77% outside; placement: the file's frame (not fitted)"
+    "positions: r as stored, in m [inferred: the file states no unit; r_lim spans 5.8 x 5.2 x 2.3 against the 5.6 x 5.2 x 2.5 m room and v_th is 0.5 against the 0.5 m/s flight threshold in the Methods of Forli et al. 2025]",
+    "spike_times: spikeTimes_usec (the global clock) / 1e6 [stated: the record's NP_Bat_Demo.m: spikeTimes_usec 'aligned to global clock' (in microseconds), divided by 1e6; localSpikeTimes_usec 'DO NOT USE']",
+    "spike_times: the merges_Dataset_*.mat groups pooled under the first cluster's id, sorted [stated: the record's NP_Bat_Demo.m pools them (putative duplicates, by distance and cross-correlogram) without sorting]",
+    "spike_times: in every unit, a spike within 1 ms of its predecessor dropped (7560 spikes) [stated: the record's NP_Bat_Demo.m: 'Clean up duplicated spikes, closer than 1 ms']",
+    "epochs['flight']: times at the 1-based sample indices f_smp (38 flights) [stated: the record's NP_Bat_Demo.m: f_smp, 'start and stop samples of each flight', indexes t in MATLAB]",
+    "epochs['neural_recording']: the first to the last spike of any unit, -12.68 to 5255.22 s; params['analysis_epochs']: the flights clipped to it [inferred: the files hold no neural recording start or stop; 289 units fire about 799 spikes/s together, so the first and last spike lie within a fraction of a second of its edges]",
+    "environment: every voxel of a grid tiling r_lim exactly, 29 x 26 x 11 cells of 0.2 x 0.2 x 0.209 m; the file's frame, not fitted [stated: r_lim, 'boundaries of the room/outdoor arena' (the record's NP_Bat_Demo.m); its sides against the paper's room: x +3.6%, y +0.0%, z -8.0%. 3.66% of tracked samples lie outside r_lim (23454 past -y, up to 1.63 m past a bound: either r_lim leaves out a place the bat lands, or the tracking there is off, and the files do not say which); the paper's room centred on r_lim (from its floor in z) would leave 3.77% outside]",
+    "survey-only geometry['declared_from']: the declared room's facts the environment fidelity study reads",
+    "survey-only geometry['room_bounds_m']: the declared room's facts the environment fidelity study reads: r_lim, the grid's extent",
+    "survey-only geometry['environment_fit']: the declared room's facts the environment fidelity study reads: r_lim's sides against the paper's room"
+  ],
+  "watch_outs": [
+    "This is the record's one demo session; the paper reports 23 sessions from six bats (the Methods of Forli et al. 2025), and the record holds no other.",
+    "The behavior runs from -107.4 to 5248.6 s and the spikes from -12.7 to 5255.2 s: 1 of the 38 flights in epochs['flight'] lies wholly outside the neural recording, so analyses use params['analysis_epochs'], the flights clipped to it.",
+    "71 of 289 units fire above 2 Hz on average (one over the mean interspike interval, after the 1 ms rule; the record's NP_Bat_Demo.m computes it before); the script sets such units aside as putative interneurons before its place analyses. All are kept here, with label None.",
+    "Positions are the authors' processed behavior, not raw tracking: the record's NP_Bat_Demo.m says 'Processing mainly includes smoothing of position and flight segmentation', and the Methods of Forli et al. 2025 that positions 'were preprocessed ... to obtain continuous and smooth 3D positional data'. Speeds and held-sample counts describe that processing as much as the tracking.",
+    "339 runs of 11 or more identical position samples (10 or more repeats of the sample before; 264247 repeats, 41.11% of samples, 2202.0 s in all, the longest 807.3 s). Positions are kept as stored. A held run is lost tracking if the tracker repeated its last fix, or the animal holding still; check before analysing stops (wells, ripples). No speed limit is stated for this dataset, so fast steps are not counted.",
+    "23454 tracked position samples of 641157 (3.66%) lie outside the declared environment (env.bin_at gives -1): tracking beyond the apparatus, or an environment placed or sized wrong; 3.6% of stopped (below 0.5 m/s) samples and 4.6% of moving samples are outside. They are kept as stored and fall in no bin.",
+    "6 of 289 units have no spikes in the analysed epochs (params['analysis_epochs']); they are kept, as the file lists them, and are units['fires_in_epochs'] False."
   ],
   "expectations": [
     {
@@ -46,13 +57,13 @@
     }
   ],
   "versions": {
-    "neurospatial": "0.6.1.dev4089+g3b3eaf52a",
+    "neurospatial": "0.6.1.dev4209+g91bd4c200.d20261104",
     "numpy": "2.3.4",
     "scipy": "1.16.3",
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "c5fd409940c2ffba9a8f5b5d5c2a93281d11dd1e"
+    "git_commit": "edc8d44515c40bb0c3d0f1f44dead7121e8a029a"
   },
   "load_warnings": [],
   "load_fingerprint": {
@@ -70,8 +81,8 @@
       642724
     ],
     "spike_counts": "54ec3f0a95b1814fd3b7a805b8e7cd898ca1cbef593d1928d54d6b0666d95e3b",
-    "unit_ids": "04e4754619adf3a16a65c82f591497b4b56ff4c0db10b86061a2be697ae3cf8a",
-    "geometry": "460b2d5a418e89ae5f453d5f70ea7d0baf34514549fa777e64207ad47feb420d"
+    "unit_ids": "9e4d27458d716dc35f7b73ce81b11ce9103c0b37ca161ac4dfa607c7eb38ff3d",
+    "geometry": "41cc3cc6dfabb52ecc6d00765ada07d6b3c2387d70f01f3e0fda429f0dba4c8f"
   },
   "operations": {
     "env.from_samples": {
@@ -84,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.224,
+      "seconds": 0.225,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -98,8 +109,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.492,
-      "peak_mb": 289.8
+      "seconds": 0.764,
+      "peak_mb": 227.7
     },
     "env.declared": {
       "status": "ok",
@@ -112,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.097,
+      "seconds": 0.095,
       "peak_mb": 112.6
     },
     "rates.spatial": {
@@ -126,8 +137,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 41.063,
-      "peak_mb": 1738.4
+      "seconds": 39.857,
+      "peak_mb": 1734.2
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -154,7 +165,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.086,
+      "seconds": 5.651,
       "peak_mb": 280.7
     },
     "cells.place_screen": {
@@ -166,7 +177,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.696,
+      "seconds": 0.63,
       "peak_mb": 177.0
     },
     "cells.grid_score": {
@@ -184,8 +195,8 @@
       "note": "NotImplementedError: Wall geometry needs a 2-D environment; this one is 3-D.\nWhy: walls and cell edges are lines in a plane.\nFix: compute wall-based measures on a 2-D environment",
       "gap": null,
       "warnings": [],
-      "seconds": 0.008,
-      "peak_mb": 26.7
+      "seconds": 0.003,
+      "peak_mb": 26.6
     },
     "hd.tuning": {
       "status": "n/a",
@@ -212,8 +223,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 3.886,
-      "peak_mb": 242.5
+      "seconds": 4.098,
+      "peak_mb": 241.8
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -223,8 +234,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 7.69,
-      "peak_mb": 220.7
+      "seconds": 7.108,
+      "peak_mb": 212.1
     },
     "env.from_graph": {
       "status": "n/a",
@@ -244,8 +255,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.084,
-      "peak_mb": 256.1
+      "seconds": 0.634,
+      "peak_mb": 234.8
     },
     "behavior.laps": {
       "status": "error",
@@ -253,7 +264,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.114,
+      "seconds": 0.113,
       "peak_mb": 97.2
     },
     "behavior.turn_sequence": {
@@ -271,8 +282,8 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.105,
-      "peak_mb": 3.1
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.nwb_readers": {
       "status": "n/a",
@@ -280,8 +291,8 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.006,
-      "peak_mb": 0.3
+      "seconds": 0.0,
+      "peak_mb": 0.0
     },
     "io.read_pose": {
       "status": "n/a",

@@ -68,12 +68,14 @@ jobs:
         if: matrix.group == 'real-data'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          path: data/j1620210710_02_r1_figure04_inputs.npz
+          path: data/datasets/comrie_2026/j1620210710_02_r1_figure04_inputs.npz
           key: j16-60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3
 
       - name: Execute ${{ matrix.group }} notebooks
         env:
           MPLBACKEND: Agg
+          # neurospatial.datasets caches downloads here (the cached path above).
+          NEUROSPATIAL_DATA_DIR: ${{ github.workspace }}/data/datasets
           NOTEBOOKS: ${{ matrix.notebooks }}
         run: |
           uv run jupyter nbconvert \

@@ -1376,6 +1376,7 @@ class FastplotlibAnimation:
                     scale.vmax,
                     None if env.n_dims == 3 else "lightgray",
                     opaque_from=scale.opaque_from,
+                    max_opacity=scale.max_opacity,
                 )
                 for scale in field_scales
             ]

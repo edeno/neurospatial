@@ -5,67 +5,62 @@ silicon probes over about 10 h: sleep in the home cage (PRE, 5.4 h), running
 on a 1 m circular track (MAZE, 45 min) and sleep again (POST, 4.1 h).
 Position (one LED) is tracked at 39.06 Hz during the maze epoch only.
 
-Where it lives: DANDI 000044 version 0.261005.2101, CC-BY-4.0. The file is
-9.2 GB, almost all LFP, so it is not downloaded: the loader reads the few
-datasets it needs by HTTP byte range (``_fetch.open_nwb``), after checking the
-SHA-256 DANDI publishes for the asset.
+The session is read by ``neurospatial.datasets.load("grosmark_2016",
+"sub-Achilles_ses-Achilles-11012013", stream=True)``: the 9.2 GB file is
+not downloaded, only the datasets it needs are read by HTTP byte range,
+after checking the SHA-256 DANDI publishes. The public module
+(``neurospatial/datasets/grosmark_2016.py``) and its docs page give the
+conversions (positions and the linearized position in cm, epochs and sleep
+states), the declared environment (the stated 1 m circle as a closed loop,
+centred by a robust circle fit) and the watch-outs. ``_record.from_public``
+converts it to the survey's record; ``dandi_session`` here is shared with
+``load_grosmark_000044_linear``.
 
-What the loader converts:
+Analysis choices are the public loader's ``params``, the paper's
+place-field analysis: ``bin_size`` 2 cm, ``min_speed`` 5 cm/s, ``dt``
+0.25 s and alternating 60 s train/test blocks of the tracked span.
 
-- ``CircularMazePosition`` (x, y) is metres; converted to cm. Untracked
-  samples are NaN in the file and stay NaN.
-- ``CircularMazeLinearizedPosition`` (metres, 0 to about 2.9 m around the
-  loop) is kept in ``params["linearized"]`` in cm. Its two ends are the same
-  place on the track, and a share of its samples is exactly 0.
-- Epochs ``PREEpoch``/``MazeEpoch``/``POSTEpoch`` become ``pre``/``maze``/
-  ``post``; the ``states`` table becomes ``awake``, ``non_rem`` and ``rem``
-  epochs, as for the figure-8.
-- The file has no ripple table. Replay candidates are population bursts in
-  POST non-REM sleep found by a stated rule (``population_bursts``) and stored
-  as ``events["candidate_events"]``, not as ripples.
+Survey-only:
 
-Analysis choices (``params``): ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s, as
-for the figure-8; ``dt`` 0.25 s with alternating 60 s train/test blocks inside
-the maze epoch; ``replay_dt`` 0.02 s; the first ``N_CANDIDATES`` POST non-REM
-bursts are decoded, to bound the run time.
-
-Declared environment (``geometry["environment"]``, ``declare_circle``): the
-stated 1 m diameter circle (Grosmark & Buzsaki 2016) as a closed loop of
-``N_VERTICES`` segments, centred by a robust circle fit to the samples on the
-track; the width is not stated. ``geometry["lap_start_region"]`` cuts the
-loop where the file's linearized coordinate starts.
+- ``events["candidate_events"]``: the file has no ripple table. Replay
+  candidates are population bursts in POST non-REM sleep found by a stated
+  rule (``population_bursts``), not ripples; the first ``N_CANDIDATES`` are
+  decoded, to bound the run time. ``events["all_bursts"]`` holds every burst.
+- ``params["analysis_epochs"]``, the maze epoch. Without it the rate maps
+  take the sleep spikes, which have no position, and the clean run's warning
+  about them hides the ``spike_times_in_ms`` hazard probe's.
+- ``params["replay_dt"]`` 0.02 s; ``params["nwb_source"]`` and
+  ``params["readers_used"]``, for the ``io.nwb_readers`` operation.
+- ``geometry["lap_start_region"]`` cuts the loop where the file's linearized
+  coordinate starts (``lap_start_region``).
+- the declared track's facts the environment fidelity study reads
+  (``_tracks.public_track_facts``): fitted to the samples, no stated width,
+  and the samples' own diameter against the stated 1 m (``samples_radius``).
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _fetch import dandi_stream_url, open_nwb
 from _record import (
     Range,
     Recording,
-    alternating_blocks,
+    SurveyOnly,
     check_expectations,
-    checked_span,
+    from_public,
+    public_file,
     validate_recording,
 )
-from _tracks import (
-    circle_points,
-    cut_region,
-    declared_geometry,
-    fit_circle_centre,
-    polyline_graph,
-    with_declared,
-)
+from _tracks import cut_region, public_track_facts
 
 DATASET = {
     "key": "grosmark_000044_circular",
-    "title": "Grosmark & Buzsaki (2016), Achilles 11012013, rat CA1, 1 m circular track",
-    "source": "https://dandiarchive.org/dandiset/000044/0.261005.2101",
-    "license": "CC-BY-4.0",
-    "download_size": "9.19 GB (streamed)",
+    "public": "grosmark_2016",
+    "session": "sub-Achilles_ses-Achilles-11012013",
 }
 
 # Pre-registered from the dataset catalog (104 units, 39.06 Hz, 1 m circular track, PRE/MAZE/POST epochs) before the first run of this loader.
@@ -82,9 +77,6 @@ EXPECTATIONS: dict[str, Any] = {
 }
 
 
-_ASSET_ID = "080a847a-5211-4101-bc05-fd45b7e77dbd"
-_SHA256 = "aed03b46d70d5a0cbf334ea034b3de6b16a6d2bbd5219530b95c97477356b157"
-_PATH = "sub-Achilles/sub-Achilles_ses-Achilles-11012013_behavior+ecephys.nwb"
 N_CANDIDATES = 200
 _BURST_SIGMA_S = 0.015
 _BURST_SD = 3.0
@@ -132,171 +124,118 @@ def population_bursts(
     return np.asarray(events, dtype=float).reshape(-1, 2)
 
 
-def load_session(
+def dandi_session(
+    key: str,
+    session: str,
     *,
-    dataset: dict[str, str],
-    asset_id: str,
-    sha256: str,
-    path: str,
-    track: str,
-    span_cm: tuple[float, float],
-    track_cm: tuple[float, float],
+    geometry: Callable[[Any], Mapping[str, SurveyOnly]],
 ) -> Recording:
-    """One 000044 session read by byte range; positions in cm."""
-    from neurospatial.io.nwb import read_intervals, read_position, read_units
+    """A DANDI 000044 session of ``grosmark_2016``, read by byte range, with candidates.
 
-    source = dandi_stream_url(asset_id, sha256=sha256)
-    with open_nwb(source) as nwbfile:
-        # The container name alone is refused (G-012); the series path works.
-        position = read_position(
-            nwbfile,
-            position_name=f"processing/behavior/{track}Position/{track}SpatialSeries",
-        )
-        linear = nwbfile.processing["behavior"][f"{track}LinearizedPosition"]
-        linear_series = next(iter(linear.spatial_series.values()))
-        linearized = np.asarray(linear_series.data[:], dtype=float).ravel()
-        linear_unit = linear_series.unit
-        units = read_units(nwbfile)
-        session_epochs = read_intervals(nwbfile, interval_name="epochs")
-        states = nwbfile.processing["behavior"]["states"].to_dataframe()
+    ``geometry``, given the public recording, returns its survey-only
+    geometry entries (the declared track's facts, at least).
+    """
+    from neurospatial.datasets import load as load_public
 
-    if position.units != "m" or linear_unit != "meters":
-        msg = f"expected metres, got {position.units!r} and {linear_unit!r}"
-        raise ValueError(msg)
-    times = np.asarray(position.times, dtype=float)
-    positions = np.asarray(position.positions, dtype=float) * 100.0
-    span = checked_span(positions, *span_cm)
-    on_track = np.isfinite(linearized) & np.isfinite(positions).all(axis=1)
-    track_length = float(np.nanmax(linearized) * 100.0)
-    if not track_cm[0] <= track_length <= track_cm[1]:
-        msg = (
-            f"linearized track length {track_length:.0f} cm outside {track_cm}; recheck"
-        )
-        raise ValueError(msg)
-    windows = np.column_stack(
-        [np.asarray(session_epochs.start), np.asarray(session_epochs.stop)]
-    )
-    labels = [str(x).removesuffix("Epoch").lower() for x in session_epochs.label]
-    epochs: dict[str, np.ndarray] = {
-        label: windows[i : i + 1] for i, label in enumerate(labels)
-    }
-    for label in sorted(states["label"].unique()):
-        key = str(label).lower().replace("-", "_")
-        epochs[key] = states.loc[
-            states["label"] == label, ["start_time", "stop_time"]
-        ].to_numpy(dtype=float)
-    maze = epochs["maze"]
-    spike_times = tuple(np.asarray(s, dtype=float) for s in units.spike_times)
-    post_nrem = epochs["non_rem"][
-        (epochs["non_rem"][:, 0] >= epochs["post"][0, 0])
-        & (epochs["non_rem"][:, 1] <= epochs["post"][0, 1])
-    ]
-    bursts = population_bursts(spike_times, post_nrem)
-    train, test = alternating_blocks(maze[0, 0], maze[0, 1], 60.0)
-    finite = np.isfinite(linearized)
-    return Recording(
-        dataset=dataset["key"],
-        session=str(nwbfile.session_id) if nwbfile.session_id else path,
-        source=f"{dataset['source']} {path} (asset {asset_id})",
-        license=dataset["license"],
-        times=times,
-        positions=positions,
-        position_units="cm",
-        spike_times=spike_times,
-        unit_ids=np.asarray(units.unit_ids),
-        epochs=epochs,
-        events={"candidate_events": bursts[:N_CANDIDATES], "all_bursts": bursts},
+    rec = load_public("grosmark_2016", session, stream=True)
+    non_rem, post = rec.epochs["non_rem"], rec.epochs["post"]
+    post_nrem = non_rem[(non_rem[:, 0] >= post[0, 0]) & (non_rem[:, 1] <= post[0, 1])]
+    bursts = population_bursts(rec.spike_times, post_nrem)
+    return from_public(
+        rec,
+        key=key,
         params={
-            "bin_size": 2.5,
-            "min_speed": 4.0,
-            "dt": 0.25,
-            "replay_dt": 0.02,
-            "analysis_epochs": maze,
-            "train_epochs": train,
-            "test_epochs": test,
-            "linearized": linearized * 100.0,
-            "nwb_source": source,
-            "readers_used": ("position", "units"),
+            "replay_dt": SurveyOnly(0.02, "the replay decoding bin"),
+            "analysis_epochs": SurveyOnly(
+                rec.epochs["maze"],
+                "the maze epoch. Without it the rate maps take the PRE and POST"
+                " sleep spikes, which have no position, so the clean run warns"
+                " that most spikes lie outside the tracking, and that warning"
+                " hides the spike_times_in_ms hazard probe's own",
+            ),
+            "nwb_source": SurveyOnly(
+                public_file("grosmark_2016", session, stream=True),
+                "the URL the file was read from by byte range",
+            ),
+            "readers_used": SurveyOnly(
+                ("position", "units"), "the io.nwb readers the public loader calls"
+            ),
         },
-        conversions=(
-            f"positions: read_position {track}Position/{track}SpatialSeries, m times 100"
-            f" -> cm; {span}; {on_track.mean() / np.isfinite(positions).all(axis=1).mean():.0%}"
-            " of tracked samples are on the track (linearized coordinate defined)",
-            f"params['linearized']: {track}LinearizedPosition, m times 100 -> cm,"
-            f" 0 to {track_length:.0f} cm;"
-            f" {np.mean(linearized[finite] == 0):.2%} of finite samples are exactly 0",
-            "epochs: intervals/epochs labels without 'Epoch', lower case; sleep"
-            " states from processing/behavior/states",
-            f"events['candidate_events']: first {N_CANDIDATES} of {len(bursts)}"
-            " population bursts in POST non-REM (rule in population_bursts); the"
-            " file has no ripple table",
-        ),
+        events={
+            "candidate_events": SurveyOnly(
+                bursts[:N_CANDIDATES],
+                f"first {N_CANDIDATES} of {len(bursts)} population bursts in"
+                " POST non-REM (rule in population_bursts); the file has no"
+                " ripple table",
+            ),
+            "all_bursts": SurveyOnly(bursts, "every population burst in POST non-REM"),
+        },
+        geometry=geometry(rec),
     )
 
 
 DIAMETER_CM = 100.0
-N_VERTICES = 72
+_RADIUS = re.compile(r"whose own radius is ([\d.]+) cm")
 
 
-def declare_circle(rec: Recording) -> Recording:
-    """``rec`` with the stated 1 m circle declared, centred on the samples.
+def lap_start_region(env: Any, positions: np.ndarray, linearized: np.ndarray) -> Any:
+    """A region across the declared loop where the file's linearized coordinate starts.
 
-    The centre is a robust circle fit to the samples where the file's
-    linearized coordinate is defined; the radius is the stated one. The lap
-    start region is drawn across the track where that coordinate starts.
+    The loop's centre is the mean of its vertices (a regular polygon); the
+    start is the mean of the samples whose linearized coordinate is in
+    (0, 5) cm, projected onto the stated 1 m circle.
     """
-    linear = np.asarray(rec.params["linearized"], dtype=float)
-    on_track = np.isfinite(linear) & np.isfinite(rec.positions).all(axis=1)
-    centre, radius = fit_circle_centre(rec.positions[on_track], scale=3.0)
-    graph = polyline_graph(
-        circle_points(centre, DIAMETER_CM / 2, N_VERTICES), closed=True
-    )
-    start = rec.positions[on_track & (linear > 0) & (linear < 5.0)].mean(axis=0)
+    graph = env.binning.linearization.graph
+    vertices = np.array([graph.nodes[node]["pos"] for node in graph.nodes])
+    centre = vertices.mean(axis=0)
+    radius = float(np.mean(np.linalg.norm(vertices - centre, axis=1)))
+    on_track = np.isfinite(linearized) & np.isfinite(positions).all(axis=1)
+    start = positions[on_track & (linearized > 0) & (linearized < 5.0)].mean(axis=0)
     angle = np.arctan2(*(start - centre)[::-1])
-    point = centre + DIAMETER_CM / 2 * np.array([np.cos(angle), np.sin(angle)])
-    region = cut_region(
+    point = centre + radius * np.array([np.cos(angle), np.sin(angle)])
+    return cut_region(
         "linearized_zero",
         point,
         (-np.sin(angle), np.cos(angle)),
         half_length=3.0,
         half_width=15.0,
     )
-    entries, line = declared_geometry(
-        graph,
-        rec.positions,
-        times=rec.times,
-        kind=f"circle {DIAMETER_CM:g} cm in diameter as a {N_VERTICES}-gon loop",
-        source="Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1 m in"
-        " diameter wooden circular maze'; width not stated",
-        bin_size=rec.params["bin_size"],
-        physical_width=None,
-        units="cm",
-        name=DATASET["key"],
-        placed_by="fitted to the samples",
-        stated_lengths={"diameter": (2 * radius, DIAMETER_CM)},
-        placement=f"centre ({centre[0]:.1f}, {centre[1]:.1f}) cm from a robust"
-        f" circle fit to the on-track samples (their own radius {radius:.1f} cm);"
-        f" lap start region across the track at the file's linearized zero,"
-        f" {np.degrees(angle):.0f} deg from the centre",
-        tracked_point="not stated",
-        speed_thresholds=(4.0, 30.0),
-    )
-    return with_declared(rec, {**entries, "lap_start_region": region}, line)
 
 
 def load(cache: Path | None = None) -> Recording:
     """Stream the session; positions in cm, spikes, epochs and candidate events."""
     del cache  # read by byte range: nothing is cached
-    rec = load_session(
-        dataset=DATASET,
-        asset_id=_ASSET_ID,
-        sha256=_SHA256,
-        path=_PATH,
-        track="CircularMaze",
-        span_cm=(100.0, 160.0),
-        track_cm=(250.0, 330.0),
-    )
-    return declare_circle(rec)
+
+    def circle(rec: Any) -> dict[str, SurveyOnly]:
+        region = lap_start_region(rec.env, rec.positions, rec.linearized)
+        return {
+            **public_track_facts(
+                rec,
+                declared_from="fitted to the samples",
+                physical_width=None,
+                speed_thresholds=(rec.params["min_speed"], 30.0),
+                stated_lengths={"diameter": (2 * samples_radius(rec), DIAMETER_CM)},
+            ),
+            "lap_start_region": SurveyOnly(
+                region,
+                "a region across the declared loop where the file's linearized"
+                " coordinate starts, for behavior.laps with method='region'",
+            ),
+        }
+
+    return dandi_session(DATASET["key"], DATASET["session"], geometry=circle)
+
+
+def samples_radius(rec: Any) -> float:
+    """The radius of the robust circle fit the public loader centred the loop by, cm.
+
+    Read from its placement ``Conversion`` ("whose own radius is ... cm").
+    """
+    for conversion in rec.conversions:
+        if found := _RADIUS.search(conversion.evidence):
+            return float(found.group(1))
+    msg = "no Conversion states the samples' own radius; the public loader changed"
+    raise ValueError(msg)
 
 
 if __name__ == "__main__":

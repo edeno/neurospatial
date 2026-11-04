@@ -11,9 +11,9 @@ added evidence on G-014, G-015, G-017, G-022, G-037) and in
 
 CRCNS serves files from the NERSC portal after a login form; the loaders post
 it with the account from `CRCNS_USERNAME` and `CRCNS_PASSWORD`
-(`_fetch.fetch_crcns`). No bot check or browser step appeared. Most sets are
+(`neurospatial.datasets._fetch.fetch_crcns`). No bot check or browser step appeared. Most sets are
 `.tar.gz` archives, which cannot be read by byte range, so
-`_fetch.fetch_crcns_tar_members` streams an archive once and keeps only the
+`neurospatial.datasets._fetch.fetch_crcns_tar_members` streams an archive once and keeps only the
 pinned members (each by SHA-256). Throughput was about 30 MB/s for one
 download and 2–13 MB/s each with three in parallel.
 
@@ -35,7 +35,7 @@ archives and `resSave.mat`) matched:
 Each row was one run of
 `uv run --group datasets python datasets/studies/crcns_first_download.py <file> <md5> <cache subdir> '<regex>'`
 (the script was committed after the run, with the cache path taken from
-`_fetch.cache_root` instead of written out). The hc-3 cell table,
+`neurospatial.datasets._fetch.cache_root` instead of written out). The hc-3 cell table,
 `hc-3/docs/crcns-hc3-metadata-tables.zip`, was downloaded on its own and its
 MD5 (`80c99fe9c82e857be409022c97edaa9f`, `md5 -q`) matched `checksums.md5`
 before its SHA-256 was pinned.

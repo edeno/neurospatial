@@ -160,10 +160,12 @@ def field_colors(
     opaque_from: float | None,
     *,
     n_colors: int = 256,
+    max_opacity: float = 1.0,
 ) -> NDArray[np.float64]:
     """A field's colors from ``vmin`` to ``vmax``, shape (n_colors, 4).
 
-    With ``opaque_from``, low values fade (see :func:`see_through_alpha`).
+    With ``opaque_from``, low values fade (see :func:`see_through_alpha`);
+    every opacity is then scaled by ``max_opacity``.
     """
     from matplotlib import colormaps
 
@@ -172,6 +174,7 @@ def field_colors(
         colors[:, 3] *= see_through_alpha(
             np.linspace(vmin, vmax, n_colors), vmin, vmax, opaque_from
         )
+    colors[:, 3] *= max_opacity
     return colors
 
 
