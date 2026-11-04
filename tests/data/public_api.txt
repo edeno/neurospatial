@@ -176,6 +176,7 @@ neurospatial.compute_spatial_rates(env, spike_times, times, positions, *, method
 neurospatial.datasets (module)
 neurospatial.datasets.Conversion (class)
 neurospatial.datasets.DatasetCheckError (class)
+neurospatial.datasets.DownloadWarning (class)
 neurospatial.datasets.Provenance (class)
 neurospatial.datasets.Recording (class)
 neurospatial.datasets.VideoSource (class)

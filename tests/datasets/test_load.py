@@ -8,6 +8,7 @@ import json
 import logging
 import sys
 import types
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +17,7 @@ import pytest
 from neurospatial import InputError
 from neurospatial.datasets import (
     DatasetCheckError,
+    DownloadWarning,
     _catalog,
     _fetch,
     _load,
@@ -68,6 +70,11 @@ def _registry(files: dict[str, Path]) -> dict:
             for session, path in files.items()
         ],
     }
+
+
+def _downloading():
+    """Expect a download's DownloadWarning (pytest turns warnings into errors)."""
+    return pytest.warns(DownloadWarning, match="^Downloading ")
 
 
 def _no_download(*args, **kwargs):
@@ -132,7 +139,8 @@ def _digest(data: bytes) -> str:
 
 
 def test_load_gives_the_default_session_checked(synthetic, square_stated):
-    rec = load(DATASET, cache=synthetic.cache)
+    with _downloading():
+        rec = load(DATASET, cache=synthetic.cache)
     assert rec.session == "s1"
     assert rec.verified
     cached = synthetic.cache / DATASET / "s1.bin"
@@ -148,7 +156,7 @@ def test_load_gives_the_default_session_checked(synthetic, square_stated):
 
 
 def test_accepted_failure_travels(synthetic):
-    with pytest.raises(DatasetCheckError) as caught:
+    with pytest.raises(DatasetCheckError) as caught, _downloading():
         load(DATASET, "clock_off", cache=synthetic.cache)
     assert caught.value.checks == ("clock",)
     assert "accept_failed_checks=('clock',)" in str(caught.value)
@@ -162,7 +170,8 @@ def test_accepted_failure_travels(synthetic):
     watch_out = summary_text(rec).split("\nWatch out", 1)[1].splitlines()
     assert watch_out[1].startswith("  ! failed the clock check")
     # Accepting a check that does not fail changes nothing.
-    plain = load(DATASET, "s1", cache=synthetic.cache)
+    with _downloading():
+        plain = load(DATASET, "s1", cache=synthetic.cache)
     accepted = load(
         DATASET, "s1", cache=synthetic.cache, accept_failed_checks=("clock", "units")
     )
@@ -195,33 +204,57 @@ def test_missing_extra_names_the_install(synthetic, monkeypatch, without_pynwb):
         load(DATASET, cache=synthetic.cache)
 
 
-def test_load_logs_the_size_and_url_before_a_download(synthetic, caplog):
-    """A download is announced at WARNING, shown by default; a cached load is not."""
-    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
+def test_load_warns_of_a_download_with_its_size_and_url(synthetic):
+    """A download is a DownloadWarning at the user's load(); a cached load is not."""
+    with pytest.warns(DownloadWarning) as caught:
         load(DATASET, "s1", cache=synthetic.cache)
-    (record,) = caplog.records
-    assert record.levelno == logging.WARNING
+    (warning,) = caught
     url = synthetic.files["s1"].as_uri()
-    assert record.getMessage() == (
+    assert str(warning.message) == (
         f"Downloading {DATASET} session s1: 200 B from {url} into "
         f"{synthetic.cache / DATASET}"
     )
-    caplog.clear()
-    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
+    assert warning.filename == __file__  # stacklevel: the caller's line
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         load(DATASET, "s1", cache=synthetic.cache)
-    assert not caplog.records
+
+
+def test_download_warning_reaches_stderr_without_logging_setup(synthetic, tmp_path):
+    """A plain script, logging unconfigured, prints the notice on stderr."""
+    import subprocess
+
+    script = tmp_path / "script.py"
+    script.write_text(
+        "import json, sys, types\n"
+        "from pathlib import Path\n"
+        "from neurospatial.datasets import _catalog, _load\n"
+        f"_catalog.REGISTRY = Path({str(synthetic.registry_path.parent)!r})\n"
+        "entry = _catalog.sessions('synthetic_2026')[0]\n"
+        f"_load.fetch_session(entry, cache=Path({str(tmp_path / 'fresh')!r}))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(script)], capture_output=True, text=True, check=True
+    )
+    assert "DownloadWarning: Downloading synthetic_2026 session s1: 200 B" in (
+        result.stderr
+    )
 
 
 def test_fetch_all_downloads_every_session(synthetic, caplog):
-    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
+    with pytest.warns(DownloadWarning) as caught:
         paths = fetch_all(DATASET, cache=synthetic.cache)
     assert [path.name for path in paths] == ["s1.bin", "clock_off.bin"]
     assert all(
         path.read_bytes() == synthetic.files[path.stem].read_bytes() for path in paths
     )
-    assert "2 sessions, 1.1 kB in all; 2 to download (1.1 kB)" in caplog.text
-    caplog.clear()
-    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
+    total, *each = (str(w.message) for w in caught)
+    assert "2 sessions, 1.1 kB in all; 2 to download (1.1 kB)" in total
+    assert [text.split(":")[0] for text in each] == [
+        f"Downloading {DATASET} session s1",
+        f"Downloading {DATASET} session clock_off",
+    ]
+    with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
         assert fetch_all(DATASET, cache=synthetic.cache) == paths
     assert "0 to download (0 B)" in caplog.text
 
@@ -229,7 +262,10 @@ def test_fetch_all_downloads_every_session(synthetic, caplog):
 def test_fetch_all_refuses_without_room(synthetic, monkeypatch):
     usage = types.SimpleNamespace(total=10_000, used=9_000, free=1_000)
     monkeypatch.setattr(_load.shutil, "disk_usage", lambda path: usage)
-    with pytest.raises(OSError, match=r"needs 1.1 kB for 2 sessions.*1 kB free"):
+    with (
+        pytest.raises(OSError, match=r"needs 1.1 kB for 2 sessions.*1 kB free"),
+        pytest.warns(DownloadWarning, match="2 to download"),
+    ):
         fetch_all(DATASET, cache=synthetic.cache)
     assert not (synthetic.cache / DATASET).exists()
 
@@ -276,7 +312,8 @@ def zipped(synthetic):
 def test_zip_member_session_fetches_only_its_members(synthetic, zipped):
     from neurospatial.datasets import catalog
 
-    rec = load(DATASET, "zipped", cache=synthetic.cache)
+    with _downloading():
+        rec = load(DATASET, "zipped", cache=synthetic.cache)
     folder = synthetic.cache / DATASET / "zipped"
     assert synthetic.calls == [("zipped", folder)]
     assert sorted(path.name for path in folder.iterdir()) == [
@@ -296,7 +333,7 @@ def test_zip_member_session_fetches_only_its_members(synthetic, zipped):
 def test_zip_member_with_another_checksum_is_refused(synthetic, zipped):
     synthetic.registry["sessions"][-1]["members"][0]["sha256"] = "0" * 64
     synthetic.registry_path.write_text(json.dumps(synthetic.registry))
-    with pytest.raises(ValueError, match="SHA-256"):
+    with pytest.raises(ValueError, match="SHA-256"), _downloading():
         load(DATASET, "zipped", cache=synthetic.cache)
     assert synthetic.calls == []
 
@@ -304,12 +341,11 @@ def test_zip_member_with_another_checksum_is_refused(synthetic, zipped):
 def test_fetch_all_counts_zip_members(synthetic, zipped, caplog):
     used = sum(len(zipped.members[name]) for name in zipped.used)
     files = sum(path.stat().st_size for path in synthetic.files.values())
-    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
+    with pytest.warns(DownloadWarning) as caught:
         paths = fetch_all(DATASET, cache=synthetic.cache)
     assert paths[-1] == synthetic.cache / DATASET / "zipped"
-    assert f"3 sessions, {_load._size(files + used)} in all" in caplog.text
-    caplog.clear()
-    with caplog.at_level(logging.WARNING, logger="neurospatial.datasets"):
+    assert f"3 sessions, {_load._size(files + used)} in all" in str(caught[0].message)
+    with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
         fetch_all(DATASET, cache=synthetic.cache)
     assert "0 to download (0 B)" in caplog.text
 
@@ -334,7 +370,8 @@ def test_session_from_another_archive_keeps_its_license(synthetic):
             "data_citation": "Someone. Tutorial files. OSF.",
         },
     )
-    rec = load(DATASET, "tutorial", cache=synthetic.cache)
+    with _downloading():
+        rec = load(DATASET, "tutorial", cache=synthetic.cache)
     assert rec.license == "not stated"
     assert rec.citation == (
         "Synthetic A (2026) A simulated session. Data: Someone. Tutorial files. OSF."

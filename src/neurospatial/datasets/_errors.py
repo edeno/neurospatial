@@ -6,11 +6,24 @@ from collections.abc import Mapping
 
 from neurospatial._exceptions import NeurospatialError, _format_error
 
-__all__ = ["REFUSING_CHECKS", "DatasetCheckError"]
+__all__ = ["REFUSING_CHECKS", "DatasetCheckError", "DownloadWarning"]
 
 #: The checks whose failure refuses a load unless it is accepted with
 #: ``accept_failed_checks``.
 REFUSING_CHECKS = ("clock", "units")
+
+
+class DownloadWarning(UserWarning):
+    """Issued before a session's file is downloaded: its size, URL and cache.
+
+    A session can be several GB, so the download is announced where it is
+    shown by default. Silence it once a download is expected, for example::
+
+        import warnings
+        from neurospatial.datasets import DownloadWarning
+
+        warnings.simplefilter("ignore", DownloadWarning)
+    """
 
 
 class DatasetCheckError(ValueError, NeurospatialError):

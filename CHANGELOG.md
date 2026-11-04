@@ -25,12 +25,15 @@
   species, brain regions, apparatus, unit count where known, whether it is
   checked by hand, the default, license as the archive states it, archive,
   size and citation) without downloading. `fetch_all(dataset, *,
-  cache=None)` downloads every session, logging the total size first and
+  cache=None)` downloads every session, giving the total size first and
   refusing to start when the cache's disk lacks the room. Before each
-  download, `load` and `fetch_all` log its size and URL at WARNING (logger
-  `neurospatial.datasets`, shown by default), and a whole-file download or a
-  DANDI checksum request gives up after 300 s without data. The summary's `Source` line gives the file's size
-  and URL. Each dataset's
+  download, `load` and `fetch_all` issue a
+  `neurospatial.datasets.DownloadWarning` (a `UserWarning`, shown by default
+  and attributed to your call) with its size, URL and cache directory;
+  `warnings.simplefilter("ignore", DownloadWarning)` silences it. A
+  whole-file download or a DANDI checksum request gives up after 300 s
+  without data. The summary's `Source` line gives the file's size and URL.
+  Each dataset's
   sessions, checksums and stated facts are in
   `neurospatial/datasets/registry/<dataset>.json`;
   `scripts/build_dataset_registry.py` fills a DANDI registry from a pinned

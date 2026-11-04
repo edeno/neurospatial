@@ -15,12 +15,14 @@ from __future__ import annotations
 import logging
 import shutil
 import sys
+import warnings
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from neurospatial._exceptions import InputError, _format_error
 from neurospatial.datasets._catalog import SessionEntry, sessions
+from neurospatial.datasets._errors import DownloadWarning
 
 if TYPE_CHECKING:
     from neurospatial.datasets._recording import Recording
@@ -48,8 +50,8 @@ def load(
 
     The first load downloads the session's file into the cache and verifies
     its SHA-256; later loads read the cached file, offline. Before a
-    download, its size and URL are logged (logger ``neurospatial.datasets``,
-    level WARNING, so shown by default): a session can be several GB. The session is
+    download, a :class:`DownloadWarning` gives its size, URL and cache
+    directory (shown by default; a session can be several GB). The session is
     then checked: spikes, events and epochs must be on the tracking clock,
     and the position span and sampling rate must match what the dataset
     states. A failure of either refuses the load, because the arrays would
@@ -161,8 +163,10 @@ def _require(name: str, dataset: str) -> None:
 def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
     """Download every session of a dataset into the cache.
 
-    The total size is logged first (logger ``neurospatial.datasets``, level
-    WARNING, so shown by default), and nothing is downloaded when the cache's disk has less free
+    When anything is to be downloaded, a :class:`DownloadWarning` gives the
+    total size first, then one per session as for :func:`load` (shown by
+    default; with nothing to download the total is logged at INFO on logger
+    ``neurospatial.datasets``), and nothing is downloaded when the cache's disk has less free
     space than the sessions not yet cached. Cached files are verified
     against their pinned SHA-256, not downloaded again. A session read from
     zip members downloads those members only.
@@ -196,15 +200,14 @@ def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
     missing = [e for e in entries if not _cached(root, e)]
     total = sum(entry.download_bytes for entry in entries)
     needed = sum(entry.download_bytes for entry in missing)
-    logger.warning(
-        "%s: %d sessions, %s in all; %d to download (%s) into %s",
-        dataset,
-        len(entries),
-        _size(total),
-        len(missing),
-        _size(needed),
-        root,
+    sizes = (
+        f"{dataset}: {len(entries)} sessions, {_size(total)} in all; "
+        f"{len(missing)} to download ({_size(needed)}) into {root}"
     )
+    if missing:
+        warnings.warn(sizes, DownloadWarning, stacklevel=2)
+    else:
+        logger.info(sizes)
     free = shutil.disk_usage(root).free
     if needed > free:
         raise OSError(
@@ -216,7 +219,10 @@ def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
                 "to a disk with room.",
             )
         )
-    return [fetch_session(entry, cache=cache) for entry in entries]
+    paths = []
+    for entry in entries:  # a loop, so the warnings point at the caller
+        paths.append(fetch_session(entry, cache=cache))  # noqa: PERF401
+    return paths
 
 
 def _cached(root: Path, entry: SessionEntry) -> bool:
@@ -236,20 +242,21 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     from zip members has each member extracted by byte range into
     ``<cache>/<dataset>/<session>/<member name>``, verified against its own
     SHA-256, and that directory, holding only the session's members, is
-    returned. A download not yet cached is logged first, at WARNING, with
-    its size and URL.
+    returned. A download not yet cached is announced first with a
+    :class:`DownloadWarning` giving its size, URL and cache directory,
+    attributed to the caller of :func:`load` or :func:`fetch_all`.
     """
     from neurospatial.datasets._fetch import cache_root, fetch, fetch_zip_member
 
     root = cache_root(cache)
     if not _cached(root, entry):
-        logger.warning(
-            "Downloading %s session %s: %s from %s into %s",
-            entry.info.dataset,
-            entry.session,
-            _size(entry.download_bytes),
-            entry.url if entry.members else entry.download_url,
-            root / entry.info.dataset,
+        warnings.warn(
+            f"Downloading {entry.info.dataset} session {entry.session}: "
+            f"{_size(entry.download_bytes)} from "
+            f"{entry.url if entry.members else entry.download_url} into "
+            f"{root / entry.info.dataset}",
+            DownloadWarning,
+            stacklevel=3,  # fetch_session <- load or fetch_all <- the user
         )
     if entry.members:
         assert entry.url is not None  # checked when the registry is read

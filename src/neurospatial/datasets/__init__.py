@@ -21,7 +21,7 @@ Importing this module needs no optional dependency; the loaders ask for the
 from __future__ import annotations
 
 from neurospatial.datasets._catalog import catalog
-from neurospatial.datasets._errors import DatasetCheckError
+from neurospatial.datasets._errors import DatasetCheckError, DownloadWarning
 from neurospatial.datasets._load import fetch_all, load
 from neurospatial.datasets._recording import Conversion, Provenance, Recording
 from neurospatial.datasets._video import VideoSource
@@ -29,6 +29,7 @@ from neurospatial.datasets._video import VideoSource
 __all__ = [
     "Conversion",
     "DatasetCheckError",
+    "DownloadWarning",
     "Provenance",
     "Recording",
     "VideoSource",

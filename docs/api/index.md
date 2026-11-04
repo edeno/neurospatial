@@ -508,6 +508,8 @@ Loaders for published spatial neuroscience datasets, requiring
   conversion applied (with its basis), where the file came from, and a session's
   camera video
 - `DatasetCheckError`: Raised when a session fails the clock or units check
+- `DownloadWarning`: Issued before a session's file is downloaded, with its
+  size, URL and cache directory
 
 ### [neurospatial.simulation](neurospatial/simulation/index.md) <span style="color: #4CAF50;">v0.2.0+</span>
 

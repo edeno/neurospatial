@@ -290,9 +290,12 @@ keep the data on a disk with room:
 export NEUROSPATIAL_DATA_DIR=/data/neurospatial
 ```
 
-A file is downloaded once. Before it starts, `load` logs a warning (shown by
-default) with the download's size and URL, and the summary's `Source` line
-gives the file's size and URL afterwards. A download whose checksum differs
+A file is downloaded once. Before it starts, `load` issues a `DownloadWarning`
+(shown by default, pointing at your `load` call) with the download's size, URL
+and cache directory, and the summary's `Source` line gives the file's size and
+URL afterwards. Once you expect the downloads,
+`warnings.simplefilter("ignore", DownloadWarning)` (with `DownloadWarning`
+from `neurospatial.datasets`) silences the notice. A download whose checksum differs
 from the pinned one is refused and removed. A cached file whose checksum
 differs is never overwritten: loading raises `FileExistsError` and asks you to
 move it aside.
@@ -313,8 +316,8 @@ Grosmark DANDI session, most of it LFP). Two ways to keep it small:
 `fetch_all(dataset)` downloads every session of a dataset (it returns the
 list of paths). Before calling it, add up what it will download:
 `catalog().query("dataset == 'grosmark_2016'")["size_bytes"].sum()` is about
-66 GB. It logs the total size first, as a warning, and refuses to start if the
-cache's disk has less free space than that.
+66 GB. It gives the total size first, as a `DownloadWarning`, and refuses to
+start if the cache's disk has less free space than that.
 
 ## CRCNS credentials
 

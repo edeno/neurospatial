@@ -20,6 +20,21 @@ from neurospatial.datasets import Provenance, Recording
 from neurospatial.datasets._checks import Stated
 from neurospatial.simulation import open_field_session, tmaze_alternation_session
 
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Let a realdata test download into a cold cache: its DownloadWarning is shown.
+
+    Everywhere else a DownloadWarning is an error (the suite's warnings filter),
+    so a synthetic test that downloads must expect it.
+    """
+    for item in items:
+        if item.get_closest_marker("realdata"):
+            item.add_marker(
+                pytest.mark.filterwarnings(
+                    "default::neurospatial.datasets.DownloadWarning"
+                )
+            )
+
+
 PROVENANCE = Provenance(
     archive="Synthetic 0",
     url="file:///synthetic/session.npz",
