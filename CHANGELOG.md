@@ -313,7 +313,8 @@
 - `huszar_2026`: Huszár et al. (2026) mouse CA1 and CA3 units on a
   cheeseboard maze, all 42 sessions of DANDI 001880 (CC0-1.0). The default
   (49 units) is checked by hand. The environment is the paper's 90 cm disc,
-  with the two reward wells as regions; `rec.trials` holds the learning
+  centred midway between the 0.5th and 99.5th percentiles of the on-maze
+  samples, with the two reward wells as regions; `rec.trials` holds the learning
   trials, `events` the ripples and reward times, `epochs` the maze and box
   intervals, PRE, Learning and POST and the sleep states. 29% of the
   default's frames are held, mostly the tracker's last fix at the platform's

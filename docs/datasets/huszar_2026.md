@@ -30,12 +30,17 @@ from neurospatial import compute_spatial_rates
 from neurospatial.datasets import load
 
 rec = load("huszar_2026")
+# The learning trials' maze visits: on_maze rows inside the Learning
+# sub-session (no row crosses its edges in any session), so the held
+# positions while the mouse waits in the holding box are left out.
+learning, on_maze = rec.epochs["learning"], rec.epochs["on_maze"]
+inside = (on_maze[:, 0] >= learning[0, 0]) & (on_maze[:, 1] <= learning[-1, 1])
 rates = compute_spatial_rates(
     rec.env,
     rec.spike_times,
     rec.times,
     rec.positions,
-    epochs=rec.epochs["learning"],
+    epochs=on_maze[inside],
     min_speed=rec.params["min_speed"],
 )
 wells = rec.env.regions                          # reward_1, reward_2
@@ -71,13 +76,13 @@ ripples.
 
 | What the loader did | Basis | Evidence |
 | --- | --- | --- |
-| positions: `PositionSeries` as stored, cm | stated | The series' unit is `cm`. The file's `SubjectPosition` also holds a `VelocitySeries`, which is not loaded. |
+| positions: `PositionSeries` as stored, cm | stated | The series' unit is `cm`. The file's `SubjectPosition` also holds a `VelocitySeries`, which is not loaded. The camera frame's handedness (whether y grows up or down the room) is not stated, so the positions may be the room's mirror image, in which case the maze's clockwise turn between trials appears counter-clockwise. |
 | epochs: `on_maze`, `open_box`, `pre`, `learning`, `post`, `awake`, `nrem`, `rem` from the file's `onMaze`, `openBox`, `subSessions` and `SleepStates` tables | stated | The file's interval tables and their descriptions. |
-| epochs: `rest` (between sub-sessions), `before_tracking`, `after_tracking` (to the last sleep-state row) and `opto_tagging` (first to last light pulse) | inferred | The paper's day plan and its "in the homecage following Probe 2" opto-tagging; the file's sleep scoring covers the whole recording. |
+| epochs: `rest` (between sub-sessions), `before_tracking`, `after_tracking` (from the last position sample to the latest stop of the sleep states, sub-sessions and light pulses) and `opto_tagging` (first to last light pulse) | inferred | The paper's day plan and its "in the homecage following Probe 2" opto-tagging; the file's sleep scoring covers the whole recording. |
 | trials: the `LearningTrials` table; `events["rewards"]`, every reward time found | stated | The file's table; the paper: "The experimenter manually recorded water consumption time points using a footswitch". |
 | events: `ripples` ([start, stop) rows) and `ripple_peaks` from the `Ripples` table | stated | The file's table, detected as the paper describes (130-200 Hz band, 5 SD peak, 2 SD edges, 20-200 ms). |
 | regions `reward_1`, `reward_2` from `rewardCoordinates`; a trial's `rewardOrder` k names `reward_k` | inferred | The file says only "Order of rewards"; on the default session the tracked position at each of the 90 reward times lies a median 2.3 cm from the well its `rewardOrder` names and 43.5 cm from the other. |
-| environment: the stated 90 cm disc, centred at the midrange of the samples tracked during `on_maze`, 2.5 cm bins | inferred placement | The file states no origin (reference frame "Arbitrary, camera"). On the default session the on-maze samples span 90.7 x 89.6 cm. |
+| environment: the stated 90 cm disc, centred midway between the 0.5th and 99.5th percentiles of the samples tracked during `on_maze`, 2.5 cm bins | inferred placement | The file states no origin (reference frame "Arbitrary, camera"). The percentiles keep a few far samples from moving the centre; on the default session it lies 4.3 cm from the samples' min-max midrange (0.1 to 6.9 cm over the 42 sessions). The on-maze samples span 90.7 x 89.6 cm; 1.5% of them lie beyond the disc's radius. |
 | `units`: `brain_region` from `location`, `label` from `cell_type`; `CA1_optoTag`, `CA3_optoTag` and the file's other columns kept | stated | The file's units table. |
 
 The sampling rate (30 Hz) and the 90 cm diameter are **stated** by the paper; a
@@ -87,22 +92,25 @@ session whose largest tracked span is outside 72 to 108 cm is refused.
 
 - **Off-maze positions are not the animal's.** The camera does not see the
   holding box. On the default session 95% of the tracked samples outside
-  `epochs["on_maze"]` repeat the sample before, a median 44 cm from the
-  platform's centre: most likely the tracker holding its last fix at the edge
-  while the mouse is in the box. `params["analysis_epochs"]` is `on_maze`; use
-  it for occupancy and rate maps. The positions are kept as stored, and the
-  summary prints the share for every session.
+  `epochs["on_maze"]` repeat the sample before (6% on the maze), a median
+  41 cm from the platform's centre: most likely the tracker holding its last
+  fix at the edge while the mouse is in the box. `params["analysis_epochs"]`
+  is `on_maze`; use it for occupancy and rate maps. The positions are kept as
+  stored. The summary gives the share for every session where more than half
+  of the off-maze samples are held (89.5 to 99.9% over the 42 sessions).
 - **Held tracking.** 29% of the default session's frames repeat in runs of 11
   or more (the longest 82 s), most of them off the maze. On the maze, check a
   stop at a well before reading it as lost tracking.
-- **Samples outside the disc.** 13% of the default session's tracked samples lie
-  outside the declared disc, 19% of the stopped ones and 1.6% of the moving
-  ones: the held fixes at the edge and the head over the platform's rim.
+- **Samples outside the disc.** 2.6% of the default session's tracked samples
+  lie outside the declared disc, 3.5% of the stopped ones and 1.0% of the
+  moving ones: held fixes at the edge and the head over the platform's rim.
 - **Trial stops are not the second reward.** The paper defines a trial's end as
   "the time point of the second water consumption", but the file's trials stop
   when the mouse leaves the maze, 15 to 52 s after the second reward on the
-  default session. Some sessions have trials in which only one reward was found
-  (`rewardTime` missing, `rewardOrder` 0); those are counted in the summary.
+  default session (in every session, every trial with both rewards stops more
+  than a frame after the second; the summary says so where one does). Some
+  sessions have trials in which only one reward was found (`rewardTime`
+  missing, `rewardOrder` 0); those are counted in the summary.
 - **The maze turns between trials, the frame does not.** Positions, the
   environment and the reward wells are in the camera's (room) frame; the maze
   under them was turned 45 degrees after every trial.

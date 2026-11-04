@@ -50,10 +50,11 @@ What the loader converts:
   ``CA3_optoTag``, ``unit_name``, ``clu_id``, ``group_id``) are kept.
 - headings: none. One LED is tracked.
 
-The declared environment is the stated 90 cm disc, centred at the midrange
-of the samples tracked during ``on_maze`` (the file states no origin: its
-reference frame is "Arbitrary, camera"), in 2.5 cm bins, with the reward
-wells as regions.
+The declared environment is the stated 90 cm disc, centred midway between
+the 0.5th and 99.5th percentiles of the samples tracked during ``on_maze``
+(the file states no origin: its reference frame is "Arbitrary, camera"), in
+2.5 cm bins, with the reward wells as regions. The camera frame's
+handedness (whether y grows up or down the room) is not stated either.
 
 Analysis choices (``params``):
 
@@ -126,6 +127,14 @@ BIN_SIZE = 2.5
 #: The paper's running threshold, cm/s.
 MIN_SPEED = 5.0
 DT = 0.25
+#: The camera's stated frame rate, Hz (STAR Methods: "a frame rate of 30 Hz").
+FRAME_RATE = 30.0
+#: Above this share of off-maze tracked samples repeating the one before,
+#: most of them are the tracker's held last fix.
+HELD_OFF_MAZE = 0.5
+#: The disc is centred between these percentiles of the on-maze samples, so
+#: a few far samples do not move it (as Shipley's star centre).
+CENTRE_PERCENTILES = (0.5, 99.5)
 
 _BEHAVIOR = "processing/behavior"
 _POSITION = f"{_BEHAVIOR}/SubjectPosition/PositionSeries"
@@ -140,7 +149,8 @@ EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
         r"runs of 11 or more identical position samples",
         r"lie outside the declared environment",
         r"of the tracked samples outside epochs\['on_maze'\] repeat",
-        r"trials with both rewards stop \d+(\.\d+)? to \d+(\.\d+)? s after",
+        r"\d+ of the \d+ learning trials with both rewards stop more than one "
+        r"frame",
     ),
 }
 
@@ -312,7 +322,11 @@ def load_session(
                 f"positions: {_POSITION} as stored, cm",
                 "stated",
                 f"the file's series: {stated_unit} (read_position applies the "
-                f"conversion); {description!r}",
+                f"conversion); {description!r}; the camera frame's handedness is "
+                "not stated (whether y grows up or down the room), so the "
+                "positions keep the file's axes and may be the room's mirror "
+                "image, in which case the maze's stated clockwise turn between "
+                "trials appears counter-clockwise in them",
             ),
             Conversion(
                 "epochs: onMaze as 'on_maze', openBox as 'open_box', "
@@ -365,6 +379,7 @@ def load_session(
             *_empty_rows(empty),
             *_held_off_maze(times, positions, on_maze, centre),
             *_trial_stops(table, found, on_maze),
+            *_short_trials(table, found),
             "Positions outside epochs['on_maze'] are not the animal's: the "
             "camera does not see the holding box, so use "
             "params['analysis_epochs'] (on_maze) for rate maps and occupancy. "
@@ -456,7 +471,7 @@ def _declared_disc(
     session: str,
     frame: str | None,
 ) -> tuple[Environment, NDArray[np.float64], Conversion]:
-    """The stated disc at the on-maze samples' midrange, with the wells as regions.
+    """The stated disc at the on-maze samples' percentile midrange, with the wells as regions.
 
     Parameters
     ----------
@@ -478,7 +493,8 @@ def _declared_disc(
     from neurospatial.regions import Region
 
     low, high = on_maze.min(axis=0), on_maze.max(axis=0)
-    centre = (low + high) / 2
+    inner_low, inner_high = np.percentile(on_maze, CENTRE_PERCENTILES, axis=0)
+    centre = (inner_low + inner_high) / 2
     radius = DIAMETER / 2
     beyond = float(np.mean(np.linalg.norm(on_maze - centre, axis=1) > radius))
     residuals = ", ".join(
@@ -504,8 +520,13 @@ def _declared_disc(
         f"beyond its {radius:g} cm radius",
         "inferred",
         f"the file states no origin (reference frame {frame!r}); the centre is "
-        "the midrange of the samples tracked during onMaze, x "
-        f"{low[0]:.4g} to {high[0]:.4g} cm and y {low[1]:.4g} to {high[1]:.4g} cm",
+        f"midway between the {CENTRE_PERCENTILES[0]:g}th and "
+        f"{CENTRE_PERCENTILES[1]:g}th percentiles of the samples tracked during "
+        f"onMaze, x {inner_low[0]:.4g} to {inner_high[0]:.4g} cm and y "
+        f"{inner_low[1]:.4g} to {inner_high[1]:.4g} cm, so a few far samples do "
+        f"not move it; their full range is x {low[0]:.4g} to {high[0]:.4g} cm and "
+        f"y {low[1]:.4g} to {high[1]:.4g} cm, whose midrange lies "
+        f"{np.linalg.norm((low + high) / 2 - centre):.2g} cm away",
     )
     return env, centre, placement
 
@@ -559,30 +580,48 @@ def _held_off_maze(
     on_maze: NDArray[np.float64],
     centre: NDArray[np.float64],
 ) -> tuple[str, ...]:
-    """Off-maze samples that repeat the one before: the tracker's last fix."""
+    """Off-maze samples that repeat the one before: the tracker's last fix.
+
+    Only where more than ``HELD_OFF_MAZE`` of the tracked off-maze samples
+    repeat the one before.
+    """
     off = ~_within(times, on_maze) & tracked_mask(positions)
     if not off.any():
         return ()
     repeat = np.r_[False, np.all(np.diff(positions, axis=0) == 0, axis=1)]
+    share = float(repeat[off].mean())
+    if share <= HELD_OFF_MAZE:
+        return ()
+    on = _within(times, on_maze) & tracked_mask(positions)
     distance = np.linalg.norm(positions[off] - centre, axis=1)
     moving = off & ~repeat
     steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
     path = float(np.nansum(steps[moving[1:] & off[:-1]]))
     return (
-        f"{repeat[off].mean():.0%} of the tracked samples outside "
-        f"epochs['on_maze'] repeat the sample before ({int(off.sum())} samples, "
-        f"a median {np.median(distance):.3g} cm from the platform's centre): most "
-        "likely the tracker holding its last fix at the platform's edge while "
-        "the mouse is in the holding box, which the camera does not see. The "
-        f"other {int(moving.sum())} move, {path:.0f} cm of path in all, so the "
-        "mouse is sometimes tracked on the maze outside an onMaze row.",
+        f"{share:.0%} of the tracked samples outside epochs['on_maze'] repeat the "
+        f"sample before ({int(off.sum())} samples, a median "
+        f"{np.median(distance):.3g} cm from the platform's centre), against "
+        f"{repeat[on].mean():.0%} on the maze: with more than "
+        f"{HELD_OFF_MAZE:.0%} held, most likely the tracker holding its last fix "
+        "at the platform's edge while the mouse is in the holding box, which "
+        "the camera does not see."
+        + (
+            f" The other {int(moving.sum())} move, {path:.0f} cm of path in all, so "
+            "the mouse is sometimes tracked on the maze outside an onMaze row."
+            if path > 0
+            else ""
+        ),
     )
 
 
 def _trial_stops(
     table: Any, found: list[list[tuple[float, int]]], on_maze: NDArray[np.float64]
 ) -> tuple[str, ...]:
-    """How the file's trial stops fall after the second reward, with numbers."""
+    """How the file's trial stops fall after the second reward, with numbers.
+
+    Only where a trial with both rewards stops more than one camera frame
+    (1 / ``FRAME_RATE``) after its second reward.
+    """
     stops = table["stop_time"].to_numpy(dtype=np.float64)
     both = np.array([len(rewards) == 2 for rewards in found], dtype=bool)
     if not both.any():
@@ -591,21 +630,30 @@ def _trial_stops(
         [max(when for when, _ in rewards) for rewards in found if len(rewards) == 2]
     )
     after = stops[both] - last
+    late = after > 1.0 / FRAME_RATE
+    if not late.any():
+        return ()
     n_maze = int(np.isin(stops, on_maze[:, 1]).sum())
-    short = len(table) - int(both.sum())
-    fewer = (
-        ""
-        if short == 0
-        else f" In {short} of the {len(table)} trials fewer than two rewards were "
-        "found (rewardTime missing, rewardOrder 0); the paper says a trial was "
-        "aborted after 4 minutes of exploring."
-    )
     return (
-        f"The {int(both.sum())} learning trials with both rewards stop {after.min():.1f} to "
-        f"{after.max():.1f} s after the second (median "
-        f"{np.median(after):.1f} s), though the paper defines a trial's end as "
-        f"'the time point of the second water consumption' ({_PAPER}); "
-        f"{n_maze} of the {len(table)} trials stop at the stop of an onMaze row, when the LED "
-        "leaves the maze. A trial's start is when the box opens; its "
-        "onMaze_start_time is when the LED is first on the maze." + fewer,
+        f"{int(late.sum())} of the {int(both.sum())} learning trials with both "
+        f"rewards stop more than one frame (1/{FRAME_RATE:g} s) after the second; "
+        f"the trials with both rewards stop {after.min():.1f} to "
+        f"{after.max():.1f} s after it (median {np.median(after):.1f} s), though "
+        "the paper defines a trial's end as 'the time point of the second water "
+        f"consumption' ({_PAPER}); {n_maze} of the {len(table)} trials stop at "
+        "the stop of an onMaze row, when the LED leaves the maze. A trial's "
+        "start is when the box opens; its onMaze_start_time is when the LED is "
+        "first on the maze.",
+    )
+
+
+def _short_trials(table: Any, found: list[list[tuple[float, int]]]) -> tuple[str, ...]:
+    """A watch-out for trials in which fewer than two rewards were found."""
+    short = sum(len(rewards) < 2 for rewards in found)
+    if not short:
+        return ()
+    return (
+        f"In {short} of the {len(table)} learning trials fewer than two rewards "
+        "were found (rewardTime missing, rewardOrder 0); the paper says a trial "
+        "was aborted after 4 minutes of exploring.",
     )

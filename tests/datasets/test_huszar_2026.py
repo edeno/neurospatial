@@ -26,15 +26,23 @@ TRIALS = (
 MAZE = ((100.0, 600.0), *((on, stop) for _, on, _, _, stop in TRIALS), (2100.0, 2500.0))
 
 
-def _positions(times):
-    """A path over the disc on the maze; a held fix at the edge off it."""
+def _positions(times, *, held=True, glitch=False):
+    """A path over the disc on the maze; a held fix at the edge off it.
+
+    ``held=False`` keeps the path moving off the maze; ``glitch`` puts 30
+    on-maze samples 300 cm off, as a tracking glitch does.
+    """
     phase = 2 * np.pi * times / 37.0
     radius = 40.0 * np.abs(np.sin(times / 11.0))
     xy = CENTRE + radius[:, None] * np.column_stack([np.cos(phase), np.sin(phase)])
     on = np.zeros(times.size, dtype=bool)
     for start, stop in MAZE:
         on |= (times >= start) & (times < stop)
-    xy[~on] = CENTRE + np.array([44.0, 0.0])  # the tracker's last fix, by the box
+    if held:
+        xy[~on] = CENTRE + np.array([44.0, 0.0])  # the tracker's last fix, by the box
+    if glitch:
+        first = int(np.flatnonzero(on)[1000])
+        xy[first : first + 30] = CENTRE + np.array([300.0, 0.0])
     for _, _, rewards, orders, _ in TRIALS:  # at each well when rewarded
         for when, k in zip(rewards, orders, strict=True):
             if k:
@@ -57,7 +65,15 @@ def _intervals(name, description, rows, **columns):
     return table
 
 
-def _write_session(path, *, unit="cm", zero_length_state=False):
+def _write_session(
+    path,
+    *,
+    unit="cm",
+    zero_length_state=False,
+    held=True,
+    glitch=False,
+    trials=TRIALS,
+):
     """An NWB file laid out as DANDI 001880's, at 30 Hz, cm, one LED."""
     pynwb = pytest.importorskip("pynwb")
     from hdmf.common import DynamicTable, VectorData
@@ -71,7 +87,7 @@ def _write_session(path, *, unit="cm", zero_length_state=False):
         subject=Subject(subject_id="iuvE14_x", species="Mus musculus"),
     )
     times = np.concatenate([np.arange(a, b, 1 / 30) for a, b in SUB])
-    xy = _positions(times)
+    xy = _positions(times, held=held, glitch=glitch)
     behavior = nwb.create_processing_module("behavior", "behavior")
     position = Position(name="SubjectPosition")
     position.add_spatial_series(
@@ -134,10 +150,10 @@ def _write_session(path, *, unit="cm", zero_length_state=False):
         _intervals(
             "LearningTrials",
             "Learning trials and rewards information",
-            [(box, stop) for (box, _, _, _, stop) in TRIALS],
-            onMaze_start_time=[on for (_, on, _, _, _) in TRIALS],
-            rewardTime=[list(rewards) for (_, _, rewards, _, _) in TRIALS],
-            rewardOrder=[list(orders) for (_, _, _, orders, _) in TRIALS],
+            [(box, stop) for (box, _, _, _, stop) in trials],
+            onMaze_start_time=[on for (_, on, _, _, _) in trials],
+            rewardTime=[list(rewards) for (_, _, rewards, _, _) in trials],
+            rewardOrder=[list(orders) for (_, _, _, orders, _) in trials],
         )
     )
     behavior.add(
@@ -227,16 +243,22 @@ def test_loads_positions_epochs_events_and_trials(synthetic, entry):
     assert list(rec.units["CA1_optoTag"]) == [1, 0]
 
 
+def _on_maze(rec, times):
+    on = np.zeros(times.size, dtype=bool)
+    for start, stop in rec.epochs["on_maze"]:
+        on |= (times >= start) & (times < stop)
+    return on
+
+
 def test_disc_is_the_stated_diameter_at_the_on_maze_midrange(synthetic, entry):
     """The 90 cm disc, centred on the on-maze samples, the wells as point regions."""
     from neurospatial.datasets import huszar_2026
 
     path, times, xy = synthetic
     rec = huszar_2026.load_session(entry, path)
-    on = np.zeros(times.size, dtype=bool)
-    for start, stop in rec.epochs["on_maze"]:
-        on |= (times >= start) & (times < stop)
-    centre = (xy[on].min(axis=0) + xy[on].max(axis=0)) / 2
+    on = _on_maze(rec, times)
+    low, high = np.percentile(xy[on], [0.5, 99.5], axis=0)
+    centre = (low + high) / 2
     bins = np.asarray(rec.env.bin_centers)
     midrange = (bins.min(axis=0) + bins.max(axis=0)) / 2
     np.testing.assert_allclose(midrange, centre, atol=2.5)
@@ -247,6 +269,25 @@ def test_disc_is_the_stated_diameter_at_the_on_maze_midrange(synthetic, entry):
     placement = next(c for c in rec.conversions if c.text.startswith("environment"))
     assert placement.basis == "inferred"
     assert f"centred at ({centre[0]:.4g}, {centre[1]:.4g}) cm" in placement.text
+    assert "midway between the 0.5th and 99.5th percentiles" in placement.evidence
+
+
+def test_a_tracking_glitch_does_not_move_the_disc(tmp_path, entry):
+    """30 samples 300 cm off would move a min-max midrange by 125 cm."""
+    from neurospatial.datasets import huszar_2026
+
+    clean, glitched = tmp_path / "clean.nwb", tmp_path / "glitch.nwb"
+    times, _ = _write_session(clean)
+    _, xy_glitch = _write_session(glitched, glitch=True)
+    centres = []
+    for path in (clean, glitched):
+        bins = np.asarray(huszar_2026.load_session(entry, path).env.bin_centers)
+        centres.append((bins.min(axis=0) + bins.max(axis=0)) / 2)
+    np.testing.assert_allclose(centres[1], centres[0], atol=0.5)
+    rec = huszar_2026.load_session(entry, glitched)
+    on = _on_maze(rec, times)
+    midrange = (xy_glitch[on].min(axis=0) + xy_glitch[on].max(axis=0)) / 2
+    assert np.linalg.norm(midrange - centres[0]) > 100.0
 
 
 def test_reward_order_names_the_well_the_animal_is_at(synthetic, entry):
@@ -266,10 +307,33 @@ def test_watch_outs_count_held_fixes_and_late_trial_stops(synthetic, entry):
     rec = huszar_2026.load_session(entry, path)
     (held,) = [w for w in rec.watch_outs if "outside epochs['on_maze'] repeat" in w]
     assert held.startswith("100% of the tracked samples")
-    assert "a median 44 cm from the platform's centre" in held
+    assert "a median 43.6 cm from the platform's centre" in held
+    assert "most likely the tracker holding its last fix" in held
+    # The few samples that differ are the jumps onto the held fix: no path.
+    assert "of path in all" not in held
     (stops,) = [w for w in rec.watch_outs if "trials with both rewards" in w]
-    assert "The 2 learning trials with both rewards stop 20.0 to 50.0 s" in stops
-    assert "In 1 of the 3 trials fewer than two rewards were found" in stops
+    assert stops.startswith(
+        "2 of the 2 learning trials with both rewards stop more than one frame"
+    )
+    assert "stop 20.0 to 50.0 s after it" in stops
+    (short,) = [w for w in rec.watch_outs if "fewer than two rewards" in w]
+    assert short.startswith("In 1 of the 3 learning trials fewer than two rewards")
+
+
+def test_held_fixes_and_late_stops_are_reported_only_where_found(tmp_path, entry):
+    """A path that keeps moving off the maze, and trials that stop at their reward."""
+    from neurospatial.datasets import huszar_2026
+
+    at_reward = tuple(
+        (box, on, rewards, orders, np.nanmax(rewards))
+        for box, on, rewards, orders, _ in TRIALS
+    )
+    path = tmp_path / "session.nwb"
+    _write_session(path, held=False, trials=at_reward)
+    rec = huszar_2026.load_session(entry, path)
+    assert not any("outside epochs['on_maze'] repeat" in w for w in rec.watch_outs)
+    assert not any("stop more than one frame" in w for w in rec.watch_outs)
+    assert any("fewer than two rewards" in w for w in rec.watch_outs)
 
 
 def test_zero_length_rows_are_left_out_and_counted(tmp_path, entry):
