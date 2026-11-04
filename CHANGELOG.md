@@ -36,7 +36,9 @@
   lists the files in a folder named after an NWB file's stem, the videos its
   ImageSeries name, under the session's `videos`, keeping the hand-set
   `landmarks` and `led_fit` of each, but only while their `video_sha256` is
-  the video's own.
+  the video's own. A session whose file has a new SHA-256 is reset to
+  unverified (its `verified`, `n_units` and `verification` cleared, its
+  `default` kept), and the reset is printed.
 - A registry session may come from a second archive, with its own license
   as that archive states it ("not stated" where it states none) and its own
   data citation; `scripts/build_dataset_registry.py` keeps such rows. A
