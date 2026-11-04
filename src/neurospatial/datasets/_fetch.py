@@ -89,8 +89,20 @@ def _install(tmp: Path, dest: Path, sha256: str) -> Path:
     actual = file_sha256(tmp)
     if actual != sha256:
         tmp.unlink()
-        msg = f"{dest.name}: downloaded SHA-256 {actual} does not match the pinned {sha256}."
-        raise ValueError(msg)
+        from neurospatial._exceptions import _format_error
+
+        raise ValueError(
+            _format_error(
+                f"{dest.name}: downloaded SHA-256 {actual} does not match the "
+                f"pinned {sha256}; the download was removed.",
+                why="the file was cut short or changed in transit, or the "
+                "archive now serves a different file, which the loader was not "
+                "checked against.",
+                fix="load again to retry the download; if it fails again with "
+                "the same SHA-256, the archive's file changed: report it, and do "
+                "not update the pin until the session is checked again.",
+            )
+        )
     tmp.replace(dest)
     return dest
 

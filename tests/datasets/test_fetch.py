@@ -76,9 +76,11 @@ def test_fetch_refuses_mismatched_existing_file(source, tmp_path):
 
 def test_bad_download_leaves_no_temp_file(source, tmp_path):
     url, _ = source
-    with pytest.raises(ValueError, match="does not match the pinned"):
+    with pytest.raises(ValueError, match="does not match the pinned") as refused:
         fetch(url, "data.bin", sha256="0" * 64, subdir="demo", cache=tmp_path / "cache")
     assert list((tmp_path / "cache" / "demo").iterdir()) == []
+    assert "\nWhy: " in str(refused.value)
+    assert "\nFix: load again to retry" in str(refused.value)
 
 
 def test_cache_root_reads_environment(tmp_path, monkeypatch):
