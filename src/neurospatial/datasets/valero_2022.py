@@ -100,7 +100,7 @@ from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import Conversion, Recording, interval_rows
-from neurospatial.datasets._tracks import nearest_segment
+from neurospatial.datasets._tracks import nearest_segment, placement_tolerance
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -158,6 +158,10 @@ END_QUANTILES = (0.005, 0.995)
 #: The placement tolerance is twice this quantile of the samples' distance
 #: from the track, and at least the stated width and one bin.
 TOLERANCE_QUANTILE = 0.99
+_QUANTILE_REASON = (
+    "The 99th percentile, so that 1% of the samples are left out: the 95th "
+    "leaves out 5%, head samples just beside the track."
+)
 
 _BEHAVIOR = "processing/behavior/LinearMazePositionTracking"
 _POSITION = f"{_BEHAVIOR}/SpatialSeriesRaw"
@@ -462,8 +466,13 @@ def _declared_track(
         graph.add_node(name, pos=(float(point[0]), float(point[1])))
     graph.add_edge("start", "end", distance=LENGTH)
     distance = nearest_segment(tracked, ends[:1], ends[1:]).distance
-    reach = float(np.quantile(distance, TOLERANCE_QUANTILE))
-    width = max(2 * reach, WIDTH, BIN_SIZE)
+    width, width_quantile, evidence = placement_tolerance(
+        distance,
+        TOLERANCE_QUANTILE,
+        floor=max(WIDTH, BIN_SIZE),
+        measured="the tracked point's distance from the track",
+        reason=_QUANTILE_REASON,
+    )
     env = Environment.from_graph(
         graph,
         [("start", "end")],
@@ -492,15 +501,8 @@ def _declared_track(
         f"stated {WIDTH:g} cm width: twice the tracked samples' "
         f"{TOLERANCE_QUANTILE:.0%} quantile distance from the track",
         "inferred",
-        f"the tracked point's distance from the track: median "
-        f"{np.median(distance):.2f} cm, {TOLERANCE_QUANTILE:.0%} quantile "
-        f"{reach:.3g} cm; {np.mean(distance > width / 2):.1%} of tracked samples "
-        "lie beyond the tolerance, by construction, and fall in no bin. The "
-        "99th percentile, so that 1% of the samples are left out: the 95th "
-        "leaves out 5%, head samples just beside the track. track_width decides only which samples are placed, not the bins, their "
-        "lengths or connectivity",
+        evidence,
     )
-    width_quantile = TOLERANCE_QUANTILE if width == 2 * reach else None
     return env, (placement, tolerance), distance, width_quantile
 
 

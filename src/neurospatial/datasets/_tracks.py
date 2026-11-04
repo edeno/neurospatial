@@ -7,7 +7,7 @@ from typing import NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
-__all__ = ["NearestSegment", "nearest_segment"]
+__all__ = ["NearestSegment", "nearest_segment", "placement_tolerance"]
 
 
 class NearestSegment(NamedTuple):
@@ -69,3 +69,52 @@ def nearest_segment(
     relative = points - starts[segment]
     cross = steps[segment, 0] * relative[:, 1] - steps[segment, 1] * relative[:, 0]
     return NearestSegment(distance, segment, along, cross / lengths[segment])
+
+
+def placement_tolerance(
+    distance: NDArray[np.float64],
+    quantile: float,
+    *,
+    floor: float,
+    measured: str,
+    reason: str,
+) -> tuple[float, float | None, str]:
+    """A track's ``track_width`` from its tracked samples' distance to it, and why.
+
+    Twice ``quantile`` of ``distance``, and at least ``floor``, so that about
+    ``1 - quantile`` of the samples fall in no bin by construction.
+
+    Parameters
+    ----------
+    distance : ndarray, shape (n_tracked,)
+        Each tracked sample's distance from the track, cm.
+    quantile : float
+        The quantile of ``distance`` that half the width is.
+    floor : float
+        The narrowest width, cm: one bin, or a stated physical width.
+    measured : str
+        What ``distance`` is, the evidence's opening words, for example
+        ``"the tracked point's distance from the track"``.
+    reason : str
+        Why that quantile, one or more sentences.
+
+    Returns
+    -------
+    width : float
+        ``track_width``, cm.
+    width_quantile : float or None
+        ``quantile`` when it set the width; None when ``floor`` did.
+    evidence : str
+        The inferred ``Conversion``'s evidence.
+    """
+    reach = float(np.quantile(distance, quantile))
+    width = max(2 * reach, floor)
+    evidence = (
+        f"{measured}: median {np.median(distance):.2f} cm, "
+        f"{quantile:.0%} quantile {reach:.3g} cm; "
+        f"{np.mean(distance > width / 2):.1%} of tracked samples lie beyond the "
+        f"tolerance, by construction, and fall in no bin. {reason} track_width "
+        "decides only which samples are placed, not the bins, their lengths or "
+        "connectivity"
+    )
+    return width, quantile if width == 2 * reach else None, evidence

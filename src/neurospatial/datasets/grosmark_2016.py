@@ -96,7 +96,7 @@ from neurospatial._angles import wrap_angle
 from neurospatial.datasets._checks import _count, gap_stats
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import Conversion, Recording, interval_rows
-from neurospatial.datasets._tracks import nearest_segment
+from neurospatial.datasets._tracks import nearest_segment, placement_tolerance
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -198,6 +198,12 @@ _CIRCLE_QUANTILE_REASON = (
     "The 99th percentile, so that 1% of the samples fall outside: a lower one "
     "leaves out head samples just beside the ring and breaks laps there "
     "(Achilles 11012013: 67 laps at the 99th, 37 at the 95th)."
+)
+#: The tolerance evidence's opening: no source states a physical width to
+#: floor the tolerance with, so one bin floors it.
+_MEASURED = (
+    "no source read states the track's width. The tracked head's distance "
+    "from the track"
 )
 #: Soft-L1 scale of the circle fit, cm: samples farther than this from the
 #: ring count less.
@@ -671,30 +677,6 @@ def _segment_distance(
     return nearest_segment(points, starts, ends).distance
 
 
-def _tolerance(
-    distance: NDArray[np.float64], quantile: float, reason: str
-) -> tuple[float, str, float | None]:
-    """``track_width`` from the tracked samples' distance to the track, and why.
-
-    Twice ``quantile`` of ``distance`` (cm), and at least one bin; no source
-    states a physical width to floor it with. ``reason`` says why that
-    quantile. The third value is ``quantile`` when it set the width, None
-    when the one-bin floor did.
-    """
-    reach = float(np.quantile(distance, quantile))
-    width = max(2 * reach, BIN_SIZE)
-    evidence = (
-        "no source read states the track's width. The tracked head's distance "
-        f"from the track: median {np.median(distance):.2f} cm, "
-        f"{quantile:.0%} quantile {reach:.3g} cm; "
-        f"{np.mean(distance > width / 2):.1%} of tracked samples lie beyond the "
-        f"tolerance, by construction, and fall in no bin. {reason} track_width "
-        "decides only which samples are placed, not the bins, their lengths or "
-        "connectivity"
-    )
-    return width, evidence, quantile if width == 2 * reach else None
-
-
 def _declared_linear(
     positions: NDArray[np.float64],
     linearized: NDArray[np.float64],
@@ -738,8 +720,12 @@ def _declared_linear(
     for (a, b), length in zip(order, np.diff(offsets), strict=True):
         graph.add_edge(a, b, distance=float(length))
     distance = _segment_distance(positions[tracked], points, closed=False)
-    width, evidence, width_quantile = _tolerance(
-        distance, LINEAR_TOLERANCE_QUANTILE, _LINEAR_QUANTILE_REASON
+    width, width_quantile, evidence = placement_tolerance(
+        distance,
+        LINEAR_TOLERANCE_QUANTILE,
+        floor=BIN_SIZE,
+        measured=_MEASURED,
+        reason=_LINEAR_QUANTILE_REASON,
     )
     env = Environment.from_graph(
         graph,
@@ -829,8 +815,12 @@ def _declared_circle(
             distance=float(np.linalg.norm(points[(k + 1) % N_VERTICES] - points[k])),
         )
     distance = _segment_distance(positions[tracked], points, closed=True)
-    width, evidence, width_quantile = _tolerance(
-        distance, CIRCLE_TOLERANCE_QUANTILE, _CIRCLE_QUANTILE_REASON
+    width, width_quantile, evidence = placement_tolerance(
+        distance,
+        CIRCLE_TOLERANCE_QUANTILE,
+        floor=BIN_SIZE,
+        measured=_MEASURED,
+        reason=_CIRCLE_QUANTILE_REASON,
     )
     env = Environment.from_graph(
         graph,
