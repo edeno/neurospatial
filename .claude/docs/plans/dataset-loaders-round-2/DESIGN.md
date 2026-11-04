@@ -145,11 +145,18 @@ From the round-1 design and code:
   [-π, π], with an `inferred` `Conversion` and a watch-out, as Peyrache
   2015 does. The overview and summary already say when a frame is not
   verified by movement.
-- **Grieves' frame change is a stated conversion,** not a chosen rule:
+- **Grieves' frame change is applied from the file,** not a chosen rule:
   the survey derived it from the file (the 3-D frame is the camera's
   mirrored in y and shifted), so the loader applies it with that evidence.
+  Its basis is `inferred` (review ruling): no source read gives `poh`'s
+  unit or frame, and the exact mirror is the evidence.
   The 3-D environment is a voxel grid as for Forli; the lattice bars are
   kept as geometry for plots.
+- **Gardner loads only the open-field session** of each recording (a
+  deviation from the table above, kept at review): the wagon-wheel track
+  and sleep-box sessions of the same files are not offered, and a
+  watch-out names them. Follow-up: offer them as sessions with their own
+  apparatus.
 
 Calls made in this document (the maintainer may overrule):
 
