@@ -196,9 +196,91 @@ def test_a_heading_along_the_movement_is_verified(tmp_path, session_entry):
     rec = kanter_2025.load_session(session_entry("kanter_2025", FORAGING), path)
     assert not any("heading frame is not verified" in t for t in rec.watch_outs)
     assert list(rec.epochs) == ["foraging"]
-    # Positions from (0, 0): the stated corner origin holds, no watch-out.
+    # Positions from (0, 0): the stated corner origin holds, no watch-out,
+    # and the square is the stated [0, 100]^2.
     assert not any("Bottom left" in t for t in rec.watch_outs)
     assert not any("No object positions" in t for t in rec.watch_outs)
+    placement = next(c for c in rec.conversions if c.text.startswith("environment"))
+    assert placement.basis == "stated"
+    assert "[0, 100] x [0, 100] cm, its bottom left at the file's origin" in (
+        placement.text
+    )
+    np.testing.assert_allclose(rec.env.dimension_ranges, [[0.0, 100.0]] * 2)
+
+
+def test_samples_past_the_far_walls_contradict_the_stated_origin(
+    tmp_path, session_entry
+):
+    """No negative coordinate, but y and x reach 108 cm in a stated 100 cm square."""
+    from neurospatial.datasets import kanter_2025
+
+    times, xy = _path(low=(10.0, 10.0))
+    path = tmp_path / "session.nwb"
+    _write_session(
+        path,
+        times,
+        xy,
+        _moving_headings(times, xy),
+        epochs=[[times[0], times[-1]]],
+        tasks=["Foraging task"],
+    )
+    rec = kanter_2025.load_session(session_entry("kanter_2025", FORAGING), path)
+    (claim,) = [t for t in rec.watch_outs if "'Bottom left of the arena', but" in t]
+    assert "have a coordinate below 0 or above the stated 100 cm" in claim
+    placement = next(c for c in rec.conversions if c.text.startswith("environment"))
+    assert placement.basis == "inferred"
+    assert "of the tracked samples contradict" in placement.evidence
+    np.testing.assert_allclose(
+        np.mean(rec.env.dimension_ranges, axis=1), xy.min(0) / 2 + xy.max(0) / 2, atol=1
+    )
+
+
+@pytest.mark.parametrize(
+    ("headings", "reason"),
+    [
+        (
+            # The offset drifts from -1 to +1 rad, its mean near 0.
+            lambda times, xy: _moving_headings(times, xy)
+            + np.linspace(-1.0, 1.0, times.size),
+            "the window means' circular SD is beyond 11.5 degrees",
+        ),
+        (
+            # A constant 0 offset with noise of +-100 degrees: a spread of 50.
+            lambda times, xy: _moving_headings(times, xy)
+            + np.radians(np.random.default_rng(2).uniform(-100, 100, times.size)),
+            "the spread is 45 degrees or more",
+        ),
+    ],
+    ids=["drift", "spread"],
+)
+def test_a_drifting_or_spread_heading_is_not_verified(
+    tmp_path, session_entry, headings, reason
+):
+    """The shared rule: |mean| <= 0.2 rad, spread < 45 degrees, and no drift."""
+    from neurospatial.datasets import kanter_2025
+
+    times, xy = _path(low=(0.0, 0.0))
+    path = tmp_path / "session.nwb"
+    _write_session(
+        path,
+        times,
+        xy,
+        headings(times, xy),
+        epochs=[[times[0], times[-1]]],
+        tasks=["Foraging task"],
+    )
+    rec = kanter_2025.load_session(session_entry("kanter_2025", FORAGING), path)
+    frame = next(c for c in rec.conversions if c.text.startswith("headings: allo"))
+    assert f"{reason}" in frame.evidence
+    assert "so the frame is not verified" in frame.evidence
+    (finding,) = [t for t in rec.watch_outs if "heading frame is not verified" in t]
+    if reason.startswith("the window"):
+        assert "smeared by the drift" in finding
+        assert "per epoch or per window" in finding
+        assert "do not depend on the frame" not in finding
+    else:
+        assert "smeared" not in finding
+        assert "with a constant offset, tuning-curve shapes" in finding
 
 
 def test_an_epoch_past_the_recording_is_clipped_and_reported(tmp_path, session_entry):
@@ -312,6 +394,9 @@ def test_loads_default_session(session_entry, assert_default_session):
     assert "circular mean -0.33 rad, median spread 17 degrees" in frame.evidence
     assert "spread of 81 degrees" in frame.evidence
     assert "17 windows" in frame.evidence
+    # The offset drifts (window means -0.62 to +2.33 rad, circular SD 31 deg).
+    (finding,) = [t for t in rec.watch_outs if "heading frame is not verified" in t]
+    assert "smeared by the drift" in finding
 
 
 @pytest.mark.realdata

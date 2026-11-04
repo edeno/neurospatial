@@ -34,8 +34,11 @@ What the loader converts:
 - headings: ``direction/head_direction`` (radians, 0 to 2π, frame "(x=1,
   y=0) unit vector") wrapped to [-π, π]. Whether the frame agrees with the
   positions' is checked against the direction of movement above 20 cm/s at
-  10 Hz; where it does not (an offset beyond 0.2 rad), the values are kept
-  and the watch-outs give the offset, its spread and how it drifts over the
+  10 Hz, by the rule the other loaders use (a circular mean within 0.2 rad
+  of 0 and a median absolute deviation under 45 degrees), and the offset
+  must not drift: the circular SD of its 60 s window means must be within
+  0.2 rad too. Where it does not hold, the values are kept and the
+  watch-outs give the offset, its spread and how it drifts over the
   session.
 - unit ids: the units table repeats ids across the probes, so
   :func:`neurospatial.io.nwb.read_units` refuses it. The loader reads the
@@ -56,10 +59,13 @@ publishes no video. The object-vector analyses, which take
 ``object_positions``, cannot run on these sessions.
 
 The declared environment is the session's stated arena, the epochs table's
-``arena_dimensions`` (a square, in cm), with 2.5 cm bins. The stated
-reference frame ("Bottom left of the arena") does not hold: positions run
-negative. So the square keeps the file's axes and is placed where it holds
-the most tracked samples (an inferred ``Conversion``).
+``arena_dimensions`` (a square, in cm), with 2.5 cm bins. Where every
+tracked sample lies in [0, side] on both axes, the stated reference frame
+("Bottom left of the arena") holds and the square is [0, side]^2 (a stated
+``Conversion``). Where samples lie below 0 or above the side, it does not
+(in every session offered, positions run negative), so the square keeps
+the file's axes and is placed where it holds the most tracked samples (an
+inferred ``Conversion``).
 
 Analysis choices (``params``):
 
@@ -132,9 +138,12 @@ BLOCK = 60.0
 HEADING_SPEED = 20.0
 #: ... at about this rate, Hz: at 120 Hz a step's direction is mostly jitter.
 HEADING_RATE = 10.0
-#: Beyond this offset (rad) from the direction of movement, the heading frame
-#: is not taken as the positions' frame.
+#: Beyond this offset (rad) from the direction of movement, or a drift of the
+#: offset (circular SD of the window means) beyond it, the heading frame is
+#: not taken as the positions' frame ...
 FRAME_TOLERANCE = 0.2
+#: ... nor with a median absolute deviation from the offset of this or more (rad).
+HEADING_SPREAD = float(np.radians(45.0))
 #: Windows (s) over which the offset's drift is measured, and the running
 #: samples each needs.
 DRIFT_WINDOW = 60.0
@@ -261,7 +270,9 @@ def load_session(
     clipped = clip_epochs_to_recording(
         epochs, times, spike_times, source="the file's epochs table"
     )
-    env, placement, span_watch_out = _declared_square(positions, side, entry.session)
+    env, placement, span_watch_out = _declared_square(
+        positions, side, frame, entry.session
+    )
     table, regions = unit_table(file_units, locations)
     frame_conversion, frame_watch_outs = _heading_frame(times, positions, headings)
     train, test = alternating_blocks(times[0], times[-1], BLOCK)
@@ -344,7 +355,7 @@ def load_session(
             *(() if clipped.watch_out is None else (clipped.watch_out,)),
             *_repeated_ids(file_units),
             *frame_watch_outs,
-            *_frame_claim(positions, frame),
+            *_frame_claim(positions, frame, side),
             *span_watch_out,
             *_task_disagreement(epoch_table, entry.session),
             *((_NO_OBJECTS,) if is_object_session else ()),
@@ -492,36 +503,58 @@ def place_square(
 
 
 def _declared_square(
-    positions: NDArray[np.float64], side: float, session: str
+    positions: NDArray[np.float64], side: float, frame: str, session: str
 ) -> tuple[Environment, Conversion, tuple[str, ...]]:
-    """The stated square placed on the samples, how, and a span watch-out."""
+    """The stated square, at the stated origin where it holds, else placed on the samples.
+
+    Returns the environment, how it was placed, and a span watch-out.
+    """
     import shapely
 
     from neurospatial import Environment
 
-    centre, n_inside = place_square(positions, side)
     tracked = positions[tracked_mask(positions)]
-    half = side / 2
+    low, high = np.percentile(tracked, [0.5, 99.5], axis=0)
+    spans = high - low
+    off = _origin_contradicted(positions, frame, side)
+    if off is not None and not off.any():
+        corner = np.zeros(2)
+        placement = Conversion(
+            f"environment: the stated {side:g} x {side:g} cm square, [0, {side:g}] "
+            f"x [0, {side:g}] cm, its bottom left at the file's origin",
+            "stated",
+            f"the file's reference frame {frame!r} and the epochs table's "
+            f"arena_dimensions; every tracked sample lies in [0, {side:g}] cm on "
+            "both axes; the samples' 0.5th to 99.5th percentile range is "
+            f"{spans[0]:.4g} x {spans[1]:.4g} cm",
+        )
+    else:
+        centre, n_inside = place_square(positions, side)
+        corner = centre - side / 2
+        turn = rectangle_turn(tracked)
+        claim = (
+            f"the file's reference frame {frame!r} states no origin"
+            if off is None
+            else "the file's reference frame says the origin is the arena's bottom "
+            f"left, which {off.mean():.1%} of the tracked samples contradict (see "
+            "watch-outs)"
+        )
+        placement = Conversion(
+            f"environment: the stated {side:g} x {side:g} cm square centred at "
+            f"({centre[0]:.3g}, {centre[1]:.3g}) cm, sides along the file's x and y",
+            "inferred",
+            f"{claim}, so the square is placed where it holds the most tracked "
+            f"samples ({n_inside} of {len(tracked)}, centred among equally good "
+            "placements); the samples' 0.5th to 99.5th percentile range is "
+            f"{spans[0]:.4g} x {spans[1]:.4g} cm against the stated {side:g} cm; "
+            f"their minimum rotated rectangle is turned {turn:+.1f} degrees from "
+            "the file's axes, so the axes are kept",
+        )
     env = Environment.from_polygon(
-        shapely.box(*(centre - half), *(centre + half)),
+        shapely.box(*corner, *(corner + side)),
         bin_size=BIN_SIZE,
         units="cm",
         name=f"kanter_2025 {session}",
-    )
-    low, high = np.percentile(tracked, [0.5, 99.5], axis=0)
-    spans = high - low
-    turn = rectangle_turn(tracked)
-    placement = Conversion(
-        f"environment: the stated {side:g} x {side:g} cm square centred at "
-        f"({centre[0]:.3g}, {centre[1]:.3g}) cm, sides along the file's x and y",
-        "inferred",
-        f"the file's reference frame says the origin is the arena's bottom left, "
-        "which the positions contradict (see watch-outs), so the square is placed "
-        f"where it holds the most tracked samples ({n_inside} of {len(tracked)}, "
-        "centred among equally good placements); the samples' 0.5th to 99.5th "
-        f"percentile range is {spans[0]:.4g} x {spans[1]:.4g} cm against the "
-        f"stated {side:g} cm; their minimum rotated rectangle is turned "
-        f"{turn:+.1f} degrees from the file's axes, so the axes are kept",
     )
     watch: tuple[str, ...] = ()
     over = spans - side
@@ -532,8 +565,7 @@ def _declared_square(
             "square arena the epochs table states (more than one bin past it, or "
             "more than 20% short of it): the arena, the session's apparatus or the "
             "tracking differs from what the file states. The environment is the "
-            "stated square, placed to hold the most samples; the positions are "
-            "kept as stored.",
+            "stated square (see its conversion); the positions are kept as stored.",
         )
     return env, placement, watch
 
@@ -607,7 +639,26 @@ def _heading_frame(
             f"{DRIFT_MIN_SAMPLES} running samples the window means run from "
             f"{lowest:+.2f} to {highest:+.2f} rad (circular SD {sd:.0f} degrees)"
         )
-    verified = abs(mean) <= FRAME_TOLERANCE and spread < negated
+    drifts = windows is not None and windows[3] > np.degrees(FRAME_TOLERANCE)
+    failed = [
+        reason
+        for fails, reason in (
+            (
+                abs(mean) > FRAME_TOLERANCE,
+                f"the offset is beyond {FRAME_TOLERANCE:g} rad",
+            ),
+            (
+                spread >= HEADING_SPREAD,
+                f"the spread is {np.degrees(HEADING_SPREAD):.0f} degrees or more",
+            ),
+            (
+                drifts,
+                "the window means' circular SD is beyond "
+                f"{np.degrees(FRAME_TOLERANCE):.1f} degrees ({FRAME_TOLERANCE:g} rad)",
+            ),
+        )
+        if fails
+    ]
     conversion = Conversion(
         "headings: allocentric in the positions' frame, 0 = +x and "
         "counter-clockwise; not rotated or mirrored",
@@ -615,26 +666,29 @@ def _heading_frame(
         f"the file's head_direction frame is '(x=1, y=0) unit vector'; {measured}"
         + (
             ""
-            if verified
-            else f"; the offset is beyond {FRAME_TOLERANCE:g} rad, so the frame is "
-            "not verified"
+            if not failed
+            else f"; {' and '.join(failed)}, so the frame is not verified"
         ),
     )
-    if verified:
+    if not failed:
         return conversion, ()
-    drift = (
-        ""
-        if windows is None
-        else " The offset is not constant over the session, so no single "
-        "correction follows from movement."
-        if windows[3] > np.degrees(FRAME_TOLERANCE)
-        else ""
+    consequence = (
+        " The offset is not constant over the session, so no single correction "
+        "follows from movement, and a tuning curve over the whole session is "
+        "smeared by the drift: it pools directions measured with different "
+        "offsets, so its width is inflated and its mean vector length reduced. "
+        "The stored head direction is kept; compute head-direction tuning per "
+        "epoch or per window, where the offset is about constant, and do not "
+        "compare absolute preferred directions."
+        if drifts
+        else " The stored head direction is kept; with a constant offset, "
+        "tuning-curve shapes and widths do not depend on the frame, while "
+        "absolute preferred directions and conjunctive position-direction "
+        "comparisons do."
     )
     return conversion, (
-        f"The heading frame is not verified by movement: {measured}.{drift} "
-        "The stored head direction is kept; tuning-curve shapes and widths do not "
-        "depend on the frame, while absolute preferred directions and conjunctive "
-        "position-direction comparisons do.",
+        f"The heading frame is not verified by movement: {measured}; "
+        f"{' and '.join(failed)}.{consequence}",
     )
 
 
@@ -677,21 +731,60 @@ def _repeated_ids(file_units: pd.DataFrame) -> tuple[str, ...]:
     )
 
 
-def _frame_claim(positions: NDArray[np.float64], frame: str) -> tuple[str, ...]:
-    """A watch-out when a bottom-left origin is stated but positions run negative."""
+def _origin_contradicted(
+    positions: NDArray[np.float64], frame: str, side: float
+) -> NDArray[np.bool_] | None:
+    """Which tracked samples a stated bottom-left origin puts outside the arena.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_time, 2)
+        Positions in cm.
+    frame : str
+        The position series' ``reference_frame``.
+    side : float
+        The stated square's side, cm.
+
+    Returns
+    -------
+    ndarray of bool, shape (n_tracked,), or None
+        For each tracked sample, whether a coordinate is negative or above
+        ``side`` (beyond float rounding); None where ``frame`` states no
+        bottom-left origin.
+
+    Examples
+    --------
+    >>> xy = np.array([[1.0, 2.0], [-3.0, 5.0], [9.0, 101.0], [np.nan, np.nan]])
+    >>> _origin_contradicted(xy, "Bottom left of the arena", 100.0).tolist()
+    [False, True, True]
+    >>> _origin_contradicted(xy, "centre", 100.0) is None
+    True
+    """
     if "bottom left" not in frame.lower():
+        return None
+    tracked = positions[tracked_mask(positions)]
+    off: NDArray[np.bool_] = np.any(
+        (tracked < -_ROUNDING) | (tracked > side + _ROUNDING), axis=1
+    )
+    return off
+
+
+def _frame_claim(
+    positions: NDArray[np.float64], frame: str, side: float
+) -> tuple[str, ...]:
+    """A watch-out when a bottom-left origin is stated but samples lie outside [0, side]."""
+    off = _origin_contradicted(positions, frame, side)
+    if off is None or not off.any():
         return ()
     tracked = positions[tracked_mask(positions)]
-    negative = np.any(tracked < -_ROUNDING, axis=1)
-    if not negative.any():
-        return ()
     low, high = tracked.min(axis=0), tracked.max(axis=0)
     return (
-        f"The file's reference frame says {frame!r}, but {negative.mean():.1%} of "
-        f"tracked samples have a negative coordinate (x {low[0]:.1f} to "
-        f"{high[0]:.1f} cm, y {low[1]:.1f} to {high[1]:.1f} cm), so the origin is "
-        "not the arena's corner and the walls' positions are not stated. The "
-        "environment is placed on the samples (see its conversion).",
+        f"The file's reference frame says {frame!r}, but {off.mean():.1%} of "
+        "tracked samples have a coordinate below 0 or above the stated "
+        f"{side:g} cm (x {low[0]:.1f} to {high[0]:.1f} cm, y {low[1]:.1f} to "
+        f"{high[1]:.1f} cm), so the origin is not the arena's corner and the "
+        "walls' positions are not stated. The environment is placed on the "
+        "samples (see its conversion).",
     )
 
 
