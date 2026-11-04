@@ -98,6 +98,8 @@ def test_loads_a_session_in_cm(tmp_path, box_path_cm):
     assert rec.env_kind == "declared"
     assert rec.conversions[1].basis == "inferred"
     assert "centred at (0, 0) cm" in rec.conversions[1].text
+    spans = np.ptp(box_path_cm, axis=0)
+    assert f"x {spans[0]:.4g} cm, +0.0%, y {spans[1]:.4g} cm" in rec.conversions[1].text
     # The session's own and the dataset's watch-outs, then nothing else.
     assert (
         rec.watch_outs[: len(sargolini_2006.WATCH_OUTS[DEFAULT])]
@@ -135,6 +137,32 @@ def test_coordinates_not_fitted_to_the_box_give_no_fit_watch_out(tmp_path, box_p
     assert not any("centred and scaled" in text for text in rec.watch_outs)
     assert "centred at (10, -5) cm" in rec.conversions[1].text
     np.testing.assert_allclose(rec.env.dimension_ranges, [[-40, 60], [-55, 45]])
+
+
+def test_a_110_cm_span_gives_its_residual_and_the_samples_outside(
+    tmp_path, box_path_cm
+):
+    """Samples past the stated side: the residual is recorded and the outside counted."""
+    from neurospatial.datasets import sargolini_2006
+
+    path = tmp_path / "session.nwb"
+    wide = box_path_cm * 1.1
+    _write_session(path, wide)
+    entry = _entry()
+    rec = run_checks(sargolini_2006.load_session(entry, path), stated=entry.info.stated)
+    assert rec.failed_checks == ()
+    placement = rec.conversions[1].text
+    assert "the samples' range against the stated side: x 110 cm, +10.0%" in placement
+    # Outside the square, counted without the environment's own lookup.
+    outside = np.any(np.abs(wide) > 50.0, axis=1)
+    assert 0 < outside.sum() < len(wide)
+    expected = (
+        f"{int(outside.sum())} tracked position samples of 30000 "
+        f"({outside.mean():.2%}) lie outside the declared environment"
+    )
+    assert any(text.startswith(expected) for text in rec.watch_outs)
+    np.testing.assert_allclose(rec.positions, wide)
+    assert not any("centred and scaled" in text for text in rec.watch_outs)
 
 
 def test_a_two_metre_session_fails_the_units_check(tmp_path, box_path_cm):

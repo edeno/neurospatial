@@ -11,9 +11,10 @@ Two checks refuse, because a failure means the arrays would be wrong:
 A refusal raises :class:`~neurospatial.datasets.DatasetCheckError` unless the
 caller accepts it with ``accept_failed_checks``; an accepted failure is kept
 in ``rec.failed_checks`` and heads ``rec.watch_outs``. The other checks only
-describe: samples at exactly the origin, held and fast tracking samples, and
-units silent in the analysed epochs go into ``rec.watch_outs`` with their
-numbers. No check changes an array.
+describe: samples at exactly the origin, held and fast tracking samples,
+tracked samples outside the environment, and units silent in the analysed
+epochs go into ``rec.watch_outs`` with their numbers. No check changes an
+array.
 """
 
 from __future__ import annotations
@@ -233,6 +234,7 @@ def run_checks(
             units_warning,
             _origin_finding(rec),
             _held_and_fast_finding(rec, stated),
+            _outside_finding(rec),
             _silent_units_finding(rec),
         )
         if finding is not None
@@ -578,6 +580,30 @@ def _fast_samples(
 def _count(n: int, noun: str) -> str:
     """``"1 run"``, ``"2 runs"``: a count and its noun."""
     return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _outside_finding(rec: Recording) -> str | None:
+    """Tracked samples in no bin of the environment; None if each is in one.
+
+    The environment is judged on misfit: samples outside it are tracking
+    beyond the apparatus (a head over a wall, a glitch) or an environment
+    placed or sized wrong. They are kept; analyses count them in no bin.
+    """
+    if rec.env is None or rec.positions is None:
+        return None
+    tracked = rec.positions[np.all(np.isfinite(rec.positions), axis=1)]
+    if len(tracked) == 0:
+        return None
+    outside = int(np.sum(np.asarray(rec.env.bin_at(tracked)) < 0))
+    if outside == 0:
+        return None
+    return (
+        f"{_count(outside, 'tracked position sample')} of {len(tracked)} "
+        f"({outside / len(tracked):.2%}) {'lies' if outside == 1 else 'lie'} "
+        f"outside the {rec.env_kind} environment (env.bin_at gives -1): "
+        "tracking beyond the apparatus, or an environment placed or sized "
+        "wrong. They are kept as stored and fall in no bin."
+    )
 
 
 def _silent_units_finding(rec: Recording) -> str | None:

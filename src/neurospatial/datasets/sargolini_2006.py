@@ -22,9 +22,10 @@ What the loader converts:
 
 The declared environment is the stated 100 x 100 cm square, placed at the
 midrange of the tracked samples, axes as in the file (which states no
-origin), with 2.5 cm bins. In the sessions checked so far the positions are
-centred on their own midrange and the longer axis spans exactly 100 cm, so
-the coordinates were already fitted to the box.
+origin), with 2.5 cm bins. How far each side of the samples' range falls
+short of or past 100 cm is in its ``Conversion``. In the sessions checked so
+far the positions are centred on their own midrange and the longer axis
+spans exactly 100 cm, so the coordinates were already fitted to the box.
 
 Analysis choices (``params``):
 
@@ -199,6 +200,10 @@ def _declared_square(
 ) -> tuple[Environment, Conversion]:
     """The stated square at the tracked samples' midrange, and how it was placed.
 
+    The placement records each axis's residual: the tracked samples' range on
+    that axis against the stated side, negative where the animal kept off a
+    wall, positive where samples reach past it.
+
     The files state no origin (their reference frame is "(0,0) is not
     known") and no rotation, so the square keeps the file's axes and is
     centred where the tracked samples' range is centred.
@@ -210,6 +215,10 @@ def _declared_square(
     tracked = positions[np.all(np.isfinite(positions), axis=1)]
     low, high = tracked.min(axis=0), tracked.max(axis=0)
     centre = (low + high) / 2
+    residuals = ", ".join(
+        f"{axis} {span:.4g} cm, {span / SIDE - 1:+.1%}"
+        for axis, span in zip("xy", high - low, strict=True)
+    )
     half = SIDE / 2
     square = shapely.box(*(centre - half), *(centre + half))
     env = Environment.from_polygon(
@@ -217,7 +226,8 @@ def _declared_square(
     )
     placement = Conversion(
         f"environment: the stated {SIDE:g} x {SIDE:g} cm square centred at "
-        f"({centre[0]:.3g}, {centre[1]:.3g}) cm, sides along the file's x and y",
+        f"({centre[0]:.3g}, {centre[1]:.3g}) cm, sides along the file's x and y; "
+        f"the samples' range against the stated side: {residuals}",
         "inferred",
         f"the file states no origin or rotation (reference frame {frame!r}); "
         "the centre is the midrange of the tracked samples, x "

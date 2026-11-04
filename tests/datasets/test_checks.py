@@ -427,3 +427,18 @@ def test_inferred_value_needs_its_evidence():
         Stated(sampling_rate=50.0, sampling_rate_basis="inferred")
     with pytest.raises(InputError, match="position_span_basis 'guessed'"):
         Stated(sampling_rate=50.0, position_span_basis="guessed")
+
+
+def test_samples_outside_the_environment_warn(square_recording, square_stated):
+    """1% of samples 5 cm past the environment: counted, kept as stored."""
+    positions = np.array(square_recording.positions)
+    positions[::100, 0] = square_recording.env.dimension_ranges[0][1] + 5.0
+    rec = dataclasses.replace(square_recording, positions=positions)
+    checked = run_checks(rec, stated=square_stated)
+    (finding,) = checked.watch_outs
+    assert finding.startswith(
+        "60 tracked position samples of 6000 (1.00%) lie outside the declared "
+        "environment (env.bin_at gives -1)"
+    )
+    np.testing.assert_array_equal(checked.positions, positions)
+    assert checked.failed_checks == ()

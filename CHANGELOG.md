@@ -37,9 +37,10 @@
   source) or inferred from the files (with its evidence), and a session
   that disagrees with an inferred value loads with a watch-out naming the
   evidence. Samples at exactly the origin (more than 0.1%), runs of 11 or
-  more identical positions, steps faster than a stated speed limit and
-  units with no spikes in the analysed epochs are reported in "Watch out"
-  with their numbers; no array is changed.
+  more identical positions, steps faster than a stated speed limit, tracked
+  samples outside the environment and units with no spikes in the analysed
+  epochs are reported in "Watch out" with their numbers; no array is
+  changed.
 - `Recording.plot_overview(*, fig=None)` draws six panels: the environment
   with the path, occupancy (never-visited bins drawn as missing), speed with
   `params["min_speed"]` marked, head direction beside heading minus direction
@@ -74,7 +75,9 @@
   `sub-10884_ses-03080402` are checked by hand. Positions are cm, from the
   first tracking LED; there are no headings, because the files hold one LED or
   do not say which of two is at the front. The declared environment is the
-  stated 100 cm square at the samples' midrange, with 2.5 cm bins. The 50 Hz
+  stated 100 cm square at the samples' midrange, with 2.5 cm bins; how far
+  the samples' range on each axis falls short of or past 100 cm is in its
+  `Conversion`. The 50 Hz
   rate is inferred from the files' timestamps, so a session at another rate
   loads with a watch-out. A session spanning more than 120 cm, such as two
   joined 20-minute sessions spanning about 1.5 m and 2 m, is refused by the
