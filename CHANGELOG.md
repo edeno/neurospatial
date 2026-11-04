@@ -276,6 +276,9 @@
   outside the environment only beyond its arena's domain as well as its bins'
   cells: on a track, whose cells span the centerline alone, a tracked head
   within the track's width is no longer reported outside.
+- `env.plot()` draws a track graph whose nodes have 1-D positions (one
+  coordinate per node) along the x axis, at y = 0; it raised `IndexError`
+  before, so `rec.plot_overview()` failed on the `grosmark_2016` default.
 - `AnimationField(..., max_opacity=1.0)` caps how opaque a field is drawn
   (0 to 1) in the Matplotlib, napari and fastplotlib views, on top of the
   see-through rule over a video below, so the video shows through every
