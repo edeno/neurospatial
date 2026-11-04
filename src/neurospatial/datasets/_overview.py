@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import InputError, _format_error
 
 if TYPE_CHECKING:
@@ -64,10 +65,6 @@ def _speed(rec: Recording) -> NDArray[np.float64]:
 
     assert rec.positions is not None
     return np.asarray(compute_speed(rec.times, rec.positions), dtype=float)
-
-
-def _wrap(angle: NDArray[np.float64]) -> NDArray[np.float64]:
-    return (angle + np.pi) % (2 * np.pi) - np.pi
 
 
 def occupancy_field(
@@ -178,7 +175,7 @@ def _panel_heading(rec: Recording, ax: Axes) -> None:
     travel = heading_from_velocity(
         rec.times, rec.positions, min_speed=0.0 if min_speed is None else min_speed
     )
-    offset = _wrap(rec.headings - travel)
+    offset = wrap_angle(rec.headings - travel)
     offset = offset[np.isfinite(offset)]
     if not offset.size:
         return

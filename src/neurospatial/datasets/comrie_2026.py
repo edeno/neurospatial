@@ -380,14 +380,17 @@ def heading_vs_movement(
         Circular mean of heading minus the direction of the step to the next
         sample, and the median absolute deviation from that mean, in radians.
     """
+    from neurospatial._angles import wrap_angle
+    from neurospatial.stats.circular import circular_mean
+
     step = np.diff(positions, axis=0)
     speed = np.linalg.norm(step, axis=1) / np.diff(times)
     moving = np.arctan2(step[:, 1], step[:, 0])
     start = headings[:-1]
     running = (speed > min_speed) & np.isfinite(start)
-    diff = np.angle(np.exp(1j * (start[running] - moving[running])))
-    mean = float(np.angle(np.mean(np.exp(1j * diff))))
-    spread = float(np.median(np.abs(np.angle(np.exp(1j * (diff - mean))))))
+    diff = wrap_angle(start[running] - moving[running])
+    mean = circular_mean(diff)
+    spread = float(np.median(np.abs(wrap_angle(diff - mean))))
     return mean, spread
 
 

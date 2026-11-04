@@ -92,6 +92,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._angles import wrap_angle
 from neurospatial.datasets._checks import _count, gap_stats
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import Conversion, Recording, interval_rows
@@ -957,7 +958,7 @@ def _running_direction(
     of its steps against the angle's, over steps within the covered arc.
     """
     angle = np.arctan2(*(positions - centre).T[::-1])
-    turn = np.angle(np.exp(1j * np.diff(angle)))
+    turn = wrap_angle(np.diff(angle))
     speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
     ring = np.abs(np.linalg.norm(positions - centre, axis=1) - DIAMETER / 2)
     running = np.isfinite(turn) & (speed > MIN_SPEED) & (ring[:-1] < OFF_TRACK)

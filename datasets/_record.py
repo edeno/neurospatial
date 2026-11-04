@@ -16,6 +16,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.stats import circular_mean, wrap_angle
+
 POSITION_UNITS = {"cm", "m", "pixel", "arbitrary"}
 
 
@@ -519,9 +521,9 @@ def heading_vs_movement(
     moving = np.arctan2(step[:, 1], step[:, 0])
     start = headings[:-lag]
     running = (speed > min_speed) & np.isfinite(start)
-    diff = np.angle(np.exp(1j * (start[running] - moving[running])))
-    mean = float(np.angle(np.mean(np.exp(1j * diff))))
-    spread = float(np.median(np.abs(np.angle(np.exp(1j * (diff - mean))))))
+    diff = wrap_angle(start[running] - moving[running])
+    mean = circular_mean(diff)
+    spread = float(np.median(np.abs(wrap_angle(diff - mean))))
     return mean, spread
 
 
