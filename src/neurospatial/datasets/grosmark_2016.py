@@ -108,7 +108,13 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+__all__ = [
+    "EXPECTED_WATCH_OUTS",
+    "REQUIRES",
+    "WATCH_OUTS",
+    "WORKED_RESULT",
+    "load_session",
+]
 
 #: The paper's finding this dataset reproduces: level B, a property the
 #: paper states, tested against a shifted-spike null
@@ -236,6 +242,15 @@ DANDI_EPOCHS: dict[str, dict[str, tuple[float, float]]] = {
         "maze": (18079.5, 20147.0),
         "post": (20147.0, 34861.1032),
     },
+}
+
+#: Findings computed from the data (by the checks or this loader) that each
+#: verified session must report, as patterns searched for in its watch_outs.
+EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "Achilles_10252013": (
+        r"times has \d+ gaps longer than",
+        r"runs of 11 or more identical position samples",
+    ),
 }
 
 #: Pitfalls of each session checked by hand, with their evidence.

@@ -94,7 +94,13 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+__all__ = [
+    "EXPECTED_WATCH_OUTS",
+    "REQUIRES",
+    "WATCH_OUTS",
+    "WORKED_RESULT",
+    "load_session",
+]
 
 #: A level B sanity property of the data and decoder, not a finding of the
 #: preprint, tested against measured baselines
@@ -184,6 +190,16 @@ MID_EDGE = (0.2, 0.8)
 TOLERANCE_QUANTILE = 0.99
 
 _PREPRINT = "the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567"
+
+#: Findings computed from the data (by the checks or this loader) that each
+#: verified session must report, as patterns searched for in its watch_outs.
+EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "j1620210710_02_r1_figure04_inputs": (
+        r"runs of 11 or more identical position samples",
+        r"lie outside the declared environment",
+        r"units have no spikes in the analysed epochs",
+    ),
+}
 
 #: Pitfalls of each session checked by hand, with their evidence.
 WATCH_OUTS: dict[str, tuple[str, ...]] = {

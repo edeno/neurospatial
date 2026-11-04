@@ -63,7 +63,13 @@ from neurospatial.datasets._recording import (
 if TYPE_CHECKING:
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+__all__ = [
+    "EXPECTED_WATCH_OUTS",
+    "REQUIRES",
+    "WATCH_OUTS",
+    "WORKED_RESULT",
+    "load_session",
+]
 
 #: The paper's finding this dataset reproduces: level A, a number with the
 #: paper's stated parameters (``tests/datasets/test_worked_results.py``).
@@ -125,6 +131,12 @@ DT = 0.1
 #: Heading samples further apart than this are a gap in the tracking, s.
 GAP = 1.0
 _PAPER = "the Methods of Peyrache et al. 2015, PMC4376557"
+
+#: Findings computed from the data (by the checks or this loader) that each
+#: verified session must report, as patterns searched for in its watch_outs.
+EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "Mouse32-140822": (r"Head direction has \d+ gaps longer than",),
+}
 
 #: Pitfalls of each session checked by hand, with their evidence.
 WATCH_OUTS: dict[str, tuple[str, ...]] = {

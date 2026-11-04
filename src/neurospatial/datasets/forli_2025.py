@@ -75,7 +75,13 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+__all__ = [
+    "EXPECTED_WATCH_OUTS",
+    "REQUIRES",
+    "WATCH_OUTS",
+    "WORKED_RESULT",
+    "load_session",
+]
 
 #: The paper's finding this dataset reproduces, or why there is none yet.
 WORKED_RESULT: dict[str, Any] = {
@@ -159,6 +165,17 @@ _PROCESSED = (
     "to obtain continuous and smooth 3D positional data'. Speeds and "
     "held-sample counts describe that processing as much as the tracking."
 )
+
+#: Findings computed from the data (by the checks or this loader) that each
+#: verified session must report, as patterns searched for in its watch_outs.
+EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "Dataset_3_14543_240419": (
+        r"runs of 11 or more identical position samples",
+        r"samples farther from the last believable sample",
+        r"lie outside the declared environment",
+        r"units have no spikes in the analysed epochs",
+    ),
+}
 
 #: Pitfalls of each session checked by hand, with their evidence.
 WATCH_OUTS: dict[str, tuple[str, ...]] = {

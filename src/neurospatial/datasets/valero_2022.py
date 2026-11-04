@@ -113,7 +113,13 @@ if TYPE_CHECKING:
     from neurospatial.datasets._catalog import SessionEntry
     from neurospatial.datasets._video import VideoSource
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+__all__ = [
+    "EXPECTED_WATCH_OUTS",
+    "REQUIRES",
+    "WATCH_OUTS",
+    "WORKED_RESULT",
+    "load_session",
+]
 
 #: The paper's finding this dataset reproduces, or why there is none yet.
 WORKED_RESULT: dict[str, Any] = {
@@ -173,6 +179,16 @@ _BEHAVIOR = "processing/behavior/LinearMazePositionTracking"
 _POSITION = f"{_BEHAVIOR}/SpatialSeriesRaw"
 _VIDEO = "ImageSeriesTrackingVideo1"
 _STATES = {"WAKEstate": "wake", "NREMstate": "nrem", "REMstate": "rem"}
+
+#: Findings computed from the data (by the checks or this loader) that each
+#: verified session must report, as patterns searched for in its watch_outs.
+EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "sub-fCamk2_ses-fCamk2-201014-sess3": (
+        r"runs of 11 or more identical position samples",
+        r"lie outside the declared environment",
+        r"lie farther than half the stated",
+    ),
+}
 
 #: Pitfalls of each session checked by hand, with their evidence.
 WATCH_OUTS: dict[str, tuple[str, ...]] = {
