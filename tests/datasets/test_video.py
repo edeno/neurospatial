@@ -373,3 +373,53 @@ def test_video_source_refuses_bad_fields(camera):
     assert "'xyz' is not 64 hexadecimal digits" in message
     assert "calibration and calibration_basis together" in message
     assert not camera["dot"].frame_times.flags.writeable
+
+
+def test_track_session_video_is_drawn_in_the_plane(track_recording, tmp_path):
+    """A track's bins lie along it, so its video scene is a grid over its footprint.
+
+    The track stays the scene's along-track panel, and the occupancy is
+    counted in the grid's bins.
+    """
+    from neurospatial.ops.transforms import AffineND
+
+    rec = track_recording
+    (x0, y0), (x1, y1) = rec.env.arena.domain_bounds()
+    bounds = ((x0, x1), (y0, y1))
+    size = _frame_size(bounds)
+    frame_times = np.arange(round(DURATION * FPS)) / FPS
+    path = _write_video(
+        tmp_path / "synthetic_2026" / "track.avi",
+        np.full((len(frame_times), 2), -99.0),
+        size,
+    )
+    to_cm = AffineND(
+        np.array(
+            [
+                [1 / SCALE, 0.0, x0 - MARGIN / SCALE],
+                [0.0, -1 / SCALE, y1 + MARGIN / SCALE],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+    )
+    calibration, basis, tried = video_calibration(
+        bin_size=2.0, stated=(to_cm, size, "a test camera")
+    )
+    source = _source(path, tmp_path, frame_times, calibration, basis, tried)
+    scene = dataclasses.replace(rec, video=source).animation(
+        time_range=(0.0, DURATION), video=True
+    )
+    assert scene.track is rec.env
+    assert not scene.env.is_linearized_track
+    assert scene.env.n_dims == 2
+    (low_x, high_x), (low_y, high_y) = scene.env.dimension_ranges
+    assert low_x <= x0 + 2.0
+    assert high_x >= x1 - 2.0
+    assert low_y <= y0 + 2.0
+    assert high_y >= y1 - 2.0
+    occupancy = scene.fields["occupancy"][0]
+    expected = scene.env.occupancy(rec.times, rec.positions)
+    np.testing.assert_allclose(occupancy, np.where(expected > 0, expected, np.nan))
+    assert type(scene.overlays[0]).__name__ == "VideoOverlay"
+    # Without the video, the track is drawn along itself, as before.
+    assert rec.animation(time_range=(0.0, DURATION)).env is rec.env

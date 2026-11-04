@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.figure import Figure
 
+    from neurospatial import Environment
     from neurospatial.animation import Animation
     from neurospatial.datasets._recording import Recording
 
@@ -65,23 +66,28 @@ def _wrap(angle: NDArray[np.float64]) -> NDArray[np.float64]:
     return (angle + np.pi) % (2 * np.pi) - np.pi
 
 
-def occupancy_field(rec: Recording) -> NDArray[np.float64]:
+def occupancy_field(
+    rec: Recording, env: Environment | None = None
+) -> NDArray[np.float64]:
     """Seconds in each bin over the whole session, NaN where never visited.
 
     Parameters
     ----------
     rec : Recording
         A session with positions and an environment.
+    env : Environment, optional
+        The bins to count in; default ``rec.env``.
 
     Returns
     -------
     ndarray, shape (n_bins,)
-        ``rec.env.occupancy(rec.times, rec.positions)`` with unvisited bins
+        ``env.occupancy(rec.times, rec.positions)`` with unvisited bins
         (zero seconds) set to NaN, so they draw as missing rather than as zero.
     """
-    assert rec.env is not None
+    env = rec.env if env is None else env
+    assert env is not None
     assert rec.positions is not None
-    occupancy: NDArray[np.float64] = rec.env.occupancy(rec.times, rec.positions)
+    occupancy: NDArray[np.float64] = env.occupancy(rec.times, rec.positions)
     return np.where(occupancy > 0, occupancy, np.nan)
 
 
@@ -363,7 +369,13 @@ def animation(
         )
     # A field row is held until the next row, so a static field is two equal
     # rows at the scene's first and last frame.
-    occupancy = occupancy_field(rec)
+    # A track's bins are drawn along it; camera frames need the plane, so over
+    # a video a track session is drawn on a grid over the track's footprint,
+    # with the track as its along-track panel.
+    env, track = rec.env, None
+    if video and rec.env.is_linearized_track:
+        env, track = _footprint_grid(rec), rec.env
+    occupancy = occupancy_field(rec, env)
     field = AnimationField(
         np.tile(occupancy, (2, 1)),
         frame_times[[0, -1]],
@@ -381,7 +393,7 @@ def animation(
         )
     ]
     if rec.headings is not None:
-        extent = max(hi - lo for lo, hi in rec.env.dimension_ranges or ((0.0, 1.0),))
+        extent = max(hi - lo for lo, hi in env.dimension_ranges or ((0.0, 1.0),))
         overlays.append(
             HeadDirectionOverlay(rec.headings, rec.times, length=0.05 * extent)
         )
@@ -403,12 +415,45 @@ def animation(
             )
         )
     return Animation(
-        rec.env,
+        env,
         {"occupancy": field},
         frame_times=frame_times,
         overlays=overlays,
         title=f"{rec.dataset} / {rec.session}",
-        show_regions=bool(rec.env.regions) and rec.env.n_dims == 2,
+        show_regions=bool(env.regions) and env.n_dims == 2,
+        track=track,
+    )
+
+
+def _footprint_grid(rec: Recording) -> Environment:
+    """A 2-D grid over the box enclosing a track's footprint, its bin size.
+
+    The bin size is ``params["bin_size"]``, else the track's median bin
+    length; units and frame are the track's.
+    """
+    import shapely
+
+    from neurospatial import Environment
+
+    assert rec.env is not None
+    bounds = rec.env.arena.domain_bounds()
+    if bounds is None:
+        raise InputError(
+            _format_error(
+                f"{rec.dataset}/{rec.session}: the track has no width, so there "
+                "is no plane to draw its video in.",
+                why="camera frames are placed in 2-D; a track's bins lie along it.",
+                fix="build the track with track_width=, or call rec.animation() "
+                "without video=True.",
+            )
+        )
+    bin_size = rec.params.get("bin_size") or float(np.median(rec.env.bin_sizes))
+    return Environment.from_polygon(
+        shapely.box(*bounds[0], *bounds[1]),
+        bin_size=float(bin_size),
+        units=rec.env.units,
+        frame=rec.env.frame,
+        name=f"{rec.env.name} footprint",
     )
 
 

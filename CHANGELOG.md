@@ -65,7 +65,9 @@
   beside the session's NWB file at the path that file names.
   `Recording.animation(..., video=True)` fetches it and draws the frames
   below the data through the calibration, occupancy see-through where it is
-  low. Frame times are the video's own timestamps, unless the video and the
+  low; a track session, whose bins are drawn along the track, is drawn over
+  its video on a 2-D grid covering the track's footprint, with the track as
+  the along-track panel. Frame times are the video's own timestamps, unless the video and the
   position series hold the same frames on two clocks (equal counts, position
   times an offset and rate of the video's to within half a frame); then the
   position times are used, as an inferred `Conversion`, and the offset is a
