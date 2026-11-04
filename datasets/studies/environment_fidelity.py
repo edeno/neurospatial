@@ -225,9 +225,12 @@ APPARATUS: dict[str, Apparatus] = {
     ),
     "ca1ca3_001880": Apparatus(
         "open",
-        "NWB: cheeseboard maze and a start box (no size)",
-        False,
-        n_parts=2,
+        "Huszár et al. 2026 STAR Methods (PMC13573635): 'a flat circular"
+        " platform (90cm diameter)'; the overhead camera's 'field of view"
+        " covered the platform but excluded the holding box itself'",
+        True,
+        shape="circle",
+        size=90.0,
     ),
     "kanter_2025": Apparatus(
         "open",
