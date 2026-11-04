@@ -1,0 +1,46 @@
+{
+  "dataset": "comrie_2026",
+  "paper": "Comrie et al. (2026)",
+  "paper_citation": "Comrie AE, Monroe EJ, Kahn AE, Denovellis EL, Joshi A, Guidera JA, Krausz TA, Berke JD, Daw ND, Frank LM (2026). Hippocampal representations of alternative possibilities are flexibly generated to meet cognitive demands. Neuron. https://doi.org/10.1016/j.neuron.2026.08.023",
+  "species": "rat",
+  "brain_regions": [
+    "hippocampus"
+  ],
+  "apparatus": "spatial bandit maze: three Y-shaped patches of 6.5 cm wide, 53 cm hallways meeting at 120 degrees, six reward ports",
+  "license": "CC-BY-4.0",
+  "archive": {
+    "name": "Zenodo 23020757 (version 1.0)",
+    "url": "https://doi.org/10.5281/zenodo.23020757",
+    "citation": "Comrie, Alison; Frank, Loren; Denovellis, Eric (2026) Figure 4 input data for \"Local goodness-of-fit measures for neural decoding\" (rat j16, 2021-07-10, run epoch 02_r1) (Version 1.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.23020757"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 500.0,
+      "basis": "stated",
+      "source": "the Methods of Comrie et al.'s preprint (bioRxiv doi:10.1101/2024.09.23.613567, version 1, read on PubMed Central PMC11463554): positions 'interpolated and upsampled to 500 Hz'"
+    },
+    "position_span": {
+      "value": [
+        146.9,
+        220.3
+      ],
+      "basis": "stated",
+      "source": "the Methods of Comrie et al.'s preprint (bioRxiv doi:10.1101/2024.09.23.613567, version 1): nine 53 cm hallways meeting at 120 degrees with three-fold symmetry, which lays the track's centrelines 183.6 cm across (4 x 53 cm x cos 30 degrees); the largest span of the tracked positions must lie within 20% of it"
+    },
+    "speed_limit": null
+  },
+  "sessions": [
+    {
+      "session": "j1620210710_02_r1_figure04_inputs",
+      "archive": "Zenodo 23020757 (version 1.0)",
+      "url": "https://zenodo.org/api/records/23020757/files/j1620210710_02_r1_figure04_inputs.npz/content",
+      "file_name": "j1620210710_02_r1_figure04_inputs.npz",
+      "sha256": "60383b394b597e2900545548ecac7c53a8601038ace9dbeb42d7f9a5fe1c93b3",
+      "size_bytes": 75064686,
+      "verified": true,
+      "default": true,
+      "n_units": 203,
+      "verification": "Checked by hand on 2026-11-03 against the Zenodo record, the file and the Methods of Comrie et al.'s preprint (bioRxiv doi:10.1101/2024.09.23.613567, version 1, read on PubMed Central; the Neuron article was not available to read). File: its SHA-256 is the one the record states, and its MD5 is the record's (66e71928...). Counts: 203 units and 870,018 spikes, 709,321 position samples, the numbers the record states. Time: samples every 0.002 s (500 Hz, the rate the preprint states), 1419 s on the Unix clock starting 2021-07-10, the session's date; spikes from 0.0008 s after the first sample to 0.0002 s before the last, inside the tracking. Space: the track graph has 10 nodes and 9 edges, the nine hallways the preprint describes, with edge lengths 51.7 to 57.4 cm against its 53 cm; the largest tracked span is 202.6 cm (x), 10% more than the 183.6 cm the stated layout gives between centrelines; env.to_linear with the file's linear_edge_order and 15 cm spacing reproduces the file's linear_position exactly. Unit: cm is inferred, not stated by the file: head_speed matches |step| / dt of the stored positions (correlation 0.93). Heading: head_orientation minus the direction of movement above 10 cm/s has a circular mean of +13.1 degrees, so it is not used as headings."
+    }
+  ]
+}

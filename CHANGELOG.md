@@ -93,6 +93,18 @@
   than 120 cm is refused by the units check: of the 12 sessions opened, two
   1200 s sessions span about 1.5 m and 2 m, and no source read states their
   box.
+- `comrie_2026`: Comrie et al. (2026) rat j16, run epoch 02_r1 of the spatial
+  bandit maze, 203 hippocampal units (Zenodo 23020757, CC-BY-4.0), checked
+  by hand. Positions are cm (inferred: the graph's edges match the stated
+  53 cm hallways and the file's head_speed matches the positions' speed),
+  500 Hz, on the Unix clock. The declared environment is the authors' track
+  graph with every edge, in the file's own edge order and 15 cm spacing, so
+  `env.to_linear` reproduces the file's linearized position; its
+  `track_width` is a placement tolerance measured from the samples (36.9 cm),
+  not the 6.5 cm hallway width, beyond half of which 64% of head samples lie
+  (86% when stopped). `head_orientation` is 13° off the direction of
+  movement, so it is kept in `params["head_orientation"]`, not used as
+  headings.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 
