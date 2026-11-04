@@ -156,6 +156,53 @@ def test_beyond_hallway_share_is_split_by_speed(tmp_path):
     assert "tracking spread, not misfit" in text
 
 
+def test_track_keeps_the_files_node_labels_edge_order_and_spacing(tmp_path):
+    """The env's track is the file's graph, as example 04 rebuilds it.
+
+    Labels that are neither 0-based nor consecutive, and an order that walks
+    edges against their stored direction, stay as the file states them.
+    """
+    from neurospatial.datasets import comrie_2026
+
+    path = tmp_path / "j16.npz"
+    _write(path)
+    with np.load(path, allow_pickle=False) as stored:
+        arrays = dict(stored)
+    labels = np.array([7, 2, 9, 4])
+    arrays["track_nodes"] = labels
+    arrays["track_edges"] = labels[arrays["track_edges"]]
+    order = [(7, 4), (4, 2), (9, 4)]
+    arrays["linear_edge_order"] = np.array(order)
+    np.savez(path, **arrays)
+    rec = comrie_2026.load_session(_entry(), path)
+    track = rec.env.binning.linearization
+    assert sorted(track.graph.nodes) == [2, 4, 7, 9]
+    for label, xy in zip(labels, arrays["track_node_positions"], strict=True):
+        assert track.graph.nodes[int(label)]["pos"] == tuple(xy)
+    assert {frozenset(edge) for edge in track.graph.edges} == {
+        frozenset(edge) for edge in order
+    }
+    assert [tuple(edge) for edge in track.edge_order] == order
+    assert track.edge_spacing == 15.0
+    for a, b in order:
+        assert track.graph.edges[a, b]["distance"] == pytest.approx(ARM, rel=1e-12)
+
+
+def test_object_arrays_are_never_unpickled(tmp_path):
+    from neurospatial.datasets import comrie_2026
+
+    path = tmp_path / "j16.npz"
+    _write(path)
+    with np.load(path, allow_pickle=False) as stored:
+        arrays = dict(stored)
+    arrays["position/head_position_x"] = np.array(
+        [{}] * len(arrays["position_time"]), dtype=object
+    )
+    np.savez(path, **arrays)
+    with pytest.raises(ValueError, match="allow_pickle=False"):
+        comrie_2026.load_session(_entry(), path)
+
+
 def test_an_edge_left_out_of_the_order_is_refused(tmp_path):
     from neurospatial.datasets import comrie_2026
 
