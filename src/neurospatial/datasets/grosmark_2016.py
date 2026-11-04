@@ -447,6 +447,7 @@ def _dandi_session(
             *WATCH_OUTS.get(entry.session, ()),
             *maze_watch_outs,
             *_before_track(times, positions, distance, environment.tolerance),
+            *_post_ends_early(epochs, units.spike_times),
             _SLEEP_SCORING,
             _rate_watch_out(),
             _NO_HEADINGS,
@@ -920,6 +921,27 @@ def _before_track(
         f"For the first {waited:.0f} s of tracking the rat is not on the track "
         f"(the head a median {away:.0f} cm from it): it starts the maze epoch "
         "elsewhere in the room. Those samples are kept and fall in no bin.",
+    )
+
+
+def _post_ends_early(
+    epochs: dict[str, NDArray[np.float64]], spike_times: Any
+) -> tuple[str, ...]:
+    """When spikes run on past the end of the POST epoch, by how much."""
+    trains = [np.asarray(train) for train in spike_times if len(train)]
+    if "post" not in epochs or not trains:
+        return ()
+    end = float(epochs["post"][:, 1].max())
+    last = max(float(train[-1]) for train in trains)
+    if last - end <= LATE_START:
+        return ()
+    scored = max(
+        float(epochs[k][:, 1].max()) for k in ("awake", "non_rem", "rem") if k in epochs
+    )
+    return (
+        f"The file's POST epoch ends at {end:.6g} s, but spikes run to {last:.6g} s "
+        f"and the sleep states to {scored:.6g} s: {last - end:.0f} s of recording "
+        "after POST belong to no pre/maze/post epoch.",
     )
 
 
