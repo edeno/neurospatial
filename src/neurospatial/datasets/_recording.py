@@ -13,7 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import InputError, _format_error
-from neurospatial._intervals import _merge
+from neurospatial._intervals import DEFAULT_MAX_GAP, _merge
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     read_only_copy,
@@ -33,10 +33,6 @@ if TYPE_CHECKING:
 __all__ = ["Conversion", "Provenance", "Recording"]
 
 POSITION_UNITS = ("cm", "m", "pixel", "arbitrary")
-#: The ``max_gap`` (s) of ``compute_speed``, ``Environment.occupancy``,
-#: ``heading_from_velocity`` and the animation overlays, used for a session
-#: whose ``params`` set none.
-DEFAULT_MAX_GAP = 1.0
 _UNIT_COLUMNS = ("brain_region", "label")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
