@@ -576,6 +576,10 @@ def video_calibration(
     return None, None, tuple(tried)
 
 
+#: The fewest samples that determine a 2-D affine (three points, six numbers).
+MIN_AFFINE_SAMPLES = 3
+
+
 def fit_pixel_affine(
     pixels: NDArray[np.float64],
     positions: NDArray[np.float64],
@@ -619,12 +623,30 @@ def fit_pixel_affine(
     residual_px : ndarray, shape (n_used,)
         Each used sample's position mapped back into the frame, its distance
         from the pixel, px.
+
+    Raises
+    ------
+    InputError
+        If fewer than three samples are finite in both ``pixels`` and
+        ``positions``.
     """
     from neurospatial.ops.transforms import AffineND
 
     pixels = np.asarray(pixels, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
     both = np.all(np.isfinite(pixels), axis=1) & np.all(np.isfinite(positions), axis=1)
+    if (n_both := int(both.sum())) < MIN_AFFINE_SAMPLES:
+        raise InputError(
+            _format_error(
+                f"{n_both} of {len(both)} samples have both a finite pixel and a "
+                f"finite position; an affine fit needs at least "
+                f"{MIN_AFFINE_SAMPLES}.",
+                why="a 2-D affine has six coefficients, and fewer than three "
+                "points leave it undetermined.",
+                fix="use frames where the LED is detected and the position is "
+                "tracked, for example a smaller frame step.",
+            )
+        )
     design = np.column_stack([pixels[both], np.ones(both.sum())])
     target = positions[both]
     coef, *_ = np.linalg.lstsq(design, target, rcond=None)

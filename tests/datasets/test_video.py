@@ -396,6 +396,13 @@ TRUE_AFFINE = np.array(
 )
 
 
+def test_led_fit_needs_three_finite_samples():
+    pixels = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0]])
+    positions = np.array([[0.0, 0.0], [5.0, 0.0], [np.nan, np.nan]])
+    with pytest.raises(InputError, match="2 of 3 samples have both"):
+        fit_pixel_affine(pixels, positions)
+
+
 def test_led_fit_recovers_a_known_camera():
     """A known affine plus 1 px of noise per axis is recovered by the fit.
 
