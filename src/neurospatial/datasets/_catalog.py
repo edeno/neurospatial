@@ -515,8 +515,9 @@ def catalog() -> pd.DataFrame:
         One row per session, with columns ``dataset``, ``session``,
         ``species``, ``brain_regions`` (comma-separated), ``apparatus``,
         ``n_units`` (missing where not known before loading), ``verified``
-        (checked by hand against the file and its sources), ``default``
-        (the session ``load(dataset)`` gives), ``license`` (as the session's
+        (checked by hand against its archive, its files and the sources its
+        page lists), ``default`` (the session ``load(dataset)`` gives),
+        ``license`` (as the session's
         archive states it), ``archive``, ``size_bytes`` (what loading it
         downloads: the file, or the zip members it is read from) and
         ``citation``.

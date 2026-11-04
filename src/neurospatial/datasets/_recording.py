@@ -255,8 +255,8 @@ class Recording(ReadOnlyArraysMixin):
         The refusing checks (``"clock"``, ``"units"``) this session failed
         and the user accepted with ``accept_failed_checks``; empty otherwise.
     verified : bool
-        Whether a person has checked this session by hand against the file
-        and the paper.
+        Whether a person has checked this session by hand against its
+        archive, its files and the sources its dataset's page lists.
     video : VideoSource or None
         The session's camera video, where the dataset publishes it: where it
         is, its frame times and its pixel-to-cm calibration, each with its

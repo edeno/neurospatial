@@ -54,8 +54,9 @@ The columns are `dataset`, `session`, `species`, `brain_regions`, `apparatus`,
 means the archive states none, so check with the data's owners before you
 redistribute it.
 
-`verified` means a person has checked the session by hand against its archive
-and its paper. Every dataset has one default session, which `load` gives when
+`verified` means a person has checked the session by hand against its archive,
+its files and the sources its page lists (not always the paper: each
+dataset's page says which sources were read). Every dataset has one default session, which `load` gives when
 you name none. Where one exists it is the session the tutorials of other tools
 use. The other sessions load too, with the same automatic checks, but their
 summary opens with "Not yet checked by hand".
