@@ -201,6 +201,36 @@ def test_a_heading_along_the_movement_is_verified(tmp_path, session_entry):
     assert not any("No object positions" in t for t in rec.watch_outs)
 
 
+def test_an_epoch_past_the_recording_is_clipped_and_reported(tmp_path, session_entry):
+    """An epoch ending 20 s after the last sample and spike is clipped to them."""
+    from neurospatial.datasets import kanter_2025
+    from neurospatial.datasets._checks import run_checks
+
+    times, xy = _path(low=(0.0, 0.0))
+    path = tmp_path / "session.nwb"
+    _write_session(
+        path,
+        times,
+        xy,
+        _moving_headings(times, xy),
+        epochs=[[times[0], times[-1] + 20.0]],
+        tasks=["Foraging task"],
+    )
+    entry = session_entry("kanter_2025", FORAGING)
+    rec = run_checks(kanter_2025.load_session(entry, path), stated=entry.info.stated)
+    assert rec.failed_checks == ()
+    stop = max(times[-1], max(train.max() for train in rec.spike_times))
+    np.testing.assert_allclose(rec.epochs["foraging"], [[times[0], stop]])
+    assert any(
+        text.startswith("1 epoch row reaches past the recording")
+        and "epochs['foraging']" in text
+        for text in rec.watch_outs
+    )
+    clip = next(c for c in rec.conversions if c.text.startswith("epochs: rows"))
+    assert clip.basis == "inferred"
+    assert "the file's epochs table lists them so" in clip.evidence
+
+
 def test_place_square_holds_the_most_samples():
     """A 100 cm square over a 100 cm box's samples, not their 150 cm range."""
     from neurospatial.datasets.kanter_2025 import place_square
@@ -282,6 +312,29 @@ def test_loads_default_session(session_entry, assert_default_session):
     assert "circular mean -0.33 rad, median spread 17 degrees" in frame.evidence
     assert "spread of 81 degrees" in frame.evidence
     assert "17 windows" in frame.evidence
+
+
+@pytest.mark.realdata
+@pytest.mark.parametrize(
+    ("session", "name", "listed_stop"),
+    [
+        ("27284_2021-Jun-16_14-33-11", "foraging", 1528.0),
+        ("27285_2021-Jun-30_13-59-11", "foraging", 1639.0),
+        ("27963_2022-Feb-08_21-14-27", "foraging", 1258.0),
+        ("27963_2022-Feb-10_11-06-56", "object_3", 1912.0),
+    ],
+)
+def test_an_epoch_ending_after_the_data_loads_clipped(session, name, listed_stop):
+    """Four sessions whose epoch ends 14.7 to 31.9 s after the data: clipped, not refused."""
+    rec = load("kanter_2025", session)
+    assert rec.failed_checks == ()
+    stop = max(rec.times[-1], max(t.max() for t in rec.spike_times if t.size))
+    assert rec.epochs[name][-1, 1] == stop
+    assert 14.5 <= listed_stop - stop <= 32.0
+    assert any(
+        f"epochs['{name}'] [" in text and f", {listed_stop:.6g}] s ends" in text
+        for text in rec.watch_outs
+    )
 
 
 @pytest.mark.realdata

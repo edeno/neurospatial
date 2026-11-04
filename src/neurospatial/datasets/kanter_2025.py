@@ -44,7 +44,10 @@ What the loader converts:
 - epochs: the epochs table's rows. A session the index lists as a novel
   object task has four rows, named ``empty``, ``object_1``, ``object_2``
   and ``object_3`` in time order (the data descriptor's sequence); every
-  other session's rows are ``foraging``.
+  other session's rows are ``foraging``. Rows that run past the recording
+  (its first to last sample or spike) are clipped to it
+  (``clip_epochs_to_recording``, an inferred ``Conversion`` and a
+  watch-out): in four sessions an epoch ends 14.7 to 31.9 s after the data.
 
 Object positions: not in the archive. The files hold no object table or
 location, the data descriptor says only that each object was placed "at a
@@ -77,6 +80,7 @@ from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import (
     Conversion,
     Recording,
+    clip_epochs_to_recording,
     heading_vs_movement,
     interval_rows,
     tracked_mask,
@@ -250,6 +254,13 @@ def load_session(
     headings = np.asarray(wrap_angle(raw), dtype=np.float64)
     side, arena = _stated_arena(epoch_table, entry.session)
     epochs, epoch_source = _epochs(epoch_table, entry.session)
+    spike_times = tuple(
+        np.sort(np.asarray(train, dtype=np.float64))
+        for train in file_units["spike_times"]
+    )
+    clipped = clip_epochs_to_recording(
+        epochs, times, spike_times, source="the file's epochs table"
+    )
     env, placement, span_watch_out = _declared_square(positions, side, entry.session)
     table, regions = unit_table(file_units, locations)
     frame_conversion, frame_watch_outs = _heading_frame(times, positions, headings)
@@ -268,10 +279,7 @@ def load_session(
             f"({started:%Y-%m-%d %H:%M})"
         ),
         times=times,
-        spike_times=tuple(
-            np.sort(np.asarray(train, dtype=np.float64))
-            for train in file_units["spike_times"]
-        ),
+        spike_times=spike_times,
         units=table,
         env=env,
         env_kind="declared",
@@ -293,7 +301,7 @@ def load_session(
             "the file's head direction (direction/head_direction), from the "
             "motion-capture markers"
         ),
-        epochs=epochs,
+        epochs=clipped.epochs,
         params={
             "bin_size": BIN_SIZE,
             "dt": DT,
@@ -328,10 +336,12 @@ def load_session(
                 "(probe) has one location",
             ),
             epoch_source,
+            *(() if clipped.conversion is None else (clipped.conversion,)),
             placement,
         ),
         watch_outs=(
             *WATCH_OUTS.get(entry.session, ()),
+            *(() if clipped.watch_out is None else (clipped.watch_out,)),
             *_repeated_ids(file_units),
             *frame_watch_outs,
             *_frame_claim(positions, frame),

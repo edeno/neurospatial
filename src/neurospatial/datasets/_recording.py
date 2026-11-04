@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import cached_property
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,6 +33,10 @@ if TYPE_CHECKING:
 __all__ = ["Conversion", "Provenance", "Recording"]
 
 POSITION_UNITS = ("cm", "m", "pixel", "arbitrary")
+#: The ``max_gap`` (s) of ``compute_speed``, ``Environment.occupancy``,
+#: ``heading_from_velocity`` and the animation overlays, used for a session
+#: whose ``params`` set none.
+DEFAULT_MAX_GAP = 1.0
 _UNIT_COLUMNS = ("brain_region", "label")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -255,6 +259,12 @@ class Recording(ReadOnlyArraysMixin):
         ``analysis_epochs``, an (n, 2) array, sets the epochs
         ``units["fires_in_epochs"]`` refers to; without it, the tracked span
         from the first to the last sample of ``times``.
+        ``max_gap``, where the loader sets one, is the longest interval
+        between samples (s) that counts as continuous tracking: the summary's
+        speed, the overview and the animation use it, as analyses of the
+        session should (a dataset whose samples were removed below a speed
+        threshold leaves gaps that must not be bridged); without it they use
+        the package functions' default.
     conversions : tuple of Conversion
         Every conversion the loader applied, stated or inferred.
     watch_outs : tuple of str
@@ -656,6 +666,16 @@ class Recording(ReadOnlyArraysMixin):
             return np.isfinite(self.headings)
         return np.zeros(self.times.size, dtype=bool)
 
+    @property
+    def _max_gap(self) -> float | None:
+        """``params["max_gap"]`` where the loader sets one, else ``DEFAULT_MAX_GAP``.
+
+        Passed to every function the summary, overview and animation call
+        with a ``max_gap``, so they bridge the gaps the session's analyses do.
+        """
+        value = self.params.get("max_gap", DEFAULT_MAX_GAP)
+        return None if value is None else float(value)
+
     @cached_property
     def _speed(self) -> NDArray[np.float64] | None:
         """Speed of each sample, read-only, shape (n_time,), as :func:`session_speed`.
@@ -664,7 +684,7 @@ class Recording(ReadOnlyArraysMixin):
         """
         if self.positions is None:
             return None
-        speed = session_speed(self.times, self.positions)
+        speed = session_speed(self.times, self.positions, max_gap=self._max_gap)
         if speed is not None:
             speed.setflags(write=False)
         return speed
@@ -979,7 +999,10 @@ def _samples_strictly_inside(
 
 
 def session_speed(
-    times: NDArray[np.float64], positions: NDArray[np.float64]
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    max_gap: float | None = DEFAULT_MAX_GAP,
 ) -> NDArray[np.float64] | None:
     """Speed of each sample, the speed a session's summary prints.
 
@@ -990,17 +1013,23 @@ def session_speed(
     ----------
     times : ndarray, shape (n_time,)
     positions : ndarray, shape (n_time, n_dims)
+    max_gap : float or None, optional
+        ``compute_speed``'s ``max_gap``: the session's
+        ``Recording.params["max_gap"]`` where it sets one. Default
+        ``DEFAULT_MAX_GAP``; None bridges every gap.
 
     Returns
     -------
     ndarray, shape (n_time,), or None
         In position units per second; None when no two tracked samples lie
-        within 1 s of each other, so no speed can be computed.
+        within ``max_gap`` of each other, so no speed can be computed.
     """
     from neurospatial.behavior import compute_speed
 
     try:
-        return np.asarray(compute_speed(times, positions), dtype=np.float64)
+        return np.asarray(
+            compute_speed(times, positions, max_gap=max_gap), dtype=np.float64
+        )
     except InputError:  # no two tracked samples within compute_speed's max_gap
         return None
 
@@ -1136,3 +1165,138 @@ def heading_vs_movement(
     mean = circular_mean(diff)
     spread = float(np.median(np.abs(wrap_angle(diff - mean))))
     return mean, spread
+
+
+class ClippedEpochs(NamedTuple):
+    """A file's epochs clipped to the recording, and how to report the clip.
+
+    Attributes
+    ----------
+    epochs : dict of str to ndarray, shape (n, 2)
+        Each named epoch's rows within the recording; a name whose every row
+        lies outside it is left out.
+    conversion : Conversion or None
+        The inferred ``Conversion`` naming each clipped or dropped row with
+        its numbers; None when no row reached past the recording.
+    watch_out : str or None
+        The matching "Watch out" entry; None when no row was clipped.
+    """
+
+    epochs: dict[str, NDArray[np.float64]]
+    conversion: Conversion | None
+    watch_out: str | None
+
+
+def clip_epochs_to_recording(
+    epochs: Mapping[str, NDArray[np.float64]],
+    times: NDArray[np.float64],
+    spike_times: tuple[NDArray[np.float64], ...],
+    *,
+    source: str,
+) -> ClippedEpochs:
+    """Clip a file's epoch rows to the recording, the span the clock check uses.
+
+    The recording runs from the earlier of the first sample and the first
+    spike to the later of the last sample and the last spike, the span the
+    clock check compares epochs with. A row edge farther past it than the
+    check's own slack (1% of the recording, at most 10 s) is clipped to it,
+    and a row wholly outside it is dropped, so a file that lists a session
+    longer than the data it holds (a session table written before the data
+    were truncated, an epoch ending after the last spike) gives epochs on
+    the data's clock instead of a refusal. An edge within the slack is left
+    as stored: the check accepts it, and where the recording's edge is a
+    first or last spike the true acquisition edge lies a little beyond it.
+    Positions and spikes are not changed.
+
+    Parameters
+    ----------
+    epochs : Mapping[str, ndarray]
+        Named (n, 2) rows in seconds, as the file states them.
+    times : ndarray, shape (n_time,)
+        Sample times in seconds, increasing.
+    spike_times : tuple of ndarray
+        One array of spike times per unit, on the clock of ``times``.
+    source : str
+        Where the rows come from, for the evidence, for example
+        ``"the file's epochs table"``.
+
+    Returns
+    -------
+    ClippedEpochs
+        The epochs, and the ``Conversion`` and watch-out describing every
+        clipped or dropped row, both None when none was.
+
+    Examples
+    --------
+    >>> times = np.arange(0.0, 10.0, 0.5)
+    >>> clipped = clip_epochs_to_recording(
+    ...     {"run": np.array([[-0.05, 15.0]]), "sleep": np.array([[20.0, 30.0]])},
+    ...     times,
+    ...     (np.array([1.0, 9.8]),),
+    ...     source="a table",
+    ... )
+    >>> {name: rows.tolist() for name, rows in clipped.epochs.items()}
+    {'run': [[-0.05, 9.8]]}
+    >>> print(clipped.watch_out)  # doctest: +NORMALIZE_WHITESPACE
+    2 epoch rows reach past the recording, 0 to 9.8 s (its first and last
+    sample or spike), and are clipped to it: epochs['run'] [-0.05, 15] s ends
+    5.2 s after it, now [-0.05, 9.8] s; epochs['sleep'] [20, 30] s lies wholly
+    outside it, dropped. Positions and spikes are as stored.
+    """
+    spikes = np.concatenate([np.empty(0), *spike_times])
+    start = float(min(times[0], spikes.min())) if spikes.size else float(times[0])
+    stop = float(max(times[-1], spikes.max())) if spikes.size else float(times[-1])
+    from neurospatial.datasets._checks import _slack
+
+    slack = _slack(stop - start)
+    kept: dict[str, NDArray[np.float64]] = {}
+    changed: list[str] = []
+    for name, table in epochs.items():
+        rows = np.asarray(table, dtype=np.float64).reshape(-1, 2)
+        out = []
+        for a, b in rows:
+            early, late = start - a, b - stop
+            if b <= start or a >= stop:
+                changed.append(
+                    f"epochs[{name!r}] [{a:.6g}, {b:.6g}] s lies wholly outside "
+                    "it, dropped"
+                )
+                continue
+            c = start if early > slack else a
+            d = stop if late > slack else b
+            out.append((c, d))
+            if (c, d) != (a, b):
+                past = [
+                    text
+                    for over, text in (
+                        (early, f"starts {early:.3g} s before it"),
+                        (late, f"ends {late:.3g} s after it"),
+                    )
+                    if over > slack
+                ]
+                changed.append(
+                    f"epochs[{name!r}] [{a:.6g}, {b:.6g}] s {' and '.join(past)}, "
+                    f"now [{c:.6g}, {d:.6g}] s"
+                )
+        if out:
+            kept[name] = np.array(out, dtype=np.float64)
+    if not changed:
+        return ClippedEpochs(kept, None, None)
+    span = f"{start:.6g} to {stop:.6g} s"
+    rows_text = "; ".join(changed)
+    n = len(changed)
+    watch_out = (
+        f"{n} epoch {'row reaches' if n == 1 else 'rows reach'} past the recording, "
+        f"{span} (its first and last sample or spike), and "
+        f"{'is' if n == 1 else 'are'} clipped to it: {rows_text}. Positions and "
+        "spikes are as stored."
+    )
+    conversion = Conversion(
+        f"epochs: rows reaching past the recording ({span}) clipped to it, rows "
+        "wholly outside it dropped",
+        "inferred",
+        f"{source} lists them so: {rows_text}. The recording is the span the "
+        "clock check compares epochs with, its first and last sample or spike; "
+        f"an edge within the check's slack ({slack:.3g} s) is kept as stored",
+    )
+    return ClippedEpochs(kept, conversion, watch_out)
