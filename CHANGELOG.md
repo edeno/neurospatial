@@ -172,6 +172,22 @@
   paper states tracking at 39.69 Hz; the files sample at 39.06 Hz. On the
   circle, `rec.linearized` increases counter-clockwise while the rat runs
   clockwise, so it decreases along a run.
+- `valero_2022`: Valero et al. (2022) mouse CA1 units on a 110 cm x 6.35 cm
+  linear track, the 28 DANDI 000568 files without raw voltage (version
+  0.230705.1633, CC-BY-4.0), the first dataset with video: each session's
+  `.avi` is `rec.video`, fetched only on request. The default,
+  `sub-fCamk2_ses-fCamk2-201014-sess3` (35 units), is checked by hand.
+  Positions are cm as stored, every 1/30 s; the declared environment is the
+  stated track as a one-edge graph along the samples' principal axis, with a
+  placement tolerance measured from the samples. The video's own timestamps
+  are 22.55 to 23.12 s earlier than the position timestamps for the same
+  67,131 frames; the video follows the position clock, on which the units'
+  spatial information is highest. The file states no pixel size and stores
+  no pixel tracking, and no landmarks have been placed yet, so
+  `rec.animation(video=True)` refuses for now. The parts of the track epoch
+  before the first and after the last position sample are the epochs
+  `track_before_tracking` and `track_after_tracking`. A session whose video
+  is split across two files has `rec.video` None.
 - `io.nwb.read_position(..., position_name=)` and
   `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
   any Position or CompassDirection container when given its full path, as in

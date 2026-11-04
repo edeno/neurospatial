@@ -1,0 +1,672 @@
+{
+  "dataset": "valero_2022",
+  "paper": "Valero et al. (2022)",
+  "paper_citation": "Valero M, Zutshi I, Yoon E, Buzs\u00e1ki G (2022). Probing subthreshold dynamics of hippocampal neurons by pulsed optogenetics. Science 375, 570\u2013574. https://doi.org/10.1126/science.abm1891",
+  "species": "mouse",
+  "brain_regions": [
+    "hippocampus CA1"
+  ],
+  "apparatus": "110 cm x 6.35 cm PVC linear track, filmed from above",
+  "archive": {
+    "dandiset": "000568",
+    "variant": "-no-raw-data",
+    "version": "0.230705.1633",
+    "url": "https://dandiarchive.org/dandiset/000568/0.230705.1633",
+    "citation": "Valero, Manuel;  Zutshi, Ipshita; Yoon, Euisik; Buzs\u00e1ki, Gy\u00f6rgy (2023) Probing subthreshold dynamics of hippocampal neurons by pulsed optogenetics (Version 0.230705.1633) [Data set]. DANDI archive. https://doi.org/10.48324/dandi.000568/0.230705.1633"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 30.0,
+      "basis": "inferred",
+      "source": "the files' position and video timestamps (1/30 s steps in the two files opened, sub-fCamk2_ses-fCamk2-201014-sess3 and sub-fCamk3_ses-fCamk3-201106-sess17); no text read states the rate"
+    },
+    "position_span": {
+      "value": [
+        88.0,
+        132.0
+      ],
+      "basis": "stated",
+      "source": "the description of the files' position series (SpatialSeriesRaw): '(x,y) coordinates tracking subject movement from above with camera on a PVC linear track (110 cm long, 6.35 cm wide)', in the three files opened; the largest span of the tracked positions must lie within 20% of 110 cm"
+    },
+    "speed_limit": null
+  },
+  "sessions": [
+    {
+      "session": "sub-fCamk1_ses-fCamk1-200827-sess9",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200827-sess9-no-raw-data_behavior+ecephys+image+ogen.nwb",
+      "asset_id": "9fc5a60e-af09-4099-ac22-ee54211f55e4",
+      "sha256": "c2fcf29852eb58d08d47dfffa91bbe51e93ef528ec1dfea7172705f2e2d9f2d6",
+      "size_bytes": 44441669,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200827-sess9-no-raw-data_behavior+ecephys+image+ogen/5fe28cbc-aa73-4556-b83e-3820267be98d_external_file_0.avi",
+          "asset_id": "5ebbad0f-9bb4-4221-8402-8c5aac09ddc8",
+          "sha256": "c6f60be2fbd4522f0a81d0fd64f8d610951bdd6da5cbe6d1097ee1a600f1e40b",
+          "size_bytes": 40263168
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk1_ses-fCamk1-200901-sess12",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200901-sess12-no-raw-data_behavior+ecephys+image+ogen.nwb",
+      "asset_id": "3ccac620-f912-4520-96cc-d582b9cbeedd",
+      "sha256": "3d9484fb26afa65a3bf7d926dfb28938777192326d40b23116c23fe35ce641c0",
+      "size_bytes": 28678484,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200901-sess12-no-raw-data_behavior+ecephys+image+ogen/20e4f76d-87c3-4af0-b9db-62f1750e2be7_external_file_0.avi",
+          "asset_id": "78090013-3395-4ed1-9e0b-c442d30ba54d",
+          "sha256": "c437de98a1b7b66f2c3bd5b1e72fa2dba9dd7441999fb5001e571caf778918a8",
+          "size_bytes": 34343936
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk1_ses-fCamk1-200902-sess13",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200902-sess13-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "a3536cb0-a232-4601-96ee-7e55dd62c75d",
+      "sha256": "24e65340f3778f2710dc8be0367ffd79531d84f4ae012ba91e18cf8ecfb37595",
+      "size_bytes": 20423392,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200902-sess13-no-raw-data_behavior+ecephys+image/383c6162-5c5c-4b82-a2cd-6473e66831c2_external_file_0.avi",
+          "asset_id": "2efeecc1-8d1a-4f6b-9d86-5ca43773f91a",
+          "sha256": "59408d356502e8643f80e9ff2d02ac4ad84d72ce426b12deaefdf4ac6b613ce1",
+          "size_bytes": 32391680
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk1_ses-fCamk1-200904-sess15",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200904-sess15-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "e20554c1-d69c-438a-b03a-70c70fb09dcf",
+      "sha256": "1aa72966cbb01ec2cbd0a6a3fc5aaf1379ee384ef73bbadd382df736ed3893e6",
+      "size_bytes": 23369004,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200904-sess15-no-raw-data_behavior+ecephys+image/7dd58de7-a732-43dd-851f-0588073311e1_external_file_0.avi",
+          "asset_id": "01350437-ae6f-43a2-9347-b7aa9a7963ad",
+          "sha256": "329eeb17db2983f7d55500d412230243ef922fc61a2fa379d74cbfed34494d35",
+          "size_bytes": 47959040
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk1_ses-fCamk1-200908-sess16",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200908-sess16-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "4c1a5776-71da-496f-8863-d138b402608a",
+      "sha256": "2fcea3371f9810ba11954df4565d339882c98ee70aac4590db6c1fc40ea88c12",
+      "size_bytes": 24342755,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200908-sess16-no-raw-data_behavior+ecephys+image/c9c02369-64af-4c4e-952e-21747cacb081_external_file_0.avi",
+          "asset_id": "b8345d54-97d1-496d-8857-54c5cf74fe48",
+          "sha256": "c4415e3f5dea1ba03f43ef2f82d999be384ff4eb085327f435e6b715dd574420",
+          "size_bytes": 50809856
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk1_ses-fCamk1-200909-sess17",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200909-sess17-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "b7b499b5-7393-45c2-9c5d-ae3691913596",
+      "sha256": "22ff8fcf61300e3c2ae5256a5020365a008515ba1397daff4ad25fef7c427a97",
+      "size_bytes": 24461500,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200909-sess17-no-raw-data_behavior+ecephys+image/e92e81f0-7e77-4827-88a7-01f014b6542a_external_file_0.avi",
+          "asset_id": "7fd40c85-c8a3-4ffb-a9d8-f3bc9b130678",
+          "sha256": "a26c1440963f5eca342e62c6ea3dca2b3fcf259f3f028218b73dd2f9f6e27c73",
+          "size_bytes": 50616320
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk1_ses-fCamk1-200910-sess18",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200910-sess18-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "07fef1f0-4590-434e-930e-3f1dc0403212",
+      "sha256": "13690df5908f64606317ca5a011dde98d9af4bb32c8bfd38ba4da24df18e17f6",
+      "size_bytes": 35492490,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200910-sess18-no-raw-data_behavior+ecephys+image/d577a551-4ceb-4c50-aa85-6ea98d56bbe0_external_file_0.avi",
+          "asset_id": "8bfc079f-270f-4024-ac30-429caeff9b9d",
+          "sha256": "9ba9c92c9439d296b8ea6cbded4a966933986f1fcecd59442b0e5491be3ddd2d",
+          "size_bytes": 52864512
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk1_ses-fCamk1-200911-sess19",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200911-sess19-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "fa6cff6b-633b-4fbe-a1e0-737a23458a6d",
+      "sha256": "d8dbb58dfe3de602e5df185d568f6093c54b7baf51e9c3f392515f4abaf30860",
+      "size_bytes": 18008280,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk1/sub-fCamk1_ses-fCamk1-200911-sess19-no-raw-data_behavior+ecephys+image/1cdcc0bc-f2fe-4c23-88f1-9d15ccb9cf72_external_file_0.avi",
+          "asset_id": "19ec21bf-de2b-40bc-96f8-a6d0abf27a4d",
+          "sha256": "f9e7f2803fdb19c30bcaa03f0042f260573bd021646c5ad32068aab0212cb367",
+          "size_bytes": 66992640
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk2_ses-fCamk2-201012-sess1",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk2/sub-fCamk2_ses-fCamk2-201012-sess1-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "019ddcc3-7959-44b0-a63d-901887e66b80",
+      "sha256": "e4e6fed6ec96738841c68401622695d11f2986706309becc6a1ee066021a181b",
+      "size_bytes": 8433148,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk2/sub-fCamk2_ses-fCamk2-201012-sess1-no-raw-data_behavior+ecephys+image/16972947-eefc-4fc8-9817-75ea8ad3b3ab_external_file_0.avi",
+          "asset_id": "a60e6203-6c7d-454b-9de7-42baa9b3b61f",
+          "sha256": "98286f8eb95dbab16bf50f4827731d27ada6930cc4eb17061d1cf9563a8c9dbc",
+          "size_bytes": 56658944
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk2_ses-fCamk2-201013-sess2",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk2/sub-fCamk2_ses-fCamk2-201013-sess2-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "ef75cfae-f2b6-4eac-84e8-58b0f146a859",
+      "sha256": "6b820cb887f815b3c3f0a525fd7ad3f5f481d6fa69b0e409374c8297d99b5ca9",
+      "size_bytes": 8773604,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk2/sub-fCamk2_ses-fCamk2-201013-sess2-no-raw-data_behavior+ecephys+image/3a51ff55-06a9-4596-89fb-b7ed985f8db8_external_file_0.avi",
+          "asset_id": "3451a440-a706-4a48-9be5-320e489e6e16",
+          "sha256": "afc467c923dc7ae1c8843ab04d57db897fc554bd0b76c57c61bcdce02fc305ae",
+          "size_bytes": 42472448
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk2_ses-fCamk2-201014-sess3",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk2/sub-fCamk2_ses-fCamk2-201014-sess3-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "48f2daa0-752b-4de5-932a-6e4682478493",
+      "sha256": "17bc28bed791fad03b3a87702a77f2f8c74ca5daac0a8e8dbc742df3506b1790",
+      "size_bytes": 5784179,
+      "verified": true,
+      "default": true,
+      "n_units": 35,
+      "verification": "Checked by hand on 2026-11-03 against the file and DANDI 000568's metadata; the paper was not available to read. Units: 35, every electrode of the file in CA1 (the units table names none). Time: 67,131 position samples every 1/30 s from 7,696.89 to 9,935.13 s, inside the third of the file's five epochs (fCamk2_201014_112432, 7,674.30 to 9,940.74 s), which starts 22.6 s before the first sample; spikes from 0.0066 to 14,793.68 s, inside the five epochs. The video ImageSeries holds 67,131 frames (as does the .avi, decoded with ffmpeg), and the position times are its timestamps plus 22.55 to 23.12 s, an offset and a rate (1.000257) to within 0.09 ms; the units' spatial information is highest on the position clock (0.84 bits/spike against 0.36 on the video's). Space: x from 4.17 to 20.68 cm and y from 0.55 to 116.48 cm, in cm by the series' unit; the track runs along y and its stated 110 cm is 5.1% shorter than the samples' 0.5th to 99.5th percentile span along it (115.6 cm). The video's calibration is not checked: no frame sheet has been looked at.",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk2/sub-fCamk2_ses-fCamk2-201014-sess3-no-raw-data_behavior+ecephys+image/29b59f05-7873-423b-87c1-e02fa4b63c6e_external_file_0.avi",
+          "asset_id": "ddca2c7c-e2a1-4f08-948b-8caf3ce904b7",
+          "sha256": "d24502b37ad8abba7e81bce647abd5193d9f4e1f2c32ec1181ac977063939a9a",
+          "size_bytes": 46047232
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk2_ses-fCamk2-201015-sess4",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk2/sub-fCamk2_ses-fCamk2-201015-sess4-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "e7e5f461-ae0a-4d56-aed4-b89ff2ca8a22",
+      "sha256": "27fe9f0605eb61c8286cecfff0b0122b768fc0a74fc72b0f088c05081db16d26",
+      "size_bytes": 7161344,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk2/sub-fCamk2_ses-fCamk2-201015-sess4-no-raw-data_behavior+ecephys+image/382fee91-09d5-411f-8d1a-7a3559a68c4e_external_file_0.avi",
+          "asset_id": "024aeeea-e1a5-43ef-9201-b3e5c61da74f",
+          "sha256": "f42b9d5cb6609f0a96b7b7072f28b88ca49fb6f1ea4088ce416bee811040ba1b",
+          "size_bytes": 31024640
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201028-sess10-cleanned",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201028-sess10-cleanned-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "e929cbe1-69a2-44ab-8745-bb80d3f6782b",
+      "sha256": "1c6b155843b5ba928e5a36a1a03cd4abb9eac376307a919613fb38b5846ab4fa",
+      "size_bytes": 39033837,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201028-sess10-cleanned-no-raw-data_behavior+ecephys+image/a356f03a-cc45-421f-aa48-fd319445e5e3_external_file_0.avi",
+          "asset_id": "5a532751-1823-4865-ae75-6905c3414d00",
+          "sha256": "441526194fdc15e28cc45f0993ac1163724957606214325158f764e2d8ba6b6c",
+          "size_bytes": 79413760
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201028-sess10-cleanned-no-raw-data_behavior+ecephys+image/a356f03a-cc45-421f-aa48-fd319445e5e3_external_file_1.avi",
+          "asset_id": "5d999c68-3c9d-4180-99a9-85e2c813f19c",
+          "sha256": "0d8bdeb9f7e6949c79107021eaf1dbbb328e37aa787a6a36fa762c5b70151a14",
+          "size_bytes": 58325504
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201029-sess11-cleanned",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201029-sess11-cleanned-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "a6d2eee0-77c9-409f-a153-a6d1bdb7121d",
+      "sha256": "c670be4839ed925b44797a0605f2a5c778c82c4434c24b29910b96760e8b1a56",
+      "size_bytes": 31733686,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201029-sess11-cleanned-no-raw-data_behavior+ecephys+image/ef310d24-324f-448f-a580-5d9c791e5386_external_file_0.avi",
+          "asset_id": "a0b7d6ff-4067-47b1-8585-a4184bd50c9c",
+          "sha256": "accb7f2dd3f09f054e9fc73c7a0ff8b93f7a0e26af8cf89596c5a518c1b3c88b",
+          "size_bytes": 67231232
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201029-sess11-cleanned-no-raw-data_behavior+ecephys+image/ef310d24-324f-448f-a580-5d9c791e5386_external_file_1.avi",
+          "asset_id": "f07f2ab0-8be1-47e8-bffa-3d126ef56e3f",
+          "sha256": "6e9a45c86773e1856f9ac7f4f5b6018ba90a644afe6704ed5289257ac55648a8",
+          "size_bytes": 63123456
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201030-sess12",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201030-sess12-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "a22f9d44-3c10-4190-a8a3-ee32008202df",
+      "sha256": "ba0dedde0918dae9470db357c321c73f8d27c2df949922bc7bc957b11065d403",
+      "size_bytes": 41446155,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201030-sess12-no-raw-data_behavior+ecephys+image/5f5265c6-5972-44c8-9024-86a144d9d306_external_file_0.avi",
+          "asset_id": "40348f94-7a0a-44bd-9e14-d02f5497359b",
+          "sha256": "6f7ac3b5c47cab1897022b49209eb9c42576f0eb35d1a0f1768cc4d401bd2818",
+          "size_bytes": 68399616
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201030-sess12-no-raw-data_behavior+ecephys+image/5f5265c6-5972-44c8-9024-86a144d9d306_external_file_1.avi",
+          "asset_id": "ba1ffc43-7682-4fe1-93c6-42e41107c69f",
+          "sha256": "5be0322c4008a5c0f99b9077734771354b7fe4f594a6215e95ac531892196379",
+          "size_bytes": 86082048
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201102-sess13",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201102-sess13-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "e37e9633-a541-4562-ac9f-279ad0ecfe7b",
+      "sha256": "28745f6a88f9852eb44f288369e1156f2a1b05b1a497918875cca2b71d011f82",
+      "size_bytes": 41073593,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201102-sess13-no-raw-data_behavior+ecephys+image/afe144e1-8b59-4b14-8a03-2a14c80de8ad_external_file_0.avi",
+          "asset_id": "8e9a356f-067d-488f-803c-5427405fdcb5",
+          "sha256": "4ea5db5c169252433e17fb8d68d9fb7a938a1a878d851cf509e065d7eff17cc0",
+          "size_bytes": 50604032
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201102-sess13-no-raw-data_behavior+ecephys+image/afe144e1-8b59-4b14-8a03-2a14c80de8ad_external_file_1.avi",
+          "asset_id": "960d0219-acfc-473e-88da-2a67040d97fa",
+          "sha256": "4f8b26ac583ea6c48e89dd448ad2e9640b77335897587b29b0c86d662e5442bc",
+          "size_bytes": 42992128
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201103-sess14",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201103-sess14-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "5bb5dace-c766-4dba-b399-148eecad6846",
+      "sha256": "efc86c3e27b9f085a490077039a36a6e49c86a9e324269729c3b759c65c86802",
+      "size_bytes": 34998267,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201103-sess14-no-raw-data_behavior+ecephys+image/242080f5-8a8f-4367-9040-fb6785ceb5f3_external_file_0.avi",
+          "asset_id": "abc7e50b-3d56-4b6f-ab2a-b15c0dadcc9e",
+          "sha256": "3f694d5bb40d2b558d854378eb2f495be47883e59a2fc1728fa95f234e4784fb",
+          "size_bytes": 50781696
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201103-sess14-no-raw-data_behavior+ecephys+image/242080f5-8a8f-4367-9040-fb6785ceb5f3_external_file_1.avi",
+          "asset_id": "a407ac7e-9e8f-4651-aa1b-46e4189d3bd5",
+          "sha256": "009a56ad0c077d8b92df6615fe89185aa6715530e6069e99bbcec1a4156ec6f6",
+          "size_bytes": 42997248
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201105-sess16",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201105-sess16-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "b46fac55-367b-421a-87e2-4bd65223b33e",
+      "sha256": "13fdee5fea7301958f9dd907a81450029a9adf24c6acd7a3272eecfa4afc52bb",
+      "size_bytes": 42453892,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201105-sess16-no-raw-data_behavior+ecephys+image/c11e79f3-e653-4db1-bebe-38547df58447_external_file_0.avi",
+          "asset_id": "d543a6d4-d64f-4585-84bf-bd8c24c5bfa0",
+          "sha256": "18c212f01b68e2ba4b5980362793c65ac8000cf998265158db03903067406552",
+          "size_bytes": 44366848
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201105-sess16-no-raw-data_behavior+ecephys+image/c11e79f3-e653-4db1-bebe-38547df58447_external_file_1.avi",
+          "asset_id": "b70f57a3-d5e8-4234-a10f-09ada1ae3ab3",
+          "sha256": "4dcd1ea1b64b1182e3f4f7e02b5d0409a1aa93e05e376dfbd072ec12f3b32cc9",
+          "size_bytes": 64188416
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201106-sess17",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201106-sess17-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "7e5391e2-f764-415e-88f9-9dd1c03853b3",
+      "sha256": "d1479fd18d770a79f60d35be88421fa1597822e73acd47cb60ef75cfb00299d2",
+      "size_bytes": 26133000,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201106-sess17-no-raw-data_behavior+ecephys+image/2ff16f8b-95be-442f-95ed-9f1eed078176_external_file_0.avi",
+          "asset_id": "d7c4539f-d580-4790-8f16-0d47301cecb1",
+          "sha256": "3c7890cfb3bdfec08cb59266a1a96965013b9be09c768e5d767b3b94b38c1962",
+          "size_bytes": 98505728
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201106-sess17-no-raw-data_behavior+ecephys+image/2ff16f8b-95be-442f-95ed-9f1eed078176_external_file_1.avi",
+          "asset_id": "07272977-513a-43c8-8586-dde0a39a46fd",
+          "sha256": "c779100c0f23e53ecfa0a3ee91b6f77a9ff51f040918344486f9c138243b9f27",
+          "size_bytes": 74069504
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201109-sess18",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201109-sess18-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "6cf9a893-c098-4ee4-9609-f68760e48f72",
+      "sha256": "fc0303d7f33a631cebf99261a95d39b562f549c1144c2d9064ab68d4521b44d8",
+      "size_bytes": 28259292,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201109-sess18-no-raw-data_behavior+ecephys+image/1cd7beeb-5c97-46ec-aaad-627f01765e94_external_file_0.avi",
+          "asset_id": "40275246-1e1b-4a78-8bd2-1bc7d08a3e8d",
+          "sha256": "a834540c6cf46b083cfb6cf5f005d31e54f35f89113e66555849b04d81fd6ccf",
+          "size_bytes": 58270208
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201109-sess18-no-raw-data_behavior+ecephys+image/1cd7beeb-5c97-46ec-aaad-627f01765e94_external_file_1.avi",
+          "asset_id": "4ce9cd21-7b1c-4930-85f5-b2290970d053",
+          "sha256": "df31baab2afe8e01d3c01b6153e7e2446ed037b2e381e3522a868ac197e9f958",
+          "size_bytes": 60902912
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201110-sess19",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201110-sess19-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "767aee0d-0d9c-433f-ac75-9af16e0a24a3",
+      "sha256": "9d300ffeb87bfd49dd1b4fcbc89e2f830082e84fbfde7f4a76a3fd4c78793c3a",
+      "size_bytes": 37785404,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201110-sess19-no-raw-data_behavior+ecephys+image/95b0d99e-4fc5-4b33-9ed8-583a41901805_external_file_0.avi",
+          "asset_id": "5f3fb651-4bc9-42a6-9380-7aa629db0399",
+          "sha256": "9157beaf75e89e8f23db85d3ac4c178ac03715c19731925f8dd2d76c4b4cb2f4",
+          "size_bytes": 93283840
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201110-sess19-no-raw-data_behavior+ecephys+image/95b0d99e-4fc5-4b33-9ed8-583a41901805_external_file_1.avi",
+          "asset_id": "648af2bd-d8b8-421c-aefa-ca2c34d6180c",
+          "sha256": "2adfce1abbaef31fff454039bedd25113380d601ebdf044e01559ecf9920513c",
+          "size_bytes": 77613056
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201111-sess20",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201111-sess20-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "1c2c6bf2-b5b3-44c9-9211-514a7160374f",
+      "sha256": "8e2550466a3080b27758d407b70c21c558d5067b0a4f2e88114ae1b7d1ac03b0",
+      "size_bytes": 30716842,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201111-sess20-no-raw-data_behavior+ecephys+image/b6d80104-4d76-4848-b678-561829d9222d_external_file_0.avi",
+          "asset_id": "b8d5edab-2ebe-406f-906d-dca3a80a78d8",
+          "sha256": "fb8d833fbb549340d3df08cb72c1b3d3e019a49a9da629baa5557d129c4d9e4d",
+          "size_bytes": 72016896
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk3_ses-fCamk3-201113-sess22",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201113-sess22-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "9a60b974-dd38-4a48-bd39-4fb7e9f5ae04",
+      "sha256": "c692d5f4d7443f578a7b02c354ec175644012908578b5dab156e4646909518de",
+      "size_bytes": 27302647,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201113-sess22-no-raw-data_behavior+ecephys+image/63dc72eb-15cf-439c-bfd4-62f1e50c0364_external_file_0.avi",
+          "asset_id": "8a29f11e-4a97-4dce-b353-9d0cc71e54a5",
+          "sha256": "e67d4317fd1319a8b88fa0462d35239116735d4fed5f504db701db697764ec66",
+          "size_bytes": 72969216
+        },
+        {
+          "asset_path": "sub-fCamk3/sub-fCamk3_ses-fCamk3-201113-sess22-no-raw-data_behavior+ecephys+image/63dc72eb-15cf-439c-bfd4-62f1e50c0364_external_file_1.avi",
+          "asset_id": "3abc532f-b4f1-4ae8-b0b9-25aac7aecb98",
+          "sha256": "f34020b0e3b86527efad3d0d76d70621c7d96b8c190b3aae39535f205984f368",
+          "size_bytes": 52171776
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk5_ses-fCamk5-210406-sess10",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210406-sess10-no-raw-data_behavior+ecephys.nwb",
+      "asset_id": "e67beb1b-8cd8-4b70-9ec8-6cfb943af252",
+      "sha256": "bb3712b73b65f119201d4b749b03bb12ea34f6b2b19ffd02e49357be29e1cf45",
+      "size_bytes": 53002740,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-fCamk5_ses-fCamk5-210407-sess11",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210407-sess11-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "d78e8745-66b9-4527-9145-7ba801ddf2b5",
+      "sha256": "53295581fee9be91e97d647e997359797d0b6afd7527a7363bbc42f865f43fc4",
+      "size_bytes": 27400505,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210407-sess11-no-raw-data_behavior+ecephys+image/62f4aa5e-f21f-42c9-8e52-16371400fb6a_external_file_0.avi",
+          "asset_id": "8ce4e3b6-240c-413e-94a8-49d0c59e07d9",
+          "sha256": "cd4b585f9c3ae1868f3091fee4d9e8dd1fd16fa7711f2d170960fbed4d0dc7ab",
+          "size_bytes": 51348480
+        },
+        {
+          "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210407-sess11-no-raw-data_behavior+ecephys+image/62f4aa5e-f21f-42c9-8e52-16371400fb6a_external_file_1.avi",
+          "asset_id": "e8e6a17c-f6f1-47c0-a4ec-19cec4c818b0",
+          "sha256": "bf5aafcd391060efdd47704d69fac17d949d6c88ba18c3429e7ba6a06d01981e",
+          "size_bytes": 54305280
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk5_ses-fCamk5-210408-sess12",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210408-sess12-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "0dba8665-312e-40c0-8614-e66539286b7f",
+      "sha256": "e0495b7126cba665f76503456c5a8957d1c6e86123b23c3ebd01716ada2d269b",
+      "size_bytes": 34091940,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210408-sess12-no-raw-data_behavior+ecephys+image/78c7c205-16df-4bf2-a86f-7d1c52ed9d8b_external_file_0.avi",
+          "asset_id": "81cbffef-edef-4c38-893d-90ff9f188495",
+          "sha256": "49cc95fae22c758f0b99b037b1fa353a1d1bb0e5335beb40caabfdbcad9c327d",
+          "size_bytes": 59331584
+        },
+        {
+          "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210408-sess12-no-raw-data_behavior+ecephys+image/78c7c205-16df-4bf2-a86f-7d1c52ed9d8b_external_file_1.avi",
+          "asset_id": "e8ce497c-329a-4e16-a956-5c3bfdff483c",
+          "sha256": "67757388a7879e4a862f73aa2e37fdffe34a8c4a9cae6a9a595e2d179c24fd54",
+          "size_bytes": 60350464
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk5_ses-fCamk5-210412-sess14",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210412-sess14-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "bcdcba1e-bb4d-4fcc-b9ed-388c38852339",
+      "sha256": "852f10213fb08522332e2b5622c6a1b73e8fa1f72efd18741daad0f3f28bdaef",
+      "size_bytes": 23334240,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210412-sess14-no-raw-data_behavior+ecephys+image/5d283d6b-d560-474f-929f-10bf4ca4214a_external_file_0.avi",
+          "asset_id": "6e83e45e-94bd-4ddd-a75d-fd9ae71c363d",
+          "sha256": "4f14b8fc635cc64efe25f3dd2a0cbb3dd1e36a9c7d7bce65fb9d2ab6ff4e7c65",
+          "size_bytes": 56271360
+        },
+        {
+          "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210412-sess14-no-raw-data_behavior+ecephys+image/5d283d6b-d560-474f-929f-10bf4ca4214a_external_file_1.avi",
+          "asset_id": "b95a39e9-1f0c-4b90-9fe1-3e5b44bd7eed",
+          "sha256": "b3dec9c267d6607c7b3157e873787e802cd08994ddefa3c09b5396c1034675c2",
+          "size_bytes": 46999040
+        }
+      ]
+    },
+    {
+      "session": "sub-fCamk5_ses-fCamk5-210414-sess16",
+      "archive": "DANDI 000568",
+      "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210414-sess16-no-raw-data_behavior+ecephys+image.nwb",
+      "asset_id": "a9d96e51-c327-4a2f-933b-c52c87478f44",
+      "sha256": "e2d671fd11307a6978e4f61f610d6c0cd5f184ddb3713f72245533b6630ded23",
+      "size_bytes": 24793531,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "videos": [
+        {
+          "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210414-sess16-no-raw-data_behavior+ecephys+image/d8e982fb-2064-4c41-8505-f96d319ac42d_external_file_0.avi",
+          "asset_id": "9c21a604-8b44-4ead-97cd-dff922eaf2ef",
+          "sha256": "f5d8166ba39cf677fa271743f89930883ef3fd79501fb13fccb4b21f84f1596f",
+          "size_bytes": 51089408
+        },
+        {
+          "asset_path": "sub-fCamk5/sub-fCamk5_ses-fCamk5-210414-sess16-no-raw-data_behavior+ecephys+image/d8e982fb-2064-4c41-8505-f96d319ac42d_external_file_1.avi",
+          "asset_id": "d606aac7-6dc9-4039-9dfd-dbf511a230db",
+          "sha256": "d3a447721c4cf034a168729a3ec87f05177b3eac6241373867091d215fef17bc",
+          "size_bytes": 67733504
+        }
+      ]
+    }
+  ],
+  "license": "CC-BY-4.0"
+}

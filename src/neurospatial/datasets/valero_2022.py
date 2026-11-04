@@ -1,0 +1,468 @@
+"""Valero et al. (2022): mouse CA1 on a linear track, filmed from above (DANDI 000568).
+
+What was recorded: CA1 units of CaMKIIa-Cre x Ai32 mice (channelrhodopsin in
+CaMKIIa neurons) probed with optogenetic pulses, over sessions of five epochs
+on one clock: one epoch on a PVC linear track "110 cm long, 6.35 cm wide"
+(the description of each file's position series), the others off it. Position
+is one tracked point from an overhead Basler camera, in cm, every 1/30 s.
+The files also hold ripples, sleep states (wake, NREM, REM) and up/down
+states.
+
+Sessions are DANDI 000568's (version 0.230705.1633, CC-BY-4.0) files without
+the raw voltage (``-no-raw-data``, 5 to 53 MB; the copies with it are 8 to
+54 GB), named without that suffix. Each file's video, an ``.avi`` beside it on
+DANDI, is ``rec.video``: fetched only on request (46 MB for the default). The
+default session, ``sub-fCamk2_ses-fCamk2-201014-sess3``, is the one the
+survey of public datasets loaded: 35 units, the track from 7,674 to 9,941 s.
+
+Sources read: DANDI 000568's metadata, the files, and the paper's Crossref
+record (title, authors, volume, pages). The paper itself was not available
+to read, so no number here comes from it.
+
+What the loader converts:
+
+- positions: the file's ``SpatialSeriesRaw`` as stored, in cm (its unit).
+  The head is tracked, so samples spread beyond the 6.35 cm track width.
+- times: the position timestamps. The video ``ImageSeries`` holds the same
+  frames (as many as position samples) on a clock 22.55 to 23.12 s earlier;
+  the overlay follows the position clock, since the spikes are on it (an
+  inferred ``Conversion`` and a watch-out).
+- epochs: the file's epochs by ``epoch_name``, the one holding the tracking
+  as ``track``, and its stretches without positions, before the first and
+  after the last sample, as ``track_before_tracking`` and
+  ``track_after_tracking``; ``SleepStates`` by label as ``wake``, ``nrem``
+  and ``rem``.
+- events: ``ripples``, the ``RippleTimeIntervals`` rows, [start, stop) in s.
+- ``units["brain_region"]``: CA1, the location of every electrode in the
+  file; the units table names none.
+- headings: none. One point is tracked.
+
+The declared environment is the stated 110 cm track as a one-edge track
+graph along the tracked samples' principal axis, centred between their
+0.5th and 99.5th percentiles along it (the file states no origin: its
+reference frame is "Arbitrary, camera"), in 2.5 cm bins. Its ``track_width``
+is a placement tolerance measured from the samples, not the stated width.
+
+The video is not drawn yet: the file states no pixel size and stores no
+pixel tracking, and nobody has placed landmarks on a frame, so
+``rec.animation(video=True)`` refuses, naming each source tried. Once
+landmarks are in the registry, the scene of the first 20 s over the video is
+
+>>> from neurospatial.datasets import load
+>>> rec = load("valero_2022")  # doctest: +SKIP
+>>> start = rec.times[0]  # doctest: +SKIP
+>>> scene = rec.animation(time_range=(start, start + 20), video=True)  # doctest: +SKIP
+>>> scene.export("valero_video.mp4", fps=30)  # doctest: +SKIP
+
+and your own decoded posterior goes into the same scene as a field, with its
+overlays:
+
+>>> from neurospatial.animation import Animation, AnimationField
+>>> mine = Animation(  # doctest: +SKIP
+...     rec.env,
+...     {"posterior": AnimationField(result.posterior, result.times)},
+...     frame_times=scene.frame_times,
+...     overlays=scene.overlays,
+... )
+
+Analysis choices (``params``):
+
+- ``bin_size`` 2.5 cm, the loader's choice (no source read states one);
+- ``min_speed`` None: no source read states a running threshold;
+- ``dt`` 0.25 s, the decoding bin, and ``train_epochs`` / ``test_epochs``,
+  alternating 60 s blocks of the tracked span.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+from numpy.typing import NDArray
+
+from neurospatial.datasets._params import alternating_blocks
+from neurospatial.datasets._recording import Conversion, Recording
+
+if TYPE_CHECKING:
+    from neurospatial import Environment
+    from neurospatial.datasets._catalog import SessionEntry
+    from neurospatial.datasets._video import VideoSource
+
+__all__ = ["REQUIRES", "WATCH_OUTS", "load_session"]
+
+#: Modules of the ``datasets`` extra the loader imports.
+REQUIRES = ("pynwb",)
+
+#: The stated track, cm.
+LENGTH, WIDTH = 110.0, 6.35
+BIN_SIZE = 2.5
+DT = 0.25
+BLOCK = 60.0
+#: The track is placed between these quantiles of the samples along it.
+END_QUANTILES = (0.005, 0.995)
+#: The placement tolerance is twice this quantile of the samples' distance
+#: from the track.
+TOLERANCE_QUANTILE = 0.95
+
+_BEHAVIOR = "processing/behavior/LinearMazePositionTracking"
+_POSITION = f"{_BEHAVIOR}/SpatialSeriesRaw"
+_VIDEO = "ImageSeriesTrackingVideo1"
+_STATES = {"WAKEstate": "wake", "NREMstate": "nrem", "REMstate": "rem"}
+
+#: Pitfalls of each session checked by hand, with their evidence.
+WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "sub-fCamk2_ses-fCamk2-201014-sess3": (
+        "The file's session_start_time, 2016-03-15, is not the recording date: "
+        "the epoch names (fCamk2_201014_091141 to fCamk2_201014_122743) give "
+        "2020-10-14. Times are seconds from the first epoch's start.",
+        "The track epoch starts 22.6 s before the first position sample "
+        "(7,674.30 s against 7,696.89 s), so the first 22.6 s of the epoch "
+        "has spikes and no positions (epochs['track_before_tracking']); the "
+        "file does not say why.",
+        "The spikes are on the position clock, not the video's: the 35 units' "
+        "spatial information (compute_spatial_rates with method='binned' on "
+        "this environment, the whole session) averages 0.84 bits/spike at the "
+        "position timestamps, 0.36 with the positions moved 22.84 s earlier "
+        "onto the video's clock, and 0.30 to 0.43 with them moved 10 or 40 s "
+        "either way (checked on 2026-11-03).",
+    ),
+}
+
+_UNLOADED = (
+    "The file also holds UpDownStatesTimeIntervals (up and down states) and "
+    "the ripples' peak times, which are not loaded; read them with pynwb."
+)
+
+
+def load_session(
+    entry: SessionEntry, path_or_stream: str | os.PathLike[str]
+) -> Recording:
+    """Read one DANDI 000568 session into a :class:`Recording`.
+
+    Parameters
+    ----------
+    entry : SessionEntry
+        The session's registry entry.
+    path_or_stream : str or path
+        The cached NWB file, or its URL to read by byte range.
+
+    Returns
+    -------
+    Recording
+        Unchecked; :func:`neurospatial.datasets.load` runs the checks.
+
+    Raises
+    ------
+    ValueError
+        If the position series is not in cm, or no epoch holds the tracking.
+    """
+    from neurospatial.datasets._fetch import open_nwb
+    from neurospatial.io.nwb import read_position, read_units
+
+    source = os.fspath(path_or_stream)
+    with open_nwb(source) as nwb:
+        position = read_position(nwb, position_name=_POSITION)
+        units = read_units(nwb)
+        stored = nwb.processing["behavior"]["LinearMazePositionTracking"]
+        series = stored.spatial_series["SpatialSeriesRaw"]
+        stated_unit = f"unit {series.unit!r}, conversion {series.conversion:g}"
+        description, frame = series.description, series.reference_frame
+        epochs_table = nwb.epochs.to_dataframe()
+        states = nwb.processing["behavior"]["SleepStates"].to_dataframe()
+        ripples = _rows(nwb.processing["ecephys"]["RippleTimeIntervals"].to_dataframe())
+        regions = nwb.electrodes.to_dataframe()["location"].dropna().unique()
+        video = nwb.acquisition.get(_VIDEO)
+        video_files = [] if video is None else [str(f) for f in video.external_file[:]]
+        video_times = (
+            None if video is None else np.asarray(video.timestamps[:], np.float64)
+        )
+        subject = nwb.subject.subject_id
+    if position.units != "cm":
+        msg = f"{entry.session}: {_POSITION} is in {position.units!r}, not cm"
+        raise ValueError(msg)
+    times = np.asarray(position.times, dtype=np.float64)
+    positions = np.asarray(position.positions, dtype=np.float64)
+    epochs = _epochs(entry.session, times, epochs_table, states)
+    env, placement, distance = _declared_track(positions, entry.session, frame)
+    table = units.unit_table
+    assert table is not None  # read_units always reads the table
+    unit_table = table[[]].copy()
+    # Units name no electrode: a region holds for every unit only when every
+    # electrode is in it.
+    unit_table["brain_region"] = regions[0] if len(regions) == 1 else None
+    unit_table["label"] = None
+    camera, video_lines = _video(entry, source, times, video_files, video_times)
+    train, test = alternating_blocks(times[0], times[-1], BLOCK)
+    return Recording(
+        **entry.identity(path_or_stream),
+        animal=f"mouse {subject}",
+        apparatus=entry.info.apparatus,
+        brain_regions=tuple(regions) or entry.info.brain_regions,
+        clock=(
+            "the acquisition clock, seconds from the first epoch's start (the "
+            "file's session_start_time is not the recording date)"
+        ),
+        times=times,
+        spike_times=tuple(np.asarray(t, dtype=np.float64) for t in units.spike_times),
+        units=unit_table,
+        env=env,
+        env_kind="declared",
+        env_source=(
+            f"the stated {LENGTH:g} cm x {WIDTH:g} cm PVC linear track (the "
+            f"position series' description), a one-edge track graph, "
+            f"{BIN_SIZE:g} cm bins"
+        ),
+        positions=positions,
+        position_units="cm",
+        tracking=(
+            "one point from an overhead camera (the file does not say which part "
+            "of the head or headstage)"
+        ),
+        epochs=epochs,
+        events={"ripples": ripples},
+        params={
+            "bin_size": BIN_SIZE,
+            "dt": DT,
+            "min_speed": None,
+            "train_epochs": train,
+            "test_epochs": test,
+        },
+        conversions=(
+            Conversion(
+                f"positions: {_POSITION} as stored, cm",
+                "stated",
+                f"the file's series: {stated_unit} (read_position applies the "
+                f"conversion); {description!r}",
+            ),
+            Conversion(
+                "epochs: intervals/epochs by epoch_name, the one holding the "
+                "tracking as 'track', and its stretches before the first and "
+                "after the last position sample as 'track_before_tracking' and "
+                "'track_after_tracking'; processing/behavior/SleepStates by label "
+                "as 'wake', 'nrem' and 'rem'",
+                "stated",
+                "the file's epochs table, position timestamps and SleepStates labels",
+            ),
+            Conversion(
+                "units['brain_region']: the location of every electrode in the "
+                "file, for every unit (missing where the electrodes are in more "
+                "than one region)",
+                "inferred",
+                "the electrodes table gives the locations "
+                f"{', '.join(regions) or 'none'}; the units table names no "
+                "electrode or location",
+            ),
+            *placement,
+            *video_lines[0],
+        ),
+        watch_outs=(
+            *WATCH_OUTS.get(entry.session, ()),
+            *video_lines[1],
+            _beyond_track(distance),
+            _UNLOADED,
+        ),
+        video=camera,
+    )
+
+
+def _rows(table: Any) -> NDArray[np.float64]:
+    """The ``(n, 2)`` [start, stop) rows of an interval table, sorted by start."""
+    rows: NDArray[np.float64] = table[["start_time", "stop_time"]].to_numpy(
+        dtype=np.float64
+    )
+    ordered: NDArray[np.float64] = rows[np.argsort(rows[:, 0], kind="stable")]
+    return ordered
+
+
+def _epochs(
+    session: str, times: NDArray[np.float64], table: Any, states: Any
+) -> dict[str, NDArray[np.float64]]:
+    """The file's epochs by name, the tracked one as ``track``, and sleep states.
+
+    The stretches of the track epoch before the first and after the last
+    position sample, where it has no positions, are also
+    ``track_before_tracking`` and ``track_after_tracking``.
+    """
+    rows = _rows(table)
+    names = table.sort_values("start_time", kind="stable")["epoch_name"].astype(str)
+    holds = (rows[:, 0] <= times[0]) & (rows[:, 1] >= times[-1])
+    if holds.sum() != 1:
+        msg = (
+            f"{session}: {int(holds.sum())} epochs hold the tracking from "
+            f"{times[0]:.6g} to {times[-1]:.6g} s, not one"
+        )
+        raise ValueError(msg)
+    epochs = {
+        ("track" if held else name): row[None, :]
+        for name, row, held in zip(names, rows, holds, strict=True)
+    }
+    (start, stop) = epochs["track"][0]
+    if times[0] > start:
+        epochs["track_before_tracking"] = np.array([[start, times[0]]])
+    if times[-1] < stop:
+        epochs["track_after_tracking"] = np.array([[times[-1], stop]])
+    for label, key in _STATES.items():
+        epochs[key] = _rows(states[states["label"] == label])
+    return epochs
+
+
+def _declared_track(
+    positions: NDArray[np.float64], session: str, frame: str | None
+) -> tuple[Environment, tuple[Conversion, Conversion], NDArray[np.float64]]:
+    """The stated track along the samples' principal axis, and how it was placed.
+
+    Returns
+    -------
+    env : Environment
+    conversions : (Conversion, Conversion)
+        The placement and the placement tolerance.
+    distance : ndarray, shape (n_tracked,)
+        Each tracked sample's distance from the track, cm.
+    """
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    tracked = positions[np.all(np.isfinite(positions), axis=1)]
+    centre = tracked.mean(axis=0)
+    _, _, axes = np.linalg.svd(tracked - centre, full_matrices=False)
+    axis = axes[0] * np.sign(axes[0][np.argmax(np.abs(axes[0]))])
+    along = (tracked - centre) @ axis
+    low, high = np.quantile(along, END_QUANTILES)
+    middle = centre + axis * (low + high) / 2
+    ends = middle + np.outer([-LENGTH / 2, LENGTH / 2], axis)
+    graph = nx.Graph()
+    for name, point in zip(("start", "end"), ends, strict=True):
+        graph.add_node(name, pos=(float(point[0]), float(point[1])))
+    graph.add_edge("start", "end", distance=LENGTH)
+    relative = tracked - ends[0]
+    t = np.clip(relative @ axis / LENGTH, 0.0, 1.0)
+    distance = np.linalg.norm(relative - np.outer(t * LENGTH, axis), axis=1)
+    reach = float(np.quantile(distance, TOLERANCE_QUANTILE))
+    width = max(2 * reach, WIDTH, BIN_SIZE)
+    env = Environment.from_graph(
+        graph,
+        [("start", "end")],
+        bin_size=BIN_SIZE,
+        edge_spacing=0.0,
+        units="cm",
+        name=f"valero_2022 {session}",
+        track_width=width,
+    )
+    span = float(high - low)
+    beyond = float(np.mean(np.abs(along - (low + high) / 2) > LENGTH / 2))
+    angle = float(np.degrees(np.arctan2(axis[1], axis[0])))
+    placement = Conversion(
+        f"environment: the stated {LENGTH:g} cm track from ({ends[0][0]:.4g}, "
+        f"{ends[0][1]:.4g}) to ({ends[1][0]:.4g}, {ends[1][1]:.4g}) cm, along the "
+        f"tracked samples' principal axis at {angle:.1f} degrees, centred between "
+        "their 0.5th and 99.5th percentiles along it",
+        "inferred",
+        f"the file states no origin or rotation (reference frame {frame!r}); the "
+        f"samples span {span:.1f} cm between those percentiles, "
+        f"{span / LENGTH - 1:+.1%} of the stated length, and {beyond:.1%} of them "
+        "lie beyond the track's ends",
+    )
+    tolerance = Conversion(
+        f"environment: track_width {width:.3g} cm, a placement tolerance, not the "
+        f"stated {WIDTH:g} cm width: twice the tracked samples' "
+        f"{TOLERANCE_QUANTILE:.0%} quantile distance from the track",
+        "inferred",
+        f"the tracked point's distance from the track: median "
+        f"{np.median(distance):.2f} cm, {TOLERANCE_QUANTILE:.0%} quantile "
+        f"{reach:.3g} cm; {np.mean(distance > width / 2):.1%} of tracked samples "
+        "lie beyond the tolerance, by construction, and fall in no bin. "
+        "track_width decides only which samples are placed, not the bins, their "
+        "lengths or connectivity",
+    )
+    return env, (placement, tolerance), distance
+
+
+def _beyond_track(distance: NDArray[np.float64]) -> str:
+    """The share of tracked samples beyond half the stated width of the track."""
+    beyond = distance > WIDTH / 2
+    return (
+        f"{beyond.mean():.1%} of tracked samples lie farther than half the stated "
+        f"{WIDTH:g} cm width from the track's centre line (the 95th percentile "
+        f"is {np.quantile(distance, 0.95):.3g} cm). This is tracking spread, not "
+        "misfit: the tracked point is on the head, which swings past the edge "
+        "of a narrow track and projects outward when raised. params gives no "
+        "min_speed (no source read states a running threshold), so the share "
+        "is not split into stopped and moving samples. The positions are kept "
+        "as stored."
+    )
+
+
+def _video(
+    entry: SessionEntry,
+    source: str,
+    times: NDArray[np.float64],
+    files: list[str],
+    video_times: NDArray[np.float64] | None,
+) -> tuple[VideoSource | None, tuple[tuple[Conversion, ...], tuple[str, ...]]]:
+    """``rec.video``, with the conversions and watch-outs it adds."""
+    from neurospatial.datasets._video import (
+        VideoSource,
+        video_calibration,
+        video_frame_times,
+    )
+
+    if not files or video_times is None:
+        return None, ((), ("This session publishes no video.",))
+    if len(files) > 1:
+        return None, (
+            (),
+            (
+                f"The session's video is split across {len(files)} files "
+                f"({', '.join(Path(f).name for f in files)}), which the video "
+                "overlay does not join: rec.video is None.",
+            ),
+        )
+    (external,) = files
+    assert entry.asset_path is not None  # every session is a DANDI file
+    asset_path = str(Path(entry.asset_path).parent / external)
+    found = [v for v in entry.videos if v.asset_path == asset_path]
+    if not found:
+        msg = (
+            f"{entry.session}: the file's {_VIDEO} names {external!r}, which the "
+            "registry does not list beside it; rebuild the registry"
+        )
+        raise ValueError(msg)
+    (asset,) = found
+    frame_times, times_basis, offset = video_frame_times(video_times, times)
+    calibration, basis, tried = video_calibration(
+        bin_size=BIN_SIZE,
+        landmarks=asset.landmarks,
+        absent=(
+            f"the file's {_VIDEO} states no pixel size or transform, and its "
+            "position series' reference frame is 'Arbitrary, camera'",
+            f"the file stores the positions in cm only ({_POSITION}), no pixel "
+            "tracking",
+            "the dataset's registry holds no landmarks for this video",
+        ),
+    )
+    streamed = source.startswith(("https://", "http://"))
+    camera = VideoSource(
+        dataset=entry.info.dataset,
+        external_file=external,
+        sha256=asset.sha256,
+        size_bytes=asset.size_bytes,
+        frame_times=frame_times,
+        frame_times_basis=times_basis,
+        calibration=calibration,
+        calibration_basis=basis,
+        calibration_tried=tried,
+        asset_id=asset.asset_id,
+        cache=None if streamed else Path(source).parents[1],
+    )
+    conversions = (times_basis,) if basis is None else (times_basis, basis)
+    watch_outs: tuple[str, ...] = () if offset is None else (offset,)
+    if calibration is None:
+        watch_outs += (
+            "The video is not calibrated, so rec.animation(video=True) refuses: "
+            "the file states no pixel size and stores no pixel tracking, and no "
+            "landmarks have been placed on a frame (see rec.video.calibration_tried).",
+        )
+    return camera, (conversions, watch_outs)
