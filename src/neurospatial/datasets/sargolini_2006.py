@@ -77,10 +77,10 @@ WORKED_RESULT: dict[str, Any] = {
     "unmatched": (),
     "attempted": None,
     "why": (
-        "The paper (Sargolini et al. 2006, Science 312, 758-762) could not "
-        "be read: the local library holds its metadata only, science.org "
-        "refuses access (HTTP 403), and Europe PMC lists it without full "
-        "text. The candidate result, the grid scores of the session's grid "
+        "The paper (Sargolini et al. 2006, Science 312, 758-762) was not "
+        "read. Its full text was not available to read: science.org refuses "
+        "access (HTTP 403) and Europe PMC lists it without full text. The "
+        "candidate result, the grid scores of the session's grid "
         "cells, waits for the paper's text, since only what was read is "
         "cited."
     ),
