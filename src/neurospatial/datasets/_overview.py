@@ -579,8 +579,14 @@ def animation(
         )
     frame_times = rec.times[window]
     if np.median(np.diff(frame_times)) < 1.0 / MAX_FRAME_RATE:
-        # Tracking faster than a viewer can play: draw 30 frames a second.
-        frame_times = np.arange(frame_times[0], frame_times[-1], 1.0 / MAX_FRAME_RATE)
+        # Tracking faster than a viewer can play: draw 30 frames a second,
+        # through the window's last sample (and never at or past its stop), so
+        # the clock ends within one frame of the window and export(time_range=)
+        # accepts the window itself.
+        step = 1.0 / MAX_FRAME_RATE
+        end = min(stop, float(frame_times[-1]) + step)
+        frame_times = np.arange(frame_times[0], end, step)
+        frame_times = frame_times[frame_times < stop]
     if len(frame_times) < 2:
         raise InputError(
             _format_error(

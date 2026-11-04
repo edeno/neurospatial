@@ -797,3 +797,19 @@ def test_raster_shows_every_units_row(square_recording):
     rec = dataclasses.replace(square_recording, spike_times=tuple(trains))
     raster = _titled(rec.plot_overview(), "First 60 s").child_axes[1]
     assert raster.get_ylim() == (-0.5, rec.n_units - 0.5)
+
+
+@pytest.mark.parametrize("window", [(10.0, 14.0), (10.004, 14.009), (0.0, 60.0)])
+def test_scene_exports_its_own_window(square_recording, tmp_path, window):
+    from neurospatial.animation._export import prepare_export
+
+    scene = square_recording.animation(time_range=window)
+    a, b = window
+    # The clock spans the window to within one frame at each end.
+    assert a <= scene.frame_times[0] < a + 1 / 30
+    assert b - 1 / 30 - 1e-9 <= scene.frame_times[-1] < b
+    plan = prepare_export(
+        tmp_path / "scene.gif", scene.frame_times, time_range=window, fps=10
+    )
+    assert scene.frame_times[0] <= plan.times[0]
+    assert plan.times[-1] < b
