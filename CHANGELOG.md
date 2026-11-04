@@ -63,6 +63,16 @@
   `neurospatial/datasets/registry/<dataset>.json`;
   `scripts/build_dataset_registry.py` fills a DANDI registry from a pinned
   published version.
+- First dataset: `sargolini_2006`, Sargolini et al. (2006) rat medial
+  entorhinal cortex in a 1 m box, all 118 sessions of DANDI 000582 (version
+  0.251111.2151, CC-BY-4.0). The default, `sub-10073_ses-17010302` (the
+  session pynapple's DANDI tutorial streams, 8 units), and
+  `sub-10884_ses-03080402` are checked by hand. Positions are cm, from the
+  first tracking LED; there are no headings, because the files hold one LED or
+  do not say which of two is at the front. The declared environment is the
+  stated 100 cm square at the samples' midrange, with 2.5 cm bins. A session
+  spanning more than 120 cm, such as two joined 20-minute sessions spanning
+  about 1.5 m and 2 m, is refused by the units check.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 

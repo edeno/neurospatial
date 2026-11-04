@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import json
 from pathlib import Path
@@ -41,6 +42,23 @@ def test_registry_complete(dataset):
         if entry.verified:
             assert entry.verification.strip()
             assert entry.n_units is not None
+
+
+@pytest.mark.parametrize("dataset", dataset_ids())
+def test_each_dataset_has_its_loader(dataset):
+    """A loader module with load_session, REQUIRES and WATCH_OUTS for its sessions."""
+    module = importlib.import_module(f"neurospatial.datasets.{dataset}")
+    assert callable(module.load_session)
+    assert all(isinstance(name, str) for name in module.REQUIRES)
+    names = {entry.session for entry in sessions(dataset)}
+    assert set(module.WATCH_OUTS) <= names
+    verified = {entry.session for entry in sessions(dataset) if entry.verified}
+    assert verified <= set(module.WATCH_OUTS)
+    assert all(
+        isinstance(text, str) and text.strip()
+        for texts in module.WATCH_OUTS.values()
+        for text in texts
+    )
 
 
 def test_catalog_lists_every_session():
