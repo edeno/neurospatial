@@ -80,9 +80,13 @@ Each day is read from four members of its `PhyOutput/OldData` folder:
 - **Days not offered.** The archive holds 50 days of 15 mice; 14 days cannot
   be put on one increasing clock, so the catalog does not list them (all three
   days of m4232 among them). In 12 a trial's fitted line starts before the
-  previous trial's ends, because the file's spike-to-sample map gives the
-  spikes at the boundary to both trials; in 2 a trial has no spikes mapped to
-  it, so its samples cannot be timed:
+  previous trial's ends. In the 9 where the overlap is under one frame
+  interval (33 ms), the file's spike-to-sample map gives the spikes at the
+  boundary to both trials. The other 3 (`m4201_2019-12-17`,
+  `m4202_2019-12-16`, `m4020_2020-08-18`, 0.8 to 10.6 s, each where a trial
+  follows the rest S1) are more than that can explain, and no source read
+  says why. In 2 a trial has no spikes mapped to it, so its samples cannot be
+  timed:
 
   | Day | Why it is not offered |
   | --- | --- |

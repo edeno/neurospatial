@@ -217,6 +217,22 @@ def test_trials_that_overlap_on_the_clock_are_refused(tmp_path, session_entry):
     assert overlap == pytest.approx(500.0, abs=2.0)
     assert "where trial '1' starts" in str(raised.value)
     assert "before trial '0' ends" in str(raised.value)
+    # Half a second is more than a frame: the boundary spikes cannot explain it.
+    assert "more than one frame interval" in str(raised.value)
+    assert "cannot explain; no source read says why" in str(raised.value)
+
+
+def test_an_overlap_under_one_frame_is_put_down_to_the_boundary_spikes(
+    tmp_path, session_entry
+):
+    from neurospatial.datasets import shipley_2026
+
+    _write_members(tmp_path, gap=-0.01)
+    with pytest.raises(ValueError, match="do not increase") as raised:
+        shipley_2026.load_session(session_entry("shipley_2026"), tmp_path)
+    assert "under one frame interval: the file's spike-to-sample map" in str(
+        raised.value
+    )
 
 
 def test_position_times_report_the_header_rate_when_the_map_used_it():

@@ -23,9 +23,11 @@ and the default is mouse m4005 on 2020-09-26.
 
 Not offered: 14 days whose position samples cannot be put on one increasing
 clock, so loading them would raise ``ValueError``. In 12 a trial's fitted
-line starts before the previous trial's ends, because the file's
-spike-to-sample map gives the spikes at the boundary to both; in 2 a trial
-has no spikes mapped to it, so its samples cannot be timed:
+line starts before the previous trial's ends. In the 9 where the overlap is
+under one frame interval (33 ms), the file's spike-to-sample map gives the
+spikes at the boundary to both trials; the 3 overlaps of 0.8 to 10.6 s,
+after a rest, are more than that can explain, and no source read says why.
+In 2 a trial has no spikes mapped to it, so its samples cannot be timed:
 
 - ``m4005_2020-09-28``: trial 8 starts 0.53 ms before trial 7 ends;
 - ``m4101_2020-11-03``: trial 2 starts 0.34 ms before trial 1 ends;
@@ -271,13 +273,21 @@ def load_session(
     if not np.all(np.diff(times) > 0):
         k = int(np.argmax(np.diff(times) <= 0))
         trial_at = int(np.searchsorted(ends, k + 1, side="right"))
+        overlap = float(times[k] - times[k + 1])
+        frame = float(np.median(np.diff(times)))
+        cause = (
+            "under one frame interval: the file's spike-to-sample map puts "
+            "spikes of both trials at the boundary"
+            if overlap < frame
+            else f"more than one frame interval ({frame * 1e3:.1f} ms), which "
+            "spikes at the boundary mapped to both trials cannot explain; no "
+            "source read says why"
+        )
         msg = (
             f"{entry.session}: the rebuilt position times do not increase at "
             f"sample {k + 1}, where trial {names[trial_at]!r} starts "
-            f"{(times[k] - times[k + 1]) * 1e3:.2f} ms before trial "
-            f"{names[trial_at - 1]!r} ends: the file's spike-to-sample map puts "
-            "spikes of both trials at the boundary, so the samples cannot be "
-            "put on one clock"
+            f"{overlap * 1e3:.2f} ms before trial {names[trial_at - 1]!r} ends, "
+            f"{cause}; so the samples cannot be put on one clock"
         )
         raise ValueError(msg)
     header = dict(np.atleast_2d(trial.pos.header))
