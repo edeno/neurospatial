@@ -26,16 +26,21 @@ Survey-only:
   candidates are population bursts in POST non-REM sleep found by a stated
   rule (``population_bursts``), not ripples; the first ``N_CANDIDATES`` are
   decoded, to bound the run time. ``events["all_bursts"]`` holds every burst.
-- ``params["analysis_epochs"]``, the maze epoch, so rate maps leave out
-  the sleep spikes, which have no position.
+- ``params["analysis_epochs"]``, the maze epoch. Without it the rate maps
+  take the sleep spikes, which have no position, and the clean run's warning
+  about them hides the ``spike_times_in_ms`` hazard probe's.
 - ``params["replay_dt"]`` 0.02 s; ``params["nwb_source"]`` and
   ``params["readers_used"]``, for the ``io.nwb_readers`` operation.
 - ``geometry["lap_start_region"]`` cuts the loop where the file's linearized
   coordinate starts (``lap_start_region``).
+- the declared track's facts the environment fidelity study reads
+  (``_tracks.public_track_facts``): fitted to the samples, no stated width,
+  and the samples' own diameter against the stated 1 m (``samples_radius``).
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -50,7 +55,7 @@ from _record import (
     public_file,
     validate_recording,
 )
-from _tracks import cut_region
+from _tracks import cut_region, public_track_facts
 
 DATASET = {
     "key": "grosmark_000044_circular",
@@ -123,12 +128,12 @@ def dandi_session(
     key: str,
     session: str,
     *,
-    geometry: Callable[[Any], Mapping[str, SurveyOnly]] | None = None,
+    geometry: Callable[[Any], Mapping[str, SurveyOnly]],
 ) -> Recording:
     """A DANDI 000044 session of ``grosmark_2016``, read by byte range, with candidates.
 
-    ``geometry``, given the public recording, returns survey-only geometry
-    entries.
+    ``geometry``, given the public recording, returns its survey-only
+    geometry entries (the declared track's facts, at least).
     """
     from neurospatial.datasets import load as load_public
 
@@ -143,8 +148,10 @@ def dandi_session(
             "replay_dt": SurveyOnly(0.02, "the replay decoding bin"),
             "analysis_epochs": SurveyOnly(
                 rec.epochs["maze"],
-                "the maze epoch: rate maps and region laps describe the maze,"
-                " and the PRE and POST sleep spikes have no position",
+                "the maze epoch. Without it the rate maps take the PRE and POST"
+                " sleep spikes, which have no position, so the clean run warns"
+                " that most spikes lie outside the tracking, and that warning"
+                " hides the spike_times_in_ms hazard probe's own",
             ),
             "nwb_source": SurveyOnly(
                 public_file("grosmark_2016", session, stream=True),
@@ -163,8 +170,12 @@ def dandi_session(
             ),
             "all_bursts": SurveyOnly(bursts, "every population burst in POST non-REM"),
         },
-        geometry=None if geometry is None else geometry(rec),
+        geometry=geometry(rec),
     )
+
+
+DIAMETER_CM = 100.0
+_RADIUS = re.compile(r"whose own radius is ([\d.]+) cm")
 
 
 def lap_start_region(env: Any, positions: np.ndarray, linearized: np.ndarray) -> Any:
@@ -195,17 +206,36 @@ def load(cache: Path | None = None) -> Recording:
     """Stream the session; positions in cm, spikes, epochs and candidate events."""
     del cache  # read by byte range: nothing is cached
 
-    def lap_start(rec: Any) -> dict[str, SurveyOnly]:
+    def circle(rec: Any) -> dict[str, SurveyOnly]:
         region = lap_start_region(rec.env, rec.positions, rec.linearized)
         return {
+            **public_track_facts(
+                rec,
+                declared_from="fitted to the samples",
+                physical_width=None,
+                speed_thresholds=(rec.params["min_speed"], 30.0),
+                stated_lengths={"diameter": (2 * samples_radius(rec), DIAMETER_CM)},
+            ),
             "lap_start_region": SurveyOnly(
                 region,
                 "a region across the declared loop where the file's linearized"
                 " coordinate starts, for behavior.laps with method='region'",
-            )
+            ),
         }
 
-    return dandi_session(DATASET["key"], DATASET["session"], geometry=lap_start)
+    return dandi_session(DATASET["key"], DATASET["session"], geometry=circle)
+
+
+def samples_radius(rec: Any) -> float:
+    """The radius of the robust circle fit the public loader centred the loop by, cm.
+
+    Read from its placement ``Conversion`` ("whose own radius is ... cm").
+    """
+    for conversion in rec.conversions:
+        if found := _RADIUS.search(conversion.evidence):
+            return float(found.group(1))
+    msg = "no Conversion states the samples' own radius; the public loader changed"
+    raise ValueError(msg)
 
 
 if __name__ == "__main__":

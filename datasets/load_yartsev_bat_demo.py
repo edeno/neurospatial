@@ -16,6 +16,10 @@ Analysis choices are the public loader's ``params``: ``bin_size`` 0.2 m,
 ``dt`` 0.25 s, ``min_speed`` the file's ``v_th`` (0.5 m/s), and the flights
 during the neural recording as ``analysis_epochs``, with even and odd
 flights as ``train_epochs`` and ``test_epochs``.
+
+Survey-only: the declared room's facts the environment fidelity study reads,
+placed in the file's coordinates: ``room_bounds_m`` (``r_lim``) and its sides'
+residuals against the paper's 5.6 x 5.2 x 2.5 m room.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import numpy as np
 from _record import (
     Range,
     Recording,
+    SurveyOnly,
     check_expectations,
     from_public,
     validate_recording,
@@ -55,10 +60,31 @@ EXPECTATIONS: dict[str, Any] = {
 
 def load(cache: Path | None = None) -> Recording:
     """The session from ``neurospatial.datasets``; metres, 3-D."""
+    from neurospatial.datasets import forli_2025
     from neurospatial.datasets import load as load_public
 
     rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
-    return from_public(rec, key=DATASET["key"])
+    room = np.asarray(rec.env.dimension_ranges, dtype=float)
+    why = "the declared room's facts the environment fidelity study reads"
+    return from_public(
+        rec,
+        key=DATASET["key"],
+        geometry={
+            "declared_from": SurveyOnly("file's coordinates", why),
+            "room_bounds_m": SurveyOnly(room, f"{why}: r_lim, the grid's extent"),
+            # r_lim's sides against the paper's room: stated facts, both
+            # independent of the samples.
+            "environment_fit": SurveyOnly(
+                {
+                    f"size_residual_room_{axis}": float(side / stated - 1)
+                    for axis, side, stated in zip(
+                        "xyz", np.ptp(room, axis=1), forli_2025.PAPER_ROOM, strict=True
+                    )
+                },
+                f"{why}: r_lim's sides against the paper's room",
+            ),
+        },
+    )
 
 
 if __name__ == "__main__":

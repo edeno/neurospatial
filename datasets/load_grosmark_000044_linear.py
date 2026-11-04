@@ -18,6 +18,10 @@ the watch-outs, among them the rat's first minutes off the track.
 Analysis choices are the public loader's ``params``: ``bin_size`` 2 cm,
 ``min_speed`` 5 cm/s, ``dt`` 0.25 s and alternating 60 s train/test blocks
 of the tracked span.
+
+Survey-only, beside those of ``dandi_session``: the declared track's facts
+the environment fidelity study reads (``_tracks.public_track_facts``),
+declared from the file's linearized coordinate, no stated width.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from typing import Any
 
 import numpy as np
 from _record import Range, Recording, check_expectations, validate_recording
+from _tracks import public_track_facts
 from load_grosmark_000044_circular import dandi_session
 
 DATASET = {
@@ -52,7 +57,16 @@ EXPECTATIONS: dict[str, Any] = {
 def load(cache: Path | None = None) -> Recording:
     """Stream the session; positions in cm, spikes, epochs and candidate events."""
     del cache  # read by byte range: nothing is cached
-    return dandi_session(DATASET["key"], DATASET["session"])
+    return dandi_session(
+        DATASET["key"],
+        DATASET["session"],
+        geometry=lambda rec: public_track_facts(
+            rec,
+            declared_from="file's linearized coordinate",
+            physical_width=None,
+            speed_thresholds=(rec.params["min_speed"], 30.0),
+        ),
+    )
 
 
 if __name__ == "__main__":

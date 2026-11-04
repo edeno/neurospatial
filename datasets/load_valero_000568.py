@@ -24,7 +24,10 @@ s; ``events["ripples"]``, the ripples inside the tracked track epoch, which
 replay is decoded on (the public ``ripples``, every ripple of the session,
 are ``events["all_ripples"]``); ``params["nwb_source"]`` and
 ``params["readers_used"]``, for the ``io.nwb_readers`` operation and the
-``video_timestamps`` hazard.
+``video_timestamps`` hazard; the declared track's facts the environment
+fidelity study reads (``_tracks.public_track_facts``: placed along the
+samples' principal axis, the stated 110 cm by 6.35 cm, the samples' span
+against the stated length).
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ from _record import (
     public_file,
     validate_recording,
 )
+from _tracks import public_track_facts
 
 from neurospatial.datasets._fetch import open_nwb
 
@@ -71,6 +75,7 @@ EXPECTATIONS: dict[str, Any] = {
 def load(cache: Path | None = None) -> Recording:
     """The session from ``neurospatial.datasets``; positions in cm, ripples."""
     from neurospatial.datasets import load as load_public
+    from neurospatial.datasets import valero_2022
 
     rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
     source = public_file(DATASET["public"], DATASET["session"], cache=cache)
@@ -101,7 +106,40 @@ def load(cache: Path | None = None) -> Recording:
             ),
             "all_ripples": SurveyOnly(np.array(ripples), "every ripple of the session"),
         },
+        geometry={
+            **public_track_facts(
+                rec,
+                declared_from="samples' principal axis",
+                physical_width=valero_2022.WIDTH,
+                speed_thresholds=(4.0, 30.0),
+                stated_lengths={
+                    "length": (samples_span(rec.env, rec.positions), valero_2022.LENGTH)
+                },
+            ),
+            "track_length_cm": SurveyOnly(
+                valero_2022.LENGTH, "the stated length ('110 cm long')"
+            ),
+            "track_width_cm": SurveyOnly(
+                valero_2022.WIDTH, "the stated width ('6.35 cm wide')"
+            ),
+        },
     )
+
+
+def samples_span(env: Any, positions: np.ndarray) -> float:
+    """The tracked samples' span along the declared track, cm.
+
+    Between their 0.5th and 99.5th percentiles along it, as the public loader
+    centres the track (``valero_2022.END_QUANTILES``).
+    """
+    from neurospatial.datasets import valero_2022
+
+    graph = env.binning.linearization.graph
+    start, end = (np.asarray(graph.nodes[n]["pos"]) for n in ("start", "end"))
+    axis = (end - start) / np.linalg.norm(end - start)
+    tracked = positions[np.isfinite(positions).all(axis=1)]
+    low, high = np.quantile((tracked - start) @ axis, valero_2022.END_QUANTILES)
+    return float(high - low)
 
 
 def _video_timestamps(rec: Recording) -> Recording:

@@ -16,7 +16,10 @@ Analysis choices are the public loader's ``params``: ``bin_size`` 2.5 cm,
 ``dt`` 0.25 s, no speed filter, alternating 60 s train/test blocks.
 
 Survey-only: ``params["nwb_source"]`` (the cached file) and
-``params["readers_used"]``, for the ``io.nwb_readers`` operation.
+``params["readers_used"]``, for the ``io.nwb_readers`` operation; the
+declared box's facts the environment fidelity study reads (placed at the
+samples' midrange, the stated square, the file's ``session_description``,
+each axis's range against the stated side).
 """
 
 from __future__ import annotations
@@ -55,12 +58,36 @@ EXPECTATIONS: dict[str, Any] = {
 def load(cache: Path | None = None) -> Recording:
     """The session from ``neurospatial.datasets``; positions in cm."""
     from neurospatial.datasets import load as load_public
+    from neurospatial.datasets import sargolini_2006
+    from neurospatial.datasets._fetch import open_nwb
 
     rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
     source = public_file(DATASET["public"], DATASET["session"], cache=cache)
+    with open_nwb(source) as nwbfile:
+        description = nwbfile.session_description
+    tracked = rec.positions[np.isfinite(rec.positions).all(axis=1)]
+    spans = np.ptp(tracked, axis=0)
+    why = "the declared box's facts the environment fidelity study reads"
     return from_public(
         rec,
         key=DATASET["key"],
+        geometry={
+            "declared_from": SurveyOnly(
+                "fitted to the samples", f"{why}: placed at the samples' midrange"
+            ),
+            "shape": SurveyOnly("square", f"{why}: the stated shape"),
+            "size_cm": SurveyOnly(sargolini_2006.SIDE, f"{why}: the stated side"),
+            "description": SurveyOnly(
+                description, f"{why}: the file's session_description"
+            ),
+            "environment_fit": SurveyOnly(
+                {
+                    f"size_residual_{axis}": float(span / sargolini_2006.SIDE - 1)
+                    for axis, span in zip("xy", spans, strict=True)
+                },
+                f"{why}: the samples' range on each axis against the stated side",
+            ),
+        },
         params={
             "nwb_source": SurveyOnly(
                 source, "the cached NWB file the session was read from"

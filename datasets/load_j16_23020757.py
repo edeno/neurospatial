@@ -19,7 +19,9 @@ blocks. ``params["linearized"]`` is the file's ``linear_position``.
 
 Survey-only: ``geometry["graph"]``, the authors' track graph (the declared
 environment's linearization graph), which the expectations count, and
-``geometry["graph_root"]``.
+``geometry["graph_root"]``; the declared track's facts the environment
+fidelity study reads (``_tracks.public_track_facts``: declared from the
+authors' graph, the 6.5 cm stated hallway width, the placement tolerance).
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ from _record import (
     from_public,
     validate_recording,
 )
+from _tracks import public_track_facts
 
 DATASET = {
     "key": "j16_23020757",
@@ -63,6 +66,7 @@ EXPECTATIONS: dict[str, Any] = {
 
 def load(cache: Path | None = None) -> Recording:
     """The session from ``neurospatial.datasets``; positions in cm, the track graph."""
+    from neurospatial.datasets import comrie_2026
     from neurospatial.datasets import load as load_public
 
     rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
@@ -70,6 +74,14 @@ def load(cache: Path | None = None) -> Recording:
         rec,
         key=DATASET["key"],
         geometry={
+            # The authors' graph: the study must not take geometry["graph"]
+            # as a reference independent of the declared track.
+            **public_track_facts(
+                rec,
+                declared_from="authors' graph",
+                physical_width=comrie_2026.HALLWAY_WIDTH,
+                speed_thresholds=(rec.params["min_speed"], 30.0),
+            ),
             "graph": SurveyOnly(
                 rec.env.binning.linearization.graph,
                 "the authors' track graph from the file (track_nodes,"
