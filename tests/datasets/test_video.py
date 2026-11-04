@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from neurospatial._exceptions import InputError
+from neurospatial.datasets._overview import VIDEO_FIELD_OPACITY
 from neurospatial.datasets._video import (
     CALIBRATION_SOURCES,
     Landmarks,
@@ -21,6 +22,7 @@ from neurospatial.datasets._video import (
     VideoSource,
     fit_pixel_affine,
     led_fit_watch_out,
+    mirror_watch_out,
     video_calibration,
     video_frame_times,
 )
@@ -271,8 +273,13 @@ def test_frame_times_drift_and_other_counts():
 
     times, basis, watch_out = video_frame_times(video, drifting[:-100])
     np.testing.assert_array_equal(times, video)
-    assert (basis.basis, watch_out) == ("stated", None)
+    assert basis.basis == "stated"
     assert "another count" in basis.evidence
+    assert "start +22.55 s and end" not in watch_out
+    assert "start -22.55 s" in watch_out
+    # Another count on the same span: the video's own clock, nothing to flag.
+    times, basis, watch_out = video_frame_times(video, video[:-1] + 1e-3)
+    assert (basis.basis, watch_out) == ("stated", None)
 
     # Equal counts, but no offset and rate relates the clocks: not the same frames.
     jittered = drifting + np.random.default_rng(0).uniform(-0.1, 0.1, video.size)
@@ -414,6 +421,32 @@ def test_led_fit_recovers_a_known_camera():
     assert np.median(in_px) == pytest.approx(np.sqrt(2 * np.log(2)), rel=0.1)
 
 
+def test_robust_fit_ignores_gross_outliers():
+    """20% of detections thrown anywhere in the frame do not move the robust fit.
+
+    Tolerance, set before the first run: every frame corner within 0.1 cm
+    of the true map (1 px of noise is 0.5 cm; the expected error with 2,400
+    good samples is about 0.03 cm). Plain least squares misses by far more.
+    """
+    from neurospatial.ops.transforms import AffineND
+
+    rng = np.random.default_rng(5)
+    pixels = rng.uniform(0, 220, (3000, 2))
+    positions = AffineND(TRUE_AFFINE)(pixels)
+    detected = pixels + rng.normal(0.0, 1.0, pixels.shape)
+    gross = rng.random(3000) < 0.2
+    detected[gross] = rng.uniform(0, 220, (int(gross.sum()), 2))
+    corners = np.array([[0, 0], [220, 0], [0, 220], [220, 220]], dtype=float)
+    truth = AffineND(TRUE_AFFINE)(corners)
+    robust, in_cm, _ = fit_pixel_affine(
+        detected, positions, huber_cm=2.0, outlier_cm=5.0
+    )
+    assert np.all(np.linalg.norm(robust(corners) - truth, axis=1) < 0.1)
+    assert np.mean(in_cm > 5.0) == pytest.approx(gross.mean(), abs=0.01)
+    plain, _, _ = fit_pixel_affine(detected, positions)
+    assert np.max(np.linalg.norm(plain(corners) - truth, axis=1)) > 1.0
+
+
 def _led_fit(median_cm):
     return LedFit(
         matrix=TRUE_AFFINE,
@@ -425,6 +458,9 @@ def _led_fit(median_cm):
         p90_cm=4.0 * median_cm,
         median_px=2.0 * median_cm,
         p90_px=8.0 * median_cm,
+        outlier_cm=5.0,
+        outlier_share=0.17,
+        lag_scan=((-1, 1.1), (0, median_cm), (1, 0.9)),
         fitted_by="a test, 2026-11-04",
     )
 
@@ -440,6 +476,11 @@ def test_led_fit_is_the_fourth_source():
     np.testing.assert_allclose(calibration.transform_px_to_cm.A, TRUE_AFFINE)
     assert "90th-percentile residual 6 cm (12 px)" in led_fit_watch_out(_led_fit(1.5))
     assert "aligned by construction" in led_fit_watch_out(_led_fit(1.5))
+    assert "17.0% of LED detections are more than 5 cm off" in led_fit_watch_out(
+        _led_fit(1.5)
+    )
+    assert "17.0% of detections are more than 5 cm off" in basis.evidence
+    assert "-1: 1.1, +0: 1.5, +1: 0.9" in basis.evidence
 
     calibration, basis, tried = video_calibration(bin_size=2.5, led_fit=_led_fit(3.0))
     assert calibration is None
@@ -516,5 +557,19 @@ def test_track_session_video_is_drawn_in_the_plane(track_recording, tmp_path):
     expected = scene.env.occupancy(rec.times, rec.positions)
     np.testing.assert_allclose(occupancy, np.where(expected > 0, expected, np.nan))
     assert type(scene.overlays[0]).__name__ == "VideoOverlay"
-    # Without the video, the track is drawn along itself, as before.
-    assert rec.animation(time_range=(0.0, DURATION)).env is rec.env
+    assert scene.fields["occupancy"].max_opacity == VIDEO_FIELD_OPACITY < 1
+    # Without the video, the track is drawn along itself, opaque, as before.
+    plain = rec.animation(time_range=(0.0, DURATION))
+    assert plain.env is rec.env
+    assert plain.fields["occupancy"].max_opacity == 1.0
+
+
+def test_mirror_watch_out_follows_the_handedness():
+    """A calibration keeping the image's handedness shows the video mirrored."""
+    from neurospatial.ops.transforms import AffineND, VideoCalibration
+
+    flipped = VideoCalibration(AffineND(TRUE_AFFINE), frame_size_px=(220, 220))
+    assert mirror_watch_out(flipped) is None  # y up the rows, as a player shows it
+    kept = np.diag([-1.0, 1.0, 1.0]) @ TRUE_AFFINE
+    mirrored = VideoCalibration(AffineND(kept), frame_size_px=(220, 220))
+    assert "mirrored relative to the raw video file" in mirror_watch_out(mirrored)

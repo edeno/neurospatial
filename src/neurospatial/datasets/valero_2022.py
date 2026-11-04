@@ -27,11 +27,13 @@ What the loader converts:
   frames (as many as position samples) on a clock 22.55 to 23.12 s earlier;
   the overlay follows the position clock, since the spikes are on it (an
   inferred ``Conversion`` and a watch-out).
-- epochs: the file's epochs by ``epoch_name``, the one holding the tracking
-  as ``track``, and its stretches without positions, before the first and
-  after the last sample, as ``track_before_tracking`` and
-  ``track_after_tracking``; ``SleepStates`` by label as ``wake``, ``nrem``
-  and ``rem``.
+- epochs: the file's epochs, those holding the tracking as ``track`` (one
+  row, or two in sessions that run the track twice) and the others as
+  ``epoch_<k>``, their place in the file's table (the ``Conversion`` names
+  each one's ``epoch_name``); the stretches of each track epoch without
+  positions, before its first and after its last sample, as
+  ``track_before_tracking`` and ``track_after_tracking``; ``SleepStates`` by
+  label as ``wake``, ``nrem`` and ``rem``.
 - events: ``ripples``, the ``RippleTimeIntervals`` rows, [start, stop) in s.
 - ``units["brain_region"]``: CA1, the location of every electrode in the
   file; the units table names none.
@@ -61,7 +63,11 @@ footprint (``scene.env``), with the track as its along-track panel:
 >>> scene.export("valero_video.mp4", fps=30)  # doctest: +SKIP
 
 Your own decoded posterior goes into the same scene as a field over
-``scene.env``'s bins (decode on ``scene.env``), with its overlays and track:
+``scene.env``'s bins, with its overlays and track. That means decoding on
+``scene.env``, a 2-D grid over the box around the track, not on the track
+graph ``rec.env``: a posterior over the track's bins lies along the track
+and cannot be drawn over the video's 2-D frames (draw it with
+``rec.animation()`` instead, without the video):
 
 >>> from neurospatial.animation import Animation, AnimationField
 >>> mine = Animation(  # doctest: +SKIP
@@ -134,6 +140,9 @@ WATCH_OUTS: dict[str, tuple[str, ...]] = {
         "position timestamps, 0.36 with the positions moved 22.84 s earlier "
         "onto the video's clock, and 0.30 to 0.43 with them moved 10 or 40 s "
         "either way (checked on 2026-11-03).",
+        "The file's SleepStates score NREM during parts of the track epoch "
+        "(for example 9,723 to 9,939 s, while the mouse runs along the track "
+        "at 9,914 s): select running by speed, not by epochs['wake'].",
     ),
 }
 
@@ -191,7 +200,7 @@ def load_session(
         raise ValueError(msg)
     times = np.asarray(position.times, dtype=np.float64)
     positions = np.asarray(position.positions, dtype=np.float64)
-    epochs = _epochs(entry.session, times, epochs_table, states)
+    epochs, epoch_names = _epochs(entry.session, times, epochs_table, states)
     env, placement, distance = _declared_track(positions, entry.session, frame)
     table = units.unit_table
     assert table is not None  # read_units always reads the table
@@ -244,11 +253,13 @@ def load_session(
                 f"conversion); {description!r}",
             ),
             Conversion(
-                "epochs: intervals/epochs by epoch_name, the one holding the "
-                "tracking as 'track', and its stretches before the first and "
-                "after the last position sample as 'track_before_tracking' and "
-                "'track_after_tracking'; processing/behavior/SleepStates by label "
-                "as 'wake', 'nrem' and 'rem'",
+                "epochs: intervals/epochs, those holding the tracking as 'track' "
+                "and the others as 'epoch_<k>', their place in the table "
+                f"({epoch_names}); the stretches of each track epoch before its "
+                "first and after its last position sample as "
+                "'track_before_tracking' and 'track_after_tracking'; "
+                "processing/behavior/SleepStates by label as 'wake', 'nrem' "
+                "and 'rem'",
                 "stated",
                 "the file's epochs table, position timestamps and SleepStates labels",
             ),
@@ -295,35 +306,62 @@ def _rows(table: Any) -> NDArray[np.float64]:
 
 def _epochs(
     session: str, times: NDArray[np.float64], table: Any, states: Any
-) -> dict[str, NDArray[np.float64]]:
-    """The file's epochs by name, the tracked one as ``track``, and sleep states.
+) -> tuple[dict[str, NDArray[np.float64]], str]:
+    """The file's epochs, the tracked ones as ``track``, and sleep states.
 
-    The stretches of the track epoch before the first and after the last
-    position sample, where it has no positions, are also
+    Epochs holding position samples are the rows of ``track`` (one or two:
+    some sessions run the track twice, with sleep between). Each other
+    epoch is ``epoch_<k>``, its place in the file's epochs table, from 1.
+    The stretches of each track epoch before its first and after its last
+    position sample, where it has no positions, are the rows of
     ``track_before_tracking`` and ``track_after_tracking``.
+
+    Returns
+    -------
+    epochs : dict of str to ndarray, shape (n, 2)
+    names : str
+        Which file ``epoch_name`` each key is, for the conversion.
     """
     rows = _rows(table)
     names = table.sort_values("start_time", kind="stable")["epoch_name"].astype(str)
-    holds = (rows[:, 0] <= times[0]) & (rows[:, 1] >= times[-1])
-    if holds.sum() != 1:
+    first = np.searchsorted(times, rows[:, 0], side="left")
+    stop = np.searchsorted(times, rows[:, 1], side="left")
+    holds = stop > first
+    if not holds.any():
         msg = (
-            f"{session}: {int(holds.sum())} epochs hold the tracking from "
-            f"{times[0]:.6g} to {times[-1]:.6g} s, not one"
+            f"{session}: no epoch holds the tracking from {times[0]:.6g} to "
+            f"{times[-1]:.6g} s"
         )
         raise ValueError(msg)
-    epochs = {
-        ("track" if held else name): row[None, :]
-        for name, row, held in zip(names, rows, holds, strict=True)
-    }
-    (start, stop) = epochs["track"][0]
-    if times[0] > start:
-        epochs["track_before_tracking"] = np.array([[start, times[0]]])
-    if times[-1] < stop:
-        epochs["track_after_tracking"] = np.array([[times[-1], stop]])
+    if int((stop - first)[holds].sum()) != len(times):
+        msg = f"{session}: some position samples lie in no epoch"
+        raise ValueError(msg)
+    epochs: dict[str, NDArray[np.float64]] = {}
+    labels = []
+    for index, (name, row, held) in enumerate(zip(names, rows, holds, strict=True)):
+        key = "track" if held else f"epoch_{index + 1}"
+        labels.append(f"{key} = {name}")
+        if not held:
+            epochs[key] = row[None, :]
+    epochs["track"] = rows[holds]
+    before = [
+        [row[0], times[k]]
+        for row, k in zip(rows[holds], first[holds], strict=True)
+        if times[k] > row[0]
+    ]
+    after = [
+        [times[k - 1], row[1]]
+        for row, k in zip(rows[holds], stop[holds], strict=True)
+        if times[k - 1] < row[1]
+    ]
+    if before:
+        epochs["track_before_tracking"] = np.array(before)
+    if after:
+        epochs["track_after_tracking"] = np.array(after)
     for label, key in _STATES.items():
         if states is not None:
             epochs[key] = _rows(states[states["label"] == label])
-    return epochs
+    return epochs, ", ".join(labels)
 
 
 def _declared_track(
@@ -425,6 +463,7 @@ def _video(
         CALIBRATION_SOURCES,
         VideoSource,
         led_fit_watch_out,
+        mirror_watch_out,
         video_calibration,
         video_frame_times,
     )
@@ -489,6 +528,9 @@ def _video(
             "neither landmarks nor an LED fit are stored for this video (see "
             "rec.video.calibration_tried).",
         )
-    elif asset.led_fit is not None and len(tried) == len(CALIBRATION_SOURCES) - 1:
-        watch_outs += (led_fit_watch_out(asset.led_fit),)
+    else:
+        if asset.led_fit is not None and len(tried) == len(CALIBRATION_SOURCES) - 1:
+            watch_outs += (led_fit_watch_out(asset.led_fit),)
+        if (mirrored := mirror_watch_out(calibration)) is not None:
+            watch_outs += (mirrored,)
     return camera, (conversions, watch_outs)

@@ -127,6 +127,20 @@ def test_unknown_dataset_lists_the_known_ones():
             ),
             "video 'v.avi': sha256 'xyz' is not 64 hex digits",
         ),
+        (
+            lambda r: r["sessions"][0].update(
+                videos=[
+                    {
+                        "asset_path": "v.avi",
+                        "asset_id": "a",
+                        "sha256": "a" * 64,
+                        "size_bytes": 1,
+                        "led_fit": {"video_sha256": "b" * 64},
+                    }
+                ]
+            ),
+            "its led_fit was made on a video with SHA-256",
+        ),
     ],
 )
 def test_malformed_registry_refused(change, message):
@@ -257,7 +271,11 @@ def test_builder_lists_one_variant_with_its_videos():
             "next": None,
         },
     }
-    landmarks = {"px": [[0, 0], [1, 0], [0, 1]], "placed_by": "someone"}
+    landmarks = {
+        "px": [[0, 0], [1, 0], [0, 1]],
+        "placed_by": "someone",
+        "video_sha256": "b" * 64,
+    }
     written = {
         "dataset": "x_2023",
         "archive": {"dandiset": "000002", "variant": "-no-raw-data"},
@@ -285,6 +303,13 @@ def test_builder_lists_one_variant_with_its_videos():
     assert first["asset_path"] == f"{stem}/uuid_external_file_0.avi"
     assert (first["sha256"], first["landmarks"]) == ("b" * 64, landmarks)
     assert (second["sha256"], "landmarks" in second) == ("c" * 64, False)
+    # Landmarks made on another video are dropped when the video changes.
+    written["sessions"][0]["videos"][0]["landmarks"] = {
+        **landmarks,
+        "video_sha256": "f" * 64,
+    }
+    (session,) = builder.build(written, "0.1", _api(pages))["sessions"]
+    assert "landmarks" not in session["videos"][0]
     # A video with landmarks that the archive no longer lists is refused.
     written["sessions"][0]["videos"][0]["asset_path"] = f"{stem}/gone.avi"
     with pytest.raises(ValueError, match=r"gone\.avi"):

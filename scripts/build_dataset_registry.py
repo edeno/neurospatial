@@ -190,8 +190,10 @@ def _videos(
     """The assets in the folder named after ``nwb_path``'s stem, sorted by path.
 
     Each keeps the hand-set fields (``VIDEO_HAND_FIELDS``) of the row
-    ``written`` gives for the same path; a written video the archive no
-    longer lists is refused, not dropped.
+    ``written`` gives for the same path, where they were made on a video of
+    the same SHA-256 (their ``video_sha256``); others are dropped, since
+    they calibrate another file. A written video the archive no longer
+    lists is refused, not dropped.
     """
     folder = nwb_path.removesuffix(".nwb") + "/"
     hand = {row["asset_path"]: row for row in written}
@@ -201,7 +203,13 @@ def _videos(
             continue
         row = _located(asset)
         old = hand.get(asset["path"], {})
-        row.update({key: old[key] for key in VIDEO_HAND_FIELDS if key in old})
+        for key in VIDEO_HAND_FIELDS:
+            if key not in old:
+                continue
+            if old[key].get("video_sha256") == row["sha256"]:
+                row[key] = old[key]
+            else:
+                print(f"{asset['path']}: dropped its {key}, made on another video")
         videos.append(row)
     if missing := sorted(set(hand) - {row["asset_path"] for row in videos}):
         msg = f"videos {missing} are not in the folder of {nwb_path}"

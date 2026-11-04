@@ -64,20 +64,24 @@
   `VideoSource.fetch(*, cache=None)` downloads the video once, verified,
   beside the session's NWB file at the path that file names.
   `Recording.animation(..., video=True)` fetches it and draws the frames
-  below the data through the calibration, occupancy see-through where it is
-  low; a track session, whose bins are drawn along the track, is drawn over
+  below the data through the calibration, occupancy at most half opaque and
+  see-through where it is low, so the frames show through every bin; a track
+  session, whose bins are drawn along the track, is drawn over
   its video on a 2-D grid covering the track's footprint, with the track as
   the along-track panel. Frame times are the video's own timestamps, unless the video and the
   position series hold the same frames on two clocks (equal counts, position
   times an offset and rate of the video's to within half a frame); then the
   position times are used, as an inferred `Conversion`, and the offset is a
-  watch-out. The calibration comes from a transform the file states, else a
+  watch-out; when the counts differ and the video's own span is more than a
+  frame off the positions', that is a watch-out too. The calibration comes from a transform the file states, else a
   least-squares fit from the file's pixel tracking to its positions, else
-  landmarks placed by hand and kept in the registry, else a least-squares
-  fit of the LED detected in the video to the positions, run once by
-  `scripts/fit_video_led_calibration.py` and kept in the registry (method,
-  affine, frame size, frames used, median and 90th-percentile residuals in
-  cm and px). A fit from pixel tracking or landmarks with a root-mean-square
+  landmarks placed by hand and kept in the registry, else a robust fit of
+  the LED detected in the video to the positions (a Huber affine, then
+  least squares over the detections within 5 cm of it), run once by
+  `scripts/fit_video_led_calibration.py` and kept in the registry keyed to
+  the video's SHA-256 (method, affine, frame size, frames used, median and
+  90th-percentile residuals in cm and px, outlier share, and the residual at
+  frame-to-sample lags). A fit from pixel tracking or landmarks with a root-mean-square
   residual over one bin, or an LED fit with a median residual over one bin,
   is refused. Without a calibration, or without a video,
   `animation(video=True)` raises `InputError` naming the four sources
@@ -101,8 +105,9 @@
   registry's `archive.variant` where a dandiset publishes each session more
   than once (DANDI 000568: `-no-raw-data`, dropped from the session id), and
   lists the files in a folder named after an NWB file's stem, the videos its
-  ImageSeries name, under the session's `videos`, keeping the landmarks a
-  person placed on each.
+  ImageSeries name, under the session's `videos`, keeping the hand-set
+  `landmarks` and `led_fit` of each, but only while their `video_sha256` is
+  the video's own.
 - A registry session may come from a second archive, with its own license
   as that archive states it ("not stated" where it states none) and its own
   data citation; `scripts/build_dataset_registry.py` keeps such rows. A
@@ -191,14 +196,22 @@
   67,131 frames; the video follows the position clock, on which the units'
   spatial information is highest. The file states no pixel size and stores
   no pixel tracking, so the default session's video is calibrated by an LED
-  fit (median residual 1.52 cm, 90th percentile 9.49 cm, over 2,238 frames),
-  and a watch-out says the overlay is aligned with the tracking by
-  construction: it does not check the tracking or the declared track, and
-  the track is not visible in the video. Other sessions refuse
-  `animation(video=True)` until the fit is run for them. The parts of the
-  track epoch before the first and after the last position sample are the
-  epochs `track_before_tracking` and `track_after_tracking`. A session whose
-  video is split across two files has `rec.video` None.
+  fit (median residual 0.95 cm, 90th percentile 9.80 cm, over 2,238 frames,
+  17.2% of detections more than 5 cm off and left out), and a watch-out
+  says the overlay is aligned with the tracking by construction: it does
+  not check the tracking or the declared track, and the track is not
+  visible in the video. Another watch-out says the scene shows the video
+  mirrored from the raw file, since the file's y grows down the camera's
+  rows. Other sessions refuse `animation(video=True)` until the fit is run
+  for them. All 28 sessions load; one (`sub-fCamk2_ses-fCamk2-201013-sess2`,
+  an epoch ending 50 s after the recording) only with
+  `accept_failed_checks=("clock",)`. The epochs holding position samples
+  are the rows of `track` (two in the 16 sessions that run the track twice),
+  the others `epoch_<k>`, and each track epoch's stretches before its first
+  and after its last sample are `track_before_tracking` and
+  `track_after_tracking`. A session whose video is split across two files
+  has `rec.video` None. The session scene's epoch panel shows only the
+  epochs its window meets.
 - `io.nwb.read_position(..., position_name=)` and
   `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
   any Position or CompassDirection container when given its full path, as in

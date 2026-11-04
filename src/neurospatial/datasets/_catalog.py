@@ -401,8 +401,8 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
             asset_id=str(video["asset_id"]),
             sha256=_sha256(video["sha256"], f"video {video['asset_path']!r}"),
             size_bytes=int(video["size_bytes"]),
-            landmarks=_landmarks(video.get("landmarks")),
-            led_fit=_led_fit(video.get("led_fit")),
+            landmarks=_landmarks(_keyed(video, "landmarks")),
+            led_fit=_led_fit(_keyed(video, "led_fit")),
         )
         for video in row.get("videos", ())
     )
@@ -430,6 +430,22 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
         members=members,
         videos=videos,
     )
+
+
+def _keyed(video: dict[str, Any], key: str) -> dict[str, Any] | None:
+    """A video's stored ``key`` (landmarks, a fit), refused unless made on this file.
+
+    Each stored calibration names the ``video_sha256`` it was made on, so a
+    changed video cannot keep a calibration of the old one.
+    """
+    value = video.get(key)
+    if value is not None and value.get("video_sha256") != video["sha256"]:
+        msg = (
+            f"video {video['asset_path']!r}: its {key} was made on a video with "
+            f"SHA-256 {value.get('video_sha256')!r}, not this one; rerun it"
+        )
+        raise ValueError(msg)
+    return value
 
 
 def _landmarks(value: dict[str, Any] | None) -> Landmarks | None:
@@ -469,6 +485,12 @@ def _led_fit(value: dict[str, Any] | None) -> LedFit | None:
         p90_cm=float(value["residual_cm"]["p90"]),
         median_px=float(value["residual_px"]["median"]),
         p90_px=float(value["residual_px"]["p90"]),
+        outlier_cm=float(value["outliers"]["cut_cm"]),
+        outlier_share=float(value["outliers"]["share"]),
+        lag_scan=tuple(
+            (int(lag), float(median))
+            for lag, median in value["lag_scan_median_cm"].items()
+        ),
         fitted_by=str(value["fitted_by"]),
     )
 

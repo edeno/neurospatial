@@ -47,6 +47,7 @@ __all__ = [
     "VideoSource",
     "fit_pixel_affine",
     "led_fit_watch_out",
+    "mirror_watch_out",
     "video_calibration",
     "video_frame_times",
 ]
@@ -119,9 +120,10 @@ class LedFit:
     """A pixel-to-cm affine fitted from the LED detected in the video, stored.
 
     ``scripts/fit_video_led_calibration.py`` detects the tracked LED in
-    frames of the video, fits a least-squares affine from its pixel position
-    to the file's position of the same sample, and writes this record into
-    the dataset's registry, so loading needs no video.
+    frames of the video, fits a robust affine from its pixel position to the
+    file's position of the same sample (:func:`fit_pixel_affine`), and
+    writes this record into the dataset's registry, keyed to the video's
+    SHA-256, so loading needs no video.
 
     Parameters
     ----------
@@ -141,8 +143,16 @@ class LedFit:
     median_px, p90_px : float
         The same in pixels: the file's positions mapped back into the frame
         against the detected LED.
+    outlier_cm : float
+        The cut beyond which a detection is an outlier, left out of the
+        final fit, cm.
+    outlier_share : float
+        The share of used frames beyond ``outlier_cm``.
+    lag_scan : tuple of (int, float)
+        The median residual, cm, of the same fit with frame k paired with
+        sample k + lag, for each lag scanned.
     fitted_by : str
-        The script, its version or commit, and the date.
+        The script, its content's SHA-256, and the date.
     """
 
     matrix: NDArray[np.float64]
@@ -154,9 +164,15 @@ class LedFit:
     p90_cm: float
     median_px: float
     p90_px: float
+    outlier_cm: float
+    outlier_share: float
+    lag_scan: tuple[tuple[int, float], ...]
     fitted_by: str
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "lag_scan", tuple((int(k), float(v)) for k, v in self.lag_scan)
+        )
         matrix = read_only_copy(self.matrix, dtype=np.float64)
         if matrix.shape != (3, 3) or not self.method.strip() or self.n_frames < 3:
             raise InputError(
@@ -328,7 +344,9 @@ def video_frame_times(
     basis : Conversion
     watch_out : str or None
         The clock offset, where the video's own times are off by more than
-        half a frame; None otherwise.
+        half a frame; for frames on the video's own clock, how far its span
+        is from the positions', where that is more than a frame; None
+        otherwise.
     """
     video = np.asarray(video_times, dtype=np.float64)
     position = np.asarray(position_times, dtype=np.float64)
@@ -346,12 +364,12 @@ def video_frame_times(
         ),
     )
     if len(video) != len(position):
-        return video, own, None
+        return video, own, _span_offset(video, position, interval)
     design = np.column_stack([np.ones_like(video), video - video[0]])
     (start, rate), *_ = np.linalg.lstsq(design, position, rcond=None)
     residual = float(np.max(np.abs(position - design @ np.array([start, rate]))))
     if residual > SAME_FRAMES_TOLERANCE * interval:
-        return video, own, None
+        return video, own, _span_offset(video, position, interval)
     offset = position - video
     if float(np.max(np.abs(offset))) <= SAME_FRAMES_TOLERANCE * interval:
         same = Conversion(
@@ -382,6 +400,24 @@ def video_frame_times(
         "the camera that far out of step with the positions and spikes."
     )
     return position, basis, watch_out
+
+
+def _span_offset(
+    video: NDArray[np.float64], position: NDArray[np.float64], interval: float
+) -> str | None:
+    """A watch-out when the video's span is more than a frame off the positions'."""
+    start, stop = video[0] - position[0], video[-1] - position[-1]
+    if max(abs(start), abs(stop)) <= interval:
+        return None
+    return (
+        f"The video's own timestamps ({video[0]:.3f} to {video[-1]:.3f} s, "
+        f"{len(video)} frames) do not span the positions' ({position[0]:.3f} to "
+        f"{position[-1]:.3f} s, {len(position)} samples): they start {start:+.2f} s "
+        f"and end {stop:+.2f} s from them, and the two are not the same frames, "
+        "so the overlay shows the video on its own clock. Check that the "
+        "camera and the tracking agree before reading the overlay frame by "
+        "frame."
+    )
 
 
 def video_calibration(
@@ -511,12 +547,17 @@ def video_calibration(
 
     if led_fit is not None:
         transform = AffineND(led_fit.matrix)
+        lags = ", ".join(f"{lag:+d}: {value:.3g}" for lag, value in led_fit.lag_scan)
         evidence = (
             f"{led_fit.method}, over {led_fit.n_frames} frames ({led_fit.frames}); "
+            f"{led_fit.outlier_share:.1%} of detections are more than "
+            f"{led_fit.outlier_cm:g} cm off and left out of the final fit; "
             f"residual median {led_fit.median_cm:.3g} cm ({led_fit.median_px:.3g} "
             f"px), 90th percentile {led_fit.p90_cm:.3g} cm ({led_fit.p90_px:.3g} "
             f"px); the median is the statistic compared with the {bin_size:g} cm "
-            f"bin; {_scale_text(transform)}; fitted by {led_fit.fitted_by}"
+            f"bin; {_scale_text(transform)}. Frame k paired with sample k + lag "
+            f"gives median residuals (cm) {lags}: frames and samples are paired "
+            f"to within a few frames. Fitted by {led_fit.fitted_by}"
         )
         if led_fit.median_cm <= bin_size:
             basis = Conversion(
@@ -536,9 +577,22 @@ def video_calibration(
 
 
 def fit_pixel_affine(
-    pixels: NDArray[np.float64], positions: NDArray[np.float64]
+    pixels: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    huber_cm: float | None = None,
+    outlier_cm: float | None = None,
+    max_iterations: int = 100,
 ) -> tuple[AffineND, NDArray[np.float64], NDArray[np.float64]]:
-    """A least-squares affine from pixels to cm over the samples finite in both.
+    """An affine from pixels to cm over the samples finite in both.
+
+    Plain least squares, or a robust fit in two steps. With ``huber_cm``, a
+    Huber fit by iteratively reweighted least squares: samples within
+    ``huber_cm`` of their fitted position weigh 1 and farther ones
+    ``huber_cm / residual``, so a wrong detection (a reflection, an occluded
+    LED) pulls the fit by a bounded amount. With ``outlier_cm`` as well, a
+    final least-squares fit over the samples within ``outlier_cm`` of the
+    Huber fit, which removes the pull the outliers still have.
 
     Parameters
     ----------
@@ -546,13 +600,22 @@ def fit_pixel_affine(
         Video pixels, ``(column, row)``.
     positions : ndarray, shape (n_samples, 2)
         The same samples' positions, cm.
+    huber_cm : float, optional
+        The Huber cut, cm. None fits plain least squares.
+    outlier_cm : float, optional
+        Samples farther than this from the Huber fit, cm, are left out of
+        the final fit. Needs ``huber_cm``.
+    max_iterations : int, default 100
+        Reweighting steps at most; the fit stops when no coefficient moves
+        by more than 1e-10.
 
     Returns
     -------
     transform : AffineND
         Pixels to cm.
     residual_cm : ndarray, shape (n_used,)
-        Each used sample's distance from its fitted position, cm.
+        Each used sample's distance from its fitted position, cm; the
+        samples beyond ``outlier_cm`` included.
     residual_px : ndarray, shape (n_used,)
         Each used sample's position mapped back into the frame, its distance
         from the pixel, px.
@@ -563,12 +626,44 @@ def fit_pixel_affine(
     positions = np.asarray(positions, dtype=np.float64)
     both = np.all(np.isfinite(pixels), axis=1) & np.all(np.isfinite(positions), axis=1)
     design = np.column_stack([pixels[both], np.ones(both.sum())])
-    coef, *_ = np.linalg.lstsq(design, positions[both], rcond=None)
+    target = positions[both]
+    coef, *_ = np.linalg.lstsq(design, target, rcond=None)
+    if huber_cm is not None:
+        for _ in range(max_iterations):
+            residual = np.linalg.norm(design @ coef - target, axis=1)
+            weight = np.sqrt(huber_cm / np.maximum(residual, huber_cm))[:, None]
+            new, *_ = np.linalg.lstsq(design * weight, target * weight, rcond=None)
+            converged = np.max(np.abs(new - coef)) < 1e-10
+            coef = new
+            if converged:
+                break
+        if outlier_cm is not None:
+            inside = np.linalg.norm(design @ coef - target, axis=1) <= outlier_cm
+            coef, *_ = np.linalg.lstsq(design[inside], target[inside], rcond=None)
     transform = AffineND(np.vstack([coef.T, [0.0, 0.0, 1.0]]))
-    residual_cm = np.linalg.norm(transform(pixels[both]) - positions[both], axis=1)
-    back = transform.inverse()(positions[both])
+    residual_cm = np.linalg.norm(transform(pixels[both]) - target, axis=1)
+    back = transform.inverse()(target)
     residual_px = np.linalg.norm(back - pixels[both], axis=1)
     return transform, residual_cm, residual_px
+
+
+def mirror_watch_out(calibration: VideoCalibration) -> str | None:
+    """A watch-out when the scene shows the video mirrored from the raw file.
+
+    An image's rows run down; a scene draws y up. A calibration that keeps
+    the image's handedness (a positive determinant: y grows down the rows)
+    therefore shows the frames mirrored relative to the file played as it is.
+    """
+    linear = np.asarray(calibration.transform_px_to_cm.A, dtype=np.float64)[:2, :2]
+    if np.linalg.det(linear) <= 0:
+        return None
+    return (
+        "In the scene the video appears mirrored relative to the raw video file "
+        "(for this camera, top and bottom swapped): the file's coordinates grow "
+        "with the camera image's rows, downward in the image, and the scene "
+        "draws y upward. The frames and the positions still agree; only the "
+        "picture's orientation differs from a video player's."
+    )
 
 
 def led_fit_watch_out(fit: LedFit) -> str:
@@ -579,7 +674,10 @@ def led_fit_watch_out(fit: LedFit) -> str:
         "shows the camera and the data aligned by construction: it does not "
         "check that the tracking or the declared track is placed correctly, "
         "and the track itself is not visible in the video. 90th-percentile "
-        f"residual {fit.p90_cm:.3g} cm ({fit.p90_px:.3g} px)."
+        f"residual {fit.p90_cm:.3g} cm ({fit.p90_px:.3g} px); "
+        f"{fit.outlier_share:.1%} of LED detections are more than "
+        f"{fit.outlier_cm:g} cm off (an occluded LED or a reflection) and were "
+        "left out of the fit."
     )
 
 

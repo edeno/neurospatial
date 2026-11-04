@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import itertools
-import os
 from pathlib import Path
 
 import numpy as np
@@ -32,7 +31,9 @@ def _entry(session=DEFAULT):
     return next(entry for entry in sessions("valero_2022") if entry.session == session)
 
 
-def _write_session(path, *, video_files=("cam/uuid_external_file_0.avi",)):
+def _write_session(
+    path, *, video_files=("cam/uuid_external_file_0.avi",), second_run=False
+):
     """An NWB file laid out as DANDI 000568's: a 1-D run along y in cm, 30 Hz.
 
     Five epochs, the track third; position starts ``LATE`` s into it, and the
@@ -57,6 +58,8 @@ def _write_session(path, *, video_files=("cam/uuid_external_file_0.avi",)):
             start_time=start, stop_time=stop - 1e-3, epoch_name=f"fCamk2_{index}"
         )
     times = np.arange(200.0 + LATE, 790.0, 1 / 30)
+    if second_run:  # the track run again in the fifth epoch, after sleep
+        times = np.concatenate([times, np.arange(905.0, 990.0, 1 / 30)])
     phase = 2 * np.pi * (times - times[0]) / 20.0
     xy = np.column_stack([12.0 + 2.0 * np.sin(5 * phase), 58.0 - 55.0 * np.cos(phase)])
     position = Position(name="LinearMazePositionTracking")
@@ -222,7 +225,17 @@ def test_video_scene(tmp_path):
     assert "detected in the video" in rec.video.calibration_basis.text
     assert rec.video.calibration_basis in rec.conversions
     assert any("aligned by construction" in line for line in rec.watch_outs)
-    start = float(rec.times[0])
+    assert any("of LED detections are more than 5 cm off" in w for w in rec.watch_outs)
+    assert any("mirrored relative to the raw video" in w for w in rec.watch_outs)
+    # A run: the 2 s the head moves farthest in, among those without a
+    # tracking jump (a step over 2.5 cm, 75 cm/s) or a held sample (a step
+    # of 0), so the frames spread along the track and every one is tracked.
+    window = round(2.0 * rec.sampling_rate)
+    step = np.linalg.norm(np.diff(rec.positions, axis=0), axis=1)
+    steps = np.lib.stride_tricks.sliding_window_view(step, window)
+    moved = np.linalg.norm(rec.positions[window:] - rec.positions[:-window], axis=1)
+    moved[(steps.max(axis=1) > 2.5) | (steps.min(axis=1) == 0.0)] = 0.0
+    start = float(rec.times[int(np.argmax(moved))])
     scene = rec.animation(time_range=(start, start + 2.0), video=True)
     frames = tmp_path / "frames"
     scene.export(
@@ -231,5 +244,26 @@ def test_video_scene(tmp_path):
     exported = sorted(frames.glob("frame_*.png"))
     assert len(exported) == 20
     sheet = np.hstack([cv2.imread(str(p)) for p in exported[::5]])
-    out = Path(os.environ.get("NEUROSPATIAL_DATA_DIR", tmp_path)) / "valero_2022"
-    cv2.imwrite(str(out / "frame_sheet.png"), sheet)
+    path = tmp_path / "frame_sheet.png"
+    assert cv2.imwrite(str(path), sheet)  # for the person who verifies the video
+
+
+def test_session_running_the_track_twice(synthetic, tmp_path):
+    """Tracking in two epochs: both are 'track' rows, each with its untracked stretches."""
+    from neurospatial.datasets import valero_2022
+
+    entry, _, _ = synthetic
+    path = tmp_path / "twice.nwb"
+    times = _write_session(path, second_run=True)
+    rec = run_checks(valero_2022.load_session(entry, path), stated=entry.info.stated)
+    np.testing.assert_allclose(
+        rec.epochs["track"], [[200.0, 800.0 - 1e-3], [900.0, 1000.0 - 1e-3]]
+    )
+    np.testing.assert_allclose(
+        rec.epochs["track_before_tracking"], [[200.0, times[0]], [900.0, 905.0]]
+    )
+    assert rec.epochs["track_after_tracking"].shape == (2, 2)
+    assert set(rec.epochs) >= {"epoch_1", "epoch_2", "epoch_4"}
+    assert "epoch_5" not in rec.epochs  # it is the second track row
+    epochs_line = next(c for c in rec.conversions if c.text.startswith("epochs:"))
+    assert "epoch_1 = fCamk2_0" in epochs_line.text

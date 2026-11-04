@@ -249,17 +249,18 @@
           "sha256": "d24502b37ad8abba7e81bce647abd5193d9f4e1f2c32ec1181ac977063939a9a",
           "size_bytes": 46047232,
           "led_fit": {
-            "method": "the LED as the brightest point of each frame's summed RGB after a Gaussian blur of 3 px (OpenCV), against the file's position of the same sample; a least-squares affine from pixels to cm",
+            "video_sha256": "d24502b37ad8abba7e81bce647abd5193d9f4e1f2c32ec1181ac977063939a9a",
+            "method": "the LED as the brightest point of each frame's summed RGB after a Gaussian blur of 3 px (OpenCV), against the file's position of the same sample; a Huber affine from pixels to cm (cut 2 cm, iteratively reweighted least squares), then least squares over the detections within 5 cm of it",
             "matrix": [
               [
-                0.0942879183,
-                -0.0011471482,
-                3.5147749017
+                0.1152356756,
+                -0.0002342365,
+                0.4205998448
               ],
               [
-                0.1015355895,
-                0.1211993661,
-                -15.8319668922
+                0.0259254976,
+                0.1173827978,
+                -4.2651708338
               ],
               [
                 0.0,
@@ -274,14 +275,29 @@
             "frames": "every 30th frame from 0 (2238 frames)",
             "n_frames": 2238,
             "residual_cm": {
-              "median": 1.5201,
-              "p90": 9.4918
+              "median": 0.9456,
+              "p90": 9.8017
             },
             "residual_px": {
-              "median": 14.8425,
-              "p90": 84.9989
+              "median": 8.2733,
+              "p90": 84.9312
             },
-            "fitted_by": "scripts/fit_video_led_calibration.py at c72c7d53e, 2026-11-04"
+            "outliers": {
+              "cut_cm": 5.0,
+              "share": 0.1716
+            },
+            "lag_scan_median_cm": {
+              "-677": 24.3197,
+              "-30": 4.8483,
+              "-3": 1.456,
+              "-1": 1.0965,
+              "0": 0.9456,
+              "1": 0.837,
+              "3": 0.8396,
+              "30": 3.189,
+              "677": 26.0264
+            },
+            "fitted_by": "scripts/fit_video_led_calibration.py with SHA-256 8d6e29eb15a9cb9c, 2026-11-04"
           }
         }
       ]
