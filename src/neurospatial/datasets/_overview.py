@@ -77,13 +77,16 @@ def occupancy_field(
     Returns
     -------
     ndarray, shape (n_bins,)
-        ``env.occupancy(rec.times, rec.positions)`` with unvisited bins
+        ``env.occupancy(rec.times, rec.positions)`` (with the session's
+        ``params["max_gap"]`` where it sets one) with unvisited bins
         (zero seconds) set to NaN, so they draw as missing rather than as zero.
     """
     env = rec.env if env is None else env
     assert env is not None
     assert rec.positions is not None
-    occupancy: NDArray[np.float64] = env.occupancy(rec.times, rec.positions)
+    occupancy: NDArray[np.float64] = env.occupancy(
+        rec.times, rec.positions, max_gap=rec._max_gap
+    )
     return np.where(occupancy > 0, occupancy, np.nan)
 
 
@@ -293,7 +296,10 @@ def _panel_heading(rec: Recording, ax: Axes) -> None:
 
     min_speed = _min_speed(rec)
     travel = heading_from_velocity(
-        rec.times, rec.positions, min_speed=0.0 if min_speed is None else min_speed
+        rec.times,
+        rec.positions,
+        min_speed=0.0 if min_speed is None else min_speed,
+        max_gap=rec._max_gap,
     )
     offset = wrap_angle(rec.headings - travel)
     offset = offset[np.isfinite(offset)]
@@ -387,6 +393,7 @@ def place_field_order(rec: Recording) -> NDArray[np.intp] | None:
                 rec.times,
                 rec.positions,
                 min_speed=_min_speed(rec),
+                max_gap=rec._max_gap,
             ).firing_rates,
             dtype=np.float64,
         )
@@ -641,12 +648,26 @@ def animation(
             rec.times,
             trail_length=trail_length,
             units=rec.position_units,
+            max_gap=rec._max_gap,
         )
     ]
     if rec.headings is not None:
         extent = max(hi - lo for lo, hi in env.dimension_ranges or ((0.0, 1.0),))
+        headings: NDArray[np.float64] = rec.headings
+        if env.n_dims == 3:
+            # A heading is an azimuth in the x-y plane; in 3-D the overlay
+            # takes unit vectors, so it points horizontally, NaN where missing.
+            headings = np.column_stack(
+                [
+                    np.cos(rec.headings),
+                    np.sin(rec.headings),
+                    np.where(np.isfinite(rec.headings), 0.0, np.nan),
+                ]
+            )
         overlays.append(
-            HeadDirectionOverlay(rec.headings, rec.times, length=0.05 * extent)
+            HeadDirectionOverlay(
+                headings, rec.times, length=0.05 * extent, max_gap=rec._max_gap
+            )
         )
     if rec.n_units:
         overlays.append(

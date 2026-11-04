@@ -247,6 +247,107 @@
   `rec.video` None. The session scene's epoch panel shows only the epochs its
   window meets.
 
+- Eight more datasets, chosen to cover what the first six could not show:
+  grid cells with the authors' grid scores, head direction together with
+  position, graph mazes, objects and a climbing structure. Each loads with
+  the automatic checks and its watch-outs; each verified session lists in
+  `EXPECTED_WATCH_OUTS` the problems the checks or the loader compute on it,
+  and a `realdata` test fails if one stops being reported.
+- `vollan_2025`: Vollan et al. (2025) rat medial entorhinal cortex and
+  hippocampus Neuropixels units, all 38 open-field and linear-track files of
+  EBRAINS 10.25493/R5FR-EDG (CC-BY-SA-4.0, a public bucket with no login),
+  read with `mat-io`. The default, `of_26018_2` (644 units, three grid
+  modules), and `lt_27764_1` are checked by hand. Positions are cm, headings
+  the file's `hd` checked against movement, times as stored: the authors
+  removed every sample slower than 5 cm/s, so `rec.times` has gaps, and
+  `params["max_gap"]` (0.015 s) keeps `compute_spatial_rates` from counting
+  them as occupancy. The authors' cell class, grid module and grid flag are
+  `units["label"]`, `units["module"]` and `units["is_grid"]`, each module's
+  grid scores and spacing are in `params`. The arena follows the session
+  type: the stated 150 cm box, the 150 cm circle (inferred for the lit and
+  dark sessions), or the 200 cm track along the samples' principal axis.
+  Two files, `of_25843_5` and `of_26820_2`, list their darkness session
+  wholly before the samples, by more than the recording's length, and load
+  only with `accept_failed_checks=("clock",)`.
+- `gardner_2022`: Gardner et al. (2022) rat medial entorhinal cortex grid
+  modules in a 1.5 m open field, the four recordings of Figshare 16764508
+  (CC0), two members of a 320 MB zip read by byte range per recording. The
+  default, `rat_r_day1` (483 units in modules 1 to 3), is checked by hand.
+  The spike trains are pickled object arrays, read by a restricted unpickler
+  that lists each pickle's imports before running it and resolves only
+  NumPy's array reconstruction. Headings are the file's azimuth, checked
+  against movement; only the open-field session is loaded, its valid times
+  as `epochs["open_field"]`, with the paper's 3 cm bins and 2.5 cm/s speed
+  threshold in `params`.
+- `peyrache_rsc`: Peyrache lab mouse retrosplenial cortex, all 14 sessions
+  of DANDI 000987 (CC-BY-4.0), with sleep and square or 70 cm circular
+  arenas. The default, `sub-A7803_ses-20240509T213129` (37 units), is checked
+  by hand. Positions are the motion-capture floor plane in cm (metres
+  inferred), headings `ry` kept as stored: heading minus the direction of
+  movement is computed per tracked epoch, and on the default it is +0.51 rad
+  with a 49 degree spread, so the frame is reported as not verified. Three
+  sessions sample at 100 Hz, not the preprint's 120 Hz, and say so.
+- `kanter_2025`: Kanter et al. (2025) rat lateral and medial entorhinal
+  cortex and hippocampus Neuropixels units in 1 to 2 m open fields, the 31
+  foraging and novel-object sessions of EBRAINS 10.25493/GTVB-FQR
+  (CC-BY-SA-4.0, public bucket). The default, `29629_2024-Oct-29_15-05-13`
+  (156 LEC and 224 CA1 units), is checked by hand. Novel-object sessions have
+  the epochs `empty` and `object_1` to `object_3`; the archive holds no
+  object positions, and a watch-out says so. The units table repeats ids
+  across probes, so units are named `<area>-<id>`. The head-direction frame
+  is not verified by movement in most sessions (the default's offset is
+  -0.33 rad and drifts). One session
+  (`26965_2020-Dec-08_11-29-48`, a fifth of its spikes after tracking stops)
+  loads only with `accept_failed_checks=("clock",)`.
+- `shipley_2026`: Shipley et al. (2026) mouse CA1 tetrode units on an 8-arm
+  radial maze with rest, App NL-G-F and wild-type mice, 36 days of UCL RDR
+  30902972 (CC-BY-4.0), four members of a 4.4 GB zip read by byte range per
+  day. The default, `m4005_2020-09-26` (71 units), is checked by hand. The
+  file stores no position times, so they are rebuilt per trial from its
+  spike-to-sample map (an inferred `Conversion`: about 30.05 Hz, not the
+  header's 30 Hz, largest residual 41 ms). The 14 days whose rebuilt clock
+  does not increase or cannot be fitted are not offered; the module and its
+  page list them with the reason. The environment is a star of the stated
+  80 cm arms from a 24.7 cm platform; the paper's 2 cm bins and 2 cm/s speed
+  threshold are in `params`.
+- `huszar_2026`: Huszár et al. (2026) mouse CA1 and CA3 units on a
+  cheeseboard maze, all 42 sessions of DANDI 001880 (CC0-1.0). The default
+  (49 units) is checked by hand. The environment is the paper's 90 cm disc,
+  centred midway between the 0.5th and 99.5th percentiles of the on-maze
+  samples, with the two reward wells as regions; `rec.trials` holds the learning
+  trials, `events` the ripples and reward times, `epochs` the maze and box
+  intervals, PRE, Learning and POST and the sleep states. 29% of the
+  default's frames are held, mostly the tracker's last fix at the platform's
+  edge while the mouse is in the unseen holding box, so
+  `params["analysis_epochs"]` is the on-maze intervals.
+- `grieves_2020`: Grieves et al. (2020) rat CA1 place cells in a 3-D
+  climbing lattice, aligned or tilted, the 57 sessions of UCL RDR 9926477
+  (CC0), one Deflate64 member of a 12 GB zip each, read by byte range. The
+  default, `926_06042018`, is checked by hand. Positions are cm (the stored
+  velocity shows the file's mm); headings are the head azimuth turned into
+  the positions' frame by the file's own map between its 2-D and 3-D
+  positions, checked against movement; the square-arena parts are epochs;
+  the lattice's 147 bars are in `params["lattice_bars"]`; the environment is
+  the authors' 5 cm voxel grid. Azimuths stored as exactly 0 (26.7% of the
+  default's) are kept and reported. One session (`951_13092018`, a 207.7 cm
+  span) loads only with `accept_failed_checks=("units",)`.
+- Epochs a file lists past the end of its data are clipped to the recording
+  (its first to last sample or spike) by one rule for every loader, when
+  they overhang by more than the clock check allows; a row wholly outside is
+  dropped. The cut is an inferred `Conversion` listing each row, and a
+  watch-out. Four Kanter sessions, two Grieves sessions and Vollan's
+  sessions truncated to a multiple of 100 s load this way. A row that
+  overhangs by more than the recording's own length is not a truncation and
+  is left as listed for the clock check, which refuses it: Vollan's
+  `of_25843_5` and `of_26820_2`, whose darkness session lies wholly before
+  the samples, load only with `accept_failed_checks=("clock",)`.
+- A session whose loader sets `params["max_gap"]` (Vollan's speed-filtered
+  times) uses it for the summary's speed, the overview's occupancy and
+  travel direction, and the scene's overlays, so printing it no longer
+  warns that its times look boolean-masked.
+- `Recording.animation()` draws a 3-D session's headings as horizontal
+  arrows; it raised for every 3-D session with headings.
+
 #### Worked results
 
 - Each dataset module's `WORKED_RESULT` records a finding of its paper
@@ -261,12 +362,15 @@
   `comrie_2026` (a sanity property, not a finding of the preprint): 92% of
   held-out running time bins decode to the rat's own track segment, against
   35% for always naming the most visited segment and at most 29% with
-  shifted spikes. `forli_2025`, `sargolini_2006` and `valero_2022` say why
-  no result is possible yet (the bat's place cells need 1-D flight-path
+  shifted spikes. `forli_2025`, `sargolini_2006`, `valero_2022` and the
+  eight new datasets say why no result is possible yet (the bat's place cells need 1-D flight-path
   fields; Sargolini's paper and Valero's methods could not be read, and
   Valero's files hold no cell types or stimulation times); the bat's 3-D
   attempt (15% of flight-active units stable, against the paper's 71%) is
-  kept in its record.
+  kept in its record. `vollan_2025` records an attempt: neurospatial's grid
+  score matches the authors' median module grid score for modules 1 and 2
+  (1.176 against 1.114, 0.981 against 0.986) but not module 3, the widest
+  spacing (0.185 against 0.685).
 
 #### Readers, overlays and tests
 

@@ -457,8 +457,8 @@ def _units_findings(rec: Recording, stated: Stated) -> tuple[str | None, str | N
     if found["inferred"]:
         warning = (
             "; ".join(found["inferred"])
-            + ". No source states that value, so the session is loaded: the "
-            "inference may not hold for this session. " + advice
+            + ". That value is inferred, not stated for this session, so the "
+            "session is loaded: the inference may not hold for it. " + advice
         )
     return refusal, warning
 

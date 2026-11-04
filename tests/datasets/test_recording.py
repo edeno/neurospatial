@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from neurospatial import InputError
-from neurospatial.datasets import Conversion, Provenance
+from neurospatial.datasets import Conversion, DatasetCheckError, Provenance
 
 
 def _swap_two_times(rec):
@@ -250,3 +250,86 @@ def test_nwb_unit_table_refuses_a_missing_column():
     assert regions == ("CA1", "CA3")
     with pytest.raises(ValueError, match=r"no column \['cell_type'\]"):
         nwb_unit_table(units, region_column="location", label_column="cell_type")
+
+
+class TestClipEpochsToRecording:
+    """Epoch rows past the recording are clipped to it, and reported once."""
+
+    TIMES = np.arange(10.0, 20.0, 0.1)  # samples 10.0 to 19.9 s
+
+    def _clip(self, epochs, spikes):
+        from neurospatial.datasets._recording import clip_epochs_to_recording
+
+        return clip_epochs_to_recording(
+            epochs, self.TIMES, spikes, source="the file's table"
+        )
+
+    def test_rows_inside_are_unchanged_and_nothing_is_reported(self):
+        rows = np.array([[10.0, 12.0], [15.0, 19.9]])
+        clipped = self._clip({"run": rows}, (np.array([10.5, 19.0]),))
+        np.testing.assert_array_equal(clipped.epochs["run"], rows)
+        assert clipped.conversion is None
+        assert clipped.watch_out is None
+
+    def test_an_edge_within_the_clock_checks_slack_is_kept_as_stored(self):
+        """The check allows 1% of the recording (here 0.099 s) at its edges."""
+        rows = np.array([[9.95, 19.95]])
+        clipped = self._clip({"run": rows}, (np.array([12.0]),))
+        np.testing.assert_array_equal(clipped.epochs["run"], rows)
+        assert clipped.watch_out is None
+
+    def test_the_recording_ends_at_the_last_spike_past_the_samples(self):
+        """An epoch with spikes but no samples survives, clipped to the last spike."""
+        clipped = self._clip(
+            {"square": np.array([[25.0, 40.0]]), "run": np.array([[5.0, 19.9]])},
+            (np.array([10.2, 26.0, 31.5]),),
+        )
+        np.testing.assert_array_equal(clipped.epochs["square"], [[25.0, 31.5]])
+        # The first sample (10.0) starts the recording: run starts 5 s early.
+        np.testing.assert_array_equal(clipped.epochs["run"], [[10.0, 19.9]])
+        assert clipped.watch_out == (
+            "2 epoch rows reach past the recording, 10 to 31.5 s (its first and "
+            "last sample or spike), and are clipped to it: epochs['square'] "
+            "[25, 40] s ends 8.5 s after it, now [25, 31.5] s; epochs['run'] "
+            "[5, 19.9] s starts 5 s before it, now [10, 19.9] s. Positions and "
+            "spikes are as stored."
+        )
+        assert clipped.conversion.basis == "inferred"
+        assert clipped.conversion.evidence.startswith("the file's table lists them so")
+
+    def test_a_row_wholly_outside_is_dropped_with_its_name(self):
+        clipped = self._clip(
+            {"before": np.array([[5.0, 9.0]]), "run": np.array([[11.0, 25.0]])},
+            (np.array([12.0]),),
+        )
+        assert list(clipped.epochs) == ["run"]
+        np.testing.assert_allclose(clipped.epochs["run"], [[11.0, 19.9]])
+        assert "epochs['before'] [5, 9] s lies wholly outside it, dropped" in (
+            clipped.watch_out
+        )
+        assert clipped.watch_out.startswith("2 epoch rows reach past the recording")
+
+    @pytest.mark.parametrize(
+        "row",
+        [
+            [10_000.0, 19_900.0],  # milliseconds read as seconds: far outside
+            [12.0, 12_000.0],  # starts inside, ends 1000 times too late
+            [-40.0, 15.0],  # starts more than the recording's length early
+        ],
+    )
+    def test_a_row_overhanging_by_more_than_the_recording_is_left_for_the_clock_check(
+        self, row, square_recording
+    ):
+        """No truncation overhangs by more than the recording's own 9.9 s."""
+        from neurospatial.datasets._checks import Stated, run_checks
+
+        clipped = self._clip({"run": np.array([row])}, (np.array([12.0]),))
+        np.testing.assert_array_equal(clipped.epochs["run"], [row])
+        assert clipped.conversion is None
+        assert clipped.watch_out is None
+        # The same row on a 60 s recording, which the clock check refuses.
+        rec = dataclasses.replace(square_recording, epochs=clipped.epochs)
+        with pytest.raises(DatasetCheckError, match="clock"):
+            run_checks(
+                rec, stated=Stated(sampling_rate=100.0, position_span=(80.0, 120.0))
+            )

@@ -1,0 +1,207 @@
+{
+  "dataset": "peyrache_rsc",
+  "paper": "Mehrotra, Levenstein et al. (2024)",
+  "paper_citation": "Mehrotra D, Levenstein D, Duszkiewicz AJ, Carrasco SS, Booker SA, Kwiatkowska A, Peyrache A (2024). Hyperpolarization-activated currents drive neuronal activation sequences in sleep. Current Biology 34, 3043–3054.e8. https://doi.org/10.1016/j.cub.2024.05.048",
+  "species": "mouse",
+  "brain_regions": [
+    "retrosplenial cortex"
+  ],
+  "apparatus": "square and circular (70 cm) open arenas, between sleep sessions in the home cage",
+  "archive": {
+    "dandiset": "000987",
+    "version": "0.261003.2342",
+    "url": "https://dandiarchive.org/dandiset/000987/0.261003.2342",
+    "citation": "Mehrotra, Dhruv ; Skromne Carrasco, Sofia; Peyrache, Adrien (2026) Freely moving mouse retrosplenial cortex recordings (Version 0.261003.2342) [Data set]. DANDI Archive. https://doi.org/10.48324/dandi.000987/0.261003.2342"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 120.0,
+      "basis": "inferred",
+      "source": "the preprint's 'sampled at 100 Hz (120 Hz for the RSC dataset)' (Mehrotra, Levenstein et al., bioRxiv 2023.09.12.557442, v1, Methods), kept as an inferred rate and not applied as a stated one, which would refuse a session, because three files (A7803-210722, A7803-210723 and A7803-210726, the default among them) step 0.01 s, 100 Hz; the other 11 files step 1/119.76 s"
+    },
+    "position_span": {
+      "value": [
+        40.0,
+        100.0
+      ],
+      "basis": "inferred",
+      "source": "the 14 files' tracked positions, read as metres: the largest per-axis span of a session is 50 to 83 cm, the circular epochs span 64 to 70 cm (the 70 cm circle of the Methods of Mehrotra, Levenstein et al.'s preprint (bioRxiv 2023.09.12.557442, v1)) and the square epochs 50 to 56 cm; no source read states the square's side"
+    },
+    "speed_limit": {
+      "value": 526.5,
+      "basis": "stated",
+      "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Mus musculus runs at most 43.88 body lengths/s at a 0.080 m body length, 3.51 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a motion-capture rigid body on the head, which swings faster than the body, and no source read states head speed"
+    }
+  },
+  "sessions": [
+    {
+      "session": "sub-A7801_ses-20240509T185057",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7801/sub-A7801_ses-20240509T185057_behavior+ecephys.nwb",
+      "asset_id": "36de62ce-1d87-4c5f-a5ab-604354aae7b2",
+      "sha256": "cbb3d34b3ad3454bb4099c717a0eca6445fa9ab581c731d200e8861b14a21108",
+      "size_bytes": 117323890,
+      "verified": false,
+      "default": false,
+      "n_units": 71,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7801_ses-20240509T185458",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7801/sub-A7801_ses-20240509T185458_behavior+ecephys.nwb",
+      "asset_id": "8a83ddb9-3ae7-4e97-9379-51e11f9dcb66",
+      "sha256": "1323f73bf42a9671e35b41c62857506e008e25d952580ea90fa0182cda1318b6",
+      "size_bytes": 72306042,
+      "verified": false,
+      "default": false,
+      "n_units": 40,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7801_ses-20240509T185805",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7801/sub-A7801_ses-20240509T185805_behavior+ecephys.nwb",
+      "asset_id": "26c194c9-7d96-45dc-96c4-f95a069d991a",
+      "sha256": "03bbe01dcc0f5c3570810875bdb85cc9e7c9c53e62257eb666c50bc15a6cf5bf",
+      "size_bytes": 84995398,
+      "verified": false,
+      "default": false,
+      "n_units": 33,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7801_ses-20240509T190101",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7801/sub-A7801_ses-20240509T190101_behavior+ecephys.nwb",
+      "asset_id": "225fc8fb-941e-4fa8-94f1-3511f6b3df04",
+      "sha256": "44824e530176d8ed373189ceb5408ceb7809d6d775003599ffa8011ce95ccc18",
+      "size_bytes": 92943946,
+      "verified": false,
+      "default": false,
+      "n_units": 31,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7802_ses-20240509T190545",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7802/sub-A7802_ses-20240509T190545_behavior+ecephys.nwb",
+      "asset_id": "0d0f7583-21a0-4618-8501-0aa81bbaba1f",
+      "sha256": "a8fab363364b636728f1de35145a8c9ccaed4fbe7ba78f194d4a2bdff7c9a212",
+      "size_bytes": 90737982,
+      "verified": false,
+      "default": false,
+      "n_units": 50,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7802_ses-20240509T190914",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7802/sub-A7802_ses-20240509T190914_behavior+ecephys.nwb",
+      "asset_id": "a1f76928-fd9d-4cd9-8ca0-2e1e565069a4",
+      "sha256": "279f25148507804f85280b53eb7169a318328f611dde71bfa6e2747f1f8606fc",
+      "size_bytes": 70821302,
+      "verified": false,
+      "default": false,
+      "n_units": 52,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7803_ses-20240509T212028",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7803/sub-A7803_ses-20240509T212028_behavior+ecephys.nwb",
+      "asset_id": "0b2e639b-2eb7-457d-9dcb-9d047bdbaa06",
+      "sha256": "70fa99faf7239bd78391ec6f978bf1595abd837f6cdb3380c930647fcc6908ad",
+      "size_bytes": 23906254,
+      "verified": false,
+      "default": false,
+      "n_units": 58,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7803_ses-20240509T212641",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7803/sub-A7803_ses-20240509T212641_behavior+ecephys.nwb",
+      "asset_id": "f60689a3-4042-4da1-8510-da44fa65ecd9",
+      "sha256": "cc5b17f54fcd47b098c7d0e55eb634830719470c24a00dc6157166e0cf5a489a",
+      "size_bytes": 20443114,
+      "verified": false,
+      "default": false,
+      "n_units": 39,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7803_ses-20240509T213129",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7803/sub-A7803_ses-20240509T213129_behavior+ecephys.nwb",
+      "asset_id": "fccdeeeb-6f18-4c39-b385-d68932b2e665",
+      "sha256": "3b9083c7b37882e8d4d1396f9b751449a948bd1f183afa53ab406cea05d8e876",
+      "size_bytes": 20192758,
+      "verified": true,
+      "default": true,
+      "n_units": 37,
+      "verification": "Checked by hand on 2026-11-04 against the file, DANDI 000987's metadata and the study's bioRxiv preprint (10.1101/2023.09.12.557442, v1); the Current Biology paper DANDI names was not read. Units: 37, every one with location 'RSC'. Time: 120,287 samples every 0.01 s (100 Hz; the preprint states 120 Hz for the RSC dataset, and 11 of the 14 files step 1/119.76 s) from 3,880.16 to 5,082.95 s, inside the wake epoch (3,878.06 to 5,085.18 s) and its position_time_support row; x, y, z, rx, ry and rz on one clock; spikes from 0.0 to 5,085.18 s, inside the sleep and wake epochs. Space: the three position series have a blank unit and reference frame; y spans 9.0 cm (the head's height), x and z 52.7 and 53.2 cm read as metres, the only reading under which the dandiset's circular epochs (64 to 70 cm) match the preprint's 70 cm circle. No position or yaw sample is NaN; 22 runs of 11 or more identical samples (0.43 % of the frames, the longest 1.0 s). Heading: ry against movement above 10 cm/s at 10 Hz: mean +0.51 rad, spread 49 degrees, 87 degrees with ry negated, the survey's numbers; the frame is not verified. The overview figure and frames of rec.animation() (Matplotlib) were looked at: the path fills a square of about 53 cm, occupancy is highest along its north wall, and the scene shows the head and its heading over occupancy with the raster and the sleep, wake, square, UP and SWS epochs."
+    },
+    {
+      "session": "sub-A7803_ses-20240509T213653",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7803/sub-A7803_ses-20240509T213653_behavior+ecephys.nwb",
+      "asset_id": "69df4025-2f7a-4b93-92dd-7f621bf84a3f",
+      "sha256": "bcf954cb8a2453686ab2be40cfd8a394670b76e988dbfb74ecf149d8a4b2b06a",
+      "size_bytes": 70027458,
+      "verified": false,
+      "default": false,
+      "n_units": 36,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7803_ses-20240509T221227",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7803/sub-A7803_ses-20240509T221227_behavior+ecephys.nwb",
+      "asset_id": "258358f0-ef87-4265-9bbb-09e0d6fedb95",
+      "sha256": "9b4dde453adc1dd4cda54ca84f5a2a9289d81b5ba8ddef93125e7b7da6d413d7",
+      "size_bytes": 122292754,
+      "verified": false,
+      "default": false,
+      "n_units": 34,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7803_ses-20240509T221830",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7803/sub-A7803_ses-20240509T221830_behavior+ecephys.nwb",
+      "asset_id": "2c3f3f71-a90c-409a-b831-41fba77cb1c4",
+      "sha256": "949eb3c72fcc1c96614fcb4b9daf2eb684f03e1bc49ba15802c84c3aec6526b6",
+      "size_bytes": 156338854,
+      "verified": false,
+      "default": false,
+      "n_units": 58,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7803_ses-20240509T222731",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7803/sub-A7803_ses-20240509T222731_behavior+ecephys.nwb",
+      "asset_id": "4aa41392-4287-463b-80de-3b7b8e9413f1",
+      "sha256": "46526d6e8490c082568a2156981eea0020c43d05b8fdad036b230e5df615a0b9",
+      "size_bytes": 96742134,
+      "verified": false,
+      "default": false,
+      "n_units": 57,
+      "verification": ""
+    },
+    {
+      "session": "sub-A7803_ses-20240509T224110",
+      "archive": "DANDI 000987",
+      "asset_path": "sub-A7803/sub-A7803_ses-20240509T224110_behavior+ecephys.nwb",
+      "asset_id": "2ecee928-e83c-49bf-9c35-437ce47cfbc6",
+      "sha256": "e35e8eb0538aeb56e85be021941a3d3eccfc347db3e5302b6ca72427bfd309a1",
+      "size_bytes": 123965170,
+      "verified": false,
+      "default": false,
+      "n_units": 42,
+      "verification": ""
+    }
+  ],
+  "license": "CC-BY-4.0"
+}

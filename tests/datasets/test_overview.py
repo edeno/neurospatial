@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import warnings
 
 import matplotlib as mpl
 
@@ -365,6 +366,24 @@ def test_3d_recording_overview_and_scene(room_recording):
     scene = room_recording.animation(time_range=(0.0, 5.0))
     assert scene.env.n_dims == 3
     assert scene.fields["occupancy"][0].shape == (room_recording.env.n_bins,)
+
+
+def test_3d_scene_draws_headings_as_horizontal_unit_vectors(
+    room_recording, square_recording
+):
+    """A heading is an azimuth; in 3-D it points along (cos, sin, 0)."""
+    headings = np.array(square_recording.headings)
+    headings[10] = np.nan
+    rec = dataclasses.replace(
+        room_recording, headings=headings, heading_source="direction of movement"
+    )
+    scene = rec.animation(time_range=(0.0, 5.0))
+    (overlay,) = [o for o in scene.overlays if isinstance(o, HeadDirectionOverlay)]
+    vectors = np.asarray(overlay.headings)
+    finite = np.isfinite(headings)
+    expected = np.column_stack([np.cos(headings), np.sin(headings), 0 * headings])
+    np.testing.assert_allclose(vectors[finite], expected[finite])
+    assert np.isnan(vectors[10]).all()
 
 
 def test_track_recording_overview_and_scene(track_recording):
@@ -737,6 +756,28 @@ def test_hippocampal_track_raster_is_sorted_by_place_field_peak(
     np.testing.assert_array_equal(overlay.order, expected)
 
 
+def test_place_field_order_uses_the_sessions_max_gap(
+    place_cell_stem_recording, monkeypatch
+):
+    """The sorting rate maps bridge only the gaps the session's analyses bridge."""
+    import neurospatial
+    from neurospatial.datasets._overview import place_field_order
+
+    seen = []
+    real = neurospatial.compute_spatial_rates
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("max_gap", "default"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(neurospatial, "compute_spatial_rates", spy)
+    rec = dataclasses.replace(
+        place_cell_stem_recording, params={"min_speed": 2.0, "max_gap": 0.05}
+    )
+    np.testing.assert_array_equal(place_field_order(rec), _expected_field_order())
+    assert seen == [0.05]
+
+
 @pytest.mark.parametrize("region", ["MEC LII", "thalamus"])
 def test_non_hippocampal_raster_keeps_the_file_order(place_cell_stem_recording, region):
     # Negative control: the same planted fields, recorded outside the hippocampus.
@@ -835,3 +876,43 @@ def test_scene_exports_its_own_window(square_recording, tmp_path, window):
     )
     assert scene.frame_times[0] <= plan.times[0]
     assert plan.times[-1] < b
+
+
+@pytest.fixture
+def speed_filtered_recording(square_recording):
+    """The box session with 40 runs of 0.3 to 0.8 s removed, as a speed filter leaves."""
+    rec = square_recording
+    rng = np.random.default_rng(5)
+    keep = np.ones(rec.times.size, dtype=bool)
+    for start in rng.choice(np.arange(100, rec.times.size - 200), 40, replace=False):
+        keep[start : start + rng.integers(30, 80)] = False
+    return dataclasses.replace(
+        rec,
+        times=rec.times[keep],
+        positions=rec.positions[keep],
+        headings=rec.headings[keep],
+    )
+
+
+def test_speed_filter_gaps_warn_without_a_stated_max_gap(speed_filtered_recording):
+    """Bridged at the default max_gap, the removed runs look boolean-masked."""
+    with pytest.warns(UserWarning, match="boolean-masked"):
+        repr(speed_filtered_recording)
+
+
+def test_a_stated_max_gap_is_used_by_the_summary_overview_and_scene(
+    speed_filtered_recording,
+):
+    """With params['max_gap'] below the removed runs, nothing warns, and speed spans them not."""
+    from neurospatial.behavior import compute_speed
+
+    rec = dataclasses.replace(speed_filtered_recording, params={"max_gap": 0.015})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        text = repr(rec)
+        fig = rec.plot_overview()
+        rec.animation(time_range=(1.0, 3.0)).render_frame(2.0, dpi=30)
+    plt.close(fig)
+    assert "speed median" in text
+    expected = compute_speed(rec.times, rec.positions, max_gap=0.015)
+    np.testing.assert_array_equal(rec._speed, expected)

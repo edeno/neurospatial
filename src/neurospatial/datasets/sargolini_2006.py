@@ -66,7 +66,13 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+__all__ = [
+    "EXPECTED_WATCH_OUTS",
+    "REQUIRES",
+    "WATCH_OUTS",
+    "WORKED_RESULT",
+    "load_session",
+]
 
 #: The paper's finding this dataset reproduces, or why there is none yet.
 WORKED_RESULT: dict[str, Any] = {
@@ -103,6 +109,13 @@ _LED1, _LED2 = "SpatialSeriesLED1", "SpatialSeriesLED2"
 _CM_PER = {"m": 100.0, "cm": 1.0, "mm": 0.1}
 #: Below this many cm, two coordinates are equal up to float rounding.
 _ROUNDING = 1e-6
+
+#: Findings computed from the data (by the checks or this loader) that each
+#: verified session must report, as patterns searched for in its watch_outs.
+EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "sub-10073_ses-17010302": (r"positions are centred on their own midrange",),
+    "sub-10884_ses-03080402": (r"positions are centred on their own midrange",),
+}
 
 #: Pitfalls of each session checked by hand, with their evidence.
 WATCH_OUTS: dict[str, tuple[str, ...]] = {

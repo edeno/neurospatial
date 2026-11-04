@@ -540,7 +540,7 @@ def test_inferred_values_warn_instead_of_refusing(
     checked = run_checks(rec, stated=inferred)
     assert checked.failed_checks == ()
     (finding,) = [w for w in checked.watch_outs if numbers in w]
-    assert "No source states that value, so the session is loaded" in finding
+    assert "That value is inferred, not stated for this session, so the" in finding
     np.testing.assert_array_equal(checked.positions, rec.positions)
     stated = dataclasses.replace(
         inferred, sampling_rate_basis="stated", position_span_basis="stated"

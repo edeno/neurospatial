@@ -83,6 +83,7 @@ from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import (
     Conversion,
     Recording,
+    heading_vs_movement,
     session_speed,
     tracked_mask,
 )
@@ -94,7 +95,13 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+__all__ = [
+    "EXPECTED_WATCH_OUTS",
+    "REQUIRES",
+    "WATCH_OUTS",
+    "WORKED_RESULT",
+    "load_session",
+]
 
 #: A level B sanity property of the data and decoder, not a finding of the
 #: preprint, tested against measured baselines
@@ -184,6 +191,16 @@ MID_EDGE = (0.2, 0.8)
 TOLERANCE_QUANTILE = 0.99
 
 _PREPRINT = "the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567"
+
+#: Findings computed from the data (by the checks or this loader) that each
+#: verified session must report, as patterns searched for in its watch_outs.
+EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "j1620210710_02_r1_figure04_inputs": (
+        r"runs of 11 or more identical position samples",
+        r"lie outside the declared environment",
+        r"units have no spikes in the analysed epochs",
+    ),
+}
 
 #: Pitfalls of each session checked by hand, with their evidence.
 WATCH_OUTS: dict[str, tuple[str, ...]] = {
@@ -373,51 +390,6 @@ def track_graph(arrays: dict[str, NDArray[Any]]) -> nx.Graph:
     ):
         graph.add_edge(int(a), int(b), distance=float(distance))
     return graph
-
-
-def heading_vs_movement(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
-    *,
-    min_speed: float,
-) -> tuple[float, float]:
-    """Compare a heading series with the direction of movement while running.
-
-    A heading in the positions' allocentric frame points along the path
-    while the animal runs, so the circular mean of heading minus movement
-    direction is near 0 and the spread is tens of degrees. A constant mean
-    away from 0 is an offset (a mounting or posture); near ±π/2 or π a
-    rotated or mirrored frame.
-
-    Parameters
-    ----------
-    times : ndarray, shape (n_time,)
-    positions : ndarray, shape (n_time, 2)
-        In the length unit of ``min_speed``.
-    headings : ndarray, shape (n_time,)
-        Radians.
-    min_speed : float
-        Steps faster than this (length per second) count as running.
-
-    Returns
-    -------
-    mean, spread : float
-        Circular mean of heading minus the direction of the step to the next
-        sample, and the median absolute deviation from that mean, in radians.
-    """
-    from neurospatial._angles import wrap_angle
-    from neurospatial.stats.circular import circular_mean
-
-    step = np.diff(positions, axis=0)
-    speed = np.linalg.norm(step, axis=1) / np.diff(times)
-    moving = np.arctan2(step[:, 1], step[:, 0])
-    start = headings[:-1]
-    running = (speed > min_speed) & np.isfinite(start)
-    diff = wrap_angle(start[running] - moving[running])
-    mean = circular_mean(diff)
-    spread = float(np.median(np.abs(wrap_angle(diff - mean))))
-    return mean, spread
 
 
 def _cm_evidence(
