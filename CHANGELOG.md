@@ -423,6 +423,11 @@
   panel.
 - The fastplotlib viewer's time axes print a tick within roundoff of 0 as
   `0`; the tick at the slider's time read `-5.55e-17`.
+- Over a 3-D field the animal's position marker, trail, heading line and
+  body parts are always visible: the fastplotlib viewer draws them after the
+  field with no depth test, and the Matplotlib scene draws 3-D artists in
+  zorder (`computed_zorder=False`, markers without depth shading), so the
+  field's voxels no longer hide the `forli_2025` bat.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

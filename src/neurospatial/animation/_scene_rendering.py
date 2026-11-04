@@ -39,7 +39,12 @@ def _planar(points: np.ndarray) -> np.ndarray:
 
 
 def _scatter(ax: Any, **style: Any) -> Any:
-    """An empty marker collection, filled per frame by :func:`_set_points`."""
+    """An empty marker collection, filled per frame by :func:`_set_points`.
+
+    In 3-D, markers keep their color at any depth (no depth shading).
+    """
+    if ax.name == "3d":
+        style.setdefault("depthshade", False)
     return ax.scatter(*np.empty((3 if ax.name == "3d" else 2, 0)), **style)
 
 
@@ -226,6 +231,10 @@ class SceneRenderer:
             ax = self.figure.add_subplot(
                 grid[0, column], projection="3d" if scene.env.n_dims == 3 else None
             )
+            if scene.env.n_dims == 3:
+                # Artists draw in zorder, not by depth, so the overlays (zorder
+                # 100 and up) stay over the field's voxels from every view.
+                cast("Any", ax).computed_zorder = False  # an Axes3D
             updates.append(self._field(ax, name, field, start))
             if scene.env.n_dims in (2, 3):
                 _colorbar(ax, prepared.field_scales[name])
@@ -632,6 +641,7 @@ class SceneRenderer:
                         *direction,
                         color=_head_direction_color(heading.color, direction),
                         linewidth=heading.width,
+                        zorder=103,
                     )
 
             return update3d

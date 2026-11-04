@@ -174,6 +174,24 @@ class _Field:
             self.graphic.update(values)
 
 
+def _over_field(graphics: Sequence[Any], env: Any) -> None:
+    """Draw ``graphics`` over a 3-D field: after it, with no depth test.
+
+    A 3-D field's voxels are in front of the animal from most views, so the
+    marker, trail, heading line and body parts would hide behind them. A 2-D
+    view keeps its depth order (videos above or below the data).
+    """
+    if env.n_dims != 3:
+        return
+    for graphic in graphics:
+        graphic.world_object.material.depth_test = False
+        graphic.world_object.render_order = OVER_FIELD_RENDER_ORDER
+
+
+#: Render order of the animal's overlays over a 3-D field; the field is 0.
+OVER_FIELD_RENDER_ORDER = 2
+
+
 class _Position:
     """The animal's position and its trail, each segment fading with its age."""
 
@@ -210,6 +228,7 @@ class _Position:
             )
             for plot in plots
         ]
+        _over_field([*self.trails, *self.markers], prepared.scene.env)
 
     def prepare(self, time: float) -> Any:
         data = self.data
@@ -266,6 +285,7 @@ class _Bodyparts:
                 )
                 for plot in plots
             ]
+        _over_field([*self.points, *self.lines], prepared.scene.env)
 
     def prepare(self, time: float) -> Any:
         return self.prepared.pose(self.data, time)
@@ -296,6 +316,7 @@ class _HeadDirection:
             )
             for plot in plots
         ]
+        _over_field(self.lines, prepared.scene.env)
 
     def prepare(self, time: float) -> Any:
         return self.prepared.heading_arrow(self.data, time)

@@ -1720,3 +1720,54 @@ def test_epoch_bands_behind_a_raster_are_faint(track, decoded):
         assert alphas["series 0"] == pytest.approx(full)
     finally:
         animation.close()
+
+
+@pytest.mark.parametrize("n_dims", [3, 2])
+def test_the_animals_overlays_draw_over_a_3d_field(n_dims):
+    from neurospatial.animation import BodypartOverlay, HeadDirectionOverlay
+    from neurospatial.animation.backends.fastplotlib_backend import (
+        OVER_FIELD_RENDER_ORDER,
+    )
+
+    env = Environment.from_grid_mask(
+        np.ones((4,) * n_dims, dtype=bool), (np.arange(5.0) * 2,) * n_dims
+    )
+    times = np.linspace(0.0, 1.0, 11)
+    center = np.full((11, n_dims), 4.0)
+    overlays = [
+        PositionOverlay(center, times, trail_length=5),
+        BodypartOverlay({"nose": center, "tail": center - 1.0}, times),
+    ]
+    if n_dims == 3:
+        overlays.append(
+            HeadDirectionOverlay(np.tile([1.0, 0.0, 0.0], (11, 1)), times, length=2.0)
+        )
+    animation = (
+        Animation(
+            env, np.ones((2, env.n_bins)), frame_times=times[[0, -1]], overlays=overlays
+        )
+        .show(backend="fastplotlib")
+        .native
+    )
+    try:
+        layers = animation._layers
+        graphics = [
+            g
+            for layer in layers
+            for g in (
+                *getattr(layer, "markers", ()),
+                *getattr(layer, "trails", ()),
+                *getattr(layer, "points", ()),
+                *getattr(layer, "lines", ()),
+            )
+        ]
+        assert graphics
+        for graphic in graphics:
+            on_top = (
+                not graphic.world_object.material.depth_test
+                and graphic.world_object.render_order == OVER_FIELD_RENDER_ORDER
+            )
+            # Negative control: a 2-D view keeps its depth order.
+            assert on_top is (n_dims == 3)
+    finally:
+        animation.close()

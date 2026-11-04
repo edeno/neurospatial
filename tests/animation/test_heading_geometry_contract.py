@@ -49,7 +49,13 @@ def gpu_heading(env, overlay):
         env, np.ones((len(times), env.n_bins)), frame_times=times, overlays=[overlay]
     ) as scene:
         plot = SimpleNamespace(
-            add_line=lambda values, **opts: SimpleNamespace(data=values)
+            add_line=lambda values, **opts: SimpleNamespace(
+                data=values,
+                # A 3-D view draws the line over the field: it sets these.
+                world_object=SimpleNamespace(
+                    material=SimpleNamespace(depth_test=True), render_order=0
+                ),
+            )
         )
         drawn = gpu._HeadDirection(
             [plot], PreparedScene(scene), scene._overlay_data.head_directions[0]
