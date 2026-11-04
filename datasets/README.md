@@ -11,7 +11,15 @@ package and is not run by the test suite or CI.
 Each `load_<dataset>.py` also works on its own as an example of bringing a
 recording into neurospatial: it fetches the files, reads them (with
 neurospatial's NWB readers where they work), converts units and frames, and
-explains every analysis choice in its docstring.
+explains every analysis choice in its docstring. The keys whose datasets
+`neurospatial.datasets` loads (`j16_23020757`, `sargolini_000582`,
+`peyrache_mouse32`, `yartsev_bat_demo`, `valero_000568`,
+`grosmark_000044_linear` and `grosmark_000044_circular`) are adapters: they
+call `neurospatial.datasets.load(...)`, take its analysis choices, and convert
+with `_record.from_public`; what only the survey adds is listed in each
+record's `conversions` as `survey-only`, and the public watch-outs are kept in
+its `watch_outs`. Their downloads go to `<cache>/<dataset id>/` (for example
+`comrie_2026/`), not `<cache>/<survey key>/`.
 
 ## Run it
 
