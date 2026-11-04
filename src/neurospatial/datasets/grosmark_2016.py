@@ -131,7 +131,7 @@ WORKED_RESULT: dict[str, Any] = {
         "exceeds the 95th percentile of the same share with each unit's spikes "
         "shifted circularly on the tracked time (20 draws, seed 2016); fixed "
         "before the run. A fixed 25% bar is not used: shifted spikes alone "
-        "give 22-36%, since occupancy, speed and smoothing crowd peaks at the "
+        "give 22.2-36.5%, since occupancy, speed and smoothing crowd peaks at the "
         "ends"
     ),
     "parameters": (
