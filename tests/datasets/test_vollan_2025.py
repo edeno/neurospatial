@@ -166,12 +166,19 @@ def test_units_carry_the_authors_modules(box_session, session_entry):
     np.testing.assert_allclose(rec.params["module_spacing_cm"], [40.0, 80.0])
 
 
-def test_listed_session_is_clipped_to_the_samples(box_session, session_entry):
+def test_listed_session_is_clipped_to_the_recording(box_session, session_entry):
     path, times, _ = box_session
     rec = _loaded(path, session_entry)
-    np.testing.assert_allclose(rec.epochs["open_field_1"], [[times[0], times[-1]]])
-    epochs = next(c for c in rec.conversions if c.text.startswith("epochs"))
-    assert "clipped: open_field_1" in epochs.text
+    spikes = np.concatenate(rec.spike_times)
+    start, stop = min(times[0], spikes.min()), max(times[-1], spikes.max())
+    np.testing.assert_allclose(rec.epochs["open_field_1"], [[start, stop]])
+    clip = next(c for c in rec.conversions if c.text.startswith("epochs: rows"))
+    assert clip.basis == "inferred"
+    assert any(
+        text.startswith("1 epoch row reaches past the recording")
+        and "starts 0.4 s before it and ends" in text
+        for text in rec.watch_outs
+    )
     held = times.size * DT
     assert any(
         text.startswith("The samples end 100 s before the listed end")
@@ -269,7 +276,7 @@ def test_a_session_table_off_the_samples_gives_no_epoch(tmp_path, session_entry)
     assert rec.failed_checks == ()
     text = " ".join(rec.watch_outs)
     assert "100.0% of the samples lie outside every listed session" in text
-    assert "holds none of the samples" in text
+    assert "s lies wholly outside it, dropped" in text
 
 
 def test_an_arena_off_the_files_centre_is_reported(tmp_path, session_entry):
@@ -298,21 +305,6 @@ def test_an_unknown_session_type_is_refused(tmp_path, session_entry):
         vollan_2025.load_session(session_entry("vollan_2025"), path)
 
 
-def test_clip_sessions_drops_ranges_without_samples():
-    epochs, clipped = vollan_2025.clip_sessions(
-        {"a_1": np.array([[0.0, 2.0], [5.0, 20.0]]), "b_1": np.array([[30.0, 40.0]])},
-        4.0,
-        10.0,
-    )
-    assert list(epochs) == ["a_1"]
-    np.testing.assert_array_equal(epochs["a_1"], [[5.0, 10.0]])
-    assert clipped == [
-        "a_1 [0, 2] -> none",
-        "a_1 [5, 20] -> [5, 10]",
-        "b_1 [30, 40] -> none",
-    ]
-
-
 @pytest.fixture(scope="module")
 def default_session():
     return load("vollan_2025")
@@ -332,7 +324,15 @@ def test_loads_default_session(default_session, session_entry, assert_default_se
     )
     np.testing.assert_allclose(np.ptp(rec.positions, axis=0), [141.9, 140.2], atol=0.1)
     assert rec.apparatus == "circular open arena, 150 cm in diameter"
-    np.testing.assert_allclose(rec.epochs["open_field_light_1"], [[3449.02, 5047.69]])
+    # Clipped to the recording: the first and last spike lie just outside the
+    # samples (3449.02 to 5047.69 s).
+    spikes = np.concatenate(rec.spike_times)
+    np.testing.assert_array_equal(
+        rec.epochs["open_field_light_1"], [[spikes.min(), spikes.max()]]
+    )
+    np.testing.assert_allclose(
+        rec.epochs["open_field_light_1"], [[3449.0153, 5047.69497]], atol=1e-5
+    )
     heading = next(c for c in rec.conversions if c.text.startswith("headings"))
     assert "circular mean of +0.2 deg" in heading.evidence
 

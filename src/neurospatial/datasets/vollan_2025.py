@@ -41,7 +41,11 @@ What the loader converts:
   ``units["is_grid"]`` and, with each module's grid scores, in ``params``.
   A unit's ``acorrCluId`` k (0 for none) is the k-th entry of
   ``unitAcorrClus.grid``, whose ``unitIds`` list the same units.
-- ``epochs``: each listed session's ``validTimeRanges``, under its name.
+- ``epochs``: each listed session's ``validTimeRanges``, under its name,
+  clipped to the recording (the first to the last sample or spike): the
+  authors truncated awake sessions to a whole number of 100 s, so a listed
+  session can end after the data, and in two files a listed session lies
+  wholly before them and gives no epoch (``clip_epochs_to_recording``).
 
 The declared environment, by the file's session type:
 
@@ -96,6 +100,7 @@ from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import (
     Conversion,
     Recording,
+    clip_epochs_to_recording,
     heading_vs_movement,
     tracked_mask,
 )
@@ -231,10 +236,12 @@ EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
     "of_26018_2": (
         r"times has 173 gaps longer than 0.02 s",
         r"end 352 s before the listed end",
+        r"epochs\['open_field_light_1'\] \[3449, 5400\] s ends 352\.\d+ s after it",
     ),
     "lt_27764_1": (
         r"times has 132 gaps longer than 0.02 s",
         r"of the samples lie outside every listed session",
+        r"epochs\['linear_track_1'\] \[7227, 7486\] s starts 0\.56 s before it",
         r"runs of 11 or more identical position samples",
         r"samples farther from the last believable sample",
     ),
@@ -311,7 +318,12 @@ def load_session(
     )
     train, test = alternating_blocks(float(times[0]), float(times[-1]), BLOCK)
     dt = raw["dt"]
-    epochs, clipped = clip_sessions(raw["sessions"], float(times[0]), float(times[-1]))
+    clipped = clip_epochs_to_recording(
+        raw["sessions"],
+        times,
+        raw["spike_times"],
+        source="the file's sessions table (validTimeRanges)",
+    )
     return Recording(
         **entry.identity(path_or_stream),
         animal=f"rat {entry.session.split('_')[1]}",
@@ -339,7 +351,7 @@ def load_session(
             f"the file's hd, '2D head direction (azimuth)' ({_DOCS}), from the "
             "motion capture"
         ),
-        epochs=epochs,
+        epochs=clipped.epochs,
         params={
             "bin_size": BIN_SIZE,
             "min_speed": None,
@@ -383,14 +395,7 @@ def load_session(
                 "unitIds list the units whose acorrCluId is its index",
             ),
             Conversion(
-                "epochs: each listed session's validTimeRanges, under its name, "
-                f"clipped to the samples' span ({times[0]:.2f} to {times[-1]:.2f} "
-                "s); "
-                + (
-                    "clipped: " + "; ".join(clipped)
-                    if clipped
-                    else "every listed range lies within it"
-                ),
+                "epochs: each listed session's validTimeRanges, under its name",
                 "stated",
                 f"{_DOCS}: sessions, 'list of individual sessions (time epochs) "
                 "included'; listed: "
@@ -399,6 +404,7 @@ def load_session(
                     for name, ranges in raw["sessions"].items()
                 ),
             ),
+            *(() if clipped.conversion is None else (clipped.conversion,)),
             *placement,
         ),
         watch_outs=(
@@ -406,8 +412,8 @@ def load_session(
             *_heading_watch_out(offset, spread),
             _speed_filter_gaps(times, raw["spike_times"], dt),
             *_outside_sessions(times, raw["sessions"]),
+            *(() if clipped.watch_out is None else (clipped.watch_out,)),
             *_truncated(times, raw["sessions"], dt),
-            *_sessions_without_samples(times, raw["sessions"]),
             *_off_centre(centre),
             *_modules(raw, kind),
         ),
@@ -833,71 +839,6 @@ def _outside_sessions(
         f"({listed}), from {outside.min():.1f} to {outside.max():.1f} s. They are "
         "kept, with their spikes; the file does not say which session they "
         "belong to.",
-    )
-
-
-def clip_sessions(
-    sessions: dict[str, NDArray[np.float64]], first: float, last: float
-) -> tuple[dict[str, NDArray[np.float64]], list[str]]:
-    """Each listed session's ranges clipped to the samples' span ``[first, last]``.
-
-    The authors truncated awake sessions to a whole number of 100 s, so a
-    listed range can end after the last sample; a range holding no sample is
-    left out, and a session left with no range has no epoch.
-
-    Parameters
-    ----------
-    sessions : dict of str to ndarray, shape (n, 2)
-        Each session's ``validTimeRanges``, seconds.
-    first, last : float
-        The first and last sample time.
-
-    Returns
-    -------
-    epochs : dict of str to ndarray, shape (n, 2)
-    clipped : list of str
-        ``"<name> [a, b] -> [c, d]"`` (or ``"-> none"``) for each range changed.
-
-    Examples
-    --------
-    >>> epochs, clipped = clip_sessions({"a_1": np.array([[0.0, 9.0]])}, 1.0, 5.0)
-    >>> epochs["a_1"].tolist(), clipped
-    ([[1.0, 5.0]], ['a_1 [0, 9] -> [1, 5]'])
-    """
-    epochs: dict[str, NDArray[np.float64]] = {}
-    clipped: list[str] = []
-    for name, ranges in sessions.items():
-        rows = np.column_stack(
-            [np.maximum(ranges[:, 0], first), np.minimum(ranges[:, 1], last)]
-        )
-        kept = rows[:, 1] > rows[:, 0]
-        for (a, b), (c, d), keep in zip(ranges, rows, kept, strict=True):
-            if keep and (c, d) == (a, b):
-                continue
-            to = f"[{c:.6g}, {d:.6g}]" if keep else "none"
-            clipped.append(f"{name} [{a:.6g}, {b:.6g}] -> {to}")
-        if kept.any():
-            epochs[name] = rows[kept]
-    return epochs, clipped
-
-
-def _sessions_without_samples(
-    times: NDArray[np.float64], sessions: dict[str, NDArray[np.float64]]
-) -> tuple[str, ...]:
-    """A watch-out for listed sessions that hold none of the samples."""
-    empty = [
-        f"{name} ({', '.join(f'{a:g} to {b:g} s' for a, b in ranges)})"
-        for name, ranges in sessions.items()
-        if not np.any((ranges[:, 1] > times[0]) & (ranges[:, 0] < times[-1]))
-    ]
-    if not empty:
-        return ()
-    return (
-        f"The listed session {'; '.join(empty)} holds none of the samples, which "
-        f"run from {times[0]:.2f} to {times[-1]:.2f} s: the file's session table "
-        "and its times disagree, and the file does not say which is right. The "
-        "spikes lie within the samples' span, so the arrays share one clock; no "
-        "epoch is given for that session.",
     )
 
 
