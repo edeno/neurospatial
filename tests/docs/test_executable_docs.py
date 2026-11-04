@@ -41,6 +41,7 @@ OPT_IN = (
     "docs/user-guide/datasets.md",
     "docs/datasets/comrie_2026.md",
     "docs/datasets/forli_2025.md",
+    "docs/datasets/grieves_2020.md",
     "docs/datasets/grosmark_2016.md",
     "docs/datasets/peyrache_2015.md",
     "docs/datasets/sargolini_2006.md",
