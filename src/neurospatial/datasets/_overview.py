@@ -26,6 +26,10 @@ WINDOW_SECONDS = 60.0
 #: Frames per second of the scene's clock for faster tracking (viewers play at most 60).
 MAX_FRAME_RATE = 30.0
 
+#: The most opaque occupancy is drawn over a session's video, so the camera
+#: shows through every bin, the most visited too.
+VIDEO_FIELD_OPACITY = 0.5
+
 _EPOCH_COLORS = ("gold", "tab:cyan", "tab:pink", "tab:olive", "tab:purple")
 
 
@@ -296,7 +300,8 @@ def animation(
         Length of the path trail behind the animal, in frames.
     video : bool, default False
         Draw ``rec.video`` below the data, placed by its calibration and
-        timed by its frame times; occupancy is then see-through where low.
+        timed by its frame times; occupancy is then at most half opaque
+        (``VIDEO_FIELD_OPACITY``) and see-through where low.
 
     Returns
     -------
@@ -381,6 +386,7 @@ def animation(
         frame_times[[0, -1]],
         max_gap=None,
         label="occupancy (s)",
+        max_opacity=VIDEO_FIELD_OPACITY if video else 1.0,
     )
     # Fetched once the window is known to hold a scene.
     overlays: list[Any] = [_video_overlay(rec, VideoOverlay)] if video else []
@@ -407,6 +413,12 @@ def animation(
     intervals = {
         **{k: v for k, v in rec.epochs.items() if len(v)},
         **{f"event: {k}": v for k, v in rec.events.items() if v.ndim == 2 and len(v)},
+    }
+    # Only intervals the scene's window meets get a row, so their names fit.
+    intervals = {
+        name: rows
+        for name, rows in intervals.items()
+        if np.any((rows[:, 0] < stop) & (rows[:, 1] > start))
     }
     for index, (name, rows) in enumerate(intervals.items()):
         overlays.append(

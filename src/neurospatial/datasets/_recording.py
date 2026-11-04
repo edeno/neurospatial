@@ -722,8 +722,8 @@ class Recording(ReadOnlyArraysMixin):
         ``.export("session.mp4", time_range=(0, 10), fps=10)``. With
         ``video=True`` the session's camera frames are drawn below, through
         ``rec.video``'s calibration, so the tracked position can be checked
-        against what the camera saw; occupancy is drawn see-through where it
-        is low.
+        against what the camera saw; occupancy is drawn at most half opaque,
+        and see-through where it is low, so the frames show through every bin.
 
         Parameters
         ----------

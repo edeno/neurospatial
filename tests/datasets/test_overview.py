@@ -351,3 +351,17 @@ def test_1d_positions_say_the_path_is_not_drawn(square_recording):
     )
     ax = _titled(rec.plot_overview(), "Environment and path")
     assert any("1-D" in t for t in _texts(ax))
+
+
+def test_epoch_panel_shows_the_window_epochs(square_recording):
+    """An epoch the scene's window does not meet gets no row in the epoch panel."""
+    rec = dataclasses.replace(
+        square_recording,
+        epochs={"run": np.array([[0.0, 30.0]]), "later": np.array([[40.0, 50.0]])},
+    )
+    labels = {
+        o.label
+        for o in rec.animation(time_range=(0.0, 20.0)).overlays
+        if isinstance(o, EpochOverlay)
+    }
+    assert labels == {"run"}
