@@ -22,7 +22,7 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 | [`grosmark_2016`](../datasets/grosmark_2016.md) | rat, dorsal CA1 | linear and circular mazes, with sleep before and after | OSF `hu5ma` (license not stated); DANDI 000044 (CC-BY-4.0) | reproduced (level B) |
 | [`peyrache_2015`](../datasets/peyrache_2015.md) | mouse, anterior thalamus | open arena, head direction only | OSF `jb2gd` (license not stated) | reproduced (level A) |
 | [`sargolini_2006`](../datasets/sargolini_2006.md) | rat, medial entorhinal cortex | 1 m open field | DANDI 000582 (CC-BY-4.0) | not possible yet |
-| [`forli_2025`](../datasets/forli_2025.md) | Egyptian fruit bat, dorsal hippocampus | flight room, 3-D | Zenodo 15738988 (CC-BY-4.0) | not possible yet |
+| [`forli_2025`](../datasets/forli_2025.md) | Egyptian fruit bat, dorsal hippocampus | flight room, 3-D | Zenodo 15738988 (CC-BY-4.0) | not possible yet; a 3-D attempt did not reproduce the paper (15.2% of units tuned against 71%) |
 | [`valero_2022`](../datasets/valero_2022.md) | mouse, CA1 | linear track, with video | DANDI 000568 (CC-BY-4.0) | not possible yet |
 
 Each dataset has a page with what was recorded, the conversions the loader
@@ -211,6 +211,12 @@ cache. It needs the `video` extra (OpenCV).
 Of the six datasets, only [`valero_2022`](../datasets/valero_2022.md) has
 video:
 
+!!! warning "The video overlay is aligned with the tracking by construction"
+    The Valero files state no pixel size and store no pixel tracking, so the
+    loader calibrates the video by fitting the LED it detects in the frames to
+    the file's positions. The overlay shows what the camera saw at each moment.
+    It is not a check of the tracking or of the declared track.
+
 <!-- docs-test: skip needs a download -->
 ```python
 rec = load("valero_2022")
@@ -272,7 +278,9 @@ write.
 
 ## The cache, and downloading versus streaming
 
-Files are cached as `<cache>/<dataset>/<file name>`, where `<cache>` is the
+Files are cached as `<cache>/<dataset>/<file name>`, or, for a session read
+from members of a remote zip, as `<cache>/<dataset>/<session>/<member name>`,
+where `<cache>` is the
 first of the `cache=` argument, the `NEUROSPATIAL_DATA_DIR` environment
 variable, and the per-user default: `~/.cache/neurospatial/datasets`
 (`%LOCALAPPDATA%\neurospatial\datasets` on Windows). Set the variable once to

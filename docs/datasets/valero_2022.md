@@ -9,19 +9,22 @@ of the animal.
 !!! warning "Baseline and stimulation runs are mixed"
     Each track session interleaves "three blocks of 10 baseline runs" with
     "two blocks of 40 to 50 stimulation runs" (main text), and light unmasks
-    place fields in non-place cells, the paper's own finding. The files hold
-    no stimulation times (the stimulus group is empty), so the blocks cannot
-    be separated. Place fields and rate maps computed on the track epoch mix
-    the two conditions. Every session carries this as a watch-out.
+    place fields in non-place cells, the paper's own finding. The stimulus
+    group is empty in 26 of the 28 files (checked on all of them), so they
+    hold no stimulation times; the other two (`sub-fCamk1_ses-fCamk1-200827-sess9`
+    and `sub-fCamk1_ses-fCamk1-200901-sess12`) store optogenetic series that
+    the loader does not read. The summary does not separate the blocks. Place
+    fields and rate maps computed on the track epoch mix the two conditions.
+    Every session carries this as a watch-out.
 
 | | |
 | --- | --- |
 | Dataset id | `valero_2022` |
 | Animal and region | CaMKIIa-Cre x Ai32 mice (channelrhodopsin in CaMKIIa neurons), CA1 |
 | Apparatus | 110 cm x 6.35 cm PVC linear track, filmed from above |
-| Archive | DANDI 000568, version 0.230705.1633 (CC-BY-4.0), the files without raw voltage (`-no-raw-data`), 3.7 to 53 MB each; the copies with raw voltage are 1 to 54 GB |
+| Archive | DANDI 000568, version 0.230705.1633 (CC-BY-4.0), the files without raw voltage (`-no-raw-data`), 5.8 to 53 MB each; the copies with raw voltage are 1 to 54 GB |
 | Sessions | 28. The default, `sub-fCamk2_ses-fCamk2-201014-sess3` (35 units), is checked by hand |
-| Video | an `.avi` beside each session on DANDI (46 MB for the default), fetched only on request; needs the `video` extra |
+| Video | 27 of the 28 sessions have an `.avi` beside them on DANDI (46 MB for the default), fetched only on request; needs the `video` extra. 14 sessions have two video files, which gives `rec.video` of `None`, and `sub-fCamk5_ses-fCamk5-210406-sess10` has none |
 
 <!-- docs-test: run -->
 ```python
@@ -30,6 +33,13 @@ from neurospatial.datasets import catalog
 sessions = catalog().query("dataset == 'valero_2022'")
 sessions[["session", "n_units", "size_bytes", "verified", "default"]].head()
 ```
+
+!!! warning "The video overlay is aligned with the tracking by construction"
+    The files state no pixel size and store no pixel tracking, so the loader
+    calibrates the video by fitting the LED it detects in the frames to the
+    file's positions. The overlay shows what the camera saw at each moment. It
+    is not a check of the tracking or of the declared track, and the track is
+    not visible in the dark video. Only the default session has a calibration.
 
 <!-- docs-test: skip needs a download -->
 ```python
@@ -92,7 +102,7 @@ gives the fit and its residual.
 
 Other sessions refuse `rec.animation(video=True)` until the fit is run for
 them; the `InputError` names each calibration source tried. A session whose
-video is split across two files has `rec.video` of `None`.
+video is split across two files (14 of the 28) has `rec.video` of `None`.
 
 The scene of the first 20 s over the video is drawn on a grid over the track's
 footprint (`scene.env`), with the track as its along-track panel. To put your
@@ -127,7 +137,9 @@ For the default session `sub-fCamk2_ses-fCamk2-201014-sess3`:
   mouse runs along the track at 9,914 s): select running by speed, not by
   `epochs["wake"]`.
 
-For every session: a share of tracked samples lies farther than half the stated
+For every session: the file also holds up and down states
+(`UpDownStatesTimeIntervals`) and the ripples' peak times, which are not
+loaded; read them with pynwb. A share of tracked samples lies farther than half the stated
 track width from the track (the head is tracked, not the body), and the
 summary gives the share. For a session with video, further watch-outs give the
 clock offset between the video and the positions, the LED fit's residuals (and
@@ -162,9 +174,9 @@ Three things are missing:
    type (`clu_id` and `unit_name` only).
 3. Each track session interleaves "three blocks of 10 baseline runs" with "two
    blocks of 40 to 50 stimulation runs" (main text), where light unmasks place
-   fields in non-place cells, the paper's own finding. The file holds no
-   stimulation times (its stimulus group is empty), so the baseline runs cannot
-   be told apart.
+   fields in non-place cells, the paper's own finding. The default file holds
+   no stimulation times (its stimulus group is empty, as in 26 of the 28
+   files), so its baseline runs cannot be told apart.
 
 Source: Valero et al. 2022, Science 375, 570-574, main text (author
 manuscript, PMC9632609).

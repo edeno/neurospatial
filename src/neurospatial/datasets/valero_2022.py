@@ -136,8 +136,10 @@ WORKED_RESULT: dict[str, Any] = {
         'And each track session interleaves "three blocks of 10 baseline '
         'runs" with "two blocks of 40 to 50 stimulation runs" (main text), '
         "where light unmasks place fields in non-place cells, the paper's "
-        "own finding; the file holds no stimulation times (its stimulus "
-        "group is empty), so the baseline runs cannot be told apart."
+        "own finding; the default file holds no stimulation times (its "
+        "stimulus group is empty, as in 26 of the 28 files; two store "
+        "optogenetic series that are not loaded), so its baseline runs "
+        "cannot be told apart."
     ),
 }
 
@@ -187,10 +189,27 @@ _STIMULATION = (
     'Each track session interleaves "three blocks of 10 baseline runs" with '
     '"two blocks of 40 to 50 stimulation runs" (main text of Valero et al. '
     "2022), and light unmasks place fields in non-place cells, the paper's own "
-    "finding. The file holds no stimulation times (its stimulus group is "
-    "empty), so the blocks cannot be separated: place fields and rate maps "
-    "computed on the whole track epoch mix baseline and stimulation runs."
+    "finding. Place fields and rate maps computed on the whole track epoch "
+    "mix baseline and stimulation runs. "
 )
+
+
+def _stimulation_watch_out(stimulus_names: list[str]) -> str:
+    """The baseline-versus-stimulation warning, by what the file's stimulus group holds."""
+    if not stimulus_names:
+        return (
+            _STIMULATION
+            + "The file's stimulus group is empty (as in 26 of the 28 files), "
+            "so it holds no stimulation times and the blocks cannot be separated."
+        )
+    return (
+        _STIMULATION
+        + f"The file's stimulus group holds {len(stimulus_names)} optogenetic "
+        f"series ({', '.join(stimulus_names)}), which are not loaded; read "
+        "them with pynwb to look for the stimulation runs. Nothing here "
+        "separates the blocks."
+    )
+
 
 _UNLOADED = (
     "The file also holds UpDownStatesTimeIntervals (up and down states) and "
@@ -236,6 +255,7 @@ def load_session(
         ripples = _table(nwb, "ecephys", "RippleTimeIntervals")
         regions = nwb.electrodes.to_dataframe()["location"].dropna().unique()
         video = nwb.acquisition.get(_VIDEO)
+        stimulus_names = sorted(nwb.stimulus)
         video_files = [] if video is None else [str(f) for f in video.external_file[:]]
         video_times = (
             None if video is None else np.asarray(video.timestamps[:], np.float64)
@@ -324,7 +344,7 @@ def load_session(
         watch_outs=(
             *WATCH_OUTS.get(entry.session, ()),
             *video_lines[1],
-            _STIMULATION,
+            _stimulation_watch_out(stimulus_names),
             _beyond_track(distance),
             _UNLOADED,
         ),

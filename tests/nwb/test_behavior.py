@@ -1150,6 +1150,40 @@ def test_read_position_reads_a_bare_time_series_named_by_path(empty_nwb, tmp_pat
     assert pos.frame is None
 
 
+@pytest.mark.parametrize("unit", ["unknown", ""])
+def test_read_position_refuses_a_bare_series_with_an_unknown_unit(empty_nwb, unit):
+    from pynwb import TimeSeries
+
+    from neurospatial import InputError
+    from neurospatial.io.nwb import read_position
+
+    empty_nwb.add_acquisition(
+        TimeSeries(
+            name="mystery", data=np.zeros(4), timestamps=np.arange(4.0), unit=unit
+        )
+    )
+    with pytest.raises(InputError, match="acquisition/mystery"):
+        read_position(empty_nwb, position_name="acquisition/mystery")
+
+
+def test_read_position_refusal_says_when_no_series_has_a_length_unit(empty_nwb):
+    from pynwb import TimeSeries
+
+    from neurospatial import InputError
+    from neurospatial.io.nwb import read_position
+
+    empty_nwb.add_acquisition(
+        TimeSeries(
+            name="theta_phase", data=np.zeros(4), timestamps=np.arange(4.0), unit="rad"
+        )
+    )
+    with pytest.raises(InputError, match="none outside a Position container"):
+        read_position(empty_nwb, position_name="acquisition/theta_phase")
+    with pytest.raises(KeyError) as caught:
+        read_position(empty_nwb)
+    assert "theta_phase" not in str(caught.value)
+
+
 def test_read_head_direction_reads_a_bare_time_series_named_by_path(empty_nwb):
     from pynwb import TimeSeries
 

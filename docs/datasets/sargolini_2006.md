@@ -79,6 +79,10 @@ disagrees with it by more than 20%.
   says the sample is from layers III and V, but this session's units table
   gives every unit's histology as MEC LII; `units["brain_region"]` follows the
   units table.
+- **Smoothed positions.** The authors smoothed the positions with a moving mean
+  filter to remove tracking jitter (the authors' readme,
+  `readme_sargolini2006.txt`, NIRD doi:10.11582/2014.00003), so speeds and
+  held-sample counts are those of smoothed positions.
 - **A NaN sample.** In `sub-10884_ses-03080402` the first of the 30000 position
   samples, at 0 s, is NaN (not tracked); it is kept as NaN.
 
@@ -95,9 +99,8 @@ alternating 60 s blocks, so decoding is always tested on held-out time.
 **Status: not possible yet.**
 
 The candidate result is the grid scores of the session's grid cells. It waits
-because the paper (Sargolini et al. 2006, Science 312, 758-762) could not be
-read: the local library holds its metadata only, science.org refuses access
-(HTTP 403), and Europe PMC lists it without full text. Only what was read is
+because the paper's text (Sargolini et al. 2006, Science 312, 758-762) could
+not be obtained. Only what was read is
 cited, so no result is claimed.
 
 ## Cite

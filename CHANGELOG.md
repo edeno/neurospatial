@@ -87,46 +87,45 @@
 
 #### Looking at a session
 
-- `Recording.plot_overview(*, fig=None)` draws six panels: the environment
-  with the path, occupancy (never-visited bins drawn as missing), speed with
-  `params["min_speed"]` marked, head direction beside heading minus direction
-  of travel, units per brain region with spikes per unit, and the first 60 s of
+- `Recording.plot_overview(*, fig=None)` draws six panels: the environment with
+  the path, occupancy (never-visited bins drawn as missing), speed with
+  `params["min_speed"]` marked, head direction beside heading minus direction of
+  travel, units per brain region with spikes per unit, and the first 60 s of
   position with the spike raster. A panel the dataset has no data for says "not
-  in this dataset". `Recording.animation(*, time_range=None,
-  trail_length=None, video=False)` returns an `Animation` of the session: occupancy over the
+  in this dataset". `Recording.animation(*, time_range=None, trail_length=None,
+  video=False)` returns an `Animation` of the session: occupancy over the
   environment with the path, headings, spike raster, events and epochs on top,
   from the first 60 s of tracking by default (30 frames a second when tracking
-  is faster), to open with `.show()` or write
-  with `.export()`. A session without positions raises `InputError`.
-- `Recording.video` is a `VideoSource` where the dataset publishes the
-  session's camera video, None otherwise: the file (asset id or URL, SHA-256
-  and size from the registry), one time per frame and a pixel-to-cm
-  `VideoCalibration`, each with its basis as a `Conversion`.
-  `VideoSource.fetch(*, cache=None)` downloads the video once, verified,
-  beside the session's NWB file at the path that file names.
-  `Recording.animation(..., video=True)` fetches it and draws the frames
+  is faster), to open with `.show()` or write with `.export()`. A session
+  without positions raises `InputError`.
+- `Recording.video` is a `VideoSource` where the dataset publishes the session's
+  camera video, None otherwise: the file (asset id or URL, SHA-256 and size from
+  the registry), one time per frame and a pixel-to-cm `VideoCalibration`, each
+  with its basis as a `Conversion`. `VideoSource.fetch(*, cache=None)` downloads
+  the video once, verified, beside the session's NWB file at the path that file
+  names. `Recording.animation(..., video=True)` fetches it and draws the frames
   below the data through the calibration, occupancy at most half opaque and
   see-through where it is low, so the frames show through every bin; a track
-  session, whose bins are drawn along the track, is drawn over
-  its video on a 2-D grid covering the track's footprint, with the track as
-  the along-track panel. Frame times are the video's own timestamps, unless the video and the
+  session, whose bins are drawn along the track, is drawn over its video on a
+  2-D grid covering the track's footprint, with the track as the along-track
+  panel. Frame times are the video's own timestamps, unless the video and the
   position series hold the same frames on two clocks (equal counts, position
   times an offset and rate of the video's to within half a frame); then the
   position times are used, as an inferred `Conversion`, and the offset is a
   watch-out; when the counts differ and the video's own span is more than a
-  frame off the positions', that is a watch-out too. The calibration comes from a transform the file states, else a
-  least-squares fit from the file's pixel tracking to its positions, else
-  landmarks placed by hand and kept in the registry, else a robust fit of
-  the LED detected in the video to the positions (a Huber affine, then
-  least squares over the detections within 5 cm of it), run once by
-  `scripts/fit_video_led_calibration.py` and kept in the registry keyed to
-  the video's SHA-256 (method, affine, frame size, frames used, median and
-  90th-percentile residuals in cm and px, outlier share, and the residual at
-  frame-to-sample lags). A fit from pixel tracking or landmarks with a root-mean-square
-  residual over one bin, or an LED fit with a median residual over one bin,
-  is refused. Without a calibration, or without a video,
-  `animation(video=True)` raises `InputError` naming the four sources
-  tried; the frames are never stretched over the environment's extent.
+  frame off the positions', that is a watch-out too. The calibration comes from
+  a transform the file states, else a least-squares fit from the file's pixel
+  tracking to its positions, else landmarks placed by hand and kept in the
+  registry, else a robust fit of the LED detected in the video to the positions
+  (a Huber affine, then least squares over the detections within 5 cm of it),
+  run once by `scripts/fit_video_led_calibration.py` and kept in the registry
+  keyed to the video's SHA-256 (method, affine, frame size, frames used, median
+  and 90th-percentile residuals in cm and px, outlier share, and the residual at
+  frame-to-sample lags). A fit from pixel tracking or landmarks with a
+  root-mean-square residual over one bin, or an LED fit with a median residual
+  over one bin, is refused. Without a calibration, or without a video,
+  `animation(video=True)` raises `InputError` naming the four sources tried; the
+  frames are never stretched over the environment's extent.
 
 #### The datasets
 
@@ -201,34 +200,35 @@
   them at the 0.5 m/s flight threshold. Needs `mat-io`, so Python 3.11 or later.
 - `valero_2022`: Valero et al. (2022) mouse CA1 units on a 110 cm x 6.35 cm
   linear track, the 28 DANDI 000568 files without raw voltage (version
-  0.230705.1633, CC-BY-4.0), the first dataset with video: each session's
-  `.avi` is `rec.video`, fetched only on request. The default,
-  `sub-fCamk2_ses-fCamk2-201014-sess3` (35 units), is checked by hand.
-  Positions are cm as stored, every 1/30 s; the declared environment is the
-  stated track as a one-edge graph along the samples' principal axis, with a
-  placement tolerance measured from the samples. The video's own timestamps
-  are 22.55 to 23.12 s earlier than the position timestamps for the same
-  67,131 frames; the video follows the position clock, on which the units'
-  spatial information is highest. The file states no pixel size and stores
-  no pixel tracking, so the default session's video is calibrated by an LED
-  fit (median residual 0.95 cm, 90th percentile 9.80 cm, over 2,238 frames,
-  17.2% of detections more than 5 cm off and left out), and a watch-out
-  says the overlay is aligned with the tracking by construction: it does
-  not check the tracking or the declared track, and the track is not
-  visible in the video. Another watch-out says the scene shows the video
-  mirrored from the raw file, since the file's y grows down the camera's
-  rows. Every session also carries a watch-out
-  that baseline and optogenetic stimulation runs are interleaved and cannot be
-  separated, since the files hold no stimulation times. Other sessions refuse `animation(video=True)` until the fit is run
-  for them. All 28 sessions load; one (`sub-fCamk2_ses-fCamk2-201013-sess2`,
-  an epoch ending 50 s after the recording) only with
-  `accept_failed_checks=("clock",)`. The epochs holding position samples
-  are the rows of `track` (two in the 16 sessions that run the track twice),
-  the others `epoch_<k>`, and each track epoch's stretches before its first
-  and after its last sample are `track_before_tracking` and
-  `track_after_tracking`. A session whose video is split across two files
-  has `rec.video` None. The session scene's epoch panel shows only the
-  epochs its window meets.
+  0.230705.1633, CC-BY-4.0), the first dataset with video: each session's `.avi`
+  is `rec.video`, fetched only on request. The default,
+  `sub-fCamk2_ses-fCamk2-201014-sess3` (35 units), is checked by hand. Positions
+  are cm as stored, every 1/30 s; the declared environment is the stated track
+  as a one-edge graph along the samples' principal axis, with a placement
+  tolerance measured from the samples. The video's own timestamps are 22.55 to
+  23.12 s earlier than the position timestamps for the same 67,131 frames; the
+  video follows the position clock, on which the units' spatial information is
+  highest. The file states no pixel size and stores no pixel tracking, so the
+  default session's video is calibrated by an LED fit (median residual 0.95 cm,
+  90th percentile 9.80 cm, over 2,238 frames, 17.2% of detections more than 5 cm
+  off and left out), and a watch-out says the overlay is aligned with the
+  tracking by construction: it does not check the tracking or the declared
+  track, and the track is not visible in the video. Another watch-out says the
+  scene shows the video mirrored from the raw file, since the file's y grows
+  down the camera's rows. Every session also carries a watch-out that baseline
+  and optogenetic stimulation runs are interleaved, which the loader cannot
+  separate: the stimulus group is empty in 26 of the 28 files, and the two that
+  store optogenetic series (`sub-fCamk1_ses-fCamk1-200827-sess9`, `-200901-sess12`)
+  are named in it. Other sessions refuse
+  `animation(video=True)` until the fit is run for them. All 28 sessions load;
+  one (`sub-fCamk2_ses-fCamk2-201013-sess2`, an epoch ending 50 s after the
+  recording) only with `accept_failed_checks=("clock",)`. The epochs holding
+  position samples are the rows of `track` (two in the 16 sessions that run the
+  track twice), the others `epoch_<k>`, and each track epoch's stretches before
+  its first and after its last sample are `track_before_tracking` and
+  `track_after_tracking`. A session whose video is split across two files has
+  `rec.video` None. The session scene's epoch panel shows only the epochs its
+  window meets.
 
 #### Worked results
 

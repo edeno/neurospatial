@@ -32,7 +32,11 @@ def _entry(session=DEFAULT):
 
 
 def _write_session(
-    path, *, video_files=("cam/uuid_external_file_0.avi",), second_run=False
+    path,
+    *,
+    video_files=("cam/uuid_external_file_0.avi",),
+    second_run=False,
+    stimulus=(),
 ):
     """An NWB file laid out as DANDI 000568's: a 1-D run along y in cm, 30 Hz.
 
@@ -107,6 +111,14 @@ def _write_session(
             unit="Frames",
         )
     )
+    from pynwb import TimeSeries
+
+    for name in stimulus:
+        nwb.add_stimulus(
+            TimeSeries(
+                name=name, data=np.zeros(3), timestamps=[0.0, 1.0, 2.0], unit="watts"
+            )
+        )
     with pynwb.NWBHDF5IO(str(path), "w") as io:
         io.write(nwb)
     return times
@@ -176,8 +188,21 @@ def test_every_session_warns_that_baseline_and_stimulation_runs_mix(
     for session_entry in (entry, other):
         rec = valero_2022.load_session(session_entry, path)
         (line,) = [w for w in rec.watch_outs if "baseline runs" in w]
-        assert "no stimulation times" in line
+        assert "stimulus group is empty" in line
         assert "mix baseline and stimulation runs" in line
+
+
+def test_stored_optogenetic_series_are_named_in_the_stimulation_watch_out(
+    synthetic, tmp_path
+):
+    from neurospatial.datasets import valero_2022
+
+    path = tmp_path / "ogen.nwb"
+    _write_session(path, stimulus=("OptogeneticSeriesSite3",))
+    rec = valero_2022.load_session(synthetic[0], path)
+    (line,) = [w for w in rec.watch_outs if "baseline runs" in w]
+    assert "OptogeneticSeriesSite3" in line
+    assert "stimulus group is empty" not in line
 
 
 def test_session_without_one_video_file_has_none(synthetic, tmp_path):

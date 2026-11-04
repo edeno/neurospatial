@@ -118,7 +118,7 @@ flights".
 fields of each clustered flight path, and neurospatial has no flight-path
 clustering or path fields.
 
-**A 3-D attempt, which is not the paper's analysis.** One 3-D map on the
+**The 3-D attempt did not reproduce the paper's result (15.2% of flight-active units tuned, against 71%).** It is not the paper's analysis. One 3-D map on the
 room's voxels, pooling every path, tested against a criterion fixed before the
 run (more than half of the flight-active units tuned), which was not met:
 
