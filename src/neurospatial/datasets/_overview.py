@@ -273,6 +273,7 @@ def animation(
     *,
     time_range: tuple[float, float] | None = None,
     trail_length: int | None = None,
+    video: bool = False,
 ) -> Animation:
     """Build the interactive or movie scene of a session.
 
@@ -287,6 +288,9 @@ def animation(
         own samples.
     trail_length : int, optional
         Length of the path trail behind the animal, in frames.
+    video : bool, default False
+        Draw ``rec.video`` below the data, placed by its calibration and
+        timed by its frame times; occupancy is then see-through where low.
 
     Returns
     -------
@@ -297,7 +301,8 @@ def animation(
     Raises
     ------
     InputError
-        If the session has no positions, or ``time_range`` holds no samples.
+        If the session has no positions, or ``time_range`` holds no samples;
+        with ``video=True``, if the session has no video or no calibration.
     """
     from neurospatial.animation import (
         Animation,
@@ -307,6 +312,7 @@ def animation(
         HeadDirectionOverlay,
         PositionOverlay,
         SpikeRasterOverlay,
+        VideoOverlay,
     )
 
     if rec.env is None or rec.positions is None:
@@ -328,6 +334,7 @@ def animation(
                 + " (for example rec.plot_overview() for the panels it can draw).",
             )
         )
+    camera = _video_overlay(rec, VideoOverlay) if video else None
     start, stop = (
         _default_time_range(rec) if time_range is None else map(float, time_range)
     )
@@ -364,7 +371,8 @@ def animation(
         max_gap=None,
         label="occupancy (s)",
     )
-    overlays: list[Any] = [
+    overlays: list[Any] = [] if camera is None else [camera]
+    overlays += [
         PositionOverlay(
             rec.positions,
             rec.times,
@@ -401,4 +409,47 @@ def animation(
         overlays=overlays,
         title=f"{rec.dataset} / {rec.session}",
         show_regions=bool(rec.env.regions) and rec.env.n_dims == 2,
+    )
+
+
+def _video_overlay(rec: Recording, overlay: type[Any]) -> Any:
+    """``rec.video`` as a ``VideoOverlay`` below the field, fetched once.
+
+    Refuses a session without a video or without a calibration: a frame
+    stretched over the environment's extent would be placed wrong.
+    """
+    if rec.video is None:
+        raise InputError(
+            _format_error(
+                f"{rec.dataset}/{rec.session} has no video to draw.",
+                why="rec.video is None: the dataset publishes no camera video "
+                "for this session that the loader reads (see rec.watch_outs).",
+                fix="call rec.animation() without video=True.",
+            )
+        )
+    if rec.video.calibration is None:
+        tried = "\n".join(f"  - {line}" for line in rec.video.calibration_tried)
+        raise InputError(
+            _format_error(
+                f"{rec.dataset}/{rec.session}: no calibration maps the video's "
+                f"pixels to the environment. Sources tried:\n{tried}",
+                why="without one the frames cannot be placed under the "
+                "positions; stretching them over the environment's extent "
+                "would put the camera's view in the wrong place.",
+                fix="call rec.animation() without video=True; to draw the video, "
+                "measure landmarks on a frame (rec.video.fetch() gives the "
+                "file) and pass a VideoOverlay with calibrate_video(env, path, "
+                "landmarks_px=..., landmarks_env=...) to your own Animation.",
+            )
+        )
+    from neurospatial._optional import require_optional
+
+    require_optional("cv2", extra="video", purpose="drawing a session's video")
+    path = rec.video.fetch()
+    return overlay(
+        path,
+        calibration=rec.video.calibration,
+        times=rec.video.frame_times,
+        alpha=1.0,
+        z_order="below",
     )

@@ -138,6 +138,17 @@ def _tracking(rec: Recording) -> list[str]:
             f"speed median {_quantity(rec.median_speed, unit)}; 95th percentile "
             f"{_quantity(rec.speed_p95, unit)}"
         )
+    if rec.video is not None:
+        placed = (
+            "calibrated"
+            if rec.video.calibration is not None
+            else "no calibration, so it is not drawn"
+        )
+        lines.append(
+            f"video: {len(rec.video.frame_times)} frames, "
+            f"{rec.video.size_bytes / 1e6:.3g} MB, fetched on request; {placed}"
+            " -> rec.animation(video=True)"
+        )
     if rec.headings is None:
         lines.append("head direction: not in this dataset")
     else:

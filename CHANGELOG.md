@@ -57,6 +57,24 @@
   from the first 60 s of tracking by default (30 frames a second when tracking
   is faster), to open with `.show()` or write
   with `.export()`. A session without positions raises `InputError`.
+- `Recording.video` is a `VideoSource` where the dataset publishes the
+  session's camera video, None otherwise: the file (asset id or URL, SHA-256
+  and size from the registry), one time per frame and a pixel-to-cm
+  `VideoCalibration`, each with its basis as a `Conversion`.
+  `VideoSource.fetch(*, cache=None)` downloads the video once, verified,
+  beside the session's NWB file at the path that file names.
+  `Recording.animation(..., video=True)` fetches it and draws the frames
+  below the data through the calibration, occupancy see-through where it is
+  low. Frame times are the video's own timestamps, unless the video and the
+  position series hold the same frames on two clocks (equal counts, position
+  times an offset and rate of the video's to within half a frame); then the
+  position times are used, as an inferred `Conversion`, and the offset is a
+  watch-out. The calibration comes from a transform the file states, else a
+  least-squares fit from the file's pixel tracking to its positions, else
+  landmarks placed by hand and kept in the registry; a fit or landmarks with
+  a residual over one bin are refused. Without a calibration, or without a
+  video, `animation(video=True)` raises `InputError` naming the sources
+  tried; the frames are never stretched over the environment's extent.
 - `neurospatial.datasets.load(dataset, session=None, *, cache=None,
   stream=False, accept_failed_checks=())` fetches one session (the
   dataset's default when `session` is None), verifies its SHA-256, reads it

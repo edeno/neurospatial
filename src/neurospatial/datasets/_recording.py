@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment, Intervals
     from neurospatial.animation import Animation
+    from neurospatial.datasets._video import VideoSource
 
 __all__ = ["Conversion", "Provenance", "Recording"]
 
@@ -256,6 +257,11 @@ class Recording(ReadOnlyArraysMixin):
     verified : bool
         Whether a person has checked this session by hand against the file
         and the paper.
+    video : VideoSource or None
+        The session's camera video, where the dataset publishes it: where it
+        is, its frame times and its pixel-to-cm calibration, each with its
+        basis. Nothing is downloaded until ``rec.video.fetch()`` or
+        ``rec.animation(video=True)``. None without a video.
 
     Raises
     ------
@@ -305,6 +311,7 @@ class Recording(ReadOnlyArraysMixin):
     watch_outs: tuple[str, ...] = ()
     failed_checks: tuple[str, ...] = ()
     verified: bool = False
+    video: VideoSource | None = None
 
     #: Physical unit of each ``summary()`` key; ``{units}`` is
     #: ``position_units``.
@@ -705,13 +712,18 @@ class Recording(ReadOnlyArraysMixin):
         *,
         time_range: tuple[float, float] | None = None,
         trail_length: int | None = None,
+        video: bool = False,
     ) -> Animation:
         """Build an interactive or movie scene of the session.
 
         Occupancy of the whole session over the environment, with the path,
         headings, spike raster, events and epochs of the window on top.
         Open it with ``.show(backend="fastplotlib")`` or write a movie with
-        ``.export("session.mp4", time_range=(0, 10), fps=10)``.
+        ``.export("session.mp4", time_range=(0, 10), fps=10)``. With
+        ``video=True`` the session's camera frames are drawn below, through
+        ``rec.video``'s calibration, so the tracked position can be checked
+        against what the camera saw; occupancy is drawn see-through where it
+        is low.
 
         Parameters
         ----------
@@ -720,6 +732,11 @@ class Recording(ReadOnlyArraysMixin):
             first 60 s of tracking, so the first ``show()`` opens fast.
         trail_length : int, optional
             Length of the path trail behind the animal, in frames.
+        video : bool, default False
+            Draw the session's video below the data. The video is downloaded
+            once, verified against its SHA-256, into the cache the session
+            was loaded into; it needs the ``video`` extra
+            (``pip install 'neurospatial[video]'``).
 
         Returns
         -------
@@ -730,11 +747,15 @@ class Recording(ReadOnlyArraysMixin):
         InputError
             If the session has no positions (it then has ``headings`` and
             ``spike_times`` to use directly), or ``time_range`` holds fewer
-            than two samples.
+            than two samples; with ``video=True``, if the session has no
+            video or no calibration maps its pixels to the environment (the
+            message names each calibration source tried).
         """
         from neurospatial.datasets._overview import animation
 
-        return animation(self, time_range=time_range, trail_length=trail_length)
+        return animation(
+            self, time_range=time_range, trail_length=trail_length, video=video
+        )
 
     def _repr_html_(self) -> str:
         """The summary text, preformatted, for Jupyter."""
