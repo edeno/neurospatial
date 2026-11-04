@@ -1,0 +1,412 @@
+{
+  "dataset": "kanter_2025",
+  "paper": "Kanter et al. (2025)",
+  "paper_citation": "Kanter BR, Lykken CM, Polti I, Moser M-B, Moser EI (2025). Electrophysiological recordings from entorhinal cortex and hippocampus in freely behaving adult male rats. Data descriptor (data-descriptor_eebc19898ded.pdf, v1.0), EBRAINS. https://doi.org/10.25493/GTVB-FQR",
+  "species": "rat",
+  "brain_regions": [
+    "lateral entorhinal cortex",
+    "medial entorhinal cortex",
+    "hippocampus"
+  ],
+  "apparatus": "square open field of 1, 1.5 or 2 m with 50 cm walls, empty or with novel objects",
+  "license": "CC-BY-SA-4.0",
+  "archive": {
+    "name": "EBRAINS 10.25493/GTVB-FQR",
+    "url": "https://doi.org/10.25493/GTVB-FQR",
+    "citation": "Kanter B, Lykken C, Polti I, Moser M-B, Moser E (2025). Electrophysiological recordings from entorhinal cortex and hippocampus in freely behaving adult male rats (v1.0) [Data set]. EBRAINS. https://doi.org/10.25493/GTVB-FQR"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 120.0,
+      "basis": "inferred",
+      "source": "the files' timestamps: a median interval of 1/120 s (119.9 to 120.2 Hz) in all 31 files read; neither the data descriptor nor the files state the rate"
+    },
+    "position_span": {
+      "value": [
+        80.0,
+        240.0
+      ],
+      "basis": "stated",
+      "source": "the data descriptor (data-descriptor_eebc19898ded.pdf): square open-field arenas 'with a diameter of 1, 1.5, or 2 m'; the largest span of the tracked positions must lie within 20% of 1 m to 2 m. The loader compares each session with its own arena (the epochs table's arena_dimensions) in a watch-out"
+    },
+    "speed_limit": {
+      "value": 393.0,
+      "basis": "stated",
+      "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is the head (motion-capture markers on the implant), which swings faster than the body, and no source read states head speed"
+    }
+  },
+  "sessions": [
+    {
+      "session": "26863_2020-Nov-04_12-46-06",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26863/26863_2020-Nov-04_12-46-06.nwb?redirect=true",
+      "file_name": "26863_2020-Nov-04_12-46-06.nwb",
+      "sha256": "0ef1b8221178f0c52540674f4ac4c4a057c5466e08b935b9a52e869a7c71c51c",
+      "size_bytes": 53478856,
+      "verified": false,
+      "default": false,
+      "n_units": 1072,
+      "verification": ""
+    },
+    {
+      "session": "26863_2020-Nov-05_10-26-23",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26863/26863_2020-Nov-05_10-26-23.nwb?redirect=true",
+      "file_name": "26863_2020-Nov-05_10-26-23.nwb",
+      "sha256": "de82354105546484ccdcb35b98a916dc038f7ee5504ea1445bef3e18cf7a645e",
+      "size_bytes": 32124028,
+      "verified": false,
+      "default": false,
+      "n_units": 721,
+      "verification": ""
+    },
+    {
+      "session": "26965_2020-Dec-07_15-52-32",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26965/26965_2020-Dec-07_15-52-32.nwb?redirect=true",
+      "file_name": "26965_2020-Dec-07_15-52-32.nwb",
+      "sha256": "f4b6153958c3beb372ee71fad2c96063aa99af15eeebc702e8d12f5a0204ce08",
+      "size_bytes": 29608677,
+      "verified": false,
+      "default": false,
+      "n_units": 393,
+      "verification": ""
+    },
+    {
+      "session": "26965_2020-Dec-08_11-29-48",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26965/26965_2020-Dec-08_11-29-48.nwb?redirect=true",
+      "file_name": "26965_2020-Dec-08_11-29-48.nwb",
+      "sha256": "9e5eb9c3ccc536ce0f4555883cc20dab667ae23141e6779db35be0a84515d93b",
+      "size_bytes": 10756000,
+      "verified": false,
+      "default": false,
+      "n_units": 240,
+      "verification": ""
+    },
+    {
+      "session": "26965_2020-Dec-08_14-36-11",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26965/26965_2020-Dec-08_14-36-11.nwb?redirect=true",
+      "file_name": "26965_2020-Dec-08_14-36-11.nwb",
+      "sha256": "bea624094fc367c632f3661456c9da18679fe39c95b13a84c16a78e877aeeb03",
+      "size_bytes": 26329396,
+      "verified": false,
+      "default": false,
+      "n_units": 548,
+      "verification": ""
+    },
+    {
+      "session": "26965_2020-Dec-09_12-10-58",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26965/26965_2020-Dec-09_12-10-58.nwb?redirect=true",
+      "file_name": "26965_2020-Dec-09_12-10-58.nwb",
+      "sha256": "ea4bc61a89fec465c5ec634af653ca8dde494d515f5222fed869a749dbe00d7e",
+      "size_bytes": 27741148,
+      "verified": false,
+      "default": false,
+      "n_units": 548,
+      "verification": ""
+    },
+    {
+      "session": "26965_2020-Dec-11_10-58-11",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26965/26965_2020-Dec-11_10-58-11.nwb?redirect=true",
+      "file_name": "26965_2020-Dec-11_10-58-11.nwb",
+      "sha256": "9c7b537a3ee9156b9e0c3f0c9eeffec4b32fa9a3c070176e7910722de4bd0427",
+      "size_bytes": 10247828,
+      "verified": false,
+      "default": false,
+      "n_units": 544,
+      "verification": ""
+    },
+    {
+      "session": "26966_2020-Dec-14_15-18-10",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26966/26966_2020-Dec-14_15-18-10.nwb?redirect=true",
+      "file_name": "26966_2020-Dec-14_15-18-10.nwb",
+      "sha256": "755794cb534a18393791dad1aa9dd2bc8ff36e79939de8bb555a6aff8863327a",
+      "size_bytes": 26969924,
+      "verified": false,
+      "default": false,
+      "n_units": 477,
+      "verification": ""
+    },
+    {
+      "session": "26966_2020-Dec-16_11-48-01",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/26966/26966_2020-Dec-16_11-48-01.nwb?redirect=true",
+      "file_name": "26966_2020-Dec-16_11-48-01.nwb",
+      "sha256": "28bace5c2f4358d701762760f2cb523d3ef26c797cc74b1bf371e7e9d00b15e7",
+      "size_bytes": 17535876,
+      "verified": false,
+      "default": false,
+      "n_units": 540,
+      "verification": ""
+    },
+    {
+      "session": "27284_2021-Jun-15_19-16-52",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27284/27284_2021-Jun-15_19-16-52.nwb?redirect=true",
+      "file_name": "27284_2021-Jun-15_19-16-52.nwb",
+      "sha256": "fcd43633a4782b56f0092b127d55b85a6cbc98616701520497da630ed66f14b2",
+      "size_bytes": 121982260,
+      "verified": false,
+      "default": false,
+      "n_units": 2306,
+      "verification": ""
+    },
+    {
+      "session": "27284_2021-Jun-16_14-33-11",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27284/27284_2021-Jun-16_14-33-11.nwb?redirect=true",
+      "file_name": "27284_2021-Jun-16_14-33-11.nwb",
+      "sha256": "ea87624732aa4e9493b52da4921b3ecfe16238ca61c9d0ec9d8d9d0348aace07",
+      "size_bytes": 99266076,
+      "verified": false,
+      "default": false,
+      "n_units": 2772,
+      "verification": ""
+    },
+    {
+      "session": "27284_2021-Jun-17_15-01-36",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27284/27284_2021-Jun-17_15-01-36.nwb?redirect=true",
+      "file_name": "27284_2021-Jun-17_15-01-36.nwb",
+      "sha256": "0a0632e2273da83d6c0d43819a3733feaf72ac40fb1fd422ac2de30a61519844",
+      "size_bytes": 65414118,
+      "verified": false,
+      "default": false,
+      "n_units": 1639,
+      "verification": ""
+    },
+    {
+      "session": "27284_2021-Jun-18_11-01-41",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27284/27284_2021-Jun-18_11-01-41.nwb?redirect=true",
+      "file_name": "27284_2021-Jun-18_11-01-41.nwb",
+      "sha256": "53d2825d80d28347f9f24a7ff3b79760ad20edd2dc6965518f04605a5882c517",
+      "size_bytes": 65801220,
+      "verified": false,
+      "default": false,
+      "n_units": 1226,
+      "verification": ""
+    },
+    {
+      "session": "27285_2021-Jul-01_13-26-22",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27285/27285_2021-Jul-01_13-26-22.nwb?redirect=true",
+      "file_name": "27285_2021-Jul-01_13-26-22.nwb",
+      "sha256": "cb16357e557a9513b8a5bc0f5b8e4206045e06e685c89a450681d1831d6802d9",
+      "size_bytes": 21368968,
+      "verified": false,
+      "default": false,
+      "n_units": 951,
+      "verification": ""
+    },
+    {
+      "session": "27285_2021-Jul-02_13-23-12",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27285/27285_2021-Jul-02_13-23-12.nwb?redirect=true",
+      "file_name": "27285_2021-Jul-02_13-23-12.nwb",
+      "sha256": "a65b64aff6b1292e430b93ff7e268a6ca6192717f0aa4c8ef3aaaa6f3fc130eb",
+      "size_bytes": 19435428,
+      "verified": false,
+      "default": false,
+      "n_units": 875,
+      "verification": ""
+    },
+    {
+      "session": "27285_2021-Jun-30_13-59-11",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27285/27285_2021-Jun-30_13-59-11.nwb?redirect=true",
+      "file_name": "27285_2021-Jun-30_13-59-11.nwb",
+      "sha256": "f32da68f82566517978a6933728d0951995cf5eeb0100e907d9ae4656e0365a4",
+      "size_bytes": 78644569,
+      "verified": false,
+      "default": false,
+      "n_units": 2253,
+      "verification": ""
+    },
+    {
+      "session": "27963_2022-Feb-08_21-14-27",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27963/27963_2022-Feb-08_21-14-27.nwb?redirect=true",
+      "file_name": "27963_2022-Feb-08_21-14-27.nwb",
+      "sha256": "8da95927181512c16b0a05271572b73a59521748f1baddd9410ea42782775aa6",
+      "size_bytes": 60314344,
+      "verified": false,
+      "default": false,
+      "n_units": 1890,
+      "verification": ""
+    },
+    {
+      "session": "27963_2022-Feb-10_11-06-56",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27963/27963_2022-Feb-10_11-06-56.nwb?redirect=true",
+      "file_name": "27963_2022-Feb-10_11-06-56.nwb",
+      "sha256": "7a588dc974b02d04a7d86862c38f53a70ec4adfa89767b95835fba9d414b5850",
+      "size_bytes": 64848858,
+      "verified": false,
+      "default": false,
+      "n_units": 1357,
+      "verification": ""
+    },
+    {
+      "session": "27963_2022-Feb-10_14-07-47",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27963/27963_2022-Feb-10_14-07-47.nwb?redirect=true",
+      "file_name": "27963_2022-Feb-10_14-07-47.nwb",
+      "sha256": "292f4a9d4006fce77c5d6823a24d23e6978570cbef1d0e35414d5e10873d39a8",
+      "size_bytes": 74827344,
+      "verified": false,
+      "default": false,
+      "n_units": 1288,
+      "verification": ""
+    },
+    {
+      "session": "27963_2022-Feb-11_14-58-41",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/27963/27963_2022-Feb-11_14-58-41.nwb?redirect=true",
+      "file_name": "27963_2022-Feb-11_14-58-41.nwb",
+      "sha256": "b604bcfc7fbb09fc63a9d6d9aa5179cd97d3883c325177811905fb600241820d",
+      "size_bytes": 24083774,
+      "verified": false,
+      "default": false,
+      "n_units": 1033,
+      "verification": ""
+    },
+    {
+      "session": "28003_2022-Mar-07_20-44-03",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/28003/28003_2022-Mar-07_20-44-03.nwb?redirect=true",
+      "file_name": "28003_2022-Mar-07_20-44-03.nwb",
+      "sha256": "65f5238d46ead14a1e87ee39177250045617abdf7ed066e3d2622fd3eb4033c9",
+      "size_bytes": 44990420,
+      "verified": false,
+      "default": false,
+      "n_units": 895,
+      "verification": ""
+    },
+    {
+      "session": "28003_2022-Mar-08_11-22-53",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/28003/28003_2022-Mar-08_11-22-53.nwb?redirect=true",
+      "file_name": "28003_2022-Mar-08_11-22-53.nwb",
+      "sha256": "210aa5e493ce449fbabf54080d36b24a0f8d8d87da428e87311590af367cfb09",
+      "size_bytes": 27238388,
+      "verified": false,
+      "default": false,
+      "n_units": 1193,
+      "verification": ""
+    },
+    {
+      "session": "28003_2022-Mar-08_11-38-59",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/28003/28003_2022-Mar-08_11-38-59.nwb?redirect=true",
+      "file_name": "28003_2022-Mar-08_11-38-59.nwb",
+      "sha256": "7c69e9c17494fb9e752dd02ccd31352681998f115d0ef896e13b406f1aba7775",
+      "size_bytes": 23586912,
+      "verified": false,
+      "default": false,
+      "n_units": 1056,
+      "verification": ""
+    },
+    {
+      "session": "28003_2022-Mar-08_15-04-04",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/28003/28003_2022-Mar-08_15-04-04.nwb?redirect=true",
+      "file_name": "28003_2022-Mar-08_15-04-04.nwb",
+      "sha256": "b22c6e664912b50cc7d2f91f9a66940f8793bb715f8dd696593a357d0d26f15f",
+      "size_bytes": 64971298,
+      "verified": false,
+      "default": false,
+      "n_units": 1386,
+      "verification": ""
+    },
+    {
+      "session": "28003_2022-Mar-10_10-53-58",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/28003/28003_2022-Mar-10_10-53-58.nwb?redirect=true",
+      "file_name": "28003_2022-Mar-10_10-53-58.nwb",
+      "sha256": "50be1cc654f607251f4ac19e294f2ae13c0c2eadf40a5f8965f853a95ac05b80",
+      "size_bytes": 41791800,
+      "verified": false,
+      "default": false,
+      "n_units": 834,
+      "verification": ""
+    },
+    {
+      "session": "29629_2024-Oct-29_15-05-13",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/29629/29629_2024-Oct-29_15-05-13.nwb?redirect=true",
+      "file_name": "29629_2024-Oct-29_15-05-13.nwb",
+      "sha256": "3b2dd16b67303e8d632ca0960cf3f97ed037bc0c17a82e69402b2521ef47e8a2",
+      "size_bytes": 29601256,
+      "verified": true,
+      "default": true,
+      "n_units": 380,
+      "verification": "Checked by hand on 2026-11-04 against the file, the data descriptor (data-descriptor_eebc19898ded.pdf) and the bucket's docs/index.json. File: 29,601,256 bytes, the size the bucket lists; its SHA-256 equals the one the survey pinned on its own download. Units: 380 rows with 235 distinct ids, 156 on the LEC probe and 224 on the CA1 probe (electrode group locations 'LEC' and 'HP - CA1'), 125 'good' and 255 'mua'; each probe's ids are unique, so <area>-<id> names every unit once. Time: 243,294 samples at a median 1/120 s from 43.008 to 2117.996 s; spikes run from 43.002 to 2117.999 s. The epochs table has four 'Novel object task' rows, 43-648, 652-1102, 1123-1646 and 1666-2118 s (605, 450, 523 and 452 s), which docs/index.json lists as the novel object task; no samples fall in the gaps between them. Space: animal_position is stored in cm (unit 'meters', conversion 0.01); x runs from -40.6 to 57.8 cm and y from -73.8 to 23.9 cm, a range of 98.4 x 97.7 cm against the 100 x 100 cm arena of the epochs table, so the stated 'Bottom left of the arena' origin does not hold; the declared square holds every sample. Heading: against movement above 20 cm/s at 10 Hz the offset is -0.33 rad with a median spread of 17 degrees (81 degrees with the heading negated); 17 windows of 60 s give means from -0.62 to +2.33 rad (circular SD 31 degrees), as the survey found. Objects: neither the file, the data descriptor nor index.json gives where the objects were, and the dataset has no video. The overview figure (path along the walls of the placed square, head-direction histogram, LEC and CA1 counts) and three animation frames (Matplotlib backend) were looked at."
+    },
+    {
+      "session": "29629_2024-Oct-30_15-13-05",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/29629/29629_2024-Oct-30_15-13-05.nwb?redirect=true",
+      "file_name": "29629_2024-Oct-30_15-13-05.nwb",
+      "sha256": "6ce014b85031c0f1f5d887f0fab2c198f536c5c3e110e2c79f50f7ad7fdfc743",
+      "size_bytes": 33976664,
+      "verified": false,
+      "default": false,
+      "n_units": 396,
+      "verification": ""
+    },
+    {
+      "session": "29630_2024-Sep-17_09-22-08",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/29630/29630_2024-Sep-17_09-22-08.nwb?redirect=true",
+      "file_name": "29630_2024-Sep-17_09-22-08.nwb",
+      "sha256": "34eeb221d8b9d468985cb76465b65d528971b460280629723a7d0e72150a4ca1",
+      "size_bytes": 103945938,
+      "verified": false,
+      "default": false,
+      "n_units": 2119,
+      "verification": ""
+    },
+    {
+      "session": "29630_2024-Sep-18_10-18-21",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/29630/29630_2024-Sep-18_10-18-21.nwb?redirect=true",
+      "file_name": "29630_2024-Sep-18_10-18-21.nwb",
+      "sha256": "66dd095ee0d61a236eb8cbd3d4adc88852cedca8096572a40d372d30270327ad",
+      "size_bytes": 84671644,
+      "verified": false,
+      "default": false,
+      "n_units": 1918,
+      "verification": ""
+    },
+    {
+      "session": "29630_2024-Sep-18_15-19-16",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/29630/29630_2024-Sep-18_15-19-16.nwb?redirect=true",
+      "file_name": "29630_2024-Sep-18_15-19-16.nwb",
+      "sha256": "9f4e60bb817f5e339f035baf82e44c47dd1ea4d8b3c9ff35a761663d45eda3d6",
+      "size_bytes": 73908396,
+      "verified": false,
+      "default": false,
+      "n_units": 2246,
+      "verification": ""
+    },
+    {
+      "session": "29630_2024-Sep-20_09-49-05",
+      "archive": "EBRAINS 10.25493/GTVB-FQR",
+      "url": "https://data-proxy.ebrains.eu/api/v1/buckets/d-885b4936-9345-43bd-880e-eebc19898ded/data/29630/29630_2024-Sep-20_09-49-05.nwb?redirect=true",
+      "file_name": "29630_2024-Sep-20_09-49-05.nwb",
+      "sha256": "a1722081d82481621ec50c9f0c691e3412d6d096b2006f0db70b019d54e26643",
+      "size_bytes": 61957002,
+      "verified": false,
+      "default": false,
+      "n_units": 1749,
+      "verification": ""
+    }
+  ]
+}
