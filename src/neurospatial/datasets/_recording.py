@@ -33,6 +33,10 @@ if TYPE_CHECKING:
 __all__ = ["Conversion", "Provenance", "Recording"]
 
 POSITION_UNITS = ("cm", "m", "pixel", "arbitrary")
+#: The ``max_gap`` (s) of ``compute_speed``, ``Environment.occupancy``,
+#: ``heading_from_velocity`` and the animation overlays, used for a session
+#: whose ``params`` set none.
+DEFAULT_MAX_GAP = 1.0
 _UNIT_COLUMNS = ("brain_region", "label")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -255,6 +259,12 @@ class Recording(ReadOnlyArraysMixin):
         ``analysis_epochs``, an (n, 2) array, sets the epochs
         ``units["fires_in_epochs"]`` refers to; without it, the tracked span
         from the first to the last sample of ``times``.
+        ``max_gap``, where the loader sets one, is the longest interval
+        between samples (s) that counts as continuous tracking: the summary's
+        speed, the overview and the animation use it, as analyses of the
+        session should (a dataset whose samples were removed below a speed
+        threshold leaves gaps that must not be bridged); without it they use
+        the package functions' default.
     conversions : tuple of Conversion
         Every conversion the loader applied, stated or inferred.
     watch_outs : tuple of str
@@ -656,6 +666,16 @@ class Recording(ReadOnlyArraysMixin):
             return np.isfinite(self.headings)
         return np.zeros(self.times.size, dtype=bool)
 
+    @property
+    def _max_gap(self) -> float | None:
+        """``params["max_gap"]`` where the loader sets one, else ``DEFAULT_MAX_GAP``.
+
+        Passed to every function the summary, overview and animation call
+        with a ``max_gap``, so they bridge the gaps the session's analyses do.
+        """
+        value = self.params.get("max_gap", DEFAULT_MAX_GAP)
+        return None if value is None else float(value)
+
     @cached_property
     def _speed(self) -> NDArray[np.float64] | None:
         """Speed of each sample, read-only, shape (n_time,), as :func:`session_speed`.
@@ -664,7 +684,7 @@ class Recording(ReadOnlyArraysMixin):
         """
         if self.positions is None:
             return None
-        speed = session_speed(self.times, self.positions)
+        speed = session_speed(self.times, self.positions, max_gap=self._max_gap)
         if speed is not None:
             speed.setflags(write=False)
         return speed
@@ -979,7 +999,10 @@ def _samples_strictly_inside(
 
 
 def session_speed(
-    times: NDArray[np.float64], positions: NDArray[np.float64]
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    *,
+    max_gap: float | None = DEFAULT_MAX_GAP,
 ) -> NDArray[np.float64] | None:
     """Speed of each sample, the speed a session's summary prints.
 
@@ -990,17 +1013,23 @@ def session_speed(
     ----------
     times : ndarray, shape (n_time,)
     positions : ndarray, shape (n_time, n_dims)
+    max_gap : float or None, optional
+        ``compute_speed``'s ``max_gap``: the session's
+        ``Recording.params["max_gap"]`` where it sets one. Default
+        ``DEFAULT_MAX_GAP``; None bridges every gap.
 
     Returns
     -------
     ndarray, shape (n_time,), or None
         In position units per second; None when no two tracked samples lie
-        within 1 s of each other, so no speed can be computed.
+        within ``max_gap`` of each other, so no speed can be computed.
     """
     from neurospatial.behavior import compute_speed
 
     try:
-        return np.asarray(compute_speed(times, positions), dtype=np.float64)
+        return np.asarray(
+            compute_speed(times, positions, max_gap=max_gap), dtype=np.float64
+        )
     except InputError:  # no two tracked samples within compute_speed's max_gap
         return None
 

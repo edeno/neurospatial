@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import warnings
 
 import matplotlib as mpl
 
@@ -853,3 +854,43 @@ def test_scene_exports_its_own_window(square_recording, tmp_path, window):
     )
     assert scene.frame_times[0] <= plan.times[0]
     assert plan.times[-1] < b
+
+
+@pytest.fixture
+def speed_filtered_recording(square_recording):
+    """The box session with 40 runs of 0.3 to 0.8 s removed, as a speed filter leaves."""
+    rec = square_recording
+    rng = np.random.default_rng(5)
+    keep = np.ones(rec.times.size, dtype=bool)
+    for start in rng.choice(np.arange(100, rec.times.size - 200), 40, replace=False):
+        keep[start : start + rng.integers(30, 80)] = False
+    return dataclasses.replace(
+        rec,
+        times=rec.times[keep],
+        positions=rec.positions[keep],
+        headings=rec.headings[keep],
+    )
+
+
+def test_speed_filter_gaps_warn_without_a_stated_max_gap(speed_filtered_recording):
+    """Bridged at the default max_gap, the removed runs look boolean-masked."""
+    with pytest.warns(UserWarning, match="boolean-masked"):
+        repr(speed_filtered_recording)
+
+
+def test_a_stated_max_gap_is_used_by_the_summary_overview_and_scene(
+    speed_filtered_recording,
+):
+    """With params['max_gap'] below the removed runs, nothing warns, and speed spans them not."""
+    from neurospatial.behavior import compute_speed
+
+    rec = dataclasses.replace(speed_filtered_recording, params={"max_gap": 0.015})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        text = repr(rec)
+        fig = rec.plot_overview()
+        rec.animation(time_range=(1.0, 3.0)).render_frame(2.0, dpi=30)
+    plt.close(fig)
+    assert "speed median" in text
+    expected = compute_speed(rec.times, rec.positions, max_gap=0.015)
+    np.testing.assert_array_equal(rec._speed, expected)
