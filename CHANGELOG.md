@@ -273,7 +273,10 @@
   these series' paths. For `read_position` only the series whose unit is a
   length or pixel unit are listed, and naming a series with another unit, such
   as `acquisition/theta_phase` in radians, raises `InputError` that names it,
-  since reading it would bin a phase or a speed as a spatial coordinate.
+  since reading it would bin a phase or a speed as a spatial coordinate. For
+  `read_head_direction` only angles in radians or degrees and `(n, 2)`
+  direction vectors without a length unit are listed or read; an `(n, 2)`
+  series in cm is a position and raises `InputError`.
 - `io.nwb.read_intervals(..., interval_name=)` reads a TimeIntervals table
   kept in a processing module by its path, as in
   `read_intervals(nwbfile, interval_name="processing/behavior/states")` for

@@ -1201,3 +1201,35 @@ def test_read_head_direction_reads_a_bare_time_series_named_by_path(empty_nwb):
     heading = read_head_direction(empty_nwb, compass_name="acquisition/head_direction")
     np.testing.assert_allclose(heading.headings, np.radians(angles))
     assert heading.frame is None
+
+
+def test_read_head_direction_refuses_a_bare_position_named_by_path(empty_nwb):
+    """(n, 2) values in a length unit are positions, not direction vectors."""
+    from pynwb import TimeSeries
+
+    from neurospatial import InputError
+    from neurospatial.io.nwb import read_head_direction
+
+    for name, data, unit in (
+        ("position", np.ones((3, 2)), "cm"),
+        ("speed", np.ones(3), "cm/s"),
+        ("head_vector", np.array([[1.0, 0.0], [0.0, 1.0], [-1.0, 0.0]]), "n/a"),
+        ("head_angle", np.zeros(3), "radians"),
+    ):
+        empty_nwb.add_acquisition(
+            TimeSeries(name=name, data=data, timestamps=np.arange(3.0), unit=unit)
+        )
+    with pytest.raises(InputError, match="acquisition/position") as refused:
+        read_head_direction(empty_nwb, compass_name="acquisition/position")
+    assert "'cm'" in str(refused.value)
+    assert "positions" in str(refused.value)
+    # Only the series that read as head direction are offered.
+    with pytest.raises(KeyError) as caught:
+        read_head_direction(empty_nwb)
+    message = str(caught.value)
+    assert "acquisition/head_vector" in message
+    assert "acquisition/head_angle" in message
+    assert "acquisition/position" not in message
+    assert "acquisition/speed" not in message
+    heading = read_head_direction(empty_nwb, compass_name="acquisition/head_vector")
+    np.testing.assert_allclose(heading.headings, [0.0, np.pi / 2, np.pi])
