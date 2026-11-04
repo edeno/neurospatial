@@ -789,3 +789,11 @@ def test_speed_counts_go_log_when_one_bar_holds_most_samples(long_box_recording)
     moving = _titled(long_box_recording.plot_overview(), "Speed")
     assert moving.get_yscale() == "linear"
 
+
+def test_raster_shows_every_units_row(square_recording):
+    # The last unit is silent in the window; its row is still on the axis.
+    trains = list(square_recording.spike_times)
+    trains[-1] = np.empty(0)
+    rec = dataclasses.replace(square_recording, spike_times=tuple(trains))
+    raster = _titled(rec.plot_overview(), "First 60 s").child_axes[1]
+    assert raster.get_ylim() == (-0.5, rec.n_units - 0.5)

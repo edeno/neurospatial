@@ -385,7 +385,8 @@
   and the scene's raster order units by their rate-map peak along the track:
   `compute_spatial_rates` on `rec.env` with `params["min_speed"]`, computed
   once per recording. Units with no peak (no finite rate above zero) go last,
-  in file order. Other recordings keep the file's order. On `comrie_2026`
+  in file order. Other recordings keep the file's order. The overview's
+  raster shows every unit's row, those silent in the window too. On `comrie_2026`
   (203 units, 709k samples) the rate maps add about 4.7 s to the first
   `plot_overview()` (3.3 s to 8.0 s).
 - The Matplotlib scene's spike raster labels as many rows as its height

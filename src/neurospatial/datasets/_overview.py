@@ -423,6 +423,8 @@ def _panel_time(rec: Recording, ax: Axes) -> None:
         inside = train[(train >= start) & (train < stop)]
         bottom.vlines(inside, row - 0.4, row + 0.4, color="k", lw=0.5)
     bottom.set_xlim(start, stop)
+    # Every unit's row, those silent in the window too.
+    bottom.set_ylim(-0.5, rec.n_units - 0.5)
     bottom.set_xlabel("time (s)")
     bottom.set_ylabel("unit" if order is None else SORTED_LABEL, fontsize=8)
 
