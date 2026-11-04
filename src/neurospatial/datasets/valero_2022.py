@@ -99,7 +99,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
-from neurospatial.datasets._recording import Conversion, Recording
+from neurospatial.datasets._recording import Conversion, Recording, interval_rows
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -307,7 +307,7 @@ def load_session(
             "of the head or headstage)"
         ),
         epochs=epochs,
-        events={} if ripples is None else {"ripples": _rows(ripples)},
+        events={} if ripples is None else {"ripples": interval_rows(ripples)},
         params={
             "bin_size": BIN_SIZE,
             "dt": DT,
@@ -366,15 +366,6 @@ def _table(nwb: Any, module: str, name: str) -> Any:
     return nwb.processing[module][name].to_dataframe()
 
 
-def _rows(table: Any) -> NDArray[np.float64]:
-    """The ``(n, 2)`` [start, stop) rows of an interval table, sorted by start."""
-    rows: NDArray[np.float64] = table[["start_time", "stop_time"]].to_numpy(
-        dtype=np.float64
-    )
-    ordered: NDArray[np.float64] = rows[np.argsort(rows[:, 0], kind="stable")]
-    return ordered
-
-
 def _epochs(
     session: str, times: NDArray[np.float64], table: Any, states: Any
 ) -> tuple[dict[str, NDArray[np.float64]], str]:
@@ -393,7 +384,7 @@ def _epochs(
     names : str
         Which file ``epoch_name`` each key is, for the conversion.
     """
-    rows = _rows(table)
+    rows = interval_rows(table)
     names = table.sort_values("start_time", kind="stable")["epoch_name"].astype(str)
     first = np.searchsorted(times, rows[:, 0], side="left")
     stop = np.searchsorted(times, rows[:, 1], side="left")
@@ -431,7 +422,7 @@ def _epochs(
         epochs["track_after_tracking"] = np.array(after)
     for label, key in _STATES.items():
         if states is not None:
-            epochs[key] = _rows(states[states["label"] == label])
+            epochs[key] = interval_rows(states[states["label"] == label])
     return epochs, ", ".join(labels)
 
 

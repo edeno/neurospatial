@@ -53,11 +53,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._checks import _count
-from neurospatial.datasets._recording import Conversion, Recording
+from neurospatial.datasets._recording import Conversion, Recording, interval_rows
 
 if TYPE_CHECKING:
-    import pandas as pd
-
     from neurospatial.datasets._catalog import SessionEntry
 
 __all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
@@ -164,11 +162,11 @@ def load_session(
         units = read_units(nwb)
         tagged = read_intervals(nwb, interval_name="epochs").intervals_table()
         epochs = {
-            tag: _rows(tagged[[tag in tags for tags in tagged["tags"]]])
+            tag: interval_rows(tagged[[tag in tags for tags in tagged["tags"]]])
             for tag in ("wake", "sleep")
         }
         for name in ("sws", "rem"):
-            epochs[name] = _rows(
+            epochs[name] = interval_rows(
                 read_intervals(nwb, interval_name=name).intervals_table()
             )
         started = nwb.session_start_time
@@ -234,15 +232,6 @@ def load_session(
             *_gaps(times),
         ),
     )
-
-
-def _rows(table: pd.DataFrame) -> NDArray[np.float64]:
-    """The ``(n, 2)`` [start, stop) rows of an interval table, sorted by start."""
-    rows: NDArray[np.float64] = table[["start_time", "stop_time"]].to_numpy(
-        dtype=np.float64
-    )
-    ordered: NDArray[np.float64] = rows[np.argsort(rows[:, 0], kind="stable")]
-    return ordered
 
 
 def _frame_watch_out() -> str:

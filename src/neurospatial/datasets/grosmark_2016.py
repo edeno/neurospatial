@@ -93,7 +93,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
-from neurospatial.datasets._recording import Conversion, Recording
+from neurospatial.datasets._recording import Conversion, Recording, interval_rows
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -429,14 +429,14 @@ def _dandi_session(
     positions = np.asarray(position.positions, dtype=np.float64) * 100.0
     linearized = np.asarray(linear.positions, dtype=np.float64).reshape(-1) * 100.0
     epochs = {
-        str(label).removesuffix("Epoch").lower(): _rows(
+        str(label).removesuffix("Epoch").lower(): interval_rows(
             stored[stored["label"] == label]
         )
         for label in stored["label"].unique()
     }
     for label in states["label"].unique():
         key = str(label).lower().replace("-", "_")
-        epochs[key] = _rows(states[states["label"] == label])
+        epochs[key] = interval_rows(states[states["label"] == label])
     if track == CIRCULAR:
         env, environment, distance = _declared_circle(
             positions, linearized, entry.session
@@ -616,15 +616,6 @@ def _unit_table(units: Any) -> Any:
     out["brain_region"] = table["location"]
     out["label"] = table["cell_type"]
     return out
-
-
-def _rows(table: Any) -> NDArray[np.float64]:
-    """The ``(n, 2)`` [start, stop) rows of an interval table, sorted by start."""
-    rows: NDArray[np.float64] = table[["start_time", "stop_time"]].to_numpy(
-        dtype=np.float64
-    )
-    ordered: NDArray[np.float64] = rows[np.argsort(rows[:, 0], kind="stable")]
-    return ordered
 
 
 def _tracked(positions: NDArray[np.float64]) -> NDArray[np.bool_]:

@@ -952,6 +952,26 @@ def _samples_strictly_inside(
     return np.maximum(inside, 0)
 
 
+def interval_rows(table: pd.DataFrame) -> NDArray[np.float64]:
+    """The ``(n, 2)`` [start, stop) rows of an NWB interval table, sorted by start.
+
+    Parameters
+    ----------
+    table : pandas.DataFrame
+        An interval table with ``start_time`` and ``stop_time`` columns, in
+        seconds.
+
+    Returns
+    -------
+    ndarray, shape (n, 2)
+    """
+    rows: NDArray[np.float64] = table[["start_time", "stop_time"]].to_numpy(
+        dtype=np.float64
+    )
+    ordered: NDArray[np.float64] = rows[np.argsort(rows[:, 0], kind="stable")]
+    return ordered
+
+
 def merged_rows(
     rows: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
