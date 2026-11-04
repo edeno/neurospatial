@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from neurospatial import InputError
-from neurospatial.datasets import Conversion, Provenance
+from neurospatial.datasets import Conversion, DatasetCheckError, Provenance
 
 
 def _swap_two_times(rec):
@@ -299,12 +299,37 @@ class TestClipEpochsToRecording:
 
     def test_a_row_wholly_outside_is_dropped_with_its_name(self):
         clipped = self._clip(
-            {"before": np.array([[0.0, 9.0]]), "run": np.array([[11.0, 30.0]])},
+            {"before": np.array([[5.0, 9.0]]), "run": np.array([[11.0, 25.0]])},
             (np.array([12.0]),),
         )
         assert list(clipped.epochs) == ["run"]
         np.testing.assert_allclose(clipped.epochs["run"], [[11.0, 19.9]])
-        assert "epochs['before'] [0, 9] s lies wholly outside it, dropped" in (
+        assert "epochs['before'] [5, 9] s lies wholly outside it, dropped" in (
             clipped.watch_out
         )
         assert clipped.watch_out.startswith("2 epoch rows reach past the recording")
+
+    @pytest.mark.parametrize(
+        "row",
+        [
+            [10_000.0, 19_900.0],  # milliseconds read as seconds: far outside
+            [12.0, 12_000.0],  # starts inside, ends 1000 times too late
+            [-40.0, 15.0],  # starts more than the recording's length early
+        ],
+    )
+    def test_a_row_overhanging_by_more_than_the_recording_is_left_for_the_clock_check(
+        self, row, square_recording
+    ):
+        """No truncation overhangs by more than the recording's own 9.9 s."""
+        from neurospatial.datasets._checks import Stated, run_checks
+
+        clipped = self._clip({"run": np.array([row])}, (np.array([12.0]),))
+        np.testing.assert_array_equal(clipped.epochs["run"], [row])
+        assert clipped.conversion is None
+        assert clipped.watch_out is None
+        # The same row on a 60 s recording, which the clock check refuses.
+        rec = dataclasses.replace(square_recording, epochs=clipped.epochs)
+        with pytest.raises(DatasetCheckError, match="clock"):
+            run_checks(
+                rec, stated=Stated(sampling_rate=100.0, position_span=(80.0, 120.0))
+            )

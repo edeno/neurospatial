@@ -1206,7 +1206,11 @@ def clip_epochs_to_recording(
     the data's clock instead of a refusal. An edge within the slack is left
     as stored: the check accepts it, and where the recording's edge is a
     first or last spike the true acquisition edge lies a little beyond it.
-    Positions and spikes are not changed.
+    A row reaching more than the recording's own length before or after it
+    is left as stored too, so the clock check still refuses it: no truncated
+    session overhangs by more than the recording, and an epoch in
+    milliseconds read as seconds, or on a second clock, does. Positions and
+    spikes are not changed.
 
     Parameters
     ----------
@@ -1230,7 +1234,7 @@ def clip_epochs_to_recording(
     --------
     >>> times = np.arange(0.0, 10.0, 0.5)
     >>> clipped = clip_epochs_to_recording(
-    ...     {"run": np.array([[-0.05, 15.0]]), "sleep": np.array([[20.0, 30.0]])},
+    ...     {"run": np.array([[-0.05, 15.0]]), "sleep": np.array([[12.0, 14.0]])},
     ...     times,
     ...     (np.array([1.0, 9.8]),),
     ...     source="a table",
@@ -1240,7 +1244,7 @@ def clip_epochs_to_recording(
     >>> print(clipped.watch_out)  # doctest: +NORMALIZE_WHITESPACE
     2 epoch rows reach past the recording, 0 to 9.8 s (its first and last
     sample or spike), and are clipped to it: epochs['run'] [-0.05, 15] s ends
-    5.2 s after it, now [-0.05, 9.8] s; epochs['sleep'] [20, 30] s lies wholly
+    5.2 s after it, now [-0.05, 9.8] s; epochs['sleep'] [12, 14] s lies wholly
     outside it, dropped. Positions and spikes are as stored.
     """
     spikes = np.concatenate([np.empty(0), *spike_times])
@@ -1249,6 +1253,7 @@ def clip_epochs_to_recording(
     from neurospatial.datasets._checks import _slack
 
     slack = _slack(stop - start)
+    length = stop - start
     kept: dict[str, NDArray[np.float64]] = {}
     changed: list[str] = []
     for name, table in epochs.items():
@@ -1256,6 +1261,10 @@ def clip_epochs_to_recording(
         out = []
         for a, b in rows:
             early, late = start - a, b - stop
+            if early > length or late > length:
+                # Not a truncation: left for the clock check to refuse.
+                out.append((a, b))
+                continue
             if b <= start or a >= stop:
                 changed.append(
                     f"epochs[{name!r}] [{a:.6g}, {b:.6g}] s lies wholly outside "
