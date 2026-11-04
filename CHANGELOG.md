@@ -403,6 +403,8 @@
   blends that alpha, so the white spike ticks stay readable; behind time
   series they are unchanged. The Matplotlib scene draws epochs in their own
   panel.
+- The fastplotlib viewer's time axes print a tick within roundoff of 0 as
+  `0`; the tick at the slider's time read `-5.55e-17`.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

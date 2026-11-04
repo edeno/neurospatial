@@ -1454,6 +1454,7 @@ class FastplotlibAnimation:
                 # one plot against time.
                 self.figure[name].toolbar = False
                 self.figure[name].axes.x.visible = name == time_panels[-1]
+                self.figure[name].axes.x.tick_format = time_tick_label
 
             # An unnamed environment is not titled by its layout's class name.
             self._title = scene.title or (
@@ -1991,6 +1992,18 @@ def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> Non
                     thickness=1.0,
                     name=f"{event} times",
                 )
+
+
+def time_tick_label(value: float, low: float, high: float) -> str:
+    """A time-axis tick label; a tick within roundoff of 0 reads ``0``.
+
+    pygfx steps from the first tick by repeated addition, so the tick at
+    the slider's time can land at ``-5.55e-17`` and print in scientific
+    notation. Otherwise pygfx's own ``0.4g`` format.
+    """
+    if abs(value) <= 1e-9 * max(abs(low), abs(high), abs(high - low)):
+        value = 0.0
+    return format(value, "0.4g")
 
 
 #: How much of an epoch's alpha its band keeps behind a spike raster.

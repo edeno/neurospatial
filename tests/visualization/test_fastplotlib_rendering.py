@@ -1656,6 +1656,35 @@ def test_the_view_frames_positions_tracked_outside_the_environment(n_dims):
         animation.close()
 
 
+def test_time_ticks_within_roundoff_of_zero_read_zero():
+    from neurospatial.animation.backends.fastplotlib_backend import time_tick_label
+
+    # What pygfx's repeated addition gives at the slider's time.
+    tick = -5.551115123125783e-17
+    assert time_tick_label(tick, -1.0, 1.0) == "0"
+    # Negative control: a real small time keeps its value.
+    assert time_tick_label(0.001, -0.005, 0.005) == "0.001"
+    assert time_tick_label(-0.8, -1.0, 1.0) == "-0.8"
+
+
+def test_time_panels_use_the_rounding_tick_label(apparatus, walk):
+    from neurospatial.animation import SpikeRasterOverlay
+    from neurospatial.animation.backends.fastplotlib_backend import time_tick_label
+
+    t, _path, fields = walk
+    animation = (
+        Animation(
+            apparatus, fields, frame_times=t, overlays=[SpikeRasterOverlay([t[::7]])]
+        )
+        .show(backend="fastplotlib")
+        .native
+    )
+    try:
+        assert animation.figure["raster 0"].axes.x.tick_format is time_tick_label
+    finally:
+        animation.close()
+
+
 def test_epoch_bands_behind_a_raster_are_faint(track, decoded):
     from neurospatial.animation import EpochOverlay, SpikeRasterOverlay
     from neurospatial.animation.backends.fastplotlib_backend import (
