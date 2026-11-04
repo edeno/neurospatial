@@ -750,6 +750,9 @@ class Recording(ReadOnlyArraysMixin):
             than two samples; with ``video=True``, if the session has no
             video or no calibration maps its pixels to the environment (the
             message names each calibration source tried).
+        ImportError
+            With ``video=True``, if the ``video`` extra (OpenCV) is not
+            installed.
         """
         from neurospatial.datasets._overview import animation
 

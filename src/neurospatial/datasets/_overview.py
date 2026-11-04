@@ -334,7 +334,6 @@ def animation(
                 + " (for example rec.plot_overview() for the panels it can draw).",
             )
         )
-    camera = _video_overlay(rec, VideoOverlay) if video else None
     start, stop = (
         _default_time_range(rec) if time_range is None else map(float, time_range)
     )
@@ -371,7 +370,8 @@ def animation(
         max_gap=None,
         label="occupancy (s)",
     )
-    overlays: list[Any] = [] if camera is None else [camera]
+    # Fetched once the window is known to hold a scene.
+    overlays: list[Any] = [_video_overlay(rec, VideoOverlay)] if video else []
     overlays += [
         PositionOverlay(
             rec.positions,
