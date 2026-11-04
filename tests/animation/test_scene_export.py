@@ -403,3 +403,33 @@ def test_missing_encoder_is_named_before_rendering(
         scene.export(tmp_path / name)
     renderer.assert_not_called()
     assert not list(tmp_path.iterdir())
+
+
+# A 30 frame/s clock built for the window [10.0, 10.5): it starts at the first
+# sample after 10.0 and ends a frame before 10.5, as a scene's clock does.
+CLOCK = 10.002 + np.arange(15) / 30
+
+
+def test_time_range_within_one_frame_of_the_clock_is_clipped_to_it(tmp_path):
+    plan = prepare_export(tmp_path / "a.gif", CLOCK, time_range=(10.0, 10.5), fps=30)
+    assert plan.times[0] == CLOCK[0]
+    # A stop clipped to the clock keeps its last time.
+    assert plan.times[-1] == pytest.approx(CLOCK[-1])
+    np.testing.assert_allclose(plan.times, CLOCK)
+
+
+@pytest.mark.parametrize(
+    "time_range",
+    [(10.0 - 1.5 / 30, 10.3), (10.1, CLOCK[-1] + 1.5 / 30)],
+    ids=["start", "stop"],
+)
+def test_time_range_beyond_one_frame_of_the_clock_still_refuses(tmp_path, time_range):
+    # Negative control: more than one frame interval outside is outside.
+    with pytest.raises(ValueError, match="inside the scene's physical clock"):
+        prepare_export(tmp_path / "a.gif", CLOCK, time_range=time_range, fps=30)
+
+
+def test_time_range_inside_the_clock_is_unchanged(tmp_path):
+    plan = prepare_export(tmp_path / "a.gif", CLOCK, time_range=(10.1, 10.3), fps=30)
+    assert plan.times[0] == pytest.approx(10.1)
+    assert plan.times[-1] < 10.3

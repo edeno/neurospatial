@@ -393,6 +393,10 @@ def prepare_export(
 
     A ``time_range`` selects ``[start, stop)``; without one, the whole
     recording is exported, including its last sample when a frame lands on it.
+    An end of ``time_range`` up to one frame interval (the clock's median
+    step) outside the scene's clock is clipped to it, and a stop clipped to
+    the clock's last time includes it; a range farther outside raises
+    ``ValueError``.
 
     Correct arithmetic roundoff to the nearest observation within four ULPs.
     Exact queries stay exact; ties prefer the scene clock, then earlier clocks
@@ -489,17 +493,32 @@ def prepare_export(
     ):
         msg = "time_range must be a finite half-open (start, stop) pair with start < stop."
         raise ValueError(msg)
-    if bounds[0] < source_times[0] or bounds[1] > source_times[-1]:
-        msg = "time_range must lie inside the scene's physical clock."
+    # A range asked of the scene's own window, such as the one it was built
+    # for, can start or stop up to one frame interval beyond the clock (a
+    # clock starts at the first sample after the window's start): that end
+    # is clipped to the clock, and a clipped stop keeps the clock's last time.
+    first, last = float(source_times[0]), float(source_times[-1])
+    interval = float(np.median(np.diff(source_times))) if len(source_times) > 1 else 0.0
+    if first - interval <= bounds[0] < first:
+        bounds[0] = first
+    # The whole recording includes its last sample when a frame lands on it,
+    # and so does a stop clipped to it; a selected [start, stop) excludes
+    # stop, so adjacent clips never repeat a frame.
+    inclusive = time_range is None
+    if last < bounds[1] <= last + interval:
+        bounds[1], inclusive = last, True
+    if bounds[0] < first or bounds[1] > last or bounds[0] > bounds[1]:
+        msg = (
+            f"time_range ({bounds[0]:.6g}, {bounds[1]:.6g}) must lie inside the "
+            f"scene's physical clock, {first:.6g} to {last:.6g} s, to within one "
+            f"frame interval ({interval:.3g} s)."
+        )
         raise ValueError(msg)
     steps = float((bounds[1] - bounds[0]) * fps / speed)
     nearest = round(steps)
     if np.isclose(steps, nearest, rtol=1e-12, atol=1e-12):
         steps = float(nearest)
-    # A selected [start, stop) excludes stop, so adjacent clips never repeat a
-    # frame; the whole recording includes its last sample when a frame lands on it.
-    whole = time_range is None
-    count = max(1, int(np.floor(steps)) + 1 if whole else int(np.ceil(steps)))
+    count = max(1, int(np.floor(steps)) + 1 if inclusive else int(np.ceil(steps)))
     times = bounds[0] + np.arange(count) * speed / fps
     # Adding a decimal frame interval to an absolute recording time can land
     # one ULP before an observation (100.1 + 0.1 < 100.2). That must not hold
@@ -521,7 +540,7 @@ def prepare_export(
             snapped[nearer] = candidate[nearer]
             best_distance[nearer] = distance[nearer]
     times = snapped
-    if whole:
+    if inclusive:
         times = times[times <= bounds[1]]
     elif bounds[1] > bounds[0]:
         times = times[times < bounds[1]]

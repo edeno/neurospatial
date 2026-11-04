@@ -326,6 +326,13 @@
   direction arrows, object vectors, videos and regions have no place on that
   axis; the Matplotlib scene now leaves them out with a warning that names
   them and the views that draw the track in its plane (fastplotlib, napari).
+- `Animation.export(..., time_range=)` accepts a range whose ends lie up to
+  one frame interval outside the scene's clock and clips it to the clock, so
+  `rec.animation(time_range=(a, b)).export(path, time_range=(a, b))` works:
+  the 30 frame/s clock starts at the first sample after `a` and ends a frame
+  before `b`. A stop clipped to the clock includes its last time. A range
+  farther outside still raises `ValueError`, which now gives the range, the
+  clock and the frame interval.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

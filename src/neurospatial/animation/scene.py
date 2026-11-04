@@ -548,7 +548,10 @@ class Animation:
             ``.webm``, ``.mov``, ``.avi``, ``.gif`` or ``.html``.
         time_range : (float, float), optional
             Half-open ``[start, stop)`` recording interval in seconds. By
-            default the whole scene, through its last time.
+            default the whole scene, through its last time. An end up to one
+            frame interval outside the scene's clock is clipped to it, so the
+            range a scene was built for is accepted; a stop clipped to the
+            clock's last time includes it.
         fps : float, default=30
             Output frames per second.
         speed : float, default=1
