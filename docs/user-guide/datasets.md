@@ -22,7 +22,7 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 | [`grosmark_2016`](../datasets/grosmark_2016.md) | rat, dorsal CA1 | linear and circular mazes, with sleep before and after | OSF `hu5ma` (license not stated); DANDI 000044 (CC-BY-4.0) | reproduced (level B) |
 | [`peyrache_2015`](../datasets/peyrache_2015.md) | mouse, anterior thalamus | open arena, head direction only | OSF `jb2gd` (license not stated) | reproduced (level A) |
 | [`sargolini_2006`](../datasets/sargolini_2006.md) | rat, medial entorhinal cortex | 1 m open field | DANDI 000582 (CC-BY-4.0) | not possible yet |
-| [`forli_2025`](../datasets/forli_2025.md) | Egyptian fruit bat, dorsal hippocampus | flight room, 3-D | Zenodo 15738988 (CC-BY-4.0) | not possible yet; a 3-D attempt did not reproduce the paper (15.2% of units tuned against 71%) |
+| [`forli_2025`](../datasets/forli_2025.md) | Egyptian fruit bat, dorsal hippocampus | flight room, 3-D | Zenodo 15738988 (CC-BY-4.0) | not possible yet; a 3-D attempt did not reproduce the paper (15.2% of flight-active units tuned against 71%) |
 | [`valero_2022`](../datasets/valero_2022.md) | mouse, CA1 | linear track, with video | DANDI 000568 (CC-BY-4.0) | not possible yet |
 
 Each dataset has a page with what was recorded, the conversions the loader
@@ -75,9 +75,10 @@ The first call downloads the file, checks its SHA-256 against the one the
 package pins, and keeps it in the cache; later calls read the cache. Before it
 returns, the loader checks the session:
 
-- **Refusing checks.** The *clock* check refuses a session whose spikes,
-  events or epochs fall outside the tracked span (or an untracked epoch such as
-  sleep). The *units* check refuses a session whose largest position span or
+- **Refusing checks.** The *clock* check refuses a session whose spikes fall
+  outside the tracked span (or an untracked epoch such as sleep), or whose
+  events or epochs fall outside the whole recording, from its first tracking
+  sample or spike to its last (an event during sleep is on the clock). The *units* check refuses a session whose largest position span or
   sampling rate disagrees with what a source states. Both raise
   `DatasetCheckError`, which gives the numbers and the argument that loads the
   session anyway.
@@ -229,13 +230,8 @@ scene = rec.animation(time_range=(start, start + 20), video=True)
 scene.export("valero_video.mp4", fps=30)
 ```
 
-**What the overlay shows, and what it does not.** The Valero files state no
-pixel size and store no pixel tracking, so the loader calibrates the video by
-fitting the LED it detects in the frames to the file's positions. The overlay
-is therefore aligned with the tracking by construction: it shows what the
-camera saw at each moment, not a check of the tracking or of the declared
-track. `rec.video.calibration_basis` gives the fit and its residual, and a
-watch-out repeats the caveat. A session without a calibration refuses
+`rec.video.calibration_basis` gives the fit and its residual, and a watch-out
+repeats the caveat above. A session without a calibration refuses
 `animation(video=True)` with an `InputError` that names each source tried; the
 frames are never stretched over the environment's extent.
 
@@ -251,7 +247,7 @@ import pynapple as nap
 
 from neurospatial.io import to_pynapple
 
-position = to_pynapple(rec.times, rec.positions)          # TsdFrame, columns x, y
+position = to_pynapple(rec.times, rec.positions, columns=["x", "y"])  # TsdFrame
 heading = to_pynapple(rec.times, rec.headings)            # Tsd, radians
 spikes = nap.TsGroup(
     {int(u): nap.Ts(t) for u, t in zip(rec.units.index, rec.spike_times, strict=True)}
@@ -315,16 +311,18 @@ Grosmark DANDI session, most of it LFP). Two ways to keep it small:
   read by byte range for the five members the loader needs (260 MB).
 
 `fetch_all(dataset)` downloads every session of a dataset (it returns the
-list of paths). It logs the total size first, as a warning, and refuses to
-start if the cache's disk has less free space than that. For `grosmark_2016`
-that total is about 66 GB.
+list of paths). Before calling it, add up what it will download:
+`catalog().query("dataset == 'grosmark_2016'")["size_bytes"].sum()` is about
+66 GB. It logs the total size first, as a warning, and refuses to start if the
+cache's disk has less free space than that.
 
 ## CRCNS credentials
 
 None of the six datasets needs an account. The package's download helpers
-for files at crcns.org read the login from the `CRCNS_USERNAME` and
-`CRCNS_PASSWORD` environment variables and never print them or put them in an
-error message; set both in your shell before using them, not in code.
+for files at crcns.org are internal, for loaders of CRCNS datasets to come;
+they are not part of the public API. They read the login from the
+`CRCNS_USERNAME` and `CRCNS_PASSWORD` environment variables and never print
+them or put them in an error message; set both in your shell, not in code.
 
 ## Compare sessions across datasets
 
@@ -340,12 +338,12 @@ from neurospatial.datasets import catalog, load
 
 small = catalog().query("verified and size_bytes < 500e6 and n_units > 0")
 rows = []
-for dataset, session in zip(small["dataset"], small["session"]):
-    rec = load(dataset, session)
+for row in small.itertuples():
+    rec = load(row.dataset, row.session)
     rows.append({
-        "dataset": dataset,
-        "session": session,
-        "species": rec.animal,
+        "dataset": row.dataset,
+        "session": row.session,
+        "species": row.species,
         "n_units": rec.n_units,
         "duration_s": rec.duration,
         "position_units": rec.position_units,
