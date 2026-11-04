@@ -62,6 +62,7 @@ and `rec.params["module"]` give each unit's module; units are named
 | What the loader did | Basis | Evidence |
 | --- | --- | --- |
 | spike trains: read from the pickled `spikes_mod<m>` arrays with a restricted unpickler | stated | The pickles import only NumPy's array reconstruction (`_reconstruct`, `ndarray`, `dtype`), listed from their opcodes before any runs. `np.load(..., allow_pickle=True)` is never used. |
+| times, spike times and the sessions text's start and end: seconds on the clock of `t` | inferred | No source read states their unit or clock. The sessions text's first start and last end, the first and last spike and the first and last sample agree to within 0.02 s in every recording. |
 | samples and spikes of the open-field session only | stated | The file's `<rat>_sessions.txt` gives `open_field_1`'s start and end. The other sessions are on other apparatus and are named under "Watch out". |
 | positions: x, y in m, times 100 to cm | inferred | No source read states the unit. The open-field samples span 1.43 to 1.48 m (rat R day 2: 1.56 m) against the stated 1.5 m box. |
 | headings: `azimuth` in [0, 2π) wrapped to [-π, π], allocentric in the positions' frame | inferred | No source read states its zero or sense. Minus the direction of movement while running, its circular mean is within 5 degrees of 0 in every recording. |

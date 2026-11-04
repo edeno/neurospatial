@@ -24,7 +24,7 @@ arrays. ``spikes_mod<m>`` are 0-d object arrays, which ``np.load`` only reads
 with ``allow_pickle=True``, letting the file run code. Their pickles import
 only ``numpy.core.multiarray._reconstruct``, ``numpy.ndarray`` and
 ``numpy.dtype`` (dtypes ``O8`` and ``f8``) and hold a dict of unit index to
-spike times (s). They are read by ``_pickled.read_npz``, which lists each
+spike times. They are read by ``_pickled.read_npz``, which lists each
 pickle's imports before running it and resolves only those names.
 
 What the loader converts:
@@ -34,6 +34,11 @@ What the loader converts:
   between them are kept. The other sessions are on other apparatus (the
   wagon-wheel track, the 40 x 40 cm sleep box; "each in a different arena
   within the same room", the Methods), and are named under "Watch out".
+- ``t``, the spike times and the sessions text's start and end are kept as
+  seconds on one clock. No source read states their unit; it is inferred
+  from the numbers: the sessions text's first start and last end, the first
+  and last spike and the first and last sample agree to within 0.02 s in
+  every recording (an inferred ``Conversion`` giving them).
 - ``x``, ``y`` in metres, times 100 to cm. No source read states the unit;
   it is metres because the open-field samples span 1.43 to 1.48 m (rat R
   day 2: 1.56 m) against the stated 1.5 m box (an inferred ``Conversion``).
@@ -252,14 +257,15 @@ def load_session(
     )
     span = np.ptp(positions[tracked_mask(positions)], axis=0)
     heading = _heading_conversion(offset, spread)
+    clock = _clock_conversion(t, arrays, listed)
     return Recording(
         **entry.identity(path_or_stream),
         animal=f"rat {_rat(entry.session)}",
         apparatus=entry.info.apparatus,
         brain_regions=entry.info.brain_regions,
         clock=(
-            "the recording's clock, seconds from the start of acquisition "
-            f"(the sessions text's times), from {times[0]:.2f} s"
+            "the recording's clock, the file's t taken as seconds (the clock "
+            f"the sessions text's times agree with), from {times[0]:.2f} s"
         ),
         times=times,
         spike_times=tuple(trains),
@@ -295,12 +301,13 @@ def load_session(
             Conversion(
                 "spike_times: spikes_mod<m> read with a restricted unpickler "
                 "(numpy _reconstruct, ndarray and the O8/f8 dtypes only); a "
-                "dict of unit index to spike times in s; units named "
+                "dict of unit index to spike times; units named "
                 "mod<m>_<index>",
                 "stated",
                 "the pickles' imports, listed from their opcodes before they "
                 "run, are those names only",
             ),
+            clock,
             Conversion(
                 f"times, positions, headings and spikes: those within "
                 f"{session.name}, {session.start:g} to {session.end:g} s of the "
@@ -308,7 +315,9 @@ def load_session(
                 f"{t[0]:.2f} to {t[-1]:.2f} s",
                 "stated",
                 f"the file's {_named(names, '_sessions.txt')}: "
-                + "; ".join(f"{s.name} {s.start:g} to {s.end:g} s" for s in listed),
+                + "; ".join(f"{s.name} {s.start:g} to {s.end:g} s" for s in listed)
+                + "; that they are on the clock of t is inferred (the times "
+                "Conversion)",
             ),
             Conversion(
                 "positions: x, y in m, times 100 to cm",
@@ -421,6 +430,43 @@ def _named(names: list[str], suffix: str) -> str:
 def _rat(session: str) -> str:
     """``"R"`` for ``"rat_r_day1"``: the rat's letter, as the paper names it."""
     return session.split("_")[1].upper()
+
+
+def _clock_conversion(
+    t: NDArray[np.float64], arrays: dict[str, Any], listed: list[_Session]
+) -> Conversion:
+    """The inferred time unit and clock: t, the spikes and the sessions text agree.
+
+    No source read states the unit of ``t``, of the spike times or of the
+    sessions text's start and end; the numbers of the three agree.
+    """
+    spikes = np.concatenate(
+        [np.empty(0)]
+        + [
+            np.asarray(train, dtype=np.float64)
+            for key in arrays
+            if key.startswith("spikes_mod")
+            for train in arrays[key][()].values()
+        ]
+    )
+    first, last = min(s.start for s in listed), max(s.end for s in listed)
+    edges = [abs(first - t[0]), abs(last - t[-1])]
+    if spikes.size:
+        edges += [abs(spikes.min() - t[0]), abs(spikes.max() - t[-1])]
+    return Conversion(
+        "times, spike times and the sessions text's start and end: seconds, "
+        "on the clock of t",
+        "inferred",
+        "no source read states their unit or clock; the file's t runs from "
+        f"{t[0]:.3f} to {t[-1]:.3f} s every {np.median(np.diff(t)):.3g} s, its "
+        + (
+            f"{spikes.size} spikes from {spikes.min():.3f} to {spikes.max():.3f} s"
+            if spikes.size
+            else "spike arrays hold no spike"
+        )
+        + f" and the sessions text's sessions from {first:g} to {last:g} s, "
+        f"edges that agree to within {max(edges):.3g} s",
+    )
 
 
 def _heading_conversion(offset: float, spread: float) -> Conversion:

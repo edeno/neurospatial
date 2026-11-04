@@ -115,6 +115,20 @@ def test_headings_are_the_wrapped_azimuth(recording, tmp_path):
     assert not any("not verified" in text for text in rec.watch_outs)
 
 
+def test_the_time_unit_is_inferred_from_the_agreeing_clocks(recording):
+    rec, t, _, _ = recording
+    clock = next(c for c in rec.conversions if c.text.startswith("times, spike"))
+    assert clock.basis == "inferred"
+    assert "no source read states their unit or clock" in clock.evidence
+    assert f"the file's t runs from {t[0]:.3f} to {t[-1]:.3f} s" in clock.evidence
+    assert "edges that agree to within" in clock.evidence
+    window = next(c for c in rec.conversions if c.text.startswith("times, positions"))
+    assert window.basis == "stated"
+    assert "on the clock of t is inferred" in window.evidence
+    trains = next(c for c in rec.conversions if c.text.startswith("spike_times"))
+    assert " in s" not in trains.text
+
+
 def test_names_the_invalid_stretch_and_the_other_sessions(recording):
     rec, t, _, _ = recording
     n_gap = int(np.sum((t > 400.0) & (t < 450.0)))
