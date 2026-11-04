@@ -394,6 +394,10 @@
   raster shows every unit's row, those silent in the window too. On `comrie_2026`
   (203 units, 709k samples) the rate maps add about 4.7 s to the first
   `plot_overview()` (3.3 s to 8.0 s).
+- The overview's time panel is ticked in seconds from the session's first
+  sample, with the start on the recording's clock in the axis label, so a
+  Unix-clock session (`comrie_2026`) no longer prints "+1.625935e9". The drawn
+  data keep the recording's clock.
 - The Matplotlib scene's spike raster labels as many rows as its height
   holds without the labels touching (every k-th row, each still its own
   unit's id) and says so in the axis label, "Unit (1 in k labelled)"; with

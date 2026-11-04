@@ -790,6 +790,28 @@ def test_speed_counts_go_log_when_one_bar_holds_most_samples(long_box_recording)
     assert moving.get_yscale() == "linear"
 
 
+def test_time_axis_counts_from_session_start_and_keeps_the_data(square_recording):
+    # A Unix-clock session: the ticks count from its first sample.
+    offset = 1_625_935_757.7
+    rec = dataclasses.replace(
+        square_recording,
+        times=square_recording.times + offset,
+        spike_times=tuple(t + offset for t in square_recording.spike_times),
+        epochs={},
+    )
+    raster = _titled(rec.plot_overview(), "First 60 s").child_axes[1]
+    assert raster.get_xlabel() == (
+        f"time from session start (s); start = {offset:.3f} s"
+    )
+    ticks = raster.get_xticks()
+    labels = [t.get_text() for t in raster.get_xticklabels()]
+    np.testing.assert_allclose([float(x) for x in labels], ticks - offset, atol=1e-6)
+    assert "e" not in "".join(labels)
+    # The drawn spikes stay on the recording's clock.
+    first = raster.collections[0].get_segments()[0][0, 0]
+    assert first > offset
+
+
 def test_raster_shows_every_units_row(square_recording):
     # The last unit is silent in the window; its row is still on the axis.
     trains = list(square_recording.spike_times)

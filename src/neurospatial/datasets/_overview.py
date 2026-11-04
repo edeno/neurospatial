@@ -425,8 +425,28 @@ def _panel_time(rec: Recording, ax: Axes) -> None:
     bottom.set_xlim(start, stop)
     # Every unit's row, those silent in the window too.
     bottom.set_ylim(-0.5, rec.n_units - 0.5)
-    bottom.set_xlabel("time (s)")
+    _label_from_session_start(rec, bottom, start, stop)
     bottom.set_ylabel("unit" if order is None else SORTED_LABEL, fontsize=8)
+
+
+def _label_from_session_start(
+    rec: Recording, ax: Axes, start: float, stop: float
+) -> None:
+    """Tick a time axis in seconds from the first sample; the data stay as stored.
+
+    Artists keep the recording's clock (a Unix clock would otherwise print as
+    an offset such as "+1.625935e9"); only the tick labels count from
+    ``rec.times[0]``, which the axis label gives.
+    """
+    from matplotlib.ticker import MaxNLocator
+
+    origin = float(rec.times[0])
+    relative = np.asarray(
+        MaxNLocator(nbins=6).tick_values(start - origin, stop - origin), dtype=float
+    )
+    relative = relative[(relative >= start - origin) & (relative <= stop - origin)]
+    ax.set_xticks(origin + relative, [f"{value:g}" for value in np.round(relative, 9)])
+    ax.set_xlabel(f"time from session start (s); start = {origin:.3f} s")
 
 
 def plot_overview(rec: Recording, fig: Figure | None = None) -> Figure:
