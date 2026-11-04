@@ -16,7 +16,15 @@ kept as they are. The registry must already exist with ``dataset`` and
 ``archive.dandiset`` set.
 
 Session ids are the asset file's BIDS entities (``sub-10073_ses-17010302``
-for ``sub-10073_ses-17010302_behavior+ecephys.nwb``).
+for ``sub-10073_ses-17010302_behavior+ecephys.nwb``). Only NWB assets are
+sessions. Where a dandiset publishes each session in several variants (DANDI
+000568: with and without the raw voltage), ``archive.variant`` names the one
+to list (``"-no-raw-data"``); only NWB files whose session entity ends with
+it are sessions, and it is dropped from the session id. Other assets in a
+folder named after an NWB file's stem are the external files its
+ImageSeries name (videos); each is listed under the session's ``videos``
+with its path, id, size and digest, keeping the ``landmarks`` a person
+placed on it.
 
 Usage
 -----
@@ -45,6 +53,8 @@ API = "https://api.dandiarchive.org/api"
 TIMEOUT = 60
 #: Session fields a person sets; the script keeps them.
 HAND_FIELDS = {"verified": False, "default": False, "n_units": None, "verification": ""}
+#: Video fields a person sets; the script keeps them where set.
+VIDEO_HAND_FIELDS = ("landmarks",)
 
 Fetch = Callable[[str], Any]
 
@@ -115,25 +125,31 @@ def build(registry: Mapping[str, Any], version: str, get: Fetch = get_json) -> d
         are kept whole.
     """
     dandiset = registry["archive"]["dandiset"]
+    variant = registry["archive"].get("variant", "")
     meta = get(f"{API}/dandisets/{dandiset}/versions/{version}/")
     rows = registry.get("sessions", [])
     elsewhere = [entry for entry in rows if "url" in entry]
     known = {entry["session"]: entry for entry in rows if "url" not in entry}
     sessions = list(elsewhere)
-    for asset in list_assets(dandiset, version, get):
-        session = session_id(asset["path"])
+    assets = list_assets(dandiset, version, get)
+    nwb = [
+        asset
+        for asset in assets
+        if asset["path"].endswith(".nwb")
+        and session_id(asset["path"]).endswith(variant)
+    ]
+    for asset in nwb:
+        session = session_id(asset["path"]).removesuffix(variant)
         old = known.get(session, {})
-        sessions.append(
-            {
-                "session": session,
-                "archive": f"DANDI {dandiset}",
-                "asset_path": asset["path"],
-                "asset_id": asset["asset_id"],
-                "sha256": asset["metadata"]["digest"]["dandi:sha2-256"],
-                "size_bytes": int(asset["size"]),
-                **{key: old.get(key, value) for key, value in HAND_FIELDS.items()},
-            }
-        )
+        entry = {
+            "session": session,
+            "archive": f"DANDI {dandiset}",
+            **_located(asset),
+            **{key: old.get(key, value) for key, value in HAND_FIELDS.items()},
+        }
+        if videos := _videos(asset["path"], assets, old.get("videos", [])):
+            entry["videos"] = videos
+        sessions.append(entry)
     names = [entry["session"] for entry in sessions]
     if len(set(names)) != len(names):
         msg = (
@@ -155,6 +171,41 @@ def build(registry: Mapping[str, Any], version: str, get: Fetch = get_json) -> d
         },
         "sessions": sorted(sessions, key=lambda entry: entry["session"]),
     }
+
+
+def _located(asset: Mapping[str, Any]) -> dict[str, Any]:
+    """An asset's path, id, digest and size, as a registry row gives them."""
+    return {
+        "asset_path": asset["path"],
+        "asset_id": asset["asset_id"],
+        "sha256": asset["metadata"]["digest"]["dandi:sha2-256"],
+        "size_bytes": int(asset["size"]),
+    }
+
+
+def _videos(
+    nwb_path: str, assets: list[dict], written: list[dict]
+) -> list[dict[str, Any]]:
+    """The assets in the folder named after ``nwb_path``'s stem, sorted by path.
+
+    Each keeps the hand-set fields (``VIDEO_HAND_FIELDS``) of the row
+    ``written`` gives for the same path; a written video the archive no
+    longer lists is refused, not dropped.
+    """
+    folder = nwb_path.removesuffix(".nwb") + "/"
+    hand = {row["asset_path"]: row for row in written}
+    videos = []
+    for asset in sorted(assets, key=lambda a: a["path"]):
+        if not asset["path"].startswith(folder):
+            continue
+        row = _located(asset)
+        old = hand.get(asset["path"], {})
+        row.update({key: old[key] for key in VIDEO_HAND_FIELDS if key in old})
+        videos.append(row)
+    if missing := sorted(set(hand) - {row["asset_path"] for row in videos}):
+        msg = f"videos {missing} are not in the folder of {nwb_path}"
+        raise ValueError(msg)
+    return videos
 
 
 def main() -> None:

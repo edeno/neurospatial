@@ -24,10 +24,13 @@ from neurospatial.datasets._recording import Provenance
 if TYPE_CHECKING:
     import pandas as pd
 
+    from neurospatial.datasets._video import Landmarks
+
 __all__ = [
     "DatasetInfo",
     "Member",
     "SessionEntry",
+    "VideoAsset",
     "catalog",
     "dataset_ids",
     "sessions",
@@ -105,6 +108,32 @@ class Member:
 
 
 @dataclass(frozen=True)
+class VideoAsset:
+    """A session's video file in the archive, beside its NWB file.
+
+    Attributes
+    ----------
+    asset_path : str
+        The video's path in the dandiset: the NWB file's ImageSeries names it
+        relative to the NWB file, in a folder named after the file's stem.
+    asset_id : str
+        The DANDI asset id.
+    sha256 : str
+        The video's SHA-256, which every download is verified against.
+    size_bytes : int
+    landmarks : Landmarks or None
+        Points a person placed on one frame, with their environment
+        positions, for the calibration; None where nobody has.
+    """
+
+    asset_path: str
+    asset_id: str
+    sha256: str
+    size_bytes: int
+    landmarks: Landmarks | None = None
+
+
+@dataclass(frozen=True)
 class SessionEntry:
     """One session of a registry: where it lives and what is known about it.
 
@@ -142,6 +171,9 @@ class SessionEntry:
         For a session read from members of a remote zip (``url``), the
         members fetched, each by byte range; empty for a whole file. The
         session's ``sha256`` and ``size_bytes`` are then the zip's.
+    videos : tuple of VideoAsset
+        The session's video files, fetched only on request; empty where the
+        archive has none.
     """
 
     info: DatasetInfo
@@ -160,6 +192,7 @@ class SessionEntry:
     license: str
     citation: str
     members: tuple[Member, ...] = ()
+    videos: tuple[VideoAsset, ...] = ()
 
     @property
     def download_url(self) -> str:
@@ -357,6 +390,16 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
     if members and url is None:
         msg = f"session {row['session']!r}: zip members need the zip's url"
         raise ValueError(msg)
+    videos = tuple(
+        VideoAsset(
+            asset_path=str(video["asset_path"]),
+            asset_id=str(video["asset_id"]),
+            sha256=_sha256(video["sha256"], f"video {video['asset_path']!r}"),
+            size_bytes=int(video["size_bytes"]),
+            landmarks=_landmarks(video.get("landmarks")),
+        )
+        for video in row.get("videos", ())
+    )
     location = row.get("asset_path") or row.get("file_name") or str(url)
     return SessionEntry(
         info=info,
@@ -379,6 +422,27 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
             else info.citation
         ),
         members=members,
+        videos=videos,
+    )
+
+
+def _landmarks(value: dict[str, Any] | None) -> Landmarks | None:
+    """A video's ``landmarks`` row as :class:`Landmarks`; None without one.
+
+    The row gives ``px``, ``env``, ``frame_size_px``, ``frame`` and
+    ``placed_by``.
+    """
+    if value is None:
+        return None
+    from neurospatial.datasets._video import Landmarks
+
+    width, height = value["frame_size_px"]
+    return Landmarks(
+        px=value["px"],
+        env=value["env"],
+        frame_size_px=(int(width), int(height)),
+        frame=int(value["frame"]),
+        placed_by=str(value["placed_by"]),
     )
 
 

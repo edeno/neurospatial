@@ -114,6 +114,19 @@ def test_unknown_dataset_lists_the_known_ones():
             ),
             "member 'a.mat': sha256 'xyz' is not 64 hex digits",
         ),
+        (
+            lambda r: r["sessions"][0].update(
+                videos=[
+                    {
+                        "asset_path": "v.avi",
+                        "asset_id": "a",
+                        "sha256": "xyz",
+                        "size_bytes": 1,
+                    }
+                ]
+            ),
+            "video 'v.avi': sha256 'xyz' is not 64 hex digits",
+        ),
     ],
 )
 def test_malformed_registry_refused(change, message):
@@ -218,3 +231,61 @@ def test_builder_pins_a_published_version_and_keeps_hand_fields():
     written["sessions"][-1]["session"] = "sub-1_ses-1"
     with pytest.raises(ValueError, match="give one session id"):
         builder.build(written, "0.2", get)
+
+
+def test_builder_lists_one_variant_with_its_videos():
+    """Only the named variant's NWB files are sessions; their folders' files are videos."""
+    builder = _builder()
+    api = builder.API
+    stem = "sub-1/sub-1_ses-1-no-raw-data_behavior+image"
+    pages = {
+        f"{api}/dandisets/000002/versions/0.1/": {
+            "license": ["spdx:CC-BY-4.0"],
+            "citation": "Someone (2023) Data. DANDI Archive.",
+        },
+        f"{api}/dandisets/000002/versions/0.1/assets/?page_size=200&metadata=true": {
+            "results": [
+                _asset(f"{stem}.nwb", "a" * 64),
+                _asset(f"{stem}/uuid_external_file_1.avi", "c" * 64),
+                _asset(f"{stem}/uuid_external_file_0.avi", "b" * 64),
+                _asset("sub-1/sub-1_ses-1_behavior+image.nwb", "d" * 64),
+                _asset(
+                    "sub-1/sub-1_ses-1_behavior+image/uuid_external_file_0.avi",
+                    "e" * 64,
+                ),
+            ],
+            "next": None,
+        },
+    }
+    landmarks = {"px": [[0, 0], [1, 0], [0, 1]], "placed_by": "someone"}
+    written = {
+        "dataset": "x_2023",
+        "archive": {"dandiset": "000002", "variant": "-no-raw-data"},
+        "sessions": [
+            {
+                "session": "sub-1_ses-1",
+                "default": True,
+                "videos": [
+                    {
+                        "asset_path": f"{stem}/uuid_external_file_0.avi",
+                        "landmarks": landmarks,
+                    }
+                ],
+            }
+        ],
+    }
+    built = builder.build(written, "0.1", _api(pages))
+    (session,) = built["sessions"]
+    assert (session["session"], session["sha256"], session["default"]) == (
+        "sub-1_ses-1",
+        "a" * 64,
+        True,
+    )
+    first, second = session["videos"]
+    assert first["asset_path"] == f"{stem}/uuid_external_file_0.avi"
+    assert (first["sha256"], first["landmarks"]) == ("b" * 64, landmarks)
+    assert (second["sha256"], "landmarks" in second) == ("c" * 64, False)
+    # A video with landmarks that the archive no longer lists is refused.
+    written["sessions"][0]["videos"][0]["asset_path"] = f"{stem}/gone.avi"
+    with pytest.raises(ValueError, match=r"gone\.avi"):
+        builder.build(written, "0.1", _api(pages))

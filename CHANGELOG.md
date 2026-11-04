@@ -90,7 +90,12 @@
   sessions, checksums and stated facts are in
   `neurospatial/datasets/registry/<dataset>.json`;
   `scripts/build_dataset_registry.py` fills a DANDI registry from a pinned
-  published version.
+  published version. It lists only NWB files as sessions, only those of the
+  registry's `archive.variant` where a dandiset publishes each session more
+  than once (DANDI 000568: `-no-raw-data`, dropped from the session id), and
+  lists the files in a folder named after an NWB file's stem, the videos its
+  ImageSeries name, under the session's `videos`, keeping the landmarks a
+  person placed on each.
 - A registry session may come from a second archive, with its own license
   as that archive states it ("not stated" where it states none) and its own
   data citation; `scripts/build_dataset_registry.py` keeps such rows. A
