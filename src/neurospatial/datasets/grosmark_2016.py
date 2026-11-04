@@ -194,7 +194,7 @@ _LINEAR_QUANTILE_REASON = (
 _CIRCLE_QUANTILE_REASON = (
     "The 99th percentile, so that 1% of the samples fall outside: a lower one "
     "leaves out head samples just beside the ring and breaks laps there "
-    "(at the 95th, 37 laps of Achilles 11012013 instead of 66)."
+    "(Achilles 11012013: 67 laps at the 99th, 37 at the 95th)."
 )
 #: Soft-L1 scale of the circle fit, cm: samples farther than this from the
 #: ring count less.
