@@ -20,6 +20,7 @@ from neurospatial.datasets import Provenance, Recording
 from neurospatial.datasets._checks import Stated
 from neurospatial.simulation import open_field_session, tmaze_alternation_session
 
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Let a realdata test download into a cold cache: its DownloadWarning is shown.
 
