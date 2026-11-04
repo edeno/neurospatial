@@ -64,11 +64,14 @@ The declared environment:
 
 No source read states the tracks' width. A DANDI track is built with a
 placement tolerance measured from the samples (``track_width``, an inferred
-``Conversion``): twice the 95th percentile of the tracked samples' distance
-from the track. The 95th percentile, not the 99th, because in some sessions
-the rat spends the first minutes off the track, a metre or more from it
-(Achilles 10252013, for 109 s), and the 99th would place those samples on
-the track.
+``Conversion``): twice a high quantile of the tracked samples' distance from
+the track, and at least one bin, so that a known share of the samples falls
+in no bin by construction. On a circle the quantile is the 99th. On a linear
+maze it is the 95th: in some sessions the rat spends the first minutes off
+the track, a metre or more from it (Achilles 10252013, about 110 s, 3.5% of
+the samples), and the 99th would make the track 3 m wide. The OSF session's
+1-D stem has no tolerance: its positions lie along the track by
+construction.
 
 Analysis choices (``params``), from the Supplementary Materials' place-field
 analysis: ``bin_size`` 2 cm, and ``min_speed`` 5 cm/s ("restricted to epochs
@@ -177,8 +180,22 @@ CIRCLE_REWARD_AREA = 30.0
 #: segment would be split into bins shorter still.
 N_VERTICES = int(np.ceil(np.pi * DIAMETER / BIN_SIZE))
 #: The DANDI tracks' placement tolerance is twice this quantile of the
-#: tracked samples' distance from the track.
-TOLERANCE_QUANTILE = 0.95
+#: tracked samples' distance from the track: the 99th on the circle; the 95th
+#: on a linear maze, whose sessions can start with minutes off the track.
+CIRCLE_TOLERANCE_QUANTILE = 0.99
+LINEAR_TOLERANCE_QUANTILE = 0.95
+_LINEAR_QUANTILE_REASON = (
+    "The 95th, not the 99th, percentile, because in some linear-maze sessions "
+    "the rat spends the first minutes off the track, a metre or more from it "
+    "(Achilles 10252013: about 110 s, 3.5% of the samples, 140 cm and more "
+    "away), and "
+    "the 99th would make the track 3 m wide."
+)
+_CIRCLE_QUANTILE_REASON = (
+    "The 99th percentile, so that 1% of the samples fall outside: a lower one "
+    "leaves out head samples just beside the ring and breaks laps there "
+    "(at the 95th, 37 laps of Achilles 11012013 instead of 66)."
+)
 #: Soft-L1 scale of the circle fit, cm: samples farther than this from the
 #: ring count less.
 CIRCLE_FIT_SCALE = 3.0
@@ -662,20 +679,25 @@ def _segment_distance(
     return distance
 
 
-def _tolerance(distance: NDArray[np.float64]) -> tuple[float, str]:
-    """``track_width`` from the tracked samples' distance to the track, and why."""
-    reach = float(np.quantile(distance, TOLERANCE_QUANTILE))
+def _tolerance(
+    distance: NDArray[np.float64], quantile: float, reason: str
+) -> tuple[float, str]:
+    """``track_width`` from the tracked samples' distance to the track, and why.
+
+    Twice ``quantile`` of ``distance`` (cm), and at least one bin; no source
+    states a physical width to floor it with. ``reason`` says why that
+    quantile.
+    """
+    reach = float(np.quantile(distance, quantile))
     width = max(2 * reach, BIN_SIZE)
     evidence = (
         "no source read states the track's width. The tracked head's distance "
         f"from the track: median {np.median(distance):.2f} cm, "
-        f"{TOLERANCE_QUANTILE:.0%} quantile {reach:.3g} cm; "
+        f"{quantile:.0%} quantile {reach:.3g} cm; "
         f"{np.mean(distance > width / 2):.1%} of tracked samples lie beyond the "
-        "tolerance, by construction, and fall in no bin. The 95th, not the 99th, "
-        "percentile, because in some sessions the rat spends the first minutes "
-        "off the track, a metre or more from it, and the 99th would place those "
-        "samples on the track. track_width decides only which samples are "
-        "placed, not the bins, their lengths or connectivity"
+        f"tolerance, by construction, and fall in no bin. {reason} track_width "
+        "decides only which samples are placed, not the bins, their lengths or "
+        "connectivity"
     )
     return width, evidence
 
@@ -723,7 +745,9 @@ def _declared_linear(
     for (a, b), length in zip(order, np.diff(offsets), strict=True):
         graph.add_edge(a, b, distance=float(length))
     distance = _segment_distance(positions[tracked], points, closed=False)
-    width, evidence = _tolerance(distance)
+    width, evidence = _tolerance(
+        distance, LINEAR_TOLERANCE_QUANTILE, _LINEAR_QUANTILE_REASON
+    )
     env = Environment.from_graph(
         graph,
         order,
@@ -756,7 +780,7 @@ def _declared_linear(
             Conversion(
                 f"environment: track_width {width:.3g} cm, a placement tolerance, "
                 "not the track's width: twice the tracked samples' "
-                f"{TOLERANCE_QUANTILE:.0%} quantile distance from the track",
+                f"{LINEAR_TOLERANCE_QUANTILE:.0%} quantile distance from the track",
                 "inferred",
                 evidence,
             ),
@@ -811,7 +835,9 @@ def _declared_circle(
             distance=float(np.linalg.norm(points[(k + 1) % N_VERTICES] - points[k])),
         )
     distance = _segment_distance(positions[tracked], points, closed=True)
-    width, evidence = _tolerance(distance)
+    width, evidence = _tolerance(
+        distance, CIRCLE_TOLERANCE_QUANTILE, _CIRCLE_QUANTILE_REASON
+    )
     env = Environment.from_graph(
         graph,
         order,
@@ -840,7 +866,7 @@ def _declared_circle(
             Conversion(
                 f"environment: track_width {width:.3g} cm, a placement tolerance, "
                 "not the track's width: twice the tracked samples' "
-                f"{TOLERANCE_QUANTILE:.0%} quantile distance from the track",
+                f"{CIRCLE_TOLERANCE_QUANTILE:.0%} quantile distance from the track",
                 "inferred",
                 evidence,
             ),

@@ -152,8 +152,8 @@ BLOCK = 60.0
 #: The track is placed between these quantiles of the samples along it.
 END_QUANTILES = (0.005, 0.995)
 #: The placement tolerance is twice this quantile of the samples' distance
-#: from the track.
-TOLERANCE_QUANTILE = 0.95
+#: from the track, and at least the stated width and one bin.
+TOLERANCE_QUANTILE = 0.99
 
 _BEHAVIOR = "processing/behavior/LinearMazePositionTracking"
 _POSITION = f"{_BEHAVIOR}/SpatialSeriesRaw"
@@ -465,8 +465,9 @@ def _declared_track(
         f"the tracked point's distance from the track: median "
         f"{np.median(distance):.2f} cm, {TOLERANCE_QUANTILE:.0%} quantile "
         f"{reach:.3g} cm; {np.mean(distance > width / 2):.1%} of tracked samples "
-        "lie beyond the tolerance, by construction, and fall in no bin. "
-        "track_width decides only which samples are placed, not the bins, their "
+        "lie beyond the tolerance, by construction, and fall in no bin. The "
+        "99th percentile, so that 1% of the samples are left out: the 95th "
+        "leaves out 5%, head samples just beside the track. track_width decides only which samples are placed, not the bins, their "
         "lengths or connectivity",
     )
     return env, (placement, tolerance), distance

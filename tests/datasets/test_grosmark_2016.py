@@ -249,6 +249,11 @@ def test_loads_a_dandi_linear_session(tmp_path):
     assert "0 to 160 cm over 154.0 cm of the 2-D track" in text
     placement = next(c for c in rec.conversions if "least-squares" in c.text)
     assert placement.basis == "inferred"
+    # A linear maze's tolerance is the 95th percentile (a session can start
+    # far off the track): 5% of the tracked samples fall in no bin.
+    tracked = np.all(np.isfinite(positions), axis=1)
+    outside = np.asarray(rec.env.bin_at(positions[tracked])) < 0
+    assert outside.mean() == pytest.approx(0.05, abs=0.002)
 
 
 #: The planted circle: centre and the stated 50 cm radius.
@@ -282,11 +287,11 @@ def test_loads_a_dandi_circular_session(tmp_path):
     centre = next(c for c in rec.conversions if "centred at" in c.text)
     assert f"({CENTRE[0]:.1f}, {CENTRE[1]:.1f}) cm" in centre.text
     # The loop is the whole circle, in bins of the stated 2 cm, and the
-    # tolerance leaves out the 5% of samples farthest from it, by construction.
+    # tolerance leaves out the 1% of samples farthest from it, by construction.
     assert rec.env.n_bins == 158
     np.testing.assert_allclose(rec.env.bin_sizes, np.pi * 100.0 / 158, rtol=1e-3)
     outside = np.asarray(rec.env.bin_at(rec.positions)) < 0
-    assert outside.mean() == pytest.approx(0.05, abs=0.002)
+    assert outside.mean() == pytest.approx(0.01, abs=0.002)
     # env.to_linear runs counter-clockwise from east of the centre.
     north = rec.env.to_linear(np.array([[CENTRE[0], CENTRE[1] + 50.0]]))[0]
     assert north == pytest.approx(rec.env.bin_sizes.sum() / 4, abs=0.1)
