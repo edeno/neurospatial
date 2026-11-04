@@ -184,8 +184,8 @@ WATCH_OUTS: dict[str, tuple[str, ...]] = {
 
 #: Added to every session's watch-outs, not only the ones checked by hand.
 _STIMULATION = (
-    "Each track session interleaves \"three blocks of 10 baseline runs\" with "
-    "\"two blocks of 40 to 50 stimulation runs\" (main text of Valero et al. "
+    'Each track session interleaves "three blocks of 10 baseline runs" with '
+    '"two blocks of 40 to 50 stimulation runs" (main text of Valero et al. '
     "2022), and light unmasks place fields in non-place cells, the paper's own "
     "finding. The file holds no stimulation times (its stimulus group is "
     "empty), so the blocks cannot be separated: place fields and rate maps "

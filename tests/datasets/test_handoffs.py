@@ -16,12 +16,15 @@ def test_recording_to_pynapple(square_recording):
     position = to_pynapple(rec.times, rec.positions)
     heading = to_pynapple(rec.times, rec.headings)
     spikes = nap.TsGroup(
-        {int(u): nap.Ts(t) for u, t in zip(rec.units.index, rec.spike_times)}
+        {
+            int(u): nap.Ts(t)
+            for u, t in zip(rec.units.index, rec.spike_times, strict=True)
+        }
     )
     np.testing.assert_array_equal(position.values, rec.positions)
     np.testing.assert_array_equal(heading.values, rec.headings)
     assert len(spikes) == rec.n_units
-    for unit, train in zip(rec.units.index, rec.spike_times):
+    for unit, train in zip(rec.units.index, rec.spike_times, strict=True):
         np.testing.assert_array_equal(spikes[int(unit)].t, train)
 
 

@@ -244,7 +244,7 @@ from neurospatial.io import to_pynapple
 position = to_pynapple(rec.times, rec.positions)          # TsdFrame, columns x, y
 heading = to_pynapple(rec.times, rec.headings)            # Tsd, radians
 spikes = nap.TsGroup(
-    {int(u): nap.Ts(t) for u, t in zip(rec.units.index, rec.spike_times)}
+    {int(u): nap.Ts(t) for u, t in zip(rec.units.index, rec.spike_times, strict=True)}
 )
 ```
 
