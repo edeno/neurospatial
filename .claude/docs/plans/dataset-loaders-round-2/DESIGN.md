@@ -1,6 +1,6 @@
 # Dataset loaders, round 2: design
 
-Status: draft, 2026-11-04. Builds on the merged loader design
+Status: merged as #283 (1deec1ecd), 2026-11-04. Builds on the merged loader design
 (`.claude/docs/plans/dataset-loaders/DESIGN.md`, merged as #282), whose
 contracts this round keeps unchanged.
 
