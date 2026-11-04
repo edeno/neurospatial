@@ -726,7 +726,8 @@ class Recording(ReadOnlyArraysMixin):
         speed histogram with ``params["min_speed"]`` marked, a head-direction
         polar histogram beside heading minus direction of travel, units per
         brain region with spikes per unit, and the first 60 s of position
-        with the spike raster. A panel the dataset has no data for says "not
+        with the spike raster, from the later of the first tracked sample
+        and the first spike. A panel the dataset has no data for says "not
         in this dataset". This is not ``plot``: the rules fix ``plot`` to one
         Axes.
 
@@ -765,7 +766,9 @@ class Recording(ReadOnlyArraysMixin):
         ----------
         time_range : (float, float), optional
             Seconds [start, stop) on the recording's clock. Default: the
-            first 60 s of tracking, so the first ``show()`` opens fast.
+            first 60 s where tracking and spikes overlap (from the later of
+            the first tracked sample and the first spike), so the first
+            ``show()`` opens fast and shows spikes.
         trail_length : int, optional
             Length of the path trail behind the animal, in frames.
         video : bool, default False

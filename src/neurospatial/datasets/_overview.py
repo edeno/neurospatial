@@ -204,9 +204,10 @@ def _panel_units(rec: Recording, ax: Axes) -> None:
 
 
 def _panel_time(rec: Recording, ax: Axes) -> None:
-    ax.set_title(f"First {WINDOW_SECONDS:g} s of tracking")
+    title = f"First {WINDOW_SECONDS:g} s of tracking with spikes"
+    ax.set_title(title)
     if rec.positions is None:
-        _missing(ax, f"First {WINDOW_SECONDS:g} s of tracking", "no positions")
+        _missing(ax, title, "no positions")
         return
     start, stop = _default_time_range(rec)
     ax.axis("off")
@@ -262,12 +263,24 @@ def plot_overview(rec: Recording, fig: Figure | None = None) -> Figure:
 
 
 def _default_time_range(rec: Recording) -> tuple[float, float]:
-    """The first ``WINDOW_SECONDS`` of tracking, from the first tracked sample."""
+    """The first ``WINDOW_SECONDS`` where tracking and spikes overlap.
+
+    It starts at the later of the first tracked sample and the first spike
+    of any unit, so a session whose neural recording starts after its
+    tracking (as in ``forli_2025``) opens on spikes. Without spikes, or
+    when they start after the last tracked sample, it starts at the first
+    tracked sample.
+    """
     if rec.positions is not None:
-        tracked = tracked_mask(rec.positions)
-        start = float(rec.times[tracked][0]) if tracked.any() else float(rec.times[0])
+        tracked = rec.times[tracked_mask(rec.positions)]
     else:
-        start = float(rec.times[0])
+        tracked = rec.times
+    if not tracked.size:
+        tracked = rec.times
+    start = float(tracked[0])
+    first_spike = min((float(t[0]) for t in rec.spike_times if t.size), default=None)
+    if first_spike is not None and start < first_spike < tracked[-1]:
+        start = first_spike
     return start, start + WINDOW_SECONDS
 
 
@@ -286,7 +299,8 @@ def animation(
         The session.
     time_range : (float, float), optional
         Seconds [start, stop) to show, on the recording's clock. Default: the
-        first 60 s of tracking. The scene has one frame per tracking sample,
+        first 60 s where tracking and spikes overlap, from the later of the
+        first tracked sample and the first spike. The scene has one frame per tracking sample,
         or 30 frames a second when tracking is faster; the overlays keep their
         own samples.
     trail_length : int, optional

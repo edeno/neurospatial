@@ -100,14 +100,51 @@ def test_time_panel_draws_the_first_minute(square_recording):
     ax = _titled(rec.plot_overview(), "First 60 s")
     top, bottom = ax.child_axes
     (x_line, _y_line) = top.lines
-    stop = rec.times[0] + 60.0
-    n_window = int(np.sum((rec.times >= rec.times[0]) & (rec.times < stop)))
-    np.testing.assert_array_equal(x_line.get_ydata(), rec.positions[:n_window, 0])
+    # The first spike comes just after the first sample: the window starts there.
+    start = min(train[0] for train in rec.spike_times if train.size)
+    assert rec.times[0] < start < rec.times[0] + 0.1
+    stop = start + 60.0
+    window = (rec.times >= start) & (rec.times < stop)
+    np.testing.assert_array_equal(x_line.get_ydata(), rec.positions[window, 0])
     n_ticks = sum(
         len(seg) for coll in bottom.collections for seg in [coll.get_segments()]
     )
-    expected = sum(int(np.sum(s < stop)) for s in rec.spike_times)
+    expected = sum(int(np.sum((s >= start) & (s < stop))) for s in rec.spike_times)
     assert n_ticks == expected
+
+
+def _late_spikes(rec, start):
+    """``rec`` with every spike before ``start`` s removed."""
+    return dataclasses.replace(
+        rec, spike_times=tuple(train[train >= start] for train in rec.spike_times)
+    )
+
+
+def test_time_panel_and_scene_start_where_spikes_start(square_recording):
+    # The neural recording starts 25 s after the tracking, as the bat's does.
+    rec = _late_spikes(square_recording, 25.0)
+    first_spike = min(train[0] for train in rec.spike_times if train.size)
+    assert first_spike > rec.times[0] + 20
+    ax = _titled(rec.plot_overview(), "First 60 s")
+    _top, bottom = ax.child_axes
+    assert bottom.get_xlim() == (first_spike, first_spike + 60.0)
+    n_ticks = sum(len(coll.get_segments()) for coll in bottom.collections)
+    assert n_ticks == sum(int(np.sum(t < first_spike + 60.0)) for t in rec.spike_times)
+    assert n_ticks > 0
+    scene = rec.animation()
+    assert first_spike <= scene.frame_times[0] < first_spike + 0.02
+
+
+def test_time_panel_starts_at_tracking_when_spikes_start_first(square_recording):
+    # Negative control: spikes from the start, tracking lost for the first 10 s.
+    positions = np.array(square_recording.positions)
+    positions[square_recording.times < 10.0] = np.nan
+    rec = dataclasses.replace(square_recording, positions=positions)
+    first_tracked = rec.times[rec.times >= 10.0][0]
+    assert min(train[0] for train in rec.spike_times if train.size) < first_tracked
+    ax = _titled(rec.plot_overview(), "First 60 s")
+    assert ax.child_axes[1].get_xlim() == (first_tracked, first_tracked + 60.0)
+    assert rec.animation().frame_times[0] == first_tracked
 
 
 def test_fig_argument_is_used(square_recording):
@@ -147,11 +184,13 @@ def test_animation_scene_holds_the_data(square_recording):
     epochs = {o.label: o for o in scene.overlays if isinstance(o, EpochOverlay)}
     assert set(epochs) == {"run", "rest"}
     np.testing.assert_array_equal(epochs["rest"].epochs, rec.epochs["rest"])
-    # The default window is the first 60 s of tracking (here the whole session).
-    assert scene.frame_times[0] == rec.times[0]
+    # The default window is the first 60 s with tracking and spikes (here the
+    # whole session), from the first sample at or after the first spike.
+    first_spike = min(train[0] for train in rec.spike_times if train.size)
+    assert scene.frame_times[0] == rec.times[rec.times >= first_spike][0]
     # 100 Hz tracking is drawn at 30 frames a second, a rate viewers can play.
     np.testing.assert_allclose(np.diff(scene.frame_times), 1 / 30)
-    assert scene.frame_times[-1] < rec.times[0] + 60.0
+    assert scene.frame_times[-1] < first_spike + 60.0
 
 
 def test_animation_time_range(square_recording):

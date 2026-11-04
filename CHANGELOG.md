@@ -333,6 +333,12 @@
   before `b`. A stop clipped to the clock includes its last time. A range
   farther outside still raises `ValueError`, which now gives the range, the
   clock and the frame interval.
+- The overview's time panel, now titled "First 60 s of tracking with
+  spikes", and `rec.animation()`'s default window start at the later of the
+  first tracked sample and the first spike, so a session whose neural
+  recording starts after its tracking shows spikes: the `forli_2025` bat's
+  panel showed −94 to −34 s, before its first spike at −12.7 s, and its raster
+  was empty.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

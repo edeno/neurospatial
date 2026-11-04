@@ -168,7 +168,9 @@ positions).
 environment with the path, occupancy (never-visited bins drawn as missing), the
 speed histogram with `params["min_speed"]` marked, head direction beside
 heading minus direction of travel, units per brain region, and the first 60 s
-of position beside the spike raster. A panel the dataset has no data for says
+of position beside the spike raster, from the later of the first tracked
+sample and the first spike, so a session whose neural recording starts after
+its tracking still shows spikes. A panel the dataset has no data for says
 "not in this dataset".
 
 <!-- docs-test: run setup=docs_datasets_session -->
@@ -179,8 +181,8 @@ fig.savefig("overview.png", dpi=100)
 
 For the time course, `rec.animation()` builds an `Animation` of the session:
 occupancy over the environment, with the path, headings, spike raster, events
-and epochs of the window on top. It starts with the first 60 s of tracking,
-so the first view opens fast; pass `time_range=(start, stop)` in seconds for
+and epochs of the window on top. It starts with the same 60 s as the
+overview's time panel, so the first view opens fast and shows spikes; pass `time_range=(start, stop)` in seconds for
 another window.
 
 <!-- docs-test: skip needs a GUI window -->
