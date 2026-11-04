@@ -164,6 +164,22 @@ def test_loads_a_session_with_its_video(synthetic):
         rec.animation(video=True)
 
 
+def test_every_session_warns_that_baseline_and_stimulation_runs_mix(
+    synthetic, tmp_path
+):
+    """The warning is not limited to the session checked by hand."""
+    from neurospatial.datasets import valero_2022
+
+    entry, path, _ = synthetic
+    other = dataclasses.replace(entry, session="sub-other_ses-other", default=False)
+    assert other.session not in valero_2022.WATCH_OUTS
+    for session_entry in (entry, other):
+        rec = valero_2022.load_session(session_entry, path)
+        (line,) = [w for w in rec.watch_outs if "baseline runs" in w]
+        assert "no stimulation times" in line
+        assert "mix baseline and stimulation runs" in line
+
+
 def test_session_without_one_video_file_has_none(synthetic, tmp_path):
     """A video split across two files, or none, gives rec.video None and says why."""
     from neurospatial.datasets import valero_2022

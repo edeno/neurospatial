@@ -6,6 +6,14 @@ units, ripples, sleep states and an overhead video of each session. It is the
 dataset to use for drawing tracked position and spikes over the camera's view
 of the animal.
 
+!!! warning "Baseline and stimulation runs are mixed"
+    Each track session interleaves "three blocks of 10 baseline runs" with
+    "two blocks of 40 to 50 stimulation runs" (main text), and light unmasks
+    place fields in non-place cells, the paper's own finding. The files hold
+    no stimulation times (the stimulus group is empty), so the blocks cannot
+    be separated. Place fields and rate maps computed on the track epoch mix
+    the two conditions. Every session carries this as a watch-out.
+
 | | |
 | --- | --- |
 | Dataset id | `valero_2022` |
@@ -94,6 +102,9 @@ over the track's bins lies along the track and cannot be drawn over the video's
 2-D frames (draw it with `rec.animation()` instead, without the video).
 
 ## Watch out
+
+For every session: the baseline and stimulation runs are mixed, as in the box
+at the top of this page.
 
 For the default session `sub-fCamk2_ses-fCamk2-201014-sess3`:
 

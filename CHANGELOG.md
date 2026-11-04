@@ -217,7 +217,9 @@
   not check the tracking or the declared track, and the track is not
   visible in the video. Another watch-out says the scene shows the video
   mirrored from the raw file, since the file's y grows down the camera's
-  rows. Other sessions refuse `animation(video=True)` until the fit is run
+  rows. Every session also carries a watch-out
+  that baseline and optogenetic stimulation runs are interleaved and cannot be
+  separated, since the files hold no stimulation times. Other sessions refuse `animation(video=True)` until the fit is run
   for them. All 28 sessions load; one (`sub-fCamk2_ses-fCamk2-201013-sess2`,
   an epoch ending 50 s after the recording) only with
   `accept_failed_checks=("clock",)`. The epochs holding position samples
