@@ -70,9 +70,10 @@ def load(cache: Path | None = None) -> Recording:
     """The session from ``neurospatial.datasets``; positions in cm, headings in radians."""
     from neurospatial.datasets import gardner_2022
     from neurospatial.datasets import load as load_public
+    from neurospatial.datasets._arenas import fitted_rectangle
 
     rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
-    centre, angle, sides = gardner_2022.fitted_rectangle(rec.positions)
+    centre, angle, sides = fitted_rectangle(rec.positions)
     side = gardner_2022.SIDE
     why = "the declared square's facts the environment fidelity study reads"
     return from_public(

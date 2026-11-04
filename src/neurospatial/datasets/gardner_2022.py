@@ -73,6 +73,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.datasets._arenas import PLACEMENT_TRIM, fitted_rectangle
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import (
     Conversion,
@@ -135,8 +136,6 @@ RUNNING = 10.0
 #: frame is not taken as verified: the circular mean (rad) and median spread.
 MAX_HEADING_OFFSET = 0.2
 MAX_HEADING_SPREAD = np.radians(45.0)
-#: Share of samples, per tail and axis, left out before placing the box.
-PLACEMENT_TRIM = 0.001
 _PAPER = "the Methods of Gardner et al. 2022"
 
 #: Findings computed from the data (by the checks or this loader) that each
@@ -538,63 +537,3 @@ def _declared_square(
         f"less the {4 * PLACEMENT_TRIM:.1%} farthest from their median",
     )
     return env, placement
-
-
-def fitted_rectangle(
-    positions: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], float, NDArray[np.float64]]:
-    """The minimum rotated rectangle around the tracked samples, less far outliers.
-
-    Parameters
-    ----------
-    positions : ndarray, shape (n_time, 2)
-
-    Returns
-    -------
-    centre : ndarray, shape (2,)
-    angle : float
-        Rotation from the positions' x axis, radians in [-π/4, π/4).
-    sides : ndarray, shape (2,)
-        The rectangle's two side lengths, the one along ``angle`` first.
-    """
-    from shapely.geometry import MultiPoint
-
-    fitted = MultiPoint(trimmed(positions, PLACEMENT_TRIM)).minimum_rotated_rectangle
-    corners = np.asarray(fitted.exterior.coords)[:4]
-    sides = np.diff(np.vstack([corners, corners[:1]]), axis=0)[:2]
-    lengths = np.linalg.norm(sides, axis=1)
-    # The side nearer the x axis sets the rotation.
-    first = int(np.argmax(np.abs(sides[:, 0]) / lengths))
-    angle = float(np.arctan2(sides[first, 1], sides[first, 0]))
-    angle = float((angle + np.pi / 4) % (np.pi / 2) - np.pi / 4)
-    centre = np.asarray(fitted.centroid.coords[0], dtype=np.float64)
-    return centre, angle, lengths[[first, 1 - first]]
-
-
-def trimmed(positions: NDArray[np.float64], trim: float) -> NDArray[np.float64]:
-    """Tracked samples less the ``2 * n_dims * trim`` share farthest from their median.
-
-    A few far glitches are dropped whole before a shape is fitted; the
-    positions themselves are not changed.
-
-    Parameters
-    ----------
-    positions : ndarray, shape (n_time, n_dims)
-    trim : float
-        Per tail and axis.
-
-    Returns
-    -------
-    ndarray, shape (n_kept, n_dims)
-
-    Examples
-    --------
-    >>> points = np.vstack([np.zeros((999, 2)), [[100.0, 100.0]]])
-    >>> trimmed(points, 0.0001).shape
-    (999, 2)
-    """
-    tracked = positions[tracked_mask(positions)]
-    radius = np.linalg.norm(tracked - np.median(tracked, axis=0), axis=1)
-    share = 2 * tracked.shape[1] * trim
-    kept: NDArray[np.float64] = tracked[radius <= np.quantile(radius, 1 - share)]
-    return kept
