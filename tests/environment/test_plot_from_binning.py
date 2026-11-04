@@ -540,3 +540,60 @@ def test_plot_draws_the_arena_outline_with_its_holes(angle):
             assert {tuple(np.round(p, 9)) for p in ring.coords} <= drawn
     finally:
         plt.close(figure)
+
+
+def _stem(nodes):
+    import networkx as nx
+
+    graph = nx.Graph()
+    for name, x in nodes:
+        graph.add_node(name, pos=(x,))
+    from itertools import pairwise
+
+    order = list(pairwise(name for name, _ in nodes))
+    for a, b in order:
+        graph.add_edge(a, b, distance=abs(dict(nodes)[b] - dict(nodes)[a]))
+    return Environment.from_graph(graph, order, bin_size=2.0, units="cm")
+
+
+def _label_boxes(figure, axes):
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    return [text.get_window_extent(renderer) for text in axes.texts]
+
+
+def test_a_one_dimensional_track_is_drawn_horizontally_with_clear_labels():
+    # Two nodes 10 cm apart on a 160 cm stem: their names would collide.
+    env = _stem([("stem_start", 10.0), ("stem_mid", 20.0), ("stem_end", 170.0)])
+    figure, axes = plt.subplots(figsize=(5, 3))
+    try:
+        env.plot(ax=axes)
+        assert not axes.yaxis.get_visible()
+        boxes = _label_boxes(figure, axes)
+        assert len(boxes) == 3
+        track_y = axes.transData.transform((0.0, 0.0))[1]
+        for box in boxes:
+            assert box.y0 > track_y  # above the track, not over it
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1 :]:
+                assert not a.overlaps(b)
+    finally:
+        plt.close(figure)
+
+
+def test_a_planar_track_keeps_its_y_axis_and_centered_labels():
+    # Negative control: a 2-D track's y axis is a coordinate.
+    import networkx as nx
+
+    graph = nx.Graph()
+    graph.add_node("a", pos=(0.0, 0.0))
+    graph.add_node("b", pos=(0.0, 50.0))
+    graph.add_edge("a", "b", distance=50.0)
+    env = Environment.from_graph(graph, [("a", "b")], bin_size=2.0, units="cm")
+    figure, axes = plt.subplots()
+    try:
+        env.plot(ax=axes)
+        assert axes.yaxis.get_visible()
+        assert {text.get_position() for text in axes.texts} == {(0.0, 0.0), (0.0, 50.0)}
+    finally:
+        plt.close(figure)

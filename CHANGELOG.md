@@ -364,6 +364,10 @@
   events, positions, body-part skeletons, time cursors and labels:
   `forli_2025`'s `rec.animation(time_range=(105, 165)).show(backend="fastplotlib")`
   raised `ValueError: Unknown color: 'tab:cyan'`.
+- `env.plot()` draws a track whose nodes have 1-D positions as a horizontal
+  track with no y axis, each node's name above its node and staggered where
+  two names would meet; the names were drawn over the track and over each
+  other on the `grosmark_2016` stem.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

@@ -588,7 +588,9 @@ def plot_track(
 ) -> Axes:
     """Draw the track graph, active bin centers and projected linear bin edges.
 
-    A track whose nodes have 1-D positions is drawn along the x axis, at y = 0.
+    A track whose nodes have 1-D positions is drawn as a horizontal track
+    along the x axis, at y = 0, with no y axis (it has no meaning there) and
+    each node's name above it, clear of the track and of its neighbors'.
     """
     import matplotlib.pyplot as plt
 
@@ -596,6 +598,10 @@ def plot_track(
         _, ax = plt.subplots(figsize=figsize)
     ax.set_title(f"{title} Layout")
     original_node_pos = _positions_on_plane(linearization.graph)
+    one_dimensional = any(
+        len(np.atleast_1d(pos)) == 1
+        for pos in nx.get_node_attributes(linearization.graph, "pos").values()
+    )
     nx.draw_networkx_nodes(
         linearization.graph,
         original_node_pos,
@@ -606,8 +612,11 @@ def plot_track(
     for node_id1, node_id2 in linearization.graph.edges:
         pos = np.stack((original_node_pos[node_id1], original_node_pos[node_id2]))
         ax.plot(pos[:, 0], pos[:, 1], color="gray", zorder=-1, label="original edges")
-    for node_id, pos in original_node_pos.items():
-        ax.text(pos[0], pos[1], str(node_id), ha="center", va="center", zorder=10)
+    if one_dimensional:
+        _label_nodes_above(ax, original_node_pos)
+    else:
+        for node_id, pos in original_node_pos.items():
+            ax.text(pos[0], pos[1], str(node_id), ha="center", va="center", zorder=10)
     bin_node_pos = _positions_on_plane(connectivity)
     nx.draw_networkx_nodes(
         connectivity, bin_node_pos, ax=ax, node_size=30, node_color="black"
@@ -624,7 +633,45 @@ def plot_track(
             alpha=0.8,
             label="bin edges",
         )
+    if one_dimensional:
+        ax.set_ylim(-1.0, 1.0)
+        ax.yaxis.set_visible(False)
+        for side in ("left", "right", "top"):
+            ax.spines[side].set_visible(False)
     return ax
+
+
+def _label_nodes_above(ax: Axes, positions: dict[Any, NDArray[np.float64]]) -> None:
+    """Name each node of a 1-D track above it, staggered when names would meet.
+
+    Names are centered over their node, 14 points above the track (clear of
+    the node's marker); a name
+    whose node lies within a name's width of the last name on its row goes
+    on the next row up, so no two names overlap and none covers the track.
+    """
+    nodes = sorted(positions, key=lambda node: positions[node][0])
+    if not nodes:
+        return
+    xs = np.array([positions[node][0] for node in nodes])
+    span = float(np.ptp(xs)) or 1.0
+    # About a twelfth of the axis per name: room for ``"stem_start"`` at 10 pt.
+    width = span / 12 * max(len(str(node)) for node in nodes) / 10
+    last: list[float] = []  # each row's last name's position
+    for node, x in zip(nodes, xs, strict=True):
+        row = next((i for i, end in enumerate(last) if x - end > width), len(last))
+        if row == len(last):
+            last.append(x)
+        last[row] = x
+        ax.annotate(
+            str(node),
+            (x, 0.0),
+            xytext=(0, 14 + 12 * row),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            zorder=10,
+        )
 
 
 def _plot_track_linear(
