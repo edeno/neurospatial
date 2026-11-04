@@ -62,6 +62,8 @@ def _write_session(
     seed=0,
 ):
     """A ``Dsession`` file laid out as mat_files.md describes, through scipy."""
+    # The loader reads the file with mat-io, which the datasets extra installs.
+    pytest.importorskip("matio")
     import scipy.io as sio
 
     if hd is None:

@@ -174,7 +174,7 @@ def _folder(tmp_path, **change):
 
 def _edit(folder, field, edit):
     """Change one stored row of the session file in place."""
-    import h5py
+    h5py = pytest.importorskip("h5py")
 
     with h5py.File(folder / f"{DEFAULT}.mat", "r+") as mat:
         values = mat[field][()]
@@ -378,7 +378,7 @@ def test_a_lattice_part_past_the_data_gives_clipped_analysis_epochs(
     tmp_path, session_entry
 ):
     """analysis_epochs and the decoding blocks follow the clipped lattice row."""
-    import h5py
+    h5py = pytest.importorskip("h5py")
 
     parts = {"square1": [(0.0, 200.0)], "lattice": [(200.0, 800.0)]}
     names = NAMES[:2]
