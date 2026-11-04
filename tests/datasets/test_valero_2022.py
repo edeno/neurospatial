@@ -12,11 +12,10 @@ import pytest
 
 from neurospatial._exceptions import InputError
 from neurospatial.datasets import load
-from neurospatial.datasets._catalog import VideoAsset, sessions
+from neurospatial.datasets._catalog import VideoAsset
 from neurospatial.datasets._checks import run_checks
 from neurospatial.datasets._video import CALIBRATION_SOURCES
 
-DEFAULT = "sub-fCamk2_ses-fCamk2-201014-sess3"
 #: The video clock's lead on the position clock in the synthetic file, s.
 LEAD = 22.6
 #: Seconds of the track epoch before the first position sample.
@@ -25,10 +24,6 @@ LATE = 20.0
 OLD_DEVICE = pytest.mark.filterwarnings(
     "ignore:The 'manufacturer' field is deprecated:DeprecationWarning"
 )
-
-
-def _entry(session=DEFAULT):
-    return next(entry for entry in sessions("valero_2022") if entry.session == session)
 
 
 def _write_session(
@@ -125,14 +120,14 @@ def _write_session(
 
 
 @pytest.fixture
-def synthetic(tmp_path):
+def synthetic(tmp_path, session_entry):
     """A synthetic session in the cache, its entry naming its one video."""
     folder = tmp_path / "valero_2022"
     folder.mkdir()
     path = folder / "sub-x_ses-x-no-raw-data_behavior+ecephys+image.nwb"
     times = _write_session(path)
     entry = dataclasses.replace(
-        _entry(),
+        session_entry("valero_2022"),
         asset_path=f"sub-x/{path.name}",
         videos=(
             VideoAsset(
@@ -225,13 +220,11 @@ def test_session_without_one_video_file_has_none(synthetic, tmp_path):
 
 @pytest.mark.realdata
 @OLD_DEVICE
-def test_loads_default_session():
+def test_loads_default_session(session_entry, assert_default_session):
     """The survey's session: 35 CA1 units, 30 Hz, the 110 cm track along y."""
     rec = load("valero_2022")
-    assert rec.session == DEFAULT
-    assert rec.verified
-    assert rec.failed_checks == ()
-    assert rec.n_units == _entry().n_units == 35
+    assert_default_session(rec, session_entry("valero_2022"))
+    assert rec.n_units == 35
     assert rec.sampling_rate == pytest.approx(30.0, rel=1e-6)
     assert rec.times.size == 67_131
     low, high = np.nanmin(rec.positions, axis=0), np.nanmax(rec.positions, axis=0)
@@ -239,7 +232,6 @@ def test_loads_default_session():
     np.testing.assert_allclose(high, [20.6797, 116.4804], atol=1e-3)
     assert 100.0 <= np.ptp(rec.positions[:, 1]) <= 125.0
     assert rec.events["ripples"].shape == (49, 2)
-    assert rec.provenance.sha256 == _entry().sha256
     assert rec.video.frame_times.size == 67_131
     np.testing.assert_array_equal(rec.video.frame_times, rec.times)
     # The width is twice the samples' 99th percentile distance from the track.

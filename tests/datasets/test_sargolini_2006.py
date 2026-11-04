@@ -9,16 +9,9 @@ import numpy as np
 import pytest
 
 from neurospatial.datasets import load
-from neurospatial.datasets._catalog import sessions
 from neurospatial.datasets._checks import run_checks
 
 DEFAULT = "sub-10073_ses-17010302"
-
-
-def _entry(session=DEFAULT):
-    return next(
-        entry for entry in sessions("sargolini_2006") if entry.session == session
-    )
 
 
 def _write_session(path, xy_cm, *, second_led=False, histology="MEC LII"):
@@ -70,12 +63,12 @@ def box_path_cm():
     return xy * (100.0 / np.ptp(xy, axis=0).max())
 
 
-def test_loads_a_session_in_cm(tmp_path, box_path_cm):
+def test_loads_a_session_in_cm(tmp_path, box_path_cm, session_entry):
     path = tmp_path / "session.nwb"
     times = _write_session(path, box_path_cm)
     from neurospatial.datasets import sargolini_2006
 
-    entry = _entry()
+    entry = session_entry("sargolini_2006")
     rec = run_checks(sargolini_2006.load_session(entry, path), stated=entry.info.stated)
     np.testing.assert_allclose(rec.times, times)
     # The file stores cm stated as metres x 0.01; read_position gives metres.
@@ -113,12 +106,14 @@ def test_loads_a_session_in_cm(tmp_path, box_path_cm):
     assert rec.params["bin_size"] == 2.5
 
 
-def test_second_led_is_named_and_not_used(tmp_path, box_path_cm):
+def test_second_led_is_named_and_not_used(tmp_path, box_path_cm, session_entry):
     path = tmp_path / "session.nwb"
     _write_session(path, box_path_cm, second_led=True)
     from neurospatial.datasets import sargolini_2006
 
-    rec = sargolini_2006.load_session(_entry("sub-11138_ses-06040501"), path)
+    rec = sargolini_2006.load_session(
+        session_entry("sargolini_2006", "sub-11138_ses-06040501"), path
+    )
     text = " ".join(rec.watch_outs)
     assert "also stores the second LED (SpatialSeriesLED2)" in text
     assert "stores only the first LED" not in text
@@ -126,21 +121,23 @@ def test_second_led_is_named_and_not_used(tmp_path, box_path_cm):
     assert not rec.verified
 
 
-def test_coordinates_not_fitted_to_the_box_give_no_fit_watch_out(tmp_path, box_path_cm):
+def test_coordinates_not_fitted_to_the_box_give_no_fit_watch_out(
+    tmp_path, box_path_cm, session_entry
+):
     """Positions off centre spanning 90 cm: the box goes there, with no fitted note."""
     path = tmp_path / "session.nwb"
     shifted = box_path_cm * 0.9 + [10.0, -5.0]
     _write_session(path, shifted)
     from neurospatial.datasets import sargolini_2006
 
-    rec = sargolini_2006.load_session(_entry(), path)
+    rec = sargolini_2006.load_session(session_entry("sargolini_2006"), path)
     assert not any("centred and scaled" in text for text in rec.watch_outs)
     assert "centred at (10, -5) cm" in rec.conversions[1].text
     np.testing.assert_allclose(rec.env.dimension_ranges, [[-40, 60], [-55, 45]])
 
 
 def test_a_110_cm_span_gives_its_residual_and_the_samples_outside(
-    tmp_path, box_path_cm
+    tmp_path, box_path_cm, session_entry
 ):
     """Samples past the stated side: the residual is recorded and the outside counted."""
     from neurospatial.datasets import sargolini_2006
@@ -148,7 +145,7 @@ def test_a_110_cm_span_gives_its_residual_and_the_samples_outside(
     path = tmp_path / "session.nwb"
     wide = box_path_cm * 1.1
     _write_session(path, wide)
-    entry = _entry()
+    entry = session_entry("sargolini_2006")
     rec = run_checks(sargolini_2006.load_session(entry, path), stated=entry.info.stated)
     assert rec.failed_checks == ()
     placement = rec.conversions[1].text
@@ -165,39 +162,26 @@ def test_a_110_cm_span_gives_its_residual_and_the_samples_outside(
     assert not any("centred and scaled" in text for text in rec.watch_outs)
 
 
-def test_a_two_metre_session_fails_the_units_check(tmp_path, box_path_cm):
+def test_a_two_metre_session_fails_the_units_check(
+    tmp_path, box_path_cm, session_entry
+):
     """A session spanning 2 m, as some joined sessions do, is not the 1 m box."""
     from neurospatial.datasets import DatasetCheckError, sargolini_2006
 
     path = tmp_path / "session.nwb"
     _write_session(path, box_path_cm * 2.0)
-    entry = _entry()
+    entry = session_entry("sargolini_2006")
     rec = sargolini_2006.load_session(entry, path)
     with pytest.raises(DatasetCheckError, match="largest position span is 200 cm"):
         run_checks(rec, stated=entry.info.stated)
 
 
-def test_missing_extra_names_the_install(monkeypatch, tmp_path, without_pynwb):
-    """Without the datasets extra, loading says how to install it, first."""
-    from neurospatial.datasets import _fetch
-
-    def no_download(*args, **kwargs):
-        msg = "a file was downloaded"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(_fetch, "fetch", no_download)
-    with pytest.raises(ImportError, match=r"pip install 'neurospatial\[datasets\]'"):
-        load("sargolini_2006", cache=tmp_path)
-
-
 @pytest.mark.realdata
-def test_loads_default_session():
+def test_loads_default_session(session_entry, assert_default_session):
     """The pynapple DANDI tutorial's session: 8 units, 50 Hz, the 1 m box."""
     rec = load("sargolini_2006")
-    assert rec.session == DEFAULT
-    assert rec.verified
-    assert rec.failed_checks == ()
-    assert rec.n_units == _entry().n_units == 8
+    assert_default_session(rec, session_entry("sargolini_2006"))
+    assert rec.n_units == 8
     # Spike counts from the rates pynapple's tutorial prints for units 0 and 1.
     assert list(rec.units["n_spikes"][:2]) == [1759, 901]
     assert rec.sampling_rate == pytest.approx(50.0, rel=1e-6)
@@ -209,7 +193,6 @@ def test_loads_default_session():
         np.nanmax(rec.positions, axis=0), [50.0, 49.3588], atol=1e-4
     )
     assert rec.env.n_bins == 1600
-    assert rec.provenance.sha256 == _entry().sha256
 
 
 @pytest.mark.realdata

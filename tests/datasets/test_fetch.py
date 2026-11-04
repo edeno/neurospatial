@@ -9,7 +9,6 @@ import http.server
 import io
 import json
 import logging
-import sys
 import tarfile
 import threading
 import traceback
@@ -113,19 +112,8 @@ def test_cache_root_per_user_default(tmp_path, monkeypatch, platform, expected):
 
 
 @pytest.mark.parametrize("module", ["pynwb", "fsspec", "inflate64"])
-def test_missing_extra_names_the_install(monkeypatch, tmp_path, module):
-    import builtins
-
-    real_import = builtins.__import__
-
-    def without(name, *args, **kwargs):
-        if name == module:
-            msg = f"No module named {module!r}"
-            raise ModuleNotFoundError(msg, name=module)
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", without)
-    monkeypatch.delitem(sys.modules, module, raising=False)
+def test_missing_extra_names_the_install(tmp_path, module, block_import):
+    block_import(module)
     calls = {
         "pynwb": lambda: _fetch.open_nwb(str(tmp_path / "x.nwb")).__enter__(),
         "fsspec": lambda: _fetch.fetch_zip_member(

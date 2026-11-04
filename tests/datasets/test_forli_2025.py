@@ -2,23 +2,14 @@
 
 from __future__ import annotations
 
-import builtins
-import sys
-
 import numpy as np
 import pandas as pd
 import pytest
 
-from neurospatial.datasets import _fetch, _load, load
-from neurospatial.datasets._catalog import sessions
+from neurospatial.datasets import _load, load
 from neurospatial.datasets._checks import run_checks
 
-DEFAULT = "Dataset_3_14543_240419"
 ROOM = np.array([[-2.9, 2.9], [-2.6, 2.6], [0.0, 2.3]])
-
-
-def _entry():
-    return next(entry for entry in sessions("forli_2025") if entry.session == DEFAULT)
 
 
 def _flight_path(rate=120.0):
@@ -102,11 +93,11 @@ def members(tmp_path, monkeypatch):
     return tmp_path, _write_members(tmp_path)
 
 
-def test_loads_the_members_into_a_3d_session(members):
+def test_loads_the_members_into_a_3d_session(members, session_entry):
     from neurospatial.datasets import forli_2025
 
     folder, (times, positions, _, flights) = members
-    entry = _entry()
+    entry = session_entry("forli_2025")
     rec = run_checks(forli_2025.load_session(entry, folder), stated=entry.info.stated)
     assert rec.failed_checks == ()
     np.testing.assert_array_equal(rec.positions, positions)
@@ -140,13 +131,13 @@ def test_loads_the_members_into_a_3d_session(members):
     assert "(2 spikes)" in dropped.text
 
 
-def test_samples_past_the_room_are_described_once(members):
+def test_samples_past_the_room_are_described_once(members, session_entry):
     """One watch-out counts them; the room's Conversion says where they lie."""
     from neurospatial.datasets import forli_2025
 
     folder, _ = members
     _write_members(folder, outside_y=slice(1000, 1100))
-    entry = _entry()
+    entry = session_entry("forli_2025")
     rec = run_checks(forli_2025.load_session(entry, folder), stated=entry.info.stated)
     outside = [w for w in rec.watch_outs if "outside" in w and "r_lim" in w]
     counted = [w for w in rec.watch_outs if "lie outside the declared" in w]
@@ -186,36 +177,22 @@ def test_drop_close_spikes_compares_each_with_its_predecessor():
     np.testing.assert_array_equal(drop_close_spikes(spikes), [0.0, 0.5])
 
 
-def test_python_310_says_mat_io_needs_311(monkeypatch, tmp_path):
+def test_python_310_says_mat_io_needs_311(
+    monkeypatch, tmp_path, block_import, no_download
+):
     """mat-io installs only on Python 3.11+: on 3.10 loading the bat says so."""
-    real_import = builtins.__import__
-
-    def blocked(name, *args, **kwargs):
-        if name == "matio":
-            msg = "No module named 'matio'"
-            raise ModuleNotFoundError(msg, name="matio")
-        return real_import(name, *args, **kwargs)
-
-    def no_download(*args, **kwargs):
-        msg = "a file was downloaded"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(builtins, "__import__", blocked)
-    monkeypatch.delitem(sys.modules, "matio", raising=False)
-    monkeypatch.setattr(_fetch, "fetch_zip_member", no_download)
+    block_import("matio")
     monkeypatch.setattr(_load, "_python_version", lambda: (3, 10))
     with pytest.raises(ImportError, match=r"mat-io.*only on Python 3\.11 or later"):
         load("forli_2025", cache=tmp_path)
 
 
 @pytest.mark.realdata
-def test_loads_default_session():
+def test_loads_default_session(session_entry, assert_default_session):
     """The demo session as the survey expected it: 3-D, 120 Hz, 38 flights."""
     rec = load("forli_2025")
-    assert rec.session == DEFAULT
-    assert rec.verified
-    assert rec.failed_checks == ()
-    assert rec.n_units == _entry().n_units == 289
+    assert_default_session(rec, session_entry("forli_2025"))
+    assert rec.n_units == 289
     assert rec.n_dims == 3
     assert 119.0 <= rec.sampling_rate <= 121.0
     low = np.nanmin(rec.positions, axis=0)
@@ -227,4 +204,3 @@ def test_loads_default_session():
     assert (rec.units["probe"] == 1).sum() <= 24
     assert len(rec.epochs["flight"]) == 38
     assert rec.env.n_bins == 29 * 26 * 11
-    assert rec.provenance.sha256 == _entry().sha256

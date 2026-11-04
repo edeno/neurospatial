@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from neurospatial.datasets import load
-from neurospatial.datasets._catalog import sessions
 from neurospatial.datasets._checks import run_checks
 
 DEFAULT = "j1620210710_02_r1_figure04_inputs"
@@ -24,10 +23,6 @@ def _entry_edges():
     path = cache_root() / "comrie_2026" / f"{DEFAULT}.npz"
     with np.load(path, allow_pickle=False) as arrays:
         return np.asarray(arrays["track_edge_distance"])
-
-
-def _entry():
-    return next(entry for entry in sessions("comrie_2026") if entry.session == DEFAULT)
 
 
 def _star():
@@ -90,12 +85,12 @@ def _write(path, *, edge_order=None, shuffle_speed=False):
     return times, positions, orientation, trains
 
 
-def test_loads_a_file_in_the_records_layout(tmp_path):
+def test_loads_a_file_in_the_records_layout(tmp_path, session_entry):
     from neurospatial.datasets import comrie_2026
 
     path = tmp_path / "j16.npz"
     times, positions, orientation, trains = _write(path)
-    entry = _entry()
+    entry = session_entry("comrie_2026")
     rec = run_checks(comrie_2026.load_session(entry, path), stated=entry.info.stated)
     assert rec.failed_checks == ()
     np.testing.assert_array_equal(rec.times, times)
@@ -121,7 +116,7 @@ def test_loads_a_file_in_the_records_layout(tmp_path):
     assert rec.track_width_quantile is None
 
 
-def test_beyond_hallway_share_is_split_by_speed(tmp_path):
+def test_beyond_hallway_share_is_split_by_speed(tmp_path, session_entry):
     """The planted head runs 1.5 cm off the centreline: inside half of 6.5 cm."""
     from neurospatial.behavior import compute_speed
     from neurospatial.datasets import comrie_2026
@@ -137,7 +132,7 @@ def test_beyond_hallway_share_is_split_by_speed(tmp_path):
     step = np.linalg.norm(np.diff(shifted, axis=0), axis=1) / np.diff(times)
     arrays["position/head_speed"] = np.r_[step[0], step]
     np.savez(path, **arrays)
-    rec = comrie_2026.load_session(_entry(), path)
+    rec = comrie_2026.load_session(session_entry("comrie_2026"), path)
     nodes, edges = _star()
     # Independent distance to the three arms.
     distance = np.full(len(shifted), np.inf)
@@ -160,7 +155,9 @@ def test_beyond_hallway_share_is_split_by_speed(tmp_path):
     assert "tracking spread, not misfit" in text
 
 
-def test_track_keeps_the_files_node_labels_edge_order_and_spacing(tmp_path):
+def test_track_keeps_the_files_node_labels_edge_order_and_spacing(
+    tmp_path, session_entry
+):
     """The env's track is the file's graph, as example 04 rebuilds it.
 
     Labels that are neither 0-based nor consecutive, and an order that walks
@@ -178,7 +175,7 @@ def test_track_keeps_the_files_node_labels_edge_order_and_spacing(tmp_path):
     order = [(7, 4), (4, 2), (9, 4)]
     arrays["linear_edge_order"] = np.array(order)
     np.savez(path, **arrays)
-    rec = comrie_2026.load_session(_entry(), path)
+    rec = comrie_2026.load_session(session_entry("comrie_2026"), path)
     track = rec.env.binning.linearization
     assert sorted(track.graph.nodes) == [2, 4, 7, 9]
     for label, xy in zip(labels, arrays["track_node_positions"], strict=True):
@@ -192,7 +189,7 @@ def test_track_keeps_the_files_node_labels_edge_order_and_spacing(tmp_path):
         assert track.graph.edges[a, b]["distance"] == pytest.approx(ARM, rel=1e-12)
 
 
-def test_object_arrays_are_never_unpickled(tmp_path):
+def test_object_arrays_are_never_unpickled(tmp_path, session_entry):
     from neurospatial.datasets import comrie_2026
 
     path = tmp_path / "j16.npz"
@@ -204,19 +201,21 @@ def test_object_arrays_are_never_unpickled(tmp_path):
     )
     np.savez(path, **arrays)
     with pytest.raises(ValueError, match="allow_pickle=False"):
-        comrie_2026.load_session(_entry(), path)
+        comrie_2026.load_session(session_entry("comrie_2026"), path)
 
 
-def test_an_edge_left_out_of_the_order_is_refused(tmp_path):
+def test_an_edge_left_out_of_the_order_is_refused(tmp_path, session_entry):
     from neurospatial.datasets import comrie_2026
 
     path = tmp_path / "j16.npz"
     _write(path, edge_order=np.array([[3, 0], [3, 1]]))
     with pytest.raises(ValueError, match="lists 2 edges, not the 3 edges"):
-        comrie_2026.load_session(_entry(), path)
+        comrie_2026.load_session(session_entry("comrie_2026"), path)
 
 
-def test_head_speed_with_gaps_is_compared_on_its_finite_samples(tmp_path):
+def test_head_speed_with_gaps_is_compared_on_its_finite_samples(
+    tmp_path, session_entry
+):
     """A few NaN speeds leave the match; an all-NaN head_speed is refused."""
     from neurospatial.datasets import comrie_2026
 
@@ -226,25 +225,27 @@ def test_head_speed_with_gaps_is_compared_on_its_finite_samples(tmp_path):
         arrays = dict(stored)
     arrays["position/head_speed"][::50] = np.nan
     np.savez(path, **arrays)
-    rec = comrie_2026.load_session(_entry(), path)
+    rec = comrie_2026.load_session(session_entry("comrie_2026"), path)
     assert "correlation 1.00" in rec.conversions[0].evidence
     arrays["position/head_speed"][:] = np.nan
     np.savez(path, **arrays)
     with pytest.raises(ValueError, match=r"r = nan"):
-        comrie_2026.load_session(_entry(), path)
+        comrie_2026.load_session(session_entry("comrie_2026"), path)
 
 
-def test_head_speed_out_of_step_with_the_positions_is_refused(tmp_path):
+def test_head_speed_out_of_step_with_the_positions_is_refused(tmp_path, session_entry):
     from neurospatial.datasets import comrie_2026
 
     path = tmp_path / "j16.npz"
     _write(path, shuffle_speed=True)
     with pytest.raises(ValueError, match="head_speed no longer matches"):
-        comrie_2026.load_session(_entry(), path)
+        comrie_2026.load_session(session_entry("comrie_2026"), path)
 
 
 @pytest.mark.parametrize("factor", [10.0, 2.54, 1 / 2.54, 0.1])
-def test_positions_in_another_unit_than_head_speed_are_refused(tmp_path, factor):
+def test_positions_in_another_unit_than_head_speed_are_refused(
+    tmp_path, factor, session_entry
+):
     """A unit error keeps the speeds' correlation but not their scale."""
     from neurospatial.datasets import comrie_2026
 
@@ -258,10 +259,10 @@ def test_positions_in_another_unit_than_head_speed_are_refused(tmp_path, factor)
         )
     np.savez(path, **arrays)
     with pytest.raises(ValueError, match=r"not in the unit of the file's head_speed"):
-        comrie_2026.load_session(_entry(), path)
+        comrie_2026.load_session(session_entry("comrie_2026"), path)
 
 
-def test_inch_positions_are_refused_with_a_slower_head_speed(tmp_path):
+def test_inch_positions_are_refused_with_a_slower_head_speed(tmp_path, session_entry):
     """The band is centred on the file's measured ratio, not on 1.
 
     With head_speed 1.45 times below |step| / dt (more smoothing than the real
@@ -276,23 +277,21 @@ def test_inch_positions_are_refused_with_a_slower_head_speed(tmp_path):
         arrays = dict(stored)
     arrays["position/head_speed"] = arrays["position/head_speed"] * 1.26 / 1.45
     np.savez(path, **arrays)
-    comrie_2026.load_session(_entry(), path)
+    comrie_2026.load_session(session_entry("comrie_2026"), path)
     for axis in ("x", "y"):
         key = f"position/head_position_{axis}"
         arrays[key] = arrays[key] / 2.54
     np.savez(path, **arrays)
     with pytest.raises(ValueError, match=r"a ratio of 0\.57"):
-        comrie_2026.load_session(_entry(), path)
+        comrie_2026.load_session(session_entry("comrie_2026"), path)
 
 
 @pytest.mark.realdata
-def test_loads_default_session():
+def test_loads_default_session(session_entry, assert_default_session):
     """j16 02_r1 as the survey expected it: 203 units, 870,018 spikes, 500 Hz."""
     rec = load("comrie_2026")
-    assert rec.session == DEFAULT
-    assert rec.verified
-    assert rec.failed_checks == ()
-    assert rec.n_units == _entry().n_units == 203
+    assert_default_session(rec, session_entry("comrie_2026"))
+    assert rec.n_units == 203
     assert int(rec.units["n_spikes"].sum()) == 870_018
     assert rec.times.size == 709_321
     assert rec.n_dims == 2
@@ -311,7 +310,6 @@ def test_loads_default_session():
     assert orientation.max() > 3.0
     assert rec.headings is None
     assert any("+13.1 degrees" in text for text in rec.watch_outs)
-    assert rec.provenance.sha256 == _entry().sha256
     # The width is twice the samples' 99th percentile distance from the graph.
     assert rec.track_width_quantile == 0.99
     (finding,) = [t for t in rec.watch_outs if "outside the declared" in t]

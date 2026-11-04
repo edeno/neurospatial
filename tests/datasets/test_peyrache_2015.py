@@ -7,18 +7,10 @@ import datetime
 import numpy as np
 import pytest
 
-from neurospatial.datasets import _fetch, load
-from neurospatial.datasets._catalog import sessions
+from neurospatial.datasets import load
 from neurospatial.datasets._checks import run_checks
 
-DEFAULT = "Mouse32-140822"
 WAKE = (100.0, 400.0)
-
-
-def _entry(session=DEFAULT):
-    return next(
-        entry for entry in sessions("peyrache_2015") if entry.session == session
-    )
 
 
 def _write_session(path, *, gap=None):
@@ -63,12 +55,12 @@ def _write_session(path, *, gap=None):
     return times, ry
 
 
-def test_loads_a_heading_only_session(tmp_path):
+def test_loads_a_heading_only_session(tmp_path, session_entry):
     from neurospatial.datasets import peyrache_2015
 
     path = tmp_path / "session.nwb"
     times, ry = _write_session(path)
-    entry = _entry()
+    entry = session_entry("peyrache_2015")
     rec = run_checks(peyrache_2015.load_session(entry, path), stated=entry.info.stated)
     assert rec.failed_checks == ()
     assert rec.env is None
@@ -92,26 +84,16 @@ def test_loads_a_heading_only_session(tmp_path):
     assert rec.provenance.archive == "OSF jb2gd"
 
 
-def test_tracking_gaps_are_counted(tmp_path):
+def test_tracking_gaps_are_counted(tmp_path, session_entry):
     from neurospatial.datasets import peyrache_2015
 
     path = tmp_path / "session.nwb"
     times, _ = _write_session(path, gap=(200.0, 205.0))
-    rec = peyrache_2015.load_session(_entry(), path)
+    rec = peyrache_2015.load_session(session_entry("peyrache_2015"), path)
     longest = np.diff(times).max()
     assert f"1 gap longer than 1 s ({longest:.1f} s in all, the longest " in "".join(
         rec.watch_outs
     )
-
-
-def test_missing_extra_names_the_install(monkeypatch, tmp_path, without_pynwb):
-    def no_download(*args, **kwargs):
-        msg = "a file was downloaded"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(_fetch, "fetch", no_download)
-    with pytest.raises(ImportError, match=r"pip install 'neurospatial\[datasets\]'"):
-        load("peyrache_2015", cache=tmp_path)
 
 
 @pytest.mark.realdata
@@ -119,13 +101,11 @@ def test_missing_extra_names_the_install(monkeypatch, tmp_path, without_pynwb):
 @pytest.mark.filterwarnings(
     "ignore:The 'manufacturer' field is deprecated:DeprecationWarning"
 )
-def test_loads_default_session():
+def test_loads_default_session(session_entry, assert_default_session):
     """The tutorials' Mouse32-140822: 49 units, 31 in ADn, wake and sleep epochs."""
     rec = load("peyrache_2015")
-    assert rec.session == DEFAULT
-    assert rec.verified
-    assert rec.failed_checks == ()
-    assert rec.n_units == _entry().n_units == 49
+    assert_default_session(rec, session_entry("peyrache_2015"))
+    assert rec.n_units == 49
     adn = np.flatnonzero(rec.units["brain_region"].to_numpy() == "adn")
     np.testing.assert_array_equal(adn, np.arange(4, 35))
     assert {"wake", "sleep", "sws", "rem"} <= set(rec.epochs)
@@ -134,4 +114,3 @@ def test_loads_default_session():
     assert rec.headings.max() > 3.0
     assert rec.sampling_rate == pytest.approx(39.0625, rel=1e-6)
     np.testing.assert_allclose(rec.epochs["wake"], [[8812.3, 10771.2999]])
-    assert rec.provenance.sha256 == _entry().sha256

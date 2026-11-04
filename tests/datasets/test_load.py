@@ -19,7 +19,6 @@ from neurospatial.datasets import (
     DatasetCheckError,
     DownloadWarning,
     _catalog,
-    _fetch,
     _load,
     fetch_all,
     load,
@@ -75,11 +74,6 @@ def _registry(files: dict[str, Path]) -> dict:
 def _downloading():
     """Expect a download's DownloadWarning (pytest turns warnings into errors)."""
     return pytest.warns(DownloadWarning, match="^Downloading ")
-
-
-def _no_download(*args, **kwargs):
-    msg = "a file was downloaded"
-    raise AssertionError(msg)
 
 
 @pytest.fixture
@@ -179,8 +173,7 @@ def test_accepted_failure_travels(synthetic):
     assert accepted.watch_outs == plain.watch_outs
 
 
-def test_unknown_names_are_refused_before_any_download(synthetic, monkeypatch):
-    monkeypatch.setattr(_fetch, "fetch", _no_download)
+def test_unknown_names_are_refused_before_any_download(synthetic, no_download):
     with pytest.raises(InputError, match=r"(?s)No dataset 'nope'.*synthetic_2026"):
         load("nope")
     with pytest.raises(InputError, match=r"(?s)no session 'sX'.*s1, clock_off"):
@@ -194,14 +187,26 @@ def test_stream_needs_a_dandi_asset(synthetic):
         load(DATASET, stream=True)
 
 
-def test_missing_extra_names_the_install(synthetic, monkeypatch, without_pynwb):
+def test_missing_extra_names_the_install(
+    synthetic, monkeypatch, without_pynwb, no_download
+):
     """Without the datasets extra, load says how to install it, before downloading."""
     monkeypatch.setattr(
         sys.modules[f"neurospatial.datasets.{DATASET}"], "REQUIRES", ("pynwb",)
     )
-    monkeypatch.setattr(_fetch, "fetch", _no_download)
     with pytest.raises(ImportError, match=r"pip install 'neurospatial\[datasets\]'"):
         load(DATASET, cache=synthetic.cache)
+
+
+@pytest.mark.parametrize(
+    "dataset", ["grosmark_2016", "peyrache_2015", "sargolini_2006", "valero_2022"]
+)
+def test_nwb_dataset_without_the_extra_names_the_install(
+    dataset, tmp_path, without_pynwb, no_download
+):
+    """Each NWB dataset, loaded without pynwb, says how to install it, first."""
+    with pytest.raises(ImportError, match=r"pip install 'neurospatial\[datasets\]'"):
+        load(dataset, cache=tmp_path)
 
 
 def test_load_warns_of_a_download_with_its_size_and_url(synthetic):
@@ -383,23 +388,13 @@ def test_session_from_another_archive_keeps_its_license(synthetic):
     assert table.loc["s1", "citation"].endswith("Data: Synthetic 0 archive.")
 
 
-def test_module_absent_below_its_python_says_so(synthetic, monkeypatch):
+def test_module_absent_below_its_python_says_so(
+    synthetic, monkeypatch, block_import, no_download
+):
     """mat-io installs only on Python 3.11+: on 3.10 the error says that."""
-    import builtins
-
-    real_import = builtins.__import__
-
-    def blocked(name, *args, **kwargs):
-        if name == "matio":
-            msg = "No module named 'matio'"
-            raise ModuleNotFoundError(msg, name="matio")
-        return real_import(name, *args, **kwargs)
-
     module = sys.modules[f"neurospatial.datasets.{DATASET}"]
     monkeypatch.setattr(module, "REQUIRES", ("matio",))
-    monkeypatch.setattr(builtins, "__import__", blocked)
-    monkeypatch.delitem(sys.modules, "matio", raising=False)
-    monkeypatch.setattr(_fetch, "fetch", _no_download)
+    block_import("matio")
     monkeypatch.setattr(_load, "_python_version", lambda: (3, 10))
     with pytest.raises(
         ImportError, match=r"only on Python 3\.11 or later.*Python 3\.10"

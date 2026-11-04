@@ -10,7 +10,6 @@ import numpy as np
 import pytest
 
 from neurospatial.datasets import DatasetCheckError, load
-from neurospatial.datasets._catalog import sessions
 from neurospatial.datasets._checks import run_checks
 
 DEFAULT = "Achilles_10252013"
@@ -18,12 +17,6 @@ DANDI_COPY = "sub-Achilles_ses-Achilles-10252013"
 DT = 0.0256
 #: DANDI's epochs of the default session, [start, stop) in s.
 PRE, MAZE, POST = (0.0, 18079.5), (18079.5, 20147.0), (20147.0, 34861.1032)
-
-
-def _entry(session=DEFAULT):
-    return next(
-        entry for entry in sessions("grosmark_2016") if entry.session == session
-    )
 
 
 def _nwbfile(pynwb, identifier):
@@ -77,7 +70,7 @@ def _write_osf(path, *, late=111.0):
     return times, values
 
 
-def test_loads_the_osf_layout(tmp_path):
+def test_loads_the_osf_layout(tmp_path, session_entry):
     """1-D positions as stored, DANDI's epochs, and a clock check that passes.
 
     Spikes fall in the 111 s of the maze epoch before the first position
@@ -88,7 +81,7 @@ def test_loads_the_osf_layout(tmp_path):
 
     path = tmp_path / "Achilles_10252013.nwb"
     times, values = _write_osf(path)
-    entry = _entry()
+    entry = session_entry("grosmark_2016")
     loaded = grosmark_2016.load_session(entry, path)
     rec = run_checks(loaded, stated=entry.info.stated)
     assert rec.failed_checks == ()
@@ -126,12 +119,12 @@ def test_loads_the_osf_layout(tmp_path):
     assert rec.headings is None
 
 
-def test_osf_layout_without_a_known_dandi_copy_is_refused(tmp_path):
+def test_osf_layout_without_a_known_dandi_copy_is_refused(tmp_path, session_entry):
     from neurospatial.datasets import grosmark_2016
 
     path = tmp_path / "other.nwb"
     _write_osf(path)
-    entry = replace(_entry(), session="Buddy_06272013")
+    entry = replace(session_entry("grosmark_2016"), session="Buddy_06272013")
     with pytest.raises(ValueError, match="no DANDI 000044 copy is known"):
         grosmark_2016.load_session(entry, path)
 
@@ -208,7 +201,7 @@ def _linear_session():
     return positions, linear, along
 
 
-def test_loads_a_dandi_linear_session(tmp_path):
+def test_loads_a_dandi_linear_session(tmp_path, session_entry):
     """cm from metres, epochs and sleep states, and the planted track recovered."""
     from neurospatial.datasets import grosmark_2016
 
@@ -217,7 +210,7 @@ def test_loads_a_dandi_linear_session(tmp_path):
     _write_dandi(
         path, track="1.6mLinearMaze", positions_cm=positions, linearized_cm=linear
     )
-    entry = _entry("sub-Buddy_ses-Buddy-06272013")
+    entry = session_entry("grosmark_2016", "sub-Buddy_ses-Buddy-06272013")
     rec = run_checks(grosmark_2016.load_session(entry, path), stated=entry.info.stated)
     assert rec.failed_checks == ()
     np.testing.assert_allclose(rec.positions, positions, rtol=1e-12)
@@ -304,7 +297,7 @@ def _circle_session():
     return positions, linear, angle
 
 
-def test_loads_a_dandi_circular_session(tmp_path):
+def test_loads_a_dandi_circular_session(tmp_path, session_entry):
     from neurospatial.datasets import grosmark_2016
 
     positions, linear, angle = _circle_session()
@@ -312,7 +305,7 @@ def test_loads_a_dandi_circular_session(tmp_path):
     _write_dandi(
         path, track="CircularMaze", positions_cm=positions, linearized_cm=linear
     )
-    entry = _entry("sub-Achilles_ses-Achilles-11012013")
+    entry = session_entry("grosmark_2016", "sub-Achilles_ses-Achilles-11012013")
     rec = run_checks(grosmark_2016.load_session(entry, path), stated=entry.info.stated)
     assert rec.failed_checks == ()
     assert rec.apparatus == "1 m diameter wooden circular maze"
@@ -343,7 +336,7 @@ def test_loads_a_dandi_circular_session(tmp_path):
     )
 
 
-def test_a_maze_the_paper_does_not_describe_is_refused(tmp_path):
+def test_a_maze_the_paper_does_not_describe_is_refused(tmp_path, session_entry):
     from neurospatial.datasets import grosmark_2016
 
     positions, linear, _ = _linear_session()
@@ -352,7 +345,9 @@ def test_a_maze_the_paper_does_not_describe_is_refused(tmp_path):
         path, track="3mLinearMaze", positions_cm=positions, linearized_cm=linear
     )
     with pytest.raises(ValueError, match=r"maze '3mLinearMaze' is none of the mazes"):
-        grosmark_2016.load_session(_entry("sub-Buddy_ses-Buddy-06272013"), path)
+        grosmark_2016.load_session(
+            session_entry("grosmark_2016", "sub-Buddy_ses-Buddy-06272013"), path
+        )
 
 
 @pytest.mark.realdata
@@ -360,13 +355,11 @@ def test_a_maze_the_paper_does_not_describe_is_refused(tmp_path):
 @pytest.mark.filterwarnings(
     "ignore:The 'manufacturer' field is deprecated:DeprecationWarning"
 )
-def test_loads_default_session():
+def test_loads_default_session(session_entry, assert_default_session):
     """NeMoS's Achilles_10252013: 137 units, 1-D positions spanning the stem."""
     rec = load("grosmark_2016")
-    assert rec.session == DEFAULT
-    assert rec.verified
-    assert rec.failed_checks == ()
-    assert rec.n_units == _entry().n_units == 137
+    assert_default_session(rec, session_entry("grosmark_2016"))
+    assert rec.n_units == 137
     assert rec.units["label"].value_counts().to_dict() == {"pE": 120, "pI": 17}
     assert rec.sampling_rate == pytest.approx(39.0626, rel=1e-4)
     assert rec.positions.shape == (12847, 1)
@@ -375,7 +368,6 @@ def test_loads_default_session():
     assert {"pre", "maze", "post"} <= set(rec.epochs)
     assert len(rec.trials.start) == 84
     assert np.all(np.asarray(rec.env.bin_at(rec.positions)) >= 0)
-    assert rec.provenance.sha256 == _entry().sha256
 
 
 @pytest.mark.realdata
@@ -490,12 +482,12 @@ def test_osf_matches_dandi():
 @pytest.mark.filterwarnings(
     "ignore:The 'manufacturer' field is deprecated:DeprecationWarning"
 )
-def test_streams_a_dandi_session(tmp_path):
+def test_streams_a_dandi_session(tmp_path, session_entry):
     """Cicero 09172014, the 2 m stem, read by byte range: nothing is cached."""
     session = "sub-Cicero_ses-Cicero-09172014"
     rec = load("grosmark_2016", session, stream=True, cache=tmp_path)
     assert rec.failed_checks == ()
-    assert rec.n_units == _entry(session).n_units == 72
+    assert rec.n_units == session_entry("grosmark_2016", session).n_units == 72
     assert rec.apparatus.startswith("2.3 m metal linear maze")
     assert rec.sampling_rate == pytest.approx(39.0626, rel=1e-4)
     assert rec.provenance.url.startswith("https://api.dandiarchive.org/")

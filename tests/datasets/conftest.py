@@ -152,15 +152,68 @@ def heading_stated() -> Stated:
 
 
 @pytest.fixture
-def without_pynwb(monkeypatch):
+def block_import(monkeypatch):
+    """``block_import(name)``: imports of ``name`` fail as if it were not installed."""
+
+    def block(module: str) -> None:
+        real_import = builtins.__import__
+
+        def blocked(name, *args, **kwargs):
+            if name == module:
+                msg = f"No module named {module!r}"
+                raise ModuleNotFoundError(msg, name=module)
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", blocked)
+        monkeypatch.delitem(sys.modules, module, raising=False)
+
+    return block
+
+
+@pytest.fixture
+def without_pynwb(block_import):
     """Imports of pynwb fail as they do without the ``datasets`` extra."""
-    real_import = builtins.__import__
+    block_import("pynwb")
 
-    def blocked(name, *args, **kwargs):
-        if name == "pynwb":
-            msg = "No module named 'pynwb'"
-            raise ModuleNotFoundError(msg, name="pynwb")
-        return real_import(name, *args, **kwargs)
 
-    monkeypatch.setattr(builtins, "__import__", blocked)
-    monkeypatch.delitem(sys.modules, "pynwb", raising=False)
+@pytest.fixture
+def no_download(monkeypatch):
+    """Any download, of a file or of a zip member, fails the test."""
+    from neurospatial.datasets import _fetch
+
+    def refuse(*args, **kwargs):
+        msg = "a file was downloaded"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(_fetch, "fetch", refuse)
+    monkeypatch.setattr(_fetch, "fetch_zip_member", refuse)
+
+
+@pytest.fixture
+def session_entry():
+    """``session_entry(dataset, session=None)``: a registry entry, the default's by default."""
+    from neurospatial.datasets._load import _session_entry
+
+    def entry(dataset: str, session: str | None = None):
+        return _session_entry(dataset, session)
+
+    return entry
+
+
+@pytest.fixture
+def assert_default_session():
+    """``assert_default_session(rec, entry)``: what every real default session shows.
+
+    The registry's default session, verified by hand, passing every refusing
+    check, with the registry's unit count and checksum.
+    """
+
+    def check(rec: Recording, entry) -> None:
+        assert entry.default
+        assert rec.session == entry.session
+        assert rec.verified
+        assert rec.failed_checks == ()
+        assert rec.n_units == entry.n_units
+        assert rec.provenance.sha256 == entry.sha256
+
+    return check
