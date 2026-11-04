@@ -229,7 +229,7 @@ class Recording(ReadOnlyArraysMixin):
         What was tracked, for example ``"head, LEDs on the headstage"``.
     headings : ndarray, shape (n_time,), or None
         Allocentric head direction in radians in [-π, π] (0 = East, +π/2 =
-        North), NaN where missing.
+        North), NaN where missing (never infinite).
     heading_source : str
         Where ``headings`` comes from, for example ``"the file's head
         direction"``; empty without headings.
@@ -373,6 +373,11 @@ class Recording(ReadOnlyArraysMixin):
                 problems.append(
                     f"headings: shape {headings.shape}, not ({n_time},), one "
                     "per sample of times"
+                )
+            elif n_inf := int(np.isinf(headings).sum()):
+                problems.append(
+                    f"headings: {n_inf} {'value is' if n_inf == 1 else 'values are'} "
+                    "infinite; mark a sample with no head direction with NaN"
                 )
             elif finite.size and (finite.min() < -np.pi or finite.max() > np.pi):
                 problems.append(

@@ -51,6 +51,15 @@ def test_infinite_positions_are_refused(square_recording, value):
         dataclasses.replace(square_recording, positions=positions)
 
 
+@pytest.mark.parametrize("value", [np.inf, -np.inf])
+def test_infinite_headings_are_refused(square_recording, value):
+    """NaN marks a missing heading; an infinite one is refused, not kept."""
+    headings = np.array(square_recording.headings)
+    headings[5] = value
+    with pytest.raises(InputError, match="headings: 1 value is infinite"):
+        dataclasses.replace(square_recording, headings=headings)
+
+
 @pytest.mark.parametrize(
     ("basis", "evidence", "named"),
     [("inferred", "", "evidence"), ("guessed", "it looked right", "basis")],
