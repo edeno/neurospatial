@@ -42,8 +42,10 @@
 # labels. We can describe firing and movement, but cannot identify rewarded
 # trials or the animal's intended goal. Unit numbers below are array indices
 # within this archive.
-# Printing the loaded recording shows the study attribution, CC BY 4.0
-# licensing, preprocessing details and the session's known pitfalls.
+# See the [data guide](https://github.com/edeno/neurospatial/blob/main/data/README.md)
+# for study attribution, CC BY 4.0 licensing and preprocessing details;
+# `print(recording)` after loading shows them too, with the session's known
+# pitfalls.
 
 # %% jupyter={"source_hidden": true}
 import sys
@@ -60,7 +62,10 @@ from neurospatial.datasets import load
 from neurospatial.encoding import compute_spatial_rates
 
 _here = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
-sys.path.insert(0, str(_here))
+if not (_here / "_style.py").exists() and (_here / "examples" / "_style.py").exists():
+    _here = _here / "examples"
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
 from _style import apply_style
 
 apply_style(figsize=(10, 5))
