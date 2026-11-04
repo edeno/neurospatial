@@ -93,8 +93,12 @@ WORKED_RESULT: dict[str, Any] = {
         "compute_directional_rates with 1 degree bins and a 6 degree "
         "Gaussian (the paper's); concentration above 1 as mean vector "
         "length above I1(1) / I0(1) = 0.446; peak rate above 1 Hz; "
-        "stats.rayleigh_test on the headings at the unit's spikes, "
-        "p < 0.001"
+        "stats.rayleigh_test on the headings at the unit's spikes, each the "
+        "nearest tracked sample's, p < 0.001. LED dropouts (\"Times when one "
+        'of the LEDs was not detected were excluded from the analysis") are '
+        "the 64 sample intervals longer than 1.5 sampling periods "
+        "(0.0384 s; the others are 0.025 to 0.026 s): left out of the tuning "
+        "curves (max_gap) and their spikes out of the Rayleigh test"
     ),
     "unmatched": (
         "the denominator: the file's 'adn' units, not the units of shanks "
@@ -105,8 +109,9 @@ WORKED_RESULT: dict[str, Any] = {
         "equal to the curve's mean vector length",
         "the peak rate: the smoothed curve's, not the fitted von Mises's",
         "the Rayleigh test: the paper does not say on what; ours is on the "
-        "headings at the spikes",
+        "headings at the spikes, not on the occupancy-normalized field",
     ),
+    "attempted": None,
     "why": None,
 }
 

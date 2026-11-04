@@ -216,16 +216,20 @@
   reproduced on the default session with public neurospatial functions,
   with the quote, the parameters, our number and every parameter that could
   not be matched; `tests/datasets/test_worked_results.py` (`realdata`)
-  recomputes each one. `peyrache_2015` (level A, a number): 20 of 31 ADn
-  units (65%) are head-direction cells by the paper's criteria, against its
-  71%. `grosmark_2016` (level B, a property): place fields of each running
-  direction tile the stem, half of them within 20 cm of an end.
-  `comrie_2026` (level B): 92% of held-out running time bins decode to the
-  rat's own track segment. `forli_2025` (level B) does not reproduce: 15% of
-  flight-active units are stable in 3-D rate maps, against the paper's 71%
-  of 1-D flight-path fields. `sargolini_2006` and `valero_2022` say why no
-  result is possible yet (the paper or its methods could not be read; no
-  cell types or stimulation times in Valero's files).
+  recomputes each one, a level B property against a null computed on the
+  same pipeline. `peyrache_2015` (level A, a number): 20 of 31 ADn units
+  (65%) are head-direction cells by the paper's criteria, against its 71%.
+  `grosmark_2016` (level B, a property): 50% of directional rate-map peaks
+  lie within 20 cm of a stem end, against at most 36% with shifted spikes.
+  `comrie_2026` (a sanity property, not a finding of the preprint): 92% of
+  held-out running time bins decode to the rat's own track segment, against
+  35% for always naming the most visited segment and at most 29% with
+  shifted spikes. `forli_2025`, `sargolini_2006` and `valero_2022` say why
+  no result is possible yet (the bat's place cells need 1-D flight-path
+  fields; Sargolini's paper and Valero's methods could not be read, and
+  Valero's files hold no cell types or stimulation times); the bat's 3-D
+  attempt (15% of flight-active units stable, against the paper's 71%) is
+  kept in its record.
 - `io.nwb.read_position(..., position_name=)` and
   `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
   any Position or CompassDirection container when given its full path, as in

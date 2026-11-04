@@ -75,6 +75,7 @@ WORKED_RESULT: dict[str, Any] = {
     "criterion": None,
     "parameters": None,
     "unmatched": (),
+    "attempted": None,
     "why": (
         "The paper (Sargolini et al. 2006, Science 312, 758-762) could not "
         "be read: the local library holds its metadata only, science.org "

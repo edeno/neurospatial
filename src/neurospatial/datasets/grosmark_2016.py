@@ -99,13 +99,14 @@ if TYPE_CHECKING:
 __all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
 
 #: The paper's finding this dataset reproduces: level B, a property the
-#: paper states (``tests/datasets/test_worked_results.py``).
+#: paper states, tested against a shifted-spike null
+#: (``tests/datasets/test_worked_results.py``).
 WORKED_RESULT: dict[str, Any] = {
     "status": "reproduced",
     "level": "B",
     "finding": (
-        "place fields of each running direction tile the stem and are "
-        "enriched near its two ends"
+        "the rate-map peaks of each running direction are enriched near the "
+        "stem's two ends, beyond a shifted-spike null"
     ),
     "quote": (
         '"Note that the place fields of rigid (blue) and plastic cells (red) '
@@ -121,29 +122,34 @@ WORKED_RESULT: dict[str, Any] = {
         '"Place Field Analysis" (p. 4), and the Fig. S2 legend (p. 14)'
     ),
     "paper": "enriched near the ends (no share stated); 491 place fields over 8 sessions",
-    "ours": 0.5,
+    "ours": 0.503,
     "criterion": (
-        "in each direction every 20 cm segment of the 160 cm stem holds the "
-        "rate-map peak of at least one place cell, and more than 25% of the "
-        "peaks (the share of the stem within 20 cm of an end) lie within "
-        "20 cm of an end; fixed before the run"
+        "the share of directional rate-map peaks within 20 cm of an end "
+        "exceeds the 95th percentile of the same share with each unit's spikes "
+        "shifted circularly on the tracked time (20 draws, seed 2016); fixed "
+        "before the run. A fixed 25% bar is not used: shifted spikes alone "
+        "give 22-36%, since occupancy, speed and smoothing crowd peaks at the "
+        "ends"
     ),
     "parameters": (
         "the 120 pyramidal ('pE') units; per direction (the sign of each "
         "step's displacement) compute_spatial_rates with method 'binned', "
-        "bandwidth 5 cm, min_speed 5 cm/s, on rec.env's 2 cm bins; a place "
-        "cell has place_cell_significance p < 0.01 (200 circular shifts, "
-        "seed 2016) and a peak of at least 1 Hz: 74 of 120 rightward and 86 "
-        "of 120 leftward, 80 of the 160 peaks within 20 cm of an end"
+        "bandwidth 5 cm, min_speed 5 cm/s, on rec.env's 2 cm bins; the maps "
+        "peaking at 1 Hz or more, both directions pooled: 50.3% of their "
+        "peaks lie within 20 cm of an end; the null "
+        "(stats.shuffle_spike_times_circular on runs without a gap over 1 s, "
+        "shifts of at least 20 s) spans 22.2% to 36.5%, 95th percentile 36.3%"
     ),
     "unmatched": (
-        "the place-cell test: the paper's null resamples spikes by occupancy "
-        "5,000 times and needs 5 consecutive bins above its 99th percentile; "
-        "ours tests spatial information against 200 circular shifts",
+        "the place-cell test: the paper keeps place cells by its occupancy "
+        "resampling null (5,000 draws, 5 consecutive bins above the 99th "
+        "percentile); ours keeps every pyramidal map peaking at 1 Hz or more, "
+        "so the real and null shares come from the same selection",
         "the reward areas: the paper leaves them out; the OSF file's "
         "positions cover the stem only, so nothing is left out",
         "the 5 cm Gaussian is read as its standard deviation",
     ),
+    "attempted": None,
     "why": None,
 }
 

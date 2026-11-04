@@ -127,6 +127,7 @@ WORKED_RESULT: dict[str, Any] = {
     "criterion": None,
     "parameters": None,
     "unmatched": (),
+    "attempted": None,
     "why": (
         "Three things are missing. The place-field definition is in the "
         "paper's Materials and methods, in the Supplementary Materials, "

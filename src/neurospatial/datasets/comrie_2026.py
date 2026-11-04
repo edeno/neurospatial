@@ -88,14 +88,16 @@ if TYPE_CHECKING:
 
 __all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
 
-#: The paper's finding this dataset reproduces: level B, a property the
-#: preprint states (``tests/datasets/test_worked_results.py``).
+#: A level B sanity property of the data and decoder, not a finding of the
+#: preprint, tested against measured baselines
+#: (``tests/datasets/test_worked_results.py``).
 WORKED_RESULT: dict[str, Any] = {
-    "status": "reproduced",
+    "status": "sanity property",
     "level": "B",
     "finding": (
-        "while the rat runs, the decoded position usually lies on the rat's "
-        "own track segment; non-local representations are a minority"
+        "a sanity property of the data and decoder, not a finding of the "
+        "preprint: while the rat runs, the decoded position usually lies on "
+        "the rat's own track segment"
     ),
     "quote": (
         '"Non-local representation times were identified as times in which '
@@ -113,9 +115,12 @@ WORKED_RESULT: dict[str, Any] = {
     "paper": "no share stated",
     "ours": 0.924,
     "criterion": (
-        "more than half of the held-out decoding bins while running above "
-        "10 cm/s decode to the rat's own segment (chance with nine segments "
-        "is about 11%); fixed before the run"
+        "the share of held-out running decoding bins on the rat's own segment "
+        "exceeds both a constant decoder naming the segment the rat runs on "
+        "most (35.1% of those bins) and the 95th percentile of the same share "
+        "after shifting every unit's spikes by one common circular offset "
+        "(20 draws, seed 2026: 18.1% to 29.4%, 95th percentile 28.1%); fixed "
+        "before the run"
     ),
     "parameters": (
         "BayesianDecoder on rec.env (the authors' track graph, 2 cm bins, "
@@ -132,6 +137,7 @@ WORKED_RESULT: dict[str, Any] = {
         "the preprint's confidence criterion (the highest 50% of the "
         "posterior within 50 cm) is not applied",
     ),
+    "attempted": None,
     "why": None,
 }
 

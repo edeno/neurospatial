@@ -77,12 +77,10 @@ if TYPE_CHECKING:
 
 __all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
 
-#: The paper's finding this dataset was tested against: level B, a property
-#: the paper states, which does not reproduce here
-#: (``tests/datasets/test_worked_results.py``).
+#: The paper's finding this dataset reproduces, or why there is none yet.
 WORKED_RESULT: dict[str, Any] = {
-    "status": "not reproduced",
-    "level": "B",
+    "status": "not possible yet",
+    "level": None,
     "finding": "most flight-active units are spatially tuned in flight",
     "quote": (
         '"a large portion of single units that were active during flight '
@@ -96,34 +94,47 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "source": (
         "Forli et al. 2025, Nature, Results (\u201cHippocampal replay of flight "
-        "trajectories\u201d) and Methods (\u201cReplay analysis: spike sequences\u201d), "
-        "read on PubMed Central, PMC12460160"
+        "trajectories\u201d) and Methods (\u201cReplay analysis: spike "
+        "sequences\u201d), read on PubMed Central, PMC12460160"
     ),
     "paper": 0.71,
-    "ours": 0.152,
-    "criterion": (
-        "more than half of the flight-active units are tuned; fixed before the run"
+    "ours": None,
+    "criterion": None,
+    "parameters": None,
+    "unmatched": (),
+    "attempted": {
+        "value": 0.152,
+        "criterion": (
+            "more than half of the flight-active units tuned; fixed before the "
+            "run, and not met"
+        ),
+        "parameters": (
+            "the flights of the neural recording (params['analysis_epochs'], "
+            "37); flight-active: more than 37 spikes in them (204 of 289 "
+            "units); 3-D compute_spatial_rates (diffusion KDE, bandwidth "
+            "0.2 m, our choice) on rec.env's 0.2 m voxels; tuned: peak above "
+            "3 Hz and a Spearman compare_spatial_rates of at least 0.4 between "
+            "the first 18 and the last 19 flights: 31 of 204"
+        ),
+        "differs": (
+            "the paper's fields are 1-D, one per clustered flight path (0.15 m "
+            "bins, a seven-bin Gaussian window); ours are one 3-D map pooling "
+            "every path, whose sparsely visited voxels are too noisy to be "
+            "stable (every unit peaks above 3 Hz; the median first-half "
+            "against second-half Spearman correlation is 0.15 over a median "
+            "183 shared voxels, and even against odd flights 0.13)",
+            "the one-field condition (pks at most 0.5) needs the 1-D fields",
+            "flight-active is not defined beyond the spike condition; we use "
+            "more than one spike per flight on average",
+            "the paper pools 23 sessions of 6 bats; this is one demo session",
+        ),
+    },
+    "why": (
+        "The paper's place cells are defined on 1-D fields of each clustered "
+        "flight path, and neurospatial has no flight-path clustering or path "
+        "fields. A 3-D attempt on the room's voxels is recorded in "
+        "'attempted'; it is not the paper's analysis."
     ),
-    "parameters": (
-        "the flights of the neural recording (params['analysis_epochs'], 37); "
-        "flight-active: more than 37 spikes in them (204 of 289 units); 3-D "
-        "compute_spatial_rates (diffusion KDE, bandwidth 0.2 m, our choice) "
-        "on rec.env's 0.2 m voxels; tuned: peak above 3 Hz and a Spearman "
-        "compare_spatial_rates of at least 0.4 between the first 18 and the "
-        "last 19 flights: 31 of 204"
-    ),
-    "unmatched": (
-        "the fields: the paper's are 1-D, along each clustered flight path "
-        "(0.15 m bins, a seven-bin Gaussian window), one map per path; ours "
-        "are one 3-D map over the room pooling every path, so the halves "
-        "compare different mixes of paths and the voxels visited in both",
-        "the one-field condition (pks at most 0.5) needs the 1-D fields and "
-        "is not applied",
-        "flight-active is not defined beyond the spike condition; we use "
-        "more than one spike per flight on average",
-        "the paper pools 23 sessions of 6 bats; this is one demo session",
-    ),
-    "why": None,
 }
 
 #: Modules of the ``datasets`` extra the loader imports.
