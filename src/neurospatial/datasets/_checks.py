@@ -585,25 +585,65 @@ def _count(n: int, noun: str) -> str:
 def _outside_finding(rec: Recording) -> str | None:
     """Tracked samples in no bin of the environment; None if each is in one.
 
-    The environment is judged on misfit: samples outside it are tracking
-    beyond the apparatus (a head over a wall, a glitch) or an environment
-    placed or sized wrong. They are kept; analyses count them in no bin.
+    In an arena or room the environment is judged on misfit: samples outside
+    it are tracking beyond the apparatus (a head over a wall, a glitch) or an
+    environment placed or sized wrong. On a track, a tracked head is
+    expected beyond the track's footprint (head-mounted LEDs swing past the
+    edge, a raised head projects outward), so there the share is tracking
+    spread, split into stopped and moving samples at ``params["min_speed"]``.
+    Either way the samples are kept; analyses count them in no bin.
     """
     if rec.env is None or rec.positions is None:
         return None
-    tracked = rec.positions[np.all(np.isfinite(rec.positions), axis=1)]
-    if len(tracked) == 0:
+    tracked = np.all(np.isfinite(rec.positions), axis=1)
+    n_tracked = int(tracked.sum())
+    if n_tracked == 0:
         return None
-    outside = int(np.sum(np.asarray(rec.env.bin_at(tracked)) < 0))
-    if outside == 0:
+    outside = np.asarray(rec.env.bin_at(rec.positions[tracked])) < 0
+    n_outside = int(outside.sum())
+    if n_outside == 0:
         return None
-    return (
-        f"{_count(outside, 'tracked position sample')} of {len(tracked)} "
-        f"({outside / len(tracked):.2%}) {'lies' if outside == 1 else 'lie'} "
-        f"outside the {rec.env_kind} environment (env.bin_at gives -1): "
-        "tracking beyond the apparatus, or an environment placed or sized "
-        "wrong. They are kept as stored and fall in no bin."
+    counted = (
+        f"{_count(n_outside, 'tracked position sample')} of {n_tracked} "
+        f"({n_outside / n_tracked:.2%}) {'lies' if n_outside == 1 else 'lie'} "
+        f"outside the {rec.env_kind} environment (env.bin_at gives -1)"
     )
+    kept = "They are kept as stored and fall in no bin."
+    if not rec.env.is_linearized_track:
+        return (
+            f"{counted}: tracking beyond the apparatus, or an environment placed "
+            f"or sized wrong. {kept}"
+        )
+    return (
+        f"{counted}: tracking spread beyond the track's footprint, expected of a "
+        "tracked head (head-mounted LEDs swing past the edge and a raised head "
+        f"projects outward), not by itself misfit; {_by_speed(rec, outside)}. "
+        f"{kept}"
+    )
+
+
+def _by_speed(rec: Recording, outside: NDArray[np.bool_]) -> str:
+    """The share of stopped and of moving tracked samples that are ``outside``."""
+    from neurospatial.behavior import compute_speed
+
+    threshold = rec.params.get("min_speed")
+    if threshold is None:
+        return "params gives no min_speed, so the share is not split by speed"
+    assert rec.positions is not None
+    tracked = np.all(np.isfinite(rec.positions), axis=1)
+    try:
+        speed = compute_speed(rec.times, rec.positions)[tracked]
+    except InputError:  # no two tracked samples within compute_speed's max_gap
+        return "no speed could be computed, so the share is not split by speed"
+    units = rec.position_units
+    parts = []
+    for name, band in (
+        (f"stopped (below {threshold:g} {units}/s)", speed < threshold),
+        ("moving", speed >= threshold),
+    ):
+        if band.any():
+            parts.append(f"{outside[band].mean():.1%} of {name} samples")
+    return " and ".join(parts) + " are outside"
 
 
 def _silent_units_finding(rec: Recording) -> str | None:

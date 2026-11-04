@@ -40,7 +40,9 @@
   more identical positions, steps faster than a stated speed limit, tracked
   samples outside the environment and units with no spikes in the analysed
   epochs are reported in "Watch out" with their numbers; no array is
-  changed.
+  changed. On a declared track, samples outside its footprint are reported
+  as tracking spread (a tracked head swings past the edge), with the share
+  of stopped and of moving samples at `params["min_speed"]`, not as misfit.
 - `Recording.plot_overview(*, fig=None)` draws six panels: the environment
   with the path, occupancy (never-visited bins drawn as missing), speed with
   `params["min_speed"]` marked, head direction beside heading minus direction

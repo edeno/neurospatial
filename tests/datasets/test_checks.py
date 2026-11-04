@@ -442,3 +442,86 @@ def test_samples_outside_the_environment_warn(square_recording, square_stated):
     )
     np.testing.assert_array_equal(checked.positions, positions)
     assert checked.failed_checks == ()
+
+
+def _straight_track_recording(square_recording, positions, times, params):
+    """A 100 cm straight track, 10 cm wide, with the given head samples."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    graph.add_node(1, pos=(100.0, 0.0))
+    graph.add_edge(0, 1, distance=100.0)
+    env = Environment.from_graph(
+        graph, [(0, 1)], bin_size=2.0, units="cm", track_width=10.0
+    )
+    return dataclasses.replace(
+        square_recording,
+        times=times,
+        positions=positions,
+        headings=None,
+        heading_source="",
+        epochs={},
+        env=env,
+        env_source="100 cm straight track (simulation)",
+        params=params,
+    )
+
+
+@pytest.fixture
+def track_head_samples():
+    """60 s at 100 Hz: 30 s running back and forth at 20 cm/s, then 30 s stopped.
+
+    The head leaves the 10 cm wide track in two blocks, 12 cm to one side: a
+    tenth of the running samples and half of the stopped ones.
+    """
+    times = np.arange(6000) / 100.0
+    lap = np.abs(np.mod(times * 20.0 / 90.0, 2.0) - 1.0)  # 5 to 95 cm and back
+    x = np.where(times < 30.0, 5.0 + 90.0 * lap, 50.0)
+    y = np.zeros_like(x)
+    y[1000:1300] = 12.0  # running, 300 of 3000 samples
+    y[4000:5500] = 12.0  # stopped, 1500 of 3000 samples
+    return times, np.column_stack([x, y])
+
+
+def test_outside_a_track_is_tracking_spread_by_speed(
+    square_recording, square_stated, track_head_samples
+):
+    """On a track the outside share is head spread, split at params['min_speed']."""
+    from neurospatial.behavior import compute_speed
+
+    times, positions = track_head_samples
+    rec = _straight_track_recording(
+        square_recording, positions, times, {"min_speed": 4.0}
+    )
+    stated = dataclasses.replace(square_stated, position_span=(80.0, 120.0))
+    checked = run_checks(rec, stated=stated)
+    (finding,) = [text for text in checked.watch_outs if "outside the" in text]
+    # Counted independently of bin_at: farther than half the width from y = 0.
+    outside = np.abs(positions[:, 1]) > 5.0
+    speed = compute_speed(times, positions)
+    stopped = speed < 4.0
+    assert finding.startswith(
+        f"{outside.sum()} tracked position samples of 6000 ({outside.mean():.2%}) "
+        "lie outside the declared environment (env.bin_at gives -1): tracking "
+        "spread beyond the track's footprint"
+    )
+    assert (
+        f"{outside[stopped].mean():.1%} of stopped (below 4 cm/s) samples and "
+        f"{outside[~stopped].mean():.1%} of moving samples are outside"
+    ) in finding
+    assert "placed or sized wrong" not in finding
+    np.testing.assert_array_equal(checked.positions, positions)
+
+
+def test_outside_a_track_without_min_speed_says_so(
+    square_recording, square_stated, track_head_samples
+):
+    times, positions = track_head_samples
+    rec = _straight_track_recording(square_recording, positions, times, {})
+    stated = dataclasses.replace(square_stated, position_span=(80.0, 120.0))
+    checked = run_checks(rec, stated=stated)
+    (finding,) = [text for text in checked.watch_outs if "outside the" in text]
+    assert "params gives no min_speed, so the share is not split by speed" in finding
