@@ -56,7 +56,7 @@ SHA-256 and reuses the cache on subsequent runs. It combines neural rate maps
 and maze behavior in one analysis. To prepare for offline work, first run:
 
 ```bash
-uv run python data/load_bandit_data.py
+uv run python -c "from neurospatial.datasets import load; load('comrie_2026')"
 ```
 
 The [data guide](https://github.com/edeno/neurospatial/blob/main/data/README.md)

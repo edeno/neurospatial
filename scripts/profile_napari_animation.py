@@ -48,7 +48,6 @@ import numpy as np
 # Add project to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
-sys.path.insert(0, str(PROJECT_ROOT / "data"))
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -63,13 +62,11 @@ def timer(name: str):
     print(f"[TIMER] {name}: {elapsed:.3f}s")
 
 
-def load_data(data_path: Path, n_frames: int | None = None):
-    """Load and preprocess the bandit task data.
+def load_data(n_frames: int | None = None):
+    """Load and preprocess the bandit task data (``comrie_2026``).
 
     Parameters
     ----------
-    data_path : Path
-        Path to data directory
     n_frames : int | None
         Maximum number of frames to use (for quick testing)
 
@@ -78,17 +75,16 @@ def load_data(data_path: Path, n_frames: int | None = None):
     dict
         Dictionary with all necessary data
     """
-    from load_bandit_data import load_neural_recording_from_files
+    from neurospatial.datasets import load
 
     with timer("Loading raw data"):
-        data = load_neural_recording_from_files(data_path, "j1620210710_02_r1")
+        rec = load("comrie_2026")
 
-    position_info = data["position_info"]
-    spike_times_all = data["spike_times"]
+    spike_times_all = rec.spike_times
 
     # Extract arrays
-    positions_2d = position_info[["head_position_x", "head_position_y"]].values
-    times_array = position_info.index.values
+    positions_2d = np.asarray(rec.positions)
+    times_array = np.asarray(rec.times)
 
     # Find a good unit for place field
     spike_counts = [len(s) for s in spike_times_all]
@@ -111,13 +107,12 @@ def load_data(data_path: Path, n_frames: int | None = None):
     positions_subsampled = positions_2d[::subsample_rate]
     times_subsampled = times_array[::subsample_rate]
 
-    # Get head direction if available
-    head_angles = None
-    if "head_orientation" in position_info.columns:
-        head_angles_full = position_info["head_orientation"].values
-        if n_frames is not None:
-            head_angles_full = head_angles_full[:max_samples]
-        head_angles = head_angles_full[::subsample_rate]
+    # The file's head orientation (rec.params; not rec.headings, see its
+    # watch-outs), drawn as a heading overlay.
+    head_angles_full = np.asarray(rec.params["head_orientation"])
+    if n_frames is not None:
+        head_angles_full = head_angles_full[:max_samples]
+    head_angles = head_angles_full[::subsample_rate]
 
     # A shortened session keeps only the spikes recorded while it was tracked.
     spike_times = np.asarray(spike_times_all[best_unit])
@@ -308,8 +303,7 @@ def profile_memory():
     tracemalloc.start()
 
     # Run the animation setup
-    data_path = PROJECT_ROOT / "data"
-    data = load_data(data_path, n_frames=5000)
+    data = load_data(n_frames=5000)
     env = create_environment(data["positions_2d"])
 
     snapshot1 = tracemalloc.take_snapshot()
@@ -415,10 +409,9 @@ def main():
         return
 
     # Load data
-    data_path = PROJECT_ROOT / "data"
-    print(f"\n[INFO] Loading data from {data_path}")
+    print("\n[INFO] Loading comrie_2026 with neurospatial.datasets.load")
 
-    data = load_data(data_path, n_frames=args.frames)
+    data = load_data(n_frames=args.frames)
 
     print(f"[INFO] Position samples: {len(data['positions_2d']):,}")
     print(f"[INFO] Animation frames: {len(data['positions_subsampled']):,}")

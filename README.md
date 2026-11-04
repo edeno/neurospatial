@@ -251,8 +251,9 @@ To start with a real recording, run
 [the real-data tutorial](examples/04_real_data_analysis.ipynb): it downloads and verifies
 the 75 MB [J16 Zenodo dataset](https://doi.org/10.5281/zenodo.23020757), then
 analyzes its 203 hippocampal spike trains.
-To download ahead of time, run `uv run python data/load_bandit_data.py` from the
-repository root. See [the data guide](data/README.md) for units and attribution.
+It loads the recording with `neurospatial.datasets.load("comrie_2026")`; to
+download ahead of time, run that once. See [the data guide](data/README.md) for
+units and attribution.
 
 To go the other way — reconstruct position from population spikes — the one-call
 path is

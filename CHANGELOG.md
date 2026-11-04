@@ -256,6 +256,13 @@
   bin; the along-track panel stays opaque.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
+- `data/load_bandit_data.py` and its command line are removed. The
+  real-data tutorial (`examples/04_real_data_analysis`) loads the J16
+  recording with `neurospatial.datasets.load("comrie_2026")`, which caches
+  the file under `$NEUROSPATIAL_DATA_DIR` or `~/.cache/neurospatial/datasets`
+  instead of `data/`, and takes the track graph, edge order and edge spacing
+  from `rec.env.binning.linearization`; its analysis outputs are unchanged.
+  `scripts/profile_napari_animation.py` loads it the same way.
 
 ### Fixes from the review of the result contract, warnings and simulators
 
