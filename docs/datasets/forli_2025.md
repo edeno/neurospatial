@@ -118,8 +118,9 @@ flights".
 fields of each clustered flight path, and neurospatial has no flight-path
 clustering or path fields.
 
-**The 3-D attempt did not reproduce the paper's result (15.2% of flight-active units tuned, against 71%).** It is not the paper's analysis. One 3-D map on the
-room's voxels, pooling every path, tested against a criterion fixed before the
+**The 3-D attempt did not reproduce the paper's result (15.2% of
+flight-active units tuned, against 71%).** It is not the paper's analysis. One
+3-D map on the room's voxels, pooling every path, tested against a criterion fixed before the
 run (more than half of the flight-active units tuned), which was not met:
 
 - 31 of 204 flight-active units tuned (15.2%), against the paper's 71%;
@@ -141,9 +142,8 @@ How it differs from the paper:
   one spike per flight on average;
 - the paper pools 23 sessions of 6 bats; this is one demo session.
 
-Source: Forli et al. 2025, Nature, Results ("Hippocampal replay of flight
-trajectories") and Methods ("Replay analysis: spike sequences"), read on
-PubMed Central, PMC12460160.
+Source: Forli et al. 2025, Nature, Results and Methods ("Identification of
+spatially tuned cells"), read on PubMed Central, PMC12460160.
 
 ## Cite
 

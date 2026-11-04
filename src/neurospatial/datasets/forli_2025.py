@@ -93,9 +93,8 @@ WORKED_RESULT: dict[str, Any] = {
         'fields for the first versus the second half of the flights"'
     ),
     "source": (
-        "Forli et al. 2025, Nature, Results (\u201cHippocampal replay of flight "
-        "trajectories\u201d) and Methods (\u201cReplay analysis: spike "
-        "sequences\u201d), read on PubMed Central, PMC12460160"
+        "Forli et al. 2025, Nature, Results and Methods (\u201cIdentification "
+        "of spatially tuned cells\u201d), read on PubMed Central, PMC12460160"
     ),
     "paper": 0.71,
     "ours": None,
