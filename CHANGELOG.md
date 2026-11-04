@@ -73,9 +73,14 @@
   position times are used, as an inferred `Conversion`, and the offset is a
   watch-out. The calibration comes from a transform the file states, else a
   least-squares fit from the file's pixel tracking to its positions, else
-  landmarks placed by hand and kept in the registry; a fit or landmarks with
-  a residual over one bin are refused. Without a calibration, or without a
-  video, `animation(video=True)` raises `InputError` naming the sources
+  landmarks placed by hand and kept in the registry, else a least-squares
+  fit of the LED detected in the video to the positions, run once by
+  `scripts/fit_video_led_calibration.py` and kept in the registry (method,
+  affine, frame size, frames used, median and 90th-percentile residuals in
+  cm and px). A fit from pixel tracking or landmarks with a root-mean-square
+  residual over one bin, or an LED fit with a median residual over one bin,
+  is refused. Without a calibration, or without a video,
+  `animation(video=True)` raises `InputError` naming the four sources
   tried; the frames are never stretched over the environment's extent.
 - `neurospatial.datasets.load(dataset, session=None, *, cache=None,
   stream=False, accept_failed_checks=())` fetches one session (the
@@ -185,11 +190,15 @@
   are 22.55 to 23.12 s earlier than the position timestamps for the same
   67,131 frames; the video follows the position clock, on which the units'
   spatial information is highest. The file states no pixel size and stores
-  no pixel tracking, and no landmarks have been placed yet, so
-  `rec.animation(video=True)` refuses for now. The parts of the track epoch
-  before the first and after the last position sample are the epochs
-  `track_before_tracking` and `track_after_tracking`. A session whose video
-  is split across two files has `rec.video` None.
+  no pixel tracking, so the default session's video is calibrated by an LED
+  fit (median residual 1.52 cm, 90th percentile 9.49 cm, over 2,238 frames),
+  and a watch-out says the overlay is aligned with the tracking by
+  construction: it does not check the tracking or the declared track, and
+  the track is not visible in the video. Other sessions refuse
+  `animation(video=True)` until the fit is run for them. The parts of the
+  track epoch before the first and after the last position sample are the
+  epochs `track_before_tracking` and `track_after_tracking`. A session whose
+  video is split across two files has `rec.video` None.
 - `io.nwb.read_position(..., position_name=)` and
   `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
   any Position or CompassDirection container when given its full path, as in

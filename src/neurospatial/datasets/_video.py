@@ -14,9 +14,11 @@ the position clock is then used, since it is the one the spikes are on.
 The calibration (:func:`video_calibration`) comes from the first source that
 gives one, in this order: a pixel-to-cm transform stated in the file, a
 least-squares fit between pixel tracking stored in the file and the
-converted positions, or landmarks placed by hand on one frame and kept in
-the dataset's registry. A fit or landmarks whose residual exceeds one bin is
-refused. Without a calibration the video is not drawn: stretching the frame
+converted positions, landmarks placed by hand on one frame and kept in the
+dataset's registry, or a least-squares fit of the tracked LED's position
+detected in the video to the positions, run once by
+``scripts/fit_video_led_calibration.py`` and kept in the registry. A fit or
+landmarks whose residual exceeds one bin is refused. Without a calibration the video is not drawn: stretching the frame
 over the environment's extent would place it wrong.
 """
 
@@ -41,7 +43,10 @@ if TYPE_CHECKING:
 __all__ = [
     "CALIBRATION_SOURCES",
     "Landmarks",
+    "LedFit",
     "VideoSource",
+    "fit_pixel_affine",
+    "led_fit_watch_out",
     "video_calibration",
     "video_frame_times",
 ]
@@ -51,6 +56,8 @@ CALIBRATION_SOURCES = (
     "a pixel-to-cm transform stated in the file",
     "a least-squares fit between pixel tracking in the file and its positions",
     "landmarks placed by hand on one frame, in the dataset's registry",
+    "a least-squares fit of LED positions detected in the video to the "
+    "positions, in the dataset's registry",
 )
 
 #: Two clocks hold the same frames when the position times are an offset and
@@ -105,6 +112,63 @@ class Landmarks:
             )
         object.__setattr__(self, "px", px)
         object.__setattr__(self, "env", env)
+
+
+@dataclass(frozen=True)
+class LedFit:
+    """A pixel-to-cm affine fitted from the LED detected in the video, stored.
+
+    ``scripts/fit_video_led_calibration.py`` detects the tracked LED in
+    frames of the video, fits a least-squares affine from its pixel position
+    to the file's position of the same sample, and writes this record into
+    the dataset's registry, so loading needs no video.
+
+    Parameters
+    ----------
+    matrix : ndarray, shape (3, 3)
+        The affine from video pixels ``(column, row, 1)`` to cm.
+    frame_size_px : (int, int)
+        The video's ``(width, height)``.
+    method : str
+        How the LED was detected and the affine fitted.
+    frames : str
+        Which frames were used, for example ``"every 30th frame from 0"``.
+    n_frames : int
+        The frames used: detected, with a finite position.
+    median_cm, p90_cm : float
+        Median and 90th percentile distance of the fitted positions from the
+        file's, cm.
+    median_px, p90_px : float
+        The same in pixels: the file's positions mapped back into the frame
+        against the detected LED.
+    fitted_by : str
+        The script, its version or commit, and the date.
+    """
+
+    matrix: NDArray[np.float64]
+    frame_size_px: tuple[int, int]
+    method: str
+    frames: str
+    n_frames: int
+    median_cm: float
+    p90_cm: float
+    median_px: float
+    p90_px: float
+    fitted_by: str
+
+    def __post_init__(self) -> None:
+        matrix = read_only_copy(self.matrix, dtype=np.float64)
+        if matrix.shape != (3, 3) or not self.method.strip() or self.n_frames < 3:
+            raise InputError(
+                _format_error(
+                    f"LedFit: matrix shape {matrix.shape}, method "
+                    f"{self.method!r}, {self.n_frames} frames.",
+                    why="a stored fit is used only with its 3 x 3 affine, its "
+                    "method and the frames it rests on.",
+                    fix="rerun scripts/fit_video_led_calibration.py.",
+                )
+            )
+        object.__setattr__(self, "matrix", matrix)
 
 
 @dataclass(frozen=True)
@@ -327,7 +391,8 @@ def video_calibration(
     tracking: tuple[NDArray[np.float64], NDArray[np.float64], tuple[int, int], str]
     | None = None,
     landmarks: Landmarks | None = None,
-    absent: Sequence[str] = ("", "", ""),
+    led_fit: LedFit | None = None,
+    absent: Sequence[str] = ("", "", "", ""),
 ) -> tuple[VideoCalibration | None, Conversion | None, tuple[str, ...]]:
     """The video's pixel-to-cm calibration from the first source that gives one.
 
@@ -338,9 +403,13 @@ def video_calibration(
        positions; a least-squares affine from one to the other.
     3. ``landmarks``: points placed by hand on one frame, from the registry;
        a similarity transform (scale, rotation, translation) through them.
+    4. ``led_fit``: an affine fitted once from the LED detected in the video
+       to the positions, from the registry (:class:`LedFit`).
 
-    A fit or landmarks whose root-mean-square residual exceeds ``bin_size``
-    is refused, and the next source is tried.
+    A fit from the file's pixel tracking or landmarks whose root-mean-square
+    residual exceeds ``bin_size`` is refused, as is an LED fit whose median
+    residual does (detection outliers, such as reflections, would dominate
+    a mean), and the next source is tried.
 
     Parameters
     ----------
@@ -354,7 +423,8 @@ def video_calibration(
         ``positions`` ``(n_time, 2)`` in cm, the same samples; the frame size
         and which series they are.
     landmarks : Landmarks, optional
-    absent : (str, str, str)
+    led_fit : LedFit, optional
+    absent : (str, str, str, str)
         Why each source the dataset has none of is absent, for example
         ``"the file's video series states no pixel size"``; empty strings
         use "none given".
@@ -391,18 +461,11 @@ def video_calibration(
 
     if tracking is not None:
         pixels, positions, size, source = tracking
-        pixels = np.asarray(pixels, dtype=np.float64)
-        positions = np.asarray(positions, dtype=np.float64)
-        both = np.all(np.isfinite(pixels), axis=1) & np.all(
-            np.isfinite(positions), axis=1
-        )
-        design = np.column_stack([pixels[both], np.ones(both.sum())])
-        coef, *_ = np.linalg.lstsq(design, positions[both], rcond=None)
-        matrix = np.vstack([coef.T, [0.0, 0.0, 1.0]])
-        transform = AffineND(matrix)
-        cm, px = _residuals(transform, pixels[both], positions[both])
+        transform, in_cm, in_px = fit_pixel_affine(pixels, positions)
+        cm = float(np.sqrt(np.mean(in_cm**2)))
+        px = float(np.sqrt(np.mean(in_px**2)))
         evidence = (
-            f"{source}: a least-squares affine over the {int(both.sum())} samples "
+            f"{source}: a least-squares affine over the {in_cm.size} samples "
             f"tracked in both, residual {cm:.3g} cm ({px:.3g} px) root mean "
             f"square; {_scale_text(transform)}"
         )
@@ -445,7 +508,79 @@ def video_calibration(
         gave_none(2, f"{evidence}, more than one {bin_size:g} cm bin")
     else:
         gave_none(2, absent[2])
+
+    if led_fit is not None:
+        transform = AffineND(led_fit.matrix)
+        evidence = (
+            f"{led_fit.method}, over {led_fit.n_frames} frames ({led_fit.frames}); "
+            f"residual median {led_fit.median_cm:.3g} cm ({led_fit.median_px:.3g} "
+            f"px), 90th percentile {led_fit.p90_cm:.3g} cm ({led_fit.p90_px:.3g} "
+            f"px); the median is the statistic compared with the {bin_size:g} cm "
+            f"bin; {_scale_text(transform)}; fitted by {led_fit.fitted_by}"
+        )
+        if led_fit.median_cm <= bin_size:
+            basis = Conversion(
+                "video calibration: a least-squares affine from the LED detected "
+                "in the video to the tracked positions",
+                "inferred",
+                evidence,
+            )
+            calibration = VideoCalibration(
+                transform, frame_size_px=led_fit.frame_size_px
+            )
+            return calibration, basis, tuple(tried)
+        gave_none(3, f"{evidence}: the median is more than one {bin_size:g} cm bin")
+    else:
+        gave_none(3, absent[3])
     return None, None, tuple(tried)
+
+
+def fit_pixel_affine(
+    pixels: NDArray[np.float64], positions: NDArray[np.float64]
+) -> tuple[AffineND, NDArray[np.float64], NDArray[np.float64]]:
+    """A least-squares affine from pixels to cm over the samples finite in both.
+
+    Parameters
+    ----------
+    pixels : ndarray, shape (n_samples, 2)
+        Video pixels, ``(column, row)``.
+    positions : ndarray, shape (n_samples, 2)
+        The same samples' positions, cm.
+
+    Returns
+    -------
+    transform : AffineND
+        Pixels to cm.
+    residual_cm : ndarray, shape (n_used,)
+        Each used sample's distance from its fitted position, cm.
+    residual_px : ndarray, shape (n_used,)
+        Each used sample's position mapped back into the frame, its distance
+        from the pixel, px.
+    """
+    from neurospatial.ops.transforms import AffineND
+
+    pixels = np.asarray(pixels, dtype=np.float64)
+    positions = np.asarray(positions, dtype=np.float64)
+    both = np.all(np.isfinite(pixels), axis=1) & np.all(np.isfinite(positions), axis=1)
+    design = np.column_stack([pixels[both], np.ones(both.sum())])
+    coef, *_ = np.linalg.lstsq(design, positions[both], rcond=None)
+    transform = AffineND(np.vstack([coef.T, [0.0, 0.0, 1.0]]))
+    residual_cm = np.linalg.norm(transform(pixels[both]) - positions[both], axis=1)
+    back = transform.inverse()(positions[both])
+    residual_px = np.linalg.norm(back - pixels[both], axis=1)
+    return transform, residual_cm, residual_px
+
+
+def led_fit_watch_out(fit: LedFit) -> str:
+    """What a video calibrated by :class:`LedFit` can and cannot show."""
+    return (
+        "The video's calibration was fitted to the tracked positions (the LED "
+        "detected in the video against the file's positions), so the overlay "
+        "shows the camera and the data aligned by construction: it does not "
+        "check that the tracking or the declared track is placed correctly, "
+        "and the track itself is not visible in the video. 90th-percentile "
+        f"residual {fit.p90_cm:.3g} cm ({fit.p90_px:.3g} px)."
+    )
 
 
 def _residuals(

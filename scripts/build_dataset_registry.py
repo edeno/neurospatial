@@ -24,7 +24,8 @@ it are sessions, and it is dropped from the session id. Other assets in a
 folder named after an NWB file's stem are the external files its
 ImageSeries name (videos); each is listed under the session's ``videos``
 with its path, id, size and digest, keeping the ``landmarks`` a person
-placed on it.
+placed on it and the ``led_fit`` that ``fit_video_led_calibration.py``
+wrote.
 
 Usage
 -----
@@ -54,7 +55,7 @@ TIMEOUT = 60
 #: Session fields a person sets; the script keeps them.
 HAND_FIELDS = {"verified": False, "default": False, "n_units": None, "verification": ""}
 #: Video fields a person sets; the script keeps them where set.
-VIDEO_HAND_FIELDS = ("landmarks",)
+VIDEO_HAND_FIELDS = ("landmarks", "led_fit")
 
 Fetch = Callable[[str], Any]
 

@@ -17,7 +17,10 @@ from neurospatial._exceptions import InputError
 from neurospatial.datasets._video import (
     CALIBRATION_SOURCES,
     Landmarks,
+    LedFit,
     VideoSource,
+    fit_pixel_affine,
+    led_fit_watch_out,
     video_calibration,
     video_frame_times,
 )
@@ -330,6 +333,7 @@ def test_refuses_without_calibration(camera):
         "the file's video series states no pixel size",
         "the file stores no pixel tracking",
         "the registry holds no landmarks for this video",
+        "the registry holds no LED fit for this video",
     )
     calibration, basis, tried = video_calibration(bin_size=2.0, absent=absent)
     assert calibration is None
@@ -373,6 +377,97 @@ def test_video_source_refuses_bad_fields(camera):
     assert "'xyz' is not 64 hexadecimal digits" in message
     assert "calibration and calibration_basis together" in message
     assert not camera["dot"].frame_times.flags.writeable
+
+
+#: A camera: 0.5 cm per pixel, turned 10 degrees, rows running down (y up).
+TRUE_AFFINE = np.array(
+    [
+        [0.5 * np.cos(0.17), 0.5 * np.sin(0.17), -5.0],
+        [0.5 * np.sin(0.17), -0.5 * np.cos(0.17), 105.0],
+        [0.0, 0.0, 1.0],
+    ]
+)
+
+
+def test_led_fit_recovers_a_known_camera():
+    """A known affine plus 1 px of noise per axis is recovered by the fit.
+
+    Tolerances, set before the first run: the fitted map puts every corner
+    of a 220 x 220 px frame within 0.2 cm of the true one (the expected
+    error at 3000 samples is about 0.02 cm), and the median residual is
+    within 10% of 0.589 cm, the median distance for 0.5 cm of Gaussian
+    noise per axis (0.5 sqrt(2 ln 2)).
+    """
+    from neurospatial.ops.transforms import AffineND
+
+    rng = np.random.default_rng(3)
+    pixels = rng.uniform(0, 220, (3000, 2))
+    positions = AffineND(TRUE_AFFINE)(pixels)
+    noisy = pixels + rng.normal(0.0, 1.0, pixels.shape)
+    noisy[::50] = np.nan  # an undetected LED is left out
+    transform, in_cm, in_px = fit_pixel_affine(noisy, positions)
+    corners = np.array([[0, 0], [220, 0], [0, 220], [220, 220]], dtype=float)
+    error = np.linalg.norm(transform(corners) - AffineND(TRUE_AFFINE)(corners), axis=1)
+    assert np.all(error < 0.2)
+    assert in_cm.size == 3000 - 60
+    assert np.median(in_cm) == pytest.approx(0.5 * np.sqrt(2 * np.log(2)), rel=0.1)
+    assert np.median(in_px) == pytest.approx(np.sqrt(2 * np.log(2)), rel=0.1)
+
+
+def _led_fit(median_cm):
+    return LedFit(
+        matrix=TRUE_AFFINE,
+        frame_size_px=(220, 220),
+        method="the brightest point after a blur",
+        frames="every 30th frame from 0 (100 frames)",
+        n_frames=100,
+        median_cm=median_cm,
+        p90_cm=4.0 * median_cm,
+        median_px=2.0 * median_cm,
+        p90_px=8.0 * median_cm,
+        fitted_by="a test, 2026-11-04",
+    )
+
+
+def test_led_fit_is_the_fourth_source():
+    """Used after the other three, with its method and residuals; refused above a bin."""
+    calibration, basis, tried = video_calibration(bin_size=2.5, led_fit=_led_fit(1.5))
+    assert len(tried) == 3
+    assert basis.basis == "inferred"
+    assert "the brightest point after a blur" in basis.evidence
+    assert "median 1.5 cm (3 px), 90th percentile 6 cm (12 px)" in basis.evidence
+    assert "the median is the statistic compared with the 2.5 cm bin" in basis.evidence
+    np.testing.assert_allclose(calibration.transform_px_to_cm.A, TRUE_AFFINE)
+    assert "90th-percentile residual 6 cm (12 px)" in led_fit_watch_out(_led_fit(1.5))
+    assert "aligned by construction" in led_fit_watch_out(_led_fit(1.5))
+
+    calibration, basis, tried = video_calibration(bin_size=2.5, led_fit=_led_fit(3.0))
+    assert calibration is None
+    assert basis is None
+    assert len(tried) == 4
+    assert tried[3].startswith(CALIBRATION_SOURCES[3])
+    assert "the median is more than one 2.5 cm bin" in tried[3]
+
+
+def test_led_detection_finds_the_brightest_spot():
+    """The fit script's detector finds a lit disk on a dark frame, to a pixel."""
+    pytest.importorskip("cv2")
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "fit_video_led_calibration.py"
+    )
+    spec = importlib.util.spec_from_file_location("fit_video_led_calibration", path)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    rows, columns = np.mgrid[0:120, 0:80]
+    frame = np.zeros((120, 80, 3), np.uint8)
+    frame[(columns - 23) ** 2 + (rows - 91) ** 2 <= 9] = (90, 200, 255)
+    frame[5, 70] = 255  # one hot pixel is blurred away
+    column, row = script.detect_led(frame)
+    assert abs(column - 23) <= 1
+    assert abs(row - 91) <= 1
 
 
 def test_track_session_video_is_drawn_in_the_plane(track_recording, tmp_path):

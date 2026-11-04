@@ -205,9 +205,9 @@ def test_loads_default_session():
 def test_video_scene(tmp_path):
     """The default session's video fetches with its checksum; a 2 s export over it.
 
-    The export and its frame sheet, for the person who verifies the video,
-    need a calibration; until landmarks are placed in the registry the scene
-    refuses, naming the three sources.
+    The video is calibrated by the stored LED fit, and the watch-out says
+    what that alignment cannot show. A frame sheet is written for the person
+    who verifies the video.
     """
     cv2 = pytest.importorskip("cv2")
     rec = load("valero_2022")
@@ -218,17 +218,15 @@ def test_video_scene(tmp_path):
 
     with _VideoReader(path) as reader:
         assert reader.n_frames == rec.video.frame_times.size
-    if rec.video.calibration is None:
-        with pytest.raises(InputError, match="no calibration") as refused:
-            rec.animation(video=True)
-        for source in CALIBRATION_SOURCES:
-            assert source in str(refused.value)
-        pytest.skip("no calibration for the default session's video yet")
+    assert rec.video.calibration is not None
+    assert "detected in the video" in rec.video.calibration_basis.text
+    assert rec.video.calibration_basis in rec.conversions
+    assert any("aligned by construction" in line for line in rec.watch_outs)
     start = float(rec.times[0])
     scene = rec.animation(time_range=(start, start + 2.0), video=True)
     frames = tmp_path / "frames"
     scene.export(
-        tmp_path / "scene.html", fps=10, dpi=60, embed=False, frames_dir=frames
+        tmp_path / "scene.html", fps=10, dpi=100, embed=False, frames_dir=frames
     )
     exported = sorted(frames.glob("frame_*.png"))
     assert len(exported) == 20

@@ -24,7 +24,7 @@ from neurospatial.datasets._recording import Provenance
 if TYPE_CHECKING:
     import pandas as pd
 
-    from neurospatial.datasets._video import Landmarks
+    from neurospatial.datasets._video import Landmarks, LedFit
 
 __all__ = [
     "DatasetInfo",
@@ -124,6 +124,10 @@ class VideoAsset:
     landmarks : Landmarks or None
         Points a person placed on one frame, with their environment
         positions, for the calibration; None where nobody has.
+    led_fit : LedFit or None
+        The affine fitted from the LED detected in the video to the
+        positions (``scripts/fit_video_led_calibration.py``); None where it
+        has not been run.
     """
 
     asset_path: str
@@ -131,6 +135,7 @@ class VideoAsset:
     sha256: str
     size_bytes: int
     landmarks: Landmarks | None = None
+    led_fit: LedFit | None = None
 
 
 @dataclass(frozen=True)
@@ -397,6 +402,7 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
             sha256=_sha256(video["sha256"], f"video {video['asset_path']!r}"),
             size_bytes=int(video["size_bytes"]),
             landmarks=_landmarks(video.get("landmarks")),
+            led_fit=_led_fit(video.get("led_fit")),
         )
         for video in row.get("videos", ())
     )
@@ -443,6 +449,27 @@ def _landmarks(value: dict[str, Any] | None) -> Landmarks | None:
         frame_size_px=(int(width), int(height)),
         frame=int(value["frame"]),
         placed_by=str(value["placed_by"]),
+    )
+
+
+def _led_fit(value: dict[str, Any] | None) -> LedFit | None:
+    """A video's ``led_fit`` row as :class:`LedFit`; None without one."""
+    if value is None:
+        return None
+    from neurospatial.datasets._video import LedFit
+
+    width, height = value["frame_size_px"]
+    return LedFit(
+        matrix=value["matrix"],
+        frame_size_px=(int(width), int(height)),
+        method=str(value["method"]),
+        frames=str(value["frames"]),
+        n_frames=int(value["n_frames"]),
+        median_cm=float(value["residual_cm"]["median"]),
+        p90_cm=float(value["residual_cm"]["p90"]),
+        median_px=float(value["residual_px"]["median"]),
+        p90_px=float(value["residual_px"]["p90"]),
+        fitted_by=str(value["fitted_by"]),
     )
 
 

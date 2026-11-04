@@ -43,10 +43,16 @@ graph along the tracked samples' principal axis, centred between their
 reference frame is "Arbitrary, camera"), in 2.5 cm bins. Its ``track_width``
 is a placement tolerance measured from the samples, not the stated width.
 
-The video is not drawn yet: the file states no pixel size and stores no
-pixel tracking, and nobody has placed landmarks on a frame, so
-``rec.animation(video=True)`` refuses, naming each source tried. Once
-landmarks are in the registry, the scene of the first 20 s over the video is
+The file states no pixel size and stores no pixel tracking, so the
+default session's video is calibrated by a least-squares affine from the
+LED detected in the video to the file's positions
+(``scripts/fit_video_led_calibration.py``, run once, stored in the
+registry). The overlay is then aligned with the tracking by construction: it
+shows the camera's view of each moment, not a check of the tracking or of
+the declared track, which the dark video does not show. Other sessions
+refuse ``rec.animation(video=True)`` until the fit is run for them. The
+scene of the first 20 s over the video is drawn on a grid over the track's
+footprint (``scene.env``), with the track as its along-track panel:
 
 >>> from neurospatial.datasets import load
 >>> rec = load("valero_2022")  # doctest: +SKIP
@@ -54,15 +60,16 @@ landmarks are in the registry, the scene of the first 20 s over the video is
 >>> scene = rec.animation(time_range=(start, start + 20), video=True)  # doctest: +SKIP
 >>> scene.export("valero_video.mp4", fps=30)  # doctest: +SKIP
 
-and your own decoded posterior goes into the same scene as a field, with its
-overlays:
+Your own decoded posterior goes into the same scene as a field over
+``scene.env``'s bins (decode on ``scene.env``), with its overlays and track:
 
 >>> from neurospatial.animation import Animation, AnimationField
 >>> mine = Animation(  # doctest: +SKIP
-...     rec.env,
+...     scene.env,
 ...     {"posterior": AnimationField(result.posterior, result.times)},
 ...     frame_times=scene.frame_times,
 ...     overlays=scene.overlays,
+...     track=scene.track,
 ... )
 
 Analysis choices (``params``):
@@ -170,8 +177,8 @@ def load_session(
         stated_unit = f"unit {series.unit!r}, conversion {series.conversion:g}"
         description, frame = series.description, series.reference_frame
         epochs_table = nwb.epochs.to_dataframe()
-        states = nwb.processing["behavior"]["SleepStates"].to_dataframe()
-        ripples = _rows(nwb.processing["ecephys"]["RippleTimeIntervals"].to_dataframe())
+        states = _table(nwb, "behavior", "SleepStates")
+        ripples = _table(nwb, "ecephys", "RippleTimeIntervals")
         regions = nwb.electrodes.to_dataframe()["location"].dropna().unique()
         video = nwb.acquisition.get(_VIDEO)
         video_files = [] if video is None else [str(f) for f in video.external_file[:]]
@@ -221,7 +228,7 @@ def load_session(
             "of the head or headstage)"
         ),
         epochs=epochs,
-        events={"ripples": ripples},
+        events={} if ripples is None else {"ripples": _rows(ripples)},
         params={
             "bin_size": BIN_SIZE,
             "dt": DT,
@@ -267,6 +274,16 @@ def load_session(
     )
 
 
+def _table(nwb: Any, module: str, name: str) -> Any:
+    """``processing/<module>/<name>`` as a DataFrame, or None where absent."""
+    if (
+        module not in nwb.processing
+        or name not in nwb.processing[module].data_interfaces
+    ):
+        return None
+    return nwb.processing[module][name].to_dataframe()
+
+
 def _rows(table: Any) -> NDArray[np.float64]:
     """The ``(n, 2)`` [start, stop) rows of an interval table, sorted by start."""
     rows: NDArray[np.float64] = table[["start_time", "stop_time"]].to_numpy(
@@ -304,7 +321,8 @@ def _epochs(
     if times[-1] < stop:
         epochs["track_after_tracking"] = np.array([[times[-1], stop]])
     for label, key in _STATES.items():
-        epochs[key] = _rows(states[states["label"] == label])
+        if states is not None:
+            epochs[key] = _rows(states[states["label"] == label])
     return epochs
 
 
@@ -404,7 +422,9 @@ def _video(
 ) -> tuple[VideoSource | None, tuple[tuple[Conversion, ...], tuple[str, ...]]]:
     """``rec.video``, with the conversions and watch-outs it adds."""
     from neurospatial.datasets._video import (
+        CALIBRATION_SOURCES,
         VideoSource,
+        led_fit_watch_out,
         video_calibration,
         video_frame_times,
     )
@@ -435,12 +455,15 @@ def _video(
     calibration, basis, tried = video_calibration(
         bin_size=BIN_SIZE,
         landmarks=asset.landmarks,
+        led_fit=asset.led_fit,
         absent=(
             f"the file's {_VIDEO} states no pixel size or transform, and its "
             "position series' reference frame is 'Arbitrary, camera'",
             f"the file stores the positions in cm only ({_POSITION}), no pixel "
             "tracking",
             "the dataset's registry holds no landmarks for this video",
+            "the dataset's registry holds no LED fit for this video (run "
+            "scripts/fit_video_led_calibration.py for this session)",
         ),
     )
     streamed = source.startswith(("https://", "http://"))
@@ -462,7 +485,10 @@ def _video(
     if calibration is None:
         watch_outs += (
             "The video is not calibrated, so rec.animation(video=True) refuses: "
-            "the file states no pixel size and stores no pixel tracking, and no "
-            "landmarks have been placed on a frame (see rec.video.calibration_tried).",
+            "the file states no pixel size and stores no pixel tracking, and "
+            "neither landmarks nor an LED fit are stored for this video (see "
+            "rec.video.calibration_tried).",
         )
+    elif asset.led_fit is not None and len(tried) == len(CALIBRATION_SOURCES) - 1:
+        watch_outs += (led_fit_watch_out(asset.led_fit),)
     return camera, (conversions, watch_outs)
