@@ -69,7 +69,7 @@ Sources read: DANDI 000568's metadata, the files, the paper's Crossref record
 (title, authors, volume, pages) and the paper's main text (the author
 manuscript, PubMed Central PMC9632609). Its Materials and methods, in the
 Supplementary Materials, were not available to read, so no number on this page
-comes from the paper.
+comes from its Methods; the numbers quoted from the main text say so.
 
 ## Units and conversions
 
@@ -93,8 +93,9 @@ the basis of each. Nothing is downloaded until `rec.video.fetch()` or
 
 **The overlay is aligned with the tracking by construction.** The file states
 no pixel size and stores no pixel tracking, so the default session's video is
-calibrated by a least-squares affine from the LED detected in the video to the
-file's positions (`scripts/fit_video_led_calibration.py`, run once and stored
+calibrated by a robust affine from the LED detected in the video to the file's
+positions (a Huber fit with a 2 cm cut, then least squares over the detections
+within 5 cm of it) (`scripts/fit_video_led_calibration.py`, run once and stored
 in the registry). The overlay therefore shows the camera's view of each moment;
 it is not a check of the tracking or of the declared track, which the dark
 video does not show. A watch-out repeats this, and `rec.video.calibration_basis`

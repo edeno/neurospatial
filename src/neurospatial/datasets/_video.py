@@ -561,8 +561,9 @@ def video_calibration(
         )
         if led_fit.median_cm <= bin_size:
             basis = Conversion(
-                "video calibration: a least-squares affine from the LED detected "
-                "in the video to the tracked positions",
+                "video calibration: a robust affine from the LED detected in the "
+                "video to the tracked positions (a Huber fit, then least squares "
+                "over the detections near it)",
                 "inferred",
                 evidence,
             )

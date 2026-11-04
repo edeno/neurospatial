@@ -19,7 +19,7 @@ Sources read: DANDI 000568's metadata, the files, the paper's Crossref
 record (title, authors, volume, pages) and the paper's main text (the author
 manuscript, PubMed Central PMC9632609). Its Materials and methods, in the
 Supplementary Materials, were not available to read, so no number here
-comes from the paper.
+comes from its Methods; the numbers quoted from the main text say so.
 
 What the loader converts:
 
@@ -48,9 +48,10 @@ reference frame is "Arbitrary, camera"), in 2.5 cm bins. Its ``track_width``
 is a placement tolerance measured from the samples, not the stated width.
 
 The file states no pixel size and stores no pixel tracking, so the
-default session's video is calibrated by a least-squares affine from the
-LED detected in the video to the file's positions
-(``scripts/fit_video_led_calibration.py``, run once, stored in the
+default session's video is calibrated by a robust affine from the LED
+detected in the video to the file's positions (a Huber fit with a 2 cm cut,
+then least squares over the detections within 5 cm of it;
+``scripts/fit_video_led_calibration.py``, run once, stored in the
 registry). The overlay is then aligned with the tracking by construction: it
 shows the camera's view of each moment, not a check of the tracking or of
 the declared track, which the dark video does not show. Other sessions
