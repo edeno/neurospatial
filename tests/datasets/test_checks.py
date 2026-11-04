@@ -390,8 +390,11 @@ def test_overlaps_count_every_row_inside_a_long_one(square_recording, square_sta
         square_recording,
         epochs={"run": np.array([[0.0, 50.0], [1.0, 2.0], [3.0, 4.0]])},
     )
-    with pytest.raises(DatasetCheckError, match="has 2 rows starting before"):
+    with pytest.raises(DatasetCheckError, match="has 2 rows starting before") as error:
         run_checks(rec, stated=square_stated)
+    # The advice is about overlapping rows, not about units or clock zeros.
+    assert "merge the overlapping rows" in str(error.value)
+    assert "milliseconds" not in str(error.value)
 
 
 def test_origin_zeros_skip_one_dimensional_tracks(square_recording, square_stated):

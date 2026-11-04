@@ -290,6 +290,7 @@ def _clock_finding(rec: Recording) -> str | None:
     times = rec.times
     first, last = float(times[0]), float(times[-1])
     problems = []
+    overlapping = []
     rows = all_epoch_rows(rec.epochs)
     untracked = untracked_epoch_rows(times, rec.epochs)
     if len(rows) and not len(tracked_epoch_rows(times, rec.epochs)):
@@ -327,7 +328,7 @@ def _clock_finding(rec: Recording) -> str | None:
         overlaps = ordered[1:, 0] < reach
         if n_overlaps := int(overlaps.sum()):
             at = int(np.argmax(overlaps))
-            problems.append(
+            overlapping.append(
                 f"epochs[{name!r}] has {_count(n_overlaps, 'row')} starting "
                 f"before an earlier row ends, the first [{ordered[at + 1, 0]:.6g}, "
                 f"{ordered[at + 1, 1]:.6g}] s before {reach[at]:.6g} s"
@@ -341,14 +342,23 @@ def _clock_finding(rec: Recording) -> str | None:
                 f"outside {span}; its times run from {values.min():.6g} to "
                 f"{values.max():.6g} s"
             )
-    if not problems:
-        return None
-    return (
-        "; ".join(problems)
-        + ". Spike, event and epoch times must be seconds on the clock of times: "
-        "check each one's unit (milliseconds or samples read as seconds) and its "
-        "zero (a second clock)."
-    )
+    found = []
+    if problems:
+        found.append(
+            "; ".join(problems)
+            + ". Spike, event and epoch times must be seconds on the clock of "
+            "times: check each one's unit (milliseconds or samples read as "
+            "seconds) and its zero (a second clock)."
+        )
+    if overlapping:
+        found.append(
+            "; ".join(overlapping)
+            + ". The rows of one epoch name must not overlap, or a sample would "
+            "be counted twice: check that the file's start and stop columns are "
+            "read as such, then merge the overlapping rows, or give rows of "
+            "different conditions their own names."
+        )
+    return " ".join(found) or None
 
 
 def _slack(length: float) -> float:
