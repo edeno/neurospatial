@@ -385,6 +385,10 @@
   in file order. Other recordings keep the file's order. On `comrie_2026`
   (203 units, 709k samples) the rate maps add about 4.7 s to the first
   `plot_overview()` (3.3 s to 8.0 s).
+- The Matplotlib scene's spike raster labels as many rows as its height
+  holds without the labels touching (every k-th row, each still its own
+  unit's id) and says so in the axis label, "Unit (1 in k labelled)"; with
+  100 or more units the labels ran together into a black bar.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

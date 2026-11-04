@@ -148,3 +148,45 @@ def test_epochs_are_sorted_merged_and_checked():
         EpochOverlay([[2.0, 1.0]])
     with pytest.raises(ValueError, match="alpha must be between 0 and 1"):
         EpochOverlay([[0.0, 1.0]], alpha=2.0)
+
+
+@pytest.mark.parametrize("n_units", [3, 203])
+def test_raster_row_labels_are_thinned_so_they_never_overlap(n_units):
+    import itertools
+
+    from neurospatial import Environment
+    from neurospatial.animation import Animation, SpikeRasterOverlay
+
+    env = Environment.from_grid_mask(
+        np.ones((2, 2), dtype=bool), (np.arange(3.0), np.arange(3.0))
+    )
+    spikes = [np.array([0.1 + 0.001 * i]) for i in range(n_units)]
+    scene = Animation(
+        env,
+        np.ones((2, env.n_bins)),
+        frame_times=[0.0, 1.0],
+        overlays=[
+            SpikeRasterOverlay(spikes, unit_ids=[f"u{i}" for i in range(n_units)])
+        ],
+    )
+    try:
+        scene.render_frame(0.5, dpi=60)
+        figure = scene._renderer.figure
+        (rows,) = [ax for ax in figure.axes if ax.get_ylabel().startswith("Unit")]
+        renderer = figure.canvas.get_renderer()
+        labels = [t for t in rows.get_yticklabels() if t.get_text()]
+        boxes = [t.get_window_extent(renderer) for t in labels]
+        assert all(not a.overlaps(b) for a, b in itertools.pairwise(boxes))
+        if n_units == 3:
+            # Negative control: a few units keep every label.
+            assert [t.get_text() for t in labels] == ["u0", "u1", "u2"]
+            assert rows.get_ylabel() == "Unit"
+        else:
+            assert 2 < len(labels) < n_units
+            step = int(rows.get_ylabel().split("1 in ")[1].split()[0])
+            # Each label is still its own row's unit.
+            for tick, label in zip(rows.get_yticks(), labels, strict=True):
+                assert label.get_text() == f"u{int(tick)}"
+            assert labels[1].get_text() == f"u{step}"
+    finally:
+        scene.close()

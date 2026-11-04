@@ -875,6 +875,23 @@ def signal_panel(ax: Any, prepared: PreparedScene, signals: list[Any]) -> Panel:
     return Panel(prepare, apply)
 
 
+def _label_step(ax: Any, n_rows: int) -> int:
+    """Label every ``step``-th of ``n_rows`` rows so the labels never touch.
+
+    As many labels fit as the axes' height holds lines of its tick-label
+    font, at 1.6 times the font size apart.
+    """
+    import math
+
+    from matplotlib import rcParams
+    from matplotlib.font_manager import FontProperties
+
+    size = FontProperties(size=rcParams["ytick.labelsize"]).get_size_in_points()
+    height = ax.get_position().height * ax.figure.get_figheight() * 72
+    fit = max(1, int(height // (1.6 * size)))
+    return max(1, math.ceil(n_rows / fit))
+
+
 def raster_panel(ax: Any, prepared: PreparedScene, raster: Any) -> Panel:
     """A spike raster: one row of ticks per unit, labeled by unit id."""
     from matplotlib.collections import LineCollection
@@ -890,8 +907,10 @@ def raster_panel(ax: Any, prepared: PreparedScene, raster: Any) -> Panel:
     ax.update_datalim([(0.0, -0.4), (0.0, len(units) - 0.6)])
     ax.autoscale_view(scalex=False)
     ax.set_ylim(ax.get_ylim())
-    ax.set_yticks(units, [str(unit) for unit in raster.unit_ids])
-    ax.set_ylabel("Unit")
+    step = _label_step(ax, len(units))
+    shown = units[::step]
+    ax.set_yticks(shown, [str(raster.unit_ids[row]) for row in shown])
+    ax.set_ylabel("Unit" if step == 1 else f"Unit (1 in {step} labelled)")
     time_axis = _time_axis(ax, prepared)
 
     def apply(time: float, segments: np.ndarray) -> None:
