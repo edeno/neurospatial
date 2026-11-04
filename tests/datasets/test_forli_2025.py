@@ -204,3 +204,26 @@ def test_loads_default_session(session_entry, assert_default_session):
     assert (rec.units["probe"] == 1).sum() <= 24
     assert len(rec.epochs["flight"]) == 38
     assert rec.env.n_bins == 29 * 26 * 11
+
+
+@pytest.mark.realdata
+def test_default_session_counts_steps_past_the_stated_flight_speed(session_entry):
+    """Tsoar et al.'s 15.3 m/s, no head margin: the tracking jumps are counted."""
+    from neurospatial.datasets._checks import _fast_samples, _held_samples
+
+    rec = load("forli_2025")
+    stated = session_entry("forli_2025").info.stated
+    assert stated.speed_limit == 15.3
+    assert "No margin is added" in stated.speed_limit_source
+    held = _held_samples(rec.times, rec.positions)[0]
+    n_fast = int(_fast_samples(rec.times, rec.positions, held, 15.3).sum())
+    assert n_fast == 121
+    (finding,) = [w for w in rec.watch_outs if "farther from the last believable" in w]
+    assert f"{n_fast} samples farther from the last believable sample" in finding
+    assert "than 15.3 m/s allows" in finding
+    assert "Positions are kept as stored" in finding
+    # The relative heuristic is a fallback, not run with a stated limit.
+    assert not any("likely tracking jumps" in w for w in rec.watch_outs)
+    # Kept as stored: a step of 22 m/s is still in the positions.
+    steps = np.linalg.norm(np.diff(rec.positions, axis=0), axis=1) / np.diff(rec.times)
+    assert np.nanmax(steps) > 21.0
