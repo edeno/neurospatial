@@ -2,45 +2,40 @@
 
 What was recorded: mouse iuvE14-cagCre-ef1aDIOchr2-3, 8 Dec 2022, 49 units
 in CA1 and CA3 (opto-tagged), during a PRE, a Learning and a POST
-sub-session on a cheeseboard maze with two reward locations, separated by
-sleep in a start box. Position (one LED, cm) at 30 Hz across all three
-sub-sessions (64-17,301 s), 5.3 % NaN, most of it off the maze. The file holds
-2,118 ripples, the maze and box intervals, 45 learning trials and the reward
-coordinates.
+sub-session on a 90 cm cheeseboard maze with two reward locations,
+separated by rest in the home cage. Position (one LED, cm) at 30 Hz across
+all three sub-sessions (64-17,301 s), 5.3 % NaN, most of it off the maze.
+The file holds 2,118 ripples, the maze and box intervals, 45 learning trials
+and the reward coordinates.
 
-Where it lives: DANDI 001880, version 0.261007.1849, CC0-1.0; the smallest
-file with units and position (65.7 MB).
+The session is read by ``neurospatial.datasets.load("huszar_cheeseboard",
+"sub-iuvE14-cagCre-ef1aDIOchr2-3_ses-iuvE14-cagCre-ef1aDIOchr2-3-221208")``,
+whose module (``neurospatial/datasets/huszar_cheeseboard.py``) and docs page
+give the file, the conversions (positions as stored in cm; ripples, rewards,
+trials and epochs from the file's tables), the declared 90 cm disc of the
+paper (Huszár et al. 2026, Neuron, STAR Methods), placed at the on-maze
+samples' midrange, with the reward wells as regions, and the watch-outs,
+among them the held runs (29 % of the frames, most of them the tracker's
+last fix while the mouse is in the holding box). ``_record.from_public``
+converts it to the survey's record.
 
-What the loader converts: nothing changes units. ``SubjectPosition`` holds two
-series, ``PositionSeries`` (x, y in cm) and ``VelocitySeries`` (vx, vy, speed
-in cm/s); the loader reads the first with ``read_position(position_name=...)``
-because the default call refuses to choose between them. Ripples are read with
-pynwb from ``processing/ecephys/Ripples``; ``onMaze`` intervals are the maze
-epochs. Positions are kept as stored. Suspect tracking is reported as a load
-warning (``_record.find_suspect_tracking``): 29 % of the frames repeat the
-one before in runs of 10 or more repeats, 11 or more identical frames (up
-to 82 s held), which may be a tracker
-repeating its last fix or a mouse still at a well or in the start box, and a
-few samples lie farther than 100 cm/s from the sample before them.
+Analysis choices are the public loader's ``params``: ``bin_size`` 2.5 cm,
+``min_speed`` 5 cm/s (the paper's), ``analysis_epochs`` the 52 ``onMaze``
+intervals, ``dt`` 0.25 s, and the even and odd ``onMaze`` intervals as
+train/test epochs.
 
-Analysis choices (``params``):
-
-- ``bin_size`` 2.5 cm; ``min_speed`` 4 cm/s.
-- ``analysis_epochs``: the 52 ``onMaze`` intervals (5,412 s), so the box is
-  left out of rate maps and occupancy.
-- ``dt`` 0.25 s; ``train_epochs``/``test_epochs``: even and odd ``onMaze``
-  intervals.
-- ``replay_dt`` 0.02 s; ``events["ripples"]``: the 195 ripples inside an
-  ``onMaze`` interval (awake ripples on the maze).
-
-Environment: built from the samples (inferred). Neither the file nor the
-DANDI description gives the cheeseboard's size; the paper (Neuron 2026,
-10.1016/j.neuron.2026.07.023) could not be read here.
+Survey-only: ``params["replay_dt"]`` 0.02 s; ``events["ripples"]``, the
+ripples inside an ``onMaze`` interval (awake ripples on the maze), which
+replay is decoded on (the public ``ripples``, every ripple of the session,
+are ``events["all_ripples"]``); ``params["nwb_source"]`` and
+``params["readers_used"]``, for the ``io.nwb_readers`` operation; the
+declared disc's facts the environment fidelity study reads (placed at the
+samples' midrange, the stated circle and diameter, each axis's range
+against the stated diameter); ``geometry["reward_locations_cm"]``.
 """
 
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 from typing import Any
 
@@ -48,19 +43,17 @@ import numpy as np
 from _record import (
     Range,
     Recording,
+    SurveyOnly,
     check_expectations,
-    find_suspect_tracking,
+    from_public,
+    public_file,
     validate_recording,
 )
 
-from neurospatial.datasets._fetch import dandi_asset_url, fetch, open_nwb
-
 DATASET = {
     "key": "ca1ca3_001880",
-    "title": "Huszar & Buzsaki, mouse iuvE14-3, CA1 and CA3 units, cheeseboard place-reward task",
-    "source": "https://dandiarchive.org/dandiset/001880/0.261007.1849",
-    "license": "CC0-1.0",
-    "download_size": "65.7 MB",
+    "public": "huszar_cheeseboard",
+    "session": "sub-iuvE14-cagCre-ef1aDIOchr2-3_ses-iuvE14-cagCre-ef1aDIOchr2-3-221208",
 }
 
 # Pre-registered from the dataset catalog (place-reward task, about 5 % NaN
@@ -71,8 +64,9 @@ EXPECTATIONS: dict[str, Any] = {
     "n_units": 49,
     "n_dims": 2,
     "sampling_rate_hz": Range(29.0, 31.0),
-    # The file's own NaN share (5.3 %, pre-registered 3-8 %) is checked in
-    # ``load`` before the held tracking is masked.
+    "file_nan_share": lambda rec: Range(0.03, 0.08).contains(
+        float(np.mean(~np.isfinite(rec.positions).all(axis=1)))
+    ),
     "maze_extent_cm": lambda rec: Range(80, 120).contains(
         float(
             np.nanmax(np.ptp(rec.positions[np.isfinite(rec.positions).all(1)], axis=0))
@@ -82,100 +76,64 @@ EXPECTATIONS: dict[str, Any] = {
 }
 
 
-_PATH = (
-    "sub-iuvE14-cagCre-ef1aDIOchr2-3/"
-    "sub-iuvE14-cagCre-ef1aDIOchr2-3_ses-iuvE14-cagCre-ef1aDIOchr2-3-221208"
-    "_behavior+ecephys.nwb"
-)
-_ASSET_ID = "67a90fac-4acd-40f6-9199-9a7668686121"
-_SHA256 = "293741812fba73117dc02f590a7182b1a2c7eaa4f1bebdb09ab0ad92770582cb"
-_SERIES = "processing/behavior/SubjectPosition/PositionSeries"
-# The share of NaN samples in the file (pre-registered from its 5.3 %).
-_FILE_NAN = (0.03, 0.08)
-# A mouse cheeseboard maze, in cm: the longest span must lie here.
-_MAZE_CM = (60.0, 150.0)
-
-
-def _windows(table: object) -> np.ndarray:
-    frame = table.to_dataframe()  # type: ignore[attr-defined]
-    return frame[["start_time", "stop_time"]].to_numpy(dtype=float)
-
-
 def load(cache: Path | None = None) -> Recording:
-    """Fetch the session; positions in cm, spikes, maze epochs and ripples."""
-    from neurospatial.io.nwb import read_position, read_units
+    """The session from ``neurospatial.datasets``; positions in cm, ripples."""
+    from neurospatial.datasets import huszar_cheeseboard
+    from neurospatial.datasets import load as load_public
 
-    path = fetch(
-        dandi_asset_url(_ASSET_ID),
-        Path(_PATH).name,
-        sha256=_SHA256,
-        subdir=DATASET["key"],
-        cache=cache,
-    )
-    with open_nwb(str(path)) as nwbfile:
-        position = read_position(nwbfile, position_name=_SERIES)
-        units = read_units(nwbfile)
-        behavior = nwbfile.processing["behavior"]
-        on_maze = _windows(behavior["onMaze"])
-        sub_sessions = behavior["subSessions"].to_dataframe()
-        ripples = _windows(nwbfile.processing["ecephys"]["Ripples"])
-        rewards = behavior["rewardCoordinates"].to_dataframe()[["x", "y"]]
-
-    positions = np.asarray(position.positions, dtype=float)
-    span = np.nanmax(positions, axis=0) - np.nanmin(positions, axis=0)
-    if position.units != "cm" or not _MAZE_CM[0] <= span.max() <= _MAZE_CM[1]:
-        msg = f"{_SERIES}: unit {position.units!r}, span {span.round(1)}; recheck"
-        raise ValueError(msg)
-    on = (ripples[:, :1] >= on_maze[:, 0]) & (ripples[:, 1:] <= on_maze[:, 1])
-    times = np.asarray(position.times, dtype=float)
-    file_nan = float(np.mean(~np.isfinite(positions).all(axis=1)))
-    if not _FILE_NAN[0] <= file_nan <= _FILE_NAN[1]:
-        msg = f"{_SERIES}: {file_nan:.1%} NaN, expected {_FILE_NAN}; recheck"
-        raise ValueError(msg)
-    _, suspect = find_suspect_tracking(times, positions, min_frozen=10, max_speed=100.0)
-    warnings.warn(suspect, UserWarning, stacklevel=1)
-    return Recording(
-        dataset=DATASET["key"],
-        session="iuvE14_cagCre_ef1aDIOchr2_3_221208",
-        source=f"{DATASET['source']} {_PATH} (asset {_ASSET_ID})",
-        license=DATASET["license"],
-        times=times,
-        positions=positions,
-        position_units="cm",
-        spike_times=tuple(np.asarray(s, dtype=float) for s in units.spike_times),
-        unit_ids=np.asarray(units.unit_ids),
-        epochs={
-            "on_maze": on_maze,
-            **{
-                str(row.label).lower(): np.array([[row.start_time, row.stop_time]])
-                for row in sub_sessions.itertuples()
-            },
-        },
-        events={"ripples": ripples[on.any(axis=1)], "all_ripples": ripples},
-        geometry={
-            "tracked_point": "one LED (per the loader, from the NWB position)",
-            "reward_locations_cm": rewards.to_numpy(dtype=float),
-        },
+    rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
+    source = public_file(DATASET["public"], DATASET["session"], cache=cache)
+    ripples = rec.events["ripples"]
+    on_maze = rec.epochs["on_maze"]
+    inside = (ripples[:, :1] >= on_maze[:, 0]) & (ripples[:, 1:] <= on_maze[:, 1])
+    on = inside.any(axis=1)
+    tracked = rec.positions[np.isfinite(rec.positions).all(axis=1)]
+    spans = np.ptp(tracked, axis=0)
+    regions = rec.env.regions
+    why = "the declared disc's facts the environment fidelity study reads"
+    return from_public(
+        rec,
+        key=DATASET["key"],
         params={
-            "bin_size": 2.5,
-            "min_speed": 4.0,
-            "dt": 0.25,
-            "replay_dt": 0.02,
-            "analysis_epochs": on_maze,
-            "train_epochs": on_maze[::2],
-            "test_epochs": on_maze[1::2],
-            "nwb_source": str(path),
-            "readers_used": ("position", "units"),
+            "replay_dt": SurveyOnly(0.02, "the replay decoding bin"),
+            "nwb_source": SurveyOnly(
+                source, "the cached NWB file the session was read from"
+            ),
+            "readers_used": SurveyOnly(
+                ("position", "units"), "the io.nwb readers the public loader calls"
+            ),
         },
-        conversions=(
-            f"positions: read_position(position_name={_SERIES!r}), cm; range checked:"
-            f" {np.nanmin(positions[:, 0]):.1f}-{np.nanmax(positions[:, 0]):.1f} by"
-            f" {np.nanmin(positions[:, 1]):.1f}-{np.nanmax(positions[:, 1]):.1f} cm",
-            f"positions: {file_nan:.1%} NaN in the file, kept as stored",
-            "epochs: onMaze intervals as on_maze; subSessions rows by label",
-            f"events['ripples']: the {int(on.any(axis=1).sum())} Ripples rows inside"
-            f" an onMaze interval, of {len(ripples)}",
-        ),
+        events={
+            "ripples": SurveyOnly(
+                ripples[on],
+                f"the {int(on.sum())} of {len(ripples)} ripples inside an onMaze"
+                " interval (awake ripples on the maze), which replay is decoded on",
+            ),
+            "all_ripples": SurveyOnly(np.array(ripples), "every ripple of the session"),
+        },
+        geometry={
+            "declared_from": SurveyOnly(
+                "fitted to the samples",
+                f"{why}: placed at the on-maze samples' midrange",
+            ),
+            "shape": SurveyOnly("circle", f"{why}: the stated shape"),
+            "size_cm": SurveyOnly(
+                huszar_cheeseboard.DIAMETER, f"{why}: the stated diameter"
+            ),
+            "environment_fit": SurveyOnly(
+                {
+                    f"size_residual_{axis}": float(
+                        span / huszar_cheeseboard.DIAMETER - 1
+                    )
+                    for axis, span in zip("xy", spans, strict=True)
+                },
+                f"{why}: the samples' range on each axis against the stated diameter",
+            ),
+            "reward_locations_cm": SurveyOnly(
+                np.array([regions[name].data for name in ("reward_1", "reward_2")]),
+                "the file's rewardCoordinates (the public env's reward regions)",
+            ),
+        },
     )
 
 
