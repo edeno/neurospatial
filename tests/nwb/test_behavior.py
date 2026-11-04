@@ -1115,6 +1115,7 @@ def test_read_position_reads_a_bare_time_series_named_by_path(empty_nwb, tmp_pat
     """
     from pynwb import NWBHDF5IO, TimeSeries
 
+    from neurospatial import InputError
     from neurospatial.io.nwb import read_position
 
     times = 100.0 + np.arange(6) * 0.0256
@@ -1135,9 +1136,14 @@ def test_read_position_reads_a_bare_time_series_named_by_path(empty_nwb, tmp_pat
             with pytest.raises(KeyError) as caught:
                 read_position(nwbfile, **kwargs)
             assert (
-                "['acquisition/position', 'acquisition/theta_phase']; to read one "
+                "['acquisition/position']; to read one "
                 "of them, pass position_name= with its path" in str(caught.value)
             )
+            assert "theta_phase" not in str(caught.value)
+        with pytest.raises(InputError, match="acquisition/theta_phase") as refused:
+            read_position(nwbfile, position_name="acquisition/theta_phase")
+        assert "'rad'" in str(refused.value)
+        assert "acquisition/position" in str(refused.value)
     np.testing.assert_array_equal(pos.times, times)
     np.testing.assert_array_equal(pos.positions, values)
     assert pos.units == "cm"

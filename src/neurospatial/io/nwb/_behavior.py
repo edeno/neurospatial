@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._units import _UNIT_SPELLINGS, declared_units
 from neurospatial.io.nwb._adapters import (
@@ -94,6 +94,11 @@ def read_position(
     ------
     KeyError
         If no Position container found, or if specified position_name not found.
+    InputError
+        If ``position_name`` is the path of a TimeSeries outside any Position
+        container whose unit is not a length or pixel unit (a phase in
+        radians, say). The search lists only such series with a length or
+        pixel unit.
     ValueError
         If more than one Position series matches (pass ``position_name=``),
         ``lazy=True`` and the series declares a non-identity ``conversion``
@@ -171,6 +176,7 @@ def read_position(
         processing_module,
         position_name,
         "position_name",
+        bare_units=_SPATIAL_UNITS,
     )
 
     shape = np.shape(spatial_series.data)
@@ -353,6 +359,8 @@ def _get_spatial_series(
     processing_module: str | None,
     series_name: str | None,
     keyword: str,
+    *,
+    bare_units: frozenset[str] | None = None,
 ) -> SpatialSeries:
     """
     Get the one SpatialSeries of a behavior container type.
@@ -372,6 +380,9 @@ def _get_spatial_series(
         ``"processing/behavior/Position/position"``.
     keyword : str
         The reader argument that takes ``series_name``.
+    bare_units : frozenset of str, optional
+        The units a TimeSeries outside any container must declare to be read
+        or listed; None accepts any unit.
 
     Returns
     -------
@@ -385,18 +396,47 @@ def _get_spatial_series(
         If the module, a container or the named series is missing.
     ValueError
         If more than one series matches.
+    InputError
+        If ``series_name`` is the path of a TimeSeries outside any container
+        whose unit is not in ``bare_units``.
     """
     from pynwb import TimeSeries
 
-    bare = [
+    outside = [
         (path, series)
         for path, series in _find_containers_by_type(nwbfile, TimeSeries)
         if processing_module is None
         or path.startswith(f"processing/{processing_module}/")
     ]
+    bare = [
+        (path, series)
+        for path, series in outside
+        if bare_units is None or declared_units(series.unit) in bare_units
+    ]
     if series_name is not None:
-        for path, series in bare:
+        for path, series in outside:
             if path == series_name:
+                if (
+                    bare_units is not None
+                    and declared_units(series.unit) not in bare_units
+                ):
+                    raise InputError(
+                        _format_error(
+                            f"{series_name!r} is a TimeSeries with unit "
+                            f"{series.unit!r}, which is not a length or pixel "
+                            f"unit, so it is not a {type_name.lower()}.",
+                            why="reading it would bin a quantity such as a phase "
+                            "or a speed as a spatial coordinate.",
+                            fix="pass the path of a series whose unit is a "
+                            "length (m, cm, mm) or pixels"
+                            + (
+                                f"; the file has {[p for p, _ in bare]}."
+                                if bare
+                                else "; the file has none outside a "
+                                f"{type_name} container."
+                            ),
+                        )
+                    )
                 logger.debug("Reading %s series at '%s'", type_name, path)
                 return series
     fix = (
