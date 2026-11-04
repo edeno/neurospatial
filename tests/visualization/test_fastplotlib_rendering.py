@@ -1580,3 +1580,36 @@ def test_the_status_shows_the_sliders_time(apparatus):
     animation.widget.indices = {"time": 0.55}
     _render(animation)
     assert animation.status == "t = 0.55 s  |  ripple 1 of 1"
+
+
+def _ndc(plot, point):
+    """``point`` (environment coordinates) in the panel camera's clip space."""
+    xyz = np.r_[point, np.zeros(3 - len(point)), 1.0]
+    clip = plot.camera.camera_matrix @ xyz
+    return clip[:3] / clip[3]
+
+
+@pytest.mark.parametrize("n_dims", [2, 3])
+def test_the_view_frames_positions_tracked_outside_the_environment(n_dims):
+    # A perch beyond the room: the animal is first lost, then sits outside.
+    env = Environment.from_grid_mask(
+        np.ones((5,) * n_dims, dtype=bool), (np.arange(6.0) * 2,) * n_dims
+    )
+    times = np.linspace(0.0, 1.0, 11)
+    perch = np.r_[5.0, -30.0, 5.0][:n_dims]
+    positions = np.tile(perch, (11, 1))
+    positions[:3] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # positions outside the environment
+        scene = Animation(
+            env,
+            np.ones((2, env.n_bins)),
+            frame_times=times[[0, -1]],
+            overlays=[PositionOverlay(positions, times)],
+        )
+    animation = scene.show(backend="fastplotlib").native
+    try:
+        (plot,) = animation._plots
+        assert np.all(np.abs(_ndc(plot, perch)[:2]) <= 1.0)
+    finally:
+        animation.close()

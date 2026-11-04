@@ -1153,6 +1153,37 @@ class _Frame(NamedTuple):
     layers: list[Any]  # each layer's prepared data
 
 
+def _frame_extent(plot: Any, env: Any, extent: NDArray[np.float64]) -> None:
+    """Frame a spatial panel on its graphics and ``extent``, shape (n_dims, 2).
+
+    ``extent`` is :meth:`PreparedScene.spatial_extent`: the environment
+    widened to positions tracked outside it, whose marker the panel's first
+    frame may not hold. A 3-D panel looks from an angle, z up, at a sphere
+    around both; a 2-D panel keeps its auto-scaled view unless positions
+    reach beyond the environment.
+    """
+    if env.n_dims == 3:
+        low, high = extent[:, 0], extent[:, 1]
+        box = plot.scene.get_world_bounding_box()
+        if box is not None:
+            low, high = np.minimum(low, box[0]), np.maximum(high, box[1])
+        center = (low + high) / 2
+        radius = max(float(np.linalg.norm(high - low)) / 2, 1e-9)
+        plot.camera.show_object((*center, radius), view_dir=(-1, -1, -1), up=(0, 0, 1))
+        return
+    frame_view(plot, env)
+    if env.n_dims != 2 or env.dimension_ranges is None:
+        return
+    ranges = np.asarray(env.dimension_ranges, dtype=np.float64)
+    if np.all(extent[:, 0] >= ranges[:, 0]) and np.all(extent[:, 1] <= ranges[:, 1]):
+        return
+    box = plot.scene.get_world_bounding_box()
+    low, high = extent[:, 0], extent[:, 1]
+    if box is not None:
+        low, high = np.minimum(low, box[0, :2]), np.maximum(high, box[1, :2])
+    plot.camera.show_rect(low[0], high[0], low[1], high[1])
+
+
 class FastplotlibAnimation:
     """Fields over time on the GPU, with a time slider and playback controls.
 
@@ -1571,9 +1602,10 @@ class FastplotlibAnimation:
                 _shade_epochs(
                     self.figure[name], epochs, self._start, strips=strips.get(name)
                 )
+            extent = prepared.spatial_extent()
             for plot in self._plots:
                 plot.auto_scale()
-                frame_view(plot, env)
+                _frame_extent(plot, env, extent)
             self._canvas: Any = None
             self._step = step
             # The panels drawn against time, each titled with the window it shows.

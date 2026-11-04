@@ -711,6 +711,31 @@ class PreparedScene:
             self._video_held[id(video)] = previous
         return previous[1]
 
+    def spatial_extent(self) -> NDArray[np.float64]:
+        """What a spatial view frames, shape ``(n_dims, 2)``: low and high per axis.
+
+        The environment's ``dimension_ranges`` (its bins' extent where it
+        has none), widened to every finite sample of each position overlay
+        on the scene's clock, so an animal tracked outside the environment
+        (a bat on a perch beyond the room's bounds) stays in view.
+        """
+        env = self.scene.env
+        if env.dimension_ranges is not None:
+            extent = np.array(env.dimension_ranges, dtype=np.float64)
+        else:
+            centers = env.bin_centers
+            extent = np.column_stack([centers.min(axis=0), centers.max(axis=0)])
+        frames = self.scene.frame_times
+        for position in self.scene._overlay_data.positions:
+            times = position.times
+            inside = (times >= frames[0]) & (times <= frames[-1])
+            points = position.data[inside]
+            points = points[np.isfinite(points).all(axis=1)]
+            if len(points) and points.shape[1] == extent.shape[0]:
+                extent[:, 0] = np.minimum(extent[:, 0], points.min(axis=0))
+                extent[:, 1] = np.maximum(extent[:, 1], points.max(axis=0))
+        return extent
+
     def bounds(self, time: float) -> tuple[float, float]:
         """The window of the time panels at ``time``: ``window_seconds`` around it."""
         half = self.window_seconds / 2

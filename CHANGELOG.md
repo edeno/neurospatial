@@ -354,6 +354,11 @@
   stated-limit fast-sample count still applies where a source states a limit.
   Of the six default sessions only `forli_2025` gives it (200 samples faster
   than 8.73 m/s).
+- Every spatial view of an `Animation` (the Matplotlib scene and the
+  fastplotlib viewer, 2-D and 3-D) frames the position overlays' samples on
+  the scene's clock as well as the environment, so an animal tracked outside
+  the environment stays in view: the `forli_2025` bat on its perch, at y
+  −4.23 to −2.76 m beside a room bounded at −2.6 m, was off-screen.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

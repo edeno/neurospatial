@@ -126,6 +126,13 @@ class _Segments:
                     line.set_alpha(float(alphas[index]))
 
 
+def _widened(limits: tuple[float, float], span: np.ndarray) -> tuple[float, float]:
+    """Axis ``limits`` widened to cover ``span`` (low, high), orientation kept."""
+    low, high = sorted(limits)
+    low, high = min(low, float(span[0])), max(high, float(span[1]))
+    return (low, high) if limits[0] <= limits[1] else (high, low)
+
+
 def _fit_view(ax: Any, points: np.ndarray) -> None:
     """Autoscale to ``points`` alone, as Matplotlib fits a new Axes, then lock.
 
@@ -343,6 +350,11 @@ class SceneRenderer:
                     ax,
                     np.array([[track[0], min(low, 0.0)], [track[1], max(high, 0.0)]]),
                 )
+            if extents is None:
+                # The view covers positions tracked outside the environment.
+                extent = self.prepared.spatial_extent()
+                ax.set_xlim(_widened(ax.get_xlim(), extent[0]))
+                ax.set_ylim(_widened(ax.get_ylim(), extent[1]))
             # Videos and overlays must not move the field's view.
             ax.set_xlim(ax.get_xlim())
             ax.set_ylim(ax.get_ylim())
@@ -437,7 +449,8 @@ class SceneRenderer:
                 transform=ax.transAxes,
                 fontsize=8,
             )
-        ranges = np.asarray(env.dimension_ranges)
+        # The environment, widened to positions tracked outside it.
+        ranges = self.prepared.spatial_extent()
         ax.set_xlim(*ranges[0])
         ax.set_ylim(*ranges[1])
         ax.set_zlim(*ranges[2])
