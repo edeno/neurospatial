@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from neurospatial import Environment, Intervals
     from neurospatial.animation import Animation
     from neurospatial.datasets._video import VideoSource
+    from neurospatial.io.nwb import NWBUnits
 
 __all__ = ["Conversion", "Provenance", "Recording"]
 
@@ -951,6 +952,46 @@ def _samples_strictly_inside(
         times, rows[:, 1], side="left"
     ) - np.searchsorted(times, rows[:, 0], side="right")
     return np.maximum(inside, 0)
+
+
+def nwb_unit_table(
+    units: NWBUnits,
+    *,
+    region_column: str | None = None,
+    region: str | None = None,
+    label_column: str | None = None,
+    keep_columns: bool = False,
+) -> tuple[pd.DataFrame, tuple[str, ...]]:
+    """A :class:`Recording`'s ``units`` table from an NWB file's, and its regions.
+
+    Parameters
+    ----------
+    units : NWBUnits
+        The file's units, from :func:`neurospatial.io.nwb.read_units`.
+    region_column : str, optional
+        The file's column ``brain_region`` is read from; missing values where
+        the file has no such column.
+    region : str, optional
+        The brain region of every unit, without ``region_column``; None
+        leaves it missing.
+    label_column : str, optional
+        The file's column ``label`` is read from; None leaves it missing.
+    keep_columns : bool, default False
+        Keep the file's own columns beside ``brain_region`` and ``label``.
+
+    Returns
+    -------
+    table : pandas.DataFrame
+        One row per unit, indexed as the file's table.
+    regions : tuple of str
+        The units' brain regions, in order of first appearance.
+    """
+    table = units.unit_table
+    assert table is not None  # read_units always reads the table
+    out = table.copy() if keep_columns else table[[]].copy()
+    out["brain_region"] = region if region_column is None else table.get(region_column)
+    out["label"] = None if label_column is None else table.get(label_column)
+    return out, tuple(dict.fromkeys(out["brain_region"].dropna().astype(str)))
 
 
 def interval_rows(table: pd.DataFrame) -> NDArray[np.float64]:

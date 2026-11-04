@@ -99,7 +99,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
-from neurospatial.datasets._recording import Conversion, Recording, interval_rows
+from neurospatial.datasets._recording import (
+    Conversion,
+    Recording,
+    interval_rows,
+    nwb_unit_table,
+)
 from neurospatial.datasets._tracks import nearest_segment, placement_tolerance
 
 if TYPE_CHECKING:
@@ -276,13 +281,11 @@ def load_session(
     env, placement, distance, width_quantile = _declared_track(
         positions, entry.session, frame
     )
-    table = units.unit_table
-    assert table is not None  # read_units always reads the table
-    unit_table = table[[]].copy()
     # Units name no electrode: a region holds for every unit only when every
     # electrode is in it.
-    unit_table["brain_region"] = regions[0] if len(regions) == 1 else None
-    unit_table["label"] = None
+    unit_table, _ = nwb_unit_table(
+        units, region=regions[0] if len(regions) == 1 else None
+    )
     camera, video_lines = _video(entry, source, times, video_files, video_times)
     train, test = alternating_blocks(times[0], times[-1], BLOCK)
     return Recording(
@@ -295,7 +298,7 @@ def load_session(
             "file's session_start_time is not the recording date)"
         ),
         times=times,
-        spike_times=tuple(np.asarray(t, dtype=np.float64) for t in units.spike_times),
+        spike_times=tuple(units.spike_times),
         units=unit_table,
         env=env,
         env_kind="declared",

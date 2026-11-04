@@ -95,7 +95,12 @@ from numpy.typing import NDArray
 from neurospatial._angles import wrap_angle
 from neurospatial.datasets._checks import _count, gap_stats
 from neurospatial.datasets._params import alternating_blocks
-from neurospatial.datasets._recording import Conversion, Recording, interval_rows
+from neurospatial.datasets._recording import (
+    Conversion,
+    Recording,
+    interval_rows,
+    nwb_unit_table,
+)
 from neurospatial.datasets._tracks import nearest_segment, placement_tolerance
 
 if TYPE_CHECKING:
@@ -316,6 +321,9 @@ def _osf_session(
         msg = f"{entry.session}: acquisition/position is in {position.units!r}, not cm"
         raise ValueError(msg)
     units = read_units(nwb)
+    table, regions = nwb_unit_table(
+        units, region_column="location", label_column="cell_type"
+    )
     trials = read_trials(nwb)
     started = nwb.session_start_time
     times = np.asarray(position.times, dtype=np.float64)
@@ -335,7 +343,7 @@ def _osf_session(
         animal="rat Achilles",
         apparatus="1.9 m wooden linear maze: a 1.6 m stem between two 15 cm "
         "reward areas",
-        brain_regions=_regions(units),
+        brain_regions=regions,
         clock=(
             "the acquisition clock, seconds from the start of the PRE sleep "
             "(the file's session_start_time, "
@@ -343,8 +351,8 @@ def _osf_session(
             "recording's 2013-10-25)"
         ),
         times=times,
-        spike_times=tuple(np.asarray(t, dtype=np.float64) for t in units.spike_times),
-        units=_unit_table(units),
+        spike_times=tuple(units.spike_times),
+        units=table,
         env=env,
         env_kind="declared",
         env_source=(
@@ -428,6 +436,9 @@ def _dandi_session(
             msg = f"{entry.session}: {path} is in {read.units!r}, not metres"
             raise ValueError(msg)
     units = read_units(nwb)
+    table, regions = nwb_unit_table(
+        units, region_column="location", label_column="cell_type"
+    )
     stored = read_intervals(nwb, interval_name="epochs").intervals_table()
     states = read_intervals(
         nwb, interval_name="processing/behavior/states"
@@ -474,14 +485,14 @@ def _dandi_session(
         **entry.identity(source),
         animal=f"rat {subject}",
         apparatus=apparatus,
-        brain_regions=_regions(units),
+        brain_regions=regions,
         clock=(
             "the acquisition clock, seconds from the file's session start time "
             f"({started:%Y-%m-%d}), the start of the PRE sleep"
         ),
         times=times,
-        spike_times=tuple(np.asarray(t, dtype=np.float64) for t in units.spike_times),
-        units=_unit_table(units),
+        spike_times=tuple(units.spike_times),
+        units=table,
         env=env,
         env_kind="declared",
         env_source=environment.source,
@@ -608,23 +619,6 @@ def _track(nwb: Any, session: str) -> str:
         )
         raise ValueError(msg)
     return track
-
-
-def _regions(units: Any) -> tuple[str, ...]:
-    """The units' locations (``lCA1``, ``rCA1``), in order of first appearance."""
-    table = units.unit_table
-    assert table is not None  # read_units always reads the table
-    return tuple(dict.fromkeys(table["location"].dropna().astype(str)))
-
-
-def _unit_table(units: Any) -> Any:
-    """``brain_region`` from ``location``, ``label`` from ``cell_type``."""
-    table = units.unit_table
-    assert table is not None  # read_units always reads the table
-    out = table[[]].copy()
-    out["brain_region"] = table["location"]
-    out["label"] = table["cell_type"]
-    return out
 
 
 def _tracked(positions: NDArray[np.float64]) -> NDArray[np.bool_]:

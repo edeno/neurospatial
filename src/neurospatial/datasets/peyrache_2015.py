@@ -53,7 +53,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._checks import _count, gap_stats
-from neurospatial.datasets._recording import Conversion, Recording, interval_rows
+from neurospatial.datasets._recording import (
+    Conversion,
+    Recording,
+    interval_rows,
+    nwb_unit_table,
+)
 
 if TYPE_CHECKING:
     from neurospatial.datasets._catalog import SessionEntry
@@ -172,11 +177,7 @@ def load_session(
         started = nwb.session_start_time
     times = np.asarray(heading.times, dtype=np.float64)
     raw = np.asarray(heading.headings, dtype=np.float64)
-    assert units.unit_table is not None  # read_units always reads the table
-    table = units.unit_table[[]].copy()
-    table["brain_region"] = units.unit_table["location"]
-    table["label"] = None
-    regions = tuple(dict.fromkeys(table["brain_region"].dropna()))
+    table, regions = nwb_unit_table(units, region_column="location")
     return Recording(
         **entry.identity(path_or_stream),
         animal="mouse Mouse32",
@@ -188,7 +189,7 @@ def load_session(
             "recording's 2014-08-22)"
         ),
         times=times,
-        spike_times=tuple(np.asarray(t, dtype=np.float64) for t in units.spike_times),
+        spike_times=tuple(units.spike_times),
         units=table,
         tracking=(
             "head direction: the orientation of a blue and a red LED on the head, "

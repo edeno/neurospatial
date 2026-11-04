@@ -55,7 +55,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
-from neurospatial.datasets._recording import Conversion, Recording
+from neurospatial.datasets._recording import Conversion, Recording, nwb_unit_table
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -164,11 +164,7 @@ def load_session(
     times = np.asarray(position.times, dtype=np.float64)
     positions = np.asarray(position.positions, dtype=np.float64) * scale
     env, placement = _declared_square(positions, entry.session, position.frame)
-    assert units.unit_table is not None  # read_units always reads the table
-    table = units.unit_table.copy()
-    table["brain_region"] = table.get("histology")
-    table["label"] = None
-    regions = tuple(dict.fromkeys(table["brain_region"].dropna()))
+    table, regions = nwb_unit_table(units, region_column="histology", keep_columns=True)
     train, test = alternating_blocks(times[0], times[-1], BLOCK)
     note = ", a placeholder" if started.year == 1900 else ""
     clock = (
@@ -182,7 +178,7 @@ def load_session(
         brain_regions=regions or entry.info.brain_regions,
         clock=clock,
         times=times,
-        spike_times=tuple(np.asarray(t, dtype=np.float64) for t in units.spike_times),
+        spike_times=tuple(units.spike_times),
         units=table,
         env=env,
         env_kind="declared",
