@@ -403,6 +403,10 @@ def test_from_public_maps_each_field_and_labels_survey_additions():
             "min_speed": SurveyOnly(4.0, "the survey's threshold"),
         },
         events={"candidate_events": SurveyOnly(np.array([[3.0, 3.1]]), "bursts")},
+        geometry={
+            "declared_from": SurveyOnly("fitted to the samples", "the placement"),
+            "tracked_point": SurveyOnly("an LED", "the survey's wording"),
+        },
     )
     validate_recording(rec)
     assert rec.dataset == "synthetic_survey"
@@ -415,7 +419,8 @@ def test_from_public_maps_each_field_and_labels_survey_additions():
         np.testing.assert_array_equal(got, stored)
     np.testing.assert_array_equal(rec.params["linearized"], public.linearized)
     assert rec.geometry["environment"]() is public.env
-    assert rec.geometry["tracked_point"] == "the simulated head"
+    assert rec.geometry["declared_from"] == "fitted to the samples"
+    assert rec.geometry["tracked_point"] == "an LED"
     assert rec.params["replay_dt"] == 0.02
     assert rec.params["min_speed"] == 4.0
     assert set(rec.events) == {"rewards", "candidate_events"}
@@ -426,9 +431,24 @@ def test_from_public_maps_each_field_and_labels_survey_additions():
         "survey-only params['min_speed'] (replaces the public loader's):"
         " the survey's threshold",
         "survey-only events['candidate_events']: bursts",
+        "survey-only geometry['declared_from']: the placement",
+        "survey-only geometry['tracked_point'] (replaces the public loader's):"
+        " the survey's wording",
     )
 
 
-def test_from_public_leaves_an_inferred_environment_to_the_driver():
-    rec = from_public(_public_recording("inferred"), key="synthetic_survey")
-    assert "environment" not in rec.geometry
+def test_from_public_needs_declared_from_for_a_declared_environment():
+    # The fidelity study tells an independent reference from the geometry a
+    # track was declared from by it, so a declared environment needs it.
+    with pytest.raises(ValueError, match="needs 'declared_from'"):
+        from_public(_public_recording("declared"), key="synthetic_survey")
+
+
+def test_from_public_maps_activity_kind():
+    public = _public_recording("inferred")
+    imaged = replace(
+        public, activity=np.ones((len(public.times), 2)), activity_times=public.times
+    )
+    with pytest.raises(ValueError, match="activity_kind is needed"):
+        from_public(imaged, key="s")
+    assert from_public(imaged, key="s", activity_kind="dff").activity_kind == "dff"

@@ -100,6 +100,7 @@ def from_public(
     params: Mapping[str, SurveyOnly] | None = None,
     events: Mapping[str, SurveyOnly] | None = None,
     geometry: Mapping[str, SurveyOnly] | None = None,
+    activity_kind: str | None = None,
 ) -> Recording:
     """The survey's ``Recording`` of a session ``neurospatial.datasets.load`` returned.
 
@@ -114,6 +115,8 @@ def from_public(
       from the stated apparatus; an environment inferred from the samples is
       left out, so the driver builds its own from the samples.
       ``geometry["tracked_point"]`` is ``rec.tracking``;
+    - ``activity_kind``, which the public record does not hold, is given here
+      for imaging activity (``"dff"``, ``"binned_rate"``);
     - each ``Conversion`` becomes one line, ``"<text> [<basis>: <evidence>]"``;
     - ``watch_outs`` are kept as they are.
 
@@ -128,31 +131,56 @@ def from_public(
     key : str
         The survey's dataset key, for example ``"j16_23020757"``.
     params, events, geometry : mapping of str to SurveyOnly, optional
+    activity_kind : str, optional
+        What ``rec.activity`` holds; required when it is not None.
 
     Returns
     -------
     Recording
+
+    Raises
+    ------
+    ValueError
+        If the environment is declared and ``geometry`` gives no
+        ``declared_from`` (the environment fidelity study needs it to tell an
+        independent reference from the geometry the track was declared
+        from), or ``rec.activity`` is given without ``activity_kind``.
     """
 
     def copied(value: Any) -> Any:
         return np.array(value) if isinstance(value, np.ndarray) else value
 
     def merged(
-        name: str, public: Mapping[str, Any], extra: Mapping[str, SurveyOnly] | None
+        field_name: str,
+        public: Mapping[str, Any],
+        extra: Mapping[str, SurveyOnly] | None,
     ) -> tuple[dict[str, Any], list[str]]:
-        out = {key: copied(value) for key, value in public.items()}
+        out = {name: copied(value) for name, value in public.items()}
         lines = []
-        for key, added in (extra or {}).items():
-            replaced = " (replaces the public loader's)" if key in out else ""
-            out[key] = added.value
-            lines.append(f"survey-only {name}[{key!r}]{replaced}: {added.why}")
+        for name, added in (extra or {}).items():
+            replaced = " (replaces the public loader's)" if name in out else ""
+            out[name] = added.value
+            lines.append(f"survey-only {field_name}[{name!r}]{replaced}: {added.why}")
         return out, lines
 
+    declared = rec.env is not None and rec.env_kind == "declared"
+    if declared and "declared_from" not in (geometry or {}):
+        msg = (
+            f"{key}: the environment is declared, so geometry needs"
+            " 'declared_from' (one of _tracks.PLACED_BY), which the environment"
+            " fidelity study judges the reference's independence by"
+        )
+        raise ValueError(msg)
+    if rec.activity is not None and activity_kind is None:
+        msg = f"{key}: rec.activity is given, so activity_kind is needed"
+        raise ValueError(msg)
     public_params = dict(rec.params)
     if rec.linearized is not None:
         public_params["linearized"] = rec.linearized
+    # A public Recording always says what was tracked (it refuses an empty
+    # ``tracking``), so ``tracked_point`` is always a stated string.
     public_geometry: dict[str, Any] = {"tracked_point": rec.tracking}
-    if rec.env is not None and rec.env_kind == "declared":
+    if declared:
         env = rec.env
         public_geometry["environment"] = lambda: env
     all_params, param_lines = merged("params", public_params, params)
@@ -171,6 +199,7 @@ def from_public(
         unit_ids=rec.units.index.to_numpy(),
         activity=copied(rec.activity),
         activity_times=copied(rec.activity_times),
+        activity_kind=activity_kind,
         epochs={name: np.array(table) for name, table in rec.epochs.items()},
         events=all_events,
         geometry=all_geometry,
@@ -190,8 +219,21 @@ def public_file(
 ) -> str:
     """The file ``neurospatial.datasets.load`` reads for a session, for ``nwb_source``.
 
-    Its cached, checksum-verified path, or with ``stream=True`` the URL it
-    is read from by byte range.
+    Parameters
+    ----------
+    dataset, session : str
+        The public dataset id and the archive's session id.
+    cache : Path, optional
+        The cache directory, as for ``neurospatial.datasets.load``.
+    stream : bool, default False
+        Give the URL the session is read from by byte range (a DANDI asset)
+        instead of the cached file.
+
+    Returns
+    -------
+    str
+        The cached, checksum-verified path, or the byte-range URL after
+        DANDI's published SHA-256 is checked.
     """
     from neurospatial.datasets._load import _session_entry, _stream_url, fetch_session
 
