@@ -80,7 +80,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
-from neurospatial.datasets._recording import Conversion, Recording, tracked_mask
+from neurospatial.datasets._recording import (
+    Conversion,
+    Recording,
+    session_speed,
+    tracked_mask,
+)
 from neurospatial.datasets._tracks import NearestSegment, nearest_segment
 
 if TYPE_CHECKING:
@@ -596,7 +601,12 @@ def _beyond_hallway(
     from neurospatial.datasets._checks import speed_split
 
     beyond = _distance_to_graph(positions, graph) > HALLWAY_WIDTH / 2
-    split = speed_split(times, positions, beyond, MIN_SPEED, "cm")
+    speed = session_speed(times, positions)
+    split = (
+        None
+        if speed is None
+        else speed_split(speed[tracked_mask(positions)], beyond, MIN_SPEED, "cm")
+    )
     return (
         f"{beyond.mean():.1%} of tracked head samples lie farther than half the "
         f"{HALLWAY_WIDTH:g} cm hallway width from the track graph"

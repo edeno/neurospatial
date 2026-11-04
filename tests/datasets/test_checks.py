@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from neurospatial import InputError
-from neurospatial.datasets import DatasetCheckError
+from neurospatial.datasets import DatasetCheckError, _checks
 from neurospatial.datasets._checks import Stated, run_checks, speed_split
 from neurospatial.datasets._summary import summary_text
 
@@ -642,8 +642,29 @@ def test_track_width_quantile_needs_a_track(square_recording):
 
 
 def test_speed_split_without_units_states_the_bare_threshold():
-    times = np.arange(10) / 10.0
-    positions = np.column_stack([np.arange(10) * 0.1, np.zeros(10)])
+    speed = np.full(10, 1.0)
     flag = np.ones(10, dtype=bool)
-    assert "stopped (below 4)" in speed_split(times, positions, flag, 4.0, "")
-    assert "stopped (below 4 cm/s)" in speed_split(times, positions, flag, 4.0, "cm")
+    assert "stopped (below 4)" in speed_split(speed, flag, 4.0, "")
+    assert "stopped (below 4 cm/s)" in speed_split(speed, flag, 4.0, "cm")
+
+
+def test_speed_is_computed_once_and_read_only(square_recording, monkeypatch):
+    """The summary, the outside split and the overview share one speed array."""
+    import neurospatial.behavior
+
+    calls = []
+    compute_speed = neurospatial.behavior.compute_speed
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return compute_speed(*args, **kwargs)
+
+    monkeypatch.setattr(neurospatial.behavior, "compute_speed", counted)
+    rec = dataclasses.replace(
+        square_recording, params={**square_recording.params, "min_speed": 5.0}
+    )
+    rec.summary()
+    outside = np.zeros(int(rec._tracked.sum()), dtype=bool)
+    assert "0.0% of moving samples are outside" in _checks._by_speed(rec, outside)
+    assert len(calls) == 1
+    assert not rec._speed.flags.writeable

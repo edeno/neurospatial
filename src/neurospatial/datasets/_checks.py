@@ -707,9 +707,12 @@ def _by_speed(rec: Recording, outside: NDArray[np.bool_]) -> str:
     threshold = rec.params.get("min_speed")
     if threshold is None:
         return "params gives no min_speed, so the share is not split by speed"
-    assert rec.positions is not None
-    split = speed_split(
-        rec.times, rec.positions, outside, threshold, rec.position_units or ""
+    split = (
+        None
+        if rec._speed is None
+        else speed_split(
+            rec._speed[rec._tracked], outside, threshold, rec.position_units or ""
+        )
     )
     if split is None:
         return "no speed could be computed, so the share is not split by speed"
@@ -717,23 +720,22 @@ def _by_speed(rec: Recording, outside: NDArray[np.bool_]) -> str:
 
 
 def speed_split(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
+    speed: NDArray[np.float64],
     flag: NDArray[np.bool_],
     threshold: float,
     units: str,
 ) -> str | None:
     """The share of stopped and of moving tracked samples with ``flag`` set.
 
-    Speed is :func:`neurospatial.behavior.compute_speed` with its defaults,
-    the speed the summary prints. A band with no sample is left out.
+    A band with no sample is left out.
 
     Parameters
     ----------
-    times : ndarray, shape (n_time,)
-    positions : ndarray, shape (n_time, n_dims)
+    speed : ndarray, shape (n_tracked,)
+        The speed of each tracked (finite) sample, in order: the speed the
+        summary prints (:func:`~neurospatial.datasets._recording.session_speed`).
     flag : ndarray of bool, shape (n_tracked,)
-        One entry per tracked (finite) sample, in order.
+        One entry per tracked sample, in order.
     threshold : float
         Below this speed, in ``units`` per second, a sample is stopped.
     units : str
@@ -744,15 +746,8 @@ def speed_split(
     -------
     str or None
         ``"X% of stopped (below 10 cm/s) samples and Y% of moving samples"``;
-        None when no speed can be computed.
+        None when neither band has a sample.
     """
-    from neurospatial.behavior import compute_speed
-
-    tracked = tracked_mask(positions)
-    try:
-        speed = compute_speed(times, positions)[tracked]
-    except InputError:  # no two tracked samples within compute_speed's max_gap
-        return None
     limit = f"{threshold:g} {units}/s" if units else f"{threshold:g}"
     parts = []
     for name, band in (

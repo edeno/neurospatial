@@ -61,13 +61,6 @@ def _min_speed(rec: Recording) -> float | None:
     return None if value is None else float(value)
 
 
-def _speed(rec: Recording) -> NDArray[np.float64]:
-    from neurospatial.behavior import compute_speed
-
-    assert rec.positions is not None
-    return np.asarray(compute_speed(rec.times, rec.positions), dtype=float)
-
-
 def occupancy_field(
     rec: Recording, env: Environment | None = None
 ) -> NDArray[np.float64]:
@@ -143,8 +136,10 @@ def _panel_speed(rec: Recording, ax: Axes) -> None:
     if rec.positions is None:
         _missing(ax, "Speed", "no positions")
         return
-    speed = _speed(rec)
-    speed = speed[np.isfinite(speed)]
+    if rec._speed is None:
+        _note(ax, "Speed", "no speed: no two tracked\nsamples within 1 s")
+        return
+    speed = rec._speed[np.isfinite(rec._speed)]
     ax.hist(speed, bins=60, color="0.4")
     min_speed = _min_speed(rec)
     if min_speed is not None:

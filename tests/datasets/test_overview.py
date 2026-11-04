@@ -475,3 +475,22 @@ def test_epoch_panel_shows_the_window_epochs(square_recording):
         if isinstance(o, EpochOverlay)
     }
     assert labels == {"run"}
+
+
+def test_speed_panel_says_when_no_speed_can_be_computed(square_recording):
+    """Tracked samples more than 1 s apart give no speed, as in the summary."""
+    rec = square_recording
+    sparse = np.full_like(rec.positions, np.nan)
+    keep = np.searchsorted(rec.times, np.arange(rec.times[0], rec.times[-1], 1.5))
+    sparse[keep] = rec.positions[keep]
+    rec = dataclasses.replace(rec, positions=sparse)
+    assert np.isnan(rec.median_speed)
+    # The occupancy panel refuses such a session, so draw the speed panel alone.
+    import matplotlib.pyplot as plt
+
+    from neurospatial.datasets._overview import _panel_speed
+
+    fig, ax = plt.subplots()
+    _panel_speed(rec, ax)
+    assert any("no speed" in t for t in _texts(ax))
+    plt.close(fig)

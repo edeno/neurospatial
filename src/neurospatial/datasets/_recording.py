@@ -657,17 +657,24 @@ class Recording(ReadOnlyArraysMixin):
         return np.zeros(self.times.size, dtype=bool)
 
     @cached_property
+    def _speed(self) -> NDArray[np.float64] | None:
+        """Speed of each sample, read-only, shape (n_time,), as :func:`session_speed`.
+
+        None without positions, or when no speed can be computed.
+        """
+        if self.positions is None:
+            return None
+        speed = session_speed(self.times, self.positions)
+        if speed is not None:
+            speed.setflags(write=False)
+        return speed
+
+    @cached_property
     def _speed_quantiles(self) -> tuple[float, float]:
         """Median and 95th percentile of speed; NaN without a finite speed."""
-        if self.positions is None:
+        if self._speed is None:
             return float("nan"), float("nan")
-        from neurospatial.behavior import compute_speed
-
-        try:
-            speed = compute_speed(self.times, self.positions)
-        except InputError:  # no two tracked samples within 1 s of each other
-            return float("nan"), float("nan")
-        speed = speed[np.isfinite(speed)]
+        speed = self._speed[np.isfinite(self._speed)]
         if speed.size == 0:
             return float("nan"), float("nan")
         median, p95 = np.percentile(speed, [50, 95])
@@ -951,6 +958,33 @@ def _samples_strictly_inside(
         times, rows[:, 1], side="left"
     ) - np.searchsorted(times, rows[:, 0], side="right")
     return np.maximum(inside, 0)
+
+
+def session_speed(
+    times: NDArray[np.float64], positions: NDArray[np.float64]
+) -> NDArray[np.float64] | None:
+    """Speed of each sample, the speed a session's summary prints.
+
+    :func:`neurospatial.behavior.compute_speed` with its defaults (positions
+    smoothed over 0.1 s, gaps over 1 s not bridged), NaN where untracked.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+    positions : ndarray, shape (n_time, n_dims)
+
+    Returns
+    -------
+    ndarray, shape (n_time,), or None
+        In position units per second; None when no two tracked samples lie
+        within 1 s of each other, so no speed can be computed.
+    """
+    from neurospatial.behavior import compute_speed
+
+    try:
+        return np.asarray(compute_speed(times, positions), dtype=np.float64)
+    except InputError:  # no two tracked samples within compute_speed's max_gap
+        return None
 
 
 def tracked_mask(positions: NDArray[np.float64]) -> NDArray[np.bool_]:
