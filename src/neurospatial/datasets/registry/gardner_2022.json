@@ -1,0 +1,134 @@
+{
+  "dataset": "gardner_2022",
+  "paper": "Gardner et al. (2022)",
+  "paper_citation": "Gardner RJ, Hermansen E, Pachitariu M, Burak Y, Baas NA, Dunn BA, Moser M-B, Moser EI (2022). Toroidal topology of population activity in grid cells. Nature 602, 123. https://doi.org/10.1038/s41586-021-04268-7",
+  "species": "rat",
+  "brain_regions": [
+    "MEC-parasubiculum"
+  ],
+  "apparatus": "1.5 m x 1.5 m open-field box",
+  "license": "CC0",
+  "archive": {
+    "name": "Figshare 16764508 (version 6)",
+    "url": "https://doi.org/10.6084/m9.figshare.16764508.v6",
+    "citation": "Gardner, Richard; Hermansen, Erik (2021). Toroidal topology of population activity in grid cells. figshare. Dataset. https://doi.org/10.6084/m9.figshare.16764508.v6"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 100.0,
+      "basis": "inferred",
+      "source": "the files' timestamps (0.01 s steps in all four recordings); no text read states the rate"
+    },
+    "position_span": {
+      "value": [
+        120.0,
+        180.0
+      ],
+      "basis": "stated",
+      "source": "the Methods of Gardner et al. 2022: 'a square open-field (OF) arena of size 1.5 x 1.5 m'; the largest span of the tracked positions must lie within 20% of the 150 cm side"
+    },
+    "speed_limit": {
+      "value": 393.0,
+      "basis": "stated",
+      "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is head-mounted motion-capture markers, which swing faster than the body, and no source read states head speed"
+    }
+  },
+  "sessions": [
+    {
+      "session": "rat_q",
+      "archive": "Figshare 16764508",
+      "url": "https://ndownloader.figshare.com/files/35078602",
+      "file_name": "Toroidal_topology_grid_cell_data.zip",
+      "sha256": "56842a7ae8e8f9144e390c9cdd72494d8ea2c48f2ce89cdee4780a49ed495372",
+      "size_bytes": 319902753,
+      "verified": false,
+      "default": false,
+      "n_units": 163,
+      "verification": "",
+      "members": [
+        {
+          "path": "Toroidal_topology_grid_cell_data/rat_q_grid_modules_1_2.npz",
+          "sha256": "a3868405fe6c278402c41e3682e00bb69260d22b3d2e0f3d7449b70867b131e4",
+          "size_bytes": 103304877
+        },
+        {
+          "path": "Toroidal_topology_grid_cell_data/rat_q_sessions.txt",
+          "sha256": "ed0dd4a2b6f1a2026d9e3d4140678578bf9c41dbdb67bcfa6fcc5cdd855c5f7b",
+          "size_bytes": 207
+        }
+      ]
+    },
+    {
+      "session": "rat_r_day1",
+      "archive": "Figshare 16764508",
+      "url": "https://ndownloader.figshare.com/files/35078602",
+      "file_name": "Toroidal_topology_grid_cell_data.zip",
+      "sha256": "56842a7ae8e8f9144e390c9cdd72494d8ea2c48f2ce89cdee4780a49ed495372",
+      "size_bytes": 319902753,
+      "verified": true,
+      "default": true,
+      "n_units": 483,
+      "verification": "Checked by hand on 2026-11-04 against the files, the Figshare record and the paper's Methods (Gardner et al. 2022, PMC8810387). Files: the zip's MD5 and size are those Figshare publishes (379bfdca..., 319,902,753 bytes); its SHA-256 was computed from one full download, and each member read is pinned by its own SHA-256. Pickles: the three spikes_mod arrays import only numpy.core.multiarray._reconstruct, numpy.ndarray and numpy.dtype, listed from their opcodes before any runs. Units: 483 (166, 168 and 149 in modules 1 to 3), within the paper's 'from 140 to 544 grid cells per session' and its 66 to 189 grid cells per module. Time: the sessions text gives open_field_1 from 7457 to 16045 s with valid_times 7457-14778 and 14890-16045 s; the 858,800 samples kept run from 7457.01 to 16045.00 s every 0.01 s (100 Hz); the spikes kept run from 7457.02 to 16045.00 s; the file's samples and spikes continue to 21640 s through the two wagon-wheel sessions, which are not loaded. Space: x from -73.0 to 74.8 cm and y from -73.5 to 74.0 cm (a 147.8 x 147.5 cm span) against the stated 1.5 x 1.5 m box, so the unit is metres; the fitted square is centred at (0.75, 0.16) cm and rotated 0.42 deg, and no tracked sample lies outside it. Heading: azimuth minus the direction of movement above 10 cm/s has a circular mean of -4.8 deg and a median spread of 20.6 deg. Looked at: the overview figure (the path fills the square; occupancy has a few unvisited bins at the walls; heading minus travel is concentrated near 0) and three animation frames, whose position and heading arrow agree with the overview's x and y traces at the same times.",
+      "members": [
+        {
+          "path": "Toroidal_topology_grid_cell_data/rat_r_day1_grid_modules_1_2_3.npz",
+          "sha256": "c7e5acbdcf1f7ec9c43dd1032b2a57cda2d69fdc7d0c904a237b2dceac65e5be",
+          "size_bytes": 168888597
+        },
+        {
+          "path": "Toroidal_topology_grid_cell_data/rat_r_day1_sessions.txt",
+          "sha256": "a08d162130a9df628ea271f8764f651cee081cb9d68c484c7710da9fcd6979dd",
+          "size_bytes": 222
+        }
+      ]
+    },
+    {
+      "session": "rat_r_day2",
+      "archive": "Figshare 16764508",
+      "url": "https://ndownloader.figshare.com/files/35078602",
+      "file_name": "Toroidal_topology_grid_cell_data.zip",
+      "sha256": "56842a7ae8e8f9144e390c9cdd72494d8ea2c48f2ce89cdee4780a49ed495372",
+      "size_bytes": 319902753,
+      "verified": false,
+      "default": false,
+      "n_units": 544,
+      "verification": "",
+      "members": [
+        {
+          "path": "Toroidal_topology_grid_cell_data/rat_r_day2_grid_modules_1_2_3.npz",
+          "sha256": "52abd86e6915d2c0e20e7f1376e85d6615310d7df15acb7abff6c3a4e6b57ad1",
+          "size_bytes": 150937490
+        },
+        {
+          "path": "Toroidal_topology_grid_cell_data/rat_r_day2_sessions.txt",
+          "sha256": "1eeae9d9bfc358b7d960d21613a23b45b477dd4c4b2b6f604329a921f3aa973e",
+          "size_bytes": 155
+        }
+      ]
+    },
+    {
+      "session": "rat_s",
+      "archive": "Figshare 16764508",
+      "url": "https://ndownloader.figshare.com/files/35078602",
+      "file_name": "Toroidal_topology_grid_cell_data.zip",
+      "sha256": "56842a7ae8e8f9144e390c9cdd72494d8ea2c48f2ce89cdee4780a49ed495372",
+      "size_bytes": 319902753,
+      "verified": false,
+      "default": false,
+      "n_units": 140,
+      "verification": "",
+      "members": [
+        {
+          "path": "Toroidal_topology_grid_cell_data/rat_s_grid_modules_1.npz",
+          "sha256": "4c94a5c4f693dfcbfe16a8abf574346eda61c61e91408797a2b7d7ce95846d87",
+          "size_bytes": 68956198
+        },
+        {
+          "path": "Toroidal_topology_grid_cell_data/rat_s_sessions.txt",
+          "sha256": "1e4b31764d4a09c4e6a33266c392437765c9f9c379c44213e9770d6247373c7b",
+          "size_bytes": 208
+        }
+      ]
+    }
+  ]
+}
