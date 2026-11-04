@@ -219,6 +219,10 @@
   outside the environment only beyond its arena's domain as well as its bins'
   cells: on a track, whose cells span the centerline alone, a tracked head
   within the track's width is no longer reported outside.
+- `AnimationField(..., max_opacity=1.0)` caps how opaque a field is drawn
+  (0 to 1) in the Matplotlib, napari and fastplotlib views, on top of the
+  see-through rule over a video below, so the video shows through every
+  bin; the along-track panel stays opaque.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 

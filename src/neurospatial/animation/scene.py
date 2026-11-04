@@ -69,6 +69,10 @@ class AnimationField:
         ``max_gap`` does not disable these known recording boundaries.
     label : str or None
         Colorbar label.
+    max_opacity : float, default=1.0
+        The most opaque the field is drawn, from 0 (invisible) to 1. Below 1,
+        what is drawn under the field, such as a video, shows through every
+        bin, also where values are high; the along-track panel stays opaque.
     """
 
     values: Any
@@ -78,6 +82,7 @@ class AnimationField:
     vmin: float | None
     vmax: float | None
     label: str | None
+    max_opacity: float
     max_gap: float | None
     break_before: np.ndarray | None
     epochs: np.ndarray | None
@@ -100,7 +105,12 @@ class AnimationField:
         break_before: Any = None,
         epochs: Any = None,
         label: str | None = None,
+        max_opacity: float = 1.0,
     ) -> None:
+        if not np.isfinite(max_opacity) or not 0.0 <= max_opacity <= 1.0:
+            msg = f"max_opacity must be between 0 and 1; got {max_opacity!r}."
+            raise ValueError(msg)
+        object.__setattr__(self, "max_opacity", float(max_opacity))
         object.__setattr__(
             self,
             "times",
