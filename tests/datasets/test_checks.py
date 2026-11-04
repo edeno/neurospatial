@@ -369,3 +369,61 @@ def test_checking_twice_refuses(
     held = run_checks(track_recording, stated=track_stated)
     with pytest.raises(InputError, match="checked already"):
         run_checks(held, stated=track_stated)
+
+
+INFERRED = "the files' timestamps (12 sessions)"
+
+
+@pytest.mark.parametrize(
+    ("change", "numbers"),
+    [
+        (
+            lambda rec, stated: (
+                rec,
+                dataclasses.replace(
+                    stated,
+                    sampling_rate=50.0,
+                    sampling_rate_basis="inferred",
+                    sampling_rate_source=INFERRED,
+                ),
+            ),
+            f"not the 50 Hz inferred from {INFERRED}",
+        ),
+        (
+            lambda rec, stated: (
+                dataclasses.replace(rec, positions=rec.positions * 10.0),
+                dataclasses.replace(
+                    stated,
+                    position_span_basis="inferred",
+                    position_span_source="the samples of 12 sessions",
+                ),
+            ),
+            "outside the 80 to 120 cm inferred from the samples of 12 sessions",
+        ),
+    ],
+    ids=["sampling rate", "position span"],
+)
+def test_inferred_values_warn_instead_of_refusing(
+    square_recording, square_stated, change, numbers
+):
+    """A check against a value no source states warns; against a stated one, refuses."""
+    rec, inferred = change(square_recording, square_stated)
+    checked = run_checks(rec, stated=inferred)
+    assert checked.failed_checks == ()
+    (finding,) = [w for w in checked.watch_outs if numbers in w]
+    assert "No source states that value, so the session is loaded" in finding
+    np.testing.assert_array_equal(checked.positions, rec.positions)
+    stated = dataclasses.replace(
+        inferred, sampling_rate_basis="stated", position_span_basis="stated"
+    )
+    with pytest.raises(DatasetCheckError) as caught:
+        run_checks(rec, stated=stated)
+    assert caught.value.checks == ("units",)
+    assert "inferred" not in caught.value.failures["units"]
+
+
+def test_inferred_value_needs_its_evidence():
+    with pytest.raises(InputError, match="sampling_rate is inferred"):
+        Stated(sampling_rate=50.0, sampling_rate_basis="inferred")
+    with pytest.raises(InputError, match="position_span_basis 'guessed'"):
+        Stated(sampling_rate=50.0, position_span_basis="guessed")

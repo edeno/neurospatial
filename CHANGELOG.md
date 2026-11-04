@@ -32,8 +32,12 @@
   within 1% of the stated one) refuse with `DatasetCheckError`, which names
   the numbers and the `accept_failed_checks=("clock",)` value that loads the
   session anyway; an accepted failure is kept in `rec.failed_checks` and
-  heads "Watch out". Samples at exactly the origin (more than 0.1%), runs of
-  11 or more identical positions, steps faster than a stated speed limit and
+  heads "Watch out". Only a value a source states refuses: each sampling
+  rate and position span the dataset gives is marked stated (with its
+  source) or inferred from the files (with its evidence), and a session
+  that disagrees with an inferred value loads with a watch-out naming the
+  evidence. Samples at exactly the origin (more than 0.1%), runs of 11 or
+  more identical positions, steps faster than a stated speed limit and
   units with no spikes in the analysed epochs are reported in "Watch out"
   with their numbers; no array is changed.
 - `Recording.plot_overview(*, fig=None)` draws six panels: the environment
@@ -70,9 +74,11 @@
   `sub-10884_ses-03080402` are checked by hand. Positions are cm, from the
   first tracking LED; there are no headings, because the files hold one LED or
   do not say which of two is at the front. The declared environment is the
-  stated 100 cm square at the samples' midrange, with 2.5 cm bins. A session
-  spanning more than 120 cm, such as two joined 20-minute sessions spanning
-  about 1.5 m and 2 m, is refused by the units check.
+  stated 100 cm square at the samples' midrange, with 2.5 cm bins. The 50 Hz
+  rate is inferred from the files' timestamps, so a session at another rate
+  loads with a watch-out. A session spanning more than 120 cm, such as two
+  joined 20-minute sessions spanning about 1.5 m and 2 m, is refused by the
+  units check.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 

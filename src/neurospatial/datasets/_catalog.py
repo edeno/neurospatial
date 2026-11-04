@@ -208,7 +208,6 @@ def _read(registry: dict[str, Any], name: str) -> tuple[SessionEntry, ...]:
     """The entries of one registry, after checking its fields."""
     try:
         archive = registry["archive"]
-        stated = registry["stated"]
         info = DatasetInfo(
             dataset=registry["dataset"],
             paper=registry["paper"],
@@ -218,16 +217,7 @@ def _read(registry: dict[str, Any], name: str) -> tuple[SessionEntry, ...]:
             apparatus=registry["apparatus"],
             license=registry["license"],
             archive=_archive_name(archive),
-            stated=Stated(
-                sampling_rate=stated["sampling_rate"],
-                position_span=(
-                    None
-                    if stated.get("position_span") is None
-                    else tuple(stated["position_span"])
-                ),
-                speed_limit=stated.get("speed_limit"),
-                speed_limit_source=stated.get("speed_limit_source", ""),
-            ),
+            stated=_stated(registry["stated"], name),
         )
         entries = tuple(_entry(info, row) for row in registry["sessions"])
     except KeyError as exc:
@@ -247,6 +237,36 @@ def _read(registry: dict[str, Any], name: str) -> tuple[SessionEntry, ...]:
         msg = f"registry {name}: verified sessions {unchecked} give no verification"
         raise ValueError(msg)
     return entries
+
+
+def _stated(stated: dict[str, Any], name: str) -> Stated:
+    """The registry's ``stated`` block: each value with its basis and source.
+
+    ``sampling_rate`` and ``position_span`` are ``{"value", "basis",
+    "source"}``, the basis ``"stated"`` or ``"inferred"`` and the source
+    never empty; ``position_span`` may be null for a dataset without
+    positions. ``speed_limit`` is null or ``{"value", "source"}``, always
+    stated.
+    """
+    values = {"sampling_rate": stated["sampling_rate"]}
+    if stated.get("position_span") is not None:
+        values["position_span"] = stated["position_span"]
+    fields: dict[str, Any] = {}
+    for key, value in values.items():
+        if value["basis"] not in ("stated", "inferred"):
+            msg = f"registry {name}: stated.{key} basis {value['basis']!r}"
+            raise ValueError(msg)
+        if not str(value["source"]).strip():
+            msg = f"registry {name}: stated.{key} gives no source"
+            raise ValueError(msg)
+        number = value["value"]
+        fields[key] = tuple(number) if key == "position_span" else number
+        fields[f"{key}_basis"] = value["basis"]
+        fields[f"{key}_source"] = value["source"]
+    if (limit := stated.get("speed_limit")) is not None:
+        fields["speed_limit"] = limit["value"]
+        fields["speed_limit_source"] = limit["source"]
+    return Stated(**fields)
 
 
 def _archive_name(archive: dict[str, Any]) -> str:

@@ -4,7 +4,9 @@ Two checks refuse, because a failure means the arrays would be wrong:
 
 - **clock**: spikes, events and epochs are on the tracking clock;
 - **units**: the position span and sampling rate match what the dataset
-  states.
+  states. A value no source states, inferred from the dataset's files, is
+  compared too, but a mismatch with it warns instead of refusing: only a
+  stated fact shows the arrays are wrong.
 
 A refusal raises :class:`~neurospatial.datasets.DatasetCheckError` unless the
 caller accepts it with ``accept_failed_checks``; an accepted failure is kept
@@ -19,7 +21,7 @@ from __future__ import annotations
 import dataclasses
 import math
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -61,37 +63,59 @@ MIN_HELD_REPEATS = 10
 class Stated:
     """What a dataset states about its sessions, to check the arrays against.
 
+    Each value has a basis. ``"stated"``: a source (the paper, the archive's
+    description, the file's own metadata) states it, and a session that
+    disagrees is refused. ``"inferred"``: no source read states it, and it
+    was worked out from the dataset's files; a session that disagrees loads
+    with a watch-out, since the inference, not the session, may be wrong.
+
     Parameters
     ----------
     sampling_rate : float
-        The stated position sampling rate in Hz.
+        The position sampling rate in Hz.
     position_span : tuple of float or None, default None
         ``(low, high)``: the range, in ``position_units``, that the largest
-        per-axis span of the tracked positions must lie in, from the stated
+        per-axis span of the tracked positions must lie in, from the
         apparatus. Required for a recording with positions.
     speed_limit : float or None, default None
         The fastest believable speed, in ``position_units`` per second,
         where a source states one; None counts no fast steps.
     speed_limit_source : str, default ""
         Where ``speed_limit`` is stated. Required with ``speed_limit``.
+    sampling_rate_basis, position_span_basis : {"stated", "inferred"}, default "stated"
+        Whether a source states the value or it was inferred from the files.
+    sampling_rate_source, position_span_source : str, default ""
+        Where the value is stated, or the evidence it was inferred from.
+        Required for an inferred value.
 
     Raises
     ------
     InputError
         If a number is not finite and positive, ``position_span`` is not a
-        ``(low, high)`` pair with ``low <= high``, or ``speed_limit`` has no
-        source.
+        ``(low, high)`` pair with ``low <= high``, a basis is not
+        ``"stated"`` or ``"inferred"``, an inferred value has no evidence,
+        or ``speed_limit`` has no source.
     """
 
     sampling_rate: float
     position_span: tuple[float, float] | None = None
     speed_limit: float | None = None
     speed_limit_source: str = ""
+    sampling_rate_basis: Literal["stated", "inferred"] = "stated"
+    sampling_rate_source: str = ""
+    position_span_basis: Literal["stated", "inferred"] = "stated"
+    position_span_source: str = ""
 
     def __post_init__(self) -> None:
         problems = []
         if not _positive(self.sampling_rate):
             problems.append(f"sampling_rate {self.sampling_rate!r} is not positive")
+        for name in ("sampling_rate", "position_span"):
+            basis = getattr(self, f"{name}_basis")
+            if basis not in ("stated", "inferred"):
+                problems.append(f"{name}_basis {basis!r} is not 'stated' or 'inferred'")
+            elif basis == "inferred" and not getattr(self, f"{name}_source").strip():
+                problems.append(f"{name} is inferred but {name}_source is empty")
         if self.position_span is not None:
             span = tuple(self.position_span)
             if not (
@@ -120,8 +144,9 @@ class Stated:
                     "these numbers, and a speed limit is used only where a "
                     "source states it.",
                     fix="give the sampling rate in Hz, the expected span as "
-                    "(low, high) in the positions' unit, and a speed limit only "
-                    "with the source that states it.",
+                    "(low, high) in the positions' unit, the evidence for any "
+                    "value inferred from the files, and a speed limit only with "
+                    "the source that states it.",
                 )
             )
 
@@ -157,8 +182,8 @@ def run_checks(
     Recording
         ``rec`` with ``failed_checks`` set to the accepted failures and
         ``watch_outs`` extended: accepted failures first, then the dataset's
-        own entries, then the warning checks' findings. The arrays are
-        unchanged.
+        own entries, then the warning checks' findings, a disagreement with
+        an inferred value among them. The arrays are unchanged.
 
     Raises
     ------
@@ -185,11 +210,12 @@ def run_checks(
                 "1 m box in cm.",
             )
         )
+    units_refusal, units_warning = _units_findings(rec, stated)
     failures = {
         name: finding
         for name, finding in (
             ("clock", _clock_finding(rec)),
-            ("units", _units_finding(rec, stated)),
+            ("units", units_refusal),
         )
         if finding is not None
     }
@@ -204,6 +230,7 @@ def run_checks(
     warnings = [
         finding
         for finding in (
+            units_warning,
             _origin_finding(rec),
             _held_and_fast_finding(rec, stated),
             _silent_units_finding(rec),
@@ -334,37 +361,64 @@ def _within_any(
     return inside
 
 
-def _units_finding(rec: Recording, stated: Stated) -> str | None:
-    """How the span or sampling rate disagrees with the stated ones; None if not."""
-    problems = []
+def _units_findings(rec: Recording, stated: Stated) -> tuple[str | None, str | None]:
+    """How the span or sampling rate disagrees with the dataset's values.
+
+    Returns
+    -------
+    refusal, warning : str or None
+        The disagreements with stated values, which refuse, and with
+        inferred values, which warn; None where there are none.
+    """
+    found: dict[str, list[str]] = {"stated": [], "inferred": []}
     rate = rec.sampling_rate
     if abs(rate / stated.sampling_rate - 1) > RATE_TOLERANCE:
-        problems.append(
+        found[stated.sampling_rate_basis].append(
             f"the sampling rate is {rate:.6g} Hz (one over the median interval), "
-            f"not the stated {stated.sampling_rate:g} Hz within "
-            f"{RATE_TOLERANCE:.0%}"
+            f"not the {_against(stated, 'sampling_rate', f'{stated.sampling_rate:g} Hz')} "
+            f"within {RATE_TOLERANCE:.0%}"
         )
     if rec.positions is not None and stated.position_span is not None:
         low, high = stated.position_span
         units = rec.position_units
         tracked = rec.positions[np.all(np.isfinite(rec.positions), axis=1)]
         if len(tracked) == 0:
-            problems.append("no position sample is tracked, so the span is unknown")
+            found["stated"].append(
+                "no position sample is tracked, so the span is unknown"
+            )
         else:
             spans = tracked.max(axis=0) - tracked.min(axis=0)
             axis = int(np.argmax(spans))
             if not low <= spans[axis] <= high:
-                problems.append(
+                found[stated.position_span_basis].append(
                     f"the largest position span is {spans[axis]:.4g} {units} (axis "
-                    f"{axis}), outside the stated {low:g} to {high:g} {units}"
+                    f"{axis}), outside the "
+                    f"{_against(stated, 'position_span', f'{low:g} to {high:g} {units}')}"
                 )
-    if not problems:
-        return None
-    return (
-        "; ".join(problems)
-        + ". Check the position unit and scale (cm, m or pixels, and any "
+    advice = (
+        "Check the position unit and scale (cm, m or pixels, and any "
         "calibration) and the sampling rate against the file and the paper."
     )
+    refusal = None
+    if found["stated"]:
+        refusal = "; ".join(found["stated"]) + ". " + advice
+    warning = None
+    if found["inferred"]:
+        warning = (
+            "; ".join(found["inferred"])
+            + ". No source states that value, so the session is loaded: the "
+            "inference may not hold for this session. " + advice
+        )
+    return refusal, warning
+
+
+def _against(stated: Stated, name: str, value: str) -> str:
+    """``"stated 50 Hz (source)"`` or ``"50 Hz inferred from <evidence>"``."""
+    basis = getattr(stated, f"{name}_basis")
+    source = getattr(stated, f"{name}_source").strip()
+    if basis == "inferred":
+        return f"{value} inferred from {source}"
+    return f"stated {value} ({source})" if source else f"stated {value}"
 
 
 def _origin_finding(rec: Recording) -> str | None:

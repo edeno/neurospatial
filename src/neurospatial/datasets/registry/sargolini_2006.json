@@ -14,15 +14,20 @@
     "citation": "Sargolini, Francesca; Fyhn, Marianne; Hafting, Torkel; McNaughton, Bruce L.; Witter, Menno P.; Moser, May-Britt; Moser, Edvard I.; Waade, Haagen; Ball, Simon (2025) Conjunctive Representation of Position, Direction, and Velocity in Entorhinal Cortex (Version 0.251111.2151) [Data set]. DANDI Archive. https://doi.org/10.48324/dandi.000582/0.251111.2151"
   },
   "stated": {
-    "sampling_rate": 50.0,
-    "sampling_rate_source": "the files' own timestamps: 0.02 s steps, 30000 samples per 600 s session, in both checked sessions and in ten others sampled across the rats; no text read states the rate",
-    "position_span": [
-      80.0,
-      120.0
-    ],
-    "position_span_source": "the 1 x 1 m enclosure the authors' readme (readme_sargolini2006.txt, NIRD doi:10.11582/2014.00003) and every file's session_description state; the largest span of the tracked positions must lie within 20% of the 100 cm side",
-    "speed_limit": null,
-    "speed_limit_source": ""
+    "sampling_rate": {
+      "value": 50.0,
+      "basis": "inferred",
+      "source": "the files' timestamps (0.02 s steps in 12 of 118 sessions: 2 downloaded, 10 read by byte range); no text read states the rate"
+    },
+    "position_span": {
+      "value": [
+        80.0,
+        120.0
+      ],
+      "basis": "stated",
+      "source": "the 1 x 1 meter enclosure of the session_description in the files (DANDI's metadata for all 118 assets carries the same text; 12 files opened) and of the authors' readme (readme_sargolini2006.txt, NIRD doi:10.11582/2014.00003); the largest span of the tracked positions must lie within 20% of the 100 cm side"
+    },
+    "speed_limit": null
   },
   "sessions": [
     {

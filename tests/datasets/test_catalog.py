@@ -93,6 +93,15 @@ def test_unknown_dataset_lists_the_known_ones():
         (lambda r: r["sessions"][0].pop("asset_id"), "either asset_id or url"),
         (lambda r: r["sessions"][2].update(verified=True), "give no verification"),
         (lambda r: r.pop("license"), "no field 'license'"),
+        (
+            lambda r: r["stated"]["sampling_rate"].update(basis="guessed"),
+            "stated.sampling_rate basis 'guessed'",
+        ),
+        (
+            lambda r: r["stated"]["position_span"].update(source=""),
+            "stated.position_span gives no source",
+        ),
+        (lambda r: r["stated"]["sampling_rate"].pop("basis"), "no field 'basis'"),
     ],
 )
 def test_malformed_registry_refused(change, message):

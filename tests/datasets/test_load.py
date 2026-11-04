@@ -40,7 +40,18 @@ def _registry(files: dict[str, Path]) -> dict:
         "apparatus": "1 m square box",
         "license": "CC0-1.0",
         "archive": {"name": "Synthetic 0", "citation": "Synthetic 0 archive."},
-        "stated": {"sampling_rate": 100.0, "position_span": [80.0, 120.0]},
+        "stated": {
+            "sampling_rate": {
+                "value": 100.0,
+                "basis": "stated",
+                "source": "the simulation",
+            },
+            "position_span": {
+                "value": [80.0, 120.0],
+                "basis": "stated",
+                "source": "the simulated 1 m box",
+            },
+        },
         "sessions": [
             {
                 "session": session,
