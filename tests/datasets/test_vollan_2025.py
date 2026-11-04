@@ -170,13 +170,16 @@ def test_listed_session_is_clipped_to_the_recording(box_session, session_entry):
     path, times, _ = box_session
     rec = _loaded(path, session_entry)
     spikes = np.concatenate(rec.spike_times)
-    start, stop = min(times[0], spikes.min()), max(times[-1], spikes.max())
-    np.testing.assert_allclose(rec.epochs["open_field_1"], [[start, stop]])
+    stop = max(times[-1], spikes.max())
+    # The start, 0.4 s before the first sample, is within the clock check's
+    # slack and kept; the end, 100 s after the data, is clipped.
+    np.testing.assert_allclose(rec.epochs["open_field_1"], [[times[0] - 0.4, stop]])
     clip = next(c for c in rec.conversions if c.text.startswith("epochs: rows"))
     assert clip.basis == "inferred"
     assert any(
         text.startswith("1 epoch row reaches past the recording")
-        and "starts 0.4 s before it and ends" in text
+        and "s ends 100 s after it" in text
+        and "starts" not in text
         for text in rec.watch_outs
     )
     held = times.size * DT
@@ -324,15 +327,13 @@ def test_loads_default_session(default_session, session_entry, assert_default_se
     )
     np.testing.assert_allclose(np.ptp(rec.positions, axis=0), [141.9, 140.2], atol=0.1)
     assert rec.apparatus == "circular open arena, 150 cm in diameter"
-    # Clipped to the recording: the first and last spike lie just outside the
-    # samples (3449.02 to 5047.69 s).
+    # The listed end (5400 s) is clipped to the last spike, just after the
+    # last sample (5047.69 s); the listed start is kept.
     spikes = np.concatenate(rec.spike_times)
     np.testing.assert_array_equal(
-        rec.epochs["open_field_light_1"], [[spikes.min(), spikes.max()]]
+        rec.epochs["open_field_light_1"], [[3449.0, spikes.max()]]
     )
-    np.testing.assert_allclose(
-        rec.epochs["open_field_light_1"], [[3449.0153, 5047.69497]], atol=1e-5
-    )
+    assert spikes.max() == pytest.approx(5047.69497, abs=1e-5)
     heading = next(c for c in rec.conversions if c.text.startswith("headings"))
     assert "circular mean of +0.2 deg" in heading.evidence
 

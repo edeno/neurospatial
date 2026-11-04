@@ -241,7 +241,6 @@ EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
     "lt_27764_1": (
         r"times has 132 gaps longer than 0.02 s",
         r"of the samples lie outside every listed session",
-        r"epochs\['linear_track_1'\] \[7227, 7486\] s starts 0\.56 s before it",
         r"runs of 11 or more identical position samples",
         r"samples farther from the last believable sample",
     ),
