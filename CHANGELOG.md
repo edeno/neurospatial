@@ -116,6 +116,16 @@
   listed, but their files store raw LED positions with no head-direction
   series or epochs, so loading one raises `NotImplementedError` before any
   download.
+- `forli_2025`: Forli et al. (2025) Egyptian fruit bat dorsal hippocampus
+  during free flight, the demo session `Dataset_3_14543_240419` of Zenodo
+  15738988 (CC-BY-4.0), checked by hand: 289 units on three Neuropixels
+  probes, 3-D positions in metres (inferred from the room's size and the
+  flight threshold) at 120 Hz, 38 flights. Only the five needed members of
+  the 3.3 GB zip are fetched (260 MB). Putative duplicate units are pooled
+  and spikes within 1 ms dropped, as the record's `NP_Bat_Demo.m` does. The
+  declared environment is the room the file's `r_lim` bounds, every voxel
+  active; 3.7% of samples, nearly all at rest, lie past its -y bound and are
+  kept. Needs `mat-io`, so Python 3.11 or later.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 

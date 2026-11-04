@@ -1,0 +1,73 @@
+{
+  "dataset": "forli_2025",
+  "paper": "Forli et al. (2025)",
+  "paper_citation": "Forli A, Fan W, Qi KK, Yartsev MM (2025). Replay and representation dynamics in the hippocampus of freely flying bats. Nature. https://doi.org/10.1038/s41586-025-09341-z",
+  "species": "Egyptian fruit bat",
+  "brain_regions": [
+    "dorsal hippocampus"
+  ],
+  "apparatus": "indoor flight room, 5.6 x 5.2 x 2.5 m, with feeders",
+  "license": "CC-BY-4.0",
+  "archive": {
+    "name": "Zenodo 15738988",
+    "url": "https://doi.org/10.5281/zenodo.15738988",
+    "citation": "Forli, Angelo (2025) Demo data for 'Replay and Representation Dynamics in the Hippocampus of Freely Flying Bats' [Data set]. Zenodo. https://doi.org/10.5281/zenodo.15738988"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 120.0,
+      "basis": "stated",
+      "source": "the Methods of Forli et al. 2025: marker positions tracked 'at a frame rate of 120 Hz' (RTLS data resampled to 120 Hz); the record's NP_Bat_Demo.m: Fs '120 Hz default'"
+    },
+    "position_span": {
+      "value": [
+        4.48,
+        6.72
+      ],
+      "basis": "stated",
+      "source": "the Methods of Forli et al. 2025: 'an indoor flight room (n = 4 bats, 5.6 m x 5.2 m x 2.5 m)'; the largest span of the tracked positions must lie within 20% of the 5.6 m side"
+    },
+    "speed_limit": null
+  },
+  "sessions": [
+    {
+      "session": "Dataset_3_14543_240419",
+      "archive": "Zenodo 15738988",
+      "url": "https://zenodo.org/records/15738988/files/Demo_Session.zip?download=1",
+      "file_name": "Demo_Session.zip",
+      "sha256": "0665a3290e1f71b46d4855551aa01abc495f83bca3093d8eb44071fd385cb17e",
+      "size_bytes": 3304325092,
+      "verified": true,
+      "default": true,
+      "n_units": 289,
+      "verification": "Checked by hand on 2026-11-03 against the files, the record's NP_Bat_Demo.m and How to use.pdf, and the paper's Methods (Forli et al. 2025, accelerated article preview). Files: the zip's MD5 and size are those Zenodo publishes (8bbd46cf..., 3,304,325,092 bytes); its SHA-256 was computed from one full download; each of the five members read is pinned by its own SHA-256. Time: 642,724 samples every 1/120 s (the 120 Hz of the paper and of the script's Fs), from -107.4 to 5248.6 s; the spikes of the 289 units run from -12.7 to 5255.2 s, so they start inside the tracking and end 6.6 s after it. Flights: 38 (f_num), at the file's v_th of 0.5 m/s, the paper's flight threshold; one ends before the first spike. Units: 289 after the script's merges and 1 ms rule (24, 158 and 107 on probes 1 to 3). Space: r_lim is 5.8 x 5.2 x 2.3 m against the paper's 5.6 x 5.2 x 2.5 m indoor room; x from -2.84 to 2.85 m and z from 0.28 to 2.16 m lie inside r_lim, while 3.66% of tracked samples lie past its -y bound, up to 1.63 m, almost none in flight.",
+      "members": [
+        {
+          "path": "Demo_Session/Extracted_Behavior_240419.mat",
+          "sha256": "88bd2164121088a789077b72a69d26e616a6e0c84a91ef200e09e89018427ddc",
+          "size_bytes": 22079421
+        },
+        {
+          "path": "Demo_Session/merges_Dataset_3_14543_240419.mat",
+          "sha256": "7c05b2a9b3127ab5b8e3ebf540355f82419a7328c0d6b0e9a60b4fcb7806da51",
+          "size_bytes": 224
+        },
+        {
+          "path": "Demo_Session/SU_kilosort4_outdir_probe1.mat",
+          "sha256": "ce0fc9442538415cdb85fd4d38dda66032ea12e59af6897690a4f47285d2ed05",
+          "size_bytes": 24854435
+        },
+        {
+          "path": "Demo_Session/SU_kilosort4_outdir_probe2.mat",
+          "sha256": "1efbec9057625bb92967da00045e5746b3c07aaeff37815fafcba28bf12a727d",
+          "size_bytes": 113240603
+        },
+        {
+          "path": "Demo_Session/SU_kilosort4_outdir_probe3.mat",
+          "sha256": "7a1b3254f176b192ec0bfa44366946fff104b3cdb5f038daa25900c5eeea0882",
+          "size_bytes": 99647093
+        }
+      ]
+    }
+  ]
+}
