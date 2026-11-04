@@ -4,12 +4,50 @@
 
 ### Dataset loaders
 
+#### Loading and cataloguing
+
 - New `neurospatial.datasets` module and `datasets` install extra
   (`pip install 'neurospatial[datasets]'`). Downloads are cached in
   `$NEUROSPATIAL_DATA_DIR`, else `~/.cache/neurospatial/datasets`
   (`%LOCALAPPDATA%\neurospatial\datasets` on Windows). The survey harness's
   download code moved into the package; the survey's default cache is no longer
-  the repository's `data/datasets/`.
+  the repository's `data/datasets/`. A user guide (`user-guide/datasets.md`)
+  and one page per dataset (`docs/datasets/`) say what was recorded, the
+  conversions and their basis, the pitfalls, the worked result and how to
+  cite.
+- `neurospatial.datasets.load(dataset, session=None, *, cache=None,
+  stream=False, accept_failed_checks=())` fetches one session (the
+  dataset's default when `session` is None), verifies its SHA-256, reads it
+  and runs the checks; `stream=True` reads a DANDI file by byte range after
+  checking the archive still publishes the pinned SHA-256. Without the
+  `datasets` extra it says how to install it before downloading anything.
+  `catalog()` lists every session of every dataset (dataset, session,
+  species, brain regions, apparatus, unit count where known, whether it is
+  checked by hand, the default, license as the archive states it, archive,
+  size and citation) without downloading. `fetch_all(dataset, *,
+  cache=None)` downloads every session, logging the total size first and
+  refusing to start when the cache's disk lacks the room. Each dataset's
+  sessions, checksums and stated facts are in
+  `neurospatial/datasets/registry/<dataset>.json`;
+  `scripts/build_dataset_registry.py` fills a DANDI registry from a pinned
+  published version. It lists only NWB files as sessions, only those of the
+  registry's `archive.variant` where a dandiset publishes each session more
+  than once (DANDI 000568: `-no-raw-data`, dropped from the session id), and
+  lists the files in a folder named after an NWB file's stem, the videos its
+  ImageSeries name, under the session's `videos`, keeping the hand-set
+  `landmarks` and `led_fit` of each, but only while their `video_sha256` is
+  the video's own.
+- A registry session may come from a second archive, with its own license
+  as that archive states it ("not stated" where it states none) and its own
+  data citation; `scripts/build_dataset_registry.py` keeps such rows. A
+  session read from members of a remote zip fetches only those members, by
+  byte range, each verified against its own SHA-256, into
+  `<cache>/<dataset>/<session>/`; `catalog()`'s
+  `size_bytes` is what loading a session downloads. A dataset that needs `mat-io`
+  says on Python 3.10 that it installs only on Python 3.11 or later.
+
+#### The recording and its checks
+
 - `neurospatial.datasets.Recording` holds a loaded session as the arrays
   analyses take (`times`, `positions`, `headings`, `spike_times`, `epochs`,
   `events`, ...), the unit table (`units`, indexed by `unit_id`, with
@@ -46,13 +84,16 @@
   as tracking spread (a tracked head swings past the edge), not as misfit;
   on any environment the outside share is split into stopped and moving
   samples at `params["min_speed"]` where the dataset sets it.
+
+#### Looking at a session
+
 - `Recording.plot_overview(*, fig=None)` draws six panels: the environment
   with the path, occupancy (never-visited bins drawn as missing), speed with
   `params["min_speed"]` marked, head direction beside heading minus direction
   of travel, units per brain region with spikes per unit, and the first 60 s of
   position with the spike raster. A panel the dataset has no data for says "not
   in this dataset". `Recording.animation(*, time_range=None,
-  trail_length=None)` returns an `Animation` of the session: occupancy over the
+  trail_length=None, video=False)` returns an `Animation` of the session: occupancy over the
   environment with the path, headings, spike raster, events and epochs on top,
   from the first 60 s of tracking by default (30 frames a second when tracking
   is faster), to open with `.show()` or write
@@ -86,50 +127,9 @@
   is refused. Without a calibration, or without a video,
   `animation(video=True)` raises `InputError` naming the four sources
   tried; the frames are never stretched over the environment's extent.
-- `neurospatial.datasets.load(dataset, session=None, *, cache=None,
-  stream=False, accept_failed_checks=())` fetches one session (the
-  dataset's default when `session` is None), verifies its SHA-256, reads it
-  and runs the checks; `stream=True` reads a DANDI file by byte range after
-  checking the archive still publishes the pinned SHA-256. Without the
-  `datasets` extra it says how to install it before downloading anything.
-  `catalog()` lists every session of every dataset (dataset, session,
-  species, brain regions, apparatus, unit count where known, whether it is
-  checked by hand, the default, license as the archive states it, archive,
-  size and citation) without downloading. `fetch_all(dataset, *,
-  cache=None)` downloads every session, logging the total size first and
-  refusing to start when the cache's disk lacks the room. Each dataset's
-  sessions, checksums and stated facts are in
-  `neurospatial/datasets/registry/<dataset>.json`;
-  `scripts/build_dataset_registry.py` fills a DANDI registry from a pinned
-  published version. It lists only NWB files as sessions, only those of the
-  registry's `archive.variant` where a dandiset publishes each session more
-  than once (DANDI 000568: `-no-raw-data`, dropped from the session id), and
-  lists the files in a folder named after an NWB file's stem, the videos its
-  ImageSeries name, under the session's `videos`, keeping the hand-set
-  `landmarks` and `led_fit` of each, but only while their `video_sha256` is
-  the video's own.
-- A registry session may come from a second archive, with its own license
-  as that archive states it ("not stated" where it states none) and its own
-  data citation; `scripts/build_dataset_registry.py` keeps such rows. A
-  session read from members of a remote zip fetches only those members, by
-  byte range, each verified against its own SHA-256, into
-  `<cache>/<dataset>/<session>/`; `catalog()`'s
-  `size_bytes` is what loading a session downloads. A dataset that needs `mat-io`
-  says on Python 3.10 that it installs only on Python 3.11 or later.
-- First dataset: `sargolini_2006`, Sargolini et al. (2006) rat medial
-  entorhinal cortex in a 1 m box, all 118 sessions of DANDI 000582 (version
-  0.251111.2151, CC-BY-4.0). The default, `sub-10073_ses-17010302` (the
-  session pynapple's DANDI tutorial streams, 8 units), and
-  `sub-10884_ses-03080402` are checked by hand. Positions are cm, from the
-  first tracking LED; there are no headings, because the files hold one LED or
-  do not say which of two is at the front. The declared environment is the
-  stated 100 cm square at the samples' midrange, with 2.5 cm bins; how far
-  the samples' range on each axis falls short of or past 100 cm is in its
-  `Conversion`. The 50 Hz rate is inferred from the files' timestamps, so a
-  session at another rate loads with a watch-out. A session spanning more
-  than 120 cm is refused by the units check: of the 12 sessions opened, two
-  1200 s sessions span about 1.5 m and 2 m, and no source read states their
-  box.
+
+#### The datasets
+
 - `comrie_2026`: Comrie et al. (2026) rat j16, run epoch 02_r1 of the spatial
   bandit maze, 203 hippocampal units (Zenodo 23020757, CC-BY-4.0), checked
   by hand. Positions are cm (inferred: the graph's edges match the stated
@@ -143,25 +143,6 @@
   locomotion threshold). `head_orientation` is 13° off the direction of
   movement, so it is kept in `params["head_orientation"]`, not used as
   headings.
-- `peyrache_2015`: Peyrache et al. (2015) mouse anterior thalamus
-  head-direction cells. The default, `Mouse32-140822`, is the OSF `jb2gd` file
-  pynapple's and NeMoS's head-direction tutorials download (license not
-  stated on OSF), checked by hand: 49 units (31 in ADn), head direction at
-  39 Hz during the wake epoch, and the wake, sleep, slow-wave and REM epochs.
-  It has no positions, so `rec.env` is None. Its heading frame is not stated
-  anywhere read, so the package frame is assumed (an inferred `Conversion`).
-  DANDI 000056 holds the dataset's other sessions in a raw-pixel layout
-  this loader does not read, so they are not listed.
-- `forli_2025`: Forli et al. (2025) Egyptian fruit bat dorsal hippocampus
-  during free flight, the demo session `Dataset_3_14543_240419` of Zenodo
-  15738988 (CC-BY-4.0), checked by hand: 289 units on three Neuropixels
-  probes, 3-D positions in metres (inferred from the room's size and the
-  flight threshold) at 120 Hz, 38 flights. Only the five needed members of
-  the 3.3 GB zip are fetched (260 MB). Putative duplicate units are pooled
-  and spikes within 1 ms dropped, as the record's `NP_Bat_Demo.m` does. The
-  declared environment is the room the file's `r_lim` bounds, every voxel
-  active; 3.7% of samples, nearly all at rest, lie past its -y bound and are
-  kept. Needs `mat-io`, so Python 3.11 or later.
 - `grosmark_2016`: Grosmark & Buzsáki (2016) rat CA1 on a novel maze between
   two sleeps. A session is one archive file, one maze. The default,
   `Achilles_10252013`, is the OSF `hu5ma` file NeMoS's place-cell tutorial
@@ -184,6 +165,40 @@
   paper states tracking at 39.69 Hz; the files sample at 39.06 Hz. On the
   circle, `rec.linearized` increases counter-clockwise while the rat runs
   clockwise, so it decreases along a run.
+- `peyrache_2015`: Peyrache et al. (2015) mouse anterior thalamus
+  head-direction cells. The default, `Mouse32-140822`, is the OSF `jb2gd` file
+  pynapple's and NeMoS's head-direction tutorials download (license not
+  stated on OSF), checked by hand: 49 units (31 in ADn), head direction at
+  39 Hz during the wake epoch, and the wake, sleep, slow-wave and REM epochs.
+  It has no positions, so `rec.env` is None. Its heading frame is not stated
+  anywhere read, so the package frame is assumed (an inferred `Conversion`).
+  DANDI 000056 holds the dataset's other sessions in a raw-pixel layout
+  this loader does not read, so they are not listed.
+- `sargolini_2006`, Sargolini et al. (2006) rat medial
+  entorhinal cortex in a 1 m box, all 118 sessions of DANDI 000582 (version
+  0.251111.2151, CC-BY-4.0). The default, `sub-10073_ses-17010302` (the
+  session pynapple's DANDI tutorial streams, 8 units), and
+  `sub-10884_ses-03080402` are checked by hand. Positions are cm, from the
+  first tracking LED; there are no headings, because the files hold one LED or
+  do not say which of two is at the front. The declared environment is the
+  stated 100 cm square at the samples' midrange, with 2.5 cm bins; how far
+  the samples' range on each axis falls short of or past 100 cm is in its
+  `Conversion`. The 50 Hz rate is inferred from the files' timestamps, so a
+  session at another rate loads with a watch-out. A session spanning more
+  than 120 cm is refused by the units check: of the 12 sessions opened, two
+  1200 s sessions span about 1.5 m and 2 m, and no source read states their
+  box.
+- `forli_2025`: Forli et al. (2025) Egyptian fruit bat dorsal hippocampus
+  during free flight, the demo session `Dataset_3_14543_240419` of Zenodo
+  15738988 (CC-BY-4.0), checked by hand: 289 units on three Neuropixels
+  probes, 3-D positions in metres (inferred from the room's size and the
+  flight threshold) at 120 Hz, 38 flights. Only the five needed members of
+  the 3.3 GB zip are fetched (260 MB). Putative duplicate units are pooled
+  and spikes within 1 ms dropped, as the record's `NP_Bat_Demo.m` does. The
+  declared environment is the room the file's `r_lim` bounds, every voxel
+  active; 3.7% of samples (0.1% of them in the file's flights) lie past its -y
+  bound and are kept; a watch-out gives the stopped and the moving share of
+  them at the 0.5 m/s flight threshold. Needs `mat-io`, so Python 3.11 or later.
 - `valero_2022`: Valero et al. (2022) mouse CA1 units on a 110 cm x 6.35 cm
   linear track, the 28 DANDI 000568 files without raw voltage (version
   0.230705.1633, CC-BY-4.0), the first dataset with video: each session's
@@ -212,6 +227,9 @@
   `track_after_tracking`. A session whose video is split across two files
   has `rec.video` None. The session scene's epoch panel shows only the
   epochs its window meets.
+
+#### Worked results
+
 - Each dataset module's `WORKED_RESULT` records a finding of its paper
   reproduced on the default session with public neurospatial functions,
   with the quote, the parameters, our number and every parameter that could
@@ -220,7 +238,7 @@
   same pipeline. `peyrache_2015` (level A, a number): 20 of 31 ADn units
   (65%) are head-direction cells by the paper's criteria, against its 71%.
   `grosmark_2016` (level B, a property): 50% of directional rate-map peaks
-  lie within 20 cm of a stem end, against at most 36% with shifted spikes.
+  lie within 20 cm of a stem end, against at most 36.5% with shifted spikes.
   `comrie_2026` (a sanity property, not a finding of the preprint): 92% of
   held-out running time bins decode to the rat's own track segment, against
   35% for always naming the most visited segment and at most 29% with
@@ -230,13 +248,19 @@
   Valero's files hold no cell types or stimulation times); the bat's 3-D
   attempt (15% of flight-active units stable, against the paper's 71%) is
   kept in its record.
+
+#### Readers, overlays and tests
+
 - `io.nwb.read_position(..., position_name=)` and
   `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
   any Position or CompassDirection container when given its full path, as in
   `read_position(nwbfile, position_name="acquisition/position")` for the
   NeMoS tutorial file of Grosmark & Buzsáki (2016). Such a series is never
   chosen without being named; the error for a file with no container lists
-  these series' paths.
+  these series' paths. For `read_position` only the series whose unit is a
+  length or pixel unit are listed, and naming a series with another unit, such
+  as `acquisition/theta_phase` in radians, raises `InputError` that names it,
+  since reading it would bin a phase or a speed as a spatial coordinate.
 - `io.nwb.read_intervals(..., interval_name=)` reads a TimeIntervals table
   kept in a processing module by its path, as in
   `read_intervals(nwbfile, interval_name="processing/behavior/states")` for

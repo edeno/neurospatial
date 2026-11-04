@@ -128,6 +128,7 @@ For animation features, install optional dependencies:
 pip install "neurospatial[animation]"    # napari viewer and notebook widget
 pip install "neurospatial[video]"        # MP4, WebM, MOV, AVI and GIF export
 pip install "neurospatial[fastplotlib]"  # GPU viewer (Python 3.11 or newer)
+pip install "neurospatial[datasets]"     # public dataset loaders (neurospatial.datasets)
 ```
 
 HTML players need no extra packages. Video export uses the ffmpeg binary that
@@ -254,6 +255,14 @@ analyzes its 203 hippocampal spike trains.
 It loads the recording with `neurospatial.datasets.load("comrie_2026")`; to
 download ahead of time, run that once. See [the data guide](data/README.md) for
 units and attribution.
+
+`neurospatial.datasets` loads six published recordings the same way: rat
+hippocampus (two datasets), rat entorhinal cortex, mouse thalamus, mouse CA1
+with video, and a flying bat. `catalog()` lists the sessions, and `load(dataset)`
+checks one and returns a `Recording` with the arrays, the conversions applied and
+the pitfalls to watch out for. Install it with
+`pip install "neurospatial[datasets]"` and see
+[the dataset guide](https://edeno.github.io/neurospatial/user-guide/datasets/).
 
 To go the other way — reconstruct position from population spikes — the one-call
 path is
@@ -635,6 +644,7 @@ src/neurospatial/
 ├── stats/          # Circular statistics, temporal shuffles, p-values, and surrogates
 ├── simulation/     # Mazes, trajectories, neural models, spikes, and validation
 ├── io/             # Environment files plus NWB and pynapple interoperability
+├── datasets/       # Loaders for published datasets: catalog, load, Recording
 ├── animation/      # Field animation: viewers, overlays, and video/HTML export
 ├── annotation/     # Interactive video and track-graph annotation
 ├── ops/            # Graph-aware distance, smoothing, transforms, and visibility
