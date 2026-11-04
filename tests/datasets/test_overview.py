@@ -756,6 +756,28 @@ def test_hippocampal_track_raster_is_sorted_by_place_field_peak(
     np.testing.assert_array_equal(overlay.order, expected)
 
 
+def test_place_field_order_uses_the_sessions_max_gap(
+    place_cell_stem_recording, monkeypatch
+):
+    """The sorting rate maps bridge only the gaps the session's analyses bridge."""
+    import neurospatial
+    from neurospatial.datasets._overview import place_field_order
+
+    seen = []
+    real = neurospatial.compute_spatial_rates
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs.get("max_gap", "default"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(neurospatial, "compute_spatial_rates", spy)
+    rec = dataclasses.replace(
+        place_cell_stem_recording, params={"min_speed": 2.0, "max_gap": 0.05}
+    )
+    np.testing.assert_array_equal(place_field_order(rec), _expected_field_order())
+    assert seen == [0.05]
+
+
 @pytest.mark.parametrize("region", ["MEC LII", "thalamus"])
 def test_non_hippocampal_raster_keeps_the_file_order(place_cell_stem_recording, region):
     # Negative control: the same planted fields, recorded outside the hippocampus.

@@ -393,6 +393,7 @@ def place_field_order(rec: Recording) -> NDArray[np.intp] | None:
                 rec.times,
                 rec.positions,
                 min_speed=_min_speed(rec),
+                max_gap=rec._max_gap,
             ).firing_rates,
             dtype=np.float64,
         )
