@@ -33,7 +33,9 @@ What the loader converts:
   and the values are metres: read as metres, the circular epochs span 64 to
   70 cm, the preprint's 70 cm circle. The loader returns (x, -z) x 100 cm.
   Motion capture with y up is right-handed, so seen from above x points East
-  and -z North (an inferred ``Conversion``).
+  and -z North (an inferred ``Conversion``). The heading's movement test
+  cannot check that handedness: mirroring the positions and the heading
+  together leaves heading minus movement unchanged.
 - headings: ``CompassDirection/ry``, the rotation about the vertical axis,
   wrapped from [0, 2π) to [-π, π]. The frame is not verified: heading minus
   the direction of movement, per tracked epoch, has a mean that is not near
@@ -311,7 +313,10 @@ def load_session(
                 f"z {floor[1]:.3g}: y is the head's height, x and z the floor, "
                 "and read as metres the dandiset's circular epochs span 64 to 70 "
                 f"cm, the 70 cm circle of {_PREPRINT}. Motion capture with y up "
-                "is right-handed, so seen from above x points East and -z North",
+                "is right-handed, so seen from above x points East and -z North; "
+                "the heading's movement test cannot check this: mirroring the "
+                "positions and the heading together leaves heading minus "
+                "movement unchanged",
             ),
             Conversion(
                 "headings: CompassDirection/ry (radian, [0, 2π)) wrapped to "

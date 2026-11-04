@@ -160,6 +160,8 @@ def test_floor_is_x_and_minus_z_in_cm_and_ry_is_wrapped(tmp_path, entry):
     bases = {c.text.split(":")[0]: c.basis for c in rec.conversions}
     assert bases["positions"] == "inferred"
     assert bases["headings"] == "inferred"
+    positions = next(c for c in rec.conversions if c.text.startswith("positions"))
+    assert "mirroring the positions and the heading together" in positions.evidence
     assert "the identifier A7803-210726 reads as 2021-07-26" in rec.clock
 
 

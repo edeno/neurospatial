@@ -63,7 +63,7 @@ is the preprint's.
 
 | What the loader did | Basis | Evidence |
 | --- | --- | --- |
-| positions: cm = (`Position/x`, -`Position/z`) x 100; `Position/y` is vertical and left out | inferred | The three series have a blank unit and reference frame. y spans a few cm (the head's height), x and z 50 to 80 cm. Read as metres, the circular epochs span 64 to 70 cm, the preprint's 70 cm circle. Motion capture with y up is right-handed, so seen from above x points East and -z North. |
+| positions: cm = (`Position/x`, -`Position/z`) x 100; `Position/y` is vertical and left out | inferred | The three series have a blank unit and reference frame. y spans a few cm (the head's height), x and z 50 to 80 cm. Read as metres, the circular epochs span 64 to 70 cm, the preprint's 70 cm circle. Motion capture with y up is right-handed, so seen from above x points East and -z North. The heading's movement test cannot check this: mirroring the positions and the heading together leaves heading minus movement unchanged. |
 | headings: `CompassDirection/ry` wrapped from [0, 2π) to [-π, π] | inferred | ry is the rotation about the vertical axis. Negated, it spreads more around the direction of movement (87 against 49 degrees on the default session), so it turns the same way as the (x, -z) frame. Its zero is not verified (see below). |
 | epochs: `sleep`, `wake` (the epochs table's tags), `sws`, `up`, `down`, `tracking` (`position_time_support`) | stated | The file's interval tables. |
 | epochs: `square`, `circle`, `partial_circle`, the tracked epochs in the order the `session_description` lists the arenas | stated | The file's `session_description`; no arena epoch is named when the number of arenas and tracked epochs differ. |
