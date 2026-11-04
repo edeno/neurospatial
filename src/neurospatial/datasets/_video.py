@@ -307,15 +307,15 @@ def video_frame_times(
         f"the position times are the video times plus {start - video[0]:+.4f} s "
         f"at {rate:.6f} s per video second, to within {residual * 1e3:.3f} ms "
         f"(half a frame is {interval * 500:.1f} ms): the same frames on two "
-        f"clocks, the position times {spread} from the video times. The spikes "
-        "are on the position clock",
+        f"clocks, position minus video time {spread}. The recording's times, "
+        "which spikes and events are checked against, are the position times",
     )
     watch_out = (
         f"The file's video timestamps are off the position clock: the video and "
-        f"the position series hold the same {len(video)} frames, and each "
-        f"position time is the video's {spread}. The overlay shows each frame at "
-        "its position sample's time; reading the video by its own timestamps "
-        "puts the camera that far out of step with the positions and spikes."
+        f"the position series hold the same {len(video)} frames, and position "
+        f"minus video time is {spread}. The overlay shows each frame at its "
+        "position sample's time; reading the video by its own timestamps puts "
+        "the camera that far out of step with the positions and spikes."
     )
     return position, basis, watch_out
 
