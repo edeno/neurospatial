@@ -212,6 +212,20 @@
   `track_after_tracking`. A session whose video is split across two files
   has `rec.video` None. The session scene's epoch panel shows only the
   epochs its window meets.
+- Each dataset module's `WORKED_RESULT` records a finding of its paper
+  reproduced on the default session with public neurospatial functions,
+  with the quote, the parameters, our number and every parameter that could
+  not be matched; `tests/datasets/test_worked_results.py` (`realdata`)
+  recomputes each one. `peyrache_2015` (level A, a number): 20 of 31 ADn
+  units (65%) are head-direction cells by the paper's criteria, against its
+  71%. `grosmark_2016` (level B, a property): place fields of each running
+  direction tile the stem, half of them within 20 cm of an end.
+  `comrie_2026` (level B): 92% of held-out running time bins decode to the
+  rat's own track segment. `forli_2025` (level B) does not reproduce: 15% of
+  flight-active units are stable in 3-D rate maps, against the paper's 71%
+  of 1-D flight-path fields. `sargolini_2006` and `valero_2022` say why no
+  result is possible yet (the paper or its methods could not be read; no
+  cell types or stimulation times in Valero's files).
 - `io.nwb.read_position(..., position_name=)` and
   `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
   any Position or CompassDirection container when given its full path, as in

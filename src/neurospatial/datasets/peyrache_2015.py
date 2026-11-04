@@ -47,7 +47,7 @@ Analysis choices (``params``):
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -60,7 +60,55 @@ if TYPE_CHECKING:
 
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "load_session"]
+__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+
+#: The paper's finding this dataset reproduces: level A, a number with the
+#: paper's stated parameters (``tests/datasets/test_worked_results.py``).
+WORKED_RESULT: dict[str, Any] = {
+    "status": "reproduced",
+    "level": "A",
+    "finding": "the share of ADn units that are head-direction cells",
+    "quote": (
+        '"Neurons were classified as HD cells for concentration parameter '
+        "exceeding 1, peak firing rates greater than 1Hz and probability of "
+        'non-uniform distribution smaller than 0.001." ... "In the thalamus, '
+        "when considering only cell ensembles recorded on silicon probe "
+        "shanks where at least one HD cell was detected, the average "
+        'proportion of HD cells was 71%"'
+    ),
+    "source": (
+        "Peyrache et al. 2015, Methods, Data analysis and statistics, "
+        '"Head direction cells" (author manuscript, PMC4376557)'
+    ),
+    "paper": 0.71,
+    "ours": 0.645,
+    "criterion": (
+        "|ours - 0.71| <= 0.163: 71% is an average over sessions with no "
+        "stated spread, so the tolerance is two binomial standard deviations "
+        "for one session of 31 units, 2 * sqrt(0.71 * 0.29 / 31); fixed "
+        "before the run"
+    ),
+    "parameters": (
+        "20 of the 31 units with location 'adn', in the wake epoch: "
+        "compute_directional_rates with 1 degree bins and a 6 degree "
+        "Gaussian (the paper's); concentration above 1 as mean vector "
+        "length above I1(1) / I0(1) = 0.446; peak rate above 1 Hz; "
+        "stats.rayleigh_test on the headings at the unit's spikes, "
+        "p < 0.001"
+    ),
+    "unmatched": (
+        "the denominator: the file's 'adn' units, not the units of shanks "
+        "with at least one HD cell (the recording holds no shank)",
+        "the von Mises fit: the paper does not say how it fitted; ours is "
+        "the maximum-likelihood fit to the tuning curve read as a "
+        "distribution of angles, whose concentration kappa has A1(kappa) "
+        "equal to the curve's mean vector length",
+        "the peak rate: the smoothed curve's, not the fitted von Mises's",
+        "the Rayleigh test: the paper does not say on what; ours is on the "
+        "headings at the spikes",
+    ),
+    "why": None,
+}
 
 #: Modules of the ``datasets`` extra the loader imports.
 REQUIRES = ("pynwb",)

@@ -75,7 +75,56 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "load_session"]
+__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+
+#: The paper's finding this dataset was tested against: level B, a property
+#: the paper states, which does not reproduce here
+#: (``tests/datasets/test_worked_results.py``).
+WORKED_RESULT: dict[str, Any] = {
+    "status": "not reproduced",
+    "level": "B",
+    "finding": "most flight-active units are spatially tuned in flight",
+    "quote": (
+        '"a large portion of single units that were active during flight '
+        "exhibited robust spatial selectivity (place cells: 990 out of 1,386 "
+        'flight-active neurons (71%), n = 6 bats" (Results); spatially '
+        'tuned cells have "more than one spike per flight, more than 3 Hz '
+        "firing at the field peak, a minimum stability of 0.4 and a maximum "
+        'pks value of 0.5" (Methods, "Identification of spatially tuned '
+        'cells"), stability being "the Spearman correlation between 1D '
+        'fields for the first versus the second half of the flights"'
+    ),
+    "source": (
+        "Forli et al. 2025, Nature, Results (\u201cHippocampal replay of flight "
+        "trajectories\u201d) and Methods (\u201cReplay analysis: spike sequences\u201d), "
+        "read on PubMed Central, PMC12460160"
+    ),
+    "paper": 0.71,
+    "ours": 0.152,
+    "criterion": (
+        "more than half of the flight-active units are tuned; fixed before the run"
+    ),
+    "parameters": (
+        "the flights of the neural recording (params['analysis_epochs'], 37); "
+        "flight-active: more than 37 spikes in them (204 of 289 units); 3-D "
+        "compute_spatial_rates (diffusion KDE, bandwidth 0.2 m, our choice) "
+        "on rec.env's 0.2 m voxels; tuned: peak above 3 Hz and a Spearman "
+        "compare_spatial_rates of at least 0.4 between the first 18 and the "
+        "last 19 flights: 31 of 204"
+    ),
+    "unmatched": (
+        "the fields: the paper's are 1-D, along each clustered flight path "
+        "(0.15 m bins, a seven-bin Gaussian window), one map per path; ours "
+        "are one 3-D map over the room pooling every path, so the halves "
+        "compare different mixes of paths and the voxels visited in both",
+        "the one-field condition (pks at most 0.5) needs the 1-D fields and "
+        "is not applied",
+        "flight-active is not defined beyond the spike condition; we use "
+        "more than one spike per flight on average",
+        "the paper pools 23 sessions of 6 bats; this is one demo session",
+    ),
+    "why": None,
+}
 
 #: Modules of the ``datasets`` extra the loader imports.
 REQUIRES = ("matio", "fsspec")

@@ -86,7 +86,54 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "load_session"]
+__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+
+#: The paper's finding this dataset reproduces: level B, a property the
+#: preprint states (``tests/datasets/test_worked_results.py``).
+WORKED_RESULT: dict[str, Any] = {
+    "status": "reproduced",
+    "level": "B",
+    "finding": (
+        "while the rat runs, the decoded position usually lies on the rat's "
+        "own track segment; non-local representations are a minority"
+    ),
+    "quote": (
+        '"Non-local representation times were identified as times in which '
+        "the most likely decoded position (hereafter \u201cdecoded "
+        "position\u201d) was in a track segment distinct to the animal\u2019s "
+        'actual position." (Methods, "Non-local representation of Stay and '
+        'Switch paths"); place cells\u2019 activity "typically signals the '
+        'actual location of the animal" (Introduction)'
+    ),
+    "source": (
+        "Comrie et al., bioRxiv 2024.09.23.613567 v1 (PMC11463554), "
+        "Introduction and Methods; the published Neuron article was not "
+        "available to read"
+    ),
+    "paper": "no share stated",
+    "ours": 0.924,
+    "criterion": (
+        "more than half of the held-out decoding bins while running above "
+        "10 cm/s decode to the rat's own segment (chance with nine segments "
+        "is about 11%); fixed before the run"
+    ),
+    "parameters": (
+        "BayesianDecoder on rec.env (the authors' track graph, 2 cm bins, "
+        "default diffusion KDE), dt 0.25 s, fitted on params['train_epochs'] "
+        "with min_speed 10 cm/s and decoded on params['test_epochs']; a bin "
+        "counts when the speed at its centre is above 10 cm/s; the segment "
+        "is the graph edge (source_edge_id) of the MAP bin and of the rat's "
+        "bin"
+    ),
+    "unmatched": (
+        "the decoder: the preprint's is clusterless and state-space, in "
+        "2 ms bins, fitted and decoded on the same data; ours uses the "
+        "file's sorted units, 0.25 s bins, held-out time",
+        "the preprint's confidence criterion (the highest 50% of the "
+        "posterior within 50 cm) is not applied",
+    ),
+    "why": None,
+}
 
 #: Modules of the ``datasets`` extra the loader imports.
 REQUIRES: tuple[str, ...] = ()
