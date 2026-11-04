@@ -131,6 +131,8 @@ def test_loads_a_day(members, session_entry):
     assert rec.units.loc[7, "ContamPct"] == pytest.approx(15.2)
     # Positions: pixels / 274 pixels per metre, in cm.
     np.testing.assert_allclose(rec.positions, xy, atol=1e-9)
+    scale = next(c for c in rec.conversions if c.text.startswith("positions:"))
+    assert "the camera frame's handedness is not stated" in scale.evidence
     # Times: each trial's line recovers the 30.05 Hz camera to within a frame's
     # rounding of the nearest-frame map.
     np.testing.assert_allclose(rec.times, times, atol=2e-3)

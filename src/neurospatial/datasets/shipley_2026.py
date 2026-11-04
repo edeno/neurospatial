@@ -358,7 +358,11 @@ def load_session(
             Conversion(
                 f"positions: cm = pos.xy (pixels) / {ppm:g} pixels per metre x 100",
                 "stated",
-                f"trialData.pos.header: pixels_per_metre {ppm:g}",
+                f"trialData.pos.header: pixels_per_metre {ppm:g}; the camera "
+                "frame's handedness is not stated (whether pixel y grows up or "
+                "down the room), so the positions keep the file's axes and may "
+                "be the room's mirror image; the arms are numbered by angle in "
+                "this frame",
             ),
             Conversion(
                 "times: per trial, a least-squares line from position sample "
