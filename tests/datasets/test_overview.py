@@ -112,6 +112,41 @@ def test_speed_panel_range_is_not_set_by_tracking_jumps(
     assert clean.get_xlim()[1] > 0.9 * long_box_recording._speed_quantiles[3]
 
 
+@pytest.fixture
+def stem_recording(square_recording):
+    """The box session's x position on a 1-D 0-100 cm stem track."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    graph.add_node("stem_start", pos=(0.0,))
+    graph.add_node("stem_end", pos=(100.0,))
+    graph.add_edge("stem_start", "stem_end", distance=100.0)
+    env = Environment.from_graph(
+        graph, [("stem_start", "stem_end")], bin_size=2.0, units="cm"
+    )
+    return dataclasses.replace(
+        square_recording,
+        env=env,
+        positions=np.array(square_recording.positions[:, :1]),
+        headings=None,
+        heading_source="",
+    )
+
+
+def test_a_1d_environment_panel_shows_samples_along_the_track(stem_recording):
+    rec = stem_recording
+    ax = _titled(rec.plot_overview(), "Environment and path")
+    assert not ax.yaxis.get_visible()
+    assert not any("not drawn" in t for t in _texts(ax))
+    (strip,) = ax.child_axes
+    edges = np.arange(0.0, 101.0, 2.0)
+    expected, _ = np.histogram(rec.positions[:, 0], bins=edges)
+    np.testing.assert_array_equal(_bar_heights(strip), expected)
+    assert "along the track" in strip.get_xlabel()
+
+
 def test_time_panel_draws_the_first_minute(square_recording):
     rec = square_recording
     ax = _titled(rec.plot_overview(), "First 60 s")
@@ -535,7 +570,7 @@ def test_interval_events_do_not_replace_epochs(square_recording):
     np.testing.assert_array_equal(labels["event: run"].epochs, rec.events["run"])
 
 
-def test_1d_positions_say_the_path_is_not_drawn(square_recording):
+def test_1d_grid_positions_are_shown_along_it(square_recording):
     from neurospatial import Environment
 
     x = np.asarray(square_recording.positions[:, :1])
@@ -544,7 +579,10 @@ def test_1d_positions_say_the_path_is_not_drawn(square_recording):
         square_recording, env=env, positions=x, headings=None, heading_source=""
     )
     ax = _titled(rec.plot_overview(), "Environment and path")
-    assert any("1-D" in t for t in _texts(ax))
+    (strip,) = ax.child_axes
+    # One bar per bin: every tracked sample is counted.
+    assert len(strip.patches) == env.n_bins
+    assert _bar_heights(strip).sum() == len(x)
 
 
 def test_epoch_panel_shows_the_window_epochs(square_recording):

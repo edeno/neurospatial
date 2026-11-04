@@ -368,6 +368,9 @@
   track with no y axis, each node's name above its node and staggered where
   two names would meet; the names were drawn over the track and over each
   other on the `grosmark_2016` stem.
+- On a 1-D environment the overview's "Environment and path" panel shows the
+  tracked samples' positions along the track as a histogram below it, one
+  bar per bin, instead of "path not drawn for 1-D positions".
 
 ### Fixes from the review of the result contract, warnings and simulators
 

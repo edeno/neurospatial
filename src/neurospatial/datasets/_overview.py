@@ -107,16 +107,29 @@ def _panel_environment(rec: Recording, ax: Axes) -> None:
             rasterized=True,
         )
     else:
-        ax.text(
-            0.5,
-            0.97,
-            "path not drawn for 1-D positions",
-            ha="center",
-            va="top",
-            transform=ax.transAxes,
-            color="0.35",
-        )
+        _along_track_strip(rec, ax)
     ax.set_title(title)
+
+
+def _along_track_strip(rec: Recording, ax: Axes) -> None:
+    """The tracked samples' positions along a 1-D track, as a histogram below it.
+
+    One bar per environment bin, on the track's own x axis, so the strip
+    shows where along the track the samples lie.
+    """
+    assert rec.env is not None
+    assert rec.positions is not None
+    along = rec.positions[tracked_mask(rec.positions), 0]
+    centers = rec.env.bin_centers[:, 0]
+    order = np.argsort(centers)
+    half = rec.env.bin_sizes[order] / 2
+    edges = np.unique(np.r_[centers[order] - half, centers[order][-1] + half[-1]])
+    strip = ax.inset_axes((0.0, 0.0, 1.0, 0.38), sharex=ax)
+    strip.hist(along, bins=edges.tolist(), color="tab:red", alpha=0.7)
+    strip.set_ylabel("samples", fontsize=8)
+    strip.tick_params(labelsize=7)
+    strip.set_xlabel(f"position along the track ({rec.position_units})")
+    ax.tick_params(labelbottom=False)
 
 
 def _panel_occupancy(rec: Recording, ax: Axes) -> None:
