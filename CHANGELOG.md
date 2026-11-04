@@ -146,7 +146,8 @@
   bandit maze, 203 hippocampal units (Zenodo 23020757, CC-BY-4.0), checked
   by hand. Positions are cm (inferred: the graph's edges match the stated
   53 cm hallways and the file's head_speed matches the positions' speed
-  in correlation and, within a factor of 2, in scale),
+  in correlation and in scale, its median-speed ratio within a factor of 2
+  of the 1.26 measured on the file),
   500 Hz, on the Unix clock. The declared environment is the authors' track
   graph with every edge, in the file's own edge order and 15 cm spacing, so
   `env.to_linear` reproduces the file's linearized position; its

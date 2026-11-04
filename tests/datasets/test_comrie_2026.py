@@ -60,7 +60,8 @@ def _write(path, *, edge_order=None, shuffle_speed=False):
     positions = np.vstack(legs)
     times = 1.6259e9 + np.arange(len(positions)) / rate
     step = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
-    speed = np.r_[step[0], step]
+    # The real file's smoothed head_speed runs below |step| / dt by 1.26.
+    speed = np.r_[step[0], step] / 1.26
     if shuffle_speed:
         speed = rng.permutation(speed)
     direction = np.arctan2(*np.diff(positions, axis=0)[:, ::-1].T)
@@ -242,7 +243,7 @@ def test_head_speed_out_of_step_with_the_positions_is_refused(tmp_path):
         comrie_2026.load_session(_entry(), path)
 
 
-@pytest.mark.parametrize("factor", [10.0, 2.54, 0.1])
+@pytest.mark.parametrize("factor", [10.0, 2.54, 1 / 2.54, 0.1])
 def test_positions_in_another_unit_than_head_speed_are_refused(tmp_path, factor):
     """A unit error keeps the speeds' correlation but not their scale."""
     from neurospatial.datasets import comrie_2026
@@ -257,6 +258,30 @@ def test_positions_in_another_unit_than_head_speed_are_refused(tmp_path, factor)
         )
     np.savez(path, **arrays)
     with pytest.raises(ValueError, match=r"not in the unit of the file's head_speed"):
+        comrie_2026.load_session(_entry(), path)
+
+
+def test_inch_positions_are_refused_with_a_slower_head_speed(tmp_path):
+    """The band is centred on the file's measured ratio, not on 1.
+
+    With head_speed 1.45 times below |step| / dt (more smoothing than the real
+    file's 1.26), cm positions load, and the same positions in inches (a ratio
+    of 0.57) are refused; a band centred on 1 would accept them.
+    """
+    from neurospatial.datasets import comrie_2026
+
+    path = tmp_path / "j16.npz"
+    _write(path)
+    with np.load(path, allow_pickle=False) as stored:
+        arrays = dict(stored)
+    arrays["position/head_speed"] = arrays["position/head_speed"] * 1.26 / 1.45
+    np.savez(path, **arrays)
+    comrie_2026.load_session(_entry(), path)
+    for axis in ("x", "y"):
+        key = f"position/head_position_{axis}"
+        arrays[key] = arrays[key] / 2.54
+    np.savez(path, **arrays)
+    with pytest.raises(ValueError, match=r"a ratio of 0\.57"):
         comrie_2026.load_session(_entry(), path)
 
 
