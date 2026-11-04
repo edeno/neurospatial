@@ -450,15 +450,13 @@ def test_osf_matches_dandi():
 @pytest.mark.filterwarnings(
     "ignore:The 'manufacturer' field is deprecated:DeprecationWarning"
 )
-def test_streams_a_dandi_session():
+def test_streams_a_dandi_session(tmp_path):
     """Cicero 09172014, the 2 m stem, read by byte range: nothing is cached."""
-    from neurospatial.datasets._fetch import cache_root
-
     session = "sub-Cicero_ses-Cicero-09172014"
-    rec = load("grosmark_2016", session, stream=True)
+    rec = load("grosmark_2016", session, stream=True, cache=tmp_path)
     assert rec.failed_checks == ()
     assert rec.n_units == _entry(session).n_units == 72
     assert rec.apparatus.startswith("2.3 m metal linear maze")
     assert rec.sampling_rate == pytest.approx(39.0626, rel=1e-4)
     assert rec.provenance.url.startswith("https://api.dandiarchive.org/")
-    assert not (cache_root() / "grosmark_2016" / _entry(session).file_name).exists()
+    assert not any(tmp_path.rglob("*.nwb"))
