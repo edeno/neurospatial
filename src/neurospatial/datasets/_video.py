@@ -666,8 +666,20 @@ def mirror_watch_out(calibration: VideoCalibration) -> str | None:
     )
 
 
-def led_fit_watch_out(fit: LedFit) -> str:
-    """What a video calibrated by :class:`LedFit` can and cannot show."""
+#: Lags whose median residual is within this share of the smallest one are
+#: reported with it as the best pairing.
+_BEST_LAG_SHARE = 0.01
+
+
+def led_fit_watch_out(fit: LedFit, frame_period: float) -> str:
+    """What a video calibrated by :class:`LedFit` can and cannot show.
+
+    Parameters
+    ----------
+    fit : LedFit
+    frame_period : float
+        Seconds per video frame, to state the best lag of the lag scan in ms.
+    """
     return (
         "The video's calibration was fitted to the tracked positions (the LED "
         "detected in the video against the file's positions), so the overlay "
@@ -677,7 +689,37 @@ def led_fit_watch_out(fit: LedFit) -> str:
         f"residual {fit.p90_cm:.3g} cm ({fit.p90_px:.3g} px); "
         f"{fit.outlier_share:.1%} of LED detections are more than "
         f"{fit.outlier_cm:g} cm off (an occluded LED or a reflection) and were "
-        "left out of the fit."
+        f"left out of the fit.{_best_lag(fit.lag_scan, frame_period)}"
+    )
+
+
+def _best_lag(scan: tuple[tuple[int, float], ...], frame_period: float) -> str:
+    """The lag scan's best pairing of frames with samples, and what it means."""
+    at_zero = dict(scan).get(0)
+    if at_zero is None:
+        return ""
+    smallest = min(value for _, value in scan)
+    best = [lag for lag, value in scan if value <= smallest * (1 + _BEST_LAG_SHARE)]
+    if 0 in best:
+        return (
+            " The lag scan's smallest median residual is at lag 0: each frame "
+            "is paired with its own sample."
+        )
+    low, high = min(best), max(best)
+    lags = f"{low:+d}" if low == high else f"{low:+d} to {high:+d}"
+    ms = 1000 * frame_period
+    times = (
+        f"{abs(low) * ms:.0f}"
+        if low == high
+        else f"{min(abs(low), abs(high)) * ms:.0f}-{max(abs(low), abs(high)) * ms:.0f}"
+    )
+    order, side = ("trail", "behind") if low > 0 else ("lead", "ahead of")
+    return (
+        f" The lag scan's smallest median residual is at {lags} frames "
+        f"({smallest:.3g} cm), against {at_zero:.3g} cm at lag 0 (frame k with "
+        f"sample k): the file's position may {order} the LED by {times} ms, so "
+        f"while the head moves fast the drawn position can sit {side} the LED "
+        "in the frame."
     )
 
 

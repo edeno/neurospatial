@@ -607,7 +607,8 @@ def _video(
         )
     else:
         if asset.led_fit is not None and len(tried) == len(CALIBRATION_SOURCES) - 1:
-            watch_outs += (led_fit_watch_out(asset.led_fit),)
+            period = float(np.median(np.diff(frame_times)))
+            watch_outs += (led_fit_watch_out(asset.led_fit, period),)
         if (mirrored := mirror_watch_out(calibration)) is not None:
             watch_outs += (mirrored,)
     return camera, (conversions, watch_outs)

@@ -465,6 +465,22 @@ def _led_fit(median_cm):
     )
 
 
+def test_led_fit_watch_out_states_the_best_lag():
+    """A best pairing one to three frames late means the position trails the LED."""
+    scan = ((-3, 1.456), (-1, 1.0965), (0, 0.9456), (1, 0.837), (3, 0.8396))
+    fit = dataclasses.replace(_led_fit(0.9456), lag_scan=scan)
+    text = led_fit_watch_out(fit, 1 / 30)
+    assert (
+        "smallest median residual is at +1 to +3 frames (0.837 cm), against "
+        "0.946 cm at lag 0"
+    ) in text
+    assert "the file's position may trail the LED by 33-100 ms" in text
+    early = dataclasses.replace(fit, lag_scan=((-1, 0.8), (0, 0.95), (1, 1.1)))
+    assert "may lead the LED by 33 ms" in led_fit_watch_out(early, 1 / 30)
+    paired = dataclasses.replace(fit, lag_scan=((-1, 1.1), (0, 0.9), (1, 1.0)))
+    assert "is at lag 0" in led_fit_watch_out(paired, 1 / 30)
+
+
 def test_led_fit_is_the_fourth_source():
     """Used after the other three, with its method and residuals; refused above a bin."""
     calibration, basis, tried = video_calibration(bin_size=2.5, led_fit=_led_fit(1.5))
@@ -474,10 +490,12 @@ def test_led_fit_is_the_fourth_source():
     assert "median 1.5 cm (3 px), 90th percentile 6 cm (12 px)" in basis.evidence
     assert "the median is the statistic compared with the 2.5 cm bin" in basis.evidence
     np.testing.assert_allclose(calibration.transform_px_to_cm.A, TRUE_AFFINE)
-    assert "90th-percentile residual 6 cm (12 px)" in led_fit_watch_out(_led_fit(1.5))
-    assert "aligned by construction" in led_fit_watch_out(_led_fit(1.5))
+    assert "90th-percentile residual 6 cm (12 px)" in led_fit_watch_out(
+        _led_fit(1.5), 1 / 30
+    )
+    assert "aligned by construction" in led_fit_watch_out(_led_fit(1.5), 1 / 30)
     assert "17.0% of LED detections are more than 5 cm off" in led_fit_watch_out(
-        _led_fit(1.5)
+        _led_fit(1.5), 1 / 30
     )
     assert "17.0% of detections are more than 5 cm off" in basis.evidence
     assert "-1: 1.1, +0: 1.5, +1: 0.9" in basis.evidence

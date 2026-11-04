@@ -143,7 +143,9 @@ loaded; read them with pynwb. A share of tracked samples lies farther than half 
 track width from the track (the head is tracked, not the body), and the
 summary gives the share. For a session with video, further watch-outs give the
 clock offset between the video and the positions, the LED fit's residuals (and
-the share of detections left out), and that the video is shown mirrored from the
+the share of detections left out), the lag at which the fit is best (on the
+default session +1 to +3 frames, 0.837 cm against 0.946 cm at lag 0: the
+position may trail the LED by 33 to 100 ms), and that the video is shown mirrored from the
 raw file, since the file's y grows down the camera's rows.
 
 One session, `sub-fCamk2_ses-fCamk2-201013-sess2`, has an epoch that ends 50 s
