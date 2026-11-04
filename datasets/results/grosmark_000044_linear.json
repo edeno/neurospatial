@@ -32,7 +32,7 @@
     "The paper states LED tracking at 39.69 Hz (the Supplementary Materials' Methods of Grosmark & Buzs\u00e1ki 2016); the files sample every 0.0256 s, 39.06 Hz, 1.6% slower. The files' rate is used.",
     "No headings: two LEDs were tracked, but the files hold one position per sample, so head direction cannot be computed.",
     "95 runs of 11 or more identical position samples (10 or more repeats of the sample before; 1306 repeats, 1.62% of samples, 33.4 s in all, the longest 0.8 s). Positions are kept as stored. A held run is lost tracking if the tracker repeated its last fix, or the animal holding still; check before analysing stops (wells, ripples). No speed limit is stated for this dataset, so fast steps are not counted.",
-    "3175 tracked position samples of 63492 (5.00%) lie outside the declared environment (env.bin_at gives -1): tracking spread beyond the track's footprint, expected of a tracked head (head-mounted LEDs swing past the edge and a raised head projects outward), not by itself misfit; 4.0% of stopped (below 5 cm/s) samples and 5.7% of moving samples are outside. They are kept as stored and fall in no bin."
+    "3175 tracked position samples of 63492 (5.00%) lie outside the declared environment (env.bin_at gives -1): about 5% by construction, since the track's width was set from these samples' 95% quantile distance from the track, so the share measures neither the tracking nor the fit; 4.0% of stopped (below 5 cm/s) samples and 5.7% of moving samples are outside. They are kept as stored and fall in no bin."
   ],
   "expectations": [
     {
@@ -68,7 +68,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "8f2e2af054f836f7503a285d68122c1387e13889"
+    "git_commit": "9e257f3e62c6ed63e2cd395946741a388587880f"
   },
   "load_warnings": [],
   "load_fingerprint": {
@@ -101,7 +101,7 @@
       "gap": null,
       "warnings": [],
       "seconds": 0.124,
-      "peak_mb": 7.6
+      "peak_mb": 7.5
     },
     "env.occupancy": {
       "status": "ok",
@@ -114,7 +114,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.082,
+      "seconds": 0.088,
       "peak_mb": 9.2
     },
     "env.declared": {
@@ -128,7 +128,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.012,
       "peak_mb": 9.4
     },
     "rates.spatial": {
@@ -142,7 +142,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.343,
+      "seconds": 0.367,
       "peak_mb": 296.3
     },
     "rates.spatial_information": {
@@ -155,7 +155,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 0.9
     },
     "rates.information_vs_shifts": {
@@ -170,7 +170,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.481,
+      "seconds": 2.578,
       "peak_mb": 364.0
     },
     "cells.place_screen": {
@@ -236,7 +236,7 @@
           "count": 1
         }
       ],
-      "seconds": 1.574,
+      "seconds": 1.704,
       "peak_mb": 320.7
     },
     "io.nwb_roundtrip": {
@@ -247,8 +247,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.711,
-      "peak_mb": 2.2
+      "seconds": 1.843,
+      "peak_mb": 2.5
     },
     "env.from_graph": {
       "status": "ok",
@@ -271,7 +271,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.086,
+      "seconds": 0.095,
       "peak_mb": 5.0
     },
     "behavior.laps": {
@@ -280,7 +280,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.015,
+      "seconds": 0.017,
       "peak_mb": 8.5
     },
     "behavior.turn_sequence": {
@@ -292,7 +292,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
+      "seconds": 0.014,
       "peak_mb": 8.5
     },
     "replay.compare_methods": {
@@ -310,7 +310,7 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 3.421,
+      "seconds": 3.828,
       "peak_mb": 296.2
     },
     "io.nwb_readers": {
@@ -323,7 +323,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries', 'processing/behavior/1.6mLinearMazePosition/1.6mLinearMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 23.38,
+      "seconds": 35.481,
       "peak_mb": 334.4
     },
     "io.read_pose": {
@@ -332,8 +332,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 18.043,
-      "peak_mb": 81.9
+      "seconds": 14.691,
+      "peak_mb": 81.8
     },
     "imaging.rates": {
       "status": "n/a",

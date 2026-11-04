@@ -10,7 +10,7 @@
     "environment: the stated 110 cm track from (16.28, 3.781) to (11.68, 113.7) cm, along the tracked samples' principal axis at 92.4 degrees, centred between their 0.5th and 99.5th percentiles along it [inferred: the file states no origin or rotation (reference frame 'Arbitrary, camera'); the samples span 115.6 cm between those percentiles, +5.1% of the stated length, and 26.2% of them lie beyond the track's ends]",
     "environment: track_width 12.9 cm, a placement tolerance, not the stated 6.35 cm width: twice the tracked samples' 99% quantile distance from the track [inferred: the tracked point's distance from the track: median 1.58 cm, 99% quantile 6.47 cm; 1.0% of tracked samples lie beyond the tolerance, by construction, and fall in no bin. The 99th percentile, so that 1% of the samples are left out: the 95th leaves out 5%, head samples just beside the track. track_width decides only which samples are placed, not the bins, their lengths or connectivity]",
     "video frame times: the position timestamps, not the file's video timestamps [inferred: the video and the position series both hold 67131 frames, and the position times are the video times plus +22.5483 s at 1.000257 s per video second, to within 0.085 ms (half a frame is 16.7 ms): the same frames on two clocks, position minus video time +22.55 to +23.12 s. The recording's times, which spikes and events are checked against, are the position times]",
-    "video calibration: a least-squares affine from the LED detected in the video to the tracked positions [inferred: the LED as the brightest point of each frame's summed RGB after a Gaussian blur of 3 px (OpenCV), against the file's position of the same sample; a Huber affine from pixels to cm (cut 2 cm, iteratively reweighted least squares), then least squares over the detections within 5 cm of it, over 2238 frames (every 30th frame from 0 (2238 frames)); 17.2% of detections are more than 5 cm off and left out of the final fit; residual median 0.946 cm (8.27 px), 90th percentile 9.8 cm (84.9 px); the median is the statistic compared with the 2.5 cm bin; 0.1181 cm per pixel column and 0.1174 cm per pixel row. Frame k paired with sample k + lag gives median residuals (cm) -677: 24.3, -30: 4.85, -3: 1.46, -1: 1.1, +0: 0.946, +1: 0.837, +3: 0.84, +30: 3.19, +677: 26: frames and samples are paired to within a few frames. Fitted by scripts/fit_video_led_calibration.py with SHA-256 8d6e29eb15a9cb9c, 2026-11-04]",
+    "video calibration: a robust affine from the LED detected in the video to the tracked positions (a Huber fit, then least squares over the detections near it) [inferred: the LED as the brightest point of each frame's summed RGB after a Gaussian blur of 3 px (OpenCV), against the file's position of the same sample; a Huber affine from pixels to cm (cut 2 cm, iteratively reweighted least squares), then least squares over the detections within 5 cm of it, over 2238 frames (every 30th frame from 0 (2238 frames)); 17.2% of detections are more than 5 cm off and left out of the final fit; residual median 0.946 cm (8.27 px), 90th percentile 9.8 cm (84.9 px); the median is the statistic compared with the 2.5 cm bin; 0.1181 cm per pixel column and 0.1174 cm per pixel row. Frame k paired with sample k + lag gives median residuals (cm) -677: 24.3, -30: 4.85, -3: 1.46, -1: 1.1, +0: 0.946, +1: 0.837, +3: 0.84, +30: 3.19, +677: 26: frames and samples are paired to within a few frames. Fitted by scripts/fit_video_led_calibration.py with SHA-256 8d6e29eb15a9cb9c, 2026-11-04]",
     "survey-only params['replay_dt']: the replay decoding bin",
     "survey-only params['min_speed'] (replaces the public loader's): the survey's running threshold, 4 cm/s, which behavior.segment_by_velocity needs; no source read states one",
     "survey-only params['nwb_source']: the cached NWB file the session was read from",
@@ -34,12 +34,13 @@
     "The spikes are on the position clock, not the video's: the 35 units' spatial information (compute_spatial_rates with method='binned' on this environment, the whole session) averages 0.84 bits/spike at the position timestamps, 0.36 with the positions moved 22.84 s earlier onto the video's clock, and 0.30 to 0.43 with them moved 10 or 40 s either way (checked on 2026-11-03).",
     "The file's SleepStates score NREM during parts of the track epoch (for example 9,723 to 9,939 s, while the mouse runs along the track at 9,914 s): select running by speed, not by epochs['wake'].",
     "The file's video timestamps are off the position clock: the video and the position series hold the same 67131 frames, and position minus video time is +22.55 to +23.12 s. The overlay shows each frame at its position sample's time; reading the video by its own timestamps puts the camera that far out of step with the positions and spikes.",
-    "The video's calibration was fitted to the tracked positions (the LED detected in the video against the file's positions), so the overlay shows the camera and the data aligned by construction: it does not check that the tracking or the declared track is placed correctly, and the track itself is not visible in the video. 90th-percentile residual 9.8 cm (84.9 px); 17.2% of LED detections are more than 5 cm off (an occluded LED or a reflection) and were left out of the fit.",
+    "The video's calibration was fitted to the tracked positions (the LED detected in the video against the file's positions), so the overlay shows the camera and the data aligned by construction: it does not check that the tracking or the declared track is placed correctly, and the track itself is not visible in the video. 90th-percentile residual 9.8 cm (84.9 px); 17.2% of LED detections are more than 5 cm off (an occluded LED or a reflection) and were left out of the fit. The lag scan's smallest median residual is at +1 to +3 frames (0.837 cm), against 0.946 cm at lag 0 (frame k with sample k): the file's position may trail the LED by 33-100 ms, so while the head moves fast the drawn position can sit behind the LED in the frame.",
     "In the scene the video appears mirrored relative to the raw video file (for this camera, top and bottom swapped): the file's coordinates grow with the camera image's rows, downward in the image, and the scene draws y upward. The frames and the positions still agree; only the picture's orientation differs from a video player's.",
+    "Each track session interleaves \"three blocks of 10 baseline runs\" with \"two blocks of 40 to 50 stimulation runs\" (main text of Valero et al. 2022), and light unmasks place fields in non-place cells, the paper's own finding. Place fields and rate maps computed on the whole track epoch mix baseline and stimulation runs. The file's stimulus group is empty (as in 26 of the 28 files), so it holds no stimulation times and the blocks cannot be separated.",
     "12.4% of tracked samples lie farther than half the stated 6.35 cm width from the track's centre line (the 95th percentile is 4.97 cm). This is tracking spread, not misfit: the tracked point is on the head, which swings past the edge of a narrow track and projects outward when raised. params gives no min_speed (no source read states a running threshold), so the share is not split into stopped and moving samples. The positions are kept as stored.",
     "The file also holds UpDownStatesTimeIntervals (up and down states) and the ripples' peak times, which are not loaded; read them with pynwb.",
     "46 runs of 11 or more identical position samples (10 or more repeats of the sample before; 2630 repeats, 3.92% of samples, 87.7 s in all, the longest 6.0 s). Positions are kept as stored. A held run is lost tracking if the tracker repeated its last fix, or the animal holding still; check before analysing stops (wells, ripples). No speed limit is stated for this dataset, so fast steps are not counted.",
-    "672 tracked position samples of 67131 (1.00%) lie outside the declared environment (env.bin_at gives -1): tracking spread beyond the track's footprint, expected of a tracked head (head-mounted LEDs swing past the edge and a raised head projects outward), not by itself misfit; params gives no min_speed, so the share is not split by speed. They are kept as stored and fall in no bin."
+    "672 tracked position samples of 67131 (1.00%) lie outside the declared environment (env.bin_at gives -1): about 1% by construction, since the track's width was set from these samples' 99% quantile distance from the track, so the share measures neither the tracking nor the fit; params gives no min_speed, so the share is not split by speed. They are kept as stored and fall in no bin."
   ],
   "expectations": [
     {
@@ -75,7 +76,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "8f2e2af054f836f7503a285d68122c1387e13889"
+    "git_commit": "9e257f3e62c6ed63e2cd395946741a388587880f"
   },
   "load_warnings": [
     {
@@ -87,7 +88,7 @@
     }
   ],
   "load_fingerprint": {
-    "params": "37b965cb2a2ecd82e8e12a93a87c07377acbabf13fceee73fc218758f42353be",
+    "params": "5118493497f486dac34c44530e4d07e87a69600d9e577194f0d3162f919f3d93",
     "positions": [
       [
         67131,
@@ -115,7 +116,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.022,
+      "seconds": 0.036,
       "peak_mb": 3.9
     },
     "env.occupancy": {
@@ -129,7 +130,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
+      "seconds": 0.052,
       "peak_mb": 18.0
     },
     "env.declared": {
@@ -143,7 +144,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.009,
+      "seconds": 0.014,
       "peak_mb": 10.3
     },
     "rates.spatial": {
@@ -165,7 +166,7 @@
           "count": 1
         }
       ],
-      "seconds": 0.063,
+      "seconds": 0.095,
       "peak_mb": 18.0
     },
     "rates.spatial_information": {
@@ -178,7 +179,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.0,
       "peak_mb": 0.1
     },
     "rates.information_vs_shifts": {
@@ -201,7 +202,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.309,
+      "seconds": 0.395,
       "peak_mb": 21.6
     },
     "cells.place_screen": {
@@ -259,7 +260,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.225,
+      "seconds": 0.305,
       "peak_mb": 19.9
     },
     "io.nwb_roundtrip": {
@@ -270,8 +271,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.706,
-      "peak_mb": 2.1
+      "seconds": 2.82,
+      "peak_mb": 1.8
     },
     "env.from_graph": {
       "status": "ok",
@@ -294,7 +295,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.024,
+      "seconds": 0.509,
       "peak_mb": 18.7
     },
     "behavior.laps": {
@@ -303,7 +304,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.458,
       "peak_mb": 9.2
     },
     "behavior.turn_sequence": {
@@ -315,7 +316,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.01,
+      "seconds": 0.601,
       "peak_mb": 9.2
     },
     "replay.compare_methods": {
@@ -333,7 +334,7 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 1.034,
+      "seconds": 4.608,
       "peak_mb": 36.1
     },
     "io.nwb_readers": {
@@ -354,7 +355,7 @@
           "count": 1
         }
       ],
-      "seconds": 1.022,
+      "seconds": 1.368,
       "peak_mb": 13.4
     },
     "io.read_pose": {
@@ -371,8 +372,8 @@
           "count": 1
         }
       ],
-      "seconds": 0.999,
-      "peak_mb": 3.1
+      "seconds": 2.257,
+      "peak_mb": 14.9
     },
     "imaging.rates": {
       "status": "n/a",

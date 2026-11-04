@@ -4,7 +4,7 @@
   "source": "https://zenodo.org/api/records/23020757/files/j1620210710_02_r1_figure04_inputs.npz/content",
   "license": "CC-BY-4.0",
   "conversions": [
-    "positions: head_position_x and head_position_y as stored, in cm [inferred: the file states no unit. Its head_speed matches |step| / dt of the stored positions (correlation 0.93, medians 6.39 and 8.04 per s), so both are in one unit; the track graph's edges, in that unit, are 51.7 to 57.4 long against the 53 cm hallways, and the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567 says positions were converted from pixels to cm]",
+    "positions: head_position_x and head_position_y as stored, in cm [inferred: the file states no unit. Its head_speed matches |step| / dt of the stored positions (correlation 0.93; medians 6.39 and 8.04 per s, a factor of 1.26, within 2 either way), so both are in one unit; the track graph's edges, in that unit, are 51.7 to 57.4 long against the 53 cm hallways, and the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567 says positions were converted from pixels to cm]",
     "spike_times: spike_times split at spike_offsets into 203 units, 21 with no spikes [stated: the Zenodo record: 'the spike times of 203 units, 870,018 spikes (spike_times, split into units by spike_offsets)']",
     "environment: Environment.from_graph on the file's track_nodes, track_node_positions, track_edges and track_edge_distance, edges in the file's linear_edge_order, linear_edge_spacing 15 cm [stated: the file's track graph; the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567: nodes at the reward ports and hallway intersections, 15 cm gaps between edges in 1-D; edge lengths 51.7 to 57.4 cm against the stated 53 cm; env.to_linear reproduces the file's linear_position to 0 cm]",
     "environment: track_width 36.9 cm, a placement tolerance, not the 6.5 cm hallway width: twice the samples' 99% quantile distance from the graph [inferred: the tracked head's distance from the graph: median 4.23 cm, 99% quantile 18.4 cm; 1.0% of samples lie beyond the tolerance, by construction, and fall in no bin. Each edge's samples sit a median -1.09 to +3.10 cm to one side of it over the whole edge, inside the 3.25 cm half-width of a hallway, and -1.49 to +1.53 cm on its middle 60%, inside one 2 cm bin. The ends are left out of the second figure because the head's posture while stopped at a reward port or junction, and samples of a neighbouring hallway near a junction, shift the median there; that window was chosen after seeing the whole-edge figure. Neither figure puts an edge's samples beyond its hallway, so the graph is not drawn beside them. track_width decides only which samples are placed, not the bins, their lengths or connectivity]",
@@ -25,7 +25,7 @@
     "63.8% of tracked head samples lie farther than half the 6.5 cm hallway width from the track graph: 79.3% of stopped (below 10 cm/s) samples and 43.6% of moving samples. This is tracking spread, not misfit: the head-mounted LEDs swing past the hallways' walls (3 cm high, the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567) and a raised head projects outward, while each edge's samples are centred on it (see the environment's conversions). The positions are kept as stored.",
     "Positions are the authors' smoothed, interpolated head positions, upsampled to 500 Hz from a 30 frames/s camera (the Methods of Comrie et al.'s preprint, bioRxiv 2024.09.23.613567), about 16 samples per video frame, so speeds and held-sample counts are those of smoothed, interpolated positions, not of raw tracking.",
     "944 runs of 11 or more identical position samples (10 or more repeats of the sample before; 16879 repeats, 2.38% of samples, 33.8 s in all, the longest 0.2 s). Positions are kept as stored. A held run is lost tracking if the tracker repeated its last fix, or the animal holding still; check before analysing stops (wells, ripples). No speed limit is stated for this dataset, so fast steps are not counted.",
-    "7094 tracked position samples of 709321 (1.00%) lie outside the declared environment (env.bin_at gives -1): tracking spread beyond the track's footprint, expected of a tracked head (head-mounted LEDs swing past the edge and a raised head projects outward), not by itself misfit; 1.1% of stopped (below 10 cm/s) samples and 0.8% of moving samples are outside. They are kept as stored and fall in no bin.",
+    "7094 tracked position samples of 709321 (1.00%) lie outside the declared environment (env.bin_at gives -1): about 1% by construction, since the track's width was set from these samples' 99% quantile distance from the track, so the share measures neither the tracking nor the fit; 1.1% of stopped (below 10 cm/s) samples and 0.8% of moving samples are outside. They are kept as stored and fall in no bin.",
     "21 of 203 units have no spikes in the analysed epochs (the tracked span); they are kept, as the file lists them, and are units['fires_in_epochs'] False."
   ],
   "expectations": [
@@ -67,7 +67,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "edc8d44515c40bb0c3d0f1f44dead7121e8a029a"
+    "git_commit": "9e257f3e62c6ed63e2cd395946741a388587880f"
   },
   "load_warnings": [],
   "load_fingerprint": {
@@ -99,7 +99,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.097,
+      "seconds": 0.099,
       "peak_mb": 41.2
     },
     "env.occupancy": {
@@ -113,7 +113,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.815,
+      "seconds": 1.928,
       "peak_mb": 189.4
     },
     "env.declared": {
@@ -127,7 +127,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.192,
+      "seconds": 0.204,
       "peak_mb": 108.3
     },
     "rates.spatial": {
@@ -141,7 +141,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.157,
+      "seconds": 3.005,
       "peak_mb": 196.7
     },
     "rates.spatial_information": {
@@ -154,7 +154,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.001,
+      "seconds": 0.002,
       "peak_mb": 3.4
     },
     "rates.information_vs_shifts": {
@@ -169,7 +169,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 8.509,
+      "seconds": 9.537,
       "peak_mb": 196.9
     },
     "cells.place_screen": {
@@ -181,7 +181,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.002,
+      "seconds": 0.007,
       "peak_mb": 3.4
     },
     "cells.grid_score": {
@@ -227,7 +227,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.389,
+      "seconds": 6.327,
       "peak_mb": 195.9
     },
     "io.nwb_roundtrip": {
@@ -238,8 +238,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.196,
-      "peak_mb": 14.5
+      "seconds": 3.988,
+      "peak_mb": 20.4
     },
     "env.from_graph": {
       "status": "ok",
@@ -262,7 +262,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.722,
+      "seconds": 1.996,
       "peak_mb": 197.2
     },
     "behavior.laps": {
@@ -271,7 +271,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.234,
+      "seconds": 0.28,
       "peak_mb": 97.0
     },
     "behavior.turn_sequence": {
@@ -283,7 +283,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.228,
+      "seconds": 0.291,
       "peak_mb": 97.0
     },
     "replay.compare_methods": {
@@ -292,7 +292,7 @@
       "note": "needs events['ripples'] or events['candidate_events'], and params['replay_dt']",
       "gap": null,
       "warnings": [],
-      "seconds": 0.103,
+      "seconds": 0.142,
       "peak_mb": 3.0
     },
     "io.nwb_readers": {
@@ -301,7 +301,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.005,
+      "seconds": 0.009,
       "peak_mb": 0.3
     },
     "io.read_pose": {
@@ -310,7 +310,7 @@
       "note": "params has no nwb_source (not an NWB dataset)",
       "gap": null,
       "warnings": [],
-      "seconds": 0.0,
+      "seconds": 0.001,
       "peak_mb": 0.0
     },
     "imaging.rates": {
