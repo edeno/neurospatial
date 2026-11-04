@@ -85,8 +85,11 @@ def _existing(dest: Path, sha256: str) -> Path | None:
     return dest
 
 
-def _install(tmp: Path, dest: Path, sha256: str) -> Path:
-    actual = file_sha256(tmp)
+def _install(tmp: Path, actual: str, dest: Path, sha256: str) -> Path:
+    """Rename the download ``tmp``, whose SHA-256 is ``actual``, to ``dest``.
+
+    Refuses, and removes ``tmp``, when ``actual`` is not the pinned ``sha256``.
+    """
     if actual != sha256:
         tmp.unlink()
         from neurospatial._exceptions import _format_error
@@ -107,17 +110,42 @@ def _install(tmp: Path, dest: Path, sha256: str) -> Path:
     return dest
 
 
-def _download_to_temp(dest: Path, write: Callable[[IO[bytes]], None]) -> Path:
+class _HashingWriter:
+    """A binary file that hashes, with SHA-256, every byte written to it."""
+
+    def __init__(self, stream: IO[bytes]) -> None:
+        self._stream = stream
+        self._digest = hashlib.sha256()
+
+    def write(self, data: bytes) -> int:
+        """Hash ``data`` and write it."""
+        self._digest.update(data)
+        return self._stream.write(data)
+
+    def hexdigest(self) -> str:
+        """The hex SHA-256 of everything written."""
+        return self._digest.hexdigest()
+
+
+def _download_to_temp(
+    dest: Path, write: Callable[[_HashingWriter], None]
+) -> tuple[Path, str]:
+    """Write a download to a temporary file beside ``dest``, hashing it as it goes.
+
+    Returns the temporary file and its hex SHA-256; on any error the
+    temporary file is removed.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as tmp:
         tmp_path = Path(tmp.name)
+        hashing = _HashingWriter(tmp)
         try:
-            write(tmp)
+            write(hashing)
         except BaseException:
             tmp.close()
             tmp_path.unlink(missing_ok=True)
             raise
-    return tmp_path
+    return tmp_path, hashing.hexdigest()
 
 
 def fetch(
@@ -128,11 +156,11 @@ def fetch(
     if (found := _existing(dest, sha256)) is not None:
         return found
 
-    def write(tmp: IO[bytes]) -> None:
+    def write(tmp: _HashingWriter) -> None:
         with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
             shutil.copyfileobj(response, tmp)
 
-    return _install(_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(dest, write), dest, sha256)
 
 
 _DEFLATE64 = 9
@@ -142,7 +170,7 @@ _DEFLATE64_CHUNK = 64 << 10  # 64 KiB in; Deflate64 expands at most ~1000x
 
 
 def _copy_deflate64(
-    archive: zipfile.ZipFile, info: zipfile.ZipInfo, out: IO[bytes]
+    archive: zipfile.ZipFile, info: zipfile.ZipInfo, out: _HashingWriter
 ) -> None:
     """Inflate a Deflate64 member, which ``zipfile`` cannot read, and check it.
 
@@ -208,7 +236,7 @@ def fetch_zip_member(
     if (found := _existing(dest, sha256)) is not None:
         return found
 
-    def write(tmp: IO[bytes]) -> None:
+    def write(tmp: _HashingWriter) -> None:
         with (
             fsspec.open(url, "rb", block_size=4 << 20) as remote,
             zipfile.ZipFile(remote) as archive,
@@ -220,7 +248,7 @@ def fetch_zip_member(
             with archive.open(info) as source:
                 shutil.copyfileobj(source, tmp)
 
-    return _install(_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(dest, write), dest, sha256)
 
 
 CRCNS_PORTAL = "https://portal.nersc.gov/project/crcns/download/index.php"
@@ -319,11 +347,11 @@ def fetch_crcns(
     if (found := _existing(dest, sha256)) is not None:
         return found
 
-    def write(tmp: IO[bytes]) -> None:
+    def write(tmp: _HashingWriter) -> None:
         with _crcns_open(path) as response:
             shutil.copyfileobj(response, tmp)
 
-    return _install(_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(dest, write), dest, sha256)
 
 
 def fetch_crcns_tar_members(
@@ -369,10 +397,10 @@ def fetch_crcns_tar_members(
             dest, digest = missing.pop(info.name)
             stream: IO[bytes] = source
 
-            def write(tmp: IO[bytes], stream: IO[bytes] = stream) -> None:
+            def write(tmp: _HashingWriter, stream: IO[bytes] = stream) -> None:
                 shutil.copyfileobj(stream, tmp)
 
-            found[info.name] = _install(_download_to_temp(dest, write), dest, digest)
+            found[info.name] = _install(*_download_to_temp(dest, write), dest, digest)
             if not missing:
                 break
     if missing:

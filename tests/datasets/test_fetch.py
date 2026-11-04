@@ -48,6 +48,23 @@ def test_fetch_verifies_and_caches(source, tmp_path, monkeypatch):
     assert fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache) == first
 
 
+def test_download_is_hashed_as_it_is_written(source, tmp_path, monkeypatch):
+    """A download is never read back to hash it; a wrong digest is still refused."""
+    url, digest = source
+
+    def read_back(path):
+        msg = f"{path} was read back to hash it"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(_fetch, "file_sha256", read_back)
+    cache = tmp_path / "cache"
+    path = fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+    with pytest.raises(ValueError, match="does not match the pinned"):
+        fetch(url, "other.bin", sha256="0" * 64, subdir="demo", cache=cache)
+    assert not (cache / "demo" / "other.bin").exists()
+
+
 def test_fetch_gives_up_on_a_stalled_server(source, tmp_path, monkeypatch):
     """The download's urlopen has a timeout, so a stalled server cannot hang it."""
     url, digest = source
