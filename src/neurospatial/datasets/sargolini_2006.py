@@ -1,11 +1,14 @@
 """Sargolini et al. (2006): rat medial entorhinal cortex in a 1 m box (DANDI 000582).
 
-What was recorded: grid, head-direction and conjunctive cells from layers II
-to VI of medial entorhinal cortex in Long Evans rats foraging in a 1 m x 1 m
-enclosure, one tetrode recording per file (DANDI 000582, 118 sessions, CC-BY-4.0).
-Most sessions are 10 minutes; some join two 10-minute sessions. Position is
-one tracking LED at 50 Hz (``SpatialSeriesLED1``); some files also hold the
-second LED (``SpatialSeriesLED2``).
+What was recorded: units in medial entorhinal cortex (MEC) of Long Evans rats
+running in a 1 x 1 m enclosure (DANDI 000582, 118 sessions, CC-BY-4.0).
+DANDI's description says the authors recorded from each principal cell layer
+of MEC; the files' experiment_description says the sample includes
+conjunctive and head-direction cells from layers III and V, and each unit's
+histology names its layer (MEC LII, LIII, LV or LVI in the 12 sessions
+opened). The authors' readme says sessions are normally 10 minutes. Position is one
+tracking LED (``SpatialSeriesLED1``), sampled every 0.02 s (50 Hz); some files
+also hold the second LED (``SpatialSeriesLED2``).
 
 The default session, ``sub-10073_ses-17010302``, is the one pynapple's DANDI
 tutorial streams: 8 layer II units. ``sub-10884_ses-03080402``, used by
@@ -23,9 +26,10 @@ What the loader converts:
 The declared environment is the stated 100 x 100 cm square, placed at the
 midrange of the tracked samples, axes as in the file (which states no
 origin), with 2.5 cm bins. How far each side of the samples' range falls
-short of or past 100 cm is in its ``Conversion``. In the sessions checked so
-far the positions are centred on their own midrange and the longer axis
-spans exactly 100 cm, so the coordinates were already fitted to the box.
+short of or past 100 cm is in its ``Conversion``. In the 10-minute sessions
+opened so far the positions are centred on their own midrange and the
+longer axis spans exactly 100 cm, so the coordinates were already fitted to
+the box.
 
 Analysis choices (``params``):
 
@@ -36,9 +40,10 @@ Analysis choices (``params``):
 - ``train_epochs`` and ``test_epochs``: alternating 60 s blocks, so decoding
   is always tested on held-out time.
 
-Every file's ``session_description`` states the 1 x 1 m enclosure, but some
-joined 20-minute sessions span about 1.5 m and 2 m (``sub-11265_ses-16030601``,
-``sub-11207_ses-24060501``); the units check refuses them.
+Of the 12 sessions opened, two are 1200 s long and span about 1.5 m and 2 m
+(``sub-11265_ses-16030601``, ``sub-11207_ses-24060501``), though their
+session_description states the 1 x 1 m enclosure. No source read states the
+box they were recorded in, and the units check refuses them.
 """
 
 from __future__ import annotations
@@ -71,8 +76,7 @@ _CM_PER = {"m": 100.0, "cm": 1.0, "mm": 0.1}
 #: Below this many cm, two coordinates are equal up to float rounding.
 _ROUNDING = 1e-6
 
-_KAVLI = "the Kavli Institute's grid-cell-data page"
-#: Pitfalls of particular sessions, with their evidence.
+#: Pitfalls of each session checked by hand, with their evidence.
 WATCH_OUTS: dict[str, tuple[str, ...]] = {
     "sub-10073_ses-17010302": (
         "The file's experiment_description says the sample is from layers III "
@@ -83,15 +87,12 @@ WATCH_OUTS: dict[str, tuple[str, ...]] = {
         "The first of the 30000 position samples, at 0 s, is NaN (not tracked); "
         "it is kept as NaN.",
     ),
-    "sub-11265_ses-06020601": (
-        "Some of this session's cells were recorded on the reference electrode, "
-        f"says a note dated 2013-11-28 on {_KAVLI}; it does not say which.",
-    ),
 }
 
 _SMOOTHED = (
     "The authors smoothed the positions with a moving mean filter to remove "
-    "tracking jitter (dataset readme), so speeds and held-sample counts are "
+    "tracking jitter (the authors' readme, readme_sargolini2006.txt, NIRD "
+    "doi:10.11582/2014.00003), so speeds and held-sample counts are "
     "those of smoothed positions."
 )
 

@@ -46,14 +46,12 @@ def test_registry_complete(dataset):
 
 @pytest.mark.parametrize("dataset", dataset_ids())
 def test_each_dataset_has_its_loader(dataset):
-    """A loader module with load_session, REQUIRES and WATCH_OUTS for its sessions."""
+    """A loader module with load_session, REQUIRES and WATCH_OUTS for each verified session."""
     module = importlib.import_module(f"neurospatial.datasets.{dataset}")
     assert callable(module.load_session)
     assert all(isinstance(name, str) for name in module.REQUIRES)
-    names = {entry.session for entry in sessions(dataset)}
-    assert set(module.WATCH_OUTS) <= names
     verified = {entry.session for entry in sessions(dataset) if entry.verified}
-    assert verified <= set(module.WATCH_OUTS)
+    assert set(module.WATCH_OUTS) == verified
     assert all(
         isinstance(text, str) and text.strip()
         for texts in module.WATCH_OUTS.values()

@@ -77,11 +77,11 @@
   do not say which of two is at the front. The declared environment is the
   stated 100 cm square at the samples' midrange, with 2.5 cm bins; how far
   the samples' range on each axis falls short of or past 100 cm is in its
-  `Conversion`. The 50 Hz
-  rate is inferred from the files' timestamps, so a session at another rate
-  loads with a watch-out. A session spanning more than 120 cm, such as two
-  joined 20-minute sessions spanning about 1.5 m and 2 m, is refused by the
-  units check.
+  `Conversion`. The 50 Hz rate is inferred from the files' timestamps, so a
+  session at another rate loads with a watch-out. A session spanning more
+  than 120 cm is refused by the units check: of the 12 sessions opened, two
+  1200 s sessions span about 1.5 m and 2 m, and no source read states their
+  box.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 

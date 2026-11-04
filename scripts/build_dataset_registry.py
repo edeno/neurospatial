@@ -39,6 +39,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "src" / "neurospatial" / "datasets" / "registry"
 API = "https://api.dandiarchive.org/api"
+#: Seconds to wait for each API response.
+TIMEOUT = 60
 #: Session fields a person sets; the script keeps them.
 HAND_FIELDS = {"verified": False, "default": False, "n_units": None, "verification": ""}
 
@@ -47,7 +49,7 @@ Fetch = Callable[[str], Any]
 
 def get_json(url: str) -> Any:
     """GET ``url`` and decode its JSON body."""
-    with urllib.request.urlopen(url) as response:
+    with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
         return json.load(response)
 
 

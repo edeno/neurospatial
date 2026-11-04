@@ -40,7 +40,7 @@
       "verified": true,
       "default": true,
       "n_units": 8,
-      "verification": "Checked by hand on 2026-11-03 against the file, the authors' readme and pynapple's DANDI tutorial, which loads this file. Units: 8 (t1c1, t2c1, t2c3, t3c1, t3c2, t3c3, t3c4, t4c1, every histology 'MEC LII'), the 8 units the tutorial prints, whose rates times its 599.896 s span give this file's 1759 and 901 spikes for units 0 and 1. Time: 30000 samples of LED1 at 0.02 s (50 Hz), 0 to 599.98 s, the 10-minute session the readme describes; spikes from 0.079 to 599.976 s, inside the tracking. Space: x from -50 to 50 cm and y from -49.36 to 49.36 cm, inside the 1 x 1 m enclosure the readme and the file's session_description state. The paper's Methods were not available to read, so no number here comes from it."
+      "verification": "Checked by hand on 2026-11-03 against the file, the authors' readme and pynapple's DANDI tutorial, which loads this file. Units: 8 (t1c1, t2c1, t2c3, t3c1, t3c2, t3c3, t3c4, t4c1, every histology 'MEC LII'). The tutorial prints the same 8 units, whose rates times its 599.896 s span give this file's 1759 and 901 spikes for units 0 and 1; that is a second reader of the same file, not an independent source. Time: 30000 samples of LED1 at 0.02 s (50 Hz), 0 to 599.98 s, the 10-minute session the readme describes; spikes from 0.079 to 599.976 s, inside the tracking. Space: x from -50 to 50 cm and y from -49.36 to 49.36 cm. That these lie inside the 1 x 1 m enclosure the readme and the file's session_description state holds by construction, since the coordinates are centred and scaled to the box; what it still checks independently is the cm conversion (the file's unit 'meters' with conversion 0.01, not mm or pixels). The paper's Methods were not available to read, so no number here comes from it."
     },
     {
       "session": "sub-10697_ses-02030402",
@@ -220,7 +220,7 @@
       "verified": true,
       "default": false,
       "n_units": 6,
-      "verification": "Checked by hand by the real-data survey, and again on 2026-11-03, against the file, the authors' readme and pynapple's tutorial_null_distributions, which prints a six-unit table for this file. Units: 6 (t1c2, t3c2, t3c3, t4c1, t4c2, t4c3, every histology 'MEC LIII'). Time: 30000 samples of LED1 at 0.02 s (50 Hz), 0 to 599.98 s; spikes from 0.36 to 599.90 s. Space: x from -49.02 to 49.02 cm and y from -50 to 50 cm, inside the stated 1 x 1 m enclosure."
+      "verification": "Checked by hand by the real-data survey, and again on 2026-11-03, against the file, the authors' readme and pynapple's tutorial_null_distributions, which prints a six-unit table for this file. Units: 6 (t1c2, t3c2, t3c3, t4c1, t4c2, t4c3, every histology 'MEC LIII'). Time: 30000 samples of LED1 at 0.02 s (50 Hz), 0 to 599.98 s; spikes from 0.36 to 599.90 s. Space: x from -49.02 to 49.02 cm and y from -50 to 50 cm, inside the stated 1 x 1 m enclosure by construction (the coordinates are centred and scaled to the box), which still checks the cm conversion. The unit table is a second reader (pynapple) of the same file, not an independent source."
     },
     {
       "session": "sub-10884_ses-03080405",
