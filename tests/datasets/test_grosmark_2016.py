@@ -254,6 +254,11 @@ def test_loads_a_dandi_linear_session(tmp_path):
     tracked = np.all(np.isfinite(positions), axis=1)
     outside = np.asarray(rec.env.bin_at(positions[tracked])) < 0
     assert outside.mean() == pytest.approx(0.05, abs=0.002)
+    # ... and the outside finding says so, instead of calling it a spread.
+    assert rec.track_width_quantile == 0.95
+    (finding,) = [t for t in rec.watch_outs if "outside the declared" in t]
+    assert "about 5% by construction" in finding
+    assert "tracking spread" not in finding
 
 
 #: The planted circle: centre and the stated 50 cm radius.
@@ -292,6 +297,9 @@ def test_loads_a_dandi_circular_session(tmp_path):
     np.testing.assert_allclose(rec.env.bin_sizes, np.pi * 100.0 / 158, rtol=1e-3)
     outside = np.asarray(rec.env.bin_at(rec.positions)) < 0
     assert outside.mean() == pytest.approx(0.01, abs=0.002)
+    assert rec.track_width_quantile == 0.99
+    (finding,) = [t for t in rec.watch_outs if "outside the declared" in t]
+    assert "about 1% by construction" in finding
     # env.to_linear runs counter-clockwise from east of the centre.
     north = rec.env.to_linear(np.array([[CENTRE[0], CENTRE[1] + 50.0]]))[0]
     assert north == pytest.approx(rec.env.bin_sizes.sum() / 4, abs=0.1)

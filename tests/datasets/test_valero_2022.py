@@ -242,6 +242,11 @@ def test_loads_default_session():
     assert rec.provenance.sha256 == _entry().sha256
     assert rec.video.frame_times.size == 67_131
     np.testing.assert_array_equal(rec.video.frame_times, rec.times)
+    # The width is twice the samples' 99th percentile distance from the track.
+    assert rec.track_width_quantile == 0.99
+    (finding,) = [t for t in rec.watch_outs if "outside the declared" in t]
+    assert "(1.00%)" in finding
+    assert "about 1% by construction" in finding
 
 
 @pytest.mark.realdata

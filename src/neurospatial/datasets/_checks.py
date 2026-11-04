@@ -618,7 +618,9 @@ def _outside_finding(rec: Recording) -> str | None:
     environment placed or sized wrong. On a track, a tracked head is
     expected beyond the track's footprint (head-mounted LEDs swing past the
     edge, a raised head projects outward), so there the share is tracking
-    spread. Either way the share is split into stopped and moving samples at
+    spread, unless the track's width was sized from these samples
+    (``rec.track_width_quantile``): then the share holds by construction and
+    measures nothing, and the finding says so. Either way the share is split into stopped and moving samples at
     ``params["min_speed"]`` where it is set, and the samples are kept;
     analyses count them in no bin.
     """
@@ -647,6 +649,14 @@ def _outside_finding(rec: Recording) -> str | None:
         return (
             f"{counted}: tracking beyond the apparatus, or an environment placed "
             f"or sized wrong{split}. {kept}"
+        )
+    if (quantile := rec.track_width_quantile) is not None:
+        return (
+            f"{counted}: about {1 - quantile:.0%} by construction, since the "
+            "track's width was set from these samples' "
+            f"{quantile:.0%} quantile distance from the track, so the share "
+            f"measures neither the tracking nor the fit; {_by_speed(rec, outside)}. "
+            f"{kept}"
         )
     return (
         f"{counted}: tracking spread beyond the track's footprint, expected of a "

@@ -267,7 +267,9 @@ def load_session(
     times = np.asarray(position.times, dtype=np.float64)
     positions = np.asarray(position.positions, dtype=np.float64)
     epochs, epoch_names = _epochs(entry.session, times, epochs_table, states)
-    env, placement, distance = _declared_track(positions, entry.session, frame)
+    env, placement, distance, width_quantile = _declared_track(
+        positions, entry.session, frame
+    )
     table = units.unit_table
     assert table is not None  # read_units always reads the table
     unit_table = table[[]].copy()
@@ -291,6 +293,7 @@ def load_session(
         units=unit_table,
         env=env,
         env_kind="declared",
+        track_width_quantile=width_quantile,
         env_source=(
             f"the stated {LENGTH:g} cm x {WIDTH:g} cm PVC linear track (the "
             f"position series' description), a one-edge track graph, "
@@ -433,7 +436,9 @@ def _epochs(
 
 def _declared_track(
     positions: NDArray[np.float64], session: str, frame: str | None
-) -> tuple[Environment, tuple[Conversion, Conversion], NDArray[np.float64]]:
+) -> tuple[
+    Environment, tuple[Conversion, Conversion], NDArray[np.float64], float | None
+]:
     """The stated track along the samples' principal axis, and how it was placed.
 
     Returns
@@ -443,6 +448,9 @@ def _declared_track(
         The placement and the placement tolerance.
     distance : ndarray, shape (n_tracked,)
         Each tracked sample's distance from the track, cm.
+    width_quantile : float or None
+        ``TOLERANCE_QUANTILE`` when it set ``track_width``; None when the
+        stated width or one bin floored it.
     """
     import networkx as nx
 
@@ -501,7 +509,8 @@ def _declared_track(
         "leaves out 5%, head samples just beside the track. track_width decides only which samples are placed, not the bins, their "
         "lengths or connectivity",
     )
-    return env, (placement, tolerance), distance
+    width_quantile = TOLERANCE_QUANTILE if width == 2 * reach else None
+    return env, (placement, tolerance), distance, width_quantile
 
 
 def _beyond_track(distance: NDArray[np.float64]) -> str:

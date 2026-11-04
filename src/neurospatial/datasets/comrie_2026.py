@@ -235,7 +235,9 @@ def load_session(
     )
     n_empty = sum(train.size == 0 for train in spike_times)
     graph = track_graph(z)
-    env, distance, placement = _declared_track(graph, z, positions, entry.session)
+    env, distance, placement, width_quantile = _declared_track(
+        graph, z, positions, entry.session
+    )
     train, test = alternating_blocks(times[0], times[-1], BLOCK)
     import pandas as pd
 
@@ -258,6 +260,7 @@ def load_session(
         units=units,
         env=env,
         env_kind="declared",
+        track_width_quantile=width_quantile,
         env_source=(
             f"the authors' track graph from the file ({graph.number_of_nodes()} "
             f"nodes, {graph.number_of_edges()} edges, every edge kept), "
@@ -436,7 +439,7 @@ def _declared_track(
     arrays: dict[str, NDArray[Any]],
     positions: NDArray[np.float64],
     session: str,
-) -> tuple[Environment, float, Conversion]:
+) -> tuple[Environment, float, Conversion, float | None]:
     """The track graph as an environment, with every edge kept.
 
     ``Environment.from_graph`` bins only the edges in ``edge_order``, so an
@@ -451,6 +454,9 @@ def _declared_track(
         ``linear_position``, in cm, over the samples placed on the track.
     placement : Conversion
         The placement tolerance used as ``track_width``, and its evidence.
+    width_quantile : float or None
+        ``TOLERANCE_QUANTILE`` when it set ``track_width``; None when the
+        hallway width or one bin floored it.
     """
     from neurospatial import Environment
 
@@ -501,7 +507,8 @@ def _declared_track(
         "beside them. track_width decides only which samples are placed, not "
         "the bins, their lengths or connectivity",
     )
-    return env, distance, placement
+    width_quantile = TOLERANCE_QUANTILE if width == 2 * reach else None
+    return env, distance, placement, width_quantile
 
 
 def _distance_to_graph(

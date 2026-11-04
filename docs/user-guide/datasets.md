@@ -83,7 +83,10 @@ returns, the loader checks the session:
   session anyway.
 - **Warning checks.** Samples at exactly the origin, runs of identical
   positions, samples outside the environment, and units with no spikes in the
-  analysed epochs are described in "Watch out" with their numbers. No array is
+  analysed epochs are described in "Watch out" with their numbers. Where a
+  track's width was set from the samples themselves
+  (`rec.track_width_quantile`), the share outside holds by construction (about
+  1 % at the 99th percentile), and the finding says so. No array is
   changed: positions stay as the file stores them, and an untracked sample
   stays NaN.
 

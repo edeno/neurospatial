@@ -212,6 +212,13 @@ class Recording(ReadOnlyArraysMixin):
     env_source : str
         The environment's stated dimensions and their source, for example
         ``"the authors' track graph, 6.5 cm hallways (STAR Methods)"``.
+    track_width_quantile : float or None
+        Where the track's ``track_width`` was sized from these samples: the
+        quantile of the tracked samples' distance from the track that its
+        half-width is (0.99 when half the width is their 99th percentile), so
+        about ``1 - track_width_quantile`` of them lie outside the
+        environment by construction. None when the width is stated, floored
+        by a stated width, or the environment is not a track.
     positions : ndarray, shape (n_time, n_dims), or None
         Tracked positions in ``position_units``, ``n_dims`` from 1 to 3, NaN
         where tracking was lost; kept as the file stores them.
@@ -295,6 +302,7 @@ class Recording(ReadOnlyArraysMixin):
     env: Environment | None = None
     env_kind: Literal["declared", "inferred"] | None = None
     env_source: str = ""
+    track_width_quantile: float | None = None
     positions: NDArray[np.float64] | None = None
     position_units: Literal["cm", "m", "pixel", "arbitrary"] | None = None
     tracking: str = ""
@@ -443,6 +451,15 @@ class Recording(ReadOnlyArraysMixin):
         elif self.env is not None and self.env_kind not in ("declared", "inferred"):
             problems.append(
                 f"env_kind: {self.env_kind!r}, not 'declared' or 'inferred'"
+            )
+        if self.track_width_quantile is not None and not (
+            self.env is not None
+            and self.env.is_linearized_track
+            and 0.0 < self.track_width_quantile < 1.0
+        ):
+            problems.append(
+                f"track_width_quantile: {self.track_width_quantile!r}; give a "
+                "quantile between 0 and 1, and only with a track environment"
             )
         if self.env is not None and not self.env_source.strip():
             problems.append(

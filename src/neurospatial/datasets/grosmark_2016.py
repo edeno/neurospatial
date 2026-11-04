@@ -476,6 +476,7 @@ def _dandi_session(
         env=env,
         env_kind="declared",
         env_source=environment.source,
+        track_width_quantile=environment.width_quantile,
         positions=positions,
         position_units="cm",
         tracking=(
@@ -554,6 +555,9 @@ class _Track:
         The track as stated, its placement and its tolerance.
     tolerance : float
         ``track_width``, cm.
+    width_quantile : float or None
+        The quantile of the samples' distance from the track that half of
+        ``tolerance`` is; None where the one-bin floor set it instead.
     centre : ndarray, shape (2,)
         The circle's centre, or the stem's midpoint, cm.
     axis : ndarray, shape (2,)
@@ -567,6 +571,7 @@ class _Track:
     source: str
     conversions: tuple[Conversion, ...]
     tolerance: float
+    width_quantile: float | None
     centre: NDArray[np.float64]
     axis: NDArray[np.float64]
     slope: float
@@ -681,12 +686,13 @@ def _segment_distance(
 
 def _tolerance(
     distance: NDArray[np.float64], quantile: float, reason: str
-) -> tuple[float, str]:
+) -> tuple[float, str, float | None]:
     """``track_width`` from the tracked samples' distance to the track, and why.
 
     Twice ``quantile`` of ``distance`` (cm), and at least one bin; no source
     states a physical width to floor it with. ``reason`` says why that
-    quantile.
+    quantile. The third value is ``quantile`` when it set the width, None
+    when the one-bin floor did.
     """
     reach = float(np.quantile(distance, quantile))
     width = max(2 * reach, BIN_SIZE)
@@ -699,7 +705,7 @@ def _tolerance(
         "decides only which samples are placed, not the bins, their lengths or "
         "connectivity"
     )
-    return width, evidence
+    return width, evidence, quantile if width == 2 * reach else None
 
 
 def _declared_linear(
@@ -745,7 +751,7 @@ def _declared_linear(
     for (a, b), length in zip(order, np.diff(offsets), strict=True):
         graph.add_edge(a, b, distance=float(length))
     distance = _segment_distance(positions[tracked], points, closed=False)
-    width, evidence = _tolerance(
+    width, evidence, width_quantile = _tolerance(
         distance, LINEAR_TOLERANCE_QUANTILE, _LINEAR_QUANTILE_REASON
     )
     env = Environment.from_graph(
@@ -786,6 +792,7 @@ def _declared_linear(
             ),
         ),
         tolerance=width,
+        width_quantile=width_quantile,
         centre=middle,
         axis=axis,
         slope=scale,
@@ -835,7 +842,7 @@ def _declared_circle(
             distance=float(np.linalg.norm(points[(k + 1) % N_VERTICES] - points[k])),
         )
     distance = _segment_distance(positions[tracked], points, closed=True)
-    width, evidence = _tolerance(
+    width, evidence, width_quantile = _tolerance(
         distance, CIRCLE_TOLERANCE_QUANTILE, _CIRCLE_QUANTILE_REASON
     )
     env = Environment.from_graph(
@@ -872,6 +879,7 @@ def _declared_circle(
             ),
         ),
         tolerance=width,
+        width_quantile=width_quantile,
         centre=centre,
         axis=np.zeros(2),
         slope=float("nan"),

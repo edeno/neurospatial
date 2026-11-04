@@ -115,6 +115,9 @@ def test_loads_a_file_in_the_records_layout(tmp_path):
     np.testing.assert_allclose(rec.env.bin_sizes.sum(), 3 * ARM)
     bases = {c.text.split(":")[0]: c.basis for c in rec.conversions}
     assert bases["positions"] == "inferred"
+    # The head 1.5 cm off each arm: twice that is under the 6.5 cm hallway,
+    # which sets the width, so the outside share is not one by construction.
+    assert rec.track_width_quantile is None
 
 
 def test_beyond_hallway_share_is_split_by_speed(tmp_path):
@@ -284,3 +287,8 @@ def test_loads_default_session():
     assert rec.headings is None
     assert any("+13.1 degrees" in text for text in rec.watch_outs)
     assert rec.provenance.sha256 == _entry().sha256
+    # The width is twice the samples' 99th percentile distance from the graph.
+    assert rec.track_width_quantile == 0.99
+    (finding,) = [t for t in rec.watch_outs if "outside the declared" in t]
+    assert "(1.00%)" in finding
+    assert "about 1% by construction" in finding

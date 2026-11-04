@@ -583,6 +583,61 @@ def test_outside_a_track_without_min_speed_says_so(
     assert "params gives no min_speed, so the share is not split by speed" in finding
 
 
+def test_outside_a_track_sized_from_its_samples_holds_by_construction(
+    square_recording, square_stated
+):
+    """A width set from the samples' 99th percentile leaves about 1 % outside."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    rng = np.random.default_rng(0)
+    times = np.arange(6000) / 100.0
+    along = 50.0 + 45.0 * np.sin(times / 3.0)
+    positions = np.column_stack([along, rng.normal(0.0, 3.0, times.size)])
+    reach = float(np.quantile(np.abs(positions[:, 1]), 0.99))
+    graph = nx.Graph()
+    graph.add_node(0, pos=(0.0, 0.0))
+    graph.add_node(1, pos=(100.0, 0.0))
+    graph.add_edge(0, 1, distance=100.0)
+    env = Environment.from_graph(
+        graph, [(0, 1)], bin_size=2.0, units="cm", track_width=2 * reach
+    )
+    rec = dataclasses.replace(
+        square_recording,
+        times=times,
+        positions=positions,
+        headings=None,
+        heading_source="",
+        epochs={},
+        env=env,
+        env_source="100 cm straight track (simulation)",
+        track_width_quantile=0.99,
+        params={"min_speed": 4.0},
+    )
+    stated = dataclasses.replace(square_stated, position_span=(80.0, 120.0))
+    checked = run_checks(rec, stated=stated)
+    (finding,) = [text for text in checked.watch_outs if "outside the" in text]
+    assert "(1.00%) lie outside the declared environment" in finding
+    assert (
+        "about 1% by construction, since the track's width was set from these "
+        "samples' 99% quantile distance from the track"
+    ) in finding
+    assert "tracking spread" not in finding
+    assert "stopped (below 4 cm/s)" in finding
+
+
+@pytest.mark.parametrize("quantile", [0.0, 1.0, 1.5])
+def test_track_width_quantile_must_be_a_quantile(quantile, track_recording):
+    with pytest.raises(InputError, match="track_width_quantile"):
+        dataclasses.replace(track_recording, track_width_quantile=quantile)
+
+
+def test_track_width_quantile_needs_a_track(square_recording):
+    with pytest.raises(InputError, match="only with a track environment"):
+        dataclasses.replace(square_recording, track_width_quantile=0.99)
+
+
 def test_speed_split_without_units_states_the_bare_threshold():
     times = np.arange(10) / 10.0
     positions = np.column_stack([np.arange(10) * 0.1, np.zeros(10)])

@@ -87,8 +87,12 @@
   samples outside the environment and units with no spikes in the analysed
   epochs are reported in "Watch out" with their numbers; no array is
   changed. On a declared track, samples outside its footprint are reported
-  as tracking spread (a tracked head swings past the edge), not as misfit;
-  on any environment the outside share is split into stopped and moving
+  as tracking spread (a tracked head swings past the edge), not as misfit.
+  Where the track's width was sized from the same samples, which
+  `rec.track_width_quantile` records (0.99 on the `comrie_2026`,
+  `valero_2022` and Grosmark circle tracks, 0.95 on Grosmark's linear
+  tracks), the finding says the share holds by construction (about 1 %, or
+  5 %) and measures nothing. On any environment the outside share is split into stopped and moving
   samples at `params["min_speed"]` where the dataset sets it.
 
 #### Looking at a session
