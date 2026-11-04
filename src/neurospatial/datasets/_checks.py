@@ -41,13 +41,15 @@ __all__ = ["Stated", "run_checks"]
 
 #: How far a time may lie outside a span and still count as within it: a
 #: share of the span's length, ``CLOCK_SLACK``, at most ``CLOCK_SLACK_CAP``
-#: seconds. The errors the clock check guards against (milliseconds read as
-#: seconds, a second clock with another zero) put times off by about the
+#: seconds. The tracked span and each stretch of untracked epochs get it at
+#: their edges. The errors the clock check guards against (milliseconds read
+#: as seconds, a second clock with another zero) put times off by about the
 #: session's length or more; acquisition edges differ by much less. Strict
 #: containment refused real sessions that are on one clock: hc-11
-#: Achilles' maze epoch ends 0.026 s after the last tracking sample, and
-#: the Yartsev bat's spikes run 6.6 s past its tracking. The cap keeps a
-#: long session's slack from hiding an offset such as 22.6 s.
+#: Achilles' maze epoch ends 0.026 s after the last tracking sample, the
+#: Yartsev bat's spikes run 6.6 s past its tracking, and DANDI 000044
+#: Gatsby 08022013's spikes run 5.4 s past its last sleep-state row. The cap
+#: keeps a long session's slack from hiding an offset such as 22.6 s.
 CLOCK_SLACK = 0.01
 #: The largest slack in seconds, whatever the span's length.
 CLOCK_SLACK_CAP = 10.0
@@ -297,13 +299,14 @@ def _clock_finding(rec: Recording) -> str | None:
     spikes = np.concatenate(trains) if trains else np.empty(0)
     slack = _slack(last - first)
     near = (spikes >= first - slack) & (spikes <= last + slack)
-    outside = ~(near | _within_any(spikes, untracked))
+    outside = ~(near | _within_any(spikes, _widened(untracked)))
     if n_outside := int(outside.sum()):
         problems.append(
             f"{n_outside} of {spikes.size} spikes ({n_outside / spikes.size:.2%}) lie "
             f"outside the tracked span {first:.6g} to {last:.6g} s (give or take "
-            f"{slack:.3g} s) and outside every untracked epoch; spikes run from "
-            f"{spikes.min():.6g} to {spikes.max():.6g} s"
+            f"{slack:.3g} s) and outside every untracked epoch (give or take the "
+            f"same share of its length); spikes run from {spikes.min():.6g} to "
+            f"{spikes.max():.6g} s"
         )
     start = min(first, float(spikes.min())) if spikes.size else first
     stop = max(last, float(spikes.max())) if spikes.size else last
@@ -349,6 +352,18 @@ def _clock_finding(rec: Recording) -> str | None:
 def _slack(length: float) -> float:
     """``CLOCK_SLACK`` of a span's ``length``, at most ``CLOCK_SLACK_CAP`` seconds."""
     return min(CLOCK_SLACK * length, CLOCK_SLACK_CAP)
+
+
+def _widened(rows: NDArray[np.float64]) -> NDArray[np.float64]:
+    """The union of ``rows`` with each stretch widened by its ``_slack``, (n, 2).
+
+    The edges of an untracked epoch are acquisition edges too: a sleep
+    scoring that stops a few seconds before the electrophysiology does is on
+    the same clock.
+    """
+    starts, stops = merged_rows(rows)
+    margin = np.minimum(CLOCK_SLACK * (stops - starts), CLOCK_SLACK_CAP)
+    return np.column_stack([starts - margin, stops + margin])
 
 
 def _within_any(

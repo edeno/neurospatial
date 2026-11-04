@@ -218,6 +218,29 @@ def test_untracked_sleep_passes(square_recording, square_stated):
         run_checks(no_sleep, stated=square_stated)
 
 
+@pytest.mark.parametrize(("past", "passes"), [(5.0, True), (6.0, False)])
+def test_spikes_just_past_an_untracked_epoch(
+    square_recording, square_stated, past, passes
+):
+    """An untracked epoch's edges get the slack the tracked span gets.
+
+    The sleep epoch [60, 600) s is 540 s long, so its slack is 5.4 s: a
+    spike 5 s past its end is on the clock, one 6 s past is not.
+    """
+    trains = list(square_recording.spike_times)
+    trains[0] = np.append(trains[0], 600.0 + past)
+    rec = dataclasses.replace(
+        square_recording,
+        spike_times=tuple(trains),
+        epochs={"run": np.array([[0.0, 60.0]]), "sleep": np.array([[60.0, 600.0]])},
+    )
+    if passes:
+        assert run_checks(rec, stated=square_stated).failed_checks == ()
+    else:
+        with pytest.raises(DatasetCheckError, match=r"1 of \d+ spikes"):
+            run_checks(rec, stated=square_stated)
+
+
 def test_spikes_just_past_tracking_pass(square_recording, square_stated):
     """Ephys running a little past the camera is within the clock's slack."""
     trains = list(square_recording.spike_times)
