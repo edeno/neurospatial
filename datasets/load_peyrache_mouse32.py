@@ -1,24 +1,21 @@
 """Peyrache et al. mouse anterodorsal thalamus head-direction session Mouse32-140822.
 
 What was recorded: 49 units (31 labelled ``adn``, 18 ``thalamus``) across a
-sleep, wake, sleep session; head direction (``ry``, radians) was tracked at
-about 39 Hz during the wake epoch only. The file has no x/y position.
+sleep, wake, sleep session; head direction tracked at about 39 Hz during the
+wake epoch only. The file has no x/y position.
 
-Where it lives: OSF ``jb2gd`` (the file pynapple's and NeMoS's head-direction
-tutorials download), 36.6 MB. The OSF project states no license; the source
-dandiset 000056 is CC-BY-4.0.
+The session is read by ``neurospatial.datasets.load("peyrache_2015")``,
+whose module (``neurospatial/datasets/peyrache_2015.py``) and docs page give
+the file (OSF ``jb2gd``, the file pynapple's and NeMoS's head-direction
+tutorials download), the conversions (headings wrapped to [-π, π], frame
+assumed) and the watch-outs. ``_record.from_public`` converts it to the
+survey's record.
 
-What the loader converts: headings are wrapped from [0, 2π) to [−π, π] with
-``neurospatial.stats.wrap_angle``. The file does not state the heading's
-reference frame (where 0 points, which way angles increase), so headings are
-not rotated; neurospatial's allocentric convention (0 = East, counter-clockwise)
-is assumed but unverified.
+Analysis choices are the public loader's ``params``: ``analysis_epochs``,
+the wake epoch, and ``dt`` 0.1 s.
 
-Analysis choices (``params``):
-
-- ``analysis_epochs``: the wake epoch, the only time with tracked head
-  direction (spikes during sleep have no heading to pair with).
-- ``dt`` 0.1 s: the decoding bin of pynapple's head-direction tutorial.
+Survey-only: ``params["nwb_source"]`` (the cached file) and
+``params["readers_used"]``, for the ``io.nwb_readers`` operation.
 """
 
 from __future__ import annotations
@@ -27,16 +24,19 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from _record import Recording, check_expectations, validate_recording
-
-from neurospatial.datasets._fetch import fetch
+from _record import (
+    Recording,
+    SurveyOnly,
+    check_expectations,
+    from_public,
+    public_file,
+    validate_recording,
+)
 
 DATASET = {
     "key": "peyrache_mouse32",
-    "title": "Peyrache et al., mouse ADn/thalamus head-direction cells, wake and sleep",
-    "source": "https://osf.io/jb2gd",
-    "license": "unstated on OSF; the source dandiset 000056 is CC-BY-4.0",
-    "download_size": "36.6 MB",
+    "public": "peyrache_2015",
+    "session": "Mouse32-140822",
 }
 
 # Pre-registered from pynapple's head-direction tutorial, before the first run
@@ -50,61 +50,25 @@ EXPECTATIONS: dict[str, Any] = {
     ),
 }
 
-_URL = "https://osf.io/jb2gd/download"
-_NAME = "Mouse32-140822.nwb"
-_SHA256 = "1a919a033305b8f58b5c3e217577256183b14ed5b436d9c70989dee6dafe0f35"
-
-
-def _intervals(table: Any) -> np.ndarray:
-    return np.column_stack([np.asarray(table.start), np.asarray(table.stop)])
-
 
 def load(cache: Path | None = None) -> Recording:
-    """Fetch the session and return it as a ``Recording`` (headings only)."""
-    import pynwb
+    """The session from ``neurospatial.datasets``; headings only."""
+    from neurospatial.datasets import load as load_public
 
-    from neurospatial.io.nwb import read_head_direction, read_intervals, read_units
-    from neurospatial.stats import wrap_angle
-
-    path = fetch(_URL, _NAME, sha256=_SHA256, subdir=DATASET["key"], cache=cache)
-    with pynwb.NWBHDF5IO(path, "r", load_namespaces=True) as io:
-        nwbfile = io.read()
-        heading = read_head_direction(nwbfile)
-        units = read_units(nwbfile)
-        tagged = read_intervals(nwbfile, interval_name="epochs").intervals_table()
-        sleep_states = {
-            name: _intervals(read_intervals(nwbfile, interval_name=name))
-            for name in ("sws", "rem")
-        }
-
-    epochs: dict[str, np.ndarray] = {}
-    for tag in ("wake", "sleep"):
-        rows = tagged[[tag in tags for tags in tagged["tags"]]]
-        epochs[tag] = rows[["start_time", "stop_time"]].to_numpy(dtype=float)
-    epochs.update(sleep_states)
-    return Recording(
-        dataset=DATASET["key"],
-        session="Mouse32-140822",
-        source=DATASET["source"],
-        license=DATASET["license"],
-        times=np.asarray(heading.times, dtype=float),
-        headings=np.asarray(wrap_angle(np.asarray(heading.headings, dtype=float))),
-        spike_times=tuple(
-            np.asarray(spikes, dtype=float) for spikes in units.spike_times
-        ),
-        unit_ids=np.asarray(units.unit_ids),
-        epochs=epochs,
+    rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
+    source = public_file(DATASET["public"], DATASET["session"], cache=cache)
+    return from_public(
+        rec,
+        key=DATASET["key"],
         params={
-            "analysis_epochs": epochs["wake"],
-            "dt": 0.1,
-            "nwb_source": str(path),
-            "readers_used": ("head_direction", "units"),
+            "nwb_source": SurveyOnly(
+                source, "the cached NWB file the session was read from"
+            ),
+            "readers_used": SurveyOnly(
+                ("head_direction", "units"),
+                "the io.nwb readers the public loader calls",
+            ),
         },
-        conversions=(
-            "headings: wrapped from [0, 2pi) to [-pi, pi] with neurospatial.stats.wrap_angle",
-            "headings: reference frame unstated in the file; not rotated",
-            "epochs: wake/sleep from the epochs table tags; sws/rem from their tables",
-        ),
     )
 
 

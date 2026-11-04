@@ -11,7 +11,6 @@ import networkx as nx
 import numpy as np
 import pytest
 from load_rosenberg_labyrinth import _Traj, _TrajUnpickler, maze_graph
-from load_yartsev_bat_demo import _drop_close_spikes, _pool
 
 
 def _load(data: bytes) -> object:
@@ -62,17 +61,3 @@ def test_maze_graph_matches_the_binary_tree():
     assert graph.nodes[0]["pos"] == (7.0, 7.0)  # first junction at the centre
     total = sum(d for _, _, d in graph.edges(data="distance"))
     assert total == 7 + 2 * 4 + 4 * 4 + 8 * 2 + 16 * 2 + 32 * 1 + 64 * 1
-
-
-def test_close_spikes_dropped_against_their_predecessor():
-    # Like the record's script: a spike within 1 ms of the one before it in
-    # the train is dropped, even if that one was itself dropped.
-    spikes = np.array([0.0, 0.0006, 0.0012, 0.0030])
-    np.testing.assert_array_equal(_drop_close_spikes(spikes), [0.0, 0.0030])
-
-
-def test_pooled_units_keep_the_first_id_and_are_sorted():
-    trains = {5: np.array([0.0, 2.0]), 9: np.array([1.0, 2.0005]), 11: np.array([3.0])}
-    pooled = _pool(trains, [[5, 9]])
-    assert sorted(pooled) == [5, 11]
-    np.testing.assert_array_equal(pooled[5], [0.0, 1.0, 2.0])

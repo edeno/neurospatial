@@ -1,23 +1,23 @@
 """Grosmark & Buzsaki 2016 rat CA1 on a 1.6 m linear track with sleep before and after (DANDI 000044).
 
 What was recorded: rat Achilles, 25 Oct 2013 (the session also published as
-CRCNS hc-11 ``Achilles_10252013``), 137 CA1 units, PRE sleep, running on a
-1.6 m linear track (MAZE) and POST sleep, position at 39.06 Hz.
+CRCNS hc-11 ``Achilles_10252013``, and on OSF as ``grosmark_2016``'s default
+session), 137 CA1 units, PRE sleep, running on a 1.6 m linear track (MAZE)
+and POST sleep, position at 39.06 Hz.
 
-Where it lives: DANDI 000044 version 0.261005.2101, CC-BY-4.0, an 8.7 GB file
-read by HTTP byte range. Reading, conversions, candidate events and analysis
-choices are those of ``load_grosmark_000044_circular`` (shared code there).
-On a linear track the linearized coordinate's 0 is a real place, the start of
-the track. Only 16 % of the tracked maze-epoch samples are on the track (the
-linearized coordinate is defined); the rest lie off it, so the 2-D positions
-span about 2 m in each direction while the track is 1.6 m long.
+The session is read by ``neurospatial.datasets.load("grosmark_2016",
+"sub-Achilles_ses-Achilles-10252013", stream=True)``, the 8.7 GB file read
+by HTTP byte range, through ``load_grosmark_000044_circular.dandi_session``
+(the survey-only candidate events, replay bin and NWB source are described
+there). The public module (``neurospatial/datasets/grosmark_2016.py``) and
+its docs page give the conversions, the declared environment (the paper's
+1.9 m maze, a 1.6 m stem with a 15 cm reward area at each end, as a
+straight graph along the line the file's linearized coordinate traces) and
+the watch-outs, among them the rat's first minutes off the track.
 
-Declared environment (``geometry["environment"]``, ``declare_track``): the
-paper's 1.9 m maze, a 1.6 m stem with a 15 cm reward area at each end, as a
-straight graph of three segments along the line the file's linearized
-coordinate traces. The width is not stated; it is measured as twice the
-samples' 95th percentile distance from the track, which keeps the samples
-spread across the reward areas and leaves out the pre-track excursion.
+Analysis choices are the public loader's ``params``: ``bin_size`` 2 cm,
+``min_speed`` 5 cm/s, ``dt`` 0.25 s and alternating 60 s train/test blocks
+of the tracked span.
 """
 
 from __future__ import annotations
@@ -27,15 +27,12 @@ from typing import Any
 
 import numpy as np
 from _record import Range, Recording, check_expectations, validate_recording
-from _tracks import declared_geometry, polyline_graph, with_declared
-from load_grosmark_000044_circular import load_session
+from load_grosmark_000044_circular import dandi_session
 
 DATASET = {
     "key": "grosmark_000044_linear",
-    "title": "Grosmark & Buzsaki (2016), Achilles 10252013, rat CA1, 1.6 m linear track",
-    "source": "https://dandiarchive.org/dandiset/000044/0.261005.2101",
-    "license": "CC-BY-4.0",
-    "download_size": "8.74 GB (streamed)",
+    "public": "grosmark_2016",
+    "session": "sub-Achilles_ses-Achilles-10252013",
 }
 
 # Pre-registered from the dataset catalog (137 units, 39.06 Hz, 1.6 m linear track, PRE/MAZE/POST epochs) before the first run of this loader.
@@ -52,76 +49,10 @@ EXPECTATIONS: dict[str, Any] = {
 }
 
 
-_ASSET_ID = "c0ac352b-9da5-44b0-b73d-41a9ee3c3b1d"
-_SHA256 = "ff10511d44d53f634c82331f345f6839574b8926ba037bde94988adfd70c0ef3"
-_PATH = "sub-Achilles/sub-Achilles_ses-Achilles-10252013_behavior+ecephys.nwb"
-
-
-STEM_CM = 160.0
-REWARD_CM = 15.0
-WIDTH_QUANTILE = 0.95
-
-
-def declare_track(rec: Recording) -> Recording:
-    """``rec`` with the stated track declared: a stem with a reward area at each end.
-
-    The track's axis comes from the file's linearized coordinate: a
-    least-squares line from it to the 2-D positions where it is defined. The
-    stated 1.6 m stem is centred on that line's stem, and the 15 cm reward
-    areas continue it at both ends (1.9 m in all).
-    """
-    linear = np.asarray(rec.params["linearized"], dtype=float)
-    on_track = np.isfinite(linear) & np.isfinite(rec.positions).all(axis=1)
-    design = np.column_stack([np.ones(on_track.sum()), linear[on_track]])
-    (origin, slope), *_ = np.linalg.lstsq(design, rec.positions[on_track], rcond=None)
-    axis = slope / np.linalg.norm(slope)
-    middle = origin + slope * 0.5 * float(np.nanmax(linear))
-    half = STEM_CM / 2
-    points = middle + np.outer([-half - REWARD_CM, -half, half, half + REWARD_CM], axis)
-    graph = polyline_graph(
-        points,
-        closed=False,
-        names=("reward_start", "stem_start", "stem_end", "reward_end"),
-    )
-    entries, line = declared_geometry(
-        graph,
-        rec.positions,
-        times=rec.times,
-        kind="straight track: 15 cm reward area, 1.6 m stem, 15 cm reward area",
-        source="Grosmark & Buzsaki 2016 Supplementary Materials: 'a 1.9 m wooden"
-        " linear maze ... 15 cm reward areas on either end ... and a 1.6 m stem';"
-        " width not stated",
-        bin_size=rec.params["bin_size"],
-        physical_width=None,
-        units="cm",
-        name=DATASET["key"],
-        placement="the stem centred on a least-squares line from the file's"
-        f" linearized coordinate to the positions ({np.linalg.norm(slope):.3f} cm"
-        " of 2-D distance per linearized cm), the reward areas beyond its ends",
-        placed_by="file's linearized coordinate",
-        # The first 110 s (3.5 % of samples) are an excursion before the rat
-        # reached the track, 140 cm and more from it; a 99th percentile would
-        # make the track 3 m wide.
-        width_quantile=WIDTH_QUANTILE,
-        tracked_point="not stated",
-        speed_thresholds=(4.0, 30.0),
-    )
-    return with_declared(rec, entries, line)
-
-
 def load(cache: Path | None = None) -> Recording:
     """Stream the session; positions in cm, spikes, epochs and candidate events."""
     del cache  # read by byte range: nothing is cached
-    rec = load_session(
-        dataset=DATASET,
-        asset_id=_ASSET_ID,
-        sha256=_SHA256,
-        path=_PATH,
-        track="1.6mLinearMaze",
-        span_cm=(150.0, 260.0),
-        track_cm=(150.0, 170.0),
-    )
-    return declare_track(rec)
+    return dandi_session(DATASET["key"], DATASET["session"])
 
 
 if __name__ == "__main__":

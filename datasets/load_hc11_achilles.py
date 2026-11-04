@@ -31,9 +31,10 @@ What the loader converts:
   rule of ``load_grosmark_000044_circular.population_bursts``, as for the
   000044 loader (the file has no ripple times).
 
-Analysis choices (``params``) are those of ``load_grosmark_000044_linear``:
-``bin_size`` 2.5 cm, ``min_speed`` 4 cm/s, ``dt`` 0.25 s with alternating
-60 s train/test blocks inside MAZE, ``replay_dt`` 0.02 s.
+Analysis choices (``params``): ``bin_size`` 2.5 cm, ``min_speed`` 4 cm/s,
+``dt`` 0.25 s with alternating 60 s train/test blocks inside MAZE,
+``replay_dt`` 0.02 s, the survey's choices before ``load_grosmark_000044_linear``
+took ``neurospatial.datasets``'s (2 cm bins and 5 cm/s, the paper's).
 """
 
 from __future__ import annotations
