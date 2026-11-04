@@ -18,7 +18,9 @@
 - `neurospatial.datasets.load(dataset, session=None, *, cache=None,
   stream=False, accept_failed_checks=())` fetches one session (the
   dataset's default when `session` is None), verifies its SHA-256, reads it
-  and runs the checks; `stream=True` reads a DANDI file by byte range after
+  and runs the checks. A verified file's digest, size and modification time
+  are recorded under the cache's `.verified/` directory, so later loads hash
+  it again only when its size or time changes; `stream=True` reads a DANDI file by byte range after
   checking the archive still publishes the pinned SHA-256. Without the
   `datasets` extra it says how to install it before downloading anything.
   `catalog()` lists every session of every dataset (dataset, session,

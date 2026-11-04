@@ -72,7 +72,8 @@ rec = load("sargolini_2006", "sub-10884_ses-03080402")   # a named one
 ```
 
 The first call downloads the file, checks its SHA-256 against the one the
-package pins, and keeps it in the cache; later calls read the cache. Before it
+package pins, and keeps it in the cache; later calls read the cache, hashing
+the file again only if its size or modification time changed. Before it
 returns, the loader checks the session:
 
 - **Refusing checks.** The *clock* check refuses a session whose spikes fall

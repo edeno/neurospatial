@@ -3,7 +3,12 @@
 Every file is pinned by SHA-256. A file is written to a temporary name in its
 destination directory and renamed only after its digest matches, so an
 interrupted or corrupted download never leaves a file the loaders would trust.
-An existing file with a different digest is never overwritten. Files too
+An existing file with a different digest is never overwritten. Each verified
+file gets a record, ``<cache>/.verified/<subdir>/<name>.verified``, of its
+digest, size and modification time; a later fetch trusts a file whose size
+and modification time still match its record without hashing it again, and
+hashes any other. The records sit apart from the files, so a session's
+directory holds only its files and keeps its modification time. Files too
 large to download (multi-GB DANDI assets) are read by HTTP byte range instead,
 pinned by the SHA-256 DANDI publishes for them.
 
@@ -31,6 +36,7 @@ import urllib.request
 import zipfile
 import zlib
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
@@ -73,23 +79,78 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _existing(dest: Path, sha256: str) -> Path | None:
+#: The directory, under the cache root, of the verified files' records.
+VERIFIED = ".verified"
+
+
+@dataclass(frozen=True)
+class _Target:
+    """Where a file is cached, and where the record of its verification is."""
+
+    path: Path
+    record: Path
+
+
+def _target(cache: Path | None, subdir: str, name: str) -> _Target:
+    """The cache location of file ``name`` in ``subdir``, and of its record."""
+    root = cache_root(cache)
+    return _Target(root / subdir / name, root / VERIFIED / subdir / f"{name}.verified")
+
+
+def _stat_record(sha256: str, stat: os.stat_result) -> dict[str, Any]:
+    """What a record holds: the file's digest, size and modification time."""
+    return {"sha256": sha256, "st_size": stat.st_size, "st_mtime_ns": stat.st_mtime_ns}
+
+
+def _write_record(target: _Target, sha256: str) -> None:
+    """Record that ``target.path``, as it is now, has SHA-256 ``sha256``."""
+    record = _stat_record(sha256, target.path.stat())
+    # A cache that cannot be written to (a shared, read-only one) keeps no
+    # records; its files are hashed on every load, as without records.
+    with contextlib.suppress(OSError):
+        target.record.parent.mkdir(parents=True, exist_ok=True)
+        partial = target.record.with_name(f"{target.record.name}.{os.getpid()}")
+        partial.write_text(json.dumps(record))
+        partial.replace(target.record)
+
+
+def _recorded(target: _Target, sha256: str, stat: os.stat_result) -> bool:
+    """Whether the record shows the file, at this size and time, has ``sha256``."""
+    try:
+        record = json.loads(target.record.read_text())
+    except (OSError, ValueError):  # no record, or a record cut short
+        return False
+    return bool(record == _stat_record(sha256, stat))
+
+
+def _existing(target: _Target, sha256: str) -> Path | None:
+    """The cached file if it is there and has ``sha256``; None if it is not there.
+
+    A file whose record matches its size and modification time is trusted;
+    any other is hashed, and recorded when it matches.
+    """
+    dest = target.path
     if not dest.exists():
         return None
+    if _recorded(target, sha256, dest.stat()):
+        return dest
     if file_sha256(dest) != sha256:
         msg = (
             f"{dest} exists with a different SHA-256 from the pinned file. "
             "Move it aside to download again; it will not be overwritten."
         )
         raise FileExistsError(msg)
+    _write_record(target, sha256)
     return dest
 
 
-def _install(tmp: Path, actual: str, dest: Path, sha256: str) -> Path:
-    """Rename the download ``tmp``, whose SHA-256 is ``actual``, to ``dest``.
+def _install(tmp: Path, actual: str, target: _Target, sha256: str) -> Path:
+    """Rename the download ``tmp``, whose SHA-256 is ``actual``, into the cache.
 
-    Refuses, and removes ``tmp``, when ``actual`` is not the pinned ``sha256``.
+    Refuses, and removes ``tmp``, when ``actual`` is not the pinned
+    ``sha256``; records the installed file's verification otherwise.
     """
+    dest = target.path
     if actual != sha256:
         tmp.unlink()
         from neurospatial._exceptions import _format_error
@@ -107,6 +168,7 @@ def _install(tmp: Path, actual: str, dest: Path, sha256: str) -> Path:
             )
         )
     tmp.replace(dest)
+    _write_record(target, sha256)
     return dest
 
 
@@ -152,15 +214,15 @@ def fetch(
     url: str, name: str, *, sha256: str, subdir: str, cache: Path | None = None
 ) -> Path:
     """Return a verified local copy of ``url``, downloading it once."""
-    dest = cache_root(cache) / subdir / name
-    if (found := _existing(dest, sha256)) is not None:
+    target = _target(cache, subdir, name)
+    if (found := _existing(target, sha256)) is not None:
         return found
 
     def write(tmp: _HashingWriter) -> None:
         with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
             shutil.copyfileobj(response, tmp)
 
-    return _install(*_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(target.path, write), target, sha256)
 
 
 _DEFLATE64 = 9
@@ -232,8 +294,8 @@ def fetch_zip_member(
     fsspec = require_optional(
         "fsspec", extra="datasets", purpose="reading zip members by byte range"
     )
-    dest = cache_root(cache) / subdir / Path(member).name
-    if (found := _existing(dest, sha256)) is not None:
+    target = _target(cache, subdir, Path(member).name)
+    if (found := _existing(target, sha256)) is not None:
         return found
 
     def write(tmp: _HashingWriter) -> None:
@@ -248,7 +310,7 @@ def fetch_zip_member(
             with archive.open(info) as source:
                 shutil.copyfileobj(source, tmp)
 
-    return _install(*_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(target.path, write), target, sha256)
 
 
 CRCNS_PORTAL = "https://portal.nersc.gov/project/crcns/download/index.php"
@@ -343,15 +405,15 @@ def fetch_crcns(
     path: str, *, sha256: str, subdir: str, cache: Path | None = None
 ) -> Path:
     """Return a verified local copy of the CRCNS file ``path``, downloading it once."""
-    dest = cache_root(cache) / subdir / Path(path).name
-    if (found := _existing(dest, sha256)) is not None:
+    target = _target(cache, subdir, Path(path).name)
+    if (found := _existing(target, sha256)) is not None:
         return found
 
     def write(tmp: _HashingWriter) -> None:
         with _crcns_open(path) as response:
             shutil.copyfileobj(response, tmp)
 
-    return _install(*_download_to_temp(dest, write), dest, sha256)
+    return _install(*_download_to_temp(target.path, write), target, sha256)
 
 
 def fetch_crcns_tar_members(
@@ -372,15 +434,14 @@ def fetch_crcns_tar_members(
     if len(set(names)) != len(names):
         msg = f"members of {path} share a base name, which is how they are stored: {sorted(members)}"
         raise ValueError(msg)
-    root = cache_root(cache) / subdir
     found: dict[str, Path] = {}
-    missing: dict[str, tuple[Path, str]] = {}
+    missing: dict[str, tuple[_Target, str]] = {}
     for member, digest in members.items():
-        dest = root / Path(member).name
-        if (cached := _existing(dest, digest)) is not None:
+        target = _target(cache, subdir, Path(member).name)
+        if (cached := _existing(target, digest)) is not None:
             found[member] = cached
         else:
-            missing[member] = (dest, digest)
+            missing[member] = (target, digest)
     if not missing:
         return found
     with (
@@ -394,13 +455,15 @@ def fetch_crcns_tar_members(
             if source is None:
                 msg = f"{path}: member {info.name} is not a regular file"
                 raise ValueError(msg)
-            dest, digest = missing.pop(info.name)
+            target, digest = missing.pop(info.name)
             stream: IO[bytes] = source
 
             def write(tmp: _HashingWriter, stream: IO[bytes] = stream) -> None:
                 shutil.copyfileobj(stream, tmp)
 
-            found[info.name] = _install(*_download_to_temp(dest, write), dest, digest)
+            found[info.name] = _install(
+                *_download_to_temp(target.path, write), target, digest
+            )
             if not missing:
                 break
     if missing:

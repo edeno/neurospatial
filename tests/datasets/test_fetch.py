@@ -9,6 +9,7 @@ import http.server
 import io
 import json
 import logging
+import os
 import tarfile
 import threading
 import traceback
@@ -63,6 +64,117 @@ def test_download_is_hashed_as_it_is_written(source, tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="does not match the pinned"):
         fetch(url, "other.bin", sha256="0" * 64, subdir="demo", cache=cache)
     assert not (cache / "demo" / "other.bin").exists()
+
+
+@pytest.fixture
+def hashes(monkeypatch):
+    """The files hashed by reading them, in order."""
+    hashed = []
+    file_sha256 = _fetch.file_sha256
+
+    def counted(path):
+        hashed.append(path)
+        return file_sha256(path)
+
+    monkeypatch.setattr(_fetch, "file_sha256", counted)
+    return hashed
+
+
+def _record(cache, subdir, name):
+    return json.loads((cache / ".verified" / subdir / f"{name}.verified").read_text())
+
+
+def test_a_recorded_file_is_trusted_without_hashing(source, tmp_path, hashes):
+    """A download records its digest, size and time; an unchanged file is not hashed."""
+    url, digest = source
+    cache = tmp_path / "cache"
+    path = fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    stat = path.stat()
+    assert _record(cache, "demo", "data.bin") == {
+        "sha256": digest,
+        "st_size": stat.st_size,
+        "st_mtime_ns": stat.st_mtime_ns,
+    }
+    assert fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache) == path
+    assert hashes == []
+    # The record sits apart from the session's files.
+    assert sorted(p.name for p in (cache / "demo").iterdir()) == ["data.bin"]
+
+
+def test_a_file_whose_time_changed_is_hashed_and_recorded_again(
+    source, tmp_path, hashes
+):
+    url, digest = source
+    cache = tmp_path / "cache"
+    path = fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    touched = path.stat().st_mtime_ns + 5_000_000_000
+    os.utime(path, ns=(touched, touched))
+    assert fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache) == path
+    assert hashes == [path]
+    assert _record(cache, "demo", "data.bin")["st_mtime_ns"] == touched
+    fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    assert hashes == [path]
+
+
+def test_an_edited_file_is_hashed_and_refused(source, tmp_path, hashes):
+    """A changed size disagrees with the record, so the file is hashed: a mismatch."""
+    url, digest = source
+    cache = tmp_path / "cache"
+    path = fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    with path.open("ab") as stream:
+        stream.write(b"more")
+    with pytest.raises(FileExistsError, match="different SHA-256"):
+        fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    assert hashes == [path]
+
+
+def test_a_cached_file_without_a_record_is_hashed_once(source, tmp_path, hashes):
+    """A file cached before records were kept is hashed, then recorded."""
+    url, digest = source
+    cache = tmp_path / "cache"
+    path = fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    (cache / ".verified" / "demo" / "data.bin.verified").unlink()
+    fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    assert hashes == [path]
+    assert _record(cache, "demo", "data.bin")["sha256"] == digest
+    fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    assert hashes == [path]
+
+
+def test_a_record_of_another_digest_is_not_trusted(source, tmp_path, hashes):
+    """A pin that changed is checked against the file, not against the record."""
+    url, digest = source
+    cache = tmp_path / "cache"
+    path = fetch(url, "data.bin", sha256=digest, subdir="demo", cache=cache)
+    with pytest.raises(FileExistsError, match="different SHA-256"):
+        fetch(url, "data.bin", sha256="0" * 64, subdir="demo", cache=cache)
+    assert hashes == [path]
+
+
+def test_zip_members_are_recorded_outside_their_directory(tmp_path, hashes):
+    import zipfile
+
+    archive = tmp_path / "archive.zip"
+    payload = b"member bytes " * 100
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("folder/member.mat", payload)
+    digest = hashlib.sha256(payload).hexdigest()
+    cache = tmp_path / "cache"
+
+    def member():
+        return _fetch.fetch_zip_member(
+            archive.as_uri(),
+            "folder/member.mat",
+            sha256=digest,
+            subdir="d/s",
+            cache=cache,
+        )
+
+    path = member()
+    assert member() == path
+    assert hashes == []
+    assert sorted(p.name for p in path.parent.iterdir()) == ["member.mat"]
+    assert _record(cache, "d/s", "member.mat")["sha256"] == digest
 
 
 def test_fetch_gives_up_on_a_stalled_server(source, tmp_path, monkeypatch):
@@ -442,7 +554,9 @@ def test_crcns_tar_members_refuses_members_sharing_a_base_name(portal, tmp_path)
     assert portal.forms == []
 
 
-def test_crcns_tar_members_extracts_only_the_pinned_members(portal, tmp_path):
+def test_crcns_tar_members_extracts_only_the_pinned_members(
+    portal, tmp_path, monkeypatch
+):
     members = {"s/s.whl": b"1 2 3 4\n", "s/s.eeg": b"\0" * 100, "s/s.res.1": b"20\n"}
     portal.reply = _PortalResponse(_tar_gz(members), "application/octet-stream")
     pins = {
@@ -460,12 +574,16 @@ def test_crcns_tar_members_extracts_only_the_pinned_members(portal, tmp_path):
         "s.whl",
     ]
     portal.reply = urllib.error.URLError("offline")  # cached copies need no network
-    assert (
-        _fetch.fetch_crcns_tar_members(
-            "hc-3/top/s.tar.gz", pins, subdir="crcns", cache=tmp_path
+    hashed = []
+    with monkeypatch.context() as patched:
+        patched.setattr(_fetch, "file_sha256", hashed.append)
+        assert (
+            _fetch.fetch_crcns_tar_members(
+                "hc-3/top/s.tar.gz", pins, subdir="crcns", cache=tmp_path
+            )
+            == paths
         )
-        == paths
-    )
+    assert hashed == []  # each member's record vouches for it
     assert len(portal.forms) == 1
     portal.reply = _PortalResponse(_tar_gz(members), "application/octet-stream")
     with pytest.raises(FileNotFoundError, match=r"no member\(s\) \['s/absent'\]"):

@@ -49,7 +49,8 @@ def load(
     """Load one session of a public dataset, checked, as the arrays analyses take.
 
     The first load downloads the session's file into the cache and verifies
-    its SHA-256; later loads read the cached file, offline. Before a
+    its SHA-256; later loads read the cached file, offline, hashing it again
+    only if its size or modification time changed. Before a
     download, a :class:`DownloadWarning` gives its size, URL and cache
     directory (shown by default; a session can be several GB). The session is
     then checked: spikes, events and epochs must be on the tracking clock,
