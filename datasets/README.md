@@ -25,16 +25,19 @@ its `watch_outs`. Their downloads go to `<cache>/<dataset id>/` (for example
 
 ```bash
 uv sync --group datasets --extra nwb --extra pynapple
-MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python datasets/run.py
-MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple python datasets/reference_checks.py
+MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple \
+    python datasets/run.py
+MPLBACKEND=Agg uv run --group datasets --extra nwb --extra pynapple \
+    python datasets/reference_checks.py
 ```
 
 `run.py --datasets KEY ... --ops OP_ID ...` runs a subset;
-`run.py --render-only` rebuilds the Markdown tables from the JSON results. A subset run keeps the
-other cells of the stored record, so it is refused when the load differs
-from the stored one: its `conversions`, `env_kind` or `load_fingerprint`
-(hashes of `params` and the geometry's stated entries, the positions' shape
-and NaN count, the tracked span, each unit's spike count and the unit ids).
+`run.py --render-only` rebuilds the Markdown tables from the JSON results. A
+subset run keeps the other cells of the stored record, so it is refused when
+the load differs from the stored one: its `conversions`, `env_kind` or
+`load_fingerprint` (hashes of `params` and the geometry's stated entries, the
+positions' shape and NaN count, the tracked span, each unit's spike count and
+the unit ids).
 Records written before the fingerprint have none; each needs one full rerun
 (without `--ops`) before `--ops` works on it. One loader alone:
 `uv run --group datasets --extra nwb python datasets/load_sargolini_000582.py`.
@@ -118,10 +121,11 @@ CRCNS loaders (`hc*`) need a free crcns.org account. They read it from the
 `CRCNS_USERNAME` and `CRCNS_PASSWORD` environment variables and never print,
 log or store either value (`neurospatial.datasets._fetch.fetch_crcns`). CRCNS
 serves `.tar.gz` archives, which cannot be read by byte range:
-`neurospatial.datasets._fetch.fetch_crcns_tar_members` streams an archive once and keeps only the pinned members, so the first load
-of `hc28_hpa` or `hc18_train261` reads the whole 2.8 or 6.5 GB archive (about
-3-10 min). CRCNS terms: cite the data set and its paper; some labs ask to be
-consulted about authorship (see each loader's `DATASET["license"]`).
+`neurospatial.datasets._fetch.fetch_crcns_tar_members` streams an archive once
+and keeps only the pinned members, so the first load of `hc28_hpa` or
+`hc18_train261` reads the whole 2.8 or 6.5 GB archive (about 3-10 min). CRCNS
+terms: cite the data set and its paper; some labs ask to be consulted about
+authorship (see each loader's `DATASET["license"]`).
 
 ## Studies
 
