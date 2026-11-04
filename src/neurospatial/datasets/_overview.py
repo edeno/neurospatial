@@ -645,9 +645,18 @@ def animation(
     ]
     if rec.headings is not None:
         extent = max(hi - lo for lo, hi in env.dimension_ranges or ((0.0, 1.0),))
-        overlays.append(
-            HeadDirectionOverlay(rec.headings, rec.times, length=0.05 * extent)
-        )
+        headings: NDArray[np.float64] = rec.headings
+        if env.n_dims == 3:
+            # A heading is an azimuth in the x-y plane; in 3-D the overlay
+            # takes unit vectors, so it points horizontally, NaN where missing.
+            headings = np.column_stack(
+                [
+                    np.cos(rec.headings),
+                    np.sin(rec.headings),
+                    np.where(np.isfinite(rec.headings), 0.0, np.nan),
+                ]
+            )
+        overlays.append(HeadDirectionOverlay(headings, rec.times, length=0.05 * extent))
     if rec.n_units:
         overlays.append(
             SpikeRasterOverlay(

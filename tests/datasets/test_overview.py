@@ -367,6 +367,24 @@ def test_3d_recording_overview_and_scene(room_recording):
     assert scene.fields["occupancy"][0].shape == (room_recording.env.n_bins,)
 
 
+def test_3d_scene_draws_headings_as_horizontal_unit_vectors(
+    room_recording, square_recording
+):
+    """A heading is an azimuth; in 3-D it points along (cos, sin, 0)."""
+    headings = np.array(square_recording.headings)
+    headings[10] = np.nan
+    rec = dataclasses.replace(
+        room_recording, headings=headings, heading_source="direction of movement"
+    )
+    scene = rec.animation(time_range=(0.0, 5.0))
+    (overlay,) = [o for o in scene.overlays if isinstance(o, HeadDirectionOverlay)]
+    vectors = np.asarray(overlay.headings)
+    finite = np.isfinite(headings)
+    expected = np.column_stack([np.cos(headings), np.sin(headings), 0 * headings])
+    np.testing.assert_allclose(vectors[finite], expected[finite])
+    assert np.isnan(vectors[10]).all()
+
+
 def test_track_recording_overview_and_scene(track_recording):
     fig = track_recording.plot_overview()
     missing = [
