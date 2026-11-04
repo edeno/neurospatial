@@ -81,6 +81,7 @@ from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import Conversion, Recording
+from neurospatial.datasets._tracks import NearestSegment, nearest_segment
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -529,47 +530,20 @@ def _distance_to_graph(
     positions: NDArray[np.float64], graph: nx.Graph
 ) -> NDArray[np.float64]:
     """Each tracked sample's distance to the nearest edge, shape (n_tracked,)."""
-    return _nearest_edge(positions, graph)[0]
+    return _nearest_edge(positions, graph).distance
 
 
-def _nearest_edge(
-    positions: NDArray[np.float64], graph: nx.Graph
-) -> tuple[
-    NDArray[np.float64], NDArray[np.intp], NDArray[np.float64], NDArray[np.float64]
-]:
-    """Each tracked sample's nearest edge and its offsets from it.
+def _nearest_edge(positions: NDArray[np.float64], graph: nx.Graph) -> NearestSegment:
+    """Each tracked sample's nearest edge (segment between its nodes) and offsets.
 
-    Returns
-    -------
-    distance : ndarray, shape (n_tracked,)
-        Distance to the nearest edge (segment between its nodes).
-    edge : ndarray of int, shape (n_tracked,)
-        Index of that edge in ``graph.edges`` order.
-    lateral : ndarray, shape (n_tracked,)
-        Signed distance across that edge's line, positive to the left of the
-        direction from its first node to its second.
-    along : ndarray, shape (n_tracked,)
-        Where the sample projects along that edge, as a share of its length
-        from its first node, clipped to [0, 1].
+    ``segment`` indexes ``graph.edges`` order; ``lateral`` is positive to the
+    left of the direction from an edge's first node to its second.
     """
     tracked = positions[np.all(np.isfinite(positions), axis=1)]
     pos = {node: np.asarray(graph.nodes[node]["pos"]) for node in graph.nodes}
-    distance = np.full(len(tracked), np.inf)
-    edge = np.zeros(len(tracked), dtype=np.intp)
-    lateral = np.zeros(len(tracked))
-    along_edge = np.zeros(len(tracked))
-    for k, (a, b) in enumerate(graph.edges):  # nine edges, vectorized over samples
-        start, along = pos[a], pos[b] - pos[a]
-        relative = tracked - start
-        t = np.clip(relative @ along / (along @ along), 0.0, 1.0)
-        here = np.linalg.norm(relative - t[:, None] * along, axis=1)
-        closer = here < distance
-        cross = along[0] * relative[:, 1] - along[1] * relative[:, 0]
-        distance[closer] = here[closer]
-        edge[closer] = k
-        lateral[closer] = cross[closer] / np.linalg.norm(along)
-        along_edge[closer] = t[closer]
-    return distance, edge, lateral, along_edge
+    starts = np.array([pos[a] for a, _ in graph.edges])
+    ends = np.array([pos[b] for _, b in graph.edges])
+    return nearest_segment(tracked, starts, ends)
 
 
 def _edge_bias(
@@ -590,7 +564,7 @@ def _edge_bias(
         The part of each edge whose samples count, as shares of its length
         from its first node: ``(0, 1)`` for the whole edge.
     """
-    _, edge, lateral, along = _nearest_edge(positions, graph)
+    _, edge, along, lateral = _nearest_edge(positions, graph)
     low, high = window
     middle = (along >= low) & (along <= high)
     medians = [

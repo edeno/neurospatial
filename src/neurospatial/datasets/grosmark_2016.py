@@ -96,6 +96,7 @@ from neurospatial._angles import wrap_angle
 from neurospatial.datasets._checks import _count, gap_stats
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import Conversion, Recording, interval_rows
+from neurospatial.datasets._tracks import nearest_segment
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -667,14 +668,7 @@ def _segment_distance(
     """Each point's distance to a polyline through ``nodes``, shape (n_points,)."""
     starts = nodes if closed else nodes[:-1]
     ends = np.roll(nodes, -1, axis=0) if closed else nodes[1:]
-    distance = np.full(len(points), np.inf)
-    for start, end in zip(starts, ends, strict=True):  # at most 158 segments
-        along = end - start
-        t = np.clip((points - start) @ along / (along @ along), 0.0, 1.0)
-        distance = np.minimum(
-            distance, np.linalg.norm(points - start - t[:, None] * along, axis=1)
-        )
-    return distance
+    return nearest_segment(points, starts, ends).distance
 
 
 def _tolerance(

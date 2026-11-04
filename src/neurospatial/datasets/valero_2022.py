@@ -100,6 +100,7 @@ from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import Conversion, Recording, interval_rows
+from neurospatial.datasets._tracks import nearest_segment
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -460,9 +461,7 @@ def _declared_track(
     for name, point in zip(("start", "end"), ends, strict=True):
         graph.add_node(name, pos=(float(point[0]), float(point[1])))
     graph.add_edge("start", "end", distance=LENGTH)
-    relative = tracked - ends[0]
-    t = np.clip(relative @ axis / LENGTH, 0.0, 1.0)
-    distance = np.linalg.norm(relative - np.outer(t * LENGTH, axis), axis=1)
+    distance = nearest_segment(tracked, ends[:1], ends[1:]).distance
     reach = float(np.quantile(distance, TOLERANCE_QUANTILE))
     width = max(2 * reach, WIDTH, BIN_SIZE)
     env = Environment.from_graph(
