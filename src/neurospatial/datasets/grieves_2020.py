@@ -45,9 +45,10 @@ What the loader converts:
   per-cell analyses every other cluster has. Without them the sessions of
   each rat hold the cells Supplementary Table 1 counts for it (1064 in all).
 - headings: ``sdata.lattice.poh``, degrees to radians, turned into the
-  positions' frame. ``poh`` is an azimuth in the frame of the 2-D positions
-  ``lattice.pox/poy``, which hold the same path as the 3-D x and y in
-  another frame. The similarity map from the 2-D to the 3-D x, y (a
+  positions' frame (an inferred ``Conversion``: no source read gives its
+  unit or frame). ``poh`` runs from 0 to 360, so degrees, and is taken to be
+  an azimuth in the frame of the 2-D positions ``lattice.pox/poy``, which
+  hold the same path as the 3-D x and y in another frame. The similarity map from the 2-D to the 3-D x, y (a
   rotation or reflection, a scale and a shift) is fitted over the samples
   the two series share, and its rotation or reflection turns the azimuth.
   Where the 2-D positions are the 3-D x, y mirrored in y and shifted,
@@ -61,7 +62,9 @@ What the loader converts:
   runs past the recording (its first to last sample or spike: in two
   sessions the sorted units stop firing before ``square2`` ends) is clipped
   to it (``clip_epochs_to_recording``, an inferred ``Conversion`` and a
-  watch-out).
+  watch-out), so a per-epoch rate over it covers the data, not the listed
+  part. ``params["analysis_epochs"]`` and the decoding blocks come from the
+  clipped rows.
 - ``params["lattice_bars"]``: ``lattice_3d.lx/ly/lz``, the lattice's 147
   bars in the positions' frame (start, stop and a NaN separator per bar),
   divided by 10 to cm, shape (147, 2, 3), for drawing the lattice; the
@@ -266,6 +269,9 @@ class _Session:
     sampling_rate: float
     units: list[tuple[int, int, NDArray[np.float64], str | None]]
     n_unsorted: int
+    #: The HDF5 dtypes of ``lattice_3d.pot`` and of each unit's spike times.
+    time_dtype: str
+    spike_dtypes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -336,14 +342,14 @@ def load_session(
         times, positions[:, :2], headings, min_speed=HEADING_SPEED
     )
     verified = abs(offset) <= HEADING_MEAN and spread < HEADING_SPREAD
-    env, grid = _authors_grid(raw, positions, entry.session)
-    lattice = raw.parts["lattice"]
-    blocks = [alternating_blocks(start, stop, BLOCK) for start, stop in lattice]
+    env, grid, in_grid = _authors_grid(raw, positions, entry.session)
     configuration = CONFIGURATIONS.get(raw.lattice_type, raw.lattice_type)
     spike_times = tuple(spikes for _, _, spikes, _ in raw.units)
     clipped = clip_epochs_to_recording(
         raw.parts, times, spike_times, source="the file's part_config"
     )
+    lattice = clipped.epochs["lattice"]
+    blocks = [alternating_blocks(start, stop, BLOCK) for start, stop in lattice]
     return Recording(
         **entry.identity(path_or_stream),
         animal=f"rat {raw.rat}",
@@ -453,13 +459,14 @@ def load_session(
         watch_outs=(
             *WATCH_OUTS.get(entry.session, ()),
             *(() if clipped.watch_out is None else (clipped.watch_out,)),
+            *_parts_past_the_spikes(raw.parts, clipped.epochs, times, spike_times),
             *_unknown_configuration(raw),
             *_unverified_heading(frame, offset, spread, verified),
             *_zero_azimuths(raw, frame),
             *_held_headings(times, positions, headings),
-            *_outside_cube(positions, bars),
+            *_outside_cube(positions, bars, in_grid),
             *_recording_days(raw),
-            _single_precision(times, raw),
+            *_single_precision(times, raw),
             _SQUARES,
             _CLOCK,
             _PROCESSED,
@@ -496,6 +503,7 @@ def _read(path: Path) -> _Session:
             _text(mat[ref]) for ref in sdata["session_names"][()].ravel()
         )
         units = []
+        spike_dtypes = []
         n_unsorted = 0
         fields = sorted(
             (int(m[1]), int(m[2]), name) for name in sdata if (m := _CELL.match(name))
@@ -512,6 +520,7 @@ def _read(path: Path) -> _Session:
                 else None
             )
             units.append((tetrode, cluster, spikes, label))
+            spike_dtypes.append(str(cell["spike_times"].dtype))
         # h5py reads MATLAB arrays with their axes reversed: (z, x, y).
         n_z, n_x, n_y = part["dwellmap"].shape
         return _Session(
@@ -537,6 +546,8 @@ def _read(path: Path) -> _Session:
             sampling_rate=float(_vector(sdata, "position_srate_hz")[0]),
             units=units,
             n_unsorted=n_unsorted,
+            time_dtype=str(part["pot"].dtype),
+            spike_dtypes=tuple(spike_dtypes),
         )
 
 
@@ -680,7 +691,13 @@ def _turned_headings(raw: _Session, frame: _FrameMap) -> NDArray[np.float64]:
 def _heading_conversion(
     raw: _Session, frame: _FrameMap, offset: float, spread: float, verified: bool
 ) -> Conversion:
-    """The heading's Conversion: stated where the frames are one, else inferred."""
+    """The heading's Conversion, inferred: no source read gives poh's unit or frame.
+
+    That ``poh`` is in degrees and in the frame of ``lattice.pox/poy`` is
+    inferred from its range and from the turned azimuth following movement;
+    where the 2-D positions are the 3-D x, y in another frame exactly, the
+    exact map is the evidence for the turn.
+    """
     shift = ", ".join(f"{value:.5g}" for value in frame.shift)
     relation = (
         f"lattice_3d.pox, poy are lattice.pox, poy under {frame.describe()} "
@@ -699,9 +716,11 @@ def _heading_conversion(
         "headings: lattice.poh, degrees to radians, turned by the 2-D to 3-D "
         "map's rotation or reflection into the positions' frame"
         + (" (here -poh)" if frame.exact and np.linalg.det(frame.rotation) < 0 else ""),
-        "stated" if frame.exact else "inferred",
-        f"{relation}; poh runs from {np.degrees(finite.min()):.3g} to "
-        f"{np.degrees(finite.max()):.4g}, so degrees; against the direction of "
+        "inferred",
+        "no source read gives poh's unit or frame; it is taken to be an "
+        f"azimuth in the frame of lattice.pox, poy, and {relation}; poh runs "
+        f"from {np.degrees(finite.min()):.3g} to {np.degrees(finite.max()):.4g}, "
+        "so degrees; against the direction of "
         f"movement above {HEADING_SPEED:g} cm/s, heading minus movement has "
         f"circular mean {np.degrees(offset):.1f} deg and median absolute "
         f"deviation {np.degrees(spread):.1f} deg"
@@ -716,11 +735,12 @@ def _heading_conversion(
 
 def _authors_grid(
     raw: _Session, positions: NDArray[np.float64], session: str
-) -> tuple[Environment, str]:
-    """The authors' rate-map grid in cm, every voxel active, and its description.
+) -> tuple[Environment, str, NDArray[np.bool_]]:
+    """The authors' rate-map grid in cm, every voxel active, its description, and which tracked samples it holds.
 
     ``l<a>rm = l<a> / 50 + c`` along each axis; voxel ``i`` (1-based) spans
     ``[i - 1, i]``, so the edges are ``(k - c) * 50`` mm for ``k = 0 .. n``.
+    The mask, shape (n_tracked,), is over the tracked samples in order.
     """
     from neurospatial import Environment
 
@@ -756,7 +776,7 @@ def _authors_grid(
         f"{' x '.join(map(str, raw.grid_shape))} voxels of {BIN_SIZE:g} cm, "
         f"{span} cm, holding {inside.mean():.2%} of the tracked samples"
     )
-    return env, description
+    return env, description, inside
 
 
 def _unit_table(raw: _Session) -> pd.DataFrame:
@@ -774,6 +794,41 @@ def _unit_table(raw: _Session) -> pd.DataFrame:
             name="unit_id",
         ),
     )
+
+
+def _parts_past_the_spikes(
+    parts: dict[str, NDArray[np.float64]],
+    clipped: dict[str, NDArray[np.float64]],
+    times: NDArray[np.float64],
+    spike_times: tuple[NDArray[np.float64], ...],
+) -> tuple[str, ...]:
+    """A watch-out for each part the file lists as longer than its data.
+
+    Only the lattice is tracked, so a square part's data end with its last
+    spike; a part clipped to the recording keeps the data's span, not the
+    listed one.
+    """
+    spikes = np.concatenate([np.empty(0), *spike_times])
+    first = float(min(times[0], spikes.min())) if spikes.size else float(times[0])
+    last = float(max(times[-1], spikes.max())) if spikes.size else float(times[-1])
+    found = []
+    for name, rows in parts.items():
+        kept = clipped.get(name)
+        if kept is not None and np.array_equal(kept, rows):
+            continue
+        listed = ", ".join(f"[{a:.6g}, {b:.6g}]" for a, b in rows)
+        edges = []
+        if rows.min() < first:
+            edges.append(f"start firing (first spike {first:.6g} s) after it begins")
+        if rows.max() > last:
+            edges.append(f"stop firing (last spike {last:.6g} s) before it ends")
+        found.append(
+            f"part_config lists {name} as {listed} s, longer than the data: the "
+            "square parts hold no position sample, and the sorted units "
+            f"{' and '.join(edges)}. epochs[{name!r}] is clipped to the data, so a "
+            "per-epoch rate over it covers the data, not the listed part."
+        )
+    return tuple(found)
 
 
 def _unknown_configuration(raw: _Session) -> tuple[str, ...]:
@@ -881,9 +936,15 @@ def _held_headings(
 
 
 def _outside_cube(
-    positions: NDArray[np.float64], bars: NDArray[np.float64]
+    positions: NDArray[np.float64],
+    bars: NDArray[np.float64],
+    in_grid: NDArray[np.bool_],
 ) -> tuple[str, ...]:
-    """The share of tracked samples outside the convex hull of the bars."""
+    """The share of tracked samples outside the convex hull of the bars.
+
+    ``in_grid``, shape (n_tracked,), says which tracked samples the authors'
+    grid holds (from :func:`_authors_grid`).
+    """
     from scipy.spatial import ConvexHull
 
     hull = ConvexHull(bars.reshape(-1, 3))
@@ -897,7 +958,9 @@ def _outside_cube(
         f"(the convex hull of its bars, {hull.volume / 1e6:.3g} m^3), up to "
         f"{beyond.max():.3g} cm beyond a face (median "
         f"{np.median(beyond[outside]):.3g} cm): where the tracked head of a rat "
-        "on the outer bars is. They lie in the environment, the authors' grid.",
+        f"on the outer bars is. The environment, the authors' grid, holds "
+        f"{in_grid[outside].mean():.1%} of them ({in_grid.mean():.2%} of all "
+        "tracked samples).",
     )
 
 
@@ -916,14 +979,44 @@ def _recording_days(raw: _Session) -> tuple[str, ...]:
     )
 
 
-def _single_precision(times: NDArray[np.float64], raw: _Session) -> str:
-    """How finely the single-precision times are resolved at the session's end."""
-    last = max(float(times[-1]), *(float(s[-1]) for _, _, s, _ in raw.units if s.size))
+def _single_precision(times: NDArray[np.float64], raw: _Session) -> tuple[str, ...]:
+    """How finely times stored as float32 are resolved at the session's end.
+
+    Only for ``lattice_3d.pot`` or spike times whose HDF5 dtype is float32.
+    """
+    single_times = raw.time_dtype == "float32"
+    single = [
+        spikes
+        for (_, _, spikes, _), dtype in zip(raw.units, raw.spike_dtypes, strict=True)
+        if dtype == "float32"
+    ]
+    if not single_times and not single:
+        return ()
+    ends = [float(s[-1]) for s in single if s.size]
+    if single_times:
+        ends.append(float(times[-1]))
+    last = max(ends)
     step = float(np.spacing(np.float32(last)))
-    intervals = np.diff(times)
-    return (
-        "Times and spike times are stored in single precision: at "
-        f"{last:.0f} s, one float32 step is {step * 1e3:.2g} ms, so each time is "
-        f"rounded to that, and the sample intervals run from {intervals.min():.5g} "
-        f"to {intervals.max():.5g} s around {np.median(intervals):.4g} s."
+    spikes = (
+        "spike times"
+        if len(single) == len(raw.units)
+        else f"the spike times of {len(single)} of {len(raw.units)} units"
     )
+    what = (
+        f"Times (lattice_3d.pot) and {spikes} are"
+        if single_times and single
+        else "Times (lattice_3d.pot) are"
+        if single_times
+        else f"{spikes[0].upper()}{spikes[1:]} are"
+    )
+    text = (
+        f"{what} stored in single precision (float32): at {last:.0f} s, one "
+        f"float32 step is {step * 1e3:.2g} ms, so each time is rounded to that"
+    )
+    if single_times:
+        intervals = np.diff(times)
+        text += (
+            f", and the sample intervals run from {intervals.min():.5g} to "
+            f"{intervals.max():.5g} s around {np.median(intervals):.4g} s"
+        )
+    return (text + ".",)

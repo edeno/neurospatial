@@ -65,9 +65,9 @@ Table 1), the record's `Summary data readme.m`, and the files.
 | positions: `lattice_3d.pox/poy/poz` / 10, mm to cm | inferred | No source states the unit. The stored positions' speed is 10 times the stored velocity `pov` (10.03 on the default session), whose median is a climbing rat's speed in cm/s; `config3.lat_size` is 970 and every bar 970 long, against the 0.97 m lattice. A session whose ratio is not near 10 is refused. |
 | times: `lattice_3d.pot` as stored, seconds | stated | The file's `position_srate_hz` is 50 and `pot` steps 0.02 s. The clock joins the session's recordings end to end (below). |
 | units: every tetrode/cluster field, cluster 0 of each tetrode left out | inferred | The cluster-0 fields hold only spike times, with none of the per-cell analyses the other clusters have. Without them every rat's sessions hold the number of cells Supplementary Table 1 gives for it (1064 in all). |
-| headings: `lattice.poh`, degrees to radians, turned into the positions' frame | stated where the frames are one, inferred where fitted | `poh` is an azimuth in the frame of the 2-D positions `lattice.pox/poy`. The loader fits the map from those 2-D positions to the 3-D x and y (a rotation or reflection, a scale and a shift) and turns the azimuth by its rotation or reflection. In the default session the 2-D positions are the 3-D x, y mirrored in y and shifted, sample by sample, so the heading is `-poh`. |
+| headings: `lattice.poh`, degrees to radians, turned into the positions' frame | inferred | No source read gives `poh`'s unit or frame. It runs from 0 to 360, so degrees, and is taken to be an azimuth in the frame of the 2-D positions `lattice.pox/poy`. The loader fits the map from those 2-D positions to the 3-D x and y (a rotation or reflection, a scale and a shift) and turns the azimuth by its rotation or reflection. In the default session the 2-D positions are the 3-D x, y mirrored in y and shifted, sample by sample, so the heading is `-poh`; the turned azimuth follows the direction of movement (below). |
 | epochs: `square1`, `lattice`, `square2` from `part_config`, a row per recording | stated | The file's `part_config` and `session_names`. |
-| epochs: rows past the recording (its first to last sample or spike) clipped to it | inferred | In two sessions `square2` ends after the last sorted spike, past the clock check's slack. Each clipped row is in the `Conversion` and under "Watch out". |
+| epochs: rows past the recording (its first to last sample or spike) clipped to it | inferred | In two sessions `square2` ends after the last sorted spike, past the clock check's slack. Each clipped row is in the `Conversion` and under "Watch out". `params["analysis_epochs"]` and the decoding blocks come from the clipped rows. |
 | `params["lattice_bars"]`: the lattice's 147 bars, `lattice_3d.lx/ly/lz` / 10, shape (147, 2, 3) | stated | The readme: maze outlines are stored as `lx`, `ly`, `lz`; each bar is 97 cm, the lattice's side. |
 | environment: every voxel of the authors' 3-D rate-map grid, 5 cm voxels | inferred | `lattice_3d.dwellmap` gives the grid's shape; `lxrm/lyrm/lzrm` are the bars in its voxel units, `lx / 50 + c` exactly, which places it. Each voxel is taken to span `[i - 1, i]` in those units, where in every session the authors' kernel dwell time matches the stored `dwellmap` best. |
 
@@ -115,31 +115,37 @@ ax.set(xlabel="x (cm)", ylabel="y (cm)", zlabel="z (cm)")
 - **Held azimuths.** 27.8% of the default session's heading samples repeat the
   sample before, in runs of up to 44 s while the head moves along its path.
   The summary counts them.
-- **Heading frames not verified.** In 16 of the 54 sessions that load, the
+- **Heading frames not verified.** In 16 of the 56 sessions that load, the
   turned azimuth does not follow the direction of movement (circular mean
-  within 0.2 rad of 0 and median absolute deviation under 45 deg). In 7 of
+  within 0.2 rad of 0 and median absolute deviation under 45 deg). In 8 of
   them the 2-D positions hold still for more than half of their steps, so
-  their map to the 3-D frame is undetermined; in the other 9 the mean is
-  within 8 deg of 0 but the spread is above 45 deg. Those sessions keep the
-  azimuth and say the frame is not verified.
+  their map to the 3-D frame is undetermined; in the other 8 the mean is
+  within 8 deg of 0 but the spread is above 45 deg. The refused session
+  `951_13092018`, loaded with `accept_failed_checks=("units",)`, is not
+  verified either: its mean is 179 deg. Those sessions keep the azimuth and
+  say the frame is not verified.
 - **The head beyond the bars.** 24.9% of the default session's samples lie
   outside the lattice's cube, up to 33 cm beyond a face: the tracked head of a
-  rat on the outer bars. They lie in the environment.
+  rat on the outer bars. The environment, the authors' grid, holds all of
+  them, in every session; the summary gives the share.
 - **Units that stop firing.** In the default session t14c4, t14c5 and t14c6
   stop firing partway through the lattice part, and t15c1 starts late in the
   first arena part; the file does not say whether the clusters were lost.
-- **Single precision.** Times and spike times are stored as float32: at the
-  end of a session one step is about 0.5 ms, so the sample intervals vary
-  around 0.02 s.
+- **Single precision.** Where `lattice_3d.pot` or the spike times are stored
+  as float32 (in every session of the archive both are), one float32 step at the end
+  of a session is about 0.5 ms, so the sample intervals vary around 0.02 s.
+  The summary says so only for a session whose file stores them as float32.
 - **Processed positions.** The Supplementary Methods say the cameras tracked
   the LEDs at 25 Hz, the paths from every pair of cameras were combined, and
   missing stretches were interpolated and smoothed. The file holds the result
   at 50 Hz, so speeds describe that processing as much as the tracking.
 - **Square parts that end after the last spike.** In `894_21122017` and
-  `926_16042018` the `square2` epoch ends 17.5 s and 94.6 s after the last
-  sorted spike, and no lattice sample lies there. The epoch is clipped to the
-  recording (its first to last sample or spike), and the summary gives the
-  listed and the clipped row.
+  `926_16042018` the file lists `square2` as 17.5 s and 94.6 s longer than
+  the data: the square parts hold no position sample, and the sorted units
+  stop firing before the listed part ends. The epoch is clipped to the
+  recording (its first to last sample or spike), so a per-epoch rate over
+  `epochs["square2"]` covers the data, not the listed part. The summary
+  gives the listed and the clipped row.
 - **A session refused by the checks.** `951_13092018` fails the units check:
   its positions span 207.7 cm in y, past the stated 201.6 cm. It loads with
   `accept_failed_checks=("units",)`.

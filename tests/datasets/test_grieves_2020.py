@@ -83,6 +83,7 @@ def write_session(
     grid_slope=1 / 50,
     heading_offset=0.0,
     spikes_until=None,
+    times_dtype=np.float32,
 ):
     """A session file laid out as the archive's: an ``sdata`` struct in HDF5.
 
@@ -90,7 +91,8 @@ def write_session(
     direction of movement in the 2-D positions' frame, in degrees, plus
     ``heading_offset`` (rad). One tetrode: cluster 0 (unsorted) and
     clusters 1 and 2, spiking from 0 s to the end of the last part, or to
-    ``spikes_until``.
+    ``spikes_until``. Both ``pot`` and the spike times are stored as
+    ``times_dtype``, float32 as in the archive.
     """
     h5py = pytest.importorskip("h5py")
     times = np.concatenate(
@@ -129,7 +131,7 @@ def write_session(
                 "times", data=np.array(rows, dtype=float).T
             )
         lattice3 = s.create_group("lattice_3d")
-        _row(lattice3, "pot", times)
+        _row(lattice3, "pot", times, times_dtype)
         for key, column in zip(("pox", "poy", "poz"), xyz.T, strict=True):
             _row(lattice3, key, column)
         _row(lattice3, "pov", speed * velocity_scale)
@@ -145,7 +147,7 @@ def write_session(
             "dwellmap", data=np.zeros((SHAPE[2], SHAPE[0], SHAPE[1]), dtype=np.float32)
         )
         lattice2 = s.create_group("lattice")
-        _row(lattice2, "pot", times)
+        _row(lattice2, "pot", times, times_dtype)
         _row(lattice2, "pox", flat[:, 0])
         _row(lattice2, "poy", flat[:, 1])
         _row(lattice2, "poh", np.degrees(np.mod(azimuth, 2 * np.pi)))
@@ -156,7 +158,7 @@ def write_session(
         }
         for name, spikes in trains.items():
             cell = s.create_group(name)
-            _row(cell, "spike_times", spikes)
+            _row(cell, "spike_times", spikes, times_dtype)
             if not name.endswith("_c0"):
                 _write_char(cell, "automatic_cell_name", "Place cell")
     return times, xyz, trains
@@ -260,7 +262,10 @@ def test_environment_is_the_authors_grid(tmp_path, session_entry):
     assert "holding 100.00% of the tracked samples" in rec.env_source
 
 
-def test_mirrored_frames_give_minus_poh_as_a_stated_conversion(tmp_path, session_entry):
+def test_mirrored_frames_give_minus_poh_as_an_inferred_conversion(
+    tmp_path, session_entry
+):
+    """The exact mirror is the evidence; poh's degrees and frame stay inferences."""
     folder, (_, xyz, _) = _folder(tmp_path)
     rec = _loaded(folder, session_entry)
     move = np.diff(xyz[:, :2], axis=0)
@@ -268,8 +273,9 @@ def test_mirrored_frames_give_minus_poh_as_a_stated_conversion(tmp_path, session
     difference = np.angle(np.exp(1j * (rec.headings[:-1] - expected)))
     assert np.max(np.abs(difference)) < 1e-3
     heading = next(c for c in rec.conversions if c.text.startswith("headings"))
-    assert heading.basis == "stated"
+    assert heading.basis == "inferred"
     assert "(here -poh)" in heading.text
+    assert "no source read gives poh's unit or frame" in heading.evidence
     assert "under a mirror in y (a reflection across the x axis)" in heading.evidence
     assert "plus a shift of (-165.6, 1039.6) mm" in heading.evidence
     assert not any("not verified" in text for text in rec.watch_outs)
@@ -362,6 +368,30 @@ def test_a_square_part_ending_after_the_last_spike_is_clipped(tmp_path, session_
     )
     clip = next(c for c in rec.conversions if c.text.startswith("epochs: rows"))
     assert "the file's part_config lists them so" in clip.evidence
+    (part,) = [t for t in rec.watch_outs if t.startswith("part_config lists")]
+    assert part.startswith("part_config lists square2 as [800, 1000] s, longer")
+    assert f"stop firing (last spike {stop:.6g} s) before it ends" in part
+    assert "covers the data, not the listed part" in part
+
+
+def test_a_lattice_part_past_the_data_gives_clipped_analysis_epochs(
+    tmp_path, session_entry
+):
+    """analysis_epochs and the decoding blocks follow the clipped lattice row."""
+    import h5py
+
+    parts = {"square1": [(0.0, 200.0)], "lattice": [(200.0, 800.0)]}
+    names = NAMES[:2]
+    folder, _ = _folder(tmp_path, parts=parts, names=names, spikes_until=790.0)
+    with h5py.File(folder / f"{DEFAULT}.mat", "r+") as mat:
+        mat["sdata/part_config/lattice/times"][...] = [[200.0], [900.0]]
+    rec = _loaded(folder, session_entry)
+    assert rec.failed_checks == ()
+    (stop,) = rec.epochs["lattice"][:, 1]
+    assert stop == pytest.approx(rec.times[-1])
+    np.testing.assert_array_equal(rec.params["analysis_epochs"], rec.epochs["lattice"])
+    blocks = np.concatenate([rec.params["train_epochs"], rec.params["test_epochs"]])
+    assert blocks.max() == pytest.approx(stop)
 
 
 def test_held_runs_are_found_from_eleven_identical_samples():
@@ -405,6 +435,29 @@ def test_samples_outside_the_cube_are_counted(tmp_path, session_entry):
     (finding,) = [t for t in rec.watch_outs if "outside the lattice's cube" in t]
     assert finding.startswith(f"{300 / rec.times.size:.1%} of tracked samples lie")
     assert "up to 10 cm beyond a face" in finding
+    # The grid's top is (33 - 5.75) x 5 = 136.25 cm, above the lifted 107 cm.
+    assert "the authors' grid, holds 100.0% of them (100.00% of all" in finding
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected"),
+    [
+        (np.float32, "Times (lattice_3d.pot) and spike times are stored in single"),
+        (np.float64, None),
+    ],
+)
+def test_single_precision_is_reported_only_for_float32_times(
+    tmp_path, session_entry, dtype, expected
+):
+    folder, _ = _folder(tmp_path, times_dtype=dtype)
+    rec = _loaded(folder, session_entry)
+    found = [t for t in rec.watch_outs if "single precision" in t]
+    if expected is None:
+        assert found == []
+    else:
+        (text,) = found
+        assert text.startswith(expected)
+        assert "one float32 step is 0.061 ms" in text
 
 
 def test_similarity_map_recovers_a_reflection_scale_and_shift():
@@ -457,7 +510,7 @@ def test_loads_default_session(session_entry, assert_default_session):
     # movement in the positions' frame mean 0.8 deg, spread 42 deg.
     assert "is 10.03 times the stored velocity pov" in rec.conversions[0].evidence
     heading = next(c for c in rec.conversions if c.text.startswith("headings"))
-    assert heading.basis == "stated"
+    assert heading.basis == "inferred"
     assert "(here -poh)" in heading.text
     assert (
         "circular mean 0.8 deg and median absolute deviation 42.3" in heading.evidence
