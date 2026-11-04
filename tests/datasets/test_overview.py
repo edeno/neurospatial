@@ -666,3 +666,112 @@ def test_speed_panel_says_when_no_speed_can_be_computed(square_recording):
     _panel_speed(rec, ax)
     assert any("no speed" in t for t in _texts(ax))
     plt.close(fig)
+
+
+#: Planted place-field centers (cm along the stem); None is a silent unit.
+FIELD_CENTERS = (70.0, None, 20.0, 50.0, None, 90.0, 35.0)
+
+
+@pytest.fixture
+def place_cell_stem_recording(square_recording):
+    """300 s of laps on a 0-100 cm stem, one unit per planted field center."""
+    times = np.arange(15_000) / 50.0
+    lap = np.abs((times / 10.0) % 2.0 - 1.0)  # 10 s each way
+    positions = (1.0 + 98.0 * lap)[:, None]
+    env, _, _ = _stem_env(positions)
+    rng = np.random.default_rng(7)  # spikes only; the path is deterministic
+    trains = []
+    for center in FIELD_CENTERS:
+        if center is None:
+            trains.append(np.empty(0))
+            continue
+        rate = 15.0 * np.exp(-0.5 * ((positions[:, 0] - center) / 4.0) ** 2)
+        trains.append(times[rng.random(times.size) < rate / 50.0])
+    units = pd.DataFrame(
+        {"brain_region": ["CA1"] * len(trains), "label": ["pyramidal"] * len(trains)},
+        index=pd.Index(np.arange(len(trains)), name="unit_id"),
+    )
+    return dataclasses.replace(
+        square_recording,
+        times=times,
+        positions=positions,
+        env=env,
+        spike_times=tuple(trains),
+        units=units,
+        epochs={},
+        headings=None,
+        heading_source="",
+        params={"min_speed": 2.0},
+    )
+
+
+def _expected_field_order():
+    firing = [i for i, c in enumerate(FIELD_CENTERS) if c is not None]
+    silent = [i for i, c in enumerate(FIELD_CENTERS) if c is None]
+    return [*sorted(firing, key=lambda i: FIELD_CENTERS[i]), *silent]
+
+
+def test_hippocampal_track_raster_is_sorted_by_place_field_peak(
+    place_cell_stem_recording,
+):
+    rec = place_cell_stem_recording
+    expected = _expected_field_order()
+    np.testing.assert_array_equal(rec._raster_order, expected)
+    # The overview's raster draws unit expected[k] in row k.
+    ax = _titled(rec.plot_overview(), "First 60 s")
+    raster = ax.child_axes[1]
+    assert raster.get_ylabel() == "units, sorted by place-field peak"
+    start, stop = raster.get_xlim()
+    for row, unit in enumerate(expected):
+        train = rec.spike_times[unit]
+        n = int(np.sum((train >= start) & (train < stop)))
+        assert len(raster.collections[row].get_segments()) == n
+        if n:
+            np.testing.assert_allclose(
+                raster.collections[row].get_segments()[0][:, 1], [row - 0.4, row + 0.4]
+            )
+    # The scene's raster uses the same order.
+    (overlay,) = [
+        o for o in rec.animation().overlays if isinstance(o, SpikeRasterOverlay)
+    ]
+    np.testing.assert_array_equal(overlay.order, expected)
+
+
+@pytest.mark.parametrize("region", ["MEC LII", "thalamus"])
+def test_non_hippocampal_raster_keeps_the_file_order(place_cell_stem_recording, region):
+    # Negative control: the same planted fields, recorded outside the hippocampus.
+    rec = dataclasses.replace(
+        place_cell_stem_recording,
+        brain_regions=(region,),
+        units=place_cell_stem_recording.units.assign(brain_region=region),
+    )
+    assert rec._raster_order is None
+    ax = _titled(rec.plot_overview(), "First 60 s")
+    assert ax.child_axes[1].get_ylabel() == "unit"
+
+
+def test_2d_hippocampal_raster_keeps_the_file_order(square_recording):
+    # Negative control: CA1 units in a 2-D box have no order along a track.
+    assert square_recording._raster_order is None
+
+
+@pytest.mark.parametrize(
+    ("region", "hippocampal"),
+    [
+        ("lCA1", True),
+        ("dorsal hippocampus", True),
+        ("DG", True),
+        ("CA3", True),
+        ("edge cortex", False),
+        ("MEC LII", False),
+    ],
+)
+def test_hippocampal_regions_are_matched_by_name(square_recording, region, hippocampal):
+    from neurospatial.datasets._overview import is_hippocampal
+
+    rec = dataclasses.replace(
+        square_recording,
+        brain_regions=(region,),
+        units=square_recording.units.assign(brain_region=region),
+    )
+    assert is_hippocampal(rec) is hippocampal

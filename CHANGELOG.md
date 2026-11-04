@@ -376,6 +376,15 @@
   rec.animation()": the x–y path inside the room's x–y bounds, and occupancy
   summed over the vertical axis per x–y column, gray where never visited;
   both are titled "top view (x–y, summed over z)".
+- For a hippocampal recording (brain regions naming the hippocampus, CA1, CA3
+  or DG, in any case) on a 1-D environment (a track, linearized graph or 1-D
+  grid), the overview's raster, labelled "units, sorted by place-field peak",
+  and the scene's raster order units by their rate-map peak along the track:
+  `compute_spatial_rates` on `rec.env` with `params["min_speed"]`, computed
+  once per recording. Units with no peak (no finite rate above zero) go last,
+  in file order. Other recordings keep the file's order. On `comrie_2026`
+  (203 units, 709k samples) the rate maps add about 4.7 s to the first
+  `plot_overview()` (3.3 s to 8.0 s).
 
 ### Fixes from the review of the result contract, warnings and simulators
 

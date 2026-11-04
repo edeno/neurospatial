@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -321,6 +322,79 @@ def _panel_units(rec: Recording, ax: Axes) -> None:
     inset.tick_params(labelsize=7)
 
 
+#: Brain regions whose units are sorted by place-field peak on a 1-D track.
+HIPPOCAMPAL = re.compile(r"hippocamp|ca1|ca3|(?<![a-z])dg(?![a-z])", re.IGNORECASE)
+
+#: The raster's unit axis when its rows are sorted by place-field peak.
+SORTED_LABEL = "units, sorted by place-field peak"
+
+
+def is_hippocampal(rec: Recording) -> bool:
+    """Whether the recording's brain regions name the hippocampus.
+
+    True when ``rec.brain_regions`` or a unit's ``brain_region`` mentions
+    the hippocampus, CA1, CA3 or DG, in any case (``"lCA1"`` counts).
+    """
+    regions = [*rec.brain_regions, *rec.units["brain_region"].dropna().astype(str)]
+    return any(HIPPOCAMPAL.search(region) for region in regions)
+
+
+def place_field_order(rec: Recording) -> NDArray[np.intp] | None:
+    """Raster rows by each unit's rate-map peak along a 1-D track.
+
+    Only for hippocampal recordings (:func:`is_hippocampal`) on a 1-D
+    environment (a track, linearized graph or 1-D grid); None otherwise,
+    and the raster keeps the file's order.
+
+    The rate maps are :func:`~neurospatial.compute_spatial_rates` on
+    ``rec.env`` with its defaults and ``params["min_speed"]`` where set. A
+    unit's peak is the bin of its highest finite rate, at that bin's
+    distance along the track; a unit with no finite rate above zero has no
+    peak and goes last, in file order (the sort is stable).
+
+    Returns
+    -------
+    ndarray of intp, shape (n_units,) or None
+        Indices into ``rec.spike_times``, first row first.
+    """
+    env = rec.env
+    if (
+        env is None
+        or rec.positions is None
+        or rec.n_units < 2
+        or not (env.is_linearized_track or env.n_dims == 1)
+        or not is_hippocampal(rec)
+    ):
+        return None
+    import warnings
+
+    from neurospatial import compute_spatial_rates
+    from neurospatial.environment import _track_extents
+
+    with warnings.catch_warnings():
+        # Sorting rows does not rely on what these warn about (dropped
+        # samples, silent units); the analyses that do warn on their own.
+        warnings.simplefilter("ignore")
+        rates = np.asarray(
+            compute_spatial_rates(
+                env,
+                rec.spike_times,
+                rec.times,
+                rec.positions,
+                min_speed=_min_speed(rec),
+            ).firing_rates,
+            dtype=np.float64,
+        )
+    extents = _track_extents(env)
+    assert extents is not None
+    along = (extents[0] + extents[1]) / 2
+    finite = np.where(np.isfinite(rates), rates, -np.inf)
+    peak_bin = np.argmax(finite, axis=1)
+    has_peak = finite[np.arange(len(rates)), peak_bin] > 0
+    peaks = np.where(has_peak, along[peak_bin], np.inf)
+    return np.argsort(peaks, kind="stable").astype(np.intp)
+
+
 def _panel_time(rec: Recording, ax: Axes) -> None:
     title = f"First {WINDOW_SECONDS:g} s of tracking with spikes"
     ax.set_title(title)
@@ -337,12 +411,15 @@ def _panel_time(rec: Recording, ax: Axes) -> None:
     top.set_ylabel(rec.position_units or "", fontsize=8)
     top.legend(frameon=False, fontsize=7, ncols=3, loc="upper right")
     top.tick_params(labelbottom=False)
-    for row, train in enumerate(rec.spike_times):
+    order = rec._raster_order
+    rows = np.arange(rec.n_units) if order is None else order
+    for row, unit in enumerate(rows):
+        train = rec.spike_times[unit]
         inside = train[(train >= start) & (train < stop)]
         bottom.vlines(inside, row - 0.4, row + 0.4, color="k", lw=0.5)
     bottom.set_xlim(start, stop)
     bottom.set_xlabel("time (s)")
-    bottom.set_ylabel("unit", fontsize=8)
+    bottom.set_ylabel("unit" if order is None else SORTED_LABEL, fontsize=8)
 
 
 def plot_overview(rec: Recording, fig: Figure | None = None) -> Figure:
@@ -540,7 +617,11 @@ def animation(
         )
     if rec.n_units:
         overlays.append(
-            SpikeRasterOverlay(rec.spike_times, unit_ids=rec.units.index.to_numpy())
+            SpikeRasterOverlay(
+                rec.spike_times,
+                order=rec._raster_order,
+                unit_ids=rec.units.index.to_numpy(),
+            )
         )
     points = {k: v for k, v in rec.events.items() if v.ndim == 1 and v.size}
     if points:

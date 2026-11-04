@@ -683,6 +683,16 @@ class Recording(ReadOnlyArraysMixin):
         median, p95, p999 = np.percentile(speed, [50, 95, 99.9])
         return float(median), float(p95), float(p999), float(speed.max())
 
+    @cached_property
+    def _raster_order(self) -> NDArray[np.intp] | None:
+        """Rows of the raster, by place-field peak, as :func:`place_field_order`.
+
+        Cached: the overview and the scene share one rate-map computation.
+        """
+        from neurospatial.datasets._overview import place_field_order
+
+        return place_field_order(self)
+
     def summary(self) -> dict[str, Any]:
         """Return the session's headline numbers, each a property of ``rec``.
 
