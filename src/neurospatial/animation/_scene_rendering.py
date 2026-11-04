@@ -7,6 +7,7 @@ updates their data, so a frame costs drawing rather than figure construction.
 from __future__ import annotations
 
 import copy
+import warnings
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple, cast
@@ -14,12 +15,15 @@ from typing import Any, NamedTuple, cast
 import numpy as np
 from matplotlib.colors import to_rgba
 
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.animation._prepared import PreparedScene, TrackWindow
 from neurospatial.animation._style import (
     _head_direction_color,
     _marker_area,
     _rate_opacity,
 )
+from neurospatial.animation._tracks import track_position
+from neurospatial.environment import _track_extents
 
 Update = Callable[[float], None]
 
@@ -162,6 +166,23 @@ class SceneRenderer:
         self.canvas = FigureCanvasAgg(self.figure)
         # Built on the first render; each entry updates its artists to a time.
         self._updates: list[Update] = []
+        # A track's field is drawn along it (``Environment.plot_field``), so
+        # the spatial overlays on it are drawn at their distance along it.
+        self._along_track = bool(scene.env.is_linearized_track)
+
+    def _shown(self, points: np.ndarray) -> np.ndarray:
+        """Display coordinates of environment ``points``, shape ``(..., n_dims)``.
+
+        On a linearized track, the distance along the track, shape
+        ``(..., 1)``: the field panel's x axis. Elsewhere ``points`` itself.
+        NaN stays NaN.
+        """
+        if not self._along_track:
+            return points
+        points = np.asarray(points, dtype=np.float64)
+        flat = points.reshape(-1, points.shape[-1])
+        along = track_position(self.scene.env, flat) if len(flat) else np.empty(0)
+        return along.reshape((*points.shape[:-1], 1))
 
     def close(self) -> None:
         self.figure.clear()
@@ -273,6 +294,9 @@ class SceneRenderer:
         from neurospatial.layout import _cell_shape
 
         shape = "line" if env.n_dims == 1 else _cell_shape(env.binning)
+        # Where the field is drawn along x: its distance along a track, or
+        # a 1-D environment's own coordinate.
+        extents = _track_extents(env) if shape in ("line", "track") else None
         if shape == "grid":
             from neurospatial.geometry import require_grid_context
             from neurospatial.layout.helpers.utils import map_active_data_to_grid
@@ -310,11 +334,11 @@ class SceneRenderer:
                 ),
             )
             ax.set_title(name)
-            if shape == "line":
+            if extents is not None:
                 # One view for every frame: the track's extent and the field's
                 # fixed scale, with zero, where position markers are drawn. A
                 # missing row neither moves the axes nor hides the animal.
-                track = env.dimension_ranges[0]
+                track = (float(extents[0].min()), float(extents[1].max()))
                 _fit_view(
                     ax,
                     np.array([[track[0], min(low, 0.0)], [track[1], max(high, 0.0)]]),
@@ -428,6 +452,14 @@ class SceneRenderer:
         """Create the spatial overlays in drawing order, each with its update."""
         scene = self.scene
         data = scene._overlay_data
+        if self._along_track:
+            self._warn_left_out_along_track()
+            updates: list[Update] = [
+                self._position(ax, position) for position in data.positions
+            ]
+            updates += [self._bodyparts(ax, body) for body in data.bodypart_sets]
+            updates += [self._events(ax, events) for events in data.events]
+            return updates
         updates = [self._video(ax, video) for video in data.videos]
         if scene._region_names:
             if scene.env.n_dims == 2:
@@ -447,6 +479,32 @@ class SceneRenderer:
         ]
         updates += [self._events(ax, events) for events in data.events]
         return updates
+
+    def _warn_left_out_along_track(self) -> None:
+        """Warn that a track's along-track panel leaves out planar overlays."""
+        data = self.scene._overlay_data
+        left_out = [
+            name
+            for name, present in (
+                ("VideoOverlay", data.videos),
+                ("HeadDirectionOverlay", data.head_directions),
+                ("ObjectVectorOverlay", data.object_vectors),
+                ("regions", self.scene._region_names),
+            )
+            if present
+        ]
+        if left_out:
+            warnings.warn(
+                f"The scene renderer draws this track's field along the track, so "
+                f"its field panel leaves out {', '.join(left_out)}: directions, "
+                "camera frames and region outlines have no place on an "
+                "along-track axis. Positions, body parts and events are drawn at "
+                "their distance along the track. To see them in the track's "
+                "plane, use Animation.show(backend='fastplotlib') or "
+                "backend='napari'.",
+                UserWarning,
+                stacklevel=_external_stacklevel(),
+            )
 
     def _video(self, ax: Any, video: Any) -> Update:
         # A placeholder image keeps the overlay order; frames replace its data.
@@ -501,8 +559,18 @@ class SceneRenderer:
             point = self.prepared.sample(position, position.data, time)
             if position.trail_length:
                 segments, alphas = self.prepared.trail(position, time)
+                segments = self._shown(segments)
+                if self._along_track:
+                    # As in the along-track panel, a step between two
+                    # segments of the track is not drawn: a line between them
+                    # would cross distances the animal never passed.
+                    piece = np.searchsorted(
+                        self.prepared.segment_starts, segments[:, :, 0], "right"
+                    )
+                    same = piece[:, 0] == piece[:, 1]
+                    segments, alphas = segments[same], alphas[same]
                 trail.set(segments, alpha=alphas)
-            _set_points(marker, point[None])
+            _set_points(marker, self._shown(point[None]))
 
         return update
 
@@ -529,8 +597,8 @@ class SceneRenderer:
         def update(time: float) -> None:
             pose = self.prepared.pose(body, time)
             for marker, point in zip(markers, pose.points, strict=True):
-                _set_points(marker, point[None])
-            skeleton.set(pose.skeleton)
+                _set_points(marker, self._shown(point[None]))
+            skeleton.set(self._shown(pose.skeleton))
 
         return update
 
@@ -644,7 +712,7 @@ class SceneRenderer:
                 face[:, 3] = edge[:, 3] = shown.opacity
                 markers[name].set_facecolor(face)
                 markers[name].set_edgecolor(edge)
-                _set_points(markers[name], shown.positions)
+                _set_points(markers[name], self._shown(shown.positions))
 
         return update
 

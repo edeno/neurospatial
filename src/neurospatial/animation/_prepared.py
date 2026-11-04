@@ -390,7 +390,7 @@ class PreparedScene:
             None if self.track_extents is None else _track_rows(*self.track_extents)
         )
         # Where each segment of a linearized track starts along it.
-        self._segment_starts = np.array(
+        self.segment_starts = np.array(
             [start for _, start, _ in track_segments(self.track_env)], dtype=float
         )
         self.projection = (
@@ -820,7 +820,7 @@ class PreparedScene:
             start = int(np.searchsorted(times, left, side="left"))
             stop = int(np.searchsorted(times, right, side="right"))
             along = track_position(self.track_env, position.data[start:stop])
-            segment = np.searchsorted(self._segment_starts, along, side="right")
+            segment = np.searchsorted(self.segment_starts, along, side="right")
             before, after = self._joined(position, start, stop)
             before, after = before - start, after - start
             # A valid gap joins its two supported samples on one segment of

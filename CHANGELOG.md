@@ -313,6 +313,20 @@
   from `rec.env.binning.linearization`; its analysis outputs are unchanged.
   `scripts/profile_napari_animation.py` loads it the same way.
 
+#### Fixes from running the loaders as a user
+
+- The Matplotlib scene (`render_frame`, `export` and the notebook widget)
+  draws a linearized track's field against distance along the track, and
+  now draws positions, their trails, body parts and events there too, at
+  their distance along the track (`env.to_linear`), with no trail step
+  between two segments of the track. They were drawn at their raw `(x, y)`
+  (or, on a 1-D track, their native coordinate) on the distance-by-value
+  axes: on `comrie_2026` the animal's dot sat at (230.8, 125.4) instead of
+  188.4 cm along the track, and on the `grosmark_2016` stem 5.3 cm off. Head
+  direction arrows, object vectors, videos and regions have no place on that
+  axis; the Matplotlib scene now leaves them out with a warning that names
+  them and the views that draw the track in its plane (fastplotlib, napari).
+
 ### Fixes from the review of the result contract, warnings and simulators
 
 **Breaking**
