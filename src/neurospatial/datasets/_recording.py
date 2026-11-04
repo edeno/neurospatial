@@ -1013,13 +1013,14 @@ def nwb_unit_table(
     units : NWBUnits
         The file's units, from :func:`neurospatial.io.nwb.read_units`.
     region_column : str, optional
-        The file's column ``brain_region`` is read from; missing values where
-        the file has no such column.
+        The file's column ``brain_region`` is read from. The file must have
+        it.
     region : str, optional
         The brain region of every unit, without ``region_column``; None
         leaves it missing.
     label_column : str, optional
-        The file's column ``label`` is read from; None leaves it missing.
+        The file's column ``label`` is read from. The file must have it;
+        None leaves ``label`` missing.
     keep_columns : bool, default False
         Keep the file's own columns beside ``brain_region`` and ``label``.
 
@@ -1029,12 +1030,28 @@ def nwb_unit_table(
         One row per unit, indexed as the file's table.
     regions : tuple of str
         The units' brain regions, in order of first appearance.
+
+    Raises
+    ------
+    ValueError
+        If the file's units table lacks ``region_column`` or ``label_column``.
     """
     table = units.unit_table
     assert table is not None  # read_units always reads the table
+    if missing := [
+        column
+        for column in (region_column, label_column)
+        if column is not None and column not in table.columns
+    ]:
+        msg = (
+            f"the file's units table has no column {missing!r} (columns: "
+            f"{list(table.columns)!r}); the loader reads brain regions and "
+            "labels from it"
+        )
+        raise ValueError(msg)
     out = table.copy() if keep_columns else table[[]].copy()
-    out["brain_region"] = region if region_column is None else table.get(region_column)
-    out["label"] = None if label_column is None else table.get(label_column)
+    out["brain_region"] = region if region_column is None else table[region_column]
+    out["label"] = None if label_column is None else table[label_column]
     return out, tuple(dict.fromkeys(out["brain_region"].dropna().astype(str)))
 
 

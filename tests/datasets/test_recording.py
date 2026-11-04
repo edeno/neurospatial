@@ -233,3 +233,20 @@ def test_pickle_round_trip(square_recording):
     assert not restored.positions.flags.writeable
     assert dict(restored.epochs).keys() == {"run"}
     assert repr(restored) == repr(square_recording)
+
+
+def test_nwb_unit_table_refuses_a_missing_column():
+    import types
+
+    import pandas as pd
+
+    from neurospatial.datasets._recording import nwb_unit_table
+
+    units = types.SimpleNamespace(
+        unit_table=pd.DataFrame({"location": ["CA1", "CA3"]}, index=[3, 7])
+    )
+    table, regions = nwb_unit_table(units, region_column="location")
+    assert list(table["brain_region"]) == ["CA1", "CA3"]
+    assert regions == ("CA1", "CA3")
+    with pytest.raises(ValueError, match=r"no column \['cell_type'\]"):
+        nwb_unit_table(units, region_column="location", label_column="cell_type")

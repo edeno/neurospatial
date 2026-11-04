@@ -169,7 +169,11 @@ def load_session(
     times = np.asarray(position.times, dtype=np.float64)
     positions = np.asarray(position.positions, dtype=np.float64) * scale
     env, placement = _declared_square(positions, entry.session, position.frame)
-    table, regions = nwb_unit_table(units, region_column="histology", keep_columns=True)
+    # Not every session's units table has a histology column.
+    histology = "histology" in getattr(units.unit_table, "columns", ())
+    table, regions = nwb_unit_table(
+        units, region_column="histology" if histology else None, keep_columns=True
+    )
     train, test = alternating_blocks(times[0], times[-1], BLOCK)
     note = ", a placeholder" if started.year == 1900 else ""
     clock = (
