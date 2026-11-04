@@ -1091,3 +1091,48 @@ def interval_rows(table: pd.DataFrame) -> NDArray[np.float64]:
     )
     ordered: NDArray[np.float64] = rows[np.argsort(rows[:, 0], kind="stable")]
     return ordered
+
+
+def heading_vs_movement(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+    *,
+    min_speed: float,
+) -> tuple[float, float]:
+    """Compare a heading series with the direction of movement while running.
+
+    A heading in the positions' allocentric frame points along the path
+    while the animal runs, so the circular mean of heading minus movement
+    direction is near 0 and the spread is tens of degrees. A constant mean
+    away from 0 is an offset (a mounting or posture); near ±π/2 or π a
+    rotated or mirrored frame.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+    positions : ndarray, shape (n_time, 2)
+        In the length unit of ``min_speed``.
+    headings : ndarray, shape (n_time,)
+        Radians.
+    min_speed : float
+        Steps faster than this (length per second) count as running.
+
+    Returns
+    -------
+    mean, spread : float
+        Circular mean of heading minus the direction of the step to the next
+        sample, and the median absolute deviation from that mean, in radians.
+    """
+    from neurospatial._angles import wrap_angle
+    from neurospatial.stats.circular import circular_mean
+
+    step = np.diff(positions, axis=0)
+    speed = np.linalg.norm(step, axis=1) / np.diff(times)
+    moving = np.arctan2(step[:, 1], step[:, 0])
+    start = headings[:-1]
+    running = (speed > min_speed) & np.isfinite(start)
+    diff = wrap_angle(start[running] - moving[running])
+    mean = circular_mean(diff)
+    spread = float(np.median(np.abs(wrap_angle(diff - mean))))
+    return mean, spread
