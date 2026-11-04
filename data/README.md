@@ -22,7 +22,7 @@ rec.linearized     # Position along the linearized track in cm
 rec.env            # The authors' track graph as an Environment, 2 cm bins
 track = rec.env.binning.linearization
 track.graph, track.edge_order, track.edge_spacing  # NetworkX graph, edges, 15 cm
-rec.params["head_orientation"]  # Head direction in radians
+rec.params["head_orientation"]  # The file's head orientation, radians
 ```
 
 The first call saves `j1620210710_02_r1_figure04_inputs.npz` (about 75 MB)
@@ -43,6 +43,12 @@ does not download data.
 
 The archive contains numeric and string arrays, loaded with
 `np.load(..., allow_pickle=False)`.
+
+`rec.headings` is None: the file's `head_orientation` is kept in
+`rec.params["head_orientation"]` instead, because minus the direction of
+movement while running it has a circular mean of about +13 degrees, a
+constant offset from the LEDs' mounting or the rat's head posture that the
+file cannot tell apart (see the watch-outs in `print(rec)`).
 
 ### Recording contents and units
 
