@@ -655,11 +655,7 @@ def _declared_track(
     from neurospatial.datasets._tracks import nearest_segment
 
     samples = positions[tracked_mask(positions)]
-    mean = samples.mean(axis=0)
-    _, _, axes = np.linalg.svd(samples - mean, full_matrices=False)
-    axis = axes[0] if axes[0][np.argmax(np.abs(axes[0]))] > 0 else -axes[0]
-    along = (samples - mean) @ axis
-    low, high = np.quantile(along, [TRACK_TRIM, 1 - TRACK_TRIM])
+    mean, axis, along, (low, high) = principal_axis(samples)
     middle = mean + 0.5 * (low + high) * axis
     start, end = middle - TRACK / 2 * axis, middle + TRACK / 2 * axis
     graph = nx.Graph()
@@ -717,6 +713,43 @@ def _declared_track(
         ),
     )
     return env, source, conversions, width_quantile, middle
+
+
+def principal_axis(
+    samples: NDArray[np.float64],
+) -> tuple[
+    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], tuple[float, float]
+]:
+    """The samples' principal axis and where they lie along it.
+
+    Parameters
+    ----------
+    samples : ndarray, shape (n_samples, 2)
+        Tracked positions.
+
+    Returns
+    -------
+    mean : ndarray, shape (2,)
+    axis : ndarray, shape (2,)
+        Unit vector, its larger component positive.
+    along : ndarray, shape (n_samples,)
+        Each sample's coordinate along ``axis`` from ``mean``.
+    ends : (float, float)
+        The ``TRACK_TRIM`` and ``1 - TRACK_TRIM`` quantiles of ``along``.
+
+    Examples
+    --------
+    >>> line = np.column_stack([np.linspace(0, 6, 601), np.linspace(0, 8, 601)])
+    >>> mean, axis, along, ends = principal_axis(line)
+    >>> np.round(axis, 6).tolist(), round(ends[1] - ends[0], 3)
+    ([0.6, 0.8], 9.9)
+    """
+    mean = samples.mean(axis=0)
+    _, _, axes = np.linalg.svd(samples - mean, full_matrices=False)
+    axis = axes[0] if axes[0][np.argmax(np.abs(axes[0]))] > 0 else -axes[0]
+    along = (samples - mean) @ axis
+    low, high = np.quantile(along, [TRACK_TRIM, 1 - TRACK_TRIM])
+    return mean, axis, along, (float(low), float(high))
 
 
 def _heading_conversion(offset: float, spread: float) -> Conversion:
