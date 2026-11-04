@@ -255,3 +255,25 @@ def test_loads_default_session(session_entry, assert_default_session):
     assert "ry negated spreads 87 degrees" in sign.evidence
     assert rec.headings.min() < -3.0
     assert rec.headings.max() > 3.0
+
+
+@pytest.mark.realdata
+@OLD_DEVICE
+def test_whole_session_rates_warn_about_the_sleep_spikes():
+    """Two thirds of the spikes are in the sleep before tracking: rates warn, epochs not."""
+    import warnings
+
+    from neurospatial import compute_spatial_rates
+
+    rec = load("peyrache_rsc")
+    with pytest.warns(UserWarning, match=r"\(66%\) .* fell outside the position time"):
+        compute_spatial_rates(rec.env, rec.spike_times, rec.times, rec.positions)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compute_spatial_rates(
+            rec.env,
+            rec.spike_times,
+            rec.times,
+            rec.positions,
+            epochs=rec.params["analysis_epochs"],
+        )

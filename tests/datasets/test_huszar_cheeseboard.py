@@ -312,3 +312,25 @@ def test_loads_default_session(session_entry, assert_default_session):
     np.testing.assert_allclose(rec.env.regions["reward_1"].data, [44.5711, 74.2334])
     order = next(c for c in rec.conversions if "rewardOrder k" in c.text)
     assert "a median 2.34 cm from the well its rewardOrder names" in order.evidence
+
+
+@pytest.mark.realdata
+def test_whole_session_rates_warn_about_spikes_after_tracking():
+    """Spikes before and after the tracking (opto-tagging among them) warn; on_maze not."""
+    import warnings
+
+    from neurospatial import compute_spatial_rates
+
+    rec = load("huszar_cheeseboard")
+    with pytest.warns(UserWarning, match=r"\(11%\) .* fell outside the position time"):
+        compute_spatial_rates(rec.env, rec.spike_times, rec.times, rec.positions)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compute_spatial_rates(
+            rec.env,
+            rec.spike_times,
+            rec.times,
+            rec.positions,
+            epochs=rec.params["analysis_epochs"],
+            min_speed=rec.params["min_speed"],
+        )
