@@ -79,7 +79,7 @@ principal axis) is reported but does not judge.
 
 | Dataset | Kind | Bins | Dims | Components (1 % of bins or more) | Holes (bins) | Sparse / thin bins | Unsupported / far links | Corner links | Geodesic / straight (median, p95) | On-track samples / bins | Env / track (median, p5) | Outline: covered / centres outside / wall gap / hull over rectangle, circle | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| sargolini_000582 | open | 1399 | 2 | 1 (1) | 72 (136) | 6% / 14% | 7.6% / 0.10% | 12 | 1.06, 1.12 | – | – | 86% / 0% / 1.3 / 0.99, 0.64 | mismatch: bins cover 86% of the stated square (94% with holes filled) |
+| sargolini_000582 | open | 1399 | 2 | 1 (1) | 72 (136) | 6% / 14% | 7.6% / 0.10% | 12 | 1.06, 1.12 | – | – | 91% / 0% / 1.3 / 0.99, 0.64 | matches |
 | figure8_000552 | track | 667 | 2 | 3 (1) | 7 (806) | 6% / 13% | 3.4% / 0.00% | 6 | 1.21, 1.68 | – | – | – | matches |
 | figure8_000552_linearized | track | 112 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.04 | – | – | – | mismatch: loop ends 222 apart along the bins, 3 in the camera |
 | rosenberg_labyrinth | track | 2780 | 2 | 1 (1) | 41 (185) | 4% / 10% | 2.4% / 0.05% | 8 | 1.08, 1.76 | 95% / 99% | 0.66, 0.28 | – | mismatch: 795 links join places far apart along the track (through a wall or gap); geodesic 0.66 x the distance along the track |
@@ -90,10 +90,10 @@ principal axis) is reported but does not judge.
 | gardner_2022_grid | open | 3463 | 2 | 1 (1) | 0 (0) | 0% / 0% | 0.1% / 0.00% | 0 | 1.06, 1.10 | – | – | 96% / 0% / 1.6 / 0.99, 0.65 | matches |
 | vollan_lt | track | 556 | 2 | 1 (1) | 11 (34) | 7% / 7% | 3.5% / 0.06% | 3 | 1.04, 1.13 | 57% / 58% (assumed width) | 1.04, 1.00 | – | mismatch: 2 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
 | vollan_of | open | 2041 | 2 | 1 (1) | 131 (297) | 9% / 8% | 8.4% / 0.12% | 17 | 1.07, 1.13 | – | – | 75% / 0% / 4.3 / 0.81, 0.94 | mismatch: bins cover 75% of the stated circle (83% with holes filled) |
-| grosmark_000044_circular | track | 1547 | 2 | 2 (1) | 17 (609) | 2% / 11% | 1.9% / 0.02% | 10 | 1.09, 1.40 | 69% / 43% (assumed width) | 0.93, 0.83 | – | matches |
-| grosmark_000044_circular_linearized | track | 117 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.03 | – | – | – | mismatch: loop ends 290 apart along the bins, 27 in the camera |
-| grosmark_000044_linear | track | 1096 | 2 | 21 (3) | 13 (49) | 5% / 26% | 3.8% / 0.06% | 11 | 1.04, 1.12 | 13% / 27% (assumed width) | 1.19, 1.06 | – | mismatch: 3 parts with 1% of the bins or more, apparatus has 1; 1 loop-sized hole (1% of the bins or more), apparatus has 0 loops |
-| grosmark_000044_linear_linearized | track | 65 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.05 | – | – | – | not verified: no stated fact independent of the samples checks it |
+| grosmark_000044_circular | track | 2318 | 2 | 2 (1) | 38 (1013) | 3% / 17% | 2.3% / 0.04% | 14 | 1.09, 1.39 | 69% / 43% (assumed width) | 0.94, 0.83 | – | matches |
+| grosmark_000044_circular_linearized | track | 146 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.03 | – | – | – | mismatch: loop ends 290 apart along the bins, 26 in the camera |
+| grosmark_000044_linear | track | 1530 | 2 | 35 (2) | 23 (98) | 5% / 28% | 3.5% / 0.00% | 21 | 1.04, 1.13 | 13% / 28% (assumed width) | 1.19, 1.06 | – | mismatch: 2 parts with 1% of the bins or more, apparatus has 1; 2 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
+| grosmark_000044_linear_linearized | track | 81 | 1 | 1 (1) | – | 0% / 0% | 0.0% / 0.00% | 0 | 1.00, 1.04 | – | – | – | not verified: no stated fact independent of the samples checks it |
 | jadhav_000447 | track | 1172 | 2 | 1 (1) | 20 (81) | 3% / 19% | 2.2% / 0.00% | 5 | 1.19, 4.35 | – | – | – | mismatch: 2 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
 | jadhav_000447_familiar | track | 788 | 2 | 1 (1) | 21 (140) | 5% / 33% | 3.3% / 0.00% | 8 | 2.53, 4.87 | – | – | – | mismatch: 8 loop-sized holes (1% of the bins or more), apparatus has 0 loops |
 | hc11_achilles | None | 1096 | 2 | 21 (3) | 13 (49) | 5% / 26% | 3.8% / 0.06% | 11 | 1.04, 1.12 | 13% / 27% (assumed width) | 1.19, 1.06 | – | not verified: no source read here states the geometry |
@@ -195,7 +195,7 @@ distance along the authors' graph). The failures are of three kinds:
   percentile up to 4.9). 001754's three apparatus, 000003's open field and
   maze, and 000044's pre-track excursion are merged the same way (G-113).
 - Samples that are not on the track. 000044's linear track: 84 % of samples
-  are at the two reward ends or before the run, so only 27 % of the bins lie
+  are at the two reward ends or before the run, so only 28 % of the bins lie
   on a 10 cm wide stem (G-039); the Z-track's tracking jumps add a sparse
   second diagonal and a second part (G-117); 001845's 123 s of head
   positions leave its W in three parts (G-116). Takigawa's two tracks are two
@@ -206,9 +206,9 @@ distance along the authors' graph). The failures are of three kinds:
 
 **1-D inputs.** The figure-8's linearized position and 000044's circular
 coordinate are covered without gaps (bins over range 1.01), but each loop's
-two ends are 222 and 290 cm apart along the bins while they sit 3 and 27 cm
+two ends are 222 and 290 cm apart along the bins while they sit 3 and 26 cm
 apart in the camera (G-021). 000044's circular coordinate does not quite
-close (27 cm). J16's linearized position, laid out with 15 cm gaps between
+close (26 cm). J16's linearized position, laid out with 15 cm gaps between
 corridors, gives a 1-D environment in 9 parts with no junction (G-115). The
 figure-8's camera positions give the right 2-D shape: one main part with its
 two loops as holes (806 bins in 7 holes, the largest 445).
