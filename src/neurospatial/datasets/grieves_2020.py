@@ -638,7 +638,12 @@ def similarity_map(
     >>> source = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 2.0]])
     >>> target = source * [1.0, -1.0] * 3 + [5.0, 1.0]
     >>> rotation, scale, shift = similarity_map(source, target)
-    >>> np.round(rotation, 6).tolist(), round(scale, 6), np.round(shift, 6).tolist()
+    >>> # + 0.0 turns -0.0, which some platforms give, into 0.0.
+    >>> (
+    ...     (np.round(rotation, 6) + 0.0).tolist(),
+    ...     round(scale, 6),
+    ...     np.round(shift, 6).tolist(),
+    ... )
     ([[1.0, 0.0], [0.0, -1.0]], 3.0, [5.0, 1.0])
     """
     centre_s, centre_t = source.mean(axis=0), target.mean(axis=0)
