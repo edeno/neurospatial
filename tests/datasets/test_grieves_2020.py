@@ -82,13 +82,15 @@ def write_session(
     n_bars=147,
     grid_slope=1 / 50,
     heading_offset=0.0,
+    spikes_until=None,
 ):
     """A session file laid out as the archive's: an ``sdata`` struct in HDF5.
 
     The lattice part is 50 Hz of a path in mm; ``lattice.poh`` is the
     direction of movement in the 2-D positions' frame, in degrees, plus
     ``heading_offset`` (rad). One tetrode: cluster 0 (unsorted) and
-    clusters 1 and 2, spiking from 0 s to the end of the last part.
+    clusters 1 and 2, spiking from 0 s to the end of the last part, or to
+    ``spikes_until``.
     """
     h5py = pytest.importorskip("h5py")
     times = np.concatenate(
@@ -103,6 +105,8 @@ def write_session(
     azimuth[-1] = azimuth[-2]
     bars = _bars_mm()[: 3 * n_bars]
     end = max(stop for rows in parts.values() for _, stop in rows)
+    if spikes_until is not None:
+        end = spikes_until
     rng = np.random.default_rng(3)
     with h5py.File(path, "w") as mat:
         s = mat.create_group("sdata")
@@ -342,6 +346,24 @@ def test_a_lattice_of_two_recordings_and_no_second_square(tmp_path, session_entr
     assert "200102c_lattice" in days
 
 
+def test_a_square_part_ending_after_the_last_spike_is_clipped(tmp_path, session_entry):
+    """square2 runs 100 s past the last spike: clipped to it, not refused."""
+    folder, _ = _folder(tmp_path, spikes_until=900.0)
+    rec = _loaded(folder, session_entry)
+    assert rec.failed_checks == ()
+    stop = max(float(t.max()) for t in rec.spike_times)
+    assert stop <= 900.0
+    np.testing.assert_allclose(rec.epochs["square2"], [[800.0, stop]])
+    np.testing.assert_array_equal(rec.epochs["square1"], [[0.0, 200.0]])
+    assert any(
+        text.startswith("1 epoch row reaches past the recording")
+        and "epochs['square2'] [800, 1000] s ends" in text
+        for text in rec.watch_outs
+    )
+    clip = next(c for c in rec.conversions if c.text.startswith("epochs: rows"))
+    assert "the file's part_config lists them so" in clip.evidence
+
+
 def test_held_runs_are_found_from_eleven_identical_samples():
     from neurospatial.datasets.grieves_2020 import held_runs
 
@@ -456,3 +478,23 @@ def test_default_session_spikes_in_the_squares_are_kept():
     in_lattice = (spikes >= lattice[0, 0]) & (spikes < lattice[0, 1])
     assert 0.3 < in_lattice.mean() < 0.8
     assert rec.units["fires_in_epochs"].all()
+
+
+@pytest.mark.realdata
+@pytest.mark.parametrize(
+    ("session", "listed_stop", "overhang"),
+    [("894_21122017", 6651.0, 17.5), ("926_16042018", 6615.0, 94.6)],
+)
+def test_a_square_part_past_the_last_spike_loads_clipped(
+    session, listed_stop, overhang
+):
+    """square2 ends after the sorted units stop firing: clipped, not refused."""
+    rec = load("grieves_2020", session)
+    assert rec.failed_checks == ()
+    stop = max(float(t.max()) for t in rec.spike_times if t.size)
+    assert rec.epochs["square2"][-1, 1] == stop
+    assert listed_stop - stop == pytest.approx(overhang, abs=0.05)
+    assert any(
+        "epochs['square2']" in text and f", {listed_stop:.6g}] s ends" in text
+        for text in rec.watch_outs
+    )

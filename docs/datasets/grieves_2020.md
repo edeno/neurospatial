@@ -67,6 +67,7 @@ Table 1), the record's `Summary data readme.m`, and the files.
 | units: every tetrode/cluster field, cluster 0 of each tetrode left out | inferred | The cluster-0 fields hold only spike times, with none of the per-cell analyses the other clusters have. Without them every rat's sessions hold the number of cells Supplementary Table 1 gives for it (1064 in all). |
 | headings: `lattice.poh`, degrees to radians, turned into the positions' frame | stated where the frames are one, inferred where fitted | `poh` is an azimuth in the frame of the 2-D positions `lattice.pox/poy`. The loader fits the map from those 2-D positions to the 3-D x and y (a rotation or reflection, a scale and a shift) and turns the azimuth by its rotation or reflection. In the default session the 2-D positions are the 3-D x, y mirrored in y and shifted, sample by sample, so the heading is `-poh`. |
 | epochs: `square1`, `lattice`, `square2` from `part_config`, a row per recording | stated | The file's `part_config` and `session_names`. |
+| epochs: rows past the recording (its first to last sample or spike) clipped to it | inferred | In two sessions `square2` ends after the last sorted spike, past the clock check's slack. Each clipped row is in the `Conversion` and under "Watch out". |
 | `params["lattice_bars"]`: the lattice's 147 bars, `lattice_3d.lx/ly/lz` / 10, shape (147, 2, 3) | stated | The readme: maze outlines are stored as `lx`, `ly`, `lz`; each bar is 97 cm, the lattice's side. |
 | environment: every voxel of the authors' 3-D rate-map grid, 5 cm voxels | inferred | `lattice_3d.dwellmap` gives the grid's shape; `lxrm/lyrm/lzrm` are the bars in its voxel units, `lx / 50 + c` exactly, which places it. Each voxel is taken to span `[i - 1, i]` in those units, where in every session the authors' kernel dwell time matches the stored `dwellmap` best. |
 
@@ -134,11 +135,14 @@ ax.set(xlabel="x (cm)", ylabel="y (cm)", zlabel="z (cm)")
   the LEDs at 25 Hz, the paths from every pair of cameras were combined, and
   missing stretches were interpolated and smoothed. The file holds the result
   at 50 Hz, so speeds describe that processing as much as the tracking.
-- **Sessions refused by the checks.** `894_21122017` and `926_16042018` fail
-  the clock check: their `square2` epoch ends 17 s and 95 s after the last
-  sorted spike, and no lattice sample lies there. `951_13092018` fails the
-  units check: its positions span 207.7 cm in y, past the stated 201.6 cm.
-  Each loads with `accept_failed_checks=("clock",)` or `("units",)`.
+- **Square parts that end after the last spike.** In `894_21122017` and
+  `926_16042018` the `square2` epoch ends 17.5 s and 94.6 s after the last
+  sorted spike, and no lattice sample lies there. The epoch is clipped to the
+  recording (its first to last sample or spike), and the summary gives the
+  listed and the clipped row.
+- **A session refused by the checks.** `951_13092018` fails the units check:
+  its positions span 207.7 cm in y, past the stated 201.6 cm. It loads with
+  `accept_failed_checks=("units",)`.
 - **Unknown configuration.** `896_16012018`'s `config3.lattice_type` is
   `'atrack'`, which no source read describes, and its `pov` holds no value, so
   its mm rests on the lattice's size alone.

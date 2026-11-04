@@ -57,7 +57,11 @@ What the loader converts:
 - epochs: ``square1``, ``lattice`` and ``square2`` from
   ``part_config.<part>.times``, a row per recording. Only the lattice part
   is tracked here: the square parts are a different apparatus, so they are
-  epochs without positions, holding the spikes recorded there.
+  epochs without positions, holding the spikes recorded there. A part that
+  runs past the recording (its first to last sample or spike: in two
+  sessions the sorted units stop firing before ``square2`` ends) is clipped
+  to it (``clip_epochs_to_recording``, an inferred ``Conversion`` and a
+  watch-out).
 - ``params["lattice_bars"]``: ``lattice_3d.lx/ly/lz``, the lattice's 147
   bars in the positions' frame (start, stop and a NaN separator per bar),
   divided by 10 to cm, shape (147, 2, 3), for drawing the lattice; the
@@ -103,6 +107,7 @@ from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import (
     Conversion,
     Recording,
+    clip_epochs_to_recording,
     heading_vs_movement,
     tracked_mask,
 )
@@ -335,6 +340,10 @@ def load_session(
     lattice = raw.parts["lattice"]
     blocks = [alternating_blocks(start, stop, BLOCK) for start, stop in lattice]
     configuration = CONFIGURATIONS.get(raw.lattice_type, raw.lattice_type)
+    spike_times = tuple(spikes for _, _, spikes, _ in raw.units)
+    clipped = clip_epochs_to_recording(
+        raw.parts, times, spike_times, source="the file's part_config"
+    )
     return Recording(
         **entry.identity(path_or_stream),
         animal=f"rat {raw.rat}",
@@ -348,7 +357,7 @@ def load_session(
             "end to end from 0 s, as the file's part_config places them"
         ),
         times=times,
-        spike_times=tuple(spikes for _, _, spikes, _ in raw.units),
+        spike_times=spike_times,
         units=_unit_table(raw),
         env=env,
         env_kind="inferred",
@@ -367,7 +376,7 @@ def load_session(
             "lattice.poh, the file's head azimuth, turned into the positions' "
             "frame" + ("" if verified else "; the frame is not verified by movement")
         ),
-        epochs=raw.parts,
+        epochs=clipped.epochs,
         params={
             "bin_size": BIN_SIZE,
             "dt": DT,
@@ -419,6 +428,7 @@ def load_session(
                 "the file's part_config places the session's recordings "
                 f"({', '.join(raw.recordings)}, its session_names) on its clock",
             ),
+            *(() if clipped.conversion is None else (clipped.conversion,)),
             Conversion(
                 f"params['lattice_bars']: lattice_3d lx, ly, lz / 10, {len(bars)} "
                 f"bars of {LATTICE_SIDE:g} cm, shape {bars.shape}",
@@ -442,6 +452,7 @@ def load_session(
         ),
         watch_outs=(
             *WATCH_OUTS.get(entry.session, ()),
+            *(() if clipped.watch_out is None else (clipped.watch_out,)),
             *_unknown_configuration(raw),
             *_unverified_heading(frame, offset, spread, verified),
             *_zero_azimuths(raw, frame),
