@@ -16,14 +16,15 @@ that may be lost tracking. ``_record.from_public`` converts it to the
 survey's record.
 
 Analysis choices are the public loader's ``params``: ``bin_size`` 2.5 cm,
-no speed filter (no source read states one), ``dt`` 0.25 s and alternating
-60 s train/test blocks of the tracked span.
+``dt`` 0.25 s and alternating 60 s train/test blocks of the tracked span.
 
-Survey-only: ``params["replay_dt"]`` 0.02 s; ``events["ripples"]``, the
-ripples inside the tracked track epoch, which replay is decoded on (the
-public ``ripples``, every ripple of the session, are ``events["all_ripples"]``);
-``params["nwb_source"]`` and ``params["readers_used"]``, for the
-``io.nwb_readers`` operation and the ``video_timestamps`` hazard.
+Survey-only: ``params["min_speed"]`` 4 cm/s (in place of the public None),
+which ``behavior.segment_by_velocity`` needs; ``params["replay_dt"]`` 0.02
+s; ``events["ripples"]``, the ripples inside the tracked track epoch, which
+replay is decoded on (the public ``ripples``, every ripple of the session,
+are ``events["all_ripples"]``); ``params["nwb_source"]`` and
+``params["readers_used"]``, for the ``io.nwb_readers`` operation and the
+``video_timestamps`` hazard.
 """
 
 from __future__ import annotations
@@ -80,6 +81,11 @@ def load(cache: Path | None = None) -> Recording:
         key=DATASET["key"],
         params={
             "replay_dt": SurveyOnly(0.02, "the replay decoding bin"),
+            "min_speed": SurveyOnly(
+                4.0,
+                "the survey's running threshold, 4 cm/s, which"
+                " behavior.segment_by_velocity needs; no source read states one",
+            ),
             "nwb_source": SurveyOnly(
                 source, "the cached NWB file the session was read from"
             ),

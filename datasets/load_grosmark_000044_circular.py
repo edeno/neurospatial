@@ -26,6 +26,8 @@ Survey-only:
   candidates are population bursts in POST non-REM sleep found by a stated
   rule (``population_bursts``), not ripples; the first ``N_CANDIDATES`` are
   decoded, to bound the run time. ``events["all_bursts"]`` holds every burst.
+- ``params["analysis_epochs"]``, the maze epoch, so rate maps leave out
+  the sleep spikes, which have no position.
 - ``params["replay_dt"]`` 0.02 s; ``params["nwb_source"]`` and
   ``params["readers_used"]``, for the ``io.nwb_readers`` operation.
 - ``geometry["lap_start_region"]`` cuts the loop where the file's linearized
@@ -139,6 +141,11 @@ def dandi_session(
         key=key,
         params={
             "replay_dt": SurveyOnly(0.02, "the replay decoding bin"),
+            "analysis_epochs": SurveyOnly(
+                rec.epochs["maze"],
+                "the maze epoch: rate maps and region laps describe the maze,"
+                " and the PRE and POST sleep spikes have no position",
+            ),
             "nwb_source": SurveyOnly(
                 public_file("grosmark_2016", session, stream=True),
                 "the URL the file was read from by byte range",
