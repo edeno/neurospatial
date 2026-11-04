@@ -330,9 +330,14 @@
   one frame interval outside the scene's clock and clips it to the clock, so
   `rec.animation(time_range=(a, b)).export(path, time_range=(a, b))` works:
   the 30 frame/s clock starts at the first sample after `a` and ends a frame
-  before `b`. A stop clipped to the clock includes its last time. A range
-  farther outside still raises `ValueError`, which now gives the range, the
-  clock and the frame interval.
+  before `b`. A stop clipped to the clock includes its last time, and one
+  interval is measured with a relative slack of 1e-9, so a clock built as
+  `np.arange(a, b, 1 / 30)` (whose last time falls a hair more than one step
+  short of `b`) still qualifies. A range farther outside still raises
+  `ValueError`, which now gives the range, the clock and the frame interval.
+  `rec.animation()`'s 30 frame/s clock now runs through the window's last
+  sample (never at or past its stop), so it ends within one frame of the
+  window on every session; the bat's ended 33 ms before it.
 - The overview's time panel, now titled "First 60 s of tracking with
   spikes", and `rec.animation()`'s default window start at the later of the
   first tracked sample and the first spike, so a session whose neural

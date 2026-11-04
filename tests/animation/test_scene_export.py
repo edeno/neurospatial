@@ -429,6 +429,15 @@ def test_time_range_beyond_one_frame_of_the_clock_still_refuses(tmp_path, time_r
         prepare_export(tmp_path / "a.gif", CLOCK, time_range=time_range, fps=30)
 
 
+def test_a_stop_one_roundoff_short_frame_after_the_clock_is_clipped(tmp_path):
+    # np.arange(10, 14, 1 / 30) ends at 13.966666666666653, a hair over one
+    # step before 14.
+    clock = np.arange(10.0, 14.0, 1 / 30)
+    assert 14.0 - clock[-1] > np.median(np.diff(clock))
+    plan = prepare_export(tmp_path / "a.gif", clock, time_range=(10.0, 14.0), fps=30)
+    assert plan.times[-1] == pytest.approx(clock[-1])
+
+
 def test_time_range_inside_the_clock_is_unchanged(tmp_path):
     plan = prepare_export(tmp_path / "a.gif", CLOCK, time_range=(10.1, 10.3), fps=30)
     assert plan.times[0] == pytest.approx(10.1)

@@ -499,6 +499,10 @@ def prepare_export(
     # is clipped to the clock, and a clipped stop keeps the clock's last time.
     first, last = float(source_times[0]), float(source_times[-1])
     interval = float(np.median(np.diff(source_times))) if len(source_times) > 1 else 0.0
+    # A clock built as start + k * step can fall short of a whole step by
+    # roundoff, so one interval is measured with a relative slack of 1e-9.
+    slack = 1e-9 * interval
+    interval += slack
     if first - interval <= bounds[0] < first:
         bounds[0] = first
     # The whole recording includes its last sample when a frame lands on it,
@@ -541,6 +545,8 @@ def prepare_export(
             best_distance[nearer] = distance[nearer]
     times = snapped
     if inclusive:
+        # A frame that roundoff puts just past the last time is that time.
+        times[(times > bounds[1]) & (times <= bounds[1] + slack)] = bounds[1]
         times = times[times <= bounds[1]]
     elif bounds[1] > bounds[0]:
         times = times[times < bounds[1]]
