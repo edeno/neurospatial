@@ -256,9 +256,11 @@ It loads the recording with `neurospatial.datasets.load("comrie_2026")`; to
 download ahead of time, run that once. See [the data guide](data/README.md) for
 units and attribution.
 
-`neurospatial.datasets` loads six published recordings the same way: rat
-hippocampus (two datasets), rat entorhinal cortex, mouse thalamus, mouse CA1
-with video, and a flying bat. `catalog()` lists the sessions, and `load(dataset)`
+`neurospatial.datasets` loads fourteen published datasets the same way: rat
+and mouse hippocampus on tracks, mazes, a cheeseboard and a 3-D climbing
+lattice; grid modules and head direction in rat entorhinal cortex; head
+direction in mouse thalamus and retrosplenial cortex; mouse CA1 with video;
+and a flying bat. `catalog()` lists the sessions, and `load(dataset)`
 checks one and returns a `Recording` with the arrays, the conversions applied and
 the pitfalls to watch out for. Install it with
 `pip install "neurospatial[datasets]"` and see

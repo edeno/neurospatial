@@ -194,6 +194,13 @@ nav:
       - "Sargolini 2006: entorhinal cortex (rat)": datasets/sargolini_2006.md
       - "Forli 2025: free flight (bat)": datasets/forli_2025.md
       - "Valero 2022: linear track with video (mouse)": datasets/valero_2022.md
+      - "Vollan 2025: grid modules and head direction (rat)": datasets/vollan_2025.md
+      - "Gardner 2022: grid modules (rat)": datasets/gardner_2022.md
+      - "Peyrache lab: retrosplenial cortex with head direction (mouse)": datasets/peyrache_rsc.md
+      - "Kanter 2025: open field with novel objects (rat)": datasets/kanter_2025.md
+      - "Shipley 2026: radial maze and rest (mouse)": datasets/shipley_2025.md
+      - "Huszár 2026: cheeseboard maze (mouse)": datasets/huszar_cheeseboard.md
+      - "Grieves 2020: 3-D climbing lattice (rat)": datasets/grieves_2020.md
   - Visualization:
       - Field Animation: user-guide/animation.md
       - Animation Overlays: animation_overlays.md

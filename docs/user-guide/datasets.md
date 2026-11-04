@@ -4,7 +4,7 @@ You want to try an analysis on a real recording: place fields from a rat in a
 maze, head-direction tuning from a mouse's thalamus, decoding from a bat in
 flight. Finding the archive, reading its file layout, and working out the
 units, the clock and the apparatus can take longer than the analysis.
-`neurospatial.datasets` does that work once, for six published datasets, and
+`neurospatial.datasets` does that work once, for fourteen published datasets, and
 hands you the arrays neurospatial's functions take.
 
 ```bash
@@ -24,6 +24,13 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 | [`sargolini_2006`](../datasets/sargolini_2006.md) | rat, medial entorhinal cortex | 1 m open field | DANDI 000582 (CC-BY-4.0) | not possible yet |
 | [`forli_2025`](../datasets/forli_2025.md) | Egyptian fruit bat, dorsal hippocampus | flight room, 3-D | Zenodo 15738988 (CC-BY-4.0) | not possible yet; a 3-D attempt did not reproduce the paper (15.2% of flight-active units tuned against 71%) |
 | [`valero_2022`](../datasets/valero_2022.md) | mouse, CA1 | linear track, with video | DANDI 000568 (CC-BY-4.0) | not possible yet |
+| [`vollan_2025`](../datasets/vollan_2025.md) | rat, medial entorhinal cortex and hippocampus | open field (box or circle) and 200 cm linear track, head direction with position | EBRAINS 10.25493/R5FR-EDG (CC-BY-SA-4.0) | not possible yet; module grid scores match the authors' for modules 1 and 2, not module 3 (0.185 against 0.685) |
+| [`gardner_2022`](../datasets/gardner_2022.md) | rat, medial entorhinal cortex grid modules | 1.5 m open field, head direction with position | Figshare 16764508 (CC0) | not possible yet |
+| [`peyrache_rsc`](../datasets/peyrache_rsc.md) | mouse, retrosplenial cortex | square and 70 cm circular arenas, head direction with position, sleep | DANDI 000987 (CC-BY-4.0) | not possible yet |
+| [`kanter_2025`](../datasets/kanter_2025.md) | rat, lateral and medial entorhinal cortex, CA1 or CA3 | 1 to 2 m open field, empty or with novel objects | EBRAINS 10.25493/GTVB-FQR (CC-BY-SA-4.0) | not possible yet |
+| [`shipley_2025`](../datasets/shipley_2025.md) | mouse (App NL-G-F and wild type), CA1 | 8-arm radial maze (track graph), with rest | UCL RDR 30902972 (CC-BY-4.0) | not possible yet |
+| [`huszar_cheeseboard`](../datasets/huszar_cheeseboard.md) | mouse, CA1 and CA3 | 90 cm cheeseboard maze, learning trials, reward wells, ripples | DANDI 001880 (CC0-1.0) | not possible yet |
+| [`grieves_2020`](../datasets/grieves_2020.md) | rat, CA1 | 3-D climbing lattice (0.97 m cube, aligned or tilted) | UCL RDR 9926477 (CC0) | not possible yet |
 
 Each dataset has a page with what was recorded, the conversions the loader
 applied and the evidence for them, the pitfalls, the worked result and how to
@@ -225,7 +232,7 @@ until you ask, by `rec.video.fetch()` or by `rec.animation(video=True)`; the
 file is verified against its SHA-256 and kept beside the session's file in the
 cache. It needs the `video` extra (OpenCV).
 
-Of the six datasets, only [`valero_2022`](../datasets/valero_2022.md) has
+Of the fourteen datasets, only [`valero_2022`](../datasets/valero_2022.md) has
 video:
 
 !!! warning "The video overlay is aligned with the tracking by construction"
@@ -333,7 +340,7 @@ start if the cache's disk has less free space than that.
 
 ## CRCNS credentials
 
-None of the six datasets needs an account. The package's download helpers
+None of the datasets needs an account. The package's download helpers
 for files at crcns.org are internal, for loaders of CRCNS datasets to come;
 they are not part of the public API. They read the login from the
 `CRCNS_USERNAME` and `CRCNS_PASSWORD` environment variables and never print
