@@ -132,6 +132,11 @@
   NeMoS tutorial file of Grosmark & Buzsáki (2016). Such a series is never
   chosen without being named; the error for a file with no container lists
   these series' paths.
+- `io.nwb.read_intervals(..., interval_name=)` reads a TimeIntervals table
+  kept in a processing module by its path, as in
+  `read_intervals(nwbfile, interval_name="processing/behavior/states")` for
+  the sleep states of DANDI 000044; the error for an unknown name lists
+  these paths too.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 
