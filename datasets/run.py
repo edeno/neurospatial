@@ -257,6 +257,7 @@ def run_recording(
         "source": rec.source,
         "license": rec.license,
         "conversions": list(rec.conversions),
+        "watch_outs": list(rec.watch_outs),
         "expectations": check_expectations(rec, getattr(module, "EXPECTATIONS", {})),
         "versions": previous_record.get("versions", versions) if subset else versions,
         "load_warnings": load_warnings or [],
