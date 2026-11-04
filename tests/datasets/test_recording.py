@@ -271,7 +271,8 @@ class TestClipEpochsToRecording:
         assert clipped.conversion is None
         assert clipped.watch_out is None
 
-    def test_an_edge_within_one_sample_interval_is_kept_as_stored(self):
+    def test_an_edge_within_the_clock_checks_slack_is_kept_as_stored(self):
+        """The check allows 1% of the recording (here 0.099 s) at its edges."""
         rows = np.array([[9.95, 19.95]])
         clipped = self._clip({"run": rows}, (np.array([12.0]),))
         np.testing.assert_array_equal(clipped.epochs["run"], rows)
