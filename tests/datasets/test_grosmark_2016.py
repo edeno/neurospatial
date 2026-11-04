@@ -261,6 +261,19 @@ def test_loads_a_dandi_linear_session(tmp_path):
     assert "tracking spread" not in finding
 
 
+@pytest.mark.parametrize("start", [0.0, 40.0])
+def test_linear_stem_is_centred_on_the_middle_of_the_linearized_range(start):
+    """The stem's middle is mid-way between the linearized ends, wherever they start."""
+    from neurospatial.datasets import grosmark_2016
+
+    positions, linear, _ = _linear_session()
+    _, track, _ = grosmark_2016._declared_linear(
+        positions, linear + start, 160.0, "synthetic"
+    )
+    # The planted linearized range, 0-160 cm, is centred on MIDDLE.
+    np.testing.assert_allclose(track.centre, MIDDLE, atol=0.2)
+
+
 #: The planted circle: centre and the stated 50 cm radius.
 CENTRE = np.array([47.3, 50.5])
 

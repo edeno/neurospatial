@@ -738,7 +738,7 @@ def _declared_linear(
     (origin, slope), *_ = np.linalg.lstsq(design, positions[both], rcond=None)
     scale = float(np.linalg.norm(slope))
     axis = slope / scale
-    middle = origin + slope * 0.5 * float(np.nanmax(linearized))
+    middle = origin + slope * 0.5 * float(np.nanmin(linearized) + np.nanmax(linearized))
     off_line = np.abs((positions[both] - origin) @ np.array([-axis[1], axis[0]]))
     half = stem / 2
     names = ("reward_start", "stem_start", "stem_end", "reward_end")
