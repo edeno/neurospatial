@@ -49,7 +49,7 @@ box they were recorded in, and the units check refuses them.
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -61,7 +61,29 @@ if TYPE_CHECKING:
     from neurospatial import Environment
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "load_session"]
+__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+
+#: The paper's finding this dataset reproduces, or why there is none yet.
+WORKED_RESULT: dict[str, Any] = {
+    "status": "not possible yet",
+    "level": None,
+    "finding": None,
+    "quote": None,
+    "source": None,
+    "paper": None,
+    "ours": None,
+    "criterion": None,
+    "parameters": None,
+    "unmatched": (),
+    "why": (
+        "The paper (Sargolini et al. 2006, Science 312, 758-762) could not "
+        "be read: the local library holds its metadata only, science.org "
+        "refuses access (HTTP 403), and Europe PMC lists it without full "
+        "text. The candidate result, the grid scores of the session's grid "
+        "cells, waits for the paper's text, since only what was read is "
+        "cited."
+    ),
+}
 
 #: Modules of the ``datasets`` extra the loader imports.
 REQUIRES = ("pynwb",)

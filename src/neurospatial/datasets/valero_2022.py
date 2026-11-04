@@ -15,9 +15,11 @@ DANDI, is ``rec.video``: fetched only on request (46 MB for the default). The
 default session, ``sub-fCamk2_ses-fCamk2-201014-sess3``, is the one the
 survey of public datasets loaded: 35 units, the track from 7,674 to 9,941 s.
 
-Sources read: DANDI 000568's metadata, the files, and the paper's Crossref
-record (title, authors, volume, pages). The paper itself was not available
-to read, so no number here comes from it.
+Sources read: DANDI 000568's metadata, the files, the paper's Crossref
+record (title, authors, volume, pages) and the paper's main text (the author
+manuscript, PubMed Central PMC9632609). Its Materials and methods, in the
+Supplementary Materials, were not available to read, so no number here
+comes from the paper.
 
 What the loader converts:
 
@@ -103,7 +105,40 @@ if TYPE_CHECKING:
     from neurospatial.datasets._catalog import SessionEntry
     from neurospatial.datasets._video import VideoSource
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "load_session"]
+__all__ = ["REQUIRES", "WATCH_OUTS", "WORKED_RESULT", "load_session"]
+
+#: The paper's finding this dataset reproduces, or why there is none yet.
+WORKED_RESULT: dict[str, Any] = {
+    "status": "not possible yet",
+    "level": None,
+    "finding": "most CA1 pyramidal neurons on the track are place cells",
+    "quote": (
+        '"With a standard definition of \u201cplace field\u201d (materials and '
+        "methods) (18), more than half of the pyramidal neurons were "
+        "classified as place cells [73% and 71% of light-responsive and "
+        'nonresponsive neurons, respectively ...]"'
+    ),
+    "source": (
+        "Valero et al. 2022, Science 375, 570-574, main text (author "
+        "manuscript, PMC9632609), the paragraph on place cells; fig. S11"
+    ),
+    "paper": "73% and 71% of pyramidal neurons",
+    "ours": None,
+    "criterion": None,
+    "parameters": None,
+    "unmatched": (),
+    "why": (
+        "Three things are missing. The place-field definition is in the "
+        "paper's Materials and methods, in the Supplementary Materials, "
+        "which were not read. The share is of pyramidal neurons, and the "
+        "file's units table holds no cell type (clu_id and unit_name only). "
+        'And each track session interleaves "three blocks of 10 baseline '
+        'runs" with "two blocks of 40 to 50 stimulation runs" (main text), '
+        "where light unmasks place fields in non-place cells, the paper's "
+        "own finding; the file holds no stimulation times (its stimulus "
+        "group is empty), so the baseline runs cannot be told apart."
+    ),
+}
 
 #: Modules of the ``datasets`` extra the loader imports.
 REQUIRES = ("pynwb",)
