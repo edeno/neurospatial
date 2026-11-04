@@ -533,7 +533,8 @@ def _held_and_fast_finding(rec: Recording, stated: Stated) -> str | None:
         )
     if stated.speed_limit is None:
         text += (
-            " No speed limit is stated for this dataset, so fast steps are not counted."
+            " No speed limit is stated for this dataset, so no samples are counted "
+            "against one."
         )
     return text
 

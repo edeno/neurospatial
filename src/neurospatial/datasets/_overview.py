@@ -240,12 +240,17 @@ def _panel_speed(rec: Recording, ax: Axes) -> None:
     # A few tracking jumps would set the axis; the histogram stops at the
     # 99.9th percentile and the panel says what lies beyond it.
     limited = bool(np.isfinite(p999) and p999 > speed.min() and fastest > p999)
-    ax.hist(
+    counts, _, _ = ax.hist(
         speed,
         bins=60,
         range=(float(speed.min()), p999) if limited else None,
         color="0.4",
     )
+    # A session spent mostly still (a bat on its perch) puts most samples
+    # in the first bar; a log count axis keeps the moving samples visible.
+    log_counts = bool(np.max(counts) > 0.5 * speed.size)
+    if log_counts:
+        ax.set_yscale("log")
     if limited:
         n_beyond = int(np.sum(speed > p999))
         unit = "" if rec.position_units == "arbitrary" else f" {rec.position_units}/s"
@@ -265,7 +270,7 @@ def _panel_speed(rec: Recording, ax: Axes) -> None:
         ax.axvline(min_speed, color="tab:red", label=f"min_speed {min_speed:g}")
         ax.legend(frameon=False)
     ax.set_xlabel(f"speed ({rec.position_units}/s)")
-    ax.set_ylabel("samples")
+    ax.set_ylabel("samples (log scale)" if log_counts else "samples")
     ax.set_title("Speed")
 
 

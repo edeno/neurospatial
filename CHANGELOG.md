@@ -353,7 +353,10 @@
   heuristic, not a stated limit; positions are kept as stored, and the
   stated-limit fast-sample count still applies where a source states a limit.
   Of the six default sessions only `forli_2025` gives it (200 samples faster
-  than 8.73 m/s).
+  than 8.73 m/s). The held-run finding's "so fast steps are not counted"
+  now reads "so no samples are counted against one" (a limit). When most
+  samples fall in the histogram's first bar (the bat, still on its perch),
+  the speed panel's counts are on a log scale, so the moving samples show.
 - Every spatial view of an `Animation` (the Matplotlib scene and the
   fastplotlib viewer, 2-D and 3-D) frames the position overlays' samples on
   the scene's clock as well as the environment, so an animal tracked outside

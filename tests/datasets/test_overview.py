@@ -775,3 +775,17 @@ def test_hippocampal_regions_are_matched_by_name(square_recording, region, hippo
         units=square_recording.units.assign(brain_region=region),
     )
     assert is_hippocampal(rec) is hippocampal
+
+
+def test_speed_counts_go_log_when_one_bar_holds_most_samples(long_box_recording):
+    # Still for 90% of the session (a bat on its perch), then the smooth path.
+    positions = np.array(long_box_recording.positions)
+    positions[: int(0.9 * len(positions))] = positions[0]
+    still = dataclasses.replace(long_box_recording, positions=positions)
+    ax = _titled(still.plot_overview(), "Speed")
+    assert ax.get_yscale() == "log"
+    assert ax.get_ylabel() == "samples (log scale)"
+    # Negative control: a session spent moving keeps linear counts.
+    moving = _titled(long_box_recording.plot_overview(), "Speed")
+    assert moving.get_yscale() == "linear"
+
