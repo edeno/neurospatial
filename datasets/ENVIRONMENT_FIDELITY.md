@@ -356,24 +356,30 @@ is to misfits of known size is not measured here: that is the survey's
 simulation ladder (phase 6, rungs 2-3, planted misfits). Of the 20
 declared tracks:
 
-- 11 match, and the frame offset passes on each. On a stated size against the samples' own: Vollan's linear
-  track +5.5 %, 000568 +5.1 %, 000165 -1.6 %, the 000044 circle's diameter
-  -0.2 % (its worst stretch 2.38 cm to one side, against a 2.5 cm limit:
-  close to it), 000447's familiar W-track (base -1.2 %, arms +6.5 %),
+- 10 match, and the frame offset passes on each. On a stated size against the samples' own: Vollan's linear
+  track +5.5 %, 000568 +5.1 %, 000165 -1.6 %, 000447's familiar W-track (base -1.2 %, arms +6.5 %),
   hc-28's W-track (base -10.5 %, arms -11.1 %, within the 15 %), 001845's
   W-maze (base +14 %, arms +7 %: close to the limit) and Shipley's eight
   arms (-5.9 to +3.4 %). On the authors' geometry or the file's coordinate
   as stated: J16's graph, hc-31's track coordinate (length +0.3 %),
   and Takigawa's centrelines. Their frame offsets are
-  0.42 bin or less by either estimator (refitted: the 000044 circle
-  1.04 cm, hc-28 0.90 cm, Takigawa 1.59 cm of a 4 cm bin); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
+  0.42 bin or less by either estimator (refitted: hc-28 0.90 cm,
+  Takigawa 1.59 cm of a 4 cm bin); on the single straight tracks (Vollan's, 000568, 000165, hc-31)
   one piece reads nothing, and the stated length, the stretch bias and the
   reach past the ends judge them.
+- The 000044 circle is a mismatch: its worst stretch's samples lie 2.50 cm
+  to one side of it, against a one-bin limit of 2.0 cm. Its diameter is
+  -0.2 % of the stated 1 m and its frame offset passes (1.21 cm refitted,
+  0.85 cm in one step). The verdict flipped from matches with the public
+  loader's 2 cm bin, not with the data: the limit is one bin, and a judged
+  stretch is 20 bins (40 cm, not 50 cm); against the 2.5 cm bin before,
+  its worst stretch read 2.38 cm.
 - 000044's linear track is not verified: its frame offset depends on the
-  estimator. Refitted, it is 3.22 cm across the track (2.95 cm with any
-  one of its 3 pieces left out, 1.18 bins); in one step 1.35 cm (0.50
-  bin). Its samples scatter from -12 to +25 cm across it (5th-95th
-  percentile), far wider than the 7.5 cm window the offset is read in, and
+  estimator. Refitted, it is 3.81 cm across the track (3.63 cm with any
+  one of its 3 pieces left out, 1.81 bins of 2 cm); in one step 1.00 cm
+  (0.90 cm judged, 0.45 bin). Its samples scatter from -12 to +25 cm across
+  it (5th-95th percentile), far wider than the 6 cm (3-bin) window the
+  offset is read in, and
   the refitted window follows the heavier side (G-160). It matched on the
   file's linearized coordinate before.
 - The labyrinth is not verified: its corridors lie 1 cell apart, and the
@@ -412,8 +418,8 @@ declared tracks:
   chosen; 12.8 % at the paper's 0.75 cell; 4.6 % and 17.9 % before its dead
   ends reached their walls), Shipley 0.7 % of the judged samples. On J16
   the graph is placed right (median signed offset -1.3 to +1.8 cm per
-  corridor) and the share falls from 87 %
-  stopped to 35 % above 30 cm/s (G-152).
+  corridor) and the share falls from 80 % below 10 cm/s (the preprint's
+  running speed) to 35 % above 30 cm/s (G-152).
 - Against their own geometry the declared environments measure only their
   binning: the labyrinth's path along its bins is 0.96 x the distance along
   the graph it was built from (0.95 before the dead ends were extended),
@@ -493,8 +499,8 @@ the vertical part, raised by a head held above the bars, is reported.
 Eight of the ten declared arenas and 3-D environments match; the bat's
 room is a mismatch and the lattice is not verified:
 
-- On the stated size against the samples' own: 000582 (sides -0.1 % and
-  -2.6 %), 002030 (diameter +0.0 %), 000405 (-6.9 %, -6.3 %), Gardner
+- On the stated size against the samples' own: 000582 (sides x -2 % and
+  y +0 %, of the public loader's square at the samples' midrange), 002030 (diameter +0.0 %), 000405 (-6.9 %, -6.3 %), Gardner
   (-1.9 %, -2.4 %), Vollan's 150 cm circle (diameter -4.0 %, centre 2.2 %
   of the radius off; the samples' extent -14.9 % of the outline, just
   inside the 15 %), Kanter (-2.1 %, -2.3 %), hc-2's platform (+0.0 %,
