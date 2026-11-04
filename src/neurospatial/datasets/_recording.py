@@ -106,12 +106,16 @@ class Provenance:
         The archive and its record, for example ``"DANDI 000044"`` or
         ``"Zenodo 23020757"``.
     url : str
-        The exact file fetched.
+        The exact file fetched. For a session read from members of a remote
+        zip, the zip.
     sha256 : str
         The file's SHA-256 checksum, 64 lowercase hexadecimal digits, which
-        the download was verified against.
+        the download was verified against. For a session read from zip
+        members, the zip's (each member is verified against its own, pinned
+        in the dataset's registry).
     size_bytes : int
-        The file's size in bytes.
+        The file's size in bytes; the zip's, for a session read from its
+        members.
     neurospatial_version : str
         The neurospatial version that loaded it.
     fetched_at : str

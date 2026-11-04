@@ -4,15 +4,19 @@ Each dataset is a module ``neurospatial.datasets.<dataset>`` with
 ``load_session(entry, path_or_stream) -> Recording``, which reads the
 session's file into a :class:`Recording` with the dataset's own watch-outs;
 ``REQUIRES``, the modules it imports from the ``datasets`` extra; and
-``WATCH_OUTS``, the pitfalls of each session checked by hand. Its registry,
+``WATCH_OUTS``, the pitfalls of each session checked by hand. A module may
+also define ``check_session(entry)``, which raises before anything is
+downloaded for a session the loader cannot read. Its registry,
 ``registry/<dataset>.json``, lists the sessions. :func:`load` fetches the
-file, calls ``load_session`` and runs the automatic checks.
+file (or, for a session read from zip members, the directory holding them),
+calls ``load_session`` and runs the automatic checks.
 """
 
 from __future__ import annotations
 
 import logging
 import shutil
+import sys
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +30,12 @@ if TYPE_CHECKING:
 __all__ = ["fetch_all", "fetch_session", "load"]
 
 logger = logging.getLogger("neurospatial.datasets")
+
+#: The oldest Python each module of the ``datasets`` extra installs on, where
+#: the extra's environment marker excludes older ones.
+PYTHON_FLOOR = {"matio": (3, 11)}
+#: What each such module is, for the message on an older Python.
+_PROJECTS = {"matio": "mat-io, the reader of MATLAB tables"}
 
 
 def load(
@@ -81,8 +91,12 @@ def load(
         in ``accept_failed_checks``.
     ImportError
         If the ``datasets`` extra is not installed
-        (``pip install 'neurospatial[datasets]'``); checked before anything
-        is downloaded.
+        (``pip install 'neurospatial[datasets]'``), or a module the dataset
+        needs does not install on this Python; checked before anything is
+        downloaded.
+    NotImplementedError
+        If the dataset's loader cannot read this session's file layout yet;
+        checked before anything is downloaded.
     ValueError
         If the downloaded file's SHA-256 differs from the pinned one.
 
@@ -100,19 +114,48 @@ def load(
     ...     rec.env, rec.spike_times, rec.times, rec.positions
     ... )
     """
-    from neurospatial._optional import require_optional
     from neurospatial.datasets._checks import _accepted, run_checks
 
     _accepted(accept_failed_checks)
     entry = _session_entry(dataset, session)
     module = import_module(f"neurospatial.datasets.{dataset}")
     for name in module.REQUIRES:
-        require_optional(name, extra="datasets", purpose=f"loading {dataset}")
+        _require(name, dataset)
+    if (check_session := getattr(module, "check_session", None)) is not None:
+        check_session(entry)
     source = _stream_url(entry) if stream else fetch_session(entry, cache=cache)
     rec: Recording = module.load_session(entry, source)
     return run_checks(
         rec, stated=entry.info.stated, accept_failed_checks=accept_failed_checks
     )
+
+
+def _require(name: str, dataset: str) -> None:
+    """Import a module of the ``datasets`` extra, or say why it is missing."""
+    from neurospatial._optional import require_optional
+
+    floor = PYTHON_FLOOR.get(name)
+    running = tuple(sys.version_info[:2])
+    if floor is not None and running < floor:
+        try:
+            __import__(name)
+        except ModuleNotFoundError as exc:
+            if exc.name != name:
+                raise
+            version = ".".join(map(str, floor))
+            raise ImportError(
+                _format_error(
+                    f"Loading {dataset} needs {_PROJECTS[name]}, which installs "
+                    f"only on Python {version} or later; this is Python "
+                    f"{running[0]}.{running[1]}.",
+                    why="the datasets extra leaves it out on older Python, so "
+                    "installing the extra does not add it here.",
+                    fix=f"use Python {version} or later with "
+                    "pip install 'neurospatial[datasets]'.",
+                )
+            ) from exc
+        return
+    require_optional(name, extra="datasets", purpose=f"loading {dataset}")
 
 
 def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
@@ -121,7 +164,8 @@ def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
     The total size is logged first (logger ``neurospatial.datasets``, level
     INFO), and nothing is downloaded when the cache's disk has less free
     space than the sessions not yet cached. Cached files are verified
-    against their pinned SHA-256, not downloaded again.
+    against their pinned SHA-256, not downloaded again. A session read from
+    zip members downloads those members only.
 
     Parameters
     ----------
@@ -133,7 +177,8 @@ def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
     Returns
     -------
     list of Path
-        The cached file of each session, in registry order.
+        The cached file of each session (the directory of its members, for
+        one read from zip members), in registry order.
 
     Raises
     ------
@@ -148,9 +193,9 @@ def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
 
     entries = sessions(dataset)
     root = cache_root(cache)
-    missing = [e for e in entries if not (root / dataset / e.file_name).exists()]
-    total = sum(entry.size_bytes for entry in entries)
-    needed = sum(entry.size_bytes for entry in missing)
+    missing = [e for e in entries if not _cached(root, e)]
+    total = sum(entry.download_bytes for entry in entries)
+    needed = sum(entry.download_bytes for entry in missing)
     logger.info(
         "%s: %d sessions, %s in all; %d to download (%s) into %s",
         dataset,
@@ -174,13 +219,37 @@ def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
     return [fetch_session(entry, cache=cache) for entry in entries]
 
 
+def _cached(root: Path, entry: SessionEntry) -> bool:
+    """Whether the session's file, or each of its zip members, is in the cache."""
+    folder = root / entry.info.dataset
+    if entry.members:
+        return all((folder / Path(m.path).name).exists() for m in entry.members)
+    return (folder / entry.file_name).exists()
+
+
 def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     """The session's verified file in the cache, downloaded once.
 
-    Files are cached as ``<cache>/<dataset>/<file name>``.
+    Files are cached as ``<cache>/<dataset>/<file name>``. A session read
+    from zip members has each member extracted by byte range into
+    ``<cache>/<dataset>/<member name>``, verified against its own SHA-256,
+    and the directory is returned.
     """
-    from neurospatial.datasets._fetch import fetch
+    from neurospatial.datasets._fetch import fetch, fetch_zip_member
 
+    if entry.members:
+        assert entry.url is not None  # checked when the registry is read
+        paths = [
+            fetch_zip_member(
+                entry.url,
+                member.path,
+                sha256=member.sha256,
+                subdir=entry.info.dataset,
+                cache=cache,
+            )
+            for member in entry.members
+        ]
+        return paths[0].parent
     return fetch(
         entry.download_url,
         entry.file_name,

@@ -100,6 +100,20 @@ def test_unknown_dataset_lists_the_known_ones():
             "stated.position_span gives no source",
         ),
         (lambda r: r["stated"]["sampling_rate"].pop("basis"), "no field 'basis'"),
+        (
+            lambda r: r["sessions"][0].update(
+                members=[{"path": "a.mat", "sha256": "0" * 64, "size_bytes": 1}]
+            ),
+            "zip members need the zip's url",
+        ),
+        (
+            lambda r: r["sessions"][0].update(
+                asset_id=None,
+                url="https://example.org/a.zip",
+                members=[{"path": "a.mat", "sha256": "xyz", "size_bytes": 1}],
+            ),
+            "member 'a.mat': sha256 'xyz' is not 64 hex digits",
+        ),
     ],
 )
 def test_malformed_registry_refused(change, message):
@@ -185,4 +199,22 @@ def test_builder_pins_a_published_version_and_keeps_hand_fields():
     # A session the archive no longer lists is refused, not dropped.
     written["sessions"].append({"session": "sub-9_ses-9"})
     with pytest.raises(ValueError, match="sub-9_ses-9"):
+        builder.build(written, "0.2", get)
+    # A session from another archive (a url row, written by hand) is kept whole.
+    written["sessions"][-1] = {
+        "session": "tutorial",
+        "archive": "OSF abcde",
+        "url": "https://osf.io/abcde/download",
+        "license": "not stated",
+    }
+    built = builder.build(written, "0.2", get)
+    assert built["sessions"][-1] == written["sessions"][-1]
+    assert [entry["session"] for entry in built["sessions"]] == [
+        "sub-1_ses-1",
+        "sub-1_ses-2",
+        "tutorial",
+    ]
+    # ... but not under a session id an asset also gives.
+    written["sessions"][-1]["session"] = "sub-1_ses-1"
+    with pytest.raises(ValueError, match="give one session id"):
         builder.build(written, "0.2", get)

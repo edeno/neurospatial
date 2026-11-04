@@ -70,6 +70,15 @@
   `neurospatial/datasets/registry/<dataset>.json`;
   `scripts/build_dataset_registry.py` fills a DANDI registry from a pinned
   published version.
+- A registry session may come from a second archive, with its own license
+  as that archive states it ("not stated" where it states none) and its own
+  data citation; `scripts/build_dataset_registry.py` keeps such rows. A
+  session read from members of a remote zip fetches only those members, by
+  byte range, each verified against its own SHA-256; `catalog()`'s
+  `size_bytes` is what loading a session downloads. A dataset whose loader
+  cannot read some of its sessions' files yet refuses them with
+  `NotImplementedError` before downloading. A dataset that needs `mat-io`
+  says on Python 3.10 that it installs only on Python 3.11 or later.
 - First dataset: `sargolini_2006`, Sargolini et al. (2006) rat medial
   entorhinal cortex in a 1 m box, all 118 sessions of DANDI 000582 (version
   0.251111.2151, CC-BY-4.0). The default, `sub-10073_ses-17010302` (the

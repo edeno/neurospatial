@@ -24,7 +24,14 @@ from neurospatial.datasets._recording import Provenance
 if TYPE_CHECKING:
     import pandas as pd
 
-__all__ = ["DatasetInfo", "SessionEntry", "catalog", "dataset_ids", "sessions"]
+__all__ = [
+    "DatasetInfo",
+    "Member",
+    "SessionEntry",
+    "catalog",
+    "dataset_ids",
+    "sessions",
+]
 
 REGISTRY = Path(__file__).parent / "registry"
 CATALOG_COLUMNS = (
@@ -78,6 +85,26 @@ class DatasetInfo:
 
 
 @dataclass(frozen=True)
+class Member:
+    """One member of a zip archive that a session is read from.
+
+    Attributes
+    ----------
+    path : str
+        The member's path inside the zip.
+    sha256 : str
+        The extracted member's SHA-256, which every extraction is verified
+        against.
+    size_bytes : int
+        The extracted member's size.
+    """
+
+    path: str
+    sha256: str
+    size_bytes: int
+
+
+@dataclass(frozen=True)
 class SessionEntry:
     """One session of a registry: where it lives and what is known about it.
 
@@ -106,6 +133,15 @@ class SessionEntry:
         The name the file is cached under.
     verification : str
         The evidence of the check by hand; empty for an unverified session.
+    license : str
+        The session file's license as its archive states it: the dataset's,
+        unless the row names its own (a session from a second archive).
+    citation : str
+        The paper's citation, then the citation of the session's archive.
+    members : tuple of Member
+        For a session read from members of a remote zip (``url``), the
+        members fetched, each by byte range; empty for a whole file. The
+        session's ``sha256`` and ``size_bytes`` are then the zip's.
     """
 
     info: DatasetInfo
@@ -121,6 +157,9 @@ class SessionEntry:
     url: str | None
     file_name: str
     verification: str
+    license: str
+    citation: str
+    members: tuple[Member, ...] = ()
 
     @property
     def download_url(self) -> str:
@@ -132,14 +171,25 @@ class SessionEntry:
         assert self.url is not None  # checked when the registry is read
         return self.url
 
+    @property
+    def download_bytes(self) -> int:
+        """The bytes a download of the session fetches: its members, or the file."""
+        if self.members:
+            return sum(member.size_bytes for member in self.members)
+        return self.size_bytes
+
     def provenance(self, source: str | os.PathLike[str]) -> Provenance:
         """Where the session's file came from, read from ``source``.
+
+        The archive is the dataset's, with its pinned version, for a DANDI
+        asset, and the row's own archive for a file elsewhere.
 
         Parameters
         ----------
         source : str or path
-            The cached file, whose modification time is when it was fetched,
-            or the URL it is streamed from, fetched now.
+            The cached file (or, for zip members, the directory holding
+            them), whose modification time is when it was fetched, or the
+            URL it is streamed from, fetched now.
         """
         from neurospatial._results import software_version
 
@@ -149,7 +199,7 @@ class SessionEntry:
             mtime = Path(source).stat().st_mtime
             fetched = datetime.fromtimestamp(mtime, timezone.utc)
         return Provenance(
-            archive=self.info.archive,
+            archive=self.info.archive if self.asset_id is not None else self.archive,
             url=self.download_url,
             sha256=self.sha256,
             size_bytes=self.size_bytes,
@@ -167,8 +217,8 @@ class SessionEntry:
             "dataset": self.info.dataset,
             "session": self.session,
             "paper": self.info.paper,
-            "license": self.info.license,
-            "citation": self.info.citation,
+            "license": self.license,
+            "citation": self.citation,
             "provenance": self.provenance(source),
             "verified": self.verified,
         }
@@ -211,7 +261,7 @@ def _read(registry: dict[str, Any], name: str) -> tuple[SessionEntry, ...]:
         info = DatasetInfo(
             dataset=registry["dataset"],
             paper=registry["paper"],
-            citation=f"{registry['paper_citation']} Data: {archive['citation']}",
+            citation=_citation(registry["paper_citation"], archive["citation"]),
             species=registry["species"],
             brain_regions=tuple(registry["brain_regions"]),
             apparatus=registry["apparatus"],
@@ -219,7 +269,10 @@ def _read(registry: dict[str, Any], name: str) -> tuple[SessionEntry, ...]:
             archive=_archive_name(archive),
             stated=_stated(registry["stated"], name),
         )
-        entries = tuple(_entry(info, row) for row in registry["sessions"])
+        entries = tuple(
+            _entry(info, row, registry["paper_citation"])
+            for row in registry["sessions"]
+        )
     except KeyError as exc:
         msg = f"registry {name} has no field {exc}"
         raise ValueError(msg) from exc
@@ -269,6 +322,11 @@ def _stated(stated: dict[str, Any], name: str) -> Stated:
     return Stated(**fields)
 
 
+def _citation(paper: str, data: str) -> str:
+    """The paper's citation, then the data's."""
+    return f"{paper} Data: {data}"
+
+
 def _archive_name(archive: dict[str, Any]) -> str:
     """``"DANDI 000582 (version 0.251111.2151)"``, or the archive's own name."""
     if "dandiset" in archive:
@@ -276,15 +334,28 @@ def _archive_name(archive: dict[str, Any]) -> str:
     return str(archive["name"])
 
 
-def _entry(info: DatasetInfo, row: dict[str, Any]) -> SessionEntry:
-    """One session row, with its download location and checksum checked."""
-    sha256 = str(row["sha256"])
-    if len(sha256) != 64 or any(c not in "0123456789abcdef" for c in sha256):
-        msg = f"session {row['session']!r}: sha256 {sha256!r} is not 64 hex digits"
-        raise ValueError(msg)
+def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
+    """One session row, with its download location and checksums checked.
+
+    A row from an archive other than the dataset's gives its own
+    ``license`` and ``data_citation``; a row read from zip members gives
+    ``members``, each with ``path``, ``sha256`` and ``size_bytes``.
+    """
+    sha256 = _sha256(row["sha256"], f"session {row['session']!r}")
     asset_id, url = row.get("asset_id"), row.get("url")
     if (asset_id is None) == (url is None):
         msg = f"session {row['session']!r}: give either asset_id or url"
+        raise ValueError(msg)
+    members = tuple(
+        Member(
+            path=str(member["path"]),
+            sha256=_sha256(member["sha256"], f"member {member['path']!r}"),
+            size_bytes=int(member["size_bytes"]),
+        )
+        for member in row.get("members", ())
+    )
+    if members and url is None:
+        msg = f"session {row['session']!r}: zip members need the zip's url"
         raise ValueError(msg)
     location = row.get("asset_path") or row.get("file_name") or str(url)
     return SessionEntry(
@@ -301,7 +372,23 @@ def _entry(info: DatasetInfo, row: dict[str, Any]) -> SessionEntry:
         url=url,
         file_name=Path(location).name,
         verification=row.get("verification", ""),
+        license=row.get("license", info.license),
+        citation=(
+            _citation(paper, row["data_citation"])
+            if "data_citation" in row
+            else info.citation
+        ),
+        members=members,
     )
+
+
+def _sha256(value: Any, what: str) -> str:
+    """``value`` as a SHA-256, refusing anything but 64 hexadecimal digits."""
+    sha256 = str(value)
+    if len(sha256) != 64 or any(c not in "0123456789abcdef" for c in sha256):
+        msg = f"{what}: sha256 {sha256!r} is not 64 hex digits"
+        raise ValueError(msg)
+    return sha256
 
 
 def catalog() -> pd.DataFrame:
@@ -316,8 +403,10 @@ def catalog() -> pd.DataFrame:
         ``species``, ``brain_regions`` (comma-separated), ``apparatus``,
         ``n_units`` (missing where not known before loading), ``verified``
         (checked by hand against the file and its sources), ``default``
-        (the session ``load(dataset)`` gives), ``license`` (as the archive
-        states it), ``archive``, ``size_bytes`` and ``citation``.
+        (the session ``load(dataset)`` gives), ``license`` (as the session's
+        archive states it), ``archive``, ``size_bytes`` (what loading it
+        downloads: the file, or the zip members it is read from) and
+        ``citation``.
 
     See Also
     --------
@@ -344,10 +433,10 @@ def catalog() -> pd.DataFrame:
             "n_units": entry.n_units,
             "verified": entry.verified,
             "default": entry.default,
-            "license": entry.info.license,
+            "license": entry.license,
             "archive": entry.archive,
-            "size_bytes": entry.size_bytes,
-            "citation": entry.info.citation,
+            "size_bytes": entry.download_bytes,
+            "citation": entry.citation,
         }
         for dataset in dataset_ids()
         for entry in sessions(dataset)

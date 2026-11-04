@@ -90,7 +90,8 @@ def synthetic(monkeypatch, tmp_path, square_recording):
         files[session].write_bytes(session.encode() * 100)
     registry = tmp_path / "registry"
     registry.mkdir()
-    (registry / f"{DATASET}.json").write_text(json.dumps(_registry(files)))
+    written = _registry(files)
+    (registry / f"{DATASET}.json").write_text(json.dumps(written))
     monkeypatch.setattr(_catalog, "REGISTRY", registry)
 
     calls = []
@@ -110,7 +111,24 @@ def synthetic(monkeypatch, tmp_path, square_recording):
     module.WATCH_OUTS = {"s1": ("the dataset's own pitfall",)}
     module.load_session = load_session
     monkeypatch.setitem(sys.modules, module.__name__, module)
-    return types.SimpleNamespace(cache=tmp_path / "cache", calls=calls, files=files)
+    return types.SimpleNamespace(
+        cache=tmp_path / "cache",
+        calls=calls,
+        files=files,
+        archive=archive,
+        registry=written,
+        registry_path=registry / f"{DATASET}.json",
+    )
+
+
+def _add_session(synthetic, row: dict) -> None:
+    """Add a session row to the synthetic registry."""
+    synthetic.registry["sessions"].append(row)
+    synthetic.registry_path.write_text(json.dumps(synthetic.registry))
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def test_load_gives_the_default_session_checked(synthetic, square_stated):
@@ -197,3 +215,157 @@ def test_fetch_all_refuses_without_room(synthetic, monkeypatch):
     with pytest.raises(OSError, match=r"needs 1.1 kB for 2 sessions.*1 kB free"):
         fetch_all(DATASET, cache=synthetic.cache)
     assert not (synthetic.cache / DATASET).exists()
+
+
+@pytest.fixture
+def zipped(synthetic):
+    """A session read from two of the three members of a local zip."""
+    import zipfile
+
+    members = {
+        "Session/behavior.mat": b"behavior" * 200,
+        "Session/units.mat": b"units" * 300,
+        "Session/video.avi": b"video" * 5000,
+    }
+    path = synthetic.archive / "Session.zip"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+    used = ("Session/behavior.mat", "Session/units.mat")
+    _add_session(
+        synthetic,
+        {
+            "session": "zipped",
+            "archive": "Synthetic 1",
+            "url": path.as_uri(),
+            "file_name": path.name,
+            "sha256": _digest(path.read_bytes()),
+            "size_bytes": path.stat().st_size,
+            "verified": False,
+            "default": False,
+            "members": [
+                {
+                    "path": name,
+                    "sha256": _digest(members[name]),
+                    "size_bytes": len(members[name]),
+                }
+                for name in used
+            ],
+        },
+    )
+    return types.SimpleNamespace(path=path, members=members, used=used)
+
+
+def test_zip_member_session_fetches_only_its_members(synthetic, zipped):
+    from neurospatial.datasets import catalog
+
+    rec = load(DATASET, "zipped", cache=synthetic.cache)
+    folder = synthetic.cache / DATASET
+    assert synthetic.calls == [("zipped", folder)]
+    assert sorted(path.name for path in folder.iterdir()) == [
+        "behavior.mat",
+        "units.mat",
+    ]
+    for name in zipped.used:
+        assert (folder / Path(name).name).read_bytes() == zipped.members[name]
+    # Provenance names the zip; the catalog gives what a load downloads.
+    assert rec.provenance.url == zipped.path.as_uri()
+    assert rec.provenance.sha256 == _digest(zipped.path.read_bytes())
+    assert rec.provenance.size_bytes == zipped.path.stat().st_size
+    row = catalog().set_index("session").loc["zipped"]
+    assert row["size_bytes"] == sum(len(zipped.members[n]) for n in zipped.used)
+
+
+def test_zip_member_with_another_checksum_is_refused(synthetic, zipped):
+    synthetic.registry["sessions"][-1]["members"][0]["sha256"] = "0" * 64
+    synthetic.registry_path.write_text(json.dumps(synthetic.registry))
+    with pytest.raises(ValueError, match="SHA-256"):
+        load(DATASET, "zipped", cache=synthetic.cache)
+    assert synthetic.calls == []
+
+
+def test_fetch_all_counts_zip_members(synthetic, zipped, caplog):
+    used = sum(len(zipped.members[name]) for name in zipped.used)
+    files = sum(path.stat().st_size for path in synthetic.files.values())
+    with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
+        paths = fetch_all(DATASET, cache=synthetic.cache)
+    assert paths[-1] == synthetic.cache / DATASET
+    assert f"3 sessions, {_load._size(files + used)} in all" in caplog.text
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
+        fetch_all(DATASET, cache=synthetic.cache)
+    assert "0 to download (0 B)" in caplog.text
+
+
+def test_session_from_another_archive_keeps_its_license(synthetic):
+    """A row from a second archive gives its own license, citation and archive."""
+    from neurospatial.datasets import catalog
+
+    path = synthetic.files["s1"]
+    _add_session(
+        synthetic,
+        {
+            "session": "tutorial",
+            "archive": "OSF abcde",
+            "url": path.as_uri(),
+            "file_name": "tutorial.bin",
+            "sha256": _digest(path.read_bytes()),
+            "size_bytes": path.stat().st_size,
+            "verified": False,
+            "default": False,
+            "license": "not stated",
+            "data_citation": "Someone. Tutorial files. OSF.",
+        },
+    )
+    rec = load(DATASET, "tutorial", cache=synthetic.cache)
+    assert rec.license == "not stated"
+    assert rec.citation == (
+        "Synthetic A (2026) A simulated session. Data: Someone. Tutorial files. OSF."
+    )
+    assert rec.provenance.archive == "OSF abcde"
+    table = catalog().set_index("session")
+    assert table.loc["tutorial", "license"] == "not stated"
+    assert table.loc["s1", "license"] == "CC0-1.0"
+    assert table.loc["s1", "citation"].endswith("Data: Synthetic 0 archive.")
+
+
+def test_check_session_refuses_before_any_download(synthetic, monkeypatch):
+    module = sys.modules[f"neurospatial.datasets.{DATASET}"]
+
+    def check_session(entry):
+        if entry.session == "clock_off":
+            msg = f"{entry.session}: this file layout is not read yet"
+            raise NotImplementedError(msg)
+
+    monkeypatch.setattr(module, "check_session", check_session, raising=False)
+    monkeypatch.setattr(_fetch, "fetch", _no_download)
+    with pytest.raises(NotImplementedError, match="not read yet"):
+        load(DATASET, "clock_off", cache=synthetic.cache)
+
+
+def test_module_absent_below_its_python_says_so(synthetic, monkeypatch):
+    """mat-io installs only on Python 3.11+: on 3.10 the error says that."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def blocked(name, *args, **kwargs):
+        if name == "matio":
+            msg = "No module named 'matio'"
+            raise ModuleNotFoundError(msg, name="matio")
+        return real_import(name, *args, **kwargs)
+
+    module = sys.modules[f"neurospatial.datasets.{DATASET}"]
+    monkeypatch.setattr(module, "REQUIRES", ("matio",))
+    monkeypatch.setattr(builtins, "__import__", blocked)
+    monkeypatch.delitem(sys.modules, "matio", raising=False)
+    monkeypatch.setattr(_fetch, "fetch", _no_download)
+    monkeypatch.setattr(_load.sys, "version_info", (3, 10, 14, "final", 0))
+    with pytest.raises(
+        ImportError, match=r"only on Python 3\.11 or later.*Python 3\.10"
+    ):
+        load(DATASET, cache=synthetic.cache)
+    # On 3.11 and later the usual install hint is given.
+    monkeypatch.setattr(_load.sys, "version_info", (3, 11, 0, "final", 0))
+    with pytest.raises(ImportError, match=r"pip install 'neurospatial\[datasets\]'"):
+        load(DATASET, cache=synthetic.cache)

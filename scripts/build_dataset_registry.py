@@ -10,7 +10,9 @@ DANDI version never changes, so the digests stay valid.
 
 What a person decided about a session (``verified``, ``default``,
 ``n_units``, ``verification``) is kept, matched by session id; a new session
-starts unverified. The registry must already exist with ``dataset`` and
+starts unverified. Sessions from another archive (rows with a ``url``, such
+as the tutorial file a dataset loads by default) are written by hand and
+kept as they are. The registry must already exist with ``dataset`` and
 ``archive.dandiset`` set.
 
 Session ids are the asset file's BIDS entities (``sub-10073_ses-17010302``
@@ -109,12 +111,15 @@ def build(registry: Mapping[str, Any], version: str, get: Fetch = get_json) -> d
     dict
         ``registry`` with ``license``, ``archive.version``, ``archive.url``,
         ``archive.citation`` and ``sessions`` from the archive; each
-        session keeps its hand-set fields.
+        session keeps its hand-set fields, and the rows from other archives
+        are kept whole.
     """
     dandiset = registry["archive"]["dandiset"]
     meta = get(f"{API}/dandisets/{dandiset}/versions/{version}/")
-    known = {entry["session"]: entry for entry in registry.get("sessions", [])}
-    sessions = []
+    rows = registry.get("sessions", [])
+    elsewhere = [entry for entry in rows if "url" in entry]
+    known = {entry["session"]: entry for entry in rows if "url" not in entry}
+    sessions = list(elsewhere)
     for asset in list_assets(dandiset, version, get):
         session = session_id(asset["path"])
         old = known.get(session, {})
@@ -131,7 +136,10 @@ def build(registry: Mapping[str, Any], version: str, get: Fetch = get_json) -> d
         )
     names = [entry["session"] for entry in sessions]
     if len(set(names)) != len(names):
-        msg = f"DANDI {dandiset} {version}: two assets give one session id"
+        msg = (
+            f"DANDI {dandiset} {version}: two assets, or an asset and a session "
+            "from another archive, give one session id"
+        )
         raise ValueError(msg)
     if missing := sorted(set(known) - set(names)):
         msg = f"sessions {missing} are not in DANDI {dandiset} {version}"
