@@ -241,6 +241,38 @@ def test_spikes_just_past_an_untracked_epoch(
             run_checks(rec, stated=square_stated)
 
 
+@pytest.mark.parametrize(("gap", "passes"), [(1.0, True), (8.0, False)])
+def test_untracked_rows_a_scoring_gap_apart_are_one_stretch(
+    square_recording, square_stated, gap, passes
+):
+    """Sleep-state rows a second apart, as a scoring leaves them, join up.
+
+    A long row [60, 400) s, then two short ones, 40 s and 10 s long, ``gap``
+    apart, with a spike in the middle of the gap. Alone, the short rows'
+    slack (0.4 s and 0.1 s) would not reach it. The rows form a stretch of
+    about 400 s, whose slack is about 4 s: a 1 s gap joins them and the
+    spike is on the clock; an 8 s gap does not, and the spike is not.
+    """
+    second = 441.0 + gap
+    trains = list(square_recording.spike_times)
+    trains[0] = np.append(trains[0], 441.0 + gap / 2)
+    trains[1] = np.append(trains[1], [200.0, second + 9.0])  # in the rows
+    rec = dataclasses.replace(
+        square_recording,
+        spike_times=tuple(np.sort(train) for train in trains),
+        epochs={
+            "run": np.array([[0.0, 60.0]]),
+            "non_rem": np.array([[60.0, 400.0], [second, second + 10.0]]),
+            "rem": np.array([[401.0, 441.0]]),
+        },
+    )
+    if passes:
+        assert run_checks(rec, stated=square_stated).failed_checks == ()
+    else:
+        with pytest.raises(DatasetCheckError, match=r"1 of \d+ spikes"):
+            run_checks(rec, stated=square_stated)
+
+
 def test_spikes_just_past_tracking_pass(square_recording, square_stated):
     """Ephys running a little past the camera is within the clock's slack."""
     trains = list(square_recording.spike_times)

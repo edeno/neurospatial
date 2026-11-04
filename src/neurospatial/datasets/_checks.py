@@ -42,14 +42,16 @@ __all__ = ["Stated", "run_checks"]
 #: How far a time may lie outside a span and still count as within it: a
 #: share of the span's length, ``CLOCK_SLACK``, at most ``CLOCK_SLACK_CAP``
 #: seconds. The tracked span and each stretch of untracked epochs get it at
-#: their edges. The errors the clock check guards against (milliseconds read
-#: as seconds, a second clock with another zero) put times off by about the
-#: session's length or more; acquisition edges differ by much less. Strict
+#: their edges, and untracked epochs that close together form one stretch.
+#: The errors the clock check guards against (milliseconds read as seconds,
+#: a second clock with another zero) put times off by about the session's
+#: length or more; acquisition edges differ by much less. Strict
 #: containment refused real sessions that are on one clock: hc-11
 #: Achilles' maze epoch ends 0.026 s after the last tracking sample, the
 #: Yartsev bat's spikes run 6.6 s past its tracking, and DANDI 000044
-#: Gatsby 08022013's spikes run 5.4 s past its last sleep-state row. The cap
-#: keeps a long session's slack from hiding an offset such as 22.6 s.
+#: Gatsby 08022013's spikes run 5.4 s past its last sleep-state row, whose
+#: rows leave 1 s between them. The cap keeps a long session's slack from
+#: hiding an offset such as 22.6 s.
 CLOCK_SLACK = 0.01
 #: The largest slack in seconds, whatever the span's length.
 CLOCK_SLACK_CAP = 10.0
@@ -355,15 +357,26 @@ def _slack(length: float) -> float:
 
 
 def _widened(rows: NDArray[np.float64]) -> NDArray[np.float64]:
-    """The union of ``rows`` with each stretch widened by its ``_slack``, (n, 2).
+    """Untracked epochs as stretches widened by their ``_slack``, shape (n, 2).
 
     The edges of an untracked epoch are acquisition edges too: a sleep
-    scoring that stops a few seconds before the electrophysiology does is on
-    the same clock.
+    scoring that stops a few seconds before the electrophysiology does, or
+    whose rows leave a second between them, is on the same clock. Rows a gap
+    apart no wider than the slack of the stretch they would form are joined,
+    and each stretch is widened by its own slack.
     """
     starts, stops = merged_rows(rows)
-    margin = np.minimum(CLOCK_SLACK * (stops - starts), CLOCK_SLACK_CAP)
-    return np.column_stack([starts - margin, stops + margin])
+    joined: list[list[float]] = []
+    for start, stop in zip(starts.tolist(), stops.tolist(), strict=True):
+        if joined and start - joined[-1][1] <= _slack(stop - joined[-1][0]):
+            joined[-1][1] = max(joined[-1][1], stop)
+        else:
+            joined.append([start, stop])
+    stretches = np.array(joined, dtype=np.float64).reshape(-1, 2)
+    margin = np.minimum(
+        CLOCK_SLACK * (stretches[:, 1] - stretches[:, 0]), CLOCK_SLACK_CAP
+    )
+    return np.column_stack([stretches[:, 0] - margin, stretches[:, 1] + margin])
 
 
 def _within_any(
