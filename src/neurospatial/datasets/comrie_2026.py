@@ -202,6 +202,26 @@ _INTERPOLATED = (
 )
 
 
+#: The file's arrays the loader reads; the others (velocities, projected
+#: positions, patch and segment ids) are left unread.
+_ARRAYS = (
+    "position_time",
+    "position/head_position_x",
+    "position/head_position_y",
+    "position/head_orientation",
+    "position/head_speed",
+    "position/linear_position",
+    "spike_times",
+    "spike_offsets",
+    "track_nodes",
+    "track_node_positions",
+    "track_edges",
+    "track_edge_distance",
+    "linear_edge_order",
+    "linear_edge_spacing",
+)
+
+
 def load_session(
     entry: SessionEntry, path_or_stream: str | os.PathLike[str]
 ) -> Recording:
@@ -229,7 +249,7 @@ def load_session(
         track graph.
     """
     with np.load(os.fspath(path_or_stream), allow_pickle=False) as arrays:
-        z = {name: arrays[name] for name in arrays.files}
+        z = {name: arrays[name] for name in _ARRAYS}
     times = np.asarray(z["position_time"], dtype=np.float64)
     positions = np.column_stack(
         [z["position/head_position_x"], z["position/head_position_y"]]
