@@ -47,6 +47,8 @@
   from the first 60 s of tracking by default (30 frames a second when tracking
   is faster), to open with `.show()` or write
   with `.export()`. A session without positions raises `InputError`.
+- The `realdata` pytest marker selects tests that download public sessions;
+  they are deselected by default (`pytest -m realdata` runs them).
 
 ### Fixes from the review of the result contract, warnings and simulators
 
