@@ -1,6 +1,6 @@
 # Dataset loaders Implementation Plan
 
-**Status:** Not started.
+**Status:** Merged as #282 (5fffac747, 2026-11-04).
 
 **Goal:** Ship `neurospatial.datasets`: correct, ready-to-analyze loaders for open spatial neuroscience datasets. This plan covers the module, its first five datasets, and Valero 2022 (DANDI 000568) as the first dataset with video.
 
