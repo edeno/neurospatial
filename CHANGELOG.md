@@ -204,6 +204,10 @@
   AVI files of DANDI 000568 report one frame more) gives `VideoOverlay` its
   real frame count, so frame times of that length are accepted; up to 16
   trailing frames are probed when the file is opened.
+- The position, bodypart and object-vector overlays warn about coordinates
+  outside the environment only beyond its arena's domain as well as its bins'
+  cells: on a track, whose cells span the centerline alone, a tracked head
+  within the track's width is no longer reported outside.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 

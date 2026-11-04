@@ -384,7 +384,7 @@ class PositionOverlay(_Overlay):
         )
         _validate_bounds(
             self.positions,
-            env.dimension_ranges,
+            _overlay_extent(env),
             name="PositionOverlay.positions",
             threshold=0.1,
         )
@@ -608,7 +608,7 @@ class BodypartOverlay(_Overlay):
                     "sample time."
                 )
                 raise ValueError(msg)
-            _validate_bounds(part_data, env.dimension_ranges, name=name, threshold=0.1)
+            _validate_bounds(part_data, _overlay_extent(env), name=name, threshold=0.1)
             # Each keypoint has its own missing observations and support.
             parts[part_name] = part_data
             sample_valid[part_name], interval_valid[part_name] = observed_support(
@@ -2531,7 +2531,7 @@ class ObjectVectorOverlay(_Overlay):
         )
         _validate_bounds(
             self.animal_positions,
-            env.dimension_ranges,
+            _overlay_extent(env),
             name="ObjectVectorOverlay.animal_positions",
             threshold=0.1,
         )
@@ -4145,6 +4145,25 @@ def _validate_temporal_alignment(
             UserWarning,
             stacklevel=_external_stacklevel(),
         )
+
+
+def _overlay_extent(env: Any) -> list[tuple[float, float]]:
+    """The ranges an overlay's coordinates are expected in, per axis.
+
+    ``env.dimension_ranges`` covers the bins' cells, which on a track is its
+    centerline alone; the arena's domain adds the track's width, where the
+    samples of a tracked head lie. An environment without a known domain
+    keeps its cells' ranges.
+    """
+    ranges = [(float(low), float(high)) for low, high in env.dimension_ranges]
+    arena = getattr(env, "arena", None)
+    bounds = None if arena is None else arena.domain_bounds()
+    if bounds is None:
+        return ranges
+    return [
+        (min(low, float(lower)), max(high, float(upper)))
+        for (low, high), lower, upper in zip(ranges, bounds[0], bounds[1], strict=True)
+    ]
 
 
 def _validate_bounds(
