@@ -46,6 +46,7 @@ OPT_IN = (
     "docs/datasets/peyrache_2015.md",
     "docs/datasets/sargolini_2006.md",
     "docs/datasets/valero_2022.md",
+    "docs/datasets/vollan_2025.md",
     "docs/user-guide/workflows.md",
     "docs/user-guide/neuroscience-metrics.md",
     "docs/user-guide/signal-processing-primitives.md",
