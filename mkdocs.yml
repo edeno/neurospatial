@@ -186,6 +186,14 @@ nav:
       - Behavior Around Events: user-guide/behavior-around-events.md
       - Compute on Trials and Segments: user-guide/compute-on-trials.md
       - RL Primitives: user-guide/rl-primitives.md
+  - Public Datasets:
+      - Loading Datasets: user-guide/datasets.md
+      - "Comrie 2026: bandit maze (rat)": datasets/comrie_2026.md
+      - "Grosmark 2016: novel maze and sleep (rat)": datasets/grosmark_2016.md
+      - "Peyrache 2015: head direction (mouse)": datasets/peyrache_2015.md
+      - "Sargolini 2006: entorhinal cortex (rat)": datasets/sargolini_2006.md
+      - "Forli 2025: free flight (bat)": datasets/forli_2025.md
+      - "Valero 2022: linear track with video (mouse)": datasets/valero_2022.md
   - Visualization:
       - Field Animation: user-guide/animation.md
       - Animation Overlays: animation_overlays.md

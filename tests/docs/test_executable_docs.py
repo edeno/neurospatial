@@ -38,6 +38,13 @@ OPT_IN = (
     "docs/user-guide/trajectory-and-behavioral-analysis.md",
     "docs/user-guide/behavior-around-events.md",
     "docs/user-guide/video-annotation.md",
+    "docs/user-guide/datasets.md",
+    "docs/datasets/comrie_2026.md",
+    "docs/datasets/forli_2025.md",
+    "docs/datasets/grosmark_2016.md",
+    "docs/datasets/peyrache_2015.md",
+    "docs/datasets/sargolini_2006.md",
+    "docs/datasets/valero_2022.md",
     "docs/user-guide/workflows.md",
     "docs/user-guide/neuroscience-metrics.md",
     "docs/user-guide/signal-processing-primitives.md",
@@ -47,6 +54,50 @@ OPT_IN = (
     "docs/migration/environment-architecture.md",
 )
 SETUPS = {
+    "docs_datasets_session": """import numpy as np
+import pandas as pd
+
+from neurospatial.behavior import heading_from_velocity
+from neurospatial.datasets import Provenance, Recording
+from neurospatial.simulation import open_field_session
+
+# A 30 s simulated box session stands in for load(...) so the fences run offline.
+_sim = open_field_session(duration=30.0, n_place_cells=6, rng=0)
+rec = Recording(
+    dataset="simulated_2026",
+    session="box",
+    paper="Simulated et al. (2026)",
+    animal="simulated rat",
+    apparatus="simulated 1 m box",
+    brain_regions=("CA1",),
+    license="CC0-1.0",
+    citation="Simulated A (2026) A simulated session.",
+    provenance=Provenance(
+        archive="Simulated 0",
+        url="file:///simulated/session.npz",
+        sha256="0" * 64,
+        size_bytes=1024,
+        neurospatial_version="0.0",
+        fetched_at="2026-11-03T00:00:00+00:00",
+    ),
+    clock="the simulation's clock, from 0 s",
+    times=_sim.times,
+    spike_times=tuple(_sim.spike_times),
+    units=pd.DataFrame(
+        {"brain_region": "CA1", "label": "pyramidal"},
+        index=pd.Index(np.arange(len(_sim.spike_times)), name="unit_id"),
+    ),
+    env=_sim.env,
+    env_kind="declared",
+    env_source="1 m square box (simulation)",
+    positions=_sim.positions,
+    position_units="cm",
+    tracking="simulated head position",
+    headings=heading_from_velocity(_sim.times, _sim.positions),
+    heading_source="direction of movement of the simulated path",
+    epochs={"run": np.array([[0.0, 30.0]])},
+)
+""",
     "docs_video_annotation_use_results": """import numpy as np
 from types import SimpleNamespace
 

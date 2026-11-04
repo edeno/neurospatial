@@ -7,6 +7,7 @@ Each route explains the analysis choices and how to interpret the figures.
 
 | I want to… | Start here | Check before interpreting |
 | --- | --- | --- |
+| Try an analysis on a published recording | [Public datasets](datasets.md) | The session's "Watch out" section, its conversions and its license |
 | Analyze my recorded spikes and tracking | [Load NWB data](interoperability.md#nwb-interop) | Position units, clocks, unit labels and recording windows |
 | Find where a neuron fires | [First rate map](../getting-started/quickstart.md#your-first-rate-map) | Occupancy, smoothing scale and missing spatial coverage |
 | Compare conditions or trials | [Place fields on outbound and inbound runs](workflows.md#place-fields-on-outbound-and-inbound-runs) | One environment, identical analysis settings, matched unit IDs and observed time in each condition |
@@ -35,6 +36,7 @@ Each route explains the analysis choices and how to interpret the figures.
 - **[Comparing Reactivation Methods](reactivation-methods.md)**: Published explained-variance and assembly reactivation analyses on one session, and what they report on data without reactivation
 - **[Performance & Caching](performance.md)**: Memory management, optimization, and benchmarks
 - **[Complete Workflows](workflows.md)**: End-to-end analysis examples
+- **[Public Datasets](datasets.md)**: Load six published recordings with their conversions, checks and pitfalls; one page per dataset
 - **[Interoperability](interoperability.md)**: Recording holders, SpikeTrains, BayesianDecoder, and pynapple / NWB adapters
 
 ## Who This Guide Is For
