@@ -92,6 +92,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.datasets._checks import _count, gap_stats
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import Conversion, Recording, interval_rows
 
@@ -1061,15 +1062,12 @@ def _trials_watch_out(
 
 def _gaps(times: NDArray[np.float64]) -> tuple[str, ...]:
     """The stretches with no position sample, longer than a tenth of a second."""
-    from neurospatial.datasets._checks import _count
-
-    steps = np.diff(times)
-    long = steps > 0.1
-    if not long.any():
+    if (gaps := gap_stats(times, 0.1)) is None:
         return ()
+    n, total, longest = gaps
     return (
-        f"times has {_count(int(long.sum()), 'gap')} longer than 0.1 s "
-        f"({steps[long].sum():.0f} s of the {times[-1] - times[0]:.0f} s tracked "
-        f"span, the longest {steps.max():.0f} s): the rat off the track. Spikes "
+        f"times has {_count(n, 'gap')} longer than 0.1 s "
+        f"({total:.0f} s of the {times[-1] - times[0]:.0f} s tracked "
+        f"span, the longest {longest:.0f} s): the rat off the track. Spikes "
         "there have no position; nothing is filled in.",
     )

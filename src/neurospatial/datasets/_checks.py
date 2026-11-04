@@ -620,6 +620,31 @@ def _count(n: int, noun: str) -> str:
     return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
 
 
+def gap_stats(
+    times: NDArray[np.float64], threshold: float
+) -> tuple[int, float, float] | None:
+    """The intervals between samples longer than ``threshold``, in numbers.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+        Sample times in seconds, increasing.
+    threshold : float
+        Seconds; a longer interval between consecutive samples is a gap.
+
+    Returns
+    -------
+    (n, total, longest) or None
+        The number of gaps, their total and the longest, in seconds; None
+        with no gap.
+    """
+    steps = np.diff(times)
+    long = steps > threshold
+    if not long.any():
+        return None
+    return int(long.sum()), float(steps[long].sum()), float(steps.max())
+
+
 def _outside_finding(rec: Recording) -> str | None:
     """Tracked samples in no bin of the environment; None if each is in one.
 

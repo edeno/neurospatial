@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.datasets._checks import _count
+from neurospatial.datasets._checks import _count, gap_stats
 from neurospatial.datasets._recording import Conversion, Recording, interval_rows
 
 if TYPE_CHECKING:
@@ -245,13 +245,12 @@ def _frame_watch_out() -> str:
 
 def _gaps(times: NDArray[np.float64]) -> tuple[str, ...]:
     """The tracking gaps longer than ``GAP`` seconds, with their numbers."""
-    steps = np.diff(times)
-    long = steps > GAP
-    if not long.any():
+    if (gaps := gap_stats(times, GAP)) is None:
         return ()
+    n, total, longest = gaps
     return (
-        f"Head direction has {_count(int(long.sum()), 'gap')} longer than {GAP:g} s "
-        f"({steps[long].sum():.1f} s in all, the longest {steps.max():.2f} s), "
+        f"Head direction has {_count(n, 'gap')} longer than {GAP:g} s "
+        f"({total:.1f} s in all, the longest {longest:.2f} s), "
         "where the file has no sample. Spikes in a gap have no heading; nothing "
         "is filled in.",
     )
