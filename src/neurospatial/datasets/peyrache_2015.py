@@ -1,0 +1,240 @@
+"""Peyrache et al. (2015): mouse anterior thalamus head-direction cells, wake and sleep.
+
+What was recorded: units in the anterior thalamus of mice, mainly the
+antero-dorsal nucleus (ADn), while they foraged in a 53 x 46 cm arena for
+30 to 45 minutes between two sleep sessions of about 2 hours (the paper's
+Methods). Head direction is the orientation of a blue and a red LED on the
+head, filmed at 30 frames/s and resampled at 39 Hz by the acquisition
+system. Spikes were sorted with KlustaKwik and adjusted by hand.
+
+The default session, ``Mouse32-140822``, is the file pynapple's and NeMoS's
+head-direction tutorials download: OSF ``jb2gd``, 36.6 MB, in the
+"Pynapple-files" project (G. Viejo), which states no license. It holds 49
+units (31 with location ``adn``, the 31 the pynapple tutorial selects, and 18
+``thalamus``), the wake and sleep epochs, slow-wave and REM sleep intervals,
+and head direction ``ry`` during the wake epoch only. It has no x/y
+position, so the recording has no positions and no environment.
+
+The other sessions are the 40 files of DANDI 000056 (CC-BY-4.0), which does
+not hold ``Mouse32-140822``. Their layout differs: raw blue and red LED
+positions in camera units (``unit`` "meters" with ``conversion`` NaN), no
+head-direction series, no wake or sleep epochs and no unit locations. This
+loader does not read them yet: loading one raises ``NotImplementedError``
+before anything is downloaded.
+
+Sources read: the paper (Peyrache, Lacroix, Petersen & Buzsáki 2015, the
+author manuscript on PubMed Central, PMC4376557), pynapple's head-direction
+tutorial, the OSF project and file metadata, DANDI 000056's metadata, and
+the files.
+
+What the loader converts:
+
+- headings: ``ry`` (radians, 0 to 2π) wrapped to [-π, π]. The file states no
+  reference frame and the paper says only that heading is the orientation
+  of two LEDs, so the package frame (0 = East, counter-clockwise) is assumed:
+  an inferred ``Conversion``. With no positions, heading cannot be compared
+  with the direction of movement. Tuning curve shapes, widths and decoding
+  do not depend on the frame; absolute preferred directions do.
+- epochs: ``wake`` and ``sleep`` from the epochs table's tags; ``sws`` and
+  ``rem`` from their own tables; times as stored, in seconds.
+
+Analysis choices (``params``):
+
+- ``analysis_epochs``: the wake epoch, the only time with tracked head
+  direction;
+- ``dt`` 0.1 s, the decoding bin of pynapple's head-direction tutorial.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import TYPE_CHECKING
+
+import numpy as np
+from numpy.typing import NDArray
+
+from neurospatial._exceptions import _format_error
+from neurospatial.datasets._recording import Conversion, Recording
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from neurospatial.datasets._catalog import SessionEntry
+
+__all__ = ["REQUIRES", "WATCH_OUTS", "check_session", "load_session"]
+
+#: Modules of the ``datasets`` extra the loader imports.
+REQUIRES = ("pynwb",)
+
+DT = 0.1
+#: Heading samples further apart than this are a gap in the tracking, s.
+GAP = 1.0
+_PAPER = "the Methods of Peyrache et al. 2015, PMC4376557"
+
+#: Pitfalls of each session checked by hand, with their evidence.
+WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "Mouse32-140822": (
+        "18 of the 49 units have location 'thalamus', not 'adn'; the pynapple "
+        "tutorial keeps the 31 'adn' units (unit ids 4 to 34) for head-direction "
+        "analyses, so select units['brain_region'] == 'adn' to match it.",
+        "This session is not in DANDI 000056 (which holds Mouse32-140820), so "
+        "the OSF file is its only public copy and cannot be cross-checked "
+        "against a second archive.",
+    ),
+}
+
+
+def check_session(entry: SessionEntry) -> None:
+    """Refuse a DANDI 000056 session before it is downloaded.
+
+    Raises
+    ------
+    NotImplementedError
+        For a DANDI 000056 session: its file layout is not read yet.
+    """
+    if entry.asset_id is None:
+        return
+    raise NotImplementedError(
+        _format_error(
+            f"peyrache_2015 cannot load {entry.session} from {entry.archive} yet.",
+            why="the DANDI 000056 files store raw blue and red LED positions in "
+            "camera units (conversion NaN) with no head-direction series, no "
+            "wake or sleep epochs and no unit locations, and the loader reads "
+            "only the OSF tutorial file's layout.",
+            fix="load the default session, load('peyrache_2015'), or read the "
+            "DANDI file with neurospatial.io.nwb yourself.",
+        )
+    )
+
+
+def load_session(
+    entry: SessionEntry, path_or_stream: str | os.PathLike[str]
+) -> Recording:
+    """Read the OSF ``Mouse32-140822.nwb`` into a heading-only :class:`Recording`.
+
+    Parameters
+    ----------
+    entry : SessionEntry
+        The session's registry entry.
+    path_or_stream : str or path
+        The cached NWB file.
+
+    Returns
+    -------
+    Recording
+        Unchecked; :func:`neurospatial.datasets.load` runs the checks.
+    """
+    from neurospatial.datasets._fetch import open_nwb
+    from neurospatial.io.nwb import read_head_direction, read_intervals, read_units
+    from neurospatial.stats import wrap_angle
+
+    check_session(entry)
+    with open_nwb(os.fspath(path_or_stream)) as nwb:
+        heading = read_head_direction(nwb)
+        series = nwb.acquisition["CompassDirection"]["ry"]
+        stated_unit = f"unit {series.unit!r}"
+        units = read_units(nwb)
+        tagged = read_intervals(nwb, interval_name="epochs").intervals_table()
+        epochs = {
+            tag: _rows(tagged[[tag in tags for tags in tagged["tags"]]])
+            for tag in ("wake", "sleep")
+        }
+        for name in ("sws", "rem"):
+            epochs[name] = _rows(
+                read_intervals(nwb, interval_name=name).intervals_table()
+            )
+        started = nwb.session_start_time
+    times = np.asarray(heading.times, dtype=np.float64)
+    raw = np.asarray(heading.headings, dtype=np.float64)
+    assert units.unit_table is not None  # read_units always reads the table
+    table = units.unit_table[[]].copy()
+    table["brain_region"] = units.unit_table["location"]
+    table["label"] = None
+    regions = tuple(dict.fromkeys(table["brain_region"].dropna()))
+    return Recording(
+        **entry.identity(path_or_stream),
+        animal="mouse Mouse32",
+        apparatus=entry.info.apparatus,
+        brain_regions=regions or entry.info.brain_regions,
+        clock=(
+            "the file's clock, seconds from its session start time "
+            f"({started:%Y-%m-%d}, the date the file was written, not the "
+            "recording's 2014-08-22)"
+        ),
+        times=times,
+        spike_times=tuple(np.asarray(t, dtype=np.float64) for t in units.spike_times),
+        units=table,
+        tracking=(
+            "head direction: the orientation of a blue and a red LED on the head, "
+            f"filmed at 30 frames/s and resampled at 39 Hz ({_PAPER})"
+        ),
+        headings=np.asarray(wrap_angle(raw), dtype=np.float64),
+        heading_source="the file's head direction, ry, during the wake epoch",
+        epochs=epochs,
+        params={"analysis_epochs": epochs["wake"], "dt": DT},
+        conversions=(
+            Conversion(
+                "headings: ry wrapped from [0, 2π) to [-π, π] "
+                "(neurospatial.stats.wrap_angle)",
+                "stated",
+                f"the file's ry: {stated_unit}, values "
+                f"{raw.min():.3g} to {raw.max():.3g}",
+            ),
+            Conversion(
+                "headings: allocentric, 0 = East and counter-clockwise, the "
+                "package convention; not rotated or mirrored",
+                "inferred",
+                "assumed: the file's reference_frame is empty, the paper says "
+                f"only that heading is the orientation of two LEDs ({_PAPER}), "
+                "and with no positions in the file heading cannot be compared "
+                "with the direction of movement",
+            ),
+            Conversion(
+                "epochs: 'wake' and 'sleep' from the tags of the epochs table; "
+                "'sws' and 'rem' from their own tables",
+                "stated",
+                "the file's intervals: epochs (3 rows tagged wake or sleep), sws "
+                "and rem",
+            ),
+        ),
+        watch_outs=(
+            *WATCH_OUTS.get(entry.session, ()),
+            "No positions: the file has head direction only, so there is no "
+            "environment (the paper's 53 x 46 cm arena is not in it) and no "
+            "speed; spatial maps and decoding of position are not possible.",
+            _frame_watch_out(),
+            *_gaps(times),
+        ),
+    )
+
+
+def _rows(table: pd.DataFrame) -> NDArray[np.float64]:
+    """The ``(n, 2)`` [start, stop) rows of an interval table, sorted by start."""
+    rows: NDArray[np.float64] = table[["start_time", "stop_time"]].to_numpy(
+        dtype=np.float64
+    )
+    ordered: NDArray[np.float64] = rows[np.argsort(rows[:, 0], kind="stable")]
+    return ordered
+
+
+def _frame_watch_out() -> str:
+    return (
+        "The heading frame is assumed, not stated: 0 = East and counter-clockwise "
+        "(the package convention). Tuning-curve shapes, widths and decoding "
+        "error do not depend on it; absolute preferred directions, and comparing "
+        "them with another session's or a cue's, do."
+    )
+
+
+def _gaps(times: NDArray[np.float64]) -> tuple[str, ...]:
+    """The tracking gaps longer than ``GAP`` seconds, with their numbers."""
+    steps = np.diff(times)
+    long = steps > GAP
+    if not long.any():
+        return ()
+    return (
+        f"Head direction has {int(long.sum())} gaps longer than {GAP:g} s "
+        f"({steps[long].sum():.1f} s in all, the longest {steps.max():.2f} s), "
+        "where the file has no sample. Spikes in a gap have no heading; nothing "
+        "is filled in.",
+    )

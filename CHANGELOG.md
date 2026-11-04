@@ -105,6 +105,17 @@
   (86% when stopped). `head_orientation` is 13° off the direction of
   movement, so it is kept in `params["head_orientation"]`, not used as
   headings.
+- `peyrache_2015`: Peyrache et al. (2015) mouse anterior thalamus
+  head-direction cells. The default, `Mouse32-140822`, is the OSF `jb2gd` file
+  pynapple's and NeMoS's head-direction tutorials download (license not
+  stated on OSF), checked by hand: 49 units (31 in ADn), head direction at
+  39 Hz during the wake epoch, and the wake, sleep, slow-wave and REM epochs.
+  It has no positions, so `rec.env` is None. Its heading frame is not stated
+  anywhere read, so the package frame is assumed (an inferred `Conversion`).
+  The 40 sessions of DANDI 000056 (version 0.250624.0430, CC-BY-4.0) are
+  listed, but their files store raw LED positions with no head-direction
+  series or epochs, so loading one raises `NotImplementedError` before any
+  download.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 
