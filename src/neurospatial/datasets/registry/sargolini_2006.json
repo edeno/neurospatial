@@ -27,7 +27,7 @@
       "basis": "stated",
       "source": "the 1 x 1 meter enclosure of the session_description in the files (DANDI's metadata for all 118 assets carries the same text; 12 files opened) and of the authors' readme (readme_sargolini2006.txt, NIRD doi:10.11582/2014.00003); the largest span of the tracked positions must lie within 20% of the 100 cm side"
     },
-    "speed_limit": null
+    "speed_limit": {"value": 393.0, "basis": "stated", "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a head-mounted LED, which swings faster than the body, and no source read states head speed"}
   },
   "sessions": [
     {

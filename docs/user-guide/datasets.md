@@ -84,10 +84,11 @@ returns, the loader checks the session:
   `DatasetCheckError`, which gives the numbers and the argument that loads the
   session anyway.
 - **Warning checks.** Samples at exactly the origin, runs of identical
-  positions, speed samples more than twice the 99.9th percentile of speed
-  (likely tracking jumps; a heuristic, not a stated limit), samples outside
-  the environment, and units with no spikes in the analysed epochs are
-  described in "Watch out" with their numbers. Where a
+  positions, samples farther from the last believable sample than the
+  dataset's stated speed limit allows (where none is stated, speed samples
+  more than twice the 99.9th percentile of speed: likely tracking jumps, a
+  heuristic), samples outside the environment, and units with no spikes in
+  the analysed epochs are described in "Watch out" with their numbers. Where a
   track's width was set from the samples themselves
   (`rec.track_width_quantile`), the share outside holds by construction (about
   1 % at the 99th percentile), and the finding says so. No array is

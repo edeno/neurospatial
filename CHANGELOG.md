@@ -362,6 +362,19 @@
   now reads "so no samples are counted against one" (a limit). When most
   samples fall in the histogram's first bar (the bat, still on its perch),
   the speed panel's counts are on a log scale, so the moving samples show.
+- Five default sessions' registries state a speed limit, so the stated-limit
+  fast-sample count runs on them: rats (`comrie_2026`, `grosmark_2016`,
+  `sargolini_2006`) 393 cm/s and mice (`valero_2022`) 526.5 cm/s, from the
+  maximum running speeds in Iriarte-Díaz (2002, J. Exp. Biol., Table 1:
+  Rattus 2.62 m/s, Mus musculus 3.51 m/s); the `forli_2025` bat 22.95 m/s,
+  from Tsoar et al. (2011, PNAS) commuting flights of at most 55 km/h. Each
+  is the body's maximum times 1.5, since the tracked point is on the head,
+  which swings faster than the body; no source read states head speed. A
+  registry's `speed_limit` must have basis `"stated"`. The relative
+  speed-jump watch-out now runs only where no limit is stated, as a
+  fallback: it misses jumps in more than 0.1% of samples. No default session
+  exceeds its limit, so the bat's watch-out no longer fires (its fastest
+  recorded step is 22.0 m/s).
 - Every spatial view of an `Animation` (the Matplotlib scene and the
   fastplotlib viewer, 2-D and 3-D) frames the position overlays' samples on
   the scene's clock as well as the environment, so an animal tracked outside

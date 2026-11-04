@@ -64,12 +64,13 @@ ZERO_SHARE = 0.001
 #: Repeats of the sample before from which a run of samples counts as held:
 #: 10 repeats, so 11 identical samples.
 MIN_HELD_REPEATS = 10
-#: Speed samples faster than ``JUMP_FACTOR`` times the 99.9th percentile of
-#: speed are reported as likely tracking jumps. A heuristic, not a stated
-#: limit, so it is applied whether or not a source states one: of the six
-#: default sessions only the forli_2025 bat's tracking reaches it (fastest
-#: 17.8 m/s against a 99.9th percentile of 4.4 m/s); the fastest step of the
-#: others is at most 1.2 times their 99.9th percentile.
+#: Where no source states a speed limit, speed samples faster than
+#: ``JUMP_FACTOR`` times the 99.9th percentile of speed are reported as
+#: likely tracking jumps. A heuristic, and a fallback only: it misses jumps
+#: in more than 0.1% of samples, whose speeds then set the 99.9th
+#: percentile, which a stated limit does not. On the six default sessions
+#: the fastest step was at most 1.2 times the 99.9th percentile, except the
+#: forli_2025 bat's (17.8 m/s against 4.4 m/s).
 JUMP_FACTOR = 2.0
 
 
@@ -247,7 +248,7 @@ def run_checks(
             units_warning,
             _origin_finding(rec),
             _held_and_fast_finding(rec, stated),
-            _speed_jump_finding(rec),
+            _speed_jump_finding(rec) if stated.speed_limit is None else None,
             _outside_finding(rec),
             _silent_units_finding(rec),
         )
@@ -542,7 +543,7 @@ def _held_and_fast_finding(rec: Recording, stated: Stated) -> str | None:
 def _speed_jump_finding(rec: Recording) -> str | None:
     """Speed samples faster than ``JUMP_FACTOR`` times the 99.9th percentile.
 
-    None unless the fastest is. The speed is the summary's
+    Run only where no speed limit is stated. None unless the fastest is. The speed is the summary's
     (:func:`~neurospatial.datasets._recording.session_speed`).
     """
     _median, _p95, p999, fastest = rec._speed_quantiles

@@ -336,8 +336,8 @@ def _stated(stated: dict[str, Any], name: str) -> Stated:
     ``sampling_rate`` and ``position_span`` are ``{"value", "basis",
     "source"}``, the basis ``"stated"`` or ``"inferred"`` and the source
     never empty; ``position_span`` may be null for a dataset without
-    positions. ``speed_limit`` is null or ``{"value", "source"}``, always
-    stated.
+    positions. ``speed_limit`` is null or ``{"value", "basis", "source"}``,
+    the basis always ``"stated"``.
     """
     values = {"sampling_rate": stated["sampling_rate"]}
     if stated.get("position_span") is not None:
@@ -355,6 +355,12 @@ def _stated(stated: dict[str, Any], name: str) -> Stated:
         fields[f"{key}_basis"] = value["basis"]
         fields[f"{key}_source"] = value["source"]
     if (limit := stated.get("speed_limit")) is not None:
+        if limit.get("basis", "stated") != "stated":
+            msg = (
+                f"registry {name}: stated.speed_limit basis {limit['basis']!r}; a "
+                "speed limit must be stated by a source"
+            )
+            raise ValueError(msg)
         fields["speed_limit"] = limit["value"]
         fields["speed_limit_source"] = limit["source"]
     return Stated(**fields)

@@ -27,7 +27,7 @@
       "basis": "stated",
       "source": "the Methods of Forli et al. 2025: 'an indoor flight room (n = 4 bats, 5.6 m x 5.2 m x 2.5 m)'; the largest span of the tracked positions must lie within 20% of the 5.6 m side"
     },
-    "speed_limit": null
+    "speed_limit": {"value": 22.95, "basis": "stated", "source": "Tsoar et al. 2011, PNAS 108:E718-E724: Egyptian fruit bats' commuting flight speeds were 'typically between 35 and 55 km/h', 15.3 m/s at most; times 1.5 because the tracked point is the headstage's markers, on the head, and no source read states head speed. Forli et al. 2025 states no flight speed. In a similar 5.8 x 4.6 x 2.7 m room Yartsev & Ulanovsky 2013 (Science 340:367, supplement) report a peak flight velocity of 261 +/- 15 cm/s (mean +/- s.e.m. over sessions), which this dataset's ordinary flights exceed, so it is not used"}
   },
   "sessions": [
     {

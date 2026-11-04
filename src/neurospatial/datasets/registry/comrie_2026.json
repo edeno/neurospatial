@@ -27,7 +27,7 @@
       "basis": "stated",
       "source": "the Methods of Comrie et al.'s preprint (bioRxiv doi:10.1101/2024.09.23.613567, version 1): nine 53 cm hallways meeting at 120 degrees with three-fold symmetry, which lays the track's centrelines 183.6 cm across (4 x 53 cm x cos 30 degrees); the largest span of the tracked positions must lie within 20% of it"
     },
-    "speed_limit": null
+    "speed_limit": {"value": 393.0, "basis": "stated", "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a head-mounted LED pair, which swings faster than the body, and no source read states head speed"}
   },
   "sessions": [
     {

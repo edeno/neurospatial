@@ -28,7 +28,7 @@
       "basis": "stated",
       "source": "the Supplementary Materials' Methods of Grosmark & Buzs\u00e1ki 2016: a 1 m diameter circular maze, a 1.9 m and a 2.3 m linear maze; the largest span of the tracked positions must lie between 80% of the smallest maze (80 cm) and 120% of the largest (276 cm)"
     },
-    "speed_limit": null
+    "speed_limit": {"value": 393.0, "basis": "stated", "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a head-mounted LED, which swings faster than the body, and no source read states head speed"}
   },
   "sessions": [
     {

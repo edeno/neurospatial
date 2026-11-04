@@ -359,16 +359,45 @@ def test_clean_path_gives_no_jump_watch_out(long_box_recording, square_stated):
     assert not any("tracking jumps" in w for w in checked.watch_outs)
 
 
-def test_jump_heuristic_and_stated_limit_both_report(
-    jumpy_box_recording, square_stated
-):
+def test_a_stated_limit_replaces_the_jump_heuristic(jumpy_box_recording, square_stated):
     limited = dataclasses.replace(
         square_stated, speed_limit=100.0, speed_limit_source="a stated 1 m/s limit"
     )
     found = run_checks(jumpy_box_recording, stated=limited).watch_outs
-    # The stated limit counts the excursions' samples; the heuristic its speeds.
+    # The stated limit counts the excursions' samples...
     assert any("samples farther from the last believable sample" in w for w in found)
-    assert any("likely tracking jumps" in w for w in found)
+    # ...and the relative heuristic, a fallback, is not run.
+    assert not any("likely tracking jumps" in w for w in found)
+
+
+def test_jumps_in_one_percent_of_steps_need_the_stated_limit(
+    long_box_recording, square_stated
+):
+    # One-sample 20 cm glitches in 1% of steps: too many for the 99.9th
+    # percentile to stay below them.
+    positions = np.array(long_box_recording.positions)
+    glitched = np.arange(50, len(positions) - 1, 100)
+    positions[glitched, 0] += 20.0
+    rec = dataclasses.replace(long_box_recording, positions=positions)
+    assert len(glitched) / len(positions) == pytest.approx(0.01, rel=0.01)
+    # The relative rule alone would not fire: the glitches set the 99.9th
+    # percentile, so the fastest step is within twice it.
+    _median, _p95, p999, fastest = rec._speed_quantiles
+    assert fastest <= 2 * p999
+    assert not any(
+        "likely tracking jumps" in w
+        for w in run_checks(rec, stated=square_stated).watch_outs
+    )
+    # A stated limit (the smooth path never exceeds 20 cm/s) catches each.
+    limited = dataclasses.replace(
+        square_stated, speed_limit=100.0, speed_limit_source="a stated 1 m/s limit"
+    )
+    (finding,) = [
+        w
+        for w in run_checks(rec, stated=limited).watch_outs
+        if "farther from the last believable sample" in w
+    ]
+    assert finding.startswith(f"{len(glitched)} samples farther")
 
 
 def test_held_run_says_no_speed_limit(track_recording, track_stated):
