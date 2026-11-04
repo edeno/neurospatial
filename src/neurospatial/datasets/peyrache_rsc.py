@@ -13,7 +13,10 @@ study's bioRxiv preprint (10.1101/2023.09.12.557442, v1, Methods) says "For
 the RSC dataset, animals explored a circular arena (diameter 70 cm) with a
 white cue card" "in addition to the square arena", that position and head
 orientation were tracked "in 3D using 7 infrared cameras (Flex 13,
-Optitrack)" and "sampled at 100 Hz (120 Hz for the RSC dataset)".
+Optitrack)" and "sampled at 100 Hz (120 Hz for the RSC dataset)". That
+120 Hz is not applied as a stated rate, which would refuse a session: 11 of
+the 14 files sample at 119.76 Hz, but three (the default among them) at
+100 Hz, so the rate is inferred and those three load with a watch-out.
 
 The default session, ``sub-A7803_ses-20240509T213129``, is the survey's
 file, the smallest with units and position (20.2 MB): mouse A7803, 37 units,

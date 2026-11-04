@@ -17,7 +17,7 @@
     "sampling_rate": {
       "value": 120.0,
       "basis": "inferred",
-      "source": "the preprint's 'sampled at 100 Hz (120 Hz for the RSC dataset)' (Mehrotra, Levenstein et al., bioRxiv 2023.09.12.557442, v1, Methods) and the timestamps of 11 of the 14 files (1/119.76 s steps); three files (A7803-210722, A7803-210723 and A7803-210726) step 0.01 s, so the stated rate does not hold for every session"
+      "source": "the preprint's 'sampled at 100 Hz (120 Hz for the RSC dataset)' (Mehrotra, Levenstein et al., bioRxiv 2023.09.12.557442, v1, Methods), kept as an inferred rate and not applied as a stated one, which would refuse a session, because three files (A7803-210722, A7803-210723 and A7803-210726, the default among them) step 0.01 s, 100 Hz; the other 11 files step 1/119.76 s"
     },
     "position_span": {
       "value": [

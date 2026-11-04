@@ -72,8 +72,9 @@ is the preprint's.
 The sampling rate is **inferred**. The preprint states "100 Hz (120 Hz for the
 RSC dataset)", and 11 of the 14 files sample at 119.76 Hz, but the three A7803
 sessions that visit only the square (A7803-210722, -210723 and -210726, the
-default) sample at 100 Hz. Those three load with a watch-out naming the
-difference. The position span is inferred from the files (largest axis 50 to 83
+default) sample at 100 Hz. So the preprint's 120 Hz is not applied as a stated
+rate, which would refuse those three sessions; it is kept as an inferred rate,
+and the three load with a watch-out naming the difference. The position span is inferred from the files (largest axis 50 to 83
 cm); a session outside 40 to 100 cm loads with a watch-out.
 
 ## Watch out
