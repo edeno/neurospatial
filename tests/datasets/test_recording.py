@@ -42,6 +42,15 @@ def test_validation_refuses_bad_shapes(square_recording, field):
         dataclasses.replace(square_recording, **BAD_FIELDS[field](square_recording))
 
 
+@pytest.mark.parametrize("value", [np.inf, -np.inf])
+def test_infinite_positions_are_refused(square_recording, value):
+    """NaN marks lost tracking; an infinite position is refused, not kept."""
+    positions = np.array(square_recording.positions)
+    positions[5, 1] = value
+    with pytest.raises(InputError, match="positions: 1 value is infinite"):
+        dataclasses.replace(square_recording, positions=positions)
+
+
 @pytest.mark.parametrize(
     ("basis", "evidence", "named"),
     [("inferred", "", "evidence"), ("guessed", "it looked right", "basis")],

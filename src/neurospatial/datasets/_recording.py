@@ -221,7 +221,8 @@ class Recording(ReadOnlyArraysMixin):
         by a stated width, or the environment is not a track.
     positions : ndarray, shape (n_time, n_dims), or None
         Tracked positions in ``position_units``, ``n_dims`` from 1 to 3, NaN
-        where tracking was lost; kept as the file stores them.
+        where tracking was lost (never infinite); kept as the file stores
+        them.
     position_units : {"cm", "m", "pixel", "arbitrary"} or None
         The length unit of ``positions``; None without positions.
     tracking : str
@@ -356,6 +357,11 @@ class Recording(ReadOnlyArraysMixin):
             problems.append(
                 f"positions: shape {positions.shape}, not (n_time, n_dims) with "
                 f"n_time = {n_time} (the length of times) and n_dims 1 to 3"
+            )
+        elif positions is not None and (n_inf := int(np.isinf(positions).sum())):
+            problems.append(
+                f"positions: {n_inf} {'value is' if n_inf == 1 else 'values are'} "
+                "infinite; mark a sample where tracking was lost with NaN"
             )
         object.__setattr__(self, "positions", positions)
         self._check_position_fields(problems)
