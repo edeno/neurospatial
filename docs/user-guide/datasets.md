@@ -28,8 +28,8 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 | [`gardner_2022`](../datasets/gardner_2022.md) | rat, medial entorhinal cortex grid modules | 1.5 m open field, head direction with position | Figshare 16764508 (CC0) | not possible yet |
 | [`peyrache_rsc`](../datasets/peyrache_rsc.md) | mouse, retrosplenial cortex | square and 70 cm circular arenas, head direction with position, sleep | DANDI 000987 (CC-BY-4.0) | not possible yet |
 | [`kanter_2025`](../datasets/kanter_2025.md) | rat, lateral and medial entorhinal cortex, CA1 or CA3 | 1 to 2 m open field, empty or with novel objects | EBRAINS 10.25493/GTVB-FQR (CC-BY-SA-4.0) | not possible yet |
-| [`shipley_2025`](../datasets/shipley_2025.md) | mouse (App NL-G-F and wild type), CA1 | 8-arm radial maze (track graph), with rest | UCL RDR 30902972 (CC-BY-4.0) | not possible yet |
-| [`huszar_cheeseboard`](../datasets/huszar_cheeseboard.md) | mouse, CA1 and CA3 | 90 cm cheeseboard maze, learning trials, reward wells, ripples | DANDI 001880 (CC0-1.0) | not possible yet |
+| [`shipley_2026`](../datasets/shipley_2026.md) | mouse (App NL-G-F and wild type), CA1 | 8-arm radial maze (track graph), with rest | UCL RDR 30902972 (CC-BY-4.0) | not possible yet |
+| [`huszar_2026`](../datasets/huszar_2026.md) | mouse, CA1 and CA3 | 90 cm cheeseboard maze, learning trials, reward wells, ripples | DANDI 001880 (CC0-1.0) | not possible yet |
 | [`grieves_2020`](../datasets/grieves_2020.md) | rat, CA1 | 3-D climbing lattice (0.97 m cube, aligned or tilted) | UCL RDR 9926477 (CC0) | not possible yet |
 
 Each dataset has a page with what was recorded, the conversions the loader

@@ -714,7 +714,7 @@ def _declared_star(
         order,
         bin_size=BIN_SIZE,
         units="cm",
-        name=f"shipley_2025 {session}",
+        name=f"shipley_2026 {session}",
         track_width=width,
     )
     sized = (

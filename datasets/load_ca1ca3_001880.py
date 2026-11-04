@@ -8,9 +8,9 @@ all three sub-sessions (64-17,301 s), 5.3 % NaN, most of it off the maze.
 The file holds 2,118 ripples, the maze and box intervals, 45 learning trials
 and the reward coordinates.
 
-The session is read by ``neurospatial.datasets.load("huszar_cheeseboard",
+The session is read by ``neurospatial.datasets.load("huszar_2026",
 "sub-iuvE14-cagCre-ef1aDIOchr2-3_ses-iuvE14-cagCre-ef1aDIOchr2-3-221208")``,
-whose module (``neurospatial/datasets/huszar_cheeseboard.py``) and docs page
+whose module (``neurospatial/datasets/huszar_2026.py``) and docs page
 give the file, the conversions (positions as stored in cm; ripples, rewards,
 trials and epochs from the file's tables), the declared 90 cm disc of the
 paper (Huszár et al. 2026, Neuron, STAR Methods), placed at the on-maze
@@ -52,7 +52,7 @@ from _record import (
 
 DATASET = {
     "key": "ca1ca3_001880",
-    "public": "huszar_cheeseboard",
+    "public": "huszar_2026",
     "session": "sub-iuvE14-cagCre-ef1aDIOchr2-3_ses-iuvE14-cagCre-ef1aDIOchr2-3-221208",
 }
 
@@ -78,7 +78,7 @@ EXPECTATIONS: dict[str, Any] = {
 
 def load(cache: Path | None = None) -> Recording:
     """The session from ``neurospatial.datasets``; positions in cm, ripples."""
-    from neurospatial.datasets import huszar_cheeseboard
+    from neurospatial.datasets import huszar_2026
     from neurospatial.datasets import load as load_public
 
     rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
@@ -117,14 +117,10 @@ def load(cache: Path | None = None) -> Recording:
                 f"{why}: placed at the on-maze samples' midrange",
             ),
             "shape": SurveyOnly("circle", f"{why}: the stated shape"),
-            "size_cm": SurveyOnly(
-                huszar_cheeseboard.DIAMETER, f"{why}: the stated diameter"
-            ),
+            "size_cm": SurveyOnly(huszar_2026.DIAMETER, f"{why}: the stated diameter"),
             "environment_fit": SurveyOnly(
                 {
-                    f"size_residual_{axis}": float(
-                        span / huszar_cheeseboard.DIAMETER - 1
-                    )
+                    f"size_residual_{axis}": float(span / huszar_2026.DIAMETER - 1)
                     for axis, span in zip("xy", spans, strict=True)
                 },
                 f"{why}: the samples' range on each axis against the stated diameter",

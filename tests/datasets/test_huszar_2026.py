@@ -187,7 +187,7 @@ def _write_session(path, *, unit="cm", zero_length_state=False):
 
 @pytest.fixture
 def entry(session_entry):
-    return session_entry("huszar_cheeseboard")
+    return session_entry("huszar_2026")
 
 
 @pytest.fixture
@@ -198,12 +198,10 @@ def synthetic(tmp_path):
 
 
 def test_loads_positions_epochs_events_and_trials(synthetic, entry):
-    from neurospatial.datasets import huszar_cheeseboard
+    from neurospatial.datasets import huszar_2026
 
     path, times, xy = synthetic
-    rec = run_checks(
-        huszar_cheeseboard.load_session(entry, path), stated=entry.info.stated
-    )
+    rec = run_checks(huszar_2026.load_session(entry, path), stated=entry.info.stated)
     assert rec.failed_checks == ()
     np.testing.assert_array_equal(rec.times, times)
     np.testing.assert_array_equal(rec.positions, xy)
@@ -231,10 +229,10 @@ def test_loads_positions_epochs_events_and_trials(synthetic, entry):
 
 def test_disc_is_the_stated_diameter_at_the_on_maze_midrange(synthetic, entry):
     """The 90 cm disc, centred on the on-maze samples, the wells as point regions."""
-    from neurospatial.datasets import huszar_cheeseboard
+    from neurospatial.datasets import huszar_2026
 
     path, times, xy = synthetic
-    rec = huszar_cheeseboard.load_session(entry, path)
+    rec = huszar_2026.load_session(entry, path)
     on = np.zeros(times.size, dtype=bool)
     for start, stop in rec.epochs["on_maze"]:
         on |= (times >= start) & (times < stop)
@@ -252,20 +250,20 @@ def test_disc_is_the_stated_diameter_at_the_on_maze_midrange(synthetic, entry):
 
 
 def test_reward_order_names_the_well_the_animal_is_at(synthetic, entry):
-    from neurospatial.datasets import huszar_cheeseboard
+    from neurospatial.datasets import huszar_2026
 
     path, _, _ = synthetic
-    rec = huszar_cheeseboard.load_session(entry, path)
+    rec = huszar_2026.load_session(entry, path)
     order = next(c for c in rec.conversions if "rewardOrder k" in c.text)
     assert order.basis == "inferred"
     assert "of the 5 reward times lies a median 0 cm from the well" in order.evidence
 
 
 def test_watch_outs_count_held_fixes_and_late_trial_stops(synthetic, entry):
-    from neurospatial.datasets import huszar_cheeseboard
+    from neurospatial.datasets import huszar_2026
 
     path, _, _ = synthetic
-    rec = huszar_cheeseboard.load_session(entry, path)
+    rec = huszar_2026.load_session(entry, path)
     (held,) = [w for w in rec.watch_outs if "outside epochs['on_maze'] repeat" in w]
     assert held.startswith("100% of the tracked samples")
     assert "a median 44 cm from the platform's centre" in held
@@ -275,29 +273,29 @@ def test_watch_outs_count_held_fixes_and_late_trial_stops(synthetic, entry):
 
 
 def test_zero_length_rows_are_left_out_and_counted(tmp_path, entry):
-    from neurospatial.datasets import huszar_cheeseboard
+    from neurospatial.datasets import huszar_2026
 
     path = tmp_path / "session.nwb"
     _write_session(path, zero_length_state=True)
-    rec = huszar_cheeseboard.load_session(entry, path)
+    rec = huszar_2026.load_session(entry, path)
     assert np.all(rec.epochs["awake"][:, 0] < rec.epochs["awake"][:, 1])
     assert any("(1 in SleepStates)" in w for w in rec.watch_outs)
 
 
 def test_refuses_positions_not_in_cm(tmp_path, entry):
-    from neurospatial.datasets import huszar_cheeseboard
+    from neurospatial.datasets import huszar_2026
 
     path = tmp_path / "session.nwb"
     _write_session(path, unit="pixels")
     with pytest.raises(ValueError, match="not cm"):
-        huszar_cheeseboard.load_session(entry, path)
+        huszar_2026.load_session(entry, path)
 
 
 @pytest.mark.realdata
 def test_loads_default_session(session_entry, assert_default_session):
     """The survey's session: 49 units, 45 trials, 2,118 ripples, the 90 cm disc."""
-    rec = load("huszar_cheeseboard")
-    assert_default_session(rec, session_entry("huszar_cheeseboard"))
+    rec = load("huszar_2026")
+    assert_default_session(rec, session_entry("huszar_2026"))
     assert rec.n_units == 49
     assert rec.units["brain_region"].value_counts().to_dict() == {"CA1": 26, "CA3": 23}
     assert rec.times.size == 236_084
@@ -321,7 +319,7 @@ def test_whole_session_rates_warn_about_spikes_after_tracking():
 
     from neurospatial import compute_spatial_rates
 
-    rec = load("huszar_cheeseboard")
+    rec = load("huszar_2026")
     with pytest.warns(UserWarning, match=r"\(11%\) .* fell outside the position time"):
         compute_spatial_rates(rec.env, rec.spike_times, rec.times, rec.positions)
     with warnings.catch_warnings():

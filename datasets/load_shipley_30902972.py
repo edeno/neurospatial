@@ -6,8 +6,8 @@ trials on an 8-arm radial maze (``0`` to ``10``) and a 45-minute rest
 recording (``S2``), on the clock of the day's recordings combined. One
 tracking LED.
 
-The session is read by ``neurospatial.datasets.load("shipley_2025")``,
-whose module (``neurospatial/datasets/shipley_2025.py``) and docs page give
+The session is read by ``neurospatial.datasets.load("shipley_2026")``,
+whose module (``neurospatial/datasets/shipley_2026.py``) and docs page give
 the four zip members read by byte range, the conversions (spike samples /
 30 kHz; pixels / 274 pixels per metre; position times rebuilt per trial from
 the spike-to-sample map, the camera at 30.05 Hz, not the header's 30 Hz,
@@ -45,7 +45,7 @@ from _tracks import public_track_facts
 
 DATASET = {
     "key": "shipley_30902972",
-    "public": "shipley_2025",
+    "public": "shipley_2026",
     "session": "m4005_2020-09-26",
 }
 
@@ -70,23 +70,23 @@ EXPECTATIONS: dict[str, Any] = {
 def load(cache: Path | None = None) -> Recording:
     """The session from ``neurospatial.datasets``; positions in cm, good units' spikes."""
     from neurospatial.datasets import load as load_public
-    from neurospatial.datasets import shipley_2025
+    from neurospatial.datasets import shipley_2026
 
     rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
     graph = rec.env.binning.linearization.graph
     centre = np.asarray(graph.nodes["centre"]["pos"])
-    reach = shipley_2025.PLATFORM / 2 + shipley_2025.ARM_LENGTH
+    reach = shipley_2026.PLATFORM / 2 + shipley_2026.ARM_LENGTH
     maze = np.zeros(len(rec.times), dtype=bool)
     for start, stop in rec.params["analysis_epochs"]:
         maze |= (rec.times >= start) & (rec.times <= stop)
     stated_lengths = {}
-    for k in range(shipley_2025.N_ARMS):
+    for k in range(shipley_2026.N_ARMS):
         end = np.asarray(graph.nodes[f"arm_{k}"]["pos"])
         u = (end - centre) / np.linalg.norm(end - centre)
         rel = rec.positions[maze] - centre
         along = rel @ u
         on_arm = (np.abs(rel[:, 0] * u[1] - rel[:, 1] * u[0]) < 10.0) & (
-            along > shipley_2025.PLATFORM / 2
+            along > shipley_2026.PLATFORM / 2
         )
         if on_arm.any():
             stated_lengths[f"arm {k}"] = (
@@ -99,7 +99,7 @@ def load(cache: Path | None = None) -> Recording:
         geometry=public_track_facts(
             rec,
             declared_from="fitted to the samples",
-            physical_width=shipley_2025.ARM_WIDTH,
+            physical_width=shipley_2026.ARM_WIDTH,
             speed_thresholds=(rec.params["min_speed"], 30.0),
             stated_lengths=stated_lengths,
         ),

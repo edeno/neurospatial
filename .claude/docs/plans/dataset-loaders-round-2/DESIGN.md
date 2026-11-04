@@ -55,8 +55,8 @@ re-derive it.
 | `gardner_2022` | Figshare 16764508, CC0; two members of a 320 MB zip by byte range (169 MB `.npz` + sessions text) | 483 units in grid modules 1–3, 1.5 m box, head azimuth with position | Spike trains are pickled object arrays: read only through the restricted unpickler that lists each pickle's imports first. Only the open-field session's valid ranges are analysis epochs |
 | `peyrache_rsc` (DANDI 000987) | DANDI 000987, CC-BY-4.0; smallest file with units and position 20.2 MB | Retrosplenial units, sleep then a square arena, motion-capture head direction with position | Blank units and reference frame (axis roles inferred from ranges; metres inferred); held-frame runs and fast steps reported by `find_suspect_tracking`; head-direction frame **not verified** by movement (+0.5 rad offset, 49° spread) |
 | `kanter_2025` | EBRAINS 10.25493/GTVB-FQR, CC-BY-SA-4.0, public bucket, no login; novel-object session 29.6 MB | LEC and CA1 Neuropixels units, empty arena then three novel objects placed one at a time (object epochs) | Unit ids repeated across two probes (380 rows, 235 ids): `read_units` refuses, the loader names units `<area>-<id>`. Stated reference frame contradicted by the values. Head-direction frame not verified and its offset drifts. **Object positions are not in the files**, so object-vector analysis cannot run |
-| `shipley_2025` | UCL RDR 30902972, CC-BY-4.0; four members of a 4.4 GB zip by byte range (~67 MB) | Mouse CA1 on an 8-arm radial maze (declared star graph from the stated arm sizes), 11 trials, sleep | Position times rebuilt per trial from the spike-to-sample map (camera ran at 30.05 Hz, not the header's 30 Hz; residual ≤ 41 ms), an inferred conversion; `pos.dir` is displacement, not head direction |
-| `huszar_cheeseboard` (DANDI 001880) | DANDI 001880, CC0-1.0; smallest file with units and position 65.7 MB | CA1/CA3 units on a cheeseboard maze, PRE / learning / POST, 45 learning trials, reward coordinates, 2,118 ripples | 29 % of frames held in long runs (`find_suspect_tracking`); environment inferred from samples (no stated size read); two position series, the loader names one |
+| `shipley_2026` | UCL RDR 30902972, CC-BY-4.0; four members of a 4.4 GB zip by byte range (~67 MB) | Mouse CA1 on an 8-arm radial maze (declared star graph from the stated arm sizes), 11 trials, sleep | Position times rebuilt per trial from the spike-to-sample map (camera ran at 30.05 Hz, not the header's 30 Hz; residual ≤ 41 ms), an inferred conversion; `pos.dir` is displacement, not head direction |
+| `huszar_2026` (DANDI 001880) | DANDI 001880, CC0-1.0; smallest file with units and position 65.7 MB | CA1/CA3 units on a cheeseboard maze, PRE / learning / POST, 45 learning trials, reward coordinates, 2,118 ripples | 29 % of frames held in long runs (`find_suspect_tracking`); environment inferred from samples (no stated size read); two position series, the loader names one |
 | `grieves_2020` | UCL RDR 10.5522/04/9926477, CC0; one Deflate64 member (431 MB) of an 11.2 GB zip by byte range | CA1 place cells in a 3-D diagonal climbing lattice, with the lattice's 147 bars as geometry | Position unit undocumented: mm inferred from the stored velocity (ratio 10.03); headings are the overhead camera's azimuth in a mirrored frame; needs `inflate64` |
 
 Module names are proposals; the round-1 pattern is `<first author>_<year>`,
@@ -168,8 +168,8 @@ Calls made in this document (the maintainer may overrule):
   on the default session is recorded as a watch-out, and the PR states
   whether any default session needs `accept_failed_checks`.
 - **Names:** `peyrache_rsc` for DANDI 000987 (the file's paper is not the
-  dataset's) and `huszar_cheeseboard` for DANDI 001880 (its paper could not
-  be read), following round 1's `<author>_<year>` pattern elsewhere.
+  dataset's); every other module follows round 1's `<author>_<year>`, with
+  the paper's year (`shipley_2026`, `huszar_2026`).
 
 ## Left to the builder
 

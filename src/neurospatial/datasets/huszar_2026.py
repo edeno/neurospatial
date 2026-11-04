@@ -494,7 +494,7 @@ def _declared_disc(
         disc,
         bin_size=BIN_SIZE,
         units="cm",
-        name=f"huszar_cheeseboard {session}",
+        name=f"huszar_2026 {session}",
         regions=regions,
     )
     placement = Conversion(

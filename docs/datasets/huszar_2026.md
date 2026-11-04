@@ -10,7 +10,7 @@ analyses and sleep reactivation.
 
 | | |
 | --- | --- |
-| Dataset id | `huszar_cheeseboard` |
+| Dataset id | `huszar_2026` |
 | Animal and region | mouse (8 animals), hippocampus CA1 and CA3 |
 | Apparatus | 90 cm diameter circular cheeseboard maze with 177 wells and a holding box, between rest sessions in the home cage |
 | Archive | DANDI 001880, version 0.261007.1849 (CC0-1.0); NWB files of 66 to 230 MB |
@@ -20,7 +20,7 @@ analyses and sleep reactivation.
 ```python
 from neurospatial.datasets import catalog
 
-sessions = catalog().query("dataset == 'huszar_cheeseboard'")
+sessions = catalog().query("dataset == 'huszar_2026'")
 sessions[["session", "n_units", "size_bytes", "verified", "default"]].head()
 ```
 
@@ -29,7 +29,7 @@ sessions[["session", "n_units", "size_bytes", "verified", "default"]].head()
 from neurospatial import compute_spatial_rates
 from neurospatial.datasets import load
 
-rec = load("huszar_cheeseboard")
+rec = load("huszar_2026")
 rates = compute_spatial_rates(
     rec.env,
     rec.spike_times,

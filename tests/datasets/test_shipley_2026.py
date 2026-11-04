@@ -116,11 +116,11 @@ def members(tmp_path):
 
 
 def test_loads_a_day(members, session_entry):
-    from neurospatial.datasets import shipley_2025
+    from neurospatial.datasets import shipley_2026
 
     folder, times, xy, spike_time, labels = members
-    entry = session_entry("shipley_2025")
-    rec = run_checks(shipley_2025.load_session(entry, folder), stated=entry.info.stated)
+    entry = session_entry("shipley_2026")
+    rec = run_checks(shipley_2026.load_session(entry, folder), stated=entry.info.stated)
     # Spikes: the good clusters only, samples / 30 kHz.
     assert list(rec.units.index) == [4, 7]
     for unit, train in zip((4, 7), rec.spike_times, strict=True):
@@ -157,7 +157,7 @@ def test_loads_a_day(members, session_entry):
 
 def test_star_is_placed_on_the_arms(members, session_entry):
     """The star's centre and arm directions come back from the samples."""
-    from neurospatial.datasets.shipley_2025 import star_graph
+    from neurospatial.datasets.shipley_2026 import star_graph
 
     graph, evidence = star_graph(_star_path())
     np.testing.assert_allclose(graph.nodes["centre"]["pos"], CENTRE, atol=0.5)
@@ -173,7 +173,7 @@ def test_star_is_placed_on_the_arms(members, session_entry):
 
 
 def test_an_unvisited_arm_keeps_the_octagons_direction():
-    from neurospatial.datasets.shipley_2025 import star_graph
+    from neurospatial.datasets.shipley_2026 import star_graph
 
     graph, evidence = star_graph(_star_path(skip_arm=3))
     assert "arms [3] have fewer than 100 samples" in evidence
@@ -182,7 +182,7 @@ def test_an_unvisited_arm_keeps_the_octagons_direction():
 
 
 def test_good_clusters_must_match_the_curated_spikes(members, session_entry):
-    from neurospatial.datasets import shipley_2025
+    from neurospatial.datasets import shipley_2026
 
     folder = members[0]
     text = (folder / "cluster_info.tsv").read_text(encoding="utf-8")
@@ -190,27 +190,27 @@ def test_good_clusters_must_match_the_curated_spikes(members, session_entry):
         text.replace("\tnoise\t", "\tgood\t"), encoding="utf-8"
     )
     with pytest.raises(ValueError, match="differ from the"):
-        shipley_2025.load_session(session_entry("shipley_2025"), folder)
+        shipley_2026.load_session(session_entry("shipley_2026"), folder)
 
 
 def test_a_trial_without_spikes_cannot_be_timed(tmp_path, session_entry):
-    from neurospatial.datasets import shipley_2025
+    from neurospatial.datasets import shipley_2026
 
     _write_members(tmp_path, spikes_in=(1, 2))
     with pytest.raises(
         ValueError,
         match=r"trial '0' \(position samples 1 to 3200\) has 0 spikes mapped",
     ):
-        shipley_2025.load_session(session_entry("shipley_2025"), tmp_path)
+        shipley_2026.load_session(session_entry("shipley_2026"), tmp_path)
 
 
 def test_trials_that_overlap_on_the_clock_are_refused(tmp_path, session_entry):
     """Trial 1 starting 0.5 s before trial 0 ends: no one clock holds both."""
-    from neurospatial.datasets import shipley_2025
+    from neurospatial.datasets import shipley_2026
 
     _write_members(tmp_path, gap=-0.5)
     with pytest.raises(ValueError, match="do not increase") as raised:
-        shipley_2025.load_session(session_entry("shipley_2025"), tmp_path)
+        shipley_2026.load_session(session_entry("shipley_2026"), tmp_path)
     overlap = float(str(raised.value).split("starts ")[1].split(" ms")[0])
     assert overlap == pytest.approx(500.0, abs=2.0)
     assert "where trial '1' starts" in str(raised.value)
@@ -218,7 +218,7 @@ def test_trials_that_overlap_on_the_clock_are_refused(tmp_path, session_entry):
 
 
 def test_position_times_report_the_header_rate_when_the_map_used_it():
-    from neurospatial.datasets.shipley_2025 import position_times
+    from neurospatial.datasets.shipley_2026 import position_times
 
     index = np.arange(1, 3001)
     times, clock = position_times(
@@ -231,8 +231,8 @@ def test_position_times_report_the_header_rate_when_the_map_used_it():
 @pytest.mark.realdata
 def test_loads_default_session(session_entry, assert_default_session):
     """m4005 on 2020-09-26, as the survey found it."""
-    rec = load("shipley_2025")
-    assert_default_session(rec, session_entry("shipley_2025"))
+    rec = load("shipley_2026")
+    assert_default_session(rec, session_entry("shipley_2026"))
     assert sum(t.size for t in rec.spike_times) == 1_201_058
     assert rec.times.size == 146_101
     assert rec.epochs["maze"].shape == (11, 2)
@@ -249,13 +249,13 @@ def test_loads_default_session(session_entry, assert_default_session):
 
 def test_days_the_loader_cannot_read_are_not_offered():
     """The 14 days whose clock cannot be rebuilt are named in the docstring, not listed."""
-    from neurospatial.datasets import shipley_2025
+    from neurospatial.datasets import shipley_2026
     from neurospatial.datasets._catalog import sessions
 
-    offered = {entry.session for entry in sessions("shipley_2025")}
+    offered = {entry.session for entry in sessions("shipley_2026")}
     named = {
         line.split("``")[1]
-        for line in shipley_2025.__doc__.splitlines()
+        for line in shipley_2026.__doc__.splitlines()
         if line.startswith("- ``m4")
     }
     assert len(offered) == 36

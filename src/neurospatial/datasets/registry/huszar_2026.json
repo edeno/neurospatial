@@ -1,5 +1,5 @@
 {
-  "dataset": "huszar_cheeseboard",
+  "dataset": "huszar_2026",
   "paper": "Huszár et al. (2026)",
   "paper_citation": "Huszár R, Kirsanov A, Henze G, Huilgol D, Valero M, Huang ZJ, Buzsáki G (2026). Developmentally defined subcircuits in the hippocampus support spatial learning. Neuron. https://doi.org/10.1016/j.neuron.2026.07.023",
   "species": "mouse",

@@ -198,8 +198,8 @@ nav:
       - "Gardner 2022: grid modules (rat)": datasets/gardner_2022.md
       - "Peyrache lab: retrosplenial cortex with head direction (mouse)": datasets/peyrache_rsc.md
       - "Kanter 2025: open field with novel objects (rat)": datasets/kanter_2025.md
-      - "Shipley 2026: radial maze and rest (mouse)": datasets/shipley_2025.md
-      - "Huszár 2026: cheeseboard maze (mouse)": datasets/huszar_cheeseboard.md
+      - "Shipley 2026: radial maze and rest (mouse)": datasets/shipley_2026.md
+      - "Huszár 2026: cheeseboard maze (mouse)": datasets/huszar_2026.md
       - "Grieves 2020: 3-D climbing lattice (rat)": datasets/grieves_2020.md
   - Visualization:
       - Field Animation: user-guide/animation.md

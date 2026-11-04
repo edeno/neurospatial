@@ -9,7 +9,7 @@ comparing them across a day's trials, and decoding position on the maze.
 
 | | |
 | --- | --- |
-| Dataset id | `shipley_2025` |
+| Dataset id | `shipley_2026` |
 | Animal and region | Male App NL-G-F/ChAT-cre and wild-type mice, CA1 pyramidal layer |
 | Apparatus | 8-arm radial maze, 80 x 10 cm arms on an octagonal centre platform 24.7 cm across; a rest box on the platform |
 | Archive | UCL Research Data Repository 30902972 (CC-BY-4.0): one 4.4 GB zip, of which each day reads about 47 to 162 MB by byte range |
@@ -19,7 +19,7 @@ comparing them across a day's trials, and decoding position on the maze.
 ```python
 from neurospatial.datasets import catalog
 
-sessions = catalog().query("dataset == 'shipley_2025'")
+sessions = catalog().query("dataset == 'shipley_2026'")
 sessions[["session", "n_units", "verified", "default"]].head()
 ```
 
@@ -28,7 +28,7 @@ sessions[["session", "n_units", "verified", "default"]].head()
 from neurospatial import compute_spatial_rates
 from neurospatial.datasets import load
 
-rec = load("shipley_2025")
+rec = load("shipley_2026")
 rates = compute_spatial_rates(
     rec.env,
     rec.spike_times,
