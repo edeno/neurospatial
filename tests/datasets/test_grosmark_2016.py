@@ -274,6 +274,20 @@ def test_linear_stem_is_centred_on_the_middle_of_the_linearized_range(start):
     np.testing.assert_allclose(track.centre, MIDDLE, atol=0.2)
 
 
+def test_spikes_after_post_are_reported_without_sleep_states():
+    """A session with no scored sleep states still says how far spikes run past POST."""
+    from neurospatial.datasets import grosmark_2016
+
+    epochs = {"post": np.array([[100.0, 200.0]])}
+    (text,) = grosmark_2016._post_ends_early(epochs, [np.array([1.0, 500.0])])
+    assert text.startswith(
+        "The file's POST epoch ends at 200 s, but spikes run to 500 s: 300 s"
+    )
+    epochs["rem"] = np.array([[150.0, 450.0]])
+    (text,) = grosmark_2016._post_ends_early(epochs, [np.array([1.0, 500.0])])
+    assert "and the sleep states to 450 s: 300 s" in text
+
+
 #: The planted circle: centre and the stated 50 cm radius.
 CENTRE = np.array([47.3, 50.5])
 

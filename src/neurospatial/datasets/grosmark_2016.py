@@ -1024,13 +1024,16 @@ def _post_ends_early(
     last = max(float(train[-1]) for train in trains)
     if last - end <= LATE_START:
         return ()
-    scored = max(
-        float(epochs[k][:, 1].max()) for k in ("awake", "non_rem", "rem") if k in epochs
-    )
+    ends = [
+        float(epochs[k][:, 1].max())
+        for k in ("awake", "non_rem", "rem")
+        if k in epochs and len(epochs[k])
+    ]
+    states = f" and the sleep states to {max(ends):.6g} s" if ends else ""
     return (
-        f"The file's POST epoch ends at {end:.6g} s, but spikes run to {last:.6g} s "
-        f"and the sleep states to {scored:.6g} s: {last - end:.0f} s of recording "
-        "after POST belong to no pre/maze/post epoch.",
+        f"The file's POST epoch ends at {end:.6g} s, but spikes run to {last:.6g} s"
+        f"{states}: {last - end:.0f} s of recording after POST belong to no "
+        "pre/maze/post epoch.",
     )
 
 
