@@ -35,7 +35,7 @@ from numpy.typing import NDArray
 
 from neurospatial._exceptions import InputError, _format_error
 from neurospatial._results import read_only_copy
-from neurospatial.datasets._recording import Conversion
+from neurospatial.datasets._recording import Conversion, tracked_mask
 
 if TYPE_CHECKING:
     from neurospatial.ops.transforms import AffineND, VideoCalibration
@@ -635,7 +635,7 @@ def fit_pixel_affine(
 
     pixels = np.asarray(pixels, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
-    both = np.all(np.isfinite(pixels), axis=1) & np.all(np.isfinite(positions), axis=1)
+    both = tracked_mask(pixels) & tracked_mask(positions)
     if (n_both := int(both.sum())) < MIN_AFFINE_SAMPLES:
         raise InputError(
             _format_error(

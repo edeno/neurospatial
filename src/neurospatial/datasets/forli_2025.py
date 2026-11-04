@@ -69,7 +69,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial.datasets._recording import Conversion, Recording
+from neurospatial.datasets._recording import Conversion, Recording, tracked_mask
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -490,14 +490,14 @@ def cell_counts(sides: NDArray[np.float64], bin_size: float) -> NDArray[np.float
 
 def _share_outside(positions: NDArray[np.float64], box: NDArray[np.float64]) -> float:
     """Share of tracked samples outside the box ``box``, shape (n_dims, 2)."""
-    tracked = positions[np.all(np.isfinite(positions), axis=1)]
+    tracked = positions[tracked_mask(positions)]
     inside = np.all((tracked >= box[:, 0]) & (tracked <= box[:, 1]), axis=1)
     return float(1 - inside.mean())
 
 
 def _where_outside(positions: NDArray[np.float64], room: NDArray[np.float64]) -> str:
     """``" (all past -y, up to 1.63 m past it; ...)"``; empty if none is outside."""
-    tracked = np.all(np.isfinite(positions), axis=1)
+    tracked = tracked_mask(positions)
     below = (positions < room[:, 0]) & tracked[:, None]
     above = (positions > room[:, 1]) & tracked[:, None]
     if not (below.any() or above.any()):

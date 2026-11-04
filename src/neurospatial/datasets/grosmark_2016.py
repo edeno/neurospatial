@@ -100,6 +100,7 @@ from neurospatial.datasets._recording import (
     Recording,
     interval_rows,
     nwb_unit_table,
+    tracked_mask,
 )
 from neurospatial.datasets._tracks import nearest_segment, placement_tolerance
 
@@ -621,11 +622,6 @@ def _track(nwb: Any, session: str) -> str:
     return track
 
 
-def _tracked(positions: NDArray[np.float64]) -> NDArray[np.bool_]:
-    """Whether each sample is tracked (every coordinate finite), shape (n_time,)."""
-    return np.asarray(np.all(np.isfinite(positions), axis=1))
-
-
 def _declared_stem(
     positions: NDArray[np.float64], session: str
 ) -> tuple[Environment, Conversion]:
@@ -635,7 +631,7 @@ def _declared_stem(
     from neurospatial import Environment
 
     stem = STEMS["1.6mLinearMaze"]
-    values = positions[_tracked(positions), 0]
+    values = positions[tracked_mask(positions), 0]
     low, high = float(values.min()), float(values.max())
     centre = (low + high) / 2
     graph = nx.Graph()
@@ -695,7 +691,7 @@ def _declared_linear(
 
     from neurospatial import Environment
 
-    tracked = _tracked(positions)
+    tracked = tracked_mask(positions)
     both = tracked & np.isfinite(linearized)
     design = np.column_stack([np.ones(both.sum()), linearized[both]])
     (origin, slope), *_ = np.linalg.lstsq(design, positions[both], rcond=None)
@@ -785,7 +781,7 @@ def _declared_circle(
 
     from neurospatial import Environment
 
-    tracked = _tracked(positions)
+    tracked = tracked_mask(positions)
     covered = positions[tracked & np.isfinite(linearized)]
     start = 0.5 * (covered.min(axis=0) + covered.max(axis=0))
     fit = least_squares(
@@ -888,7 +884,7 @@ def _reward_ends(
     positions: NDArray[np.float64], distance: NDArray[np.float64], track: _Track
 ) -> str:
     """The share of the samples placed on the track beyond each end of the stem."""
-    placed = positions[_tracked(positions)][distance <= track.tolerance / 2]
+    placed = positions[tracked_mask(positions)][distance <= track.tolerance / 2]
     along = (placed - track.centre) @ track.axis
     start = float(np.mean(along < -track.half_stem))
     end = float(np.mean(along > track.half_stem))
@@ -907,7 +903,7 @@ def _uncovered_loop(
     distance: NDArray[np.float64],
 ) -> str:
     """The share of on-track samples the linearized position leaves out."""
-    tracked = _tracked(positions)
+    tracked = tracked_mask(positions)
     uncovered = ~np.isfinite(linearized[tracked])
     on_track = distance <= OFF_TRACK
     share = float(np.mean(uncovered & on_track))
@@ -973,7 +969,7 @@ def _before_track(
     on = np.flatnonzero(distance <= tolerance / 2)
     if not on.size:
         return ()
-    waited = float(times[_tracked(positions)][on[0]] - times[0])
+    waited = float(times[tracked_mask(positions)][on[0]] - times[0])
     away = float(np.median(distance[: on[0]])) if on[0] else 0.0
     if waited < LATE_START or away < OFF_TRACK:
         return ()

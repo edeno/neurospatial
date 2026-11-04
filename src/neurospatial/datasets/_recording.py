@@ -651,8 +651,7 @@ class Recording(ReadOnlyArraysMixin):
     def _tracked(self) -> NDArray[np.bool_]:
         """Whether each sample is tracked, shape (n_time,)."""
         if self.positions is not None:
-            tracked: NDArray[np.bool_] = np.all(np.isfinite(self.positions), axis=1)
-            return tracked
+            return tracked_mask(self.positions)
         if self.headings is not None:
             return np.isfinite(self.headings)
         return np.zeros(self.times.size, dtype=bool)
@@ -952,6 +951,17 @@ def _samples_strictly_inside(
         times, rows[:, 1], side="left"
     ) - np.searchsorted(times, rows[:, 0], side="right")
     return np.maximum(inside, 0)
+
+
+def tracked_mask(positions: NDArray[np.float64]) -> NDArray[np.bool_]:
+    """Whether each sample is tracked, every coordinate finite, shape (n_time,).
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_time, n_dims)
+    """
+    tracked: NDArray[np.bool_] = np.all(np.isfinite(positions), axis=1)
+    return tracked
 
 
 def nwb_unit_table(

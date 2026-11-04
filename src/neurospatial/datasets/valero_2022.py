@@ -104,6 +104,7 @@ from neurospatial.datasets._recording import (
     Recording,
     interval_rows,
     nwb_unit_table,
+    tracked_mask,
 )
 from neurospatial.datasets._tracks import nearest_segment, placement_tolerance
 
@@ -456,7 +457,7 @@ def _declared_track(
 
     from neurospatial import Environment
 
-    tracked = positions[np.all(np.isfinite(positions), axis=1)]
+    tracked = positions[tracked_mask(positions)]
     centre = tracked.mean(axis=0)
     _, _, axes = np.linalg.svd(tracked - centre, full_matrices=False)
     axis = axes[0] * np.sign(axes[0][np.argmax(np.abs(axes[0]))])

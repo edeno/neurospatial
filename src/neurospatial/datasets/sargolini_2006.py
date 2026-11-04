@@ -55,7 +55,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
-from neurospatial.datasets._recording import Conversion, Recording, nwb_unit_table
+from neurospatial.datasets._recording import (
+    Conversion,
+    Recording,
+    nwb_unit_table,
+    tracked_mask,
+)
 
 if TYPE_CHECKING:
     from neurospatial import Environment
@@ -232,7 +237,7 @@ def _declared_square(
 
     from neurospatial import Environment
 
-    tracked = positions[np.all(np.isfinite(positions), axis=1)]
+    tracked = positions[tracked_mask(positions)]
     low, high = tracked.min(axis=0), tracked.max(axis=0)
     centre = (low + high) / 2
     residuals = ", ".join(
@@ -273,7 +278,7 @@ def _led_watch_out(has_second_led: bool) -> str:
 
 def _fitted_coordinates(positions: NDArray[np.float64]) -> tuple[str, ...]:
     """A watch-out when the positions are centred and scaled to the stated side."""
-    tracked = positions[np.all(np.isfinite(positions), axis=1)]
+    tracked = positions[tracked_mask(positions)]
     low, high = tracked.min(axis=0), tracked.max(axis=0)
     span = float(np.max(high - low))
     if not (np.all(np.abs(low + high) < _ROUNDING) and abs(span - SIDE) < _ROUNDING):

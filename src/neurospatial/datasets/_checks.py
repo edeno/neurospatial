@@ -34,6 +34,7 @@ from neurospatial.datasets._recording import (
     Recording,
     all_epoch_rows,
     tracked_epoch_rows,
+    tracked_mask,
     untracked_epoch_rows,
 )
 
@@ -421,7 +422,7 @@ def _units_findings(rec: Recording, stated: Stated) -> tuple[str | None, str | N
     if rec.positions is not None and stated.position_span is not None:
         low, high = stated.position_span
         units = rec.position_units
-        tracked = rec.positions[np.all(np.isfinite(rec.positions), axis=1)]
+        tracked = rec.positions[tracked_mask(rec.positions)]
         if len(tracked) == 0:
             found["stated"].append(
                 "no position sample is tracked, so the span is unknown"
@@ -585,7 +586,7 @@ def _fast_samples(
     ndarray of bool, shape (n_time,)
     """
     fast = np.zeros(len(positions), dtype=bool)
-    order = np.flatnonzero(np.all(np.isfinite(positions), axis=1) & ~held).tolist()
+    order = np.flatnonzero(tracked_mask(positions) & ~held).tolist()
     if not order:
         return fast
     points, clock = positions.tolist(), times.tolist()
@@ -661,7 +662,7 @@ def _outside_finding(rec: Recording) -> str | None:
     """
     if rec.env is None or rec.positions is None:
         return None
-    tracked = np.all(np.isfinite(rec.positions), axis=1)
+    tracked = tracked_mask(rec.positions)
     n_tracked = int(tracked.sum())
     if n_tracked == 0:
         return None
@@ -747,7 +748,7 @@ def speed_split(
     """
     from neurospatial.behavior import compute_speed
 
-    tracked = np.all(np.isfinite(positions), axis=1)
+    tracked = tracked_mask(positions)
     try:
         speed = compute_speed(times, positions)[tracked]
     except InputError:  # no two tracked samples within compute_speed's max_gap

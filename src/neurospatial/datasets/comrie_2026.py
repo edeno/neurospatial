@@ -80,7 +80,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._params import alternating_blocks
-from neurospatial.datasets._recording import Conversion, Recording
+from neurospatial.datasets._recording import Conversion, Recording, tracked_mask
 from neurospatial.datasets._tracks import NearestSegment, nearest_segment
 
 if TYPE_CHECKING:
@@ -539,7 +539,7 @@ def _nearest_edge(positions: NDArray[np.float64], graph: nx.Graph) -> NearestSeg
     ``segment`` indexes ``graph.edges`` order; ``lateral`` is positive to the
     left of the direction from an edge's first node to its second.
     """
-    tracked = positions[np.all(np.isfinite(positions), axis=1)]
+    tracked = positions[tracked_mask(positions)]
     pos = {node: np.asarray(graph.nodes[node]["pos"]) for node in graph.nodes}
     starts = np.array([pos[a] for a, _ in graph.edges])
     ends = np.array([pos[b] for _, b in graph.edges])

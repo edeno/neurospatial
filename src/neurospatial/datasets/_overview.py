@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 
 from neurospatial._angles import wrap_angle
 from neurospatial._exceptions import InputError, _format_error
+from neurospatial.datasets._recording import tracked_mask
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -268,7 +269,7 @@ def plot_overview(rec: Recording, fig: Figure | None = None) -> Figure:
 def _default_time_range(rec: Recording) -> tuple[float, float]:
     """The first ``WINDOW_SECONDS`` of tracking, from the first tracked sample."""
     if rec.positions is not None:
-        tracked = np.all(np.isfinite(rec.positions), axis=1)
+        tracked = tracked_mask(rec.positions)
         start = float(rec.times[tracked][0]) if tracked.any() else float(rec.times[0])
     else:
         start = float(rec.times[0])
