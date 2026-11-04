@@ -28,11 +28,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import InputError, _format_error
+from neurospatial._intervals import _merge
 from neurospatial.datasets._errors import REFUSING_CHECKS, DatasetCheckError
 from neurospatial.datasets._recording import (
     Recording,
     all_epoch_rows,
-    merged_rows,
     tracked_epoch_rows,
     untracked_epoch_rows,
 )
@@ -375,7 +375,7 @@ def _widened(rows: NDArray[np.float64]) -> NDArray[np.float64]:
     apart no wider than the slack of the stretch they would form are joined,
     and each stretch is widened by its own slack.
     """
-    starts, stops = merged_rows(rows)
+    starts, stops = _merge(rows).T
     joined: list[list[float]] = []
     for start, stop in zip(starts.tolist(), stops.tolist(), strict=True):
         if joined and start - joined[-1][1] <= _slack(stop - joined[-1][0]):
@@ -395,7 +395,7 @@ def _within_any(
     """Whether each value lies in any closed ``[start, stop]`` row, shape (n,)."""
     if len(rows) == 0 or values.size == 0:
         return np.zeros(values.size, dtype=bool)
-    starts, stops = merged_rows(rows)
+    starts, stops = _merge(rows).T
     index = np.searchsorted(starts, values, side="right") - 1
     inside: NDArray[np.bool_] = (index >= 0) & (values <= stops[np.maximum(index, 0)])
     return inside

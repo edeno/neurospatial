@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial._exceptions import InputError, _format_error
+from neurospatial._intervals import _merge
 from neurospatial._results import (
     ReadOnlyArraysMixin,
     read_only_copy,
@@ -624,7 +625,7 @@ class Recording(ReadOnlyArraysMixin):
         if len(rows) == 0:
             rows = np.array([[self.times[0], self.times[-1]]])
         before, after = tracked_times[:-1], tracked_times[1:]
-        starts, stops = merged_rows(rows)
+        starts, stops = _merge(rows).T
         index = np.searchsorted(starts, before, side="right") - 1
         inside = (index >= 0) & (after <= stops[np.maximum(index, 0)])
         if not np.any(inside):
@@ -970,15 +971,3 @@ def interval_rows(table: pd.DataFrame) -> NDArray[np.float64]:
     )
     ordered: NDArray[np.float64] = rows[np.argsort(rows[:, 0], kind="stable")]
     return ordered
-
-
-def merged_rows(
-    rows: NDArray[np.float64],
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """The union of ``[start, stop]`` rows as sorted, disjoint starts and stops."""
-    if len(rows) == 0:
-        return np.empty(0), np.empty(0)
-    rows = rows[np.argsort(rows[:, 0], kind="stable")]
-    reach = np.maximum.accumulate(rows[:, 1])
-    first = np.flatnonzero(np.r_[True, rows[1:, 0] > reach[:-1]])
-    return rows[first, 0], np.maximum.reduceat(rows[:, 1], first)
