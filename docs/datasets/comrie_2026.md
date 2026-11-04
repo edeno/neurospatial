@@ -12,7 +12,7 @@ the authors drew, so it suits decoding on a track with branches.
 | Apparatus | spatial bandit maze: three Y-shaped patches of 6.5 cm wide, 53 cm hallways meeting at 120 degrees, six reward ports |
 | Archive | Zenodo 23020757, version 1.0 (CC-BY-4.0), one `.npz`, 75.1 MB |
 | Sessions | 1: `j1620210710_02_r1_figure04_inputs`, checked by hand |
-| Needs | no extra beyond `datasets` |
+| Needs | no extra: the file is a NumPy `.npz`, read without the `datasets` extra |
 
 <!-- docs-test: run -->
 ```python
