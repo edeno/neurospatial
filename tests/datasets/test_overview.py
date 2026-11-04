@@ -216,6 +216,116 @@ def test_track_recording_overview_and_scene(track_recording):
     assert track_recording.animation(time_range=(0.0, 5.0)).env is track_recording.env
 
 
+def _stem_env(positions):
+    """A straight track whose nodes hold 1-D positions (``grosmark_2016``'s stem)."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    graph.add_node("stem_start", pos=(0.0,))
+    graph.add_node("stem_end", pos=(100.0,))
+    graph.add_edge("stem_start", "stem_end", distance=100.0)
+    env = Environment.from_graph(
+        graph, [("stem_start", "stem_end")], bin_size=2.0, units="cm"
+    )
+    return env, positions[:, :1], "cm"
+
+
+def _linear_env(positions):
+    """A 2-D straight track with a width (``grosmark_2016`` linear, ``valero_2022``)."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    graph = nx.Graph()
+    graph.add_node("start", pos=(0.0, 40.0))
+    graph.add_node("end", pos=(100.0, 40.0))
+    graph.add_edge("start", "end", distance=100.0)
+    env = Environment.from_graph(
+        graph,
+        [("start", "end")],
+        bin_size=2.0,
+        edge_spacing=0.0,
+        units="cm",
+        track_width=80.0,
+    )
+    return env, positions, "cm"
+
+
+def _loop_env(positions):
+    """A closed 2-D track with a width (``grosmark_2016``'s circle)."""
+    import networkx as nx
+
+    from neurospatial import Environment
+
+    angle = np.linspace(0.0, 2 * np.pi, 24, endpoint=False)
+    points = 50.0 + 40.0 * np.column_stack([np.cos(angle), np.sin(angle)])
+    graph = nx.Graph()
+    names = [f"p{k}" for k in range(len(points))]
+    for name, point in zip(names, points, strict=True):
+        graph.add_node(name, pos=(float(point[0]), float(point[1])))
+    order = list(zip(names, names[1:] + names[:1], strict=True))
+    for k, (a, b) in enumerate(order):
+        distance = float(np.linalg.norm(points[(k + 1) % len(points)] - points[k]))
+        graph.add_edge(a, b, distance=distance)
+    env = Environment.from_graph(
+        graph, order, bin_size=2.0, units="cm", track_width=20.0
+    )
+    return env, positions, "cm"
+
+
+def _box_env(positions):
+    """A square arena from a polygon (``sargolini_2006``)."""
+    import shapely
+
+    from neurospatial import Environment
+
+    env = Environment.from_polygon(shapely.box(0.0, 0.0, 100.0, 100.0), bin_size=2.5)
+    return env, positions, "cm"
+
+
+def _room_env(positions):
+    """A 3-D room in metres, every voxel active (``forli_2025``)."""
+    from neurospatial import Environment
+
+    z = 1.0 + 0.5 * np.sin(np.arange(len(positions)) / 500.0)
+    metres = np.column_stack([positions / 100.0, z])
+    room = [(0.0, 1.0), (0.0, 1.0), (0.0, 2.0)]
+    env = Environment.from_samples(
+        metres,
+        bin_size=(0.2, 0.2, 0.2),
+        dimension_ranges=room,
+        infer_active_bins=False,
+        units="m",
+    )
+    return env, metres, "m"
+
+
+@pytest.mark.parametrize(
+    "build", [_stem_env, _linear_env, _loop_env, _box_env, _room_env]
+)
+def test_overview_draws_every_loader_environment_shape(build, square_recording):
+    """Each shape a shipped loader builds draws its overview without failing."""
+    env, positions, units = build(square_recording.positions)
+    rec = dataclasses.replace(
+        square_recording,
+        env=env,
+        positions=positions,
+        position_units=units,
+        headings=None,
+        heading_source="",
+    )
+    fig = rec.plot_overview()
+    environment = _titled(fig, "Environment")
+    occupancy = _titled(fig, "Occupancy")
+    for ax in (environment, occupancy):
+        assert not any("not in this dataset" in t for t in _texts(ax))
+    if env.n_dims < 3:
+        assert environment.collections or environment.lines
+        assert occupancy.collections or occupancy.lines
+
+
 @pytest.mark.gui
 @pytest.mark.parametrize("dims", [2, 3])
 def test_animation_show_fastplotlib(dims, square_recording, room_recording):
