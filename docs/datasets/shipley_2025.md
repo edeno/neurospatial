@@ -3,7 +3,7 @@
 **The question.** Do place cells of an Alzheimer's mouse model hold their map
 of a radial maze, and is the replay during rest that should stabilize it
 intact? This dataset is tetrode recordings in CA1 of App NL-G-F/ChAT-cre mice
-and wild-type littermates over 50 days of a radial-maze memory task, each day
+and wild-type littermates over 36 days of a radial-maze memory task, each day
 with a 45-minute rest recording. It suits place fields on a track graph,
 comparing them across a day's trials, and decoding position on the maze.
 
@@ -13,7 +13,7 @@ comparing them across a day's trials, and decoding position on the maze.
 | Animal and region | Male App NL-G-F/ChAT-cre and wild-type mice, CA1 pyramidal layer |
 | Apparatus | 8-arm radial maze, 80 x 10 cm arms on an octagonal centre platform 24.7 cm across; a rest box on the platform |
 | Archive | UCL Research Data Repository 30902972 (CC-BY-4.0): one 4.4 GB zip, of which each day reads about 47 to 162 MB by byte range |
-| Sessions | 50 days of 15 mice. One is checked by hand: the default `m4005_2020-09-26` (71 units) |
+| Sessions | 36 days of 14 mice (14 more days of the archive are not offered; see below). One is checked by hand: the default `m4005_2020-09-26` (71 units) |
 
 <!-- docs-test: run -->
 ```python
@@ -77,15 +77,30 @@ Each day is read from four members of its `PhyOutput/OldData` folder:
   holding-box intervals are not in the clock: each trial starts within a few
   frames of the previous one's end. Durations within a trial are real;
   times between trials are not.
-- **Days the loader refuses.** 14 of the 50 days cannot be put on one clock,
-  and loading them raises `ValueError` with the trial and the numbers. In eight
-  days a trial's line starts 0.04 to 0.75 ms before the previous trial's ends,
-  because the file's spike-to-sample map gives spikes at the boundary to both
-  trials; in `m4604_2022-03-02` the overlap is 29 ms, and in
-  `m4201_2019-12-17`, `m4202_2019-12-16` and `m4020_2020-08-18` a trial after
-  the first rest starts 0.8, 1.4 and 10.6 s before the rest ends. In
-  `m4020_2020-08-21` and `m4578_2021-10-18` the first trials have no spikes
-  mapped to them, so their samples cannot be timed.
+- **Days not offered.** The archive holds 50 days of 15 mice; 14 days cannot
+  be put on one increasing clock, so the catalog does not list them (all three
+  days of m4232 among them). In 12 a trial's fitted line starts before the
+  previous trial's ends, because the file's spike-to-sample map gives the
+  spikes at the boundary to both trials; in 2 a trial has no spikes mapped to
+  it, so its samples cannot be timed:
+
+  | Day | Why it is not offered |
+  | --- | --- |
+  | `m4005_2020-09-28` | Trial 8 starts 0.53 ms before trial 7 ends |
+  | `m4101_2020-11-03` | Trial 2 starts 0.34 ms before trial 1 ends |
+  | `m4230_2020-12-18` | Trial 9 starts 0.42 ms before trial 8 ends |
+  | `m4230_2020-12-19` | Trial 5 starts 0.36 ms before trial 4 ends |
+  | `m4232_2020-12-17` | Trial 2 starts 0.38 ms before trial 1 ends |
+  | `m4232_2020-12-18` | Trial 9 starts 0.11 ms before trial 8 ends |
+  | `m4232_2020-12-19` | Trial 5 starts 0.04 ms before trial 4 ends |
+  | `m4376_2021-08-16` | Trial 9 starts 0.75 ms before trial 8 ends |
+  | `m4604_2022-03-02` | Trial 1 starts 28.95 ms before trial 0 ends |
+  | `m4201_2019-12-17` | Trial 6 starts 796.89 ms before rest S1 ends |
+  | `m4202_2019-12-16` | Trial 6 starts 1381.64 ms before rest S1 ends |
+  | `m4020_2020-08-18` | Trial 6 starts 10583.43 ms before rest S1 ends |
+  | `m4020_2020-08-21` | Trials 0 to 3 have no spikes mapped to them |
+  | `m4578_2021-10-18` | Trial 0 has no spikes mapped to it |
+
 - **Rebuilt position times.** Within a trial the times are a straight line:
   dropped frames, if any, are not located. The summary gives each day's
   fitted rates and residuals. In the 2021 and 2022 days of some mice every

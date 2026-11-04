@@ -171,74 +171,6 @@
       ]
     },
     {
-      "session": "m4005_2020-09-28",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 72,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4005/m4005_2020-09-28/PhyOutput/OldData/spike_times.npy",
-          "sha256": "7237ed1e14e8c234dbaa1f7da3147e80726a4bdf9f1f18068d276b176af4b3ac",
-          "size_bytes": 41343280
-        },
-        {
-          "path": "Shipley2025_Data/m4005/m4005_2020-09-28/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "0f9f77ab6f9303e4bb8d536cefee15420c8eac9c4d85a12d198100e9dad17838",
-          "size_bytes": 20671728
-        },
-        {
-          "path": "Shipley2025_Data/m4005/m4005_2020-09-28/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "3607ceac4d140db8c13c8bd02213a7895557a2b7e2253ad56f7d904d4fc36fd0",
-          "size_bytes": 28740
-        },
-        {
-          "path": "Shipley2025_Data/m4005/m4005_2020-09-28/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "5106d188630bab046aaaa1839e6305d0c421df7e7c02a3c4f290a241fb5b5131",
-          "size_bytes": 49685541
-        }
-      ]
-    },
-    {
-      "session": "m4020_2020-08-18",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 70,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4020/m4020_2020-08-18/PhyOutput/OldData/spike_times.npy",
-          "sha256": "c25f208361e1f39d5b837a1604491811712e6d2ddd34ef50e6837fb2da290672",
-          "size_bytes": 40850576
-        },
-        {
-          "path": "Shipley2025_Data/m4020/m4020_2020-08-18/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "f349ba01bdea66b171de277bfc42f7f75f148386de0e8b92d0c8f2cd18ee604b",
-          "size_bytes": 20425376
-        },
-        {
-          "path": "Shipley2025_Data/m4020/m4020_2020-08-18/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "84d06c0e4552798b1944a1fad094e714bf866527a232372fe2de3b74665fe936",
-          "size_bytes": 30150
-        },
-        {
-          "path": "Shipley2025_Data/m4020/m4020_2020-08-18/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "59facb53e359e9ae9d70018474b237ca239b17f8563570ce45ec2cb6df010a4c",
-          "size_bytes": 39350558
-        }
-      ]
-    },
-    {
       "session": "m4020_2020-08-19",
       "archive": "UCL RDR 30902972",
       "url": "https://ndownloader.figshare.com/files/60449825",
@@ -303,40 +235,6 @@
           "path": "Shipley2025_Data/m4020/m4020_2020-08-20/PhyOutput/OldData/trialData_newMUA.mat",
           "sha256": "032bcbe7cf19b9be8d4ec1733a8fd4f0a653231b91da20185d456996430d416c",
           "size_bytes": 42555848
-        }
-      ]
-    },
-    {
-      "session": "m4020_2020-08-21",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 65,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4020/m4020_2020-08-21/PhyOutput/OldData/spike_times.npy",
-          "sha256": "2f9af28c9b4df7779bc690a738a4cc5f8e62bdb03a43a897af0060e435065d37",
-          "size_bytes": 32388088
-        },
-        {
-          "path": "Shipley2025_Data/m4020/m4020_2020-08-21/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "78ab9892460b9c1512e10b6c65a91b864861320ff561cc416a50b1840e673773",
-          "size_bytes": 16194132
-        },
-        {
-          "path": "Shipley2025_Data/m4020/m4020_2020-08-21/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "d41e8ebd3d2c9863f343bfb0c2a69cbfc42ee57001468d517adc2edfc754e99f",
-          "size_bytes": 31093
-        },
-        {
-          "path": "Shipley2025_Data/m4020/m4020_2020-08-21/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "a30da28e365d8d514f3af5439a973372f86dc6199b030ff9b2d23d0039a37e42",
-          "size_bytes": 35603483
         }
       ]
     },
@@ -613,40 +511,6 @@
       ]
     },
     {
-      "session": "m4101_2020-11-03",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 73,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4101/m4101_2020-11-03/PhyOutput/OldData/spike_times.npy",
-          "sha256": "ed1e3fc7f17e119286cd5960081956c2f2d0677ab5622e94766ce844a980ddbe",
-          "size_bytes": 37549856
-        },
-        {
-          "path": "Shipley2025_Data/m4101/m4101_2020-11-03/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "239f48d6c62e189be7499cde600548437c4ed79ed2d336a2f8508ca42792297f",
-          "size_bytes": 18775016
-        },
-        {
-          "path": "Shipley2025_Data/m4101/m4101_2020-11-03/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "9f2c0b88804c82ee2456890b1473897317270f21dec530dabfa2411adec49ca4",
-          "size_bytes": 30041
-        },
-        {
-          "path": "Shipley2025_Data/m4101/m4101_2020-11-03/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "150e82ffae925ae75749532f1a183d0467f945909bae28fe790d6312c87d8f56",
-          "size_bytes": 39757790
-        }
-      ]
-    },
-    {
       "session": "m4201_2019-12-16",
       "archive": "UCL RDR 30902972",
       "url": "https://ndownloader.figshare.com/files/60449825",
@@ -677,40 +541,6 @@
           "path": "Shipley2025_Data/m4201/m4201_2019-12-16/PhyOutput/OldData/trialData_newMUA.mat",
           "sha256": "16676c1f411add718498ac4f0bbcca23de8b137560a570b6a9c837dc9323eccc",
           "size_bytes": 50285438
-        }
-      ]
-    },
-    {
-      "session": "m4201_2019-12-17",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 73,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4201/m4201_2019-12-17/PhyOutput/OldData/spike_times.npy",
-          "sha256": "ad0938323fd4796dec154be12debb73d5df0e15e3efc084b5c16fb1627ab9654",
-          "size_bytes": 36549688
-        },
-        {
-          "path": "Shipley2025_Data/m4201/m4201_2019-12-17/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "97588617d73ef4d2f19a499cf3d32732b3c1cf0e96437269ae02f02898bf9691",
-          "size_bytes": 18274932
-        },
-        {
-          "path": "Shipley2025_Data/m4201/m4201_2019-12-17/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "99af1b563bc4c8f1f0968950e1b886a47ee333312cc34e46202f8171ed69c009",
-          "size_bytes": 15854
-        },
-        {
-          "path": "Shipley2025_Data/m4201/m4201_2019-12-17/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "d99f92c79200432e48e5db738886cf02647b90f4b02c5836b95240a2d1dd42d4",
-          "size_bytes": 41078862
         }
       ]
     },
@@ -779,40 +609,6 @@
           "path": "Shipley2025_Data/m4202/m4202_2019-12-15/PhyOutput/OldData/trialData_newMUA.mat",
           "sha256": "e75be0600508124378d1ce33c1d26721b83de7ea132a4d38728a2bddcda4b565",
           "size_bytes": 69220990
-        }
-      ]
-    },
-    {
-      "session": "m4202_2019-12-16",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 97,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4202/m4202_2019-12-16/PhyOutput/OldData/spike_times.npy",
-          "sha256": "806fd98fe0d39d6b6f644cb838524f6cac1f097353e5890a7c831414ccee75e0",
-          "size_bytes": 63065520
-        },
-        {
-          "path": "Shipley2025_Data/m4202/m4202_2019-12-16/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "c836bf2fe12eb40fe1cc0bd9926c00fb8894d523b6bb2cf67b752ed9c8b4232f",
-          "size_bytes": 31532848
-        },
-        {
-          "path": "Shipley2025_Data/m4202/m4202_2019-12-16/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "421717cca87b15b7693ef53977945c423b73e87c5d01d55cc95fbcd028054f8c",
-          "size_bytes": 19247
-        },
-        {
-          "path": "Shipley2025_Data/m4202/m4202_2019-12-16/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "5b3f367cbf2f4e0a771a568c55563dbbe88dfda51ac2f2575d32e0bc64843d78",
-          "size_bytes": 66859114
         }
       ]
     },
@@ -953,176 +749,6 @@
       ]
     },
     {
-      "session": "m4230_2020-12-18",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 92,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4230/m4230_2020-12-18/PhyOutput/OldData/spike_times.npy",
-          "sha256": "aeed48933bde3aea53e096163b8d48db9a9b1c006c25fd6efb60c4a84d6ac09a",
-          "size_bytes": 55167176
-        },
-        {
-          "path": "Shipley2025_Data/m4230/m4230_2020-12-18/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "3dfb47439ce52cf8c8fe3bb0b0917100345f3a3ade7755b86584cd39bd5b91a7",
-          "size_bytes": 27583676
-        },
-        {
-          "path": "Shipley2025_Data/m4230/m4230_2020-12-18/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "2b43c27add59896c8e36fec02608c53e44b5c202a9ad308be93841b48701ac5b",
-          "size_bytes": 27161
-        },
-        {
-          "path": "Shipley2025_Data/m4230/m4230_2020-12-18/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "64f23bb4e733f20c93af442d59b51e28ad9b0d19322e558095ac21f6125780da",
-          "size_bytes": 49120391
-        }
-      ]
-    },
-    {
-      "session": "m4230_2020-12-19",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 111,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4230/m4230_2020-12-19/PhyOutput/OldData/spike_times.npy",
-          "sha256": "812168cc32aec84a60e556110eae6033433270cc853288fe1948f69efff7b945",
-          "size_bytes": 49494048
-        },
-        {
-          "path": "Shipley2025_Data/m4230/m4230_2020-12-19/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "89ea9af60bf703133553cd9dcc02094de64f91e5f2b4f0e027489ccda7e8b4dc",
-          "size_bytes": 24747112
-        },
-        {
-          "path": "Shipley2025_Data/m4230/m4230_2020-12-19/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "88d15bb67a122528a78dd56848046c3231dad91d9fd32d1b0378621fdab42349",
-          "size_bytes": 35210
-        },
-        {
-          "path": "Shipley2025_Data/m4230/m4230_2020-12-19/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "dd73c0c120e32b6faeabe13b44cb9065932533313b98af600b44b02113a25632",
-          "size_bytes": 47185630
-        }
-      ]
-    },
-    {
-      "session": "m4232_2020-12-17",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 77,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-17/PhyOutput/OldData/spike_times.npy",
-          "sha256": "251da3add51c5c7d4a9b7d7f59de722ba5a4a953a80dd1e8c3f48609a83bf175",
-          "size_bytes": 37143784
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-17/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "1e70bc3adc84b741742f66584c3d83ebb95b062da63209299ea65047728957fa",
-          "size_bytes": 18571980
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-17/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "6bcdc4464bb94acf71f89e11367c7b88a5818ab9efa45ed5f479f125d38579fc",
-          "size_bytes": 34340
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-17/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "01e94966f099abcb907b59e90027aa301a8113ca47697220ed10489cc8a925bc",
-          "size_bytes": 37353828
-        }
-      ]
-    },
-    {
-      "session": "m4232_2020-12-18",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 79,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-18/PhyOutput/OldData/spike_times.npy",
-          "sha256": "ce1200639bda91854a8bd15578b05de14af91bfac71123ad1158b1012c9422cf",
-          "size_bytes": 52526456
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-18/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "2336369dd064a8f136bd9cc58e70597fede8cc9caf243749422ba4af279d1802",
-          "size_bytes": 26263316
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-18/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "d6d078314b97023ef760acf938cd9b2c9613b4d69bef49e019c46692ceeb6998",
-          "size_bytes": 37365
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-18/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "28f0801dd8e2cdb8e0c04887b42d4b80ccec354ef523023d7b8ba22dd2a0c4b4",
-          "size_bytes": 44609928
-        }
-      ]
-    },
-    {
-      "session": "m4232_2020-12-19",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 80,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-19/PhyOutput/OldData/spike_times.npy",
-          "sha256": "a02fedb14036e6d69446782872bf7e4f811811ce57a986ac7df1ba74f48e6c1e",
-          "size_bytes": 40443488
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-19/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "d8ef8bc20f90530af0b9404cc579d7400c315f97468e9b868bc8f86a202439e5",
-          "size_bytes": 20221832
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-19/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "096732550881cf5f33034c5764870ad3565a2091e241a2515ed08945058f8584",
-          "size_bytes": 41909
-        },
-        {
-          "path": "Shipley2025_Data/m4232/m4232_2020-12-19/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "174094e10206b23708ee43743ee0798b8e8c22fa653face0ae0e98444515aa42",
-          "size_bytes": 41362684
-        }
-      ]
-    },
-    {
       "session": "m4376_2021-08-09",
       "archive": "UCL RDR 30902972",
       "url": "https://ndownloader.figshare.com/files/60449825",
@@ -1225,40 +851,6 @@
       ]
     },
     {
-      "session": "m4376_2021-08-16",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 65,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4376/m4376_2021-08-16/PhyOutput/OldData/spike_times.npy",
-          "sha256": "988d54e9252e89214ad28c6d8f8d77cfdddf858419c9b8c1fe307a6d0384f425",
-          "size_bytes": 35397184
-        },
-        {
-          "path": "Shipley2025_Data/m4376/m4376_2021-08-16/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "726be1f6a7073982a8f3c4c9f49817874d537798b47beb52853c085d273c36c1",
-          "size_bytes": 17698680
-        },
-        {
-          "path": "Shipley2025_Data/m4376/m4376_2021-08-16/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "8cd86327dbeb89f074a8d22139fcb9a66dce11388df5120a8305bb6cb2d733c0",
-          "size_bytes": 22368
-        },
-        {
-          "path": "Shipley2025_Data/m4376/m4376_2021-08-16/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "9db4025b4d85bf61cc49956d9bd22c8a98f0d4866d933f27caf4df29f4579e6b",
-          "size_bytes": 49763709
-        }
-      ]
-    },
-    {
       "session": "m4578_2021-10-17",
       "archive": "UCL RDR 30902972",
       "url": "https://ndownloader.figshare.com/files/60449825",
@@ -1289,40 +881,6 @@
           "path": "Shipley2025_Data/m4578/m4578_2021-10-17/PhyOutput/OldData/trialData_newMUA.mat",
           "sha256": "95442503f61fee322dfe20aad13499a1bd1ab723f39d967705f5707429566fc6",
           "size_bytes": 52622178
-        }
-      ]
-    },
-    {
-      "session": "m4578_2021-10-18",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 45,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4578/m4578_2021-10-18/PhyOutput/OldData/spike_times.npy",
-          "sha256": "bd178a376fc29fafd140ddc984e1b4f0f78e39aa8febdfaa3def1dd1d74d4373",
-          "size_bytes": 19230648
-        },
-        {
-          "path": "Shipley2025_Data/m4578/m4578_2021-10-18/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "e742833f50deda91ac341eea8580dca4db0d5694d759d3a8c19079fae09acef6",
-          "size_bytes": 9615412
-        },
-        {
-          "path": "Shipley2025_Data/m4578/m4578_2021-10-18/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "66ac0165474a68ed80f3abefa20e698340940317f2a2e4e74b7a8f7a4e957690",
-          "size_bytes": 25776
-        },
-        {
-          "path": "Shipley2025_Data/m4578/m4578_2021-10-18/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "131d2eb70215002cfcd0781016ebef9d3c0ef08f3c2adf1359d77964320444c5",
-          "size_bytes": 36340457
         }
       ]
     },
@@ -1459,40 +1017,6 @@
           "path": "Shipley2025_Data/m4604/m4604_2022-03-01/PhyOutput/OldData/trialData_newMUA.mat",
           "sha256": "2f6697555487d5206f21c7ba6ae5278758d155720746797d78ccea7cdfdb8e48",
           "size_bytes": 26668879
-        }
-      ]
-    },
-    {
-      "session": "m4604_2022-03-02",
-      "archive": "UCL RDR 30902972",
-      "url": "https://ndownloader.figshare.com/files/60449825",
-      "file_name": "Shipley2025_Data.zip",
-      "sha256": "e78791a976e562f5c15a7a3bf6dd8add597d112713bdc2ea5d1769f687ae6c5f",
-      "size_bytes": 4364634689,
-      "verified": false,
-      "default": false,
-      "n_units": 35,
-      "verification": "",
-      "members": [
-        {
-          "path": "Shipley2025_Data/m4604/m4604_2022-03-02/PhyOutput/OldData/spike_times.npy",
-          "sha256": "3c6a94a9f1249e711b4dc75d646769118841b337d0ec10f4f41127a3abc24750",
-          "size_bytes": 22287192
-        },
-        {
-          "path": "Shipley2025_Data/m4604/m4604_2022-03-02/PhyOutput/OldData/spike_clusters.npy",
-          "sha256": "587b9d999aa8f2a241ebc9924274307844bf878251ae66fbdab89deea89e7939",
-          "size_bytes": 11143684
-        },
-        {
-          "path": "Shipley2025_Data/m4604/m4604_2022-03-02/PhyOutput/OldData/cluster_info.tsv",
-          "sha256": "ced6377e93fc815977dd4ce35e84a91a7a15f4939e9fa2fad8ebc9c4d8a5f958",
-          "size_bytes": 19468
-        },
-        {
-          "path": "Shipley2025_Data/m4604/m4604_2022-03-02/PhyOutput/OldData/trialData_newMUA.mat",
-          "sha256": "6c90b68224dbb50dfae7e577082febac23ff95ffc6a52f1ef6b59f5baa78d9a2",
-          "size_bytes": 42442811
         }
       ]
     },

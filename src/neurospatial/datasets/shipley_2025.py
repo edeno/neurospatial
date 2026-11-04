@@ -17,8 +17,30 @@ reads four members of the day's ``PhyOutput/OldData`` folder by HTTP byte
 range: ``spike_times.npy`` and ``spike_clusters.npy`` (Kilosort, read with
 ``np.load(..., allow_pickle=False)``), ``cluster_info.tsv`` (the Phy labels)
 and ``trialData_newMUA.mat`` (MATLAB v5: the day's positions, and per
-tetrode the curated spikes' times and position samples). Every one of the
-archive's 50 days is offered; the default is mouse m4005 on 2020-09-26.
+tetrode the curated spikes' times and position samples). The archive holds
+50 days of 15 mice; the 36 days (14 mice) the loader can read are offered,
+and the default is mouse m4005 on 2020-09-26.
+
+Not offered: 14 days whose position samples cannot be put on one increasing
+clock, so loading them would raise ``ValueError``. In 12 a trial's fitted
+line starts before the previous trial's ends, because the file's
+spike-to-sample map gives the spikes at the boundary to both; in 2 a trial
+has no spikes mapped to it, so its samples cannot be timed:
+
+- ``m4005_2020-09-28``: trial 8 starts 0.53 ms before trial 7 ends;
+- ``m4101_2020-11-03``: trial 2 starts 0.34 ms before trial 1 ends;
+- ``m4230_2020-12-18``: trial 9 starts 0.42 ms before trial 8 ends;
+- ``m4230_2020-12-19``: trial 5 starts 0.36 ms before trial 4 ends;
+- ``m4232_2020-12-17``: trial 2 starts 0.38 ms before trial 1 ends;
+- ``m4232_2020-12-18``: trial 9 starts 0.11 ms before trial 8 ends;
+- ``m4232_2020-12-19``: trial 5 starts 0.04 ms before trial 4 ends;
+- ``m4376_2021-08-16``: trial 9 starts 0.75 ms before trial 8 ends;
+- ``m4604_2022-03-02``: trial 1 starts 28.95 ms before trial 0 ends;
+- ``m4201_2019-12-17``: trial 6 starts 796.89 ms before rest S1 ends;
+- ``m4202_2019-12-16``: trial 6 starts 1381.64 ms before rest S1 ends;
+- ``m4020_2020-08-18``: trial 6 starts 10583.43 ms before rest S1 ends;
+- ``m4020_2020-08-21``: trials 0 to 3 have no spikes mapped to them;
+- ``m4578_2021-10-18``: trial 0 has no spikes mapped to it.
 
 Sources read: the paper (Shipley, Abrate, Hayman, Chan & Barry 2026,
 Current Biology 36, 859-871.e5, on Europe PMC, PMC7619514), the record's
@@ -43,7 +65,8 @@ What the loader converts:
   the largest residual is 41 ms (about one frame); the residuals are
   reported for every day. The loader refuses a day where the fitted times
   do not increase (a trial's line starts before the previous trial's ends)
-  or a trial has too few spikes to fit.
+  or a trial has too few spikes to fit; the days that do are not offered
+  (above).
 - headings: none. The file has one LED (``n_leds`` 1) though the Methods
   fit two, and ``pos.dir`` equals ``dir_disp``, the direction of
   displacement, not of the head.
@@ -113,7 +136,7 @@ WORKED_RESULT: dict[str, Any] = {
         "spatial information from the second session of each day with "
         "adaptive binning), and its replay results need a replay analysis "
         "of the rest recordings; none is a single-day number this session "
-        "can reproduce. A pooled result over the 50 days is left for later."
+        "can reproduce. A pooled result over the 36 offered days is left for later."
     ),
 }
 

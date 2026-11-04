@@ -247,8 +247,17 @@ def test_loads_default_session(session_entry, assert_default_session):
     assert rec.env.units == "cm"
 
 
-@pytest.mark.realdata
-def test_a_day_whose_trials_overlap_is_refused():
-    """m4005 on 2020-09-28: trial 8's line starts 0.53 ms before trial 7's ends."""
-    with pytest.raises(ValueError, match=r"trial '8' starts 0\.53 ms before trial '7'"):
-        load("shipley_2025", "m4005_2020-09-28")
+def test_days_the_loader_cannot_read_are_not_offered():
+    """The 14 days whose clock cannot be rebuilt are named in the docstring, not listed."""
+    from neurospatial.datasets import shipley_2025
+    from neurospatial.datasets._catalog import sessions
+
+    offered = {entry.session for entry in sessions("shipley_2025")}
+    named = {
+        line.split("``")[1]
+        for line in shipley_2025.__doc__.splitlines()
+        if line.startswith("- ``m4")
+    }
+    assert len(offered) == 36
+    assert len(named) == 14
+    assert not named & offered
