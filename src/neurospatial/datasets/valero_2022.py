@@ -9,7 +9,7 @@ The files also hold ripples, sleep states (wake, NREM, REM) and up/down
 states.
 
 Sessions are DANDI 000568's (version 0.230705.1633, CC-BY-4.0) files without
-the raw voltage (``-no-raw-data``, 5 to 53 MB; the copies with it are 8 to
+the raw voltage (``-no-raw-data``, 5 to 53 MB; the copies with it are 1 to
 54 GB), named without that suffix. Each file's video, an ``.avi`` beside it on
 DANDI, is ``rec.video``: fetched only on request (46 MB for the default). The
 default session, ``sub-fCamk2_ses-fCamk2-201014-sess3``, is the one the
