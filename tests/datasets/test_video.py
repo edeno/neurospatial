@@ -486,6 +486,12 @@ def test_led_fit_watch_out_states_the_best_lag():
     assert "may lead the LED by 33 ms" in led_fit_watch_out(early, 1 / 30)
     paired = dataclasses.replace(fit, lag_scan=((-1, 1.1), (0, 0.9), (1, 1.0)))
     assert "is at lag 0" in led_fit_watch_out(paired, 1 / 30)
+    # Equally good either side of 0, and worse at 0: no direction is preferred.
+    both = dataclasses.replace(fit, lag_scan=((-1, 0.8), (0, 0.95), (1, 0.8)))
+    text = led_fit_watch_out(both, 1 / 30)
+    assert "at -1 and +1 frames (0.8 cm)" in text
+    assert "out of step by up to 33 ms either way" in text
+    assert "33-33" not in text
 
 
 def test_led_fit_is_the_fourth_source():

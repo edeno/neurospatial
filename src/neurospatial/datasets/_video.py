@@ -729,13 +729,19 @@ def _best_lag(scan: tuple[tuple[int, float], ...], frame_period: float) -> str:
             "is paired with its own sample."
         )
     low, high = min(best), max(best)
-    lags = f"{low:+d}" if low == high else f"{low:+d} to {high:+d}"
     ms = 1000 * frame_period
-    times = (
-        f"{abs(low) * ms:.0f}"
-        if low == high
-        else f"{min(abs(low), abs(high)) * ms:.0f}-{max(abs(low), abs(high)) * ms:.0f}"
-    )
+    near, far = sorted((abs(low), abs(high)))
+    if low < 0 < high:
+        # Lags either side of 0, not 0 itself: no direction is preferred.
+        lags = " and ".join(f"{lag:+d}" for lag in sorted(best))
+        return (
+            f" The lag scan's smallest median residual is at {lags} frames "
+            f"({smallest:.3g} cm), against {at_zero:.3g} cm at lag 0 (frame k "
+            "with sample k), with no direction preferred: frames and the file's "
+            f"positions may be out of step by up to {far * ms:.0f} ms either way."
+        )
+    lags = f"{low:+d}" if low == high else f"{low:+d} to {high:+d}"
+    times = f"{near * ms:.0f}" if near == far else f"{near * ms:.0f}-{far * ms:.0f}"
     order, side = ("trail", "behind") if low > 0 else ("lead", "ahead of")
     return (
         f" The lag scan's smallest median residual is at {lags} frames "
