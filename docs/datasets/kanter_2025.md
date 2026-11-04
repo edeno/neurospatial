@@ -66,6 +66,7 @@ leaves out). The figure-eight, odor-sequence and sleep files are not read.
 | headings: in the positions' frame, 0 = +x and counter-clockwise | inferred | Compared with the direction of movement above 20 cm/s at about 10 Hz; the offset, its spread and how it drifts are in the `Conversion` and, where the offset is beyond 0.2 rad, in a watch-out. |
 | unit ids: `<area>-<id>`, for example `LEC-12` and `CA1-12` | stated | The units table repeats ids across probes; each probe records one area. `units["file_unit_id"]` keeps the file's id. |
 | epochs: `empty`, `object_1`, `object_2`, `object_3` for a novel-object session; `foraging` otherwise | stated | The data descriptor's sequence, and the index's task list for each file. |
+| epochs: rows past the recording (its first to last sample or spike) clipped to it | inferred | Four sessions list an epoch ending 14.7 to 31.9 s after the last sample and spike. Each clipped row is in the `Conversion` and under "Watch out". |
 | environment: the stated square arena (the epochs table's `arena_dimensions`), axes as in the file, placed where it holds the most tracked samples, 2.5 cm bins | inferred | The stated origin, "Bottom left of the arena", does not hold: positions run negative. |
 
 The sampling rate (120 Hz) is **inferred** from the files' timestamps: no text
@@ -95,13 +96,15 @@ session is also compared with its own stated arena in a watch-out.
   correction follows from movement. The stored values are kept. Tuning-curve
   shapes do not depend on the frame; absolute preferred directions do. Two
   sessions of rat 26863 have offsets near ±π.
-- **Sessions the clock check refuses.** Five sessions fail the clock check:
-  in `26965_2020-Dec-08_11-29-48` tracking stops at 709 s while spikes and the
-  epoch run to 906 s (the file's description says "motive crashed"), and in
-  `27284_2021-Jun-16_14-33-11`, `27285_2021-Jun-30_13-59-11`,
-  `27963_2022-Feb-08_21-14-27` and `27963_2022-Feb-10_11-06-56` an epoch ends
-  15 to 32 s after the last sample and spike. `accept_failed_checks=("clock",)`
-  loads one anyway.
+- **Epochs that end after the data.** In `27284_2021-Jun-16_14-33-11`,
+  `27285_2021-Jun-30_13-59-11`, `27963_2022-Feb-08_21-14-27` and
+  `27963_2022-Feb-10_11-06-56` an epoch ends 14.7 to 31.9 s after the last sample
+  and spike. The epoch is clipped to the recording (its first to last sample
+  or spike), and the summary gives the listed and the clipped row.
+- **A session the clock check refuses.** In `26965_2020-Dec-08_11-29-48`
+  tracking stops at 709 s while spikes and the epoch run to 906 s (the file's
+  description says "motive crashed"): 20% of the spikes have no position.
+  `accept_failed_checks=("clock",)` loads it anyway.
 - **Sessions that do not match their stated arena.** In five sessions the
   samples' range is more than a bin past or 20% short of the arena the epochs
   table states, for example `27963_2022-Feb-11_14-58-41` (94 cm of samples in a
