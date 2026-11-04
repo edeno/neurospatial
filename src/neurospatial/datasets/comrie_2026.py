@@ -31,9 +31,10 @@ What the loader converts:
   graph's edges, in the positions' unit, are 52 to 57 long against the
   53 cm hallways the preprint states, and the preprint says the positions
   were converted to cm (an inferred ``Conversion``). The file's
-  ``head_speed`` matches the speed of the stored positions (|step| / dt),
-  so speed and position share that unit; the loader refuses the file if
-  they stop agreeing.
+  ``head_speed`` matches the speed of the stored positions (|step| / dt)
+  in shape (correlation at least 0.8) and in scale (median speeds within a
+  factor of 2), so speed and position share that unit; the loader refuses
+  the file if they stop agreeing.
 - times stay as stored: seconds on the Unix clock (1.6259e9 s is
   2021-07-10, the session's date); float64 resolves them to about 0.2 µs.
 - spike trains are cut from ``spike_times`` at ``spike_offsets``, as the
@@ -157,6 +158,12 @@ BLOCK = 60.0
 #: Below this correlation of the file's head_speed with the speed of the
 #: stored positions, the positions are not in the unit of head_speed.
 MIN_SPEED_AGREEMENT = 0.8
+#: The largest factor, either way, between the median speed of the stored
+#: positions and the file's median head_speed. A correlation ignores scale, so
+#: this bound catches a unit error: the nearest units to cm differ by 2.54
+#: (inch), 10 (mm) and 100 (m), all outside a factor of 2, while the file's
+#: smoothed head_speed runs below |step| / dt by a factor of 1.26.
+MAX_SPEED_RATIO = 2.0
 #: The middle of each edge, as shares of its length from its first node:
 #: its samples' lateral bias is reported beside the whole edge's, leaving out
 #: the ends, where the head's posture at a port or junction shifts it. The
@@ -206,8 +213,9 @@ def load_session(
     ------
     ValueError
         If the file's ``head_speed`` no longer matches the speed of the stored
-        positions (correlation below 0.8), or its ``linear_edge_order`` leaves
-        out an edge of its track graph.
+        positions (correlation below 0.8, or median speeds more than a factor
+        of 2 apart), or its ``linear_edge_order`` leaves out an edge of its
+        track graph.
     """
     with np.load(os.fspath(path_or_stream), allow_pickle=False) as arrays:
         z = {name: arrays[name] for name in arrays.files}
@@ -396,12 +404,26 @@ def _cm_evidence(
             "the positions may not be in cm"
         )
         raise ValueError(msg)
+    stored_median = float(np.median(stored[finite]))
+    step_median = float(np.median(step_speed[finite]))
+    ratio = step_median / stored_median if stored_median > 0 else float("inf")
+    if not 1 / MAX_SPEED_RATIO <= ratio <= MAX_SPEED_RATIO:
+        msg = (
+            "the speed of the stored positions is not in the unit of the file's "
+            f"head_speed: their medians are {step_median:.3g} and "
+            f"{stored_median:.3g} per s, a factor of {ratio:.3g}, outside "
+            f"{1 / MAX_SPEED_RATIO:g} to {MAX_SPEED_RATIO:g}. A unit error "
+            "(mm, m or inch instead of cm) gives a factor of 10, 100 or 2.54, so "
+            "the positions may not be in cm. Check that the file is Zenodo "
+            "23020757's and that its sha256 matches the registry"
+        )
+        raise ValueError(msg)
     edges = np.asarray(arrays["track_edge_distance"], dtype=np.float64)
     return (
         "the file states no unit. Its head_speed matches |step| / dt of the "
-        f"stored positions (correlation {agreement:.2f}, medians "
-        f"{np.median(stored[finite]):.2f} and {np.median(step_speed[finite]):.2f} "
-        "per s), so both "
+        f"stored positions (correlation {agreement:.2f}; medians "
+        f"{stored_median:.2f} and {step_median:.2f} per s, a factor of "
+        f"{ratio:.2f}, within {MAX_SPEED_RATIO:g} either way), so both "
         "are in one unit; the track graph's edges, in that unit, are "
         f"{edges.min():.1f} to {edges.max():.1f} long against the "
         f"{HALLWAY_LENGTH:g} cm hallways, and {_PREPRINT} says positions were "

@@ -239,6 +239,24 @@ def test_head_speed_out_of_step_with_the_positions_is_refused(tmp_path):
         comrie_2026.load_session(_entry(), path)
 
 
+@pytest.mark.parametrize("factor", [10.0, 2.54, 0.1])
+def test_positions_in_another_unit_than_head_speed_are_refused(tmp_path, factor):
+    """A unit error keeps the speeds' correlation but not their scale."""
+    from neurospatial.datasets import comrie_2026
+
+    path = tmp_path / "j16.npz"
+    _write(path)
+    with np.load(path, allow_pickle=False) as stored:
+        arrays = dict(stored)
+    for axis in ("x", "y"):
+        arrays[f"position/head_position_{axis}"] = (
+            arrays[f"position/head_position_{axis}"] * factor
+        )
+    np.savez(path, **arrays)
+    with pytest.raises(ValueError, match=r"not in the unit of the file's head_speed"):
+        comrie_2026.load_session(_entry(), path)
+
+
 @pytest.mark.realdata
 def test_loads_default_session():
     """j16 02_r1 as the survey expected it: 203 units, 870,018 spikes, 500 Hz."""

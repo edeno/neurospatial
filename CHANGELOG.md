@@ -132,7 +132,8 @@
 - `comrie_2026`: Comrie et al. (2026) rat j16, run epoch 02_r1 of the spatial
   bandit maze, 203 hippocampal units (Zenodo 23020757, CC-BY-4.0), checked
   by hand. Positions are cm (inferred: the graph's edges match the stated
-  53 cm hallways and the file's head_speed matches the positions' speed),
+  53 cm hallways and the file's head_speed matches the positions' speed
+  in correlation and, within a factor of 2, in scale),
   500 Hz, on the Unix clock. The declared environment is the authors' track
   graph with every edge, in the file's own edge order and 15 cm spacing, so
   `env.to_linear` reproduces the file's linearized position; its
