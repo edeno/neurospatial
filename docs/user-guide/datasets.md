@@ -84,8 +84,10 @@ returns, the loader checks the session:
   `DatasetCheckError`, which gives the numbers and the argument that loads the
   session anyway.
 - **Warning checks.** Samples at exactly the origin, runs of identical
-  positions, samples outside the environment, and units with no spikes in the
-  analysed epochs are described in "Watch out" with their numbers. Where a
+  positions, speed samples more than twice the 99.9th percentile of speed
+  (likely tracking jumps; a heuristic, not a stated limit), samples outside
+  the environment, and units with no spikes in the analysed epochs are
+  described in "Watch out" with their numbers. Where a
   track's width was set from the samples themselves
   (`rec.track_width_quantile`), the share outside holds by construction (about
   1 % at the 99th percentile), and the finding says so. No array is
@@ -119,7 +121,8 @@ print(rec)
 The sections are, in order: the identity lines (paper, animal, session,
 apparatus, archive, license, citation), **Time** (duration, clock, sampling
 rate), **Epochs**, **Tracking** (what was tracked, the tracked share, the
-longest gap, speed, head-direction coverage), **Environment** (how it was
+longest gap, speed: median, 95th percentile and fastest step, head-direction
+coverage), **Environment** (how it was
 built, and from which source), **Neurons** (counts per brain region and the
 unit labels the authors gave), and **Watch out**, always last and always in
 full.
@@ -166,7 +169,8 @@ positions).
 
 `plot_overview` draws six panels that show the session at a glance: the
 environment with the path, occupancy (never-visited bins drawn as missing), the
-speed histogram with `params["min_speed"]` marked, head direction beside
+speed histogram up to the 99.9th percentile with `params["min_speed"]` marked
+(the panel counts the faster samples and gives the fastest), head direction beside
 heading minus direction of travel, units per brain region, and the first 60 s
 of position beside the spike raster, from the later of the first tracked
 sample and the first spike, so a session whose neural recording starts after

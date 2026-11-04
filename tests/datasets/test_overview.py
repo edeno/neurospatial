@@ -95,6 +95,23 @@ def test_speed_panel_marks_min_speed(square_recording):
     assert sum(p.get_height() for p in ax.patches) > 0
 
 
+def test_speed_panel_range_is_not_set_by_tracking_jumps(
+    jumpy_box_recording, long_box_recording
+):
+    rec = jumpy_box_recording
+    _median, _p95, p999, fastest = rec._speed_quantiles
+    assert fastest > 4 * p999
+    ax = _titled(rec.plot_overview(), "Speed")
+    assert ax.get_xlim()[1] < 1.1 * p999
+    beyond = int(np.sum(rec._speed > p999))
+    (note,) = [t for t in _texts(ax) if "beyond" in t]
+    assert note.startswith(f"{beyond} samples beyond the 99.9th")
+    assert f"fastest {fastest:.3g} cm/s" in note
+    # Negative control: without jumps the axis ends near the fastest step.
+    clean = _titled(long_box_recording.plot_overview(), "Speed")
+    assert clean.get_xlim()[1] > 0.9 * long_box_recording._speed_quantiles[3]
+
+
 def test_time_panel_draws_the_first_minute(square_recording):
     rec = square_recording
     ax = _titled(rec.plot_overview(), "First 60 s")
@@ -407,8 +424,15 @@ def test_speed_panel_is_the_speed_histogram(two_region_recording):
     ax = _titled(rec.plot_overview(), "Speed")
     speed = compute_speed(rec.times, rec.positions)
     speed = speed[np.isfinite(speed)]
-    expected, _ = np.histogram(speed, bins=60)
+    # The histogram stops at the 99.9th percentile; the panel counts the rest.
+    p999 = np.percentile(speed, 99.9)
+    expected, _ = np.histogram(speed, bins=60, range=(speed.min(), p999))
     np.testing.assert_array_equal(_bar_heights(ax), expected)
+    beyond = int(np.sum(speed > p999))
+    assert beyond == len(speed) - expected.sum()
+    (note,) = [t for t in _texts(ax) if "beyond" in t]
+    assert note.startswith(f"{beyond} samples beyond the 99.9th")
+    assert f"fastest {speed.max():.3g} cm/s" in note
     # The speed itself, from successive positions, agrees up to the smoothing.
     step = np.linalg.norm(np.diff(rec.positions, axis=0), axis=1) / np.diff(rec.times)
     assert abs(np.median(speed) - np.median(step)) < 0.15 * np.median(step)

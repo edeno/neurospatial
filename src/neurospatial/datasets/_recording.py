@@ -670,15 +670,18 @@ class Recording(ReadOnlyArraysMixin):
         return speed
 
     @cached_property
-    def _speed_quantiles(self) -> tuple[float, float]:
-        """Median and 95th percentile of speed; NaN without a finite speed."""
+    def _speed_quantiles(self) -> tuple[float, float, float, float]:
+        """Median, 95th and 99.9th percentiles and maximum of speed.
+
+        NaN without a finite speed.
+        """
         if self._speed is None:
-            return float("nan"), float("nan")
+            return (float("nan"),) * 4
         speed = self._speed[np.isfinite(self._speed)]
         if speed.size == 0:
-            return float("nan"), float("nan")
-        median, p95 = np.percentile(speed, [50, 95])
-        return float(median), float(p95)
+            return (float("nan"),) * 4
+        median, p95, p999 = np.percentile(speed, [50, 95, 99.9])
+        return float(median), float(p95), float(p999), float(speed.max())
 
     def summary(self) -> dict[str, Any]:
         """Return the session's headline numbers, each a property of ``rec``.

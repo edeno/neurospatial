@@ -329,6 +329,48 @@ def test_fast_steps_need_a_stated_limit(square_recording, square_stated):
     assert "(a stated 1 m/s limit)" in finding
 
 
+def test_tracking_jumps_warn_as_a_heuristic(jumpy_box_recording, square_stated):
+    rec = jumpy_box_recording
+    checked = run_checks(rec, stated=square_stated)
+    (finding,) = [w for w in checked.watch_outs if "likely tracking jumps" in w]
+    speed = checked._speed[np.isfinite(checked._speed)]
+    p999 = np.percentile(speed, 99.9)
+    n_jumps = int(np.sum(speed > 2 * p999))
+    # Each jump and its return, spread over the speed's 0.1 s smoothing.
+    assert 2 * 3 <= n_jumps < 0.001 * len(speed)
+    assert finding.startswith(
+        f"{n_jumps} speed samples are faster than {2 * p999:.3g} cm/s, 2 times "
+        f"the 99.9th percentile of speed ({p999:.3g} cm/s)"
+    )
+    assert f"the fastest is {speed.max():.3g} cm/s" in finding
+    assert "heuristic" in finding
+    assert "not a speed limit any source states" in finding
+    assert "kept as stored" in finding
+    np.testing.assert_array_equal(checked.positions, rec.positions)
+    # The summary's tracking line gives the same fastest step.
+    assert f"fastest step {speed.max():.3g} cm/s" in " ".join(repr(checked).split())
+
+
+def test_clean_path_gives_no_jump_watch_out(long_box_recording, square_stated):
+    # Negative control: the smooth path's fastest step is near the rest.
+    _median, _p95, p999, fastest = long_box_recording._speed_quantiles
+    assert fastest < 2 * p999
+    checked = run_checks(long_box_recording, stated=square_stated)
+    assert not any("tracking jumps" in w for w in checked.watch_outs)
+
+
+def test_jump_heuristic_and_stated_limit_both_report(
+    jumpy_box_recording, square_stated
+):
+    limited = dataclasses.replace(
+        square_stated, speed_limit=100.0, speed_limit_source="a stated 1 m/s limit"
+    )
+    found = run_checks(jumpy_box_recording, stated=limited).watch_outs
+    # The stated limit counts the excursions' samples; the heuristic its speeds.
+    assert any("samples farther from the last believable sample" in w for w in found)
+    assert any("likely tracking jumps" in w for w in found)
+
+
 def test_held_run_says_no_speed_limit(track_recording, track_stated):
     (finding,) = run_checks(track_recording, stated=track_stated).watch_outs
     assert "No speed limit is stated for this dataset" in finding

@@ -140,7 +140,30 @@ def _panel_speed(rec: Recording, ax: Axes) -> None:
         _note(ax, "Speed", "no speed: no two tracked\nsamples within 1 s")
         return
     speed = rec._speed[np.isfinite(rec._speed)]
-    ax.hist(speed, bins=60, color="0.4")
+    _median, _p95, p999, fastest = rec._speed_quantiles
+    # A few tracking jumps would set the axis; the histogram stops at the
+    # 99.9th percentile and the panel says what lies beyond it.
+    limited = bool(np.isfinite(p999) and p999 > speed.min() and fastest > p999)
+    ax.hist(
+        speed,
+        bins=60,
+        range=(float(speed.min()), p999) if limited else None,
+        color="0.4",
+    )
+    if limited:
+        n_beyond = int(np.sum(speed > p999))
+        unit = "" if rec.position_units == "arbitrary" else f" {rec.position_units}/s"
+        ax.text(
+            0.97,
+            0.75,
+            f"{n_beyond} samples beyond the 99.9th\npercentile ({p999:.3g}"
+            f"{unit}) not drawn;\nfastest {fastest:.3g}{unit}",
+            ha="right",
+            va="top",
+            transform=ax.transAxes,
+            fontsize=8,
+            color="0.25",
+        )
     min_speed = _min_speed(rec)
     if min_speed is not None:
         ax.axvline(min_speed, color="tab:red", label=f"min_speed {min_speed:g}")

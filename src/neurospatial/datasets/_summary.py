@@ -2,8 +2,8 @@
 
 Six sections, in this order: identity (paper, animal, session, apparatus,
 archive, license, the file's size and URL, citation), time (duration, clock, sampling rate, epochs),
-tracking (what was tracked, tracked share, longest gap, speed, head-direction
-coverage), environment, neurons, and "Watch out", which is always printed in
+tracking (what was tracked, tracked share, longest gap, speed with its
+fastest step, head-direction coverage), environment, neurons, and "Watch out", which is always printed in
 full. The ranges are computed from the arrays; the rest comes from the
 recording's own fields.
 """
@@ -144,9 +144,11 @@ def _tracking(rec: Recording) -> list[str]:
     )
     if rec.positions is not None:
         unit = rec._repr_unit("median_speed") or "arbitrary units/s"
+        fastest = rec._speed_quantiles[3]
         lines.append(
             f"speed median {_quantity(rec.median_speed, unit)}; 95th percentile "
-            f"{_quantity(rec.speed_p95, unit)}"
+            f"{_quantity(rec.speed_p95, unit)}; fastest step "
+            f"{_quantity(fastest, unit)}"
         )
     if rec.video is not None:
         placed = (

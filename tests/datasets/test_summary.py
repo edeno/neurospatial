@@ -25,7 +25,8 @@ Time        60 s from the first to the last sample, in seconds on the
 Epochs      run (0 to 60 s)
 Tracking    simulated head position (2-D, cm)
             tracked 100.0% of samples, longest gap 0.01 s
-            speed median 7.06 cm/s; 95th percentile 13.7 cm/s
+            speed median 7.06 cm/s; 95th percentile 13.7 cm/s; fastest step
+              21.2 cm/s
             head direction covers 100% of 10° bins (direction of movement of
               the simulated path)
 Environment declared: 1 m square box (simulation)

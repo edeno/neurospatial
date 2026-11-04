@@ -12,7 +12,8 @@ A refusal raises :class:`~neurospatial.datasets.DatasetCheckError` unless the
 caller accepts it with ``accept_failed_checks``; an accepted failure is kept
 in ``rec.failed_checks`` and heads ``rec.watch_outs``. The other checks only
 describe: samples at exactly the origin, held and fast tracking samples,
-tracked samples outside the environment, and units silent in the analysed
+speed samples far faster than the rest (likely tracking jumps), tracked
+samples outside the environment, and units silent in the analysed
 epochs go into ``rec.watch_outs`` with their numbers. No check changes an
 array.
 """
@@ -63,6 +64,13 @@ ZERO_SHARE = 0.001
 #: Repeats of the sample before from which a run of samples counts as held:
 #: 10 repeats, so 11 identical samples.
 MIN_HELD_REPEATS = 10
+#: Speed samples faster than ``JUMP_FACTOR`` times the 99.9th percentile of
+#: speed are reported as likely tracking jumps. A heuristic, not a stated
+#: limit, so it is applied whether or not a source states one: of the six
+#: default sessions only the forli_2025 bat's tracking reaches it (fastest
+#: 17.8 m/s against a 99.9th percentile of 4.4 m/s); the fastest step of the
+#: others is at most 1.2 times their 99.9th percentile.
+JUMP_FACTOR = 2.0
 
 
 @dataclass(frozen=True)
@@ -239,6 +247,7 @@ def run_checks(
             units_warning,
             _origin_finding(rec),
             _held_and_fast_finding(rec, stated),
+            _speed_jump_finding(rec),
             _outside_finding(rec),
             _silent_units_finding(rec),
         )
@@ -527,6 +536,30 @@ def _held_and_fast_finding(rec: Recording, stated: Stated) -> str | None:
             " No speed limit is stated for this dataset, so fast steps are not counted."
         )
     return text
+
+
+def _speed_jump_finding(rec: Recording) -> str | None:
+    """Speed samples faster than ``JUMP_FACTOR`` times the 99.9th percentile.
+
+    None unless the fastest is. The speed is the summary's
+    (:func:`~neurospatial.datasets._recording.session_speed`).
+    """
+    _median, _p95, p999, fastest = rec._speed_quantiles
+    if not np.isfinite(fastest) or fastest <= JUMP_FACTOR * p999:
+        return None
+    assert rec._speed is not None
+    bar = JUMP_FACTOR * p999
+    n_jumps = int(np.sum(rec._speed > bar))
+    unit = f" {rec.position_units}/s" if rec.position_units != "arbitrary" else ""
+    return (
+        f"{_count(n_jumps, 'speed sample')} {'is' if n_jumps == 1 else 'are'} "
+        f"faster than {bar:.3g}{unit}, {JUMP_FACTOR:g} times the 99.9th "
+        f"percentile of speed ({p999:.3g}{unit}); the fastest is "
+        f"{fastest:.3g}{unit}. They are likely tracking jumps. The rule is a "
+        f"heuristic (a step more than {JUMP_FACTOR:g} times as fast as all but "
+        "the fastest 0.1% of samples), not a speed limit any source states. "
+        "Positions are kept as stored."
+    )
 
 
 def _held_samples(

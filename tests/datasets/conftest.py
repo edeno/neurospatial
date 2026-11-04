@@ -9,6 +9,7 @@ check against its ``Stated`` facts.
 from __future__ import annotations
 
 import builtins
+import dataclasses
 import sys
 
 import numpy as np
@@ -100,6 +101,42 @@ def square_recording(open_field) -> Recording:
         heading_source="direction of movement of the simulated path",
         epochs={"run": np.array([[0.0, 60.0]])},
     )
+
+
+@pytest.fixture
+def long_box_recording(square_recording) -> Recording:
+    """2000 s at 100 Hz on a smooth closed path in the box, no headings.
+
+    Long enough that a few tracking jumps, each spread over the 0.1 s of the
+    speed's smoothing, stay within the fastest 0.1 % of samples.
+    """
+    times = np.arange(200_000) / 100.0
+    positions = np.column_stack(
+        [
+            50.0 + 45.0 * np.sin(2 * np.pi * times / 17.0),
+            50.0 + 45.0 * np.sin(2 * np.pi * times / 23.0),
+        ]
+    )
+    return dataclasses.replace(
+        square_recording,
+        times=times,
+        positions=positions,
+        headings=None,
+        heading_source="",
+    )
+
+
+@pytest.fixture
+def jumpy_box_recording(long_box_recording) -> Recording:
+    """``long_box_recording`` with three tracking jumps: 20 cm east for 0.2 s.
+
+    A tracker that latches onto a reflection; one-sample glitches are mostly
+    smoothed away by the speed's 0.1 s smoothing.
+    """
+    positions = np.array(long_box_recording.positions)
+    for start in (40_000, 90_000, 150_000):
+        positions[start : start + 20, 0] += 20.0
+    return dataclasses.replace(long_box_recording, positions=positions)
 
 
 @pytest.fixture

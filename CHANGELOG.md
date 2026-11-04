@@ -339,6 +339,18 @@
   recording starts after its tracking shows spikes: the `forli_2025` bat's
   panel showed −94 to −34 s, before its first spike at −12.7 s, and its raster
   was empty.
+- The overview's speed histogram stops at the 99.9th percentile of speed and
+  says how many samples lie beyond it and the fastest, so a few tracking
+  jumps no longer set its axis (the `forli_2025` bat: fastest 17.8 m/s, 99.9th
+  percentile 4.37 m/s, median 0.0004 m/s). The summary's Tracking line gives
+  the fastest step beside the median and 95th percentile.
+- A new automatic watch-out: when the fastest speed sample is more than twice
+  the 99.9th percentile, it gives how many samples are faster than twice the
+  99.9th percentile and the fastest, as likely tracking jumps. The rule is a
+  heuristic, not a stated limit; positions are kept as stored, and the
+  stated-limit fast-sample count still applies where a source states a limit.
+  Of the six default sessions only `forli_2025` gives it (200 samples faster
+  than 8.73 m/s).
 
 ### Fixes from the review of the result contract, warnings and simulators
 
