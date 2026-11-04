@@ -691,7 +691,8 @@ def speed_split(
     threshold : float
         Below this speed, in ``units`` per second, a sample is stopped.
     units : str
-        The positions' length unit, for the text.
+        The positions' length unit, for the text; when empty, the threshold is
+        stated without a unit.
 
     Returns
     -------
@@ -706,9 +707,10 @@ def speed_split(
         speed = compute_speed(times, positions)[tracked]
     except InputError:  # no two tracked samples within compute_speed's max_gap
         return None
+    limit = f"{threshold:g} {units}/s" if units else f"{threshold:g}"
     parts = []
     for name, band in (
-        (f"stopped (below {threshold:g} {units}/s)", speed < threshold),
+        (f"stopped (below {limit})", speed < threshold),
         ("moving", speed >= threshold),
     ):
         if band.any():

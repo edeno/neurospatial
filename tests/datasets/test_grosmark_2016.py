@@ -335,7 +335,7 @@ def test_loads_default_session():
     assert rec.units["label"].value_counts().to_dict() == {"pE": 120, "pI": 17}
     assert rec.sampling_rate == pytest.approx(39.0626, rel=1e-4)
     assert rec.positions.shape == (12847, 1)
-    # The survey's expected extent for this session's linear track, 150-175 cm.
+    # The stem is 1.6 m; the head's range along it is 150-175 cm.
     assert 150.0 <= np.ptp(rec.positions) <= 175.0
     assert {"pre", "maze", "post"} <= set(rec.epochs)
     assert len(rec.trials.start) == 84

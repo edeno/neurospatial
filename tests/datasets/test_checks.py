@@ -10,7 +10,7 @@ import pytest
 
 from neurospatial import InputError
 from neurospatial.datasets import DatasetCheckError
-from neurospatial.datasets._checks import Stated, run_checks
+from neurospatial.datasets._checks import Stated, run_checks, speed_split
 from neurospatial.datasets._summary import summary_text
 
 
@@ -581,3 +581,11 @@ def test_outside_a_track_without_min_speed_says_so(
     checked = run_checks(rec, stated=stated)
     (finding,) = [text for text in checked.watch_outs if "outside the" in text]
     assert "params gives no min_speed, so the share is not split by speed" in finding
+
+
+def test_speed_split_without_units_states_the_bare_threshold():
+    times = np.arange(10) / 10.0
+    positions = np.column_stack([np.arange(10) * 0.1, np.zeros(10)])
+    flag = np.ones(10, dtype=bool)
+    assert "stopped (below 4)" in speed_split(times, positions, flag, 4.0, "")
+    assert "stopped (below 4 cm/s)" in speed_split(times, positions, flag, 4.0, "cm")
