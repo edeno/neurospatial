@@ -10,7 +10,10 @@
     "spike_times: in every unit, a spike within 1 ms of its predecessor dropped (7560 spikes) [stated: the record's NP_Bat_Demo.m: 'Clean up duplicated spikes, closer than 1 ms']",
     "epochs['flight']: times at the 1-based sample indices f_smp (38 flights) [stated: the record's NP_Bat_Demo.m: f_smp, 'start and stop samples of each flight', indexes t in MATLAB]",
     "epochs['neural_recording']: the first to the last spike of any unit, -12.68 to 5255.22 s; params['analysis_epochs']: the flights clipped to it [inferred: the files hold no neural recording start or stop; 289 units fire about 799 spikes/s together, so the first and last spike lie within a fraction of a second of its edges]",
-    "environment: every voxel of a grid tiling r_lim exactly, 29 x 26 x 11 cells of 0.2 x 0.2 x 0.209 m; the file's frame, not fitted [stated: r_lim, 'boundaries of the room/outdoor arena' (the record's NP_Bat_Demo.m); its sides against the paper's room: x +3.6%, y +0.0%, z -8.0%. 3.66% of tracked samples lie outside r_lim (23454 past -y, up to 1.63 m past a bound: either r_lim leaves out a place the bat lands, or the tracking there is off, and the files do not say which); the paper's room centred on r_lim (from its floor in z) would leave 3.77% outside]"
+    "environment: every voxel of a grid tiling r_lim exactly, 29 x 26 x 11 cells of 0.2 x 0.2 x 0.209 m; the file's frame, not fitted [stated: r_lim, 'boundaries of the room/outdoor arena' (the record's NP_Bat_Demo.m); its sides against the paper's room: x +3.6%, y +0.0%, z -8.0%. 3.66% of tracked samples lie outside r_lim (23454 past -y, up to 1.63 m past a bound: either r_lim leaves out a place the bat lands, or the tracking there is off, and the files do not say which); the paper's room centred on r_lim (from its floor in z) would leave 3.77% outside]",
+    "survey-only geometry['declared_from']: the declared room's facts the environment fidelity study reads",
+    "survey-only geometry['room_bounds_m']: the declared room's facts the environment fidelity study reads: r_lim, the grid's extent",
+    "survey-only geometry['environment_fit']: the declared room's facts the environment fidelity study reads: r_lim's sides against the paper's room"
   ],
   "watch_outs": [
     "This is the record's one demo session; the paper reports 23 sessions from six bats (the Methods of Forli et al. 2025), and the record holds no other.",
@@ -60,7 +63,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "2ff13395a8946ce27c6a56f06abd29419f5d5578"
+    "git_commit": "edc8d44515c40bb0c3d0f1f44dead7121e8a029a"
   },
   "load_warnings": [],
   "load_fingerprint": {
@@ -79,7 +82,7 @@
     ],
     "spike_counts": "54ec3f0a95b1814fd3b7a805b8e7cd898ca1cbef593d1928d54d6b0666d95e3b",
     "unit_ids": "9e4d27458d716dc35f7b73ce81b11ce9103c0b37ca161ac4dfa607c7eb38ff3d",
-    "geometry": "ba5870ee43faa379fb2a5fe59cf148b641ce5576fdd75039053df2801c339777"
+    "geometry": "41cc3cc6dfabb52ecc6d00765ada07d6b3c2387d70f01f3e0fda429f0dba4c8f"
   },
   "operations": {
     "env.from_samples": {
@@ -92,7 +95,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.223,
+      "seconds": 0.225,
       "peak_mb": 68.5
     },
     "env.occupancy": {
@@ -106,7 +109,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.73,
+      "seconds": 0.764,
       "peak_mb": 227.7
     },
     "env.declared": {
@@ -120,7 +123,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.094,
+      "seconds": 0.095,
       "peak_mb": 112.6
     },
     "rates.spatial": {
@@ -134,8 +137,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 39.903,
-      "peak_mb": 1734.3
+      "seconds": 39.857,
+      "peak_mb": 1734.2
     },
     "rates.spatial_information": {
       "status": "ok",
@@ -147,7 +150,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.031,
+      "seconds": 0.034,
       "peak_mb": 160.6
     },
     "rates.information_vs_shifts": {
@@ -162,7 +165,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 5.609,
+      "seconds": 5.651,
       "peak_mb": 280.7
     },
     "cells.place_screen": {
@@ -174,7 +177,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.647,
+      "seconds": 0.63,
       "peak_mb": 177.0
     },
     "cells.grid_score": {
@@ -220,7 +223,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 4.107,
+      "seconds": 4.098,
       "peak_mb": 241.8
     },
     "io.nwb_roundtrip": {
@@ -231,8 +234,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 7.097,
-      "peak_mb": 211.7
+      "seconds": 7.108,
+      "peak_mb": 212.1
     },
     "env.from_graph": {
       "status": "n/a",
@@ -252,7 +255,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.62,
+      "seconds": 0.634,
       "peak_mb": 234.8
     },
     "behavior.laps": {
@@ -261,7 +264,7 @@
       "note": "InputError: detect_laps(method='auto') cannot tell whether this 3-D environment has a loop.\nWhy: a lap goes around a loop of the space: a cycle of a track graph, or a hole in a 2-D area. Only those two kinds of environment are read.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.11,
+      "seconds": 0.113,
       "peak_mb": 97.2
     },
     "behavior.turn_sequence": {

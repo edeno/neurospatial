@@ -8,13 +8,21 @@
     "linearized: processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries in m x 100, cm [stated: the file's series: unit 'meters', conversion 1, described as starting at the edge of the reward area and ending at the opposing edge]",
     "epochs: PREEpoch, MazeEpoch and POSTEpoch of intervals/epochs as 'pre', 'maze' and 'post'; the states table of processing/behavior as 'awake', 'non_rem' and 'rem' [stated: the file's intervals/epochs labels and processing/behavior/states]",
     "environment: a straight track of three edges, 15, 160 and 15 cm, the stem centred on the middle of the file's linearized position, along a least-squares line from the linearized position to the positions [inferred: the Supplementary Materials' Methods of Grosmark & Buzs\u00e1ki 2016 state the lengths; the file states no placement. The line fits the 10336 samples with a linearized position: 0.9626 cm of 2-D track per linearized cm, the samples a median 4.04 cm from it]",
-    "environment: track_width 55 cm, a placement tolerance, not the track's width: twice the tracked samples' 95% quantile distance from the track [inferred: no source read states the track's width. The tracked head's distance from the track: median 9.35 cm, 95% quantile 27.5 cm; 5.0% of tracked samples lie beyond the tolerance, by construction, and fall in no bin. The 95th, not the 99th, percentile, because in some sessions the rat spends the first minutes off the track, a metre or more from it, and the 99th would place those samples on the track. track_width decides only which samples are placed, not the bins, their lengths or connectivity]",
+    "environment: track_width 55 cm, a placement tolerance, not the track's width: twice the tracked samples' 95% quantile distance from the track [inferred: no source read states the track's width. The tracked head's distance from the track: median 9.35 cm, 95% quantile 27.5 cm; 5.0% of tracked samples lie beyond the tolerance, by construction, and fall in no bin. The 95th, not the 99th, percentile, because in some linear-maze sessions the rat spends the first minutes off the track, a metre or more from it (Achilles 10252013: about 110 s, 3.5% of the samples, 140 cm and more away), and the 99th would make the track 3 m wide. track_width decides only which samples are placed, not the bins, their lengths or connectivity]",
     "survey-only params['replay_dt']: the replay decoding bin",
-    "survey-only params['analysis_epochs']: the maze epoch: rate maps and region laps describe the maze, and the PRE and POST sleep spikes have no position",
+    "survey-only params['analysis_epochs']: the maze epoch. Without it the rate maps take the PRE and POST sleep spikes, which have no position, so the clean run warns that most spikes lie outside the tracking, and that warning hides the spike_times_in_ms hazard probe's own",
     "survey-only params['nwb_source']: the URL the file was read from by byte range",
     "survey-only params['readers_used']: the io.nwb readers the public loader calls",
     "survey-only events['candidate_events']: first 200 of 1646 population bursts in POST non-REM (rule in population_bursts); the file has no ripple table",
-    "survey-only events['all_bursts']: every population burst in POST non-REM"
+    "survey-only events['all_bursts']: every population burst in POST non-REM",
+    "survey-only geometry['declared_from']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_graph']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_physical_width']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_physical_width_kind']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_track_width']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_track_width_kind']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_speed_thresholds']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['environment_fit']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus"
   ],
   "watch_outs": [
     "rec.linearized is the file's linearized position: defined only on the stem (NaN at the reward ends and off the track) and running 0 to 160 cm over 154.0 cm of the 2-D track (0.9626 cm of track per linearized cm), so it is rescaled, not distance along the track. env.to_linear gives distance along the declared track, the reward areas included (15 cm before the stem).",
@@ -60,7 +68,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "2ff13395a8946ce27c6a56f06abd29419f5d5578"
+    "git_commit": "8f2e2af054f836f7503a285d68122c1387e13889"
   },
   "load_warnings": [],
   "load_fingerprint": {
@@ -79,7 +87,7 @@
     ],
     "spike_counts": "fea41033ff74991c6683a1f77f603b4341726b23a6e5037a1939144b13ad4937",
     "unit_ids": "b09582c2b4abaca7aa07afdb5ff0f317fe9e22357124c90a04fc86e8301de0b6",
-    "geometry": "e862a6930cd2faf56597535175ce9f780da01b0cde75dc4e199c155cc02bcb74"
+    "geometry": "a1438708a866967004ee730f6a452b692125d4586f8ea2b33e60093ddb3a5528"
   },
   "operations": {
     "env.from_samples": {
@@ -92,7 +100,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.122,
+      "seconds": 0.124,
       "peak_mb": 7.6
     },
     "env.occupancy": {
@@ -106,7 +114,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.087,
+      "seconds": 0.082,
       "peak_mb": 9.2
     },
     "env.declared": {
@@ -120,7 +128,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.013,
+      "seconds": 0.014,
       "peak_mb": 9.4
     },
     "rates.spatial": {
@@ -134,7 +142,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.329,
+      "seconds": 0.343,
       "peak_mb": 296.3
     },
     "rates.spatial_information": {
@@ -162,7 +170,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.4,
+      "seconds": 2.481,
       "peak_mb": 364.0
     },
     "cells.place_screen": {
@@ -228,7 +236,7 @@
           "count": 1
         }
       ],
-      "seconds": 1.546,
+      "seconds": 1.574,
       "peak_mb": 320.7
     },
     "io.nwb_roundtrip": {
@@ -239,8 +247,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.822,
-      "peak_mb": 2.9
+      "seconds": 1.711,
+      "peak_mb": 2.2
     },
     "env.from_graph": {
       "status": "ok",
@@ -272,7 +280,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.014,
+      "seconds": 0.015,
       "peak_mb": 8.5
     },
     "behavior.turn_sequence": {
@@ -302,7 +310,7 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 3.521,
+      "seconds": 3.421,
       "peak_mb": 296.2
     },
     "io.nwb_readers": {
@@ -315,7 +323,7 @@
       "note": "position: ValueError: Found 2 Position series candidates: ['processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries', 'processing/behavior/1.6mLinearMazePosition/1.6mLinearMazeSpatialSeries'].\nWhy: they may differ in units, frame or processing, so none is chosen for you.\nFix: pass position_name= with one of these paths, e.g. position_name='processing/behavior/1.6mLinearMazeLinearizedPosition/1.6mLinearMazeLinearizedTimeSeries'.",
       "gap": null,
       "warnings": [],
-      "seconds": 52.824,
+      "seconds": 23.38,
       "peak_mb": 334.4
     },
     "io.read_pose": {
@@ -324,8 +332,8 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 17.338,
-      "peak_mb": 81.7
+      "seconds": 18.043,
+      "peak_mb": 81.9
     },
     "imaging.rates": {
       "status": "n/a",

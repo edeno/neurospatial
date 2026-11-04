@@ -8,7 +8,7 @@
     "epochs: intervals/epochs, those holding the tracking as 'track' and the others as 'epoch_<k>', their place in the table (epoch_1 = fCamk2_201014_091141, epoch_2 = fCamk2_201014_102932, track = fCamk2_201014_112432, epoch_4 = fCamk2_201014_120236, epoch_5 = fCamk2_201014_122743); the stretches of each track epoch before its first and after its last position sample as 'track_before_tracking' and 'track_after_tracking'; processing/behavior/SleepStates by label as 'wake', 'nrem' and 'rem' [stated: the file's epochs table, position timestamps and SleepStates labels]",
     "units['brain_region']: the location of every electrode in the file, for every unit (missing where the electrodes are in more than one region) [inferred: the electrodes table gives the locations CA1; the units table names no electrode or location]",
     "environment: the stated 110 cm track from (16.28, 3.781) to (11.68, 113.7) cm, along the tracked samples' principal axis at 92.4 degrees, centred between their 0.5th and 99.5th percentiles along it [inferred: the file states no origin or rotation (reference frame 'Arbitrary, camera'); the samples span 115.6 cm between those percentiles, +5.1% of the stated length, and 26.2% of them lie beyond the track's ends]",
-    "environment: track_width 9.95 cm, a placement tolerance, not the stated 6.35 cm width: twice the tracked samples' 95% quantile distance from the track [inferred: the tracked point's distance from the track: median 1.58 cm, 95% quantile 4.97 cm; 5.0% of tracked samples lie beyond the tolerance, by construction, and fall in no bin. track_width decides only which samples are placed, not the bins, their lengths or connectivity]",
+    "environment: track_width 12.9 cm, a placement tolerance, not the stated 6.35 cm width: twice the tracked samples' 99% quantile distance from the track [inferred: the tracked point's distance from the track: median 1.58 cm, 99% quantile 6.47 cm; 1.0% of tracked samples lie beyond the tolerance, by construction, and fall in no bin. The 99th percentile, so that 1% of the samples are left out: the 95th leaves out 5%, head samples just beside the track. track_width decides only which samples are placed, not the bins, their lengths or connectivity]",
     "video frame times: the position timestamps, not the file's video timestamps [inferred: the video and the position series both hold 67131 frames, and the position times are the video times plus +22.5483 s at 1.000257 s per video second, to within 0.085 ms (half a frame is 16.7 ms): the same frames on two clocks, position minus video time +22.55 to +23.12 s. The recording's times, which spikes and events are checked against, are the position times]",
     "video calibration: a least-squares affine from the LED detected in the video to the tracked positions [inferred: the LED as the brightest point of each frame's summed RGB after a Gaussian blur of 3 px (OpenCV), against the file's position of the same sample; a Huber affine from pixels to cm (cut 2 cm, iteratively reweighted least squares), then least squares over the detections within 5 cm of it, over 2238 frames (every 30th frame from 0 (2238 frames)); 17.2% of detections are more than 5 cm off and left out of the final fit; residual median 0.946 cm (8.27 px), 90th percentile 9.8 cm (84.9 px); the median is the statistic compared with the 2.5 cm bin; 0.1181 cm per pixel column and 0.1174 cm per pixel row. Frame k paired with sample k + lag gives median residuals (cm) -677: 24.3, -30: 4.85, -3: 1.46, -1: 1.1, +0: 0.946, +1: 0.837, +3: 0.84, +30: 3.19, +677: 26: frames and samples are paired to within a few frames. Fitted by scripts/fit_video_led_calibration.py with SHA-256 8d6e29eb15a9cb9c, 2026-11-04]",
     "survey-only params['replay_dt']: the replay decoding bin",
@@ -16,7 +16,17 @@
     "survey-only params['nwb_source']: the cached NWB file the session was read from",
     "survey-only params['readers_used']: the io.nwb readers the public loader calls",
     "survey-only events['ripples'] (replaces the public loader's): the 24 of 49 ripples inside the tracking, so replay is decoded where the rate maps were fitted",
-    "survey-only events['all_ripples']: every ripple of the session"
+    "survey-only events['all_ripples']: every ripple of the session",
+    "survey-only geometry['declared_from']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_graph']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_physical_width']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_physical_width_kind']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_track_width']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_track_width_kind']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['declared_speed_thresholds']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['environment_fit']: the declared track's facts the environment fidelity study reads, from the public environment (its graph and track_width) and the stated apparatus",
+    "survey-only geometry['track_length_cm']: the stated length ('110 cm long')",
+    "survey-only geometry['track_width_cm']: the stated width ('6.35 cm wide')"
   ],
   "watch_outs": [
     "The file's session_start_time, 2016-03-15, is not the recording date: the epoch names (fCamk2_201014_091141 to fCamk2_201014_122743) give 2020-10-14. Times are seconds from the first epoch's start.",
@@ -29,7 +39,7 @@
     "12.4% of tracked samples lie farther than half the stated 6.35 cm width from the track's centre line (the 95th percentile is 4.97 cm). This is tracking spread, not misfit: the tracked point is on the head, which swings past the edge of a narrow track and projects outward when raised. params gives no min_speed (no source read states a running threshold), so the share is not split into stopped and moving samples. The positions are kept as stored.",
     "The file also holds UpDownStatesTimeIntervals (up and down states) and the ripples' peak times, which are not loaded; read them with pynwb.",
     "46 runs of 11 or more identical position samples (10 or more repeats of the sample before; 2630 repeats, 3.92% of samples, 87.7 s in all, the longest 6.0 s). Positions are kept as stored. A held run is lost tracking if the tracker repeated its last fix, or the animal holding still; check before analysing stops (wells, ripples). No speed limit is stated for this dataset, so fast steps are not counted.",
-    "3357 tracked position samples of 67131 (5.00%) lie outside the declared environment (env.bin_at gives -1): tracking spread beyond the track's footprint, expected of a tracked head (head-mounted LEDs swing past the edge and a raised head projects outward), not by itself misfit; params gives no min_speed, so the share is not split by speed. They are kept as stored and fall in no bin."
+    "672 tracked position samples of 67131 (1.00%) lie outside the declared environment (env.bin_at gives -1): tracking spread beyond the track's footprint, expected of a tracked head (head-mounted LEDs swing past the edge and a raised head projects outward), not by itself misfit; params gives no min_speed, so the share is not split by speed. They are kept as stored and fall in no bin."
   ],
   "expectations": [
     {
@@ -65,7 +75,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "2ff13395a8946ce27c6a56f06abd29419f5d5578"
+    "git_commit": "8f2e2af054f836f7503a285d68122c1387e13889"
   },
   "load_warnings": [
     {
@@ -92,7 +102,7 @@
     ],
     "spike_counts": "b590ba8150225e60a798b234941fcb3775cc8500dd83ebb2dac6ef3db16fb530",
     "unit_ids": "37465a0353bf64fad9d2468f4acd952e33f93f21ce040f3365965bb12b15425a",
-    "geometry": "4e0788a41dfd61c3696dc0731b9234d8b67ff0b2c5987f729d2eebba7e35a504"
+    "geometry": "ae64176cf18713a278018fedd7ceeb27eb562b3ccd858bb12e7803b6e899cd23"
   },
   "operations": {
     "env.from_samples": {
@@ -105,21 +115,21 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.02,
+      "seconds": 0.022,
       "peak_mb": 3.9
     },
     "env.occupancy": {
       "status": "ok",
       "summary": {
-        "total_s": 921.2364000000252,
+        "total_s": 944.4091666666836,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 14.103833333323564,
-        "max_s": 72.95206666667218
+        "median_s_per_visited_bin": 15.170466666663742,
+        "max_s": 78.42023333333327
       },
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.026,
+      "seconds": 0.031,
       "peak_mb": 18.0
     },
     "env.declared": {
@@ -128,21 +138,21 @@
         "n_bins": 45,
         "n_dims": 2,
         "max_extent": 107.4614489359976,
-        "frac_samples_outside": 0.05000670331143585
+        "frac_samples_outside": 0.010010278410868302
       },
       "note": "",
       "gap": null,
       "warnings": [],
       "seconds": 0.009,
-      "peak_mb": 9.9
+      "peak_mb": 10.3
     },
     "rates.spatial": {
       "status": "ok",
       "summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.2497387882075757,
-        "median_mean_hz": 0.5447811592367968
+        "median_peak_hz": 1.2493685024635848,
+        "median_mean_hz": 0.5490151793420944
       },
       "note": "",
       "gap": null,
@@ -155,14 +165,14 @@
           "count": 1
         }
       ],
-      "seconds": 0.149,
-      "peak_mb": 22.2
+      "seconds": 0.063,
+      "peak_mb": 18.0
     },
     "rates.spatial_information": {
       "status": "ok",
       "summary": {
-        "bits_per_spike_median": 0.29136654920592736,
-        "bits_per_spike_max": 1.6352613030562855,
+        "bits_per_spike_median": 0.28288772918926036,
+        "bits_per_spike_max": 1.643942065548765,
         "bits_per_spike_n_finite": 35
       },
       "note": "",
@@ -174,9 +184,9 @@
     "rates.information_vs_shifts": {
       "status": "ok",
       "summary": {
-        "median_bits_per_spike": 0.29136654920592736,
-        "median_shifted_bits_per_spike": 0.018614880700229763,
-        "frac_above_every_shift": 0.8285714285714286,
+        "median_bits_per_spike": 0.28288772918926036,
+        "median_shifted_bits_per_spike": 0.017309888333388097,
+        "frac_above_every_shift": 0.8571428571428571,
         "n_units": 35,
         "n_shifts": 4
       },
@@ -191,7 +201,7 @@
           "count": 4
         }
       ],
-      "seconds": 0.265,
+      "seconds": 0.309,
       "peak_mb": 21.6
     },
     "cells.place_screen": {
@@ -238,27 +248,19 @@
       "status": "ok",
       "summary": {
         "median_error": 34.22222222222223,
-        "chance_median_error": 41.55555555555559,
+        "chance_median_error": 39.111111111111114,
         "chance_frac_disconnected": 0.0,
-        "frac_actual_outside": 0.04206675811614083,
+        "frac_actual_outside": 0.007087334247828075,
         "units": "cm",
         "n_time_bins": 4374,
         "median_error_on_declared": 34.22222222222223,
-        "n_on_declared": 4366
+        "n_on_declared": 4374
       },
       "note": "",
       "gap": null,
-      "warnings": [
-        {
-          "category": "UserWarning",
-          "origin": "neurospatial",
-          "template": "decoding_error(): # of # time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
-          "example": "decoding_error(): 8 of 4374 time bins have a decoded or actual position outside the environment, more than about one bin spacing from it, so their geodesic error is NaN. A decoded position there (such as a posterior mean between two arms) is a failed decode: use map_position for a decoded position that is always a bin. Check actual positions for tracking glitches or a different coordinate frame.",
-          "count": 1
-        }
-      ],
-      "seconds": 0.234,
-      "peak_mb": 20.6
+      "warnings": [],
+      "seconds": 0.225,
+      "peak_mb": 19.9
     },
     "io.nwb_roundtrip": {
       "status": "ok",
@@ -268,8 +270,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.666,
-      "peak_mb": 2.5
+      "seconds": 1.706,
+      "peak_mb": 2.1
     },
     "env.from_graph": {
       "status": "ok",
@@ -292,8 +294,8 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.556,
-      "peak_mb": 40.1
+      "seconds": 0.024,
+      "peak_mb": 18.7
     },
     "behavior.laps": {
       "status": "error",
@@ -301,8 +303,8 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.012,
-      "peak_mb": 8.8
+      "seconds": 0.014,
+      "peak_mb": 9.2
     },
     "behavior.turn_sequence": {
       "status": "ok",
@@ -314,7 +316,7 @@
       "gap": null,
       "warnings": [],
       "seconds": 0.01,
-      "peak_mb": 8.8
+      "peak_mb": 9.2
     },
     "replay.compare_methods": {
       "status": "ok",
@@ -331,8 +333,8 @@
       "note": "decoded on the declared track graph",
       "gap": null,
       "warnings": [],
-      "seconds": 1.107,
-      "peak_mb": 39.0
+      "seconds": 1.034,
+      "peak_mb": 36.1
     },
     "io.nwb_readers": {
       "status": "ok",
@@ -352,8 +354,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.024,
-      "peak_mb": 13.5
+      "seconds": 1.022,
+      "peak_mb": 13.4
     },
     "io.read_pose": {
       "status": "n/a",
@@ -369,8 +371,8 @@
           "count": 1
         }
       ],
-      "seconds": 1.741,
-      "peak_mb": 15.1
+      "seconds": 0.999,
+      "peak_mb": 3.1
     },
     "imaging.rates": {
       "status": "n/a",
@@ -394,8 +396,8 @@
       "clean_summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.2497387882075757,
-        "median_mean_hz": 0.5447811592367968
+        "median_peak_hz": 1.2493685024635848,
+        "median_mean_hz": 0.5490151793420944
       },
       "hazard_summary": {
         "n_units": 35,
@@ -428,10 +430,10 @@
       "message": "InputError: Interval filtering excluded ALL trajectory intervals (active gate(s) max_gap=1.0, min_speed=4.0).\nWhy: no sampling interval is left to analyse; rather than return a result in which occupancy is zero in every bin, the call refuses.\nFix: check that min_speed=4.0 is in the positions' length units per second.",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 921.2364000000252,
+        "total_s": 944.4091666666836,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 14.103833333323564,
-        "max_s": 72.95206666667218
+        "median_s_per_visited_bin": 15.170466666663742,
+        "max_s": 78.42023333333327
       },
       "hazard_summary": null
     },
@@ -444,8 +446,8 @@
       "clean_summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.2497387882075757,
-        "median_mean_hz": 0.5447811592367968
+        "median_peak_hz": 1.2493685024635848,
+        "median_mean_hz": 0.5490151793420944
       },
       "hazard_summary": null
     },
@@ -512,16 +514,16 @@
       "message": "",
       "repeated_clean_warnings": 0,
       "clean_summary": {
-        "total_s": 921.2364000000252,
+        "total_s": 944.4091666666836,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 14.103833333323564,
-        "max_s": 72.95206666667218
+        "median_s_per_visited_bin": 15.170466666663742,
+        "max_s": 78.42023333333327
       },
       "hazard_summary": {
-        "total_s": 921.066666666643,
+        "total_s": 944.2333333333163,
         "frac_bins_visited": 1.0,
-        "median_s_per_visited_bin": 14.099999999983993,
-        "max_s": 72.899999999996
+        "median_s_per_visited_bin": 15.166666666668789,
+        "max_s": 78.33333333333303
       }
     },
     {
@@ -533,14 +535,14 @@
       "clean_summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 1.2497387882075757,
-        "median_mean_hz": 0.5447811592367968
+        "median_peak_hz": 1.2493685024635848,
+        "median_mean_hz": 0.5490151793420944
       },
       "hazard_summary": {
         "n_units": 35,
         "frac_nan_bins": 0.0,
-        "median_peak_hz": 0.8918670691427494,
-        "median_mean_hz": 0.6202007942040133
+        "median_peak_hz": 0.8915014589137854,
+        "median_mean_hz": 0.6243801018925671
       }
     },
     {

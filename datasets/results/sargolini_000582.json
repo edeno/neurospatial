@@ -7,7 +7,12 @@
     "positions: cm = SpatialSeriesLED1 in m (read_position applies the file's conversion) x 100 [stated: the file's SpatialSeriesLED1: unit 'meters', conversion 0.01]",
     "environment: the stated 100 x 100 cm square centred at (0, 0) cm, sides along the file's x and y; the samples' range against the stated side: x 98.04 cm, -2.0%, y 100 cm, +0.0% [inferred: the file states no origin or rotation (reference frame '(0,0) is not known.'); the centre is the midrange of the tracked samples, x -49.02 to 49.02 cm and y -50 to 50 cm]",
     "survey-only params['nwb_source']: the cached NWB file the session was read from",
-    "survey-only params['readers_used']: the io.nwb readers the public loader calls"
+    "survey-only params['readers_used']: the io.nwb readers the public loader calls",
+    "survey-only geometry['declared_from']: the declared box's facts the environment fidelity study reads: placed at the samples' midrange",
+    "survey-only geometry['shape']: the declared box's facts the environment fidelity study reads: the stated shape",
+    "survey-only geometry['size_cm']: the declared box's facts the environment fidelity study reads: the stated side",
+    "survey-only geometry['description']: the declared box's facts the environment fidelity study reads: the file's session_description",
+    "survey-only geometry['environment_fit']: the declared box's facts the environment fidelity study reads: the samples' range on each axis against the stated side"
   ],
   "watch_outs": [
     "The first of the 30000 position samples, at 0 s, is NaN (not tracked); it is kept as NaN.",
@@ -49,7 +54,7 @@
     "pynwb": "3.1.2",
     "pynapple": "0.11.3",
     "opexebo": "0.7.2",
-    "git_commit": "2ff13395a8946ce27c6a56f06abd29419f5d5578"
+    "git_commit": "edc8d44515c40bb0c3d0f1f44dead7121e8a029a"
   },
   "load_warnings": [],
   "load_fingerprint": {
@@ -68,7 +73,7 @@
     ],
     "spike_counts": "a5640f21dfbea43531be462021914a1df9f0a528ac5d3742df0ba43b7539cb79",
     "unit_ids": "a8d78592f509e595e26d06a5849bef2641b09fa4ba864b87ae0e812bc8baa6f3",
-    "geometry": "aeb5efa5960ce01ebbf6f10876426cc597a568fb895ec80f17c15b5911462646"
+    "geometry": "0dc557450cb1050427fb3ac71b1ad2d93ef82d92f94ced62249f9be8a226dd62"
   },
   "operations": {
     "env.from_samples": {
@@ -81,7 +86,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.112,
+      "seconds": 0.113,
       "peak_mb": 5.9
     },
     "env.occupancy": {
@@ -123,7 +128,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 1.011,
+      "seconds": 1.004,
       "peak_mb": 65.0
     },
     "rates.spatial_information": {
@@ -163,7 +168,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.045,
+      "seconds": 0.048,
       "peak_mb": 90.5
     },
     "cells.grid_score": {
@@ -176,7 +181,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.036,
+      "seconds": 0.034,
       "peak_mb": 8.1
     },
     "cells.border_score": {
@@ -189,7 +194,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.091,
+      "seconds": 0.096,
       "peak_mb": 2.8
     },
     "hd.tuning": {
@@ -217,7 +222,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.615,
+      "seconds": 0.616,
       "peak_mb": 65.4
     },
     "io.nwb_roundtrip": {
@@ -228,7 +233,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 2.441,
+      "seconds": 2.424,
       "peak_mb": 14.3
     },
     "env.from_graph": {
@@ -255,7 +260,7 @@
       "note": "InputError: detect_laps(method='auto') counts laps around a loop, but this environment has no loop: its track graph has no cycle, or its area has no hole to run around.\nWhy: on a track, a tree maze or in an open arena the animal can always come back the way it went, so no lap goes round a loop and the laps found would have direction 'unknown'.\nFix: for back-and-forth runs on a linear track or arm, use detect_trials(env, times, positions, regions=[start, end]); to segment round trips against a template, pass method='reference' with reference_lap=, which reports each round trip's direction along the track as 'increasing' or 'decreasing'.",
       "gap": null,
       "warnings": [],
-      "seconds": 0.018,
+      "seconds": 0.019,
       "peak_mb": 3.8
     },
     "behavior.turn_sequence": {
@@ -286,7 +291,7 @@
       "note": "",
       "gap": null,
       "warnings": [],
-      "seconds": 0.209,
+      "seconds": 0.214,
       "peak_mb": 3.6
     },
     "io.read_pose": {
@@ -295,7 +300,7 @@
       "note": "the file has no PoseEstimation",
       "gap": null,
       "warnings": [],
-      "seconds": 0.926,
+      "seconds": 0.976,
       "peak_mb": 12.3
     },
     "imaging.rates": {
