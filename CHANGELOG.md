@@ -161,6 +161,10 @@
   `read_intervals(nwbfile, interval_name="processing/behavior/states")` for
   the sleep states of DANDI 000044; the error for an unknown name lists
   these paths too.
+- A video file whose container reports more frames than it decodes (as the
+  AVI files of DANDI 000568 report one frame more) gives `VideoOverlay` its
+  real frame count, so frame times of that length are accepted; up to 16
+  trailing frames are probed when the file is opened.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 

@@ -23,6 +23,9 @@ from neurospatial._validation import is_integer_at_least
 # A forward jump of at most this many frames is decoded through instead of
 # seeking: a seek restarts decoding at the previous keyframe.
 _MAX_FRAMES_GRABBED = 16
+# At most this many frames at the end of a video are probed when its container
+# reports more frames than can be decoded.
+_MAX_TRAILING_PROBED = 16
 
 
 @runtime_checkable
@@ -156,6 +159,37 @@ def _validate_frame_processing(
     return width // downsample, height // downsample
 
 
+def _decodable_frame_count(capture: Any, reported: int) -> int:
+    """The reported frame count, less trailing frames that cannot be decoded.
+
+    A container's frame count can overstate the frames it holds (an AVI
+    whose index counts one frame more than its stream): the last reported
+    frames then read nothing. Up to ``_MAX_TRAILING_PROBED`` frames are
+    probed back from the end; if none decodes, the reported count is kept,
+    so that reading a frame fails with the decoding error.
+
+    Parameters
+    ----------
+    capture : cv2.VideoCapture
+        An open capture; its position is changed.
+    reported : int
+        The container's ``CAP_PROP_FRAME_COUNT``.
+
+    Returns
+    -------
+    int
+        The number of frames from the first to the last that decodes.
+    """
+    import cv2
+
+    for count in range(reported, max(reported - _MAX_TRAILING_PROBED, 0), -1):
+        capture.set(cv2.CAP_PROP_POS_FRAMES, count - 1)
+        decoded, _ = capture.read()
+        if decoded:
+            return count
+    return reported
+
+
 class CacheInfo(NamedTuple):
     """Cache statistics for _VideoReader.
 
@@ -263,7 +297,12 @@ class _VideoReader:
         if not capture.isOpened():
             msg = f"Could not open video file: {self._path}"
             raise ValueError(msg)
-        self._n_frames: int = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._n_frames: int = _decodable_frame_count(
+            capture, int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        )
+        # Probing moved the capture; a fresh one decodes from the first frame.
+        capture.release()
+        capture = cv2.VideoCapture(str(self._path))
         width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self._original_size_px: tuple[int, int] = (width, height)
