@@ -1582,6 +1582,42 @@ def test_the_status_shows_the_sliders_time(apparatus):
     assert animation.status == "t = 0.55 s  |  ripple 1 of 1"
 
 
+def test_matplotlib_color_names_reach_pygfx_as_rgba(apparatus, walk):
+    # "tab:cyan" is a Matplotlib name that pygfx cannot parse.
+    from neurospatial.animation import EpochOverlay, SpikeRasterOverlay
+
+    t, path, fields = walk
+    animation = (
+        Animation(
+            apparatus,
+            fields,
+            frame_times=t,
+            overlays=[
+                PositionOverlay(path, times=t, color="tab:cyan"),
+                EpochOverlay([[0.5, 1.5]], label="run", color="tab:cyan"),
+                EventOverlay(
+                    event_times={"lap": t[[10]]},
+                    event_positions={"lap": path[[10]]},
+                    colors={"lap": "tab:cyan"},
+                ),
+                SpikeRasterOverlay([t[::7]]),
+            ],
+        )
+        .show(backend="fastplotlib")
+        .native
+    )
+    try:
+        _render(animation)
+        figure = animation.figure
+        cyan = np.asarray(to_rgba("tab:cyan"), dtype=np.float32)
+        (band,) = [g for g in figure["raster 0"].graphics if g.name == "run epochs"]
+        np.testing.assert_allclose(np.reshape(band.colors[:], (-1, 4))[0], cyan)
+        (lap,) = [g for g in figure["raster 0"].graphics if g.name == "lap times"]
+        np.testing.assert_allclose(np.reshape(lap.colors[:], (-1, 4))[0], cyan)
+    finally:
+        animation.close()
+
+
 def _ndc(plot, point):
     """``point`` (environment coordinates) in the panel camera's clip space."""
     xyz = np.r_[point, np.zeros(3 - len(point)), 1.0]

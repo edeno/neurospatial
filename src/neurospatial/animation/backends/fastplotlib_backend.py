@@ -121,7 +121,12 @@ def _marker(code: str) -> str:
     return marker
 
 
-def _rgba(color: str) -> NDArray[np.float32]:
+def _rgba(color: Any) -> NDArray[np.float32]:
+    """Any Matplotlib color as RGBA for pygfx.
+
+    Overlays take Matplotlib colors (``"tab:cyan"``, ``"C1"``, ``"0.5"``),
+    which pygfx does not parse, so every color handed to it passes here.
+    """
     from matplotlib.colors import to_rgba
 
     return np.asarray(to_rgba(color), dtype=np.float32)
@@ -198,7 +203,7 @@ class _Position:
         self.markers = [
             plot.add_scatter(
                 xyz([np.nan, np.nan]),
-                colors=data.color,
+                colors=_rgba(data.color),
                 sizes=data.size,
                 edge_colors="white",
                 edge_width=1,
@@ -256,7 +261,7 @@ class _Bodyparts:
             self.lines = [
                 plot.add_line(
                     np.full((3 * self.n_edges, 3), np.nan, dtype=np.float32),
-                    colors=skeleton.edge_color,
+                    colors=_rgba(skeleton.edge_color),
                     thickness=skeleton.edge_width,
                 )
                 for plot in plots
@@ -499,7 +504,9 @@ class _TimeWindow:
         self.subplot, self.prepared, self.start = subplot, prepared, start
         # A dark edge, so the cursor shows on light colormap colors too.
         self.halo = subplot.add_inf_line([0.0], axis="x", colors="black", thickness=4)
-        self.cursor = LinearSelector(0.0, limits=(-np.inf, np.inf), edge_color=color)
+        self.cursor = LinearSelector(
+            0.0, limits=(-np.inf, np.inf), edge_color=_rgba(color)
+        )
         self.cursor.add_event_handler(
             lambda event: move_to(event.info["value"]), "selection"
         )
@@ -996,7 +1003,7 @@ def _edge_label(subplot: Any, text: str, color: str) -> Any:
     return subplot.add_text(
         text,
         font_size=13,
-        face_color=color,
+        face_color=_rgba(color),
         outline_color="black",
         outline_thickness=0.25,
         anchor="middle-right",
@@ -1973,7 +1980,7 @@ def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> Non
                 subplot.add_inf_line(
                     event_times - start,
                     axis="x",
-                    colors=data.colors[event],
+                    colors=_rgba(data.colors[event]),
                     thickness=1.0,
                     name=f"{event} times",
                 )
@@ -2004,7 +2011,7 @@ def _shade_epochs(
             positions,
             bands.triangles,
             mode="basic",
-            colors=data.color,
+            colors=_rgba(data.color),
             alpha=1.0 if strip else float(perceived_alpha(data.alpha)),
             alpha_mode="blend",
             name=f"{data.label} epochs",

@@ -359,6 +359,11 @@
   the scene's clock as well as the environment, so an animal tracked outside
   the environment stays in view: the `forli_2025` bat on its perch, at y
   −4.23 to −2.76 m beside a room bounded at −2.6 m, was off-screen.
+- The fastplotlib viewer converts every overlay color to RGBA before handing
+  it to pygfx, so Matplotlib color names such as `"tab:cyan"` work on epochs,
+  events, positions, body-part skeletons, time cursors and labels:
+  `forli_2025`'s `rec.animation(time_range=(105, 165)).show(backend="fastplotlib")`
+  raised `ValueError: Unknown color: 'tab:cyan'`.
 
 ### Fixes from the review of the result contract, warnings and simulators
 
