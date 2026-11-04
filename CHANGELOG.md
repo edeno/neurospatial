@@ -126,6 +126,28 @@
   declared environment is the room the file's `r_lim` bounds, every voxel
   active; 3.7% of samples, nearly all at rest, lie past its -y bound and are
   kept. Needs `mat-io`, so Python 3.11 or later.
+- `grosmark_2016`: Grosmark & Buzsáki (2016) rat CA1 on a novel maze between
+  two sleeps. A session is one archive file, one maze. The default,
+  `Achilles_10252013`, is the OSF `hu5ma` file NeMoS's place-cell tutorial
+  downloads (license not stated on OSF), checked by hand against DANDI
+  000044's copy of the same session: the same 137 units and spike times,
+  positions on DANDI's sample times. Its position is 1-D, the head's distance
+  along the linear maze's axis on the track only (a projection of DANDI's 2-D
+  positions, not DANDI's rescaled linearized position), and the declared
+  environment is the stated 1.6 m stem as a 1-D track. The file has no
+  epochs, so `pre`, `maze` and `post` are DANDI's (an inferred
+  `Conversion`), and `maze_before_track` covers the 111 s before its first
+  position sample, when the rat was off the track. The eight files of DANDI
+  000044 (version 0.261005.2101, CC-BY-4.0, 5 to 9 GB each; load them with
+  `stream=True`) are the other sessions: 2-D positions in cm, the authors'
+  linearized position in `rec.linearized`, the PRE/MAZE/POST epochs and the
+  sleep states. Their declared environment is the stated linear maze (reward
+  area, stem, reward area) as a straight track along the line the linearized
+  position traces, or the stated 1 m circle as a closed loop centred by a
+  robust fit, each with a placement tolerance measured from the samples. The
+  paper states tracking at 39.69 Hz; the files sample at 39.06 Hz. On the
+  circle, `rec.linearized` increases counter-clockwise while the rat runs
+  clockwise, so it decreases along a run.
 - `io.nwb.read_position(..., position_name=)` and
   `read_head_direction(..., compass_name=)` read a TimeSeries stored outside
   any Position or CompassDirection container when given its full path, as in
