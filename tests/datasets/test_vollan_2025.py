@@ -299,7 +299,9 @@ def test_a_session_table_a_recording_length_before_the_samples_is_refused(
     np.testing.assert_allclose(rec.epochs["open_field_1"], listed)
     with pytest.raises(DatasetCheckError, match="no epoch holds a tracking sample"):
         run_checks(rec, stated=entry.info.stated)
-    accepted = run_checks(rec, stated=entry.info.stated, accept_failed_checks=("clock",))
+    accepted = run_checks(
+        rec, stated=entry.info.stated, accept_failed_checks=("clock",)
+    )
     assert accepted.failed_checks == ("clock",)
     np.testing.assert_allclose(accepted.epochs["open_field_1"], listed)
 
