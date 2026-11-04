@@ -169,7 +169,7 @@ positions).
 
 `plot_overview` draws six panels that show the session at a glance: the
 environment with the path (on a 1-D track, a histogram of the samples along
-it), occupancy (never-visited bins drawn as missing), the
+it; in 3-D, a top view, as is occupancy, summed over z), occupancy (never-visited bins drawn as missing), the
 speed histogram up to the 99.9th percentile with `params["min_speed"]` marked
 (the panel counts the faster samples and gives the fastest), head direction beside
 heading minus direction of travel, units per brain region, and the first 60 s

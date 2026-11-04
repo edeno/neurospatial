@@ -115,21 +115,11 @@ def test_speed_panel_range_is_not_set_by_tracking_jumps(
 @pytest.fixture
 def stem_recording(square_recording):
     """The box session's x position on a 1-D 0-100 cm stem track."""
-    import networkx as nx
-
-    from neurospatial import Environment
-
-    graph = nx.Graph()
-    graph.add_node("stem_start", pos=(0.0,))
-    graph.add_node("stem_end", pos=(100.0,))
-    graph.add_edge("stem_start", "stem_end", distance=100.0)
-    env = Environment.from_graph(
-        graph, [("stem_start", "stem_end")], bin_size=2.0, units="cm"
-    )
+    env, positions, _ = _stem_env(np.asarray(square_recording.positions))
     return dataclasses.replace(
         square_recording,
         env=env,
-        positions=np.array(square_recording.positions[:, :1]),
+        positions=positions,
         headings=None,
         heading_source="",
     )
@@ -145,6 +135,64 @@ def test_a_1d_environment_panel_shows_samples_along_the_track(stem_recording):
     expected, _ = np.histogram(rec.positions[:, 0], bins=edges)
     np.testing.assert_array_equal(_bar_heights(strip), expected)
     assert "along the track" in strip.get_xlabel()
+
+
+@pytest.fixture
+def room_grid_recording(square_recording):
+    """The box session lifted into a 1 m x 1 m x 40 cm room, 10 cm cubes."""
+    from neurospatial import Environment
+
+    xy = np.asarray(square_recording.positions)
+    z = 20.0 + 15.0 * np.sin(square_recording.times / 3.0)
+    edges = (
+        np.linspace(0.0, 100.0, 11),
+        np.linspace(0.0, 100.0, 11),
+        np.linspace(0.0, 40.0, 5),
+    )
+    mask = np.ones((10, 10, 4), dtype=bool)
+    mask[0, 0, :] = False  # a column with no bin
+    env = Environment.from_grid_mask(mask, grid_edges=edges, units="cm")
+    return dataclasses.replace(
+        square_recording,
+        env=env,
+        positions=np.column_stack([xy, z]),
+        headings=None,
+        heading_source="",
+    )
+
+
+def test_3d_occupancy_panel_is_the_occupancy_summed_over_z(room_grid_recording):
+    from neurospatial.datasets._overview import top_view_occupancy
+
+    rec = room_grid_recording
+    # Independently: seconds per 3-D bin from the samples, summed per column.
+    occupancy = rec.env.occupancy(rec.times, rec.positions)
+    columns = np.floor(rec.env.bin_centers[:, :2] / 10).astype(int)
+    expected = np.zeros((10, 10))
+    np.add.at(expected, (columns[:, 0], columns[:, 1]), occupancy)
+    visited = expected > 0
+    edges, seconds = top_view_occupancy(rec)
+    np.testing.assert_array_equal(edges[0], np.linspace(0.0, 100.0, 11))
+    np.testing.assert_allclose(seconds[visited], expected[visited])
+    np.testing.assert_array_equal(np.isnan(seconds), ~visited)
+    assert np.isnan(seconds[0, 0])  # the column with no bin is missing, not zero
+    np.testing.assert_allclose(np.nansum(seconds), occupancy.sum())
+    # The panel draws exactly these columns.
+    ax = _titled(rec.plot_overview(), "Occupancy")
+    assert "top view (x\u2013y, summed over z)" in ax.get_title()
+    (mesh,) = ax.collections
+    drawn = mesh.get_array()
+    np.testing.assert_allclose(
+        np.sort(np.ma.compressed(drawn)), np.sort(seconds[visited])
+    )
+
+
+def test_3d_path_panel_is_the_xy_path(room_grid_recording):
+    rec = room_grid_recording
+    ax = _titled(rec.plot_overview(), "Environment and path")
+    assert "top view (x\u2013y, summed over z)" in ax.get_title()
+    (path,) = [c for c in ax.collections if len(c.get_offsets()) == len(rec.times)]
+    np.testing.assert_array_equal(path.get_offsets(), rec.positions[:, :2])
 
 
 def test_time_panel_draws_the_first_minute(square_recording):
@@ -311,7 +359,9 @@ def room_recording(square_recording):
 def test_3d_recording_overview_and_scene(room_recording):
     fig = room_recording.plot_overview()
     for title in ("Environment", "Occupancy"):
-        assert any("3-D" in t for t in _texts(_titled(fig, title)))
+        ax = _titled(fig, title)
+        assert ax.get_title().count("top view") == 1
+        assert not any("open rec.animation()" in t for t in _texts(ax))
     scene = room_recording.animation(time_range=(0.0, 5.0))
     assert scene.env.n_dims == 3
     assert scene.fields["occupancy"][0].shape == (room_recording.env.n_bins,)

@@ -371,6 +371,11 @@
 - On a 1-D environment the overview's "Environment and path" panel shows the
   tracked samples' positions along the track as a histogram below it, one
   bar per bin, instead of "path not drawn for 1-D positions".
+- For a 3-D session (the `forli_2025` bat) the overview's environment and
+  occupancy panels draw a top view instead of "3-D environment: open
+  rec.animation()": the x–y path inside the room's x–y bounds, and occupancy
+  summed over the vertical axis per x–y column, gray where never visited;
+  both are titled "top view (x–y, summed over z)".
 
 ### Fixes from the review of the result contract, warnings and simulators
 

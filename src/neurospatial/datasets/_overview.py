@@ -92,7 +92,7 @@ def _panel_environment(rec: Recording, ax: Axes) -> None:
         _missing(ax, title, "no positions")
         return
     if rec.env.n_dims == 3:
-        _note(ax, title, "3-D environment:\nopen rec.animation()")
+        _top_view_path(rec, ax)
         return
     rec.env.plot(ax=ax)
     if rec.positions.shape[1] == 2:
@@ -137,12 +137,94 @@ def _panel_occupancy(rec: Recording, ax: Axes) -> None:
         _missing(ax, "Occupancy", "no positions")
         return
     if rec.env.n_dims == 3:
-        _note(ax, "Occupancy", "3-D environment:\nopen rec.animation()")
+        _top_view_occupancy(rec, ax)
         return
     rec.env.plot_field(
         occupancy_field(rec), ax=ax, colorbar_label="s", nan_color="lightgray"
     )
     ax.set_title("Occupancy (gray: never visited)")
+
+
+TOP_VIEW = "top view (x\u2013y, summed over z)"
+
+
+def _top_view_path(rec: Recording, ax: Axes) -> None:
+    """A 3-D session's path seen from above, inside the room's x–y bounds."""
+    from matplotlib.patches import Rectangle
+
+    assert rec.env is not None
+    assert rec.positions is not None
+    if rec.env.dimension_ranges is not None:
+        (x0, x1), (y0, y1) = rec.env.dimension_ranges[:2]
+        ax.add_patch(
+            Rectangle(
+                (x0, y0), x1 - x0, y1 - y0, fill=False, color="0.4", linestyle="--"
+            )
+        )
+    ax.scatter(
+        rec.positions[:, 0],
+        rec.positions[:, 1],
+        s=1,
+        c="tab:red",
+        linewidths=0,
+        alpha=0.5,
+        rasterized=True,
+    )
+    ax.set_aspect("equal", adjustable="datalim")
+    unit = rec.position_units
+    ax.set_xlabel(f"x ({unit})")
+    ax.set_ylabel(f"y ({unit})")
+    ax.set_title(f"Environment and path\n{TOP_VIEW}")
+
+
+def top_view_occupancy(rec: Recording) -> tuple[Any, NDArray[np.float64]]:
+    """A 3-D grid session's occupancy summed over z, NaN where never visited.
+
+    Parameters
+    ----------
+    rec : Recording
+        A session whose environment is an axis-aligned 3-D grid.
+
+    Returns
+    -------
+    edges : tuple of ndarray or None
+        The grid's x and y cell edges, shapes (n_x + 1,) and (n_y + 1,);
+        None when the environment is not an axis-aligned grid.
+    seconds : ndarray, shape (n_x, n_y)
+        Seconds in each x–y column, all heights together; NaN where no
+        height of the column was visited (or the column holds no bin).
+        Empty without a grid.
+    """
+    assert rec.env is not None
+    grid = rec.env._binning.rectilinear
+    if grid is None or rec.env._binning.grid_frame is not None:
+        return None, np.empty((0, 0))
+    occupancy = np.nan_to_num(occupancy_field(rec))
+    volume = np.zeros(grid.shape)
+    volume[grid.active_mask] = occupancy
+    seconds = volume.sum(axis=2)
+    return grid.edges[:2], np.where(seconds > 0, seconds, np.nan)
+
+
+def _top_view_occupancy(rec: Recording, ax: Axes) -> None:
+    title = f"Occupancy, {TOP_VIEW}\n(gray: never visited)"
+    edges, seconds = top_view_occupancy(rec)
+    if edges is None:
+        _note(
+            ax,
+            "Occupancy",
+            "3-D environment without an axis-aligned\ngrid: open rec.animation()",
+        )
+        return
+    ax.set_facecolor("lightgray")
+    # pcolormesh leaves NaN (never visited) cells undrawn: the gray shows.
+    mesh = ax.pcolormesh(edges[0], edges[1], seconds.T, cmap="viridis")
+    ax.figure.colorbar(mesh, ax=ax, label="s")
+    ax.set_aspect("equal", adjustable="datalim")
+    unit = rec.position_units
+    ax.set_xlabel(f"x ({unit})")
+    ax.set_ylabel(f"y ({unit})")
+    ax.set_title(title)
 
 
 def _panel_speed(rec: Recording, ax: Axes) -> None:
