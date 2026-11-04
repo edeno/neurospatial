@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import datetime
 
 import numpy as np
@@ -100,31 +99,9 @@ def test_tracking_gaps_are_counted(tmp_path):
     times, _ = _write_session(path, gap=(200.0, 205.0))
     rec = peyrache_2015.load_session(_entry(), path)
     longest = np.diff(times).max()
-    assert f"1 gaps longer than 1 s ({longest:.1f} s in all, the longest " in "".join(
+    assert f"1 gap longer than 1 s ({longest:.1f} s in all, the longest " in "".join(
         rec.watch_outs
     )
-
-
-def test_dandi_sessions_are_refused_before_download(monkeypatch, tmp_path):
-    """DANDI 000056 files have another layout: refused, nothing downloaded."""
-
-    def no_download(*args, **kwargs):
-        msg = "a file was downloaded"
-        raise AssertionError(msg)
-
-    monkeypatch.setattr(_fetch, "fetch", no_download)
-    dandi = [entry for entry in sessions("peyrache_2015") if entry.asset_id]
-    assert len(dandi) == 40
-    with pytest.raises(NotImplementedError, match="raw blue and red LED positions"):
-        load("peyrache_2015", dandi[0].session, cache=tmp_path)
-
-
-def test_dandi_layout_is_refused_by_load_session(tmp_path):
-    from neurospatial.datasets import peyrache_2015
-
-    entry = dataclasses.replace(_entry(), asset_id="43be9315")
-    with pytest.raises(NotImplementedError, match="cannot load"):
-        peyrache_2015.load_session(entry, tmp_path / "unused.nwb")
 
 
 def test_missing_extra_names_the_install(monkeypatch, tmp_path, without_pynwb):

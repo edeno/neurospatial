@@ -41,8 +41,9 @@
   samples outside the environment and units with no spikes in the analysed
   epochs are reported in "Watch out" with their numbers; no array is
   changed. On a declared track, samples outside its footprint are reported
-  as tracking spread (a tracked head swings past the edge), with the share
-  of stopped and of moving samples at `params["min_speed"]`, not as misfit.
+  as tracking spread (a tracked head swings past the edge), not as misfit;
+  on any environment the outside share is split into stopped and moving
+  samples at `params["min_speed"]` where the dataset sets it.
 - `Recording.plot_overview(*, fig=None)` draws six panels: the environment
   with the path, occupancy (never-visited bins drawn as missing), speed with
   `params["min_speed"]` marked, head direction beside heading minus direction
@@ -74,10 +75,9 @@
   as that archive states it ("not stated" where it states none) and its own
   data citation; `scripts/build_dataset_registry.py` keeps such rows. A
   session read from members of a remote zip fetches only those members, by
-  byte range, each verified against its own SHA-256; `catalog()`'s
-  `size_bytes` is what loading a session downloads. A dataset whose loader
-  cannot read some of its sessions' files yet refuses them with
-  `NotImplementedError` before downloading. A dataset that needs `mat-io`
+  byte range, each verified against its own SHA-256, into
+  `<cache>/<dataset>/<session>/`; `catalog()`'s
+  `size_bytes` is what loading a session downloads. A dataset that needs `mat-io`
   says on Python 3.10 that it installs only on Python 3.11 or later.
 - First dataset: `sargolini_2006`, Sargolini et al. (2006) rat medial
   entorhinal cortex in a 1 m box, all 118 sessions of DANDI 000582 (version
@@ -102,7 +102,8 @@
   `env.to_linear` reproduces the file's linearized position; its
   `track_width` is a placement tolerance measured from the samples (36.9 cm),
   not the 6.5 cm hallway width, beyond half of which 64% of head samples lie
-  (86% when stopped). `head_orientation` is 13° off the direction of
+  (79% of those below `params["min_speed"]`, the preprint's 10 cm/s
+  locomotion threshold). `head_orientation` is 13° off the direction of
   movement, so it is kept in `params["head_orientation"]`, not used as
   headings.
 - `peyrache_2015`: Peyrache et al. (2015) mouse anterior thalamus
@@ -112,10 +113,8 @@
   39 Hz during the wake epoch, and the wake, sleep, slow-wave and REM epochs.
   It has no positions, so `rec.env` is None. Its heading frame is not stated
   anywhere read, so the package frame is assumed (an inferred `Conversion`).
-  The 40 sessions of DANDI 000056 (version 0.250624.0430, CC-BY-4.0) are
-  listed, but their files store raw LED positions with no head-direction
-  series or epochs, so loading one raises `NotImplementedError` before any
-  download.
+  DANDI 000056 holds the dataset's other sessions in a raw-pixel layout
+  this loader does not read, so they are not listed.
 - `forli_2025`: Forli et al. (2025) Egyptian fruit bat dorsal hippocampus
   during free flight, the demo session `Dataset_3_14543_240419` of Zenodo
   15738988 (CC-BY-4.0), checked by hand: 289 units on three Neuropixels

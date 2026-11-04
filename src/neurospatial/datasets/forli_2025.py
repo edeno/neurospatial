@@ -42,11 +42,13 @@ What the loader converts:
 The declared environment is the room: every voxel of a grid that tiles
 ``r_lim`` ("boundaries of the room/outdoor arena", the script) exactly, so
 it holds the air the bat could fly through, not only the voxels it visited.
-Each axis has a whole number of cells close to 0.2 m (29 x 26 x 11 cells of
-0.2 x 0.2 x 0.209 m): with 0.2 m cells on every axis the 2.3 m height is
-11.5 cells and the grid would reach 5 cm past the floor and the ceiling.
+Each axis has the whole number of cells nearest to its side over 0.2 m, a
+tie going to fewer, larger cells (29 x 26 x 11 cells of 0.2 x 0.2 x 0.209
+m): the 2.3 m height is 11.5 cells of 0.2 m, and cells of exactly 0.2 m
+would make the grid reach past the floor or the ceiling.
 ``r_lim`` is used because it is stated in the positions' frame; the paper
-gives only the room's size. Some resting samples lie beyond the -y bound.
+gives only the room's size. 3.7% of samples lie beyond the -y bound,
+0.1% of them in the file's flights (``bflying``).
 
 Analysis choices (``params``):
 
@@ -92,10 +94,11 @@ _PAPER = "the Methods of Forli et al. 2025"
 _SCRIPT = "the record's NP_Bat_Demo.m"
 
 _PROCESSED = (
-    "Positions are the authors' processed behavior (smoothed, with flights "
-    f"segmented; {_SCRIPT}), so held-sample counts describe that processing as "
-    "much as the tracking: at rest the stored position stays exactly the same "
-    "for minutes."
+    "Positions are the authors' processed behavior, not raw tracking: "
+    f"{_SCRIPT} says 'Processing mainly includes smoothing of position and "
+    f"flight segmentation', and {_PAPER} that positions 'were preprocessed ... "
+    "to obtain continuous and smooth 3D positional data'. Speeds and "
+    "held-sample counts describe that processing as much as the tracking."
 )
 
 #: Pitfalls of each session checked by hand, with their evidence.
@@ -154,7 +157,6 @@ def load_session(
     )
     neural_flights = _clip(flight_windows, recorded)
     env, placement = _declared_room(positions, room, entry.session)
-    flying = np.asarray(behavior["bflying"], dtype=bool)
     ids = list(units)
     table = pd.DataFrame(
         {
@@ -255,7 +257,6 @@ def load_session(
         ),
         watch_outs=(
             *WATCH_OUTS.get(entry.session, ()),
-            *_outside_room(positions, room, flying),
             _before_recording(times, flight_windows, recorded),
             _interneurons(units),
             _PROCESSED,
@@ -305,6 +306,13 @@ def _probe_units(
         )
     }
     for group in groups:
+        if missing := [c for c in group if c not in trains]:
+            msg = (
+                f"probe {probe}: the merge list pools clusters {group}, but "
+                f"{path.name} has no good unit {missing}; the merge list and the "
+                "unit table are from different sortings"
+            )
+            raise ValueError(msg)
         trains[group[0]] = np.concatenate([trains.pop(c) for c in group])
     out, dropped = {}, 0
     for cluster in sorted(trains):
@@ -363,7 +371,7 @@ def _declared_room(
     from neurospatial import Environment
 
     sides = np.ptp(room, axis=1)
-    n_cells = np.floor(sides / BIN_SIZE + 0.5)
+    n_cells = cell_counts(sides, BIN_SIZE)
     cells = sides / n_cells
     env = Environment.from_samples(
         positions,
@@ -388,10 +396,37 @@ def _declared_room(
         f"r_lim, 'boundaries of the room/outdoor arena' ({_SCRIPT}); its sides "
         f"against the paper's room: {residuals}. "
         f"{_share_outside(positions, room):.2%} of tracked samples lie outside "
-        "r_lim; the paper's room centred on r_lim (from its floor in z) would "
-        f"leave {_share_outside(positions, paper):.2%} outside",
+        f"r_lim{_where_outside(positions, room)}; the paper's room centred on "
+        "r_lim (from its floor in z) would leave "
+        f"{_share_outside(positions, paper):.2%} outside",
     )
     return env, placement
+
+
+def cell_counts(sides: NDArray[np.float64], bin_size: float) -> NDArray[np.float64]:
+    """Whole numbers of cells per axis nearest to ``bin_size``, ties to fewer.
+
+    ``sides / bin_size`` is rounded to 6 decimals first, so float noise
+    (2.3 / 0.2 is 11.499999999999998) does not decide a tie.
+
+    Parameters
+    ----------
+    sides : ndarray, shape (n_dims,)
+    bin_size : float
+
+    Returns
+    -------
+    ndarray, shape (n_dims,)
+        At least one cell per axis.
+
+    Examples
+    --------
+    >>> cell_counts(np.array([5.8, 2.3, 2.35]), 0.2).tolist()
+    [29.0, 11.0, 12.0]
+    """
+    ratio = np.round(np.asarray(sides, dtype=np.float64) / bin_size, 6)
+    counts: NDArray[np.float64] = np.maximum(np.ceil(ratio - 0.5), 1.0)
+    return counts
 
 
 def _share_outside(positions: NDArray[np.float64], box: NDArray[np.float64]) -> float:
@@ -401,16 +436,13 @@ def _share_outside(positions: NDArray[np.float64], box: NDArray[np.float64]) -> 
     return float(1 - inside.mean())
 
 
-def _outside_room(
-    positions: NDArray[np.float64], room: NDArray[np.float64], flying: NDArray[np.bool_]
-) -> tuple[str, ...]:
-    """Where the samples outside ``r_lim`` lie: by axis and side, and in flight."""
+def _where_outside(positions: NDArray[np.float64], room: NDArray[np.float64]) -> str:
+    """``" (all past -y, up to 1.63 m past it; ...)"``; empty if none is outside."""
     tracked = np.all(np.isfinite(positions), axis=1)
     below = (positions < room[:, 0]) & tracked[:, None]
     above = (positions > room[:, 1]) & tracked[:, None]
-    outside = below.any(axis=1) | above.any(axis=1)
-    if not outside.any():
-        return ()
+    if not (below.any() or above.any()):
+        return ""
     sides = ", ".join(
         f"{int(mask[:, axis].sum())} past {sign}{'xyz'[axis]}"
         for axis in range(room.shape[0])
@@ -420,11 +452,9 @@ def _outside_room(
     beyond = np.maximum(room[:, 0] - positions, positions - room[:, 1])
     farthest = float(np.nanmax(np.where(below | above, beyond, np.nan)))
     return (
-        f"The tracked samples outside the room bounds r_lim lie {sides}, up to "
-        f"{farthest:.2f} m past a bound, and {np.mean(flying[outside]):.1%} of "
-        "them during flight (the file's bflying). Either r_lim leaves out a "
-        "place the bat lands, or the tracking there is off; the files do not say which. The samples are kept as "
-        "stored and fall in no bin of the environment.",
+        f" ({sides}, up to {farthest:.2f} m past a bound: either r_lim leaves "
+        "out a place the bat lands, or the tracking there is off, and the files "
+        "do not say which)"
     )
 
 

@@ -590,8 +590,9 @@ def _outside_finding(rec: Recording) -> str | None:
     environment placed or sized wrong. On a track, a tracked head is
     expected beyond the track's footprint (head-mounted LEDs swing past the
     edge, a raised head projects outward), so there the share is tracking
-    spread, split into stopped and moving samples at ``params["min_speed"]``.
-    Either way the samples are kept; analyses count them in no bin.
+    spread. Either way the share is split into stopped and moving samples at
+    ``params["min_speed"]`` where it is set, and the samples are kept;
+    analyses count them in no bin.
     """
     if rec.env is None or rec.positions is None:
         return None
@@ -610,9 +611,14 @@ def _outside_finding(rec: Recording) -> str | None:
     )
     kept = "They are kept as stored and fall in no bin."
     if not rec.env.is_linearized_track:
+        split = (
+            ""
+            if rec.params.get("min_speed") is None
+            else f"; {_by_speed(rec, outside)}"
+        )
         return (
             f"{counted}: tracking beyond the apparatus, or an environment placed "
-            f"or sized wrong. {kept}"
+            f"or sized wrong{split}. {kept}"
         )
     return (
         f"{counted}: tracking spread beyond the track's footprint, expected of a "
@@ -624,26 +630,62 @@ def _outside_finding(rec: Recording) -> str | None:
 
 def _by_speed(rec: Recording, outside: NDArray[np.bool_]) -> str:
     """The share of stopped and of moving tracked samples that are ``outside``."""
-    from neurospatial.behavior import compute_speed
-
     threshold = rec.params.get("min_speed")
     if threshold is None:
         return "params gives no min_speed, so the share is not split by speed"
     assert rec.positions is not None
-    tracked = np.all(np.isfinite(rec.positions), axis=1)
-    try:
-        speed = compute_speed(rec.times, rec.positions)[tracked]
-    except InputError:  # no two tracked samples within compute_speed's max_gap
+    split = speed_split(
+        rec.times, rec.positions, outside, threshold, rec.position_units or ""
+    )
+    if split is None:
         return "no speed could be computed, so the share is not split by speed"
-    units = rec.position_units
+    return f"{split} are outside"
+
+
+def speed_split(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    flag: NDArray[np.bool_],
+    threshold: float,
+    units: str,
+) -> str | None:
+    """The share of stopped and of moving tracked samples with ``flag`` set.
+
+    Speed is :func:`neurospatial.behavior.compute_speed` with its defaults,
+    the speed the summary prints. A band with no sample is left out.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+    positions : ndarray, shape (n_time, n_dims)
+    flag : ndarray of bool, shape (n_tracked,)
+        One entry per tracked (finite) sample, in order.
+    threshold : float
+        Below this speed, in ``units`` per second, a sample is stopped.
+    units : str
+        The positions' length unit, for the text.
+
+    Returns
+    -------
+    str or None
+        ``"X% of stopped (below 10 cm/s) samples and Y% of moving samples"``;
+        None when no speed can be computed.
+    """
+    from neurospatial.behavior import compute_speed
+
+    tracked = np.all(np.isfinite(positions), axis=1)
+    try:
+        speed = compute_speed(times, positions)[tracked]
+    except InputError:  # no two tracked samples within compute_speed's max_gap
+        return None
     parts = []
     for name, band in (
         (f"stopped (below {threshold:g} {units}/s)", speed < threshold),
         ("moving", speed >= threshold),
     ):
         if band.any():
-            parts.append(f"{outside[band].mean():.1%} of {name} samples")
-    return " and ".join(parts) + " are outside"
+            parts.append(f"{flag[band].mean():.1%} of {name} samples")
+    return " and ".join(parts) if parts else None
 
 
 def _silent_units_finding(rec: Recording) -> str | None:

@@ -4,9 +4,7 @@ Each dataset is a module ``neurospatial.datasets.<dataset>`` with
 ``load_session(entry, path_or_stream) -> Recording``, which reads the
 session's file into a :class:`Recording` with the dataset's own watch-outs;
 ``REQUIRES``, the modules it imports from the ``datasets`` extra; and
-``WATCH_OUTS``, the pitfalls of each session checked by hand. A module may
-also define ``check_session(entry)``, which raises before anything is
-downloaded for a session the loader cannot read. Its registry,
+``WATCH_OUTS``, the pitfalls of each session checked by hand. Its registry,
 ``registry/<dataset>.json``, lists the sessions. :func:`load` fetches the
 file (or, for a session read from zip members, the directory holding them),
 calls ``load_session`` and runs the automatic checks.
@@ -94,9 +92,6 @@ def load(
         (``pip install 'neurospatial[datasets]'``), or a module the dataset
         needs does not install on this Python; checked before anything is
         downloaded.
-    NotImplementedError
-        If the dataset's loader cannot read this session's file layout yet;
-        checked before anything is downloaded.
     ValueError
         If the downloaded file's SHA-256 differs from the pinned one.
 
@@ -121,8 +116,6 @@ def load(
     module = import_module(f"neurospatial.datasets.{dataset}")
     for name in module.REQUIRES:
         _require(name, dataset)
-    if (check_session := getattr(module, "check_session", None)) is not None:
-        check_session(entry)
     source = _stream_url(entry) if stream else fetch_session(entry, cache=cache)
     rec: Recording = module.load_session(entry, source)
     return run_checks(
@@ -130,12 +123,17 @@ def load(
     )
 
 
+def _python_version() -> tuple[int, int]:
+    """The running Python's (major, minor) version."""
+    return sys.version_info.major, sys.version_info.minor
+
+
 def _require(name: str, dataset: str) -> None:
     """Import a module of the ``datasets`` extra, or say why it is missing."""
     from neurospatial._optional import require_optional
 
     floor = PYTHON_FLOOR.get(name)
-    running = tuple(sys.version_info[:2])
+    running = _python_version()
     if floor is not None and running < floor:
         try:
             __import__(name)
@@ -223,7 +221,9 @@ def _cached(root: Path, entry: SessionEntry) -> bool:
     """Whether the session's file, or each of its zip members, is in the cache."""
     folder = root / entry.info.dataset
     if entry.members:
-        return all((folder / Path(m.path).name).exists() for m in entry.members)
+        return all(
+            (folder / entry.session / Path(m.path).name).exists() for m in entry.members
+        )
     return (folder / entry.file_name).exists()
 
 
@@ -232,8 +232,9 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
 
     Files are cached as ``<cache>/<dataset>/<file name>``. A session read
     from zip members has each member extracted by byte range into
-    ``<cache>/<dataset>/<member name>``, verified against its own SHA-256,
-    and the directory is returned.
+    ``<cache>/<dataset>/<session>/<member name>``, verified against its own
+    SHA-256, and that directory, holding only the session's members, is
+    returned.
     """
     from neurospatial.datasets._fetch import fetch, fetch_zip_member
 
@@ -244,7 +245,7 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
                 entry.url,
                 member.path,
                 sha256=member.sha256,
-                subdir=entry.info.dataset,
+                subdir=f"{entry.info.dataset}/{entry.session}",
                 cache=cache,
             )
             for member in entry.members

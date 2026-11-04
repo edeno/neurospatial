@@ -15,12 +15,11 @@ units (31 with location ``adn``, the 31 the pynapple tutorial selects, and 18
 and head direction ``ry`` during the wake epoch only. It has no x/y
 position, so the recording has no positions and no environment.
 
-The other sessions are the 40 files of DANDI 000056 (CC-BY-4.0), which does
-not hold ``Mouse32-140822``. Their layout differs: raw blue and red LED
-positions in camera units (``unit`` "meters" with ``conversion`` NaN), no
-head-direction series, no wake or sleep epochs and no unit locations. This
-loader does not read them yet: loading one raises ``NotImplementedError``
-before anything is downloaded.
+DANDI 000056 (CC-BY-4.0) holds the dataset's other sessions, but not
+``Mouse32-140822``, in a layout this loader does not read: raw blue and red
+LED positions in camera pixels (``unit`` "meters" with ``conversion`` NaN),
+with no head-direction series, no wake or sleep epochs and no unit
+locations. They are not listed.
 
 Sources read: the paper (Peyrache, Lacroix, Petersen & Buzsáki 2015, the
 author manuscript on PubMed Central, PMC4376557), pynapple's head-direction
@@ -53,7 +52,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from numpy.typing import NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial.datasets._checks import _count
 from neurospatial.datasets._recording import Conversion, Recording
 
 if TYPE_CHECKING:
@@ -61,7 +60,7 @@ if TYPE_CHECKING:
 
     from neurospatial.datasets._catalog import SessionEntry
 
-__all__ = ["REQUIRES", "WATCH_OUTS", "check_session", "load_session"]
+__all__ = ["REQUIRES", "WATCH_OUTS", "load_session"]
 
 #: Modules of the ``datasets`` extra the loader imports.
 REQUIRES = ("pynwb",)
@@ -82,29 +81,6 @@ WATCH_OUTS: dict[str, tuple[str, ...]] = {
         "against a second archive.",
     ),
 }
-
-
-def check_session(entry: SessionEntry) -> None:
-    """Refuse a DANDI 000056 session before it is downloaded.
-
-    Raises
-    ------
-    NotImplementedError
-        For a DANDI 000056 session: its file layout is not read yet.
-    """
-    if entry.asset_id is None:
-        return
-    raise NotImplementedError(
-        _format_error(
-            f"peyrache_2015 cannot load {entry.session} from {entry.archive} yet.",
-            why="the DANDI 000056 files store raw blue and red LED positions in "
-            "camera units (conversion NaN) with no head-direction series, no "
-            "wake or sleep epochs and no unit locations, and the loader reads "
-            "only the OSF tutorial file's layout.",
-            fix="load the default session, load('peyrache_2015'), or read the "
-            "DANDI file with neurospatial.io.nwb yourself.",
-        )
-    )
 
 
 def load_session(
@@ -128,7 +104,6 @@ def load_session(
     from neurospatial.io.nwb import read_head_direction, read_intervals, read_units
     from neurospatial.stats import wrap_angle
 
-    check_session(entry)
     with open_nwb(os.fspath(path_or_stream)) as nwb:
         heading = read_head_direction(nwb)
         series = nwb.acquisition["CompassDirection"]["ry"]
@@ -233,7 +208,7 @@ def _gaps(times: NDArray[np.float64]) -> tuple[str, ...]:
     if not long.any():
         return ()
     return (
-        f"Head direction has {int(long.sum())} gaps longer than {GAP:g} s "
+        f"Head direction has {_count(int(long.sum()), 'gap')} longer than {GAP:g} s "
         f"({steps[long].sum():.1f} s in all, the longest {steps.max():.2f} s), "
         "where the file has no sample. Spikes in a gap have no heading; nothing "
         "is filled in.",

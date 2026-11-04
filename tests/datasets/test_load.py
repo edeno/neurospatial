@@ -260,7 +260,7 @@ def test_zip_member_session_fetches_only_its_members(synthetic, zipped):
     from neurospatial.datasets import catalog
 
     rec = load(DATASET, "zipped", cache=synthetic.cache)
-    folder = synthetic.cache / DATASET
+    folder = synthetic.cache / DATASET / "zipped"
     assert synthetic.calls == [("zipped", folder)]
     assert sorted(path.name for path in folder.iterdir()) == [
         "behavior.mat",
@@ -289,7 +289,7 @@ def test_fetch_all_counts_zip_members(synthetic, zipped, caplog):
     files = sum(path.stat().st_size for path in synthetic.files.values())
     with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
         paths = fetch_all(DATASET, cache=synthetic.cache)
-    assert paths[-1] == synthetic.cache / DATASET
+    assert paths[-1] == synthetic.cache / DATASET / "zipped"
     assert f"3 sessions, {_load._size(files + used)} in all" in caplog.text
     caplog.clear()
     with caplog.at_level(logging.INFO, logger="neurospatial.datasets"):
@@ -329,20 +329,6 @@ def test_session_from_another_archive_keeps_its_license(synthetic):
     assert table.loc["s1", "citation"].endswith("Data: Synthetic 0 archive.")
 
 
-def test_check_session_refuses_before_any_download(synthetic, monkeypatch):
-    module = sys.modules[f"neurospatial.datasets.{DATASET}"]
-
-    def check_session(entry):
-        if entry.session == "clock_off":
-            msg = f"{entry.session}: this file layout is not read yet"
-            raise NotImplementedError(msg)
-
-    monkeypatch.setattr(module, "check_session", check_session, raising=False)
-    monkeypatch.setattr(_fetch, "fetch", _no_download)
-    with pytest.raises(NotImplementedError, match="not read yet"):
-        load(DATASET, "clock_off", cache=synthetic.cache)
-
-
 def test_module_absent_below_its_python_says_so(synthetic, monkeypatch):
     """mat-io installs only on Python 3.11+: on 3.10 the error says that."""
     import builtins
@@ -360,12 +346,12 @@ def test_module_absent_below_its_python_says_so(synthetic, monkeypatch):
     monkeypatch.setattr(builtins, "__import__", blocked)
     monkeypatch.delitem(sys.modules, "matio", raising=False)
     monkeypatch.setattr(_fetch, "fetch", _no_download)
-    monkeypatch.setattr(_load.sys, "version_info", (3, 10, 14, "final", 0))
+    monkeypatch.setattr(_load, "_python_version", lambda: (3, 10))
     with pytest.raises(
         ImportError, match=r"only on Python 3\.11 or later.*Python 3\.10"
     ):
         load(DATASET, cache=synthetic.cache)
     # On 3.11 and later the usual install hint is given.
-    monkeypatch.setattr(_load.sys, "version_info", (3, 11, 0, "final", 0))
+    monkeypatch.setattr(_load, "_python_version", lambda: (3, 11))
     with pytest.raises(ImportError, match=r"pip install 'neurospatial\[datasets\]'"):
         load(DATASET, cache=synthetic.cache)

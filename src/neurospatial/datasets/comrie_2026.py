@@ -61,8 +61,9 @@ Analysis choices (``params``):
 
 - ``bin_size`` 4 cm, for a 2-D grid over the maze, and ``graph_bin_size``
   2 cm along the track, the environment's bins;
-- ``min_speed`` 4 cm/s, the running threshold; the preprint analyses
-  locomotion above 10 cm/s;
+- ``min_speed`` 10 cm/s, the preprint's Methods' threshold for locomotion
+  ("valid times of high speed (>10 cm/s)"); also the speed above which
+  heading is compared with the direction of movement;
 - ``dt`` 0.25 s, the decoding bin, and ``train_epochs`` / ``test_epochs``,
   alternating 60 s blocks;
 - ``head_orientation``: the file's head orientation, for comparison.
@@ -95,17 +96,18 @@ HALLWAY_WIDTH = 6.5
 HALLWAY_LENGTH = 53.0
 BIN_SIZE = 4.0
 GRAPH_BIN_SIZE = 2.0
-MIN_SPEED = 4.0
+#: The preprint's locomotion threshold, cm/s: its Methods analyse "valid
+#: times of high speed (>10 cm/s)".
+MIN_SPEED = 10.0
 DT = 0.25
 BLOCK = 60.0
-#: Speed above which the rat is running when heading is compared with the
-#: direction of movement: the preprint's locomotion threshold, cm/s.
-RUNNING_SPEED = 10.0
 #: Below this correlation of the file's head_speed with the speed of the
 #: stored positions, the positions are not in the unit of head_speed.
 MIN_SPEED_AGREEMENT = 0.8
-#: The share of each edge's length, from its first node, whose samples judge
-#: whether the graph is placed beside them.
+#: The middle of each edge, as shares of its length from its first node:
+#: its samples' lateral bias is reported beside the whole edge's, leaving out
+#: the ends, where the head's posture at a port or junction shifts it. The
+#: window was chosen after seeing the whole-edge bias.
 MID_EDGE = (0.2, 0.8)
 #: The share of samples the placement tolerance leaves outside the track:
 #: its half-width is the samples' 99th percentile distance from the graph.
@@ -163,7 +165,7 @@ def load_session(
     cm = _cm_evidence(times, positions, z)
     orientation = np.asarray(z["position/head_orientation"], dtype=np.float64)
     offset, spread = heading_vs_movement(
-        times, positions, orientation, min_speed=RUNNING_SPEED
+        times, positions, orientation, min_speed=MIN_SPEED
     )
     offsets = np.asarray(z["spike_offsets"])
     spike_times = tuple(
@@ -328,8 +330,13 @@ def _cm_evidence(
     """Why the stored positions are cm; raises if head_speed no longer agrees."""
     step_speed = np.linalg.norm(np.diff(positions, axis=0), axis=1) / np.diff(times)
     stored = np.asarray(arrays["position/head_speed"], dtype=np.float64)[1:]
-    agreement = float(np.corrcoef(step_speed, stored)[0, 1])
-    if agreement < MIN_SPEED_AGREEMENT:
+    finite = np.isfinite(step_speed) & np.isfinite(stored)
+    agreement = (
+        float(np.corrcoef(step_speed[finite], stored[finite])[0, 1])
+        if finite.sum() > 1
+        else float("nan")
+    )
+    if not agreement >= MIN_SPEED_AGREEMENT:  # NaN fails too
         msg = (
             f"the file's head_speed no longer matches the speed of the stored "
             f"positions (r = {agreement:.2f}, below {MIN_SPEED_AGREEMENT:g}), so "
@@ -340,7 +347,8 @@ def _cm_evidence(
     return (
         "the file states no unit. Its head_speed matches |step| / dt of the "
         f"stored positions (correlation {agreement:.2f}, medians "
-        f"{np.median(stored):.2f} and {np.median(step_speed):.2f} per s), so both "
+        f"{np.median(stored[finite]):.2f} and {np.median(step_speed[finite]):.2f} "
+        "per s), so both "
         "are in one unit; the track graph's edges, in that unit, are "
         f"{edges.min():.1f} to {edges.max():.1f} long against the "
         f"{HALLWAY_LENGTH:g} cm hallways, and {_PREPRINT} says positions were "
@@ -380,7 +388,8 @@ def _declared_track(
         )
         raise ValueError(msg)
     offsets = _distance_to_graph(positions, graph)
-    low, high = _edge_bias(positions, graph)
+    whole = _edge_bias(positions, graph, (0.0, 1.0))
+    middle = _edge_bias(positions, graph, MID_EDGE)
     reach = float(np.quantile(offsets, TOLERANCE_QUANTILE))
     width = max(2 * reach, HALLWAY_WIDTH, GRAPH_BIN_SIZE)
     env = Environment.from_graph(
@@ -404,11 +413,18 @@ def _declared_track(
         f"the tracked head's distance from the graph: median {np.median(offsets):.2f} "
         f"cm, {TOLERANCE_QUANTILE:.0%} quantile {reach:.3g} cm; "
         f"{np.mean(offsets > width / 2):.1%} of samples lie beyond the tolerance, "
-        "by construction, and fall in no bin. The graph is not drawn beside "
-        f"the samples: on the middle {MID_EDGE[1] - MID_EDGE[0]:.0%} of each edge "
-        f"they sit a median {low:+.2f} to {high:+.2f} cm to one side, within one "
-        f"{GRAPH_BIN_SIZE:g} cm bin. track_width decides only which samples are "
-        "placed, not the bins, their lengths or connectivity",
+        "by construction, and fall in no bin. Each edge's samples sit a median "
+        f"{whole[0]:+.2f} to {whole[1]:+.2f} cm to one side of it over the whole "
+        f"edge, inside the {HALLWAY_WIDTH / 2:g} cm half-width of a hallway, and "
+        f"{middle[0]:+.2f} to {middle[1]:+.2f} cm on its middle "
+        f"{MID_EDGE[1] - MID_EDGE[0]:.0%}, inside one {GRAPH_BIN_SIZE:g} cm bin. "
+        "The ends are left out of the second figure because the head's posture "
+        "while stopped at a reward port or junction, and samples of a "
+        "neighbouring hallway near a junction, shift the median there; that "
+        "window was chosen after seeing the whole-edge figure. Neither figure "
+        "puts an edge's samples beyond its hallway, so the graph is not drawn "
+        "beside them. track_width decides only which samples are placed, not "
+        "the bins, their lengths or connectivity",
     )
     return env, distance, placement
 
@@ -460,18 +476,27 @@ def _nearest_edge(
     return distance, edge, lateral, along_edge
 
 
-def _edge_bias(positions: NDArray[np.float64], graph: nx.Graph) -> tuple[float, float]:
+def _edge_bias(
+    positions: NDArray[np.float64],
+    graph: nx.Graph,
+    window: tuple[float, float],
+) -> tuple[float, float]:
     """The lowest and highest per-edge median signed lateral offset, in cm.
 
     A graph drawn beside its samples has the samples of some edge consistently
-    to one side of it; head swings about a correct graph do not. Only the
-    middle of each edge (``MID_EDGE``) is used: at a reward port or a
-    junction the head's posture while stopped, and samples of the
-    neighbouring hallway, shift the median.
+    to one side of it; head swings about a correct graph do not.
+
+    Parameters
+    ----------
+    positions : ndarray, shape (n_time, 2)
+    graph : networkx.Graph
+    window : (float, float)
+        The part of each edge whose samples count, as shares of its length
+        from its first node: ``(0, 1)`` for the whole edge.
     """
     _, edge, lateral, along = _nearest_edge(positions, graph)
-    low, high = MID_EDGE
-    middle = (along > low) & (along < high)
+    low, high = window
+    middle = (along >= low) & (along <= high)
     medians = [
         float(np.median(lateral[(edge == k) & middle]))
         for k in range(graph.number_of_edges())
@@ -485,7 +510,7 @@ def _heading_watch_out(offset: float, spread: float) -> str:
     return (
         "No headings: the file's head_orientation (from the front and back LEDs) "
         "minus the direction of movement above "
-        f"{RUNNING_SPEED:g} cm/s has a circular mean of {np.degrees(offset):+.1f} "
+        f"{MIN_SPEED:g} cm/s has a circular mean of {np.degrees(offset):+.1f} "
         f"degrees (median spread {np.degrees(spread):.1f} degrees): the head's "
         "direction with a constant offset, from the LEDs' mounting or the rat's "
         "head posture, which the file cannot tell apart. It is kept in "
@@ -498,20 +523,17 @@ def _beyond_hallway(
     times: NDArray[np.float64], positions: NDArray[np.float64], graph: nx.Graph
 ) -> str:
     """The share of head samples beyond the hallway's half-width, by speed."""
-    from neurospatial.behavior import compute_speed
+    from neurospatial.datasets._checks import speed_split
 
-    tracked = np.all(np.isfinite(positions), axis=1)
     beyond = _distance_to_graph(positions, graph) > HALLWAY_WIDTH / 2
-    speed = compute_speed(times, positions)[tracked]
-    stopped = speed < MIN_SPEED
-    moving = speed >= MIN_SPEED
+    split = speed_split(times, positions, beyond, MIN_SPEED, "cm")
     return (
         f"{beyond.mean():.1%} of tracked head samples lie farther than half the "
-        f"{HALLWAY_WIDTH:g} cm hallway width from the track graph: "
-        f"{beyond[stopped].mean():.1%} while stopped (below {MIN_SPEED:g} cm/s) and "
-        f"{beyond[moving].mean():.1%} while moving. This is tracking spread, not "
-        "misfit: the head-mounted LEDs swing past the hallways' 3 cm walls "
-        f"(the height {_PREPRINT} gives) and a raised head projects outward, while each edge's "
-        "samples are centred on it (see the environment's conversions). The "
-        "positions are kept as stored."
+        f"{HALLWAY_WIDTH:g} cm hallway width from the track graph"
+        + (f": {split}" if split else "")
+        + ". This is tracking spread, not misfit: the head-mounted LEDs swing "
+        f"past the hallways' walls (3 cm high, {_PREPRINT}) and a raised head "
+        "projects outward, "
+        "while each edge's samples are centred on it (see the environment's "
+        "conversions). The positions are kept as stored."
     )

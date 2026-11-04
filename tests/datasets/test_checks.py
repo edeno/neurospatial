@@ -440,6 +440,7 @@ def test_samples_outside_the_environment_warn(square_recording, square_stated):
         "60 tracked position samples of 6000 (1.00%) lie outside the declared "
         "environment (env.bin_at gives -1)"
     )
+    assert "stopped" not in finding  # no params['min_speed'], no split
     np.testing.assert_array_equal(checked.positions, positions)
     assert checked.failed_checks == ()
 

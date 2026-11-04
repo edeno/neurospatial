@@ -140,18 +140,41 @@ def test_loads_the_members_into_a_3d_session(members):
     assert "(2 spikes)" in dropped.text
 
 
-def test_samples_past_the_room_are_described(members):
+def test_samples_past_the_room_are_described_once(members):
+    """One watch-out counts them; the room's Conversion says where they lie."""
     from neurospatial.datasets import forli_2025
 
     folder, _ = members
-    _, _, flying, _ = _write_members(folder, outside_y=slice(1000, 1100))
-    rec = forli_2025.load_session(_entry(), folder)
-    (text,) = [w for w in rec.watch_outs if "room bounds r_lim lie" in w]
-    assert text.startswith(
-        "The tracked samples outside the room bounds r_lim lie 100 past -y, up to "
-        f"0.40 m past a bound, and {flying[1000:1100].mean():.1%} of them during "
-        "flight"
+    _write_members(folder, outside_y=slice(1000, 1100))
+    entry = _entry()
+    rec = run_checks(forli_2025.load_session(entry, folder), stated=entry.info.stated)
+    outside = [w for w in rec.watch_outs if "outside" in w and "r_lim" in w]
+    counted = [w for w in rec.watch_outs if "lie outside the declared" in w]
+    assert outside == []
+    (finding,) = counted
+    assert finding.startswith("100 tracked position samples of ")
+    assert "of stopped (below 0.5 m/s) samples and" in finding
+    room = next(c for c in rec.conversions if c.text.startswith("environment"))
+    assert "(100 past -y, up to 0.40 m past a bound" in room.evidence
+
+
+def test_cells_per_axis_take_the_nearest_count_ties_to_fewer():
+    from neurospatial.datasets.forli_2025 import cell_counts
+
+    # 2.3 / 0.2 is 11.499999999999998 in floats: a tie, which goes to 11.
+    np.testing.assert_array_equal(
+        cell_counts(np.array([5.8, 5.2, 2.3, 2.35, 2.25, 0.05]), 0.2),
+        [29, 26, 11, 12, 11, 1],
     )
+
+
+def test_merge_of_a_cluster_missing_from_the_units_names_it(members):
+    from neurospatial.datasets import forli_2025
+
+    folder, _ = members
+    # Probe 1's table has cluster 3 only; a merge list naming 9 is another sorting.
+    with pytest.raises(ValueError, match=r"probe 1: .*no good unit \[9\]"):
+        forli_2025._probe_units(folder / "SU_kilosort4_outdir_probe1.mat", 1, [[3, 9]])
 
 
 def test_drop_close_spikes_compares_each_with_its_predecessor():
@@ -180,7 +203,7 @@ def test_python_310_says_mat_io_needs_311(monkeypatch, tmp_path):
     monkeypatch.setattr(builtins, "__import__", blocked)
     monkeypatch.delitem(sys.modules, "matio", raising=False)
     monkeypatch.setattr(_fetch, "fetch_zip_member", no_download)
-    monkeypatch.setattr(_load.sys, "version_info", (3, 10, 14, "final", 0))
+    monkeypatch.setattr(_load, "_python_version", lambda: (3, 10))
     with pytest.raises(ImportError, match=r"mat-io.*only on Python 3\.11 or later"):
         load("forli_2025", cache=tmp_path)
 

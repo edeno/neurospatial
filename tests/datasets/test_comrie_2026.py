@@ -17,6 +17,15 @@ OFFSET = np.radians(13.0)
 ARM = 106.0
 
 
+def _entry_edges():
+    """The real file's track_edge_distance, from the cache load() filled."""
+    from neurospatial.datasets._fetch import cache_root
+
+    path = cache_root() / "comrie_2026" / f"{DEFAULT}.npz"
+    with np.load(path, allow_pickle=False) as arrays:
+        return np.asarray(arrays["track_edge_distance"])
+
+
 def _entry():
     return next(entry for entry in sessions("comrie_2026") if entry.session == DEFAULT)
 
@@ -135,12 +144,14 @@ def test_beyond_hallway_share_is_split_by_speed(tmp_path):
             distance, np.linalg.norm(shifted - (nodes[a] + t[:, None] * along), axis=1)
         )
     beyond = distance > 3.25
-    stopped = compute_speed(times, shifted) < 4.0
+    stopped = compute_speed(times, shifted) < 10.0
+    assert 0 < stopped.mean() < 1
     (text,) = [w for w in rec.watch_outs if "hallway width" in w]
     assert text.startswith(
         f"{beyond.mean():.1%} of tracked head samples lie farther than half the "
         f"6.5 cm hallway width from the track graph: {beyond[stopped].mean():.1%} "
-        f"while stopped (below 4 cm/s) and {beyond[~stopped].mean():.1%} while moving"
+        f"of stopped (below 10 cm/s) samples and {beyond[~stopped].mean():.1%} of "
+        "moving samples."
     )
     assert "tracking spread, not misfit" in text
 
@@ -151,6 +162,24 @@ def test_an_edge_left_out_of_the_order_is_refused(tmp_path):
     path = tmp_path / "j16.npz"
     _write(path, edge_order=np.array([[3, 0], [3, 1]]))
     with pytest.raises(ValueError, match="lists 2 edges, not the 3 edges"):
+        comrie_2026.load_session(_entry(), path)
+
+
+def test_head_speed_with_gaps_is_compared_on_its_finite_samples(tmp_path):
+    """A few NaN speeds leave the match; an all-NaN head_speed is refused."""
+    from neurospatial.datasets import comrie_2026
+
+    path = tmp_path / "j16.npz"
+    _write(path)
+    with np.load(path, allow_pickle=False) as stored:
+        arrays = dict(stored)
+    arrays["position/head_speed"][::50] = np.nan
+    np.savez(path, **arrays)
+    rec = comrie_2026.load_session(_entry(), path)
+    assert "correlation 1.00" in rec.conversions[0].evidence
+    arrays["position/head_speed"][:] = np.nan
+    np.savez(path, **arrays)
+    with pytest.raises(ValueError, match=r"r = nan"):
         comrie_2026.load_session(_entry(), path)
 
 
@@ -175,8 +204,9 @@ def test_loads_default_session():
     assert rec.times.size == 709_321
     assert rec.n_dims == 2
     assert 499.0 <= rec.sampling_rate <= 501.0
-    graph = rec.env.connectivity
-    assert rec.env.n_bins == graph.number_of_nodes()
+    # Every edge kept: the bins cover the file's whole track length.
+    edges = _entry_edges()
+    np.testing.assert_allclose(rec.env.bin_sizes.sum(), edges.sum(), rtol=1e-9)
     assert rec.env.is_linearized_track
     # The authors' graph, every edge kept: env.to_linear is their linearization.
     placed = np.asarray(rec.env.bin_at(rec.positions)) >= 0
