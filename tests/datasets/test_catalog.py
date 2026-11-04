@@ -247,6 +247,45 @@ def test_builder_pins_a_published_version_and_keeps_hand_fields():
         builder.build(written, "0.2", get)
 
 
+def test_builder_resets_a_session_whose_file_changed(capsys):
+    """A new SHA-256 clears the check by hand, keeps the default and says so."""
+    builder = _builder()
+    api = builder.API
+    pages = {
+        f"{api}/dandisets/000001/versions/0.3/": {
+            "license": ["spdx:CC-BY-4.0"],
+            "citation": "Someone (2025) Data. DANDI Archive.",
+        },
+        f"{api}/dandisets/000001/versions/0.3/assets/?page_size=200&metadata=true": {
+            "results": [
+                _asset("sub-1/sub-1_ses-1_ecephys.nwb", "c" * 64),
+                _asset("sub-1/sub-1_ses-2_ecephys.nwb", "d" * 64),
+            ],
+            "next": None,
+        },
+    }
+    checked = {"verified": True, "n_units": 3, "verification": "Checked by hand."}
+    written = {
+        "dataset": "x_2025",
+        "archive": {"dandiset": "000001"},
+        "sessions": [
+            {"session": "sub-1_ses-1", "sha256": "a" * 64, "default": True, **checked},
+            {"session": "sub-1_ses-2", "sha256": "d" * 64, "default": False, **checked},
+        ],
+    }
+    changed, same = builder.build(written, "0.3", _api(pages))["sessions"]
+    assert (changed["sha256"], changed["default"]) == ("c" * 64, True)
+    assert (changed["verified"], changed["n_units"], changed["verification"]) == (
+        False,
+        None,
+        "",
+    )
+    assert {key: same[key] for key in checked} == checked
+    printed = capsys.readouterr().out
+    assert "sub-1_ses-1: reset to unverified" in printed
+    assert "sub-1_ses-2" not in printed
+
+
 def test_builder_lists_one_variant_with_its_videos():
     """Only the named variant's NWB files are sessions; their folders' files are videos."""
     builder = _builder()

@@ -10,7 +10,10 @@ DANDI version never changes, so the digests stay valid.
 
 What a person decided about a session (``verified``, ``default``,
 ``n_units``, ``verification``) is kept, matched by session id; a new session
-starts unverified. Sessions from another archive (rows with a ``url``, such
+starts unverified. When a session's file has a new SHA-256, its check by hand
+was made on another file: it is reset to unverified (``verified``,
+``n_units`` and ``verification`` cleared, ``default`` kept, since it names the
+session, not the file), and the reset is printed. Sessions from another archive (rows with a ``url``, such
 as the tutorial file a dataset loads by default) are written by hand and
 kept as they are. The registry must already exist with ``dataset`` and
 ``archive.dandiset`` set.
@@ -54,6 +57,8 @@ API = "https://api.dandiarchive.org/api"
 TIMEOUT = 60
 #: Session fields a person sets; the script keeps them.
 HAND_FIELDS = {"verified": False, "default": False, "n_units": None, "verification": ""}
+#: Hand fields that describe the file's contents; a new SHA-256 resets them.
+FILE_HAND_FIELDS = ("verified", "n_units", "verification")
 #: Video fields a person sets; the script keeps them where set.
 VIDEO_HAND_FIELDS = ("landmarks", "led_fit")
 
@@ -142,11 +147,19 @@ def build(registry: Mapping[str, Any], version: str, get: Fetch = get_json) -> d
     for asset in nwb:
         session = session_id(asset["path"]).removesuffix(variant)
         old = known.get(session, {})
+        located = _located(asset)
+        hand = {key: old.get(key, value) for key, value in HAND_FIELDS.items()}
+        if old.get("sha256", located["sha256"]) != located["sha256"]:
+            hand.update({key: HAND_FIELDS[key] for key in FILE_HAND_FIELDS})
+            print(
+                f"{session}: reset to unverified; its file's SHA-256 changed "
+                f"from {old['sha256']} to {located['sha256']}, so check it again"
+            )
         entry = {
             "session": session,
             "archive": f"DANDI {dandiset}",
-            **_located(asset),
-            **{key: old.get(key, value) for key, value in HAND_FIELDS.items()},
+            **located,
+            **hand,
         }
         if videos := _videos(asset["path"], assets, old.get("videos", [])):
             entry["videos"] = videos
