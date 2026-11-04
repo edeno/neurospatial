@@ -398,6 +398,11 @@
   holds without the labels touching (every k-th row, each still its own
   unit's id) and says so in the axis label, "Unit (1 in k labelled)"; with
   100 or more units the labels ran together into a black bar.
+- In the fastplotlib viewer, epoch bands behind a spike raster are drawn at
+  0.3 of the epoch's alpha (`RASTER_EPOCH_OPACITY`), blended as Matplotlib
+  blends that alpha, so the white spike ticks stay readable; behind time
+  series they are unchanged. The Matplotlib scene draws epochs in their own
+  panel.
 
 ### Fixes from the review of the result contract, warnings and simulators
 

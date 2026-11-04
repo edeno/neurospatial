@@ -1607,7 +1607,14 @@ class FastplotlibAnimation:
             for name in time_panels:
                 _mark_events(self.figure[name], events, self._start)
                 _shade_epochs(
-                    self.figure[name], epochs, self._start, strips=strips.get(name)
+                    self.figure[name],
+                    epochs,
+                    self._start,
+                    strips=strips.get(name),
+                    # Behind a raster's thin ticks a faint tint keeps every
+                    # spike readable, as the Matplotlib view's separate epoch
+                    # panel does.
+                    opacity=RASTER_EPOCH_OPACITY if name.startswith("raster") else 1.0,
                 )
             extent = prepared.spatial_extent()
             for plot in self._plots:
@@ -1986,16 +1993,22 @@ def _mark_events(subplot: Any, events: Sequence[EventData], start: float) -> Non
                 )
 
 
+#: How much of an epoch's alpha its band keeps behind a spike raster.
+RASTER_EPOCH_OPACITY = 0.3
+
+
 def _shade_epochs(
     subplot: Any,
     epochs: Sequence[EpochData],
     start: float,
     *,
     strips: Sequence[tuple[float, float]] | None = None,
+    opacity: float = 1.0,
 ) -> None:
     """Epochs on the widget's clock, shaded behind the data; over a heatmap,
     which shading would tint, each kind as a solid strip between its heights
-    in ``strips``."""
+    in ``strips``. ``opacity`` scales a shaded band's alpha, which then looks
+    as Matplotlib draws that alpha."""
     for k, data in enumerate(epochs):
         starts, stops = data.intervals[:, 0] - start, data.intervals[:, 1] - start
         strip = strips[k] if strips is not None else None
@@ -2012,7 +2025,7 @@ def _shade_epochs(
             bands.triangles,
             mode="basic",
             colors=_rgba(data.color),
-            alpha=1.0 if strip else float(perceived_alpha(data.alpha)),
+            alpha=1.0 if strip else float(perceived_alpha(opacity * data.alpha)),
             alpha_mode="blend",
             name=f"{data.label} epochs",
         )

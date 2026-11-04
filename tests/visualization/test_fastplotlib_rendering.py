@@ -1139,9 +1139,14 @@ def test_opacity_looks_as_in_matplotlib_and_the_cursor_shows_on_bright_bins(
     animation.widget.indices = {"time": 1.2}
     _render(animation)
     figure = animation.figure
-    # White at 0.25 over black, blended as Matplotlib does: a quarter gray.
+    # White at 0.25 over black, blended as Matplotlib does: a quarter gray,
+    # which behind a raster is kept faint (RASTER_EPOCH_OPACITY of it).
+    from neurospatial.animation.backends.fastplotlib_backend import (
+        RASTER_EPOCH_OPACITY,
+    )
+
     band = _pixel(figure, figure["raster 0"], 1.1, 0.0)
-    np.testing.assert_allclose(band, 0.25, atol=0.04)
+    np.testing.assert_allclose(band, 0.25 * RASTER_EPOCH_OPACITY, atol=0.04)
     # The cursor's dark edge sets it apart from the brightest bins.
     track_panel = figure["track"]
     column, row = track_panel.map_world_to_screen((1.2, 50.0, 0))[:2]
@@ -1647,5 +1652,42 @@ def test_the_view_frames_positions_tracked_outside_the_environment(n_dims):
     try:
         (plot,) = animation._plots
         assert np.all(np.abs(_ndc(plot, perch)[:2]) <= 1.0)
+    finally:
+        animation.close()
+
+
+def test_epoch_bands_behind_a_raster_are_faint(track, decoded):
+    from neurospatial.animation import EpochOverlay, SpikeRasterOverlay
+    from neurospatial.animation.backends.fastplotlib_backend import (
+        RASTER_EPOCH_OPACITY,
+    )
+    from neurospatial.environment._fastplotlib import perceived_alpha
+
+    times, _, fields = decoded
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # the gap between runs
+        animation = track.animate_fields(
+            fields,
+            frame_times=times,
+            backend="fastplotlib",
+            overlays=[
+                EpochOverlay([[0.45, 0.65]], label="ripple", color="tab:cyan"),
+                SpikeRasterOverlay([times[::3]]),
+                TimeSeriesOverlay(data=np.sin(times), times=times, label="lfp"),
+            ],
+        ).native
+    try:
+        figure = animation.figure
+        alphas = {
+            panel: next(
+                g for g in figure[panel].graphics if g.name == "ripple epochs"
+            ).world_object.material.opacity
+            for panel in ("raster 0", "series 0")
+        }
+        full = float(perceived_alpha(0.45))
+        faint = float(perceived_alpha(RASTER_EPOCH_OPACITY * 0.45))
+        assert alphas["raster 0"] == pytest.approx(faint)
+        # Negative control: a time series keeps the full shading.
+        assert alphas["series 0"] == pytest.approx(full)
     finally:
         animation.close()
