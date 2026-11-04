@@ -8,6 +8,9 @@ check against its ``Stated`` facts.
 
 from __future__ import annotations
 
+import builtins
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -130,3 +133,18 @@ def track_stated() -> Stated:
 def heading_stated() -> Stated:
     """The heading-only session: 100 Hz."""
     return Stated(sampling_rate=100.0)
+
+
+@pytest.fixture
+def without_pynwb(monkeypatch):
+    """Imports of pynwb fail as they do without the ``datasets`` extra."""
+    real_import = builtins.__import__
+
+    def blocked(name, *args, **kwargs):
+        if name == "pynwb":
+            msg = "No module named 'pynwb'"
+            raise ModuleNotFoundError(msg, name="pynwb")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+    monkeypatch.delitem(sys.modules, "pynwb", raising=False)

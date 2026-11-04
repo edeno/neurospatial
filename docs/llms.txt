@@ -263,6 +263,9 @@ required.
 - `DatasetCheckError` (class): Raised when a loaded session fails a check that refuses the load.
 - `Provenance` (class): Where a session's file came from and when it was fetched.
 - `Recording` (class): One session of a public dataset, as the arrays analyses take.
+- `catalog`: List every session of every dataset, one row each.
+- `fetch_all`: Download every session of a dataset into the cache.
+- `load`: Load one session of a public dataset, checked, as the arrays analyses take.
 
 ### neurospatial.decoding
 

@@ -47,6 +47,22 @@
   from the first 60 s of tracking by default (30 frames a second when tracking
   is faster), to open with `.show()` or write
   with `.export()`. A session without positions raises `InputError`.
+- `neurospatial.datasets.load(dataset, session=None, *, cache=None,
+  stream=False, accept_failed_checks=())` fetches one session (the
+  dataset's default when `session` is None), verifies its SHA-256, reads it
+  and runs the checks; `stream=True` reads a DANDI file by byte range after
+  checking the archive still publishes the pinned SHA-256. Without the
+  `datasets` extra it says how to install it before downloading anything.
+  `catalog()` lists every session of every dataset (dataset, session,
+  species, brain regions, apparatus, unit count where known, whether it is
+  checked by hand, the default, license as the archive states it, archive,
+  size and citation) without downloading. `fetch_all(dataset, *,
+  cache=None)` downloads every session, logging the total size first and
+  refusing to start when the cache's disk lacks the room. Each dataset's
+  sessions, checksums and stated facts are in
+  `neurospatial/datasets/registry/<dataset>.json`;
+  `scripts/build_dataset_registry.py` fills a DANDI registry from a pinned
+  published version.
 - The `realdata` pytest marker selects tests that download public sessions;
   they are deselected by default (`pytest -m realdata` runs them).
 

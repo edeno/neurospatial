@@ -193,6 +193,8 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # The video or region the annotation works on.
     ("annotate_track_graph", "video_path"),
     ("validate_annotations", "boundary"),
+    # The public dataset session loaded; None is the dataset's default.
+    ("load", "session"),
 }
 
 
@@ -318,6 +320,9 @@ REQUIRED_DATA_ARGUMENTS = {
     ("make_circular_arena", "center"),
     ("make_circular_arena", "radius"),
     ("union_polygons", "polygons"),
+    # The public dataset loaded or fetched.
+    ("load", "dataset"),
+    ("fetch_all", "dataset"),
 }
 
 
