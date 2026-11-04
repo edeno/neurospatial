@@ -338,7 +338,10 @@
   first tracked sample and the first spike, so a session whose neural
   recording starts after its tracking shows spikes: the `forli_2025` bat's
   panel showed −94 to −34 s, before its first spike at −12.7 s, and its raster
-  was empty.
+  was empty. Where `params["analysis_epochs"]` names the analysed behaviour,
+  the window then moves to the first analysed epoch at or after that time, so
+  the bat's opens on its first analysed flight (112.1 s) instead of on the
+  perch.
 - The overview's speed histogram stops at the 99.9th percentile of speed and
   says how many samples lie beyond it and the fastest, so a few tracking
   jumps no longer set its axis (the `forli_2025` bat: fastest 17.8 m/s, 99.9th

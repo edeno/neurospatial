@@ -152,6 +152,27 @@ def test_time_panel_and_scene_start_where_spikes_start(square_recording):
     assert first_spike <= scene.frame_times[0] < first_spike + 0.02
 
 
+def test_window_opens_on_the_first_analysed_epoch(square_recording):
+    # As the bat's flights: spikes from the start, the analysed behaviour later.
+    rec = dataclasses.replace(
+        square_recording, params={"analysis_epochs": np.array([[30.0, 40.0]])}
+    )
+    ax = _titled(rec.plot_overview(), "First 60 s")
+    assert ax.child_axes[1].get_xlim() == (30.0, 90.0)
+    assert rec.animation().frame_times[0] == 30.0
+    # An analysed epoch that ended before the spikes start moves nothing.
+    late = _late_spikes(
+        dataclasses.replace(
+            square_recording, params={"analysis_epochs": np.array([[1.0, 5.0]])}
+        ),
+        25.0,
+    )
+    first_spike = min(train[0] for train in late.spike_times if train.size)
+    assert _titled(late.plot_overview(), "First 60 s").child_axes[1].get_xlim()[0] == (
+        first_spike
+    )
+
+
 def test_time_panel_starts_at_tracking_when_spikes_start_first(square_recording):
     # Negative control: spikes from the start, tracking lost for the first 10 s.
     positions = np.array(square_recording.positions)

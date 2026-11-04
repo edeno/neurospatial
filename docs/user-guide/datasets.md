@@ -174,7 +174,8 @@ speed histogram up to the 99.9th percentile with `params["min_speed"]` marked
 heading minus direction of travel, units per brain region, and the first 60 s
 of position beside the spike raster, from the later of the first tracked
 sample and the first spike, so a session whose neural recording starts after
-its tracking still shows spikes. A panel the dataset has no data for says
+its tracking still shows spikes, and from the first analysed epoch after that
+where `params["analysis_epochs"]` names them (the bat's flights). A panel the dataset has no data for says
 "not in this dataset".
 
 <!-- docs-test: run setup=docs_datasets_session -->

@@ -286,13 +286,17 @@ def plot_overview(rec: Recording, fig: Figure | None = None) -> Figure:
 
 
 def _default_time_range(rec: Recording) -> tuple[float, float]:
-    """The first ``WINDOW_SECONDS`` where tracking and spikes overlap.
+    """The first ``WINDOW_SECONDS`` where tracking, spikes and analysis overlap.
 
     It starts at the later of the first tracked sample and the first spike
     of any unit, so a session whose neural recording starts after its
-    tracking (as in ``forli_2025``) opens on spikes. Without spikes, or
-    when they start after the last tracked sample, it starts at the first
-    tracked sample.
+    tracking (as in ``forli_2025``) opens on spikes; then at the first
+    analysed epoch (``params["analysis_epochs"]``, the bat's flights) at or
+    after that time, so it opens on the behaviour the dataset analyses
+    rather than on, say, a bat resting on its perch. Without spikes, or when
+    they start after the last tracked sample, the first rule starts at the
+    first tracked sample; with no analysed epoch after that time, the second
+    rule is skipped.
     """
     if rec.positions is not None:
         tracked = rec.times[tracked_mask(rec.positions)]
@@ -304,6 +308,11 @@ def _default_time_range(rec: Recording) -> tuple[float, float]:
     first_spike = min((float(t[0]) for t in rec.spike_times if t.size), default=None)
     if first_spike is not None and start < first_spike < tracked[-1]:
         start = first_spike
+    rows = rec._analysis_epochs
+    rows = rows[np.argsort(rows[:, 0], kind="stable")]
+    ahead = rows[(rows[:, 1] > start) & (rows[:, 0] < tracked[-1])]
+    if len(ahead):
+        start = max(start, float(ahead[0, 0]))
     return start, start + WINDOW_SECONDS
 
 
@@ -323,7 +332,8 @@ def animation(
     time_range : (float, float), optional
         Seconds [start, stop) to show, on the recording's clock. Default: the
         first 60 s where tracking and spikes overlap, from the later of the
-        first tracked sample and the first spike. The scene has one frame per tracking sample,
+        first tracked sample and the first spike, moved to the first analysed
+        epoch (``params["analysis_epochs"]``) at or after it. The scene has one frame per tracking sample,
         or 30 frames a second when tracking is faster; the overlays keep their
         own samples.
     trail_length : int, optional
