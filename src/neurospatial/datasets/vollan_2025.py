@@ -236,7 +236,7 @@ EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
     "of_26018_2": (
         r"times has 173 gaps longer than 0.02 s",
         r"end 352 s before the listed end",
-        r"epochs\['open_field_light_1'\] \[3449, 5400\] s ends 352\.\d+ s after it",
+        r"epochs\['open_field_light_1'\] \[3449, 5400\] s ends 352 s after it",
     ),
     "lt_27764_1": (
         r"times has 132 gaps longer than 0.02 s",
