@@ -9,7 +9,11 @@ import pytest
 
 from neurospatial import Environment
 from neurospatial.behavior import compute_speed
-from neurospatial.encoding import compute_spatial_rate, compute_spatial_rates
+from neurospatial.encoding import (
+    compute_directional_place_fields,
+    compute_spatial_rate,
+    compute_spatial_rates,
+)
 
 
 def _shift_out(spike_times, times, fraction):
@@ -87,6 +91,16 @@ def test_default_bandwidth_on_rodent_bins_does_not_warn(open_field_120s):
         compute_spatial_rate(
             session.env, session.spike_times[0], session.times, session.positions
         )
+
+
+def test_default_bandwidth_warns_once_for_directional_fields():
+    env, spikes, times, positions = _flight_tunnel()
+    labels = np.where(np.arange(times.size) % 2000 < 1000, "out", "in")
+    with pytest.warns(UserWarning, match="5 cm default") as record:
+        compute_directional_place_fields(
+            env, spikes, times, positions, labels, method="diffusion_kde"
+        )
+    assert sum("5 cm default" in str(item.message) for item in record) == 1
 
 
 def test_tiny_spatial_bandwidth_warns(open_field_120s):
