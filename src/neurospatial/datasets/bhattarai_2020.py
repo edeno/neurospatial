@@ -151,14 +151,18 @@ WORKED_RESULT: dict[str, Any] = {
         "an SWR's five place cells are the block's, not any block's, since "
         "bhattarai_2020 takes one selection",
         "how an event ends is not stated: the last spike of the 300 ms window",
+        "how the last 20 ms window of an event is handled is not stated: here it "
+        "is the first to reach the last spike, cut there and decoded as a whole "
+        "window, and on 37 events the verdict depends on this",
     ),
     "attempted": {
-        "value": 0.243,
+        "value": 0.297,
         "criterion": (
             "the share of candidates judged replay exceeds the 95th percentile of "
             "the same share with cell identities permuted within each block (20 "
-            "draws, seed 2026: 2.7% to 27.0%, 95th percentile 27.0%); fixed before "
-            "any null ran, and not met"
+            "draws, seed 2026: 5.4% to 29.7%, 95th percentile 24.6%); fixed before "
+            "any null ran, and met, by two events of 37 and not above the largest "
+            "draw"
         ),
         "parameters": (
             "literature_methods.bhattarai_2020 at ripple_detection 0eddae64, the "
@@ -167,25 +171,59 @@ WORKED_RESULT: dict[str, Any] = {
             "cells, the reward period of its free-choice trials; rate maps of "
             "complex-spike units on sequence_track (binned, 2 cm, bandwidth 6 cm, "
             "above 4 cm/s, forced and correct free-choice trials); 20 ms windows "
-            "in 10 ms steps; BHATTARAI_2020"
+            "in 10 ms steps from the event's start, the last being the first to "
+            "reach the event's last spike and cut there; BHATTARAI_2020"
         ),
         "differs": (
-            "9 of 37 candidates are judged replay against Table S1's 153 of 278. "
-            "The loss is at the SWR gate: 793 threshold crossings on this channel "
-            "and 24,028 over the 25 sets, against the paper's 132,665 SWRs. "
-            "Without the gate the same bursts number 534 here (5,019 over the sets, "
-            "2,573 in the paper), of which 96 are judged replay (18.0%, above that "
-            "null's 95th percentile of 16.0%), and over the sets 783 (15.6%). "
-            "Events last 232 ms against the paper's 152 ms. The null itself calls "
-            "about 14% of events replay"
+            "11 of 37 candidates are judged replay against Table S1's 153 of 278. "
+            "That the criterion is met is not firm: 200 draws of the same null put "
+            "the 95th percentile at 27.0%, and 6 of them reach 29.7%; and one more "
+            "row at each event's end, holding only spikes the row before holds, "
+            "gives 8 of 37 (21.6%), below that row rule's own 29.9%. "
+            "Candidates are lost at the SWR gate: 0.12 SWRs with five place cells "
+            "per correct trial in the reward period over the 25 sets (0.49 on this "
+            "set) against the paper's 0.61 (p. 693). The paper's 132,665 SWRs are "
+            "not that quantity: 76,609 in the reward zone would be 19 per trial, "
+            "so that count is at another stage. Without the gate the same bursts "
+            "number 534 here (5,019 over the sets, 2,573 in the paper), of which "
+            "147 are judged replay (27.5%, above that null's 95th percentile of "
+            "20.1%), and over the sets 1,024 (20.4%). The recipe over the sets is "
+            "42 of 187 (22.5%). The recipe's events last 232 ms and the bursts "
+            "244 ms against the paper's 152 ms. The null itself calls about 17% "
+            "of events replay"
+        ),
+    },
+    "planted_recall": {
+        "judged": 55,
+        "planted": 296,
+        "reading": (
+            "replay planted into the 37 windows, keeping every spike's time and "
+            "drawing its cell from these rate maps along a real running path "
+            "played 15 times faster, is judged replay 18.6% of the time (21.6%, "
+            "346 of 1,602, on the 534 bursts). Events with no content pass 8.1% "
+            "and events that stay in one place 16.2%. So this judge passes "
+            "about one known replay in five here, and neither 29.7% nor the "
+            "paper's 52% can be read as a rate of replay, and a low share is not "
+            "evidence of its absence. This is a limit of what the number can say, "
+            "not a measurement of the rats: planted events come from the model the "
+            "decoder assumes, and compression 15 is a choice"
         ),
     },
     "why": (
         "the paper's candidates need an SWR detected on two tetrodes, and the "
-        "archive holds one channel, at its rails for 5% to 56% of each set, whose "
-        "ripple-band power rises little at population bursts. On it the paper's "
-        "detector passes 187 candidates over the 25 sets, not 2,573, and 35 "
-        "replays, not 1,342. Nothing was tuned to close this"
+        "archive holds one channel. Its rails are in the file, not our reader: "
+        "float64 values stop at exactly +/-327.67, and every set's length is a "
+        "multiple of 512, a Neuralynx record, so the clipping probably came at "
+        "acquisition (inferred). The rails do not cause the low count. They sit "
+        "in running (8% to 87% of samples, against 0.1% to 20% when still), the "
+        "crossing rate does not follow them over the sets (Spearman 0.15; 0.29 "
+        "per s on the five least clipped sets, 0.32 on the five most), and "
+        "clipping a clean set harder raises the count. The likelier cause, "
+        "inferred, is which channel this is: population bursts raise its 100-250 "
+        "Hz power only 1.4 times, with no spectral peak, at moments with almost "
+        "no clipping, and the files do not say which channel it is. On it the "
+        "paper's detector passes 187 candidates over the 25 sets, not 2,573, and "
+        "42 replays, not 1,342. Nothing was tuned to close this"
     ),
 }
 
@@ -344,11 +382,16 @@ _NO_REST = (
     "here can serve as a pre-task baseline."
 )
 _RAILS = (
-    "lfp.mat's values stop at +/-327.67, in 0.01 steps, with no unit stated: 5% "
-    "to 56% of a set's samples sit at those rails. On a rail the 100-250 Hz band "
-    "is flat, and each step off one adds broadband power, so ripple power is "
-    "missing there and inflated at the edges. A threshold on the session's mean "
-    "and SD sees both."
+    "lfp.mat stores float64 values that stop at exactly +/-327.67, in 0.01 steps, "
+    "with no unit stated. So the clipping is in the file, and it probably came at "
+    "acquisition: every set's length is a multiple of 512, a Neuralynx record "
+    "(inferred). 5% to 56% of a set's samples sit at those rails, 8% to 87% while "
+    "running and 0.1% to 20% while still. On a rail the 100-250 Hz band is flat, "
+    "and each step off one adds broadband power, so ripple power is missing there "
+    "and inflated at the edges. A threshold on the session's mean and SD sees "
+    "both: it sits a median 1.3 times above the one from clean samples. The rails "
+    "do not explain the low SWR count: the crossing rate does not follow them "
+    "over the sets."
 )
 _UNITS = (
     "Each set's units are all those recorded that day, not its place cells. "

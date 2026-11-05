@@ -475,6 +475,8 @@ def test_lfp_is_on_the_clock_of_the_spikes():
     from scipy.ndimage import uniform_filter1d
     from scipy.signal import butter, find_peaks, sosfiltfilt
 
+    from neurospatial.datasets._ripple import _speed_on_grid
+
     rec = load("bhattarai_2020")
     samples, times = rec.lfp.fetch()
     assert samples.shape == (times.size, 1)
@@ -482,8 +484,13 @@ def test_lfp_is_on_the_clock_of_the_spikes():
     assert abs(times[0] - rec.times[0]) < 0.1
     # The rails: the file's values never pass them, and often reach them.
     assert np.abs(samples).max() == 327.67
-    share = np.mean(np.abs(samples) == 327.67)
-    assert 0.2 < share < 0.25
+    at_rail = np.abs(samples[:, 0]) == 327.67
+    assert 0.2 < at_rail.mean() < 0.25
+    # As stored, in a length of whole Neuralynx records, and mostly in running.
+    assert samples.dtype == np.float64
+    assert times.size % 512 == 0
+    speed = _speed_on_grid(rec, times)
+    assert at_rail[speed >= 4.0].mean() > 10 * at_rail[speed < 4.0].mean()
     sos = butter(4, (100.0, 250.0), btype="band", fs=2000.0, output="sos")
     power = uniform_filter1d(sosfiltfilt(sos, samples[:, 0]) ** 2, 100)
     z = (power - power.mean()) / power.std()
@@ -573,6 +580,7 @@ def _replay_events(rec):
 
 def _judged(block, order, *, rng):
     """Each event's verdict under ``BHATTARAI_2020``, the rate maps in ``order``."""
+    from neurospatial.datasets._ripple import event_rows
     from neurospatial.decoding import decode_position
     from neurospatial.replay import detect_replay
     from neurospatial.replay.methods import BHATTARAI_2020
@@ -580,18 +588,17 @@ def _judged(block, order, *, rng):
     method = BHATTARAI_2020
     verdicts = []
     for start, stop in block["events"]:
-        windows = np.arange(start, stop - method.decoding["time_bin"] + 1e-9, 0.01)
-        if windows.size < 2:
+        # An event ends on the sample of its last spike, which counts to the sample's end.
+        counts, centers = event_rows(
+            block["trains"],
+            float(start),
+            float(stop) + 1 / bhattarai_2020.LFP_RATE,
+            time_bin=method.decoding["time_bin"],
+            step=method.decoding["time_step"],
+        )
+        if centers.size < 2:
             verdicts.append(False)
             continue
-        ends = windows + method.decoding["time_bin"]
-        counts = np.array(
-            [
-                np.searchsorted(train, ends) - np.searchsorted(train, windows)
-                for train in block["trains"]
-            ]
-        ).T
-        centers = windows + method.decoding["time_bin"] / 2
         decoded = decode_position(
             block["track"],
             counts,
@@ -632,23 +639,24 @@ def _share_and_null(blocks):
 
 @pytest.mark.realdata
 def test_replay_on_the_one_channel_pins_the_attempt():
-    """The paper's recipe and preset on the file's channel: the criterion is not met.
+    """The paper's recipe and preset on the file's channel: the criterion is met.
 
     Fixed before any null ran: the share of candidates judged replay must exceed
-    the 95th percentile of the same share with cell identities permuted. It does
-    not, and ``WORKED_RESULT`` says why. This pins the numbers, so a change to the
-    detector, the loader or the preset that moves them fails here.
+    the 95th percentile of the same share with cell identities permuted. It does,
+    by two events, and ``WORKED_RESULT`` says why that is not firm. This pins the
+    numbers, so a change to the detector, the loader or the preset that moves them
+    fails here.
     """
     pytest.importorskip("ripple_detection.literature_methods")
     rec = load("bhattarai_2020")
     blocks = _replay_events(rec)
     replays, n_events, null = _share_and_null(blocks)
     record = bhattarai_2020.WORKED_RESULT
-    assert (n_events, replays) == (37, 9)
+    assert (n_events, replays) == (37, 11)
     assert record["attempted"]["value"] == round(replays / n_events, 3)
     bar = float(np.percentile(null, 95))
-    assert round(bar, 3) == 0.27
-    assert replays / n_events <= bar
+    assert round(bar, 3) == 0.246
+    assert replays / n_events > bar
 
     # Reported beside it: the same bursts without the SWR requirement.
     import ripple_detection as rd
@@ -675,8 +683,40 @@ def test_replay_on_the_one_channel_pins_the_attempt():
         ]
         block["events"] = bounds[inside]
     replays, n_events, null = _share_and_null(blocks)
-    assert (n_events, replays) == (534, 96)
+    assert (n_events, replays) == (534, 147)
     assert replays / n_events > np.percentile(null, 95)
+
+
+@pytest.mark.realdata
+def test_swrs_per_trial_on_this_set():
+    """The like-for-like comparison with the paper's 0.61 and 0.13 per trial."""
+    pytest.importorskip("ripple_detection.literature_methods")
+    from ripple_detection.literature_methods import run_method
+
+    from neurospatial.datasets._ripple import ripple_recording
+
+    rec = load("bhattarai_2020")
+    blocks = _replay_events(rec)
+    samples, times = rec.lfp.fetch()
+    union = np.unique(np.concatenate([block["ids"] for block in blocks]))
+    recording = ripple_recording(
+        rec, np.column_stack([samples[:, 0]] * 2), times, place_cells=union
+    )
+    starts = run_method("bhattarai_2020_ripples", recording)["start_time"].to_numpy()
+    table = rec.trials.intervals_table()
+    free = table[
+        ~table["forced"]
+        & table["end_known"]
+        & table["reward_start"].notna()
+        & (table["stop_time"] > table["reward_start"])
+    ]
+    in_trial = (starts[:, None] >= free["reward_start"].to_numpy()) & (
+        starts[:, None] < free["stop_time"].to_numpy()
+    )
+    per_trial = in_trial.sum(axis=0)
+    correct = free["rewarded"].to_numpy(dtype=bool)
+    assert round(per_trial[correct].mean(), 2) == 0.49
+    assert round(per_trial[~correct].mean(), 2) == 0.08
 
 
 def test_worked_result_record_is_complete():
@@ -694,6 +734,7 @@ def test_worked_result_record_is_complete():
         "parameters",
         "unmatched",
         "attempted",
+        "planted_recall",
         "why",
     }
     assert record["status"] == "not possible yet"
@@ -702,3 +743,10 @@ def test_worked_result_record_is_complete():
     assert record["why"]
     assert set(record["attempted"]) == {"value", "criterion", "parameters", "differs"}
     assert record["attempted"]["differs"]
+    # The paper's per-trial rate is the comparison, and the rails are not the cause.
+    assert "0.61" in record["attempted"]["differs"]
+    assert "do not cause the low count" in record["why"]
+    planted = record["planted_recall"]
+    assert round(planted["judged"] / planted["planted"], 3) == 0.186
+    assert "18.6%" in planted["reading"]
+    assert "not evidence of its absence" in planted["reading"]

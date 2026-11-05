@@ -101,8 +101,11 @@ and the files. `lfp.mat` is MATLAB 7.3 (HDF5); the others are MATLAB 5.0.
   each of two tetrodes. `lfp.mat` holds one channel per set, and the files do not
   say which tetrode it is. The paper's theta power came from a tetrode above the
   cell layer, so it may be that one.
-- **The LFP is saturated.** Its values stop at +/-327.67, and 5% to 56% of a set's
-  samples sit there (21.4% in the default set). On a rail the ripple band is flat,
+- **The LFP is clipped in the file.** `lfp.mat` stores float64 values that stop at
+  exactly +/-327.67, and 5% to 56% of a set's samples sit there (21.4% in the default
+  set). Every set's length is a multiple of 512, a Neuralynx record, so the clipping
+  probably came at acquisition (inferred). The rails sit in running: 8% to 87% of
+  running samples and 0.1% to 20% of still ones. On a rail the ripple band is flat,
   and each step off a rail adds broadband power. The unit is not stated.
 - **Ripple power marks population events weakly.** Around peaks of 100-250 Hz power
   the rate of all units is 0.65 to 1.59 times its level 120 to 200 ms away, over the
@@ -179,37 +182,75 @@ power rises little at population bursts.
   made up;
 - decoding in 20 ms windows stepped by 10 ms, judged with `BHATTARAI_2020`.
 
+Each event's 20 ms windows start every 10 ms from its first spike. The last window is
+the first to reach its last spike, and it is cut there, so every spike is in a window.
+The paper does not say how it handled the end of an event.
+
 The criterion, fixed before any null ran: the share of candidates judged replay
 exceeds the 95th percentile of the same share with cell identities permuted within
-each block (20 draws, seed 2026). **It was not met.**
+each block (20 draws, seed 2026). **It was met, narrowly, and this is not firm.**
 
 | | Candidates | Replays | Share | Permuted cells, 95th percentile |
 | --- | --- | --- | --- | --- |
 | Paper, `rat2_set2` (Table S1) | 278 | 153 | 55.0% | |
-| Ours, the paper's recipe | 37 | 9 | 24.3% | 27.0% |
-| Ours, the same bursts with no SWR requirement | 534 | 96 | 18.0% | 16.0% |
+| Ours, the paper's recipe | 37 | 11 | 29.7% | 24.6% |
+| Ours, the same bursts with no SWR requirement | 534 | 147 | 27.5% | 20.1% |
 | Paper, all 25 sets | 2,573 | 1,342 | 52.2% | |
-| Ours, the paper's recipe, all 25 sets | 187 | 35 | 18.7% | not run |
-| Ours, no SWR requirement, all 25 sets | 5,019 | 783 | 15.6% | not run |
+| Ours, the paper's recipe, all 25 sets | 187 | 42 | 22.5% | not run |
+| Ours, no SWR requirement, all 25 sets | 5,019 | 1,024 | 20.4% | not run |
 
 Only the second row is the attempt. The others are the paper's numbers and
-diagnostics, stated beside it and not part of the criterion. Where the difference
-comes from:
+diagnostics, stated beside it and not part of the criterion.
 
-- **The SWR gate.** The paper counts 132,665 SWRs over the sets. Three SD on this
-  channel gives 24,028 threshold crossings, and 505 once an SWR must hold five
-  place cells. The bursts themselves are in the paper's range: over the sets they
-  correlate with Table S1's candidates at r = 0.81 (319 against 313 on `rat2_set1`,
-  534 against 278 here).
-- **The events are longer.** Ours last 232 ms (the paper: 151.9 +/- 61.5 ms). The
-  paper does not say how an event ends.
-- **A short event has few shifts.** An event of n time bins has n - 1 distinct
-  circular shifts, so under 20 time bins, p < 0.05 means no shift fits as well. Ours
-  have a median of about 11. With permuted cells the test still calls about 14% of
-  events replay at alpha 0.05.
+**Why the verdict is not firm.** The share clears the bar by two events of 37, and it
+equals the largest of the 20 draws. With 200 draws the 95th percentile is 27.0%, and
+6 draws reach 29.7%. Adding one more window at each event's end, which holds only
+spikes the window before already holds, gives 8 of 37 (21.6%, against 29.9%), which
+fails. Over the 25 sets the same extra window gives 39 and 1,063 where the table has
+42 and 1,024, so it does not favour either side. Read this as: on 37 events, the test
+cannot tell these candidates from the null.
 
-The decoder is not the cause: in-sample running error is about 8.5 cm on this set
-against Table S1's 5 cm, in 50 ms bins. Nothing was tuned to close the gap.
+**What the number can say.** We planted replay into the 37 windows. Every spike kept
+its time, and its cell was drawn from these rate maps along a real running path played
+15 times faster.
+
+| Planted into the 37 windows, 8 times each | Judged replay |
+| --- | --- |
+| Sweep along a path | 55 of 296, 18.6% |
+| Stays in one place | 48 of 296, 16.2% |
+| No position content | 24 of 296, 8.1% |
+
+The same sweep is judged 21.6% of the time on the 534 bursts. So this judge passes
+about one known replay in five at these spike counts, and it passes a stationary event
+almost as often. Neither 29.7% nor a lower share is a rate of replay, and a low share
+is not evidence that replay is absent. This is a limit of the number, not a measurement
+of these rats: planted events come from the model the decoder assumes, and compression
+15 is a choice.
+
+Where the difference from the paper comes from:
+
+- **The SWR gate.** With five place cells this channel gives 0.12 SWRs per correct
+  trial in the reward period over the 25 sets (0.49 on this set), against the paper's
+  0.61 (p. 693). Do not compare with the paper's 132,665 SWRs: its 76,609 in the reward
+  zone would be 19 per trial, so that count is at another stage. The bursts themselves
+  are in the paper's range: over the sets they correlate with Table S1's candidates at
+  r = 0.81 (319 against 313 on `rat2_set1`, 534 against 278 here).
+- **Probably the channel, not its rails.** The low count does not come from clipping.
+  The rails sit in running, and the crossing rate does not follow them over the sets
+  (Spearman 0.15). Clipping a clean set harder raises the count. A threshold from
+  samples far from a rail doubles the reward-zone count, no more. The likelier cause,
+  which is inferred, is which channel this is: population bursts raise its 100-250 Hz
+  power only 1.4 times, with no spectral peak, at moments with almost no clipping.
+- **The events are longer.** The recipe's last 232 ms and the bursts 244 ms (the paper:
+  151.9 +/- 61.5 ms). The paper does not say how an event ends. Ending at the next
+  silence gives 174 ms.
+- **A short event has few shifts.** An event of n time bins has n - 1 distinct circular
+  shifts, so under 20 time bins, p < 0.05 means no shift fits as well. With permuted
+  cells the test still calls about 17% of events replay at alpha 0.05.
+
+The decoder is not the cause. With the procedure of the paper's Fig. 3A, posterior
+averaged by true position, error is 3.6 cm on this set and 5.8 cm over the sets,
+against Table S1's 5 and 6.56 cm. Nothing was tuned to close the gap.
 
 Level: no published replay number is reproduced. Reproduced at level A: 648 of 698
 units are complex-spike cells by the paper's rule, exactly the paper's number.
