@@ -28,7 +28,12 @@ from neurospatial._intervals import as_intervals
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._spikes import as_spike_trains
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._time_bins import _count_spikes_in_time_bins, _time_bins_in_windows
+from neurospatial._time_bins import (
+    _count_spikes_in_overlapping_bins,
+    _count_spikes_in_time_bins,
+    _overlapping_time_bins_in_windows,
+    _time_bins_in_windows,
+)
 from neurospatial._validation import validate_choice, validate_finite_scalar
 
 
@@ -107,6 +112,7 @@ def bin_spikes_in_time(
     spike_times: Sequence[NDArray[np.float64]],
     *,
     dt: float,
+    step: float | None = None,
     t_start: float | None = None,
     t_stop: float | None = None,
     epochs: Any = None,
@@ -131,6 +137,11 @@ def bin_spikes_in_time(
     dt : float
         Bin width, in the same time units as the spike times. Must be finite
         and strictly positive.
+    step : float or None, optional
+        Time between the starts of neighboring bins, above 0 and at most
+        ``dt``, for overlapping windows such as 20 ms stepped by 5 ms. A spike
+        counts in every window that holds it. None (default) tiles the time
+        with bins ``dt`` apart, as ``step=dt`` does.
     t_start : float or None, optional
         Left edge of the first bin. If None (default), uses the minimum spike
         time across all neurons (0.0 if every train is empty).
@@ -173,7 +184,8 @@ or None
     Raises
     ------
     ValueError
-        If ``dt`` is not finite or not strictly positive, if an explicitly
+        If ``dt`` is not finite or not strictly positive, if ``step`` is not
+        above 0 and at most ``dt``, if an explicitly
         passed ``t_stop`` is not strictly greater than ``t_start``, if
         ``t_start`` is after the last spike and ``t_stop`` is omitted, if the
         windows contain no whole bin, if ``epochs`` is an empty selection,
@@ -185,7 +197,9 @@ or None
     Bins are half-open ``[left, right)`` and are tiled independently inside
     each normalized epoch. A trailing remainder shorter than ``dt`` is
     dropped. A spike exactly at ``t_stop`` or any window stop is not counted.
-    Edges that round past a window stop are clamped to that stop.
+    Edges that round past a window stop are clamped to that stop. With
+    ``step``, bins are whole windows of width ``dt``, so the last ends less
+    than ``step`` before the stop.
 
     Examples
     --------
@@ -229,6 +243,7 @@ or None
         owner="bin_spikes_in_time()",
     )
     dt = validate_dt(dt)
+    step = validate_step(step, dt)
     trains = as_spike_trains(spike_times)
     if epochs is not None:
         if t_start is not None or t_stop is not None:
@@ -282,7 +297,7 @@ or None
                 )
             )
         windows = np.array([[t_start, t_stop]], dtype=np.float64)
-    counts, bin_centers = spike_counts_in_windows(trains, windows, dt)
+    counts, bin_centers = spike_counts_in_windows(trains, windows, dt, step)
     warn_if_dt_in_milliseconds(dt, context="bin_spikes_in_time")
     if orient == "neuron_x_time":
         counts = counts.T
@@ -311,8 +326,48 @@ def warn_if_dt_in_milliseconds(dt: float, *, context: str) -> None:
     )
 
 
+def validate_step(step: float | None, dt: float) -> float | None:
+    """The seconds between overlapping windows, or ``None`` for tiled bins.
+
+    Parameters
+    ----------
+    step : float or None
+        The step the caller passed. A step equal to ``dt`` tiles the time, so
+        it returns ``None`` and takes the tiled path.
+    dt : float
+        Validated window width, in seconds.
+
+    Returns
+    -------
+    float or None
+        ``step``, below ``dt``, or ``None``.
+
+    Raises
+    ------
+    ValueError
+        If ``step`` is not a finite number above 0 and at most ``dt``.
+    """
+    if step is None:
+        return None
+    value = float(step)
+    if not (np.isfinite(value) and 0.0 < value <= dt):
+        raise ValueError(
+            _format_error(
+                f"step={step!r} must be above 0 and at most dt={dt:g}.",
+                why="step is the time between the starts of neighboring windows "
+                "of width dt, and a larger step leaves spikes between windows.",
+                fix="pass a step of at most dt, or omit it for time bins that "
+                "tile the time",
+            )
+        )
+    return None if value == dt else value
+
+
 def spike_counts_in_windows(
-    trains: list[NDArray[np.float64]], windows: NDArray[np.float64], dt: float
+    trains: list[NDArray[np.float64]],
+    windows: NDArray[np.float64],
+    dt: float,
+    step: float | None = None,
 ) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
     """Spike counts in the whole ``dt`` bins inside resolved windows.
 
@@ -327,6 +382,9 @@ def spike_counts_in_windows(
         Sorted, merged ``[start, stop)`` windows in seconds.
     dt : float
         Validated bin width in seconds.
+    step : float or None, default=None
+        Validated seconds between the starts of overlapping bins, from
+        :func:`validate_step`; ``None`` tiles the windows.
 
     Returns
     -------
@@ -342,7 +400,11 @@ def spike_counts_in_windows(
                 "this condition.",
             )
         )
-    left, right = _time_bins_in_windows(windows, dt)
+    left, right = (
+        _time_bins_in_windows(windows, dt)
+        if step is None
+        else _overlapping_time_bins_in_windows(windows, dt, step)
+    )
     if left.size == 0:
         longest = float(np.max(np.diff(windows, axis=1), initial=0.0))
         raise ValueError(
@@ -352,5 +414,9 @@ def spike_counts_in_windows(
                 why="Why: each analyzed window must contain at least one full time bin.",
             )
         )
-    counts = _count_spikes_in_time_bins(trains, left, right)
+    counts = (
+        _count_spikes_in_time_bins(trains, left, right)
+        if step is None
+        else _count_spikes_in_overlapping_bins(trains, left, right)
+    )
     return counts, left + dt / 2.0

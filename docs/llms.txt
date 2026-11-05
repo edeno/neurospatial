@@ -659,7 +659,7 @@ required.
 - `dataset`: Data-set-level replay tests: is there more replay in a data set than chance?
 - `dataset_test`: Test a data-set statistic against null data sets (a Monte Carlo test).
 - `dataset_values`: Per-event values of a real data set, or of null data sets, by one method.
-- `decode_intervals`: Decode each interval in non-overlapping time bins of width ``dt``.
+- `decode_intervals`: Decode each interval in time windows of width ``dt``.
 - `detect_arm_replay`: Find a single-arm or joint-arm replay in one decoded event.
 - `detect_bias_sequence_replay`: Apply a published pairwise-bias sequence test to one candidate event.
 - `detect_pairwise_order_replay`: Apply a published pairwise-order method to one candidate event.

@@ -423,6 +423,8 @@ def decode_jointly(
             times=times,
             spike_window=None,
             time_support=centered_bin_support(times, dt),
+            interval_id=None,
+            dt=dt,
         )
 
     log_evidence_array = np.column_stack(log_evidence)

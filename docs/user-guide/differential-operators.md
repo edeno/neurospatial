@@ -19,10 +19,9 @@ Differential operators provide a principled framework for analyzing spatial grad
 
 ### Neuroscience Applications
 
-1. **Successor Representation Analysis** - Compute flow fields from hippocampal replay sequences
-2. **Value Gradient Estimation** - Analyze policy gradients in reinforcement learning tasks
-3. **Place Field Dynamics** - Study spatial derivatives of firing rate fields
-4. **Trajectory Flow Analysis** - Detect sources and sinks in spatial navigation patterns
+1. **Value Gradient Estimation** - Analyze policy gradients in reinforcement learning tasks
+2. **Place Field Dynamics** - Study spatial derivatives of firing rate fields
+3. **Trajectory Flow Analysis** - Detect sources and sinks in spatial navigation patterns
 
 ### Mathematical Foundation
 
@@ -157,9 +156,9 @@ For each node (bin):
 - **Negative divergence**: Net inflow (sink) - more flow entering than leaving
 - **Zero divergence**: Conservation - inflow equals outflow
 
-### Example: Flow Field from Successor Representation
+### Example: Sources and Sinks of a Flow Field
 
-In reinforcement learning, the successor representation defines flow fields. The divergence identifies source and sink states:
+The divergence of a flow on the graph's edges identifies source and sink bins:
 
 ```python
 from neurospatial.ops import divergence
@@ -454,9 +453,7 @@ plt.show()
 
 2. **Perraudin, N., Paratte, J., Shuman, D., Kalofolias, V., Vandergheynst, P., & Hammond, D. K. (2014).** GSPBOX: A toolbox for signal processing on graphs. *arXiv preprint arXiv:1408.5781*.
 
-3. **Stachenfeld, K. L., Botvinick, M. M., & Gershman, S. J. (2017).** The hippocampus as a predictive map. *Nature Neuroscience*, 20(11), 1643-1653. [Successor representations and flow fields]
-
-4. **Pfeiffer, B. E., & Foster, D. J. (2013).** Hippocampal place-cell sequences depict future paths to remembered goals. *Nature*, 497(7447), 74-79. [Replay analysis applications]
+3. **Pfeiffer, B. E., & Foster, D. J. (2013).** Hippocampal place-cell sequences depict future paths to remembered goals. *Nature*, 497(7447), 74-79. [Replay analysis applications]
 
 ## See Also
 

@@ -68,6 +68,7 @@ from neurospatial.replay._compare import (
     _compare,
     _criterion_label,
 )
+from neurospatial.replay._inputs import _event_identity, _window_width
 from neurospatial.replay.arms import ArmReplayMethod
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
@@ -86,6 +87,7 @@ from neurospatial.replay.significance import (
     _POOL_NULLS,
     _ROW_MOVING_NULLS,
     _checked_null_options,
+    _refuse_shuffling_overlapping_windows,
 )
 from neurospatial.replay.template_match import (
     JI_WILSON_2007,
@@ -651,6 +653,8 @@ class ReplayMethod:
         ``template_choice`` and the ``"template_fraction"`` criterion.
     decoding : Mapping[str, Any]
         The paper's decoding settings, for reference (not enforced).
+        ``time_bin`` and ``time_step`` are the ``dt`` and ``step`` of
+        :func:`~neurospatial.replay.decode_intervals`.
     notes : tuple of str
         Choices the paper does not specify, and reference-code bugs not
         reproduced.
@@ -1758,7 +1762,10 @@ def detect_replay(
     ------
     ValueError
         If the method needs an input that is not given (spike counts,
-        decoding inputs or a pseudo-event pool); if the method counts
+        decoding inputs or a pseudo-event pool); if one of its nulls cannot
+        test overlapping windows and the event's are, from the width a decode
+        recorded or else ``dt`` (see
+        :func:`~neurospatial.replay.replay_significance`); if the method counts
         active cells and ``spike_counts`` is summed over cells; if
         ``valid_time_bins`` is not one boolean per time bin; if the method's
         ``units`` are not the environment's; if a joint decode is given
@@ -1844,6 +1851,13 @@ def detect_replay(
         template=template,
         pseudo_event_pool=pseudo_event_pool,
         valid_time_bins=valid_time_bins,
+    )
+    # Nulls on the posterior are not given dt, so check it here.
+    _refuse_shuffling_overlapping_windows(
+        replay_method.nulls,
+        times,
+        _window_width(posterior, dt),
+        operation="detect_replay()",
     )
     measured = _measure_event(replay_method, event, rng, test=True)
     if isinstance(measured, ReplayDetectionResult):
@@ -3744,8 +3758,15 @@ def compare_replay_methods(
     Returns
     -------
     pandas.DataFrame
-        One row per (event, method): ``event``, ``method``, ``is_replay``,
-        ``score``, ``p_value``, ``n_shuffles_used`` (the shuffles the
+        One row per (event, method): ``event`` (the event's position in
+        ``events``, so it changes if the list is filtered), ``start_time`` and
+        ``stop_time`` (the start of the event's first decoded window and the
+        end of its last, in seconds; NaN when neither the event's
+        ``time_support`` nor ``dt`` gives the window width), ``interval_id``
+        (the interval :func:`~neurospatial.replay.decode_intervals` decoded,
+        NaN for other decodes, such as a joint decode), ``method``,
+        ``is_replay``, ``score``, ``p_value``, ``n_shuffles_used`` (the
+        shuffles the
         p-value counts, smallest over the method's nulls; NaN for methods
         without shuffles), one ``criteria[...]`` column per criterion and a
         ``values[...]`` column with the value it was compared on (such as
@@ -3869,6 +3890,12 @@ def compare_replay_methods(
             "template_bias": template_bias,
         },
     )
+    # Nulls on the posterior need no dt, so the width comes from the event.
+    for method in replay_methods:
+        for event, times in zip(events, event_times, strict=True):
+            _refuse_shuffling_overlapping_windows(
+                getattr(method, "nulls", ()), times, _window_width(event, dt)
+            )
     pool = _pseudo_event_pool(events) if needs_pool else None
     rng = _concrete_seed(rng)
     root = _root(rng)
@@ -3919,7 +3946,13 @@ def compare_replay_methods(
                     f"compare_replay_methods(): event {index}, method {method.name!r}"
                 ):
                     result = method._compare(compared, stream)
-                rows.append({"event": index, **result.summary()})
+                rows.append(
+                    {
+                        "event": index,
+                        **_event_identity(event, event_times[index], dt),
+                        **result.summary(),
+                    }
+                )
     table = pd.DataFrame(rows)
     table.attrs["rng_entropy"] = _recorded_seed(root)
     table.attrs["rng_seed"] = _rng_seed(rng)
@@ -4258,6 +4291,10 @@ WU_2017 = ReplayMethod(
         "Dropped time bins keep their times; the paper regresses on time-bin "
         "number and does not say whether bins are renumbered.",
         "The paper's p-value has no +1; here it is (k + 1) / (n + 1).",
+        "The paper's 20 ms windows stepped by 10 ms are refused with this "
+        "null, which loses the correlation of overlapping rows: a 5% test "
+        "rejected 11.5% of simulated events with no sequence, against 5.2% on "
+        "tiled 20 ms bins. Decode tiled bins, or change the null.",
         "Mou et al. (2022; Mou, X., Pokhrel, A., Suresh, P., & Ji, D., "
         "Observational learning promotes hippocampal remote awake replay "
         "toward future reward locations, Neuron, 110(5), 891-902) used this "

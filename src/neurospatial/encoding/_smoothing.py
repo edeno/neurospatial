@@ -146,12 +146,13 @@ def resolve_spatial_bandwidth(env: Any, bandwidth: float | None) -> float:
 def warn_about_bandwidth(
     env: Any, bandwidth: float | None, resolved: float, method: str
 ) -> bool:
-    """Warn about an explicit bandwidth below a bin or a units-free default.
+    """Warn about a bandwidth below a bin or a units-free default.
 
     A positive explicit ``bandwidth`` below a quarter of the median bin
     length barely smooths and is usually in other units (metres on a cm
-    environment). Without metric ``env.units`` the 5 cm default cannot be
-    converted, so :func:`resolve_spatial_bandwidth` falls back to 2.5 median
+    environment). The 5 cm default can fall below it too, on bins much larger
+    than a rodent's, such as a bat's tunnel, or when ``env.units`` is wrong.
+    Without metric ``env.units`` the 5 cm default cannot be converted, so :func:`resolve_spatial_bandwidth` falls back to 2.5 median
     bin spacings for a kernel method and the smoothing length depends on the
     bin size. Call this after the inputs are validated, so an input error is
     never preceded (or, with warnings as errors, replaced) by these warnings.
@@ -179,6 +180,7 @@ def warn_about_bandwidth(
     if bandwidth is not None or method not in ("diffusion_kde", "gaussian_kde"):
         return False
     if units_per_centimeter(env.units) is not None:
+        _warn_if_below_bin_length(env, resolved, default=True)
         return False
     value = (
         f"{resolved:.4g}"
@@ -219,29 +221,42 @@ def warn_about_bandwidth(
     return True
 
 
-def _warn_if_below_bin_length(env: Any, bandwidth: float) -> None:
+def _warn_if_below_bin_length(
+    env: Any, bandwidth: float, *, default: bool = False
+) -> None:
     """Warn when ``bandwidth`` is below a quarter of the median bin length.
 
     A bin's length is its physical width: a Cartesian bin's length, or the
     side of a square or cube of its area or volume; a polar bin's radial
     width, since its arc grows with the distance from the animal.
+
+    With ``default=True``, ``bandwidth`` is the 5 cm default, not the caller's
+    choice, so the message does not suggest it is in the wrong units.
     """
     length = float(np.median(env.coordinate_system.fallback_lengths(env)))
     if bandwidth >= 0.25 * length:
         return
     units = f" {env.units}" if env.units else ""
-    warnings.warn(
-        _format_error(
+    if default:
+        message = _format_error(
+            f"bandwidth=None resolved to the 5 cm default ({bandwidth:g}{units}), "
+            f"far below the {length:.3g}{units} bin size, so almost no smoothing "
+            "happens.",
+            why="5 cm is a rodent-scale default, set for bins of a few cm; bins "
+            "this large mean a larger recording or a wrong env.units.",
+            fix="pass a bandwidth suited to these bins, in env.units, or "
+            "method='binned' (unsmoothed) without a bandwidth for no smoothing.",
+        )
+    else:
+        message = _format_error(
             f"bandwidth={bandwidth:g} is far below the {length:.3g}{units} bin "
             "size, so almost no smoothing happens.",
             why="a bandwidth in different units (for example metres on a cm "
             "environment) looks like this.",
             fix="pass bandwidth in env.units, or method='binned' (unsmoothed) "
             "without a bandwidth for no smoothing.",
-        ),
-        UserWarning,
-        stacklevel=_external_stacklevel(),
-    )
+        )
+    warnings.warn(message, UserWarning, stacklevel=_external_stacklevel())
 
 
 def kernel_ratio_rates(

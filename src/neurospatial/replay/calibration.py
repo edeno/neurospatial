@@ -38,7 +38,7 @@ from __future__ import annotations
 import itertools
 import warnings
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -54,7 +54,11 @@ from neurospatial._validation import (
     validate_integer_at_least,
 )
 from neurospatial.replay._compare import _tolerance
-from neurospatial.replay._inputs import _checked_intervals, _selected_units
+from neurospatial.replay._inputs import (
+    _checked_intervals,
+    _event_identity,
+    _selected_units,
+)
 from neurospatial.stats import _binomial_rate
 
 if TYPE_CHECKING:
@@ -129,6 +133,13 @@ def event_properties(
     pandas.DataFrame
         One row per event, indexed by ``event``:
 
+        - ``start_time``, ``stop_time``: the start of the event's first
+          decoded window and the end of its last, in seconds; NaN when
+          neither the event's ``time_support`` nor ``dt`` gives the window
+          width.
+        - ``interval_id``: the interval
+          :func:`decode_intervals` decoded; NaN for other decodes, such as a
+          joint decode.
         - ``n_time_bins``.
         - ``duration``: last minus first time-bin center, in seconds;
           with ``dt``, ``window_duration`` adds one window, the span
@@ -214,6 +225,7 @@ def event_properties(
         )
         row: dict[str, Any] = {
             "event": index,
+            **_event_identity(event, np.asarray(times), dt),
             "n_time_bins": len(posterior),
             "duration": float(metrics.duration),
             "mean_peak_probability": float(metrics.mean_peak_probability),
@@ -1921,15 +1933,16 @@ def decode_intervals(
     encoding_models: Any,
     *,
     dt: float,
+    step: float | None = None,
     prior: NDArray[np.float64] | None = None,
 ) -> tuple[list[DecodingResult], list[NDArray[np.int64]]]:
-    """Decode each interval in non-overlapping time bins of width ``dt``.
+    """Decode each interval in time windows of width ``dt``.
 
     A convenience for candidate events and null events alike. Decode real
-    and null events with the same function and settings: this one only
-    makes non-overlapping bins on one set of rate maps, while many
-    published methods decode overlapping windows (their ``decoding``
-    settings) or jointly over templates.
+    and null events with the same function and settings. Windows tile the
+    interval unless ``step`` overlaps them, as many published methods do (the
+    ``time_bin`` and ``time_step`` of their ``decoding`` settings). It decodes
+    on one set of rate maps; some methods decode jointly over templates.
 
     Parameters
     ----------
@@ -1944,21 +1957,29 @@ def decode_intervals(
     encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
         Each cell's rate map on ``env``, in Hz.
     dt : float
-        Time-bin width, in seconds.
+        Time-window width, in seconds.
+    step : float or None
+        Seconds between the starts of neighboring windows, above 0 and at most
+        ``dt``, as for :func:`~neurospatial.decoding.bin_spikes_in_time`. None
+        tiles the interval. Pass the same ``dt`` to the replay functions:
+        ``dt`` is the width of each window, not the time between them.
     prior : NDArray[np.float64] or None
         Prior over bins, as for :func:`~neurospatial.decoding.decode_position`.
 
     Returns
     -------
     events : list of DecodingResult
-        Each interval's decoded posterior, with the time-bin centers.
+        Each interval's decoded posterior, with the time-window centers, the
+        decoded time as ``time_support`` and the interval as ``interval_id``:
+        the ``Intervals`` id, or the row of an array.
     spike_counts : list of NDArray[np.int64]
         Each interval's spike counts, ``(n_time_bins, n_cells)``.
 
     Raises
     ------
     ValueError
-        If an interval holds no time bin of width ``dt``, or for inputs
+        If ``step`` is not above 0 and at most ``dt``, if an interval holds no
+        time bin of width ``dt``, or for inputs
         :func:`~neurospatial.decoding.bin_spikes_in_time` or
         :func:`~neurospatial.decoding.decode_position` refuse.
 
@@ -1977,7 +1998,21 @@ def decode_intervals(
     this way against 11 s one interval at a time, which matters for the
     many surrogate events of a data-set-level test.
     Overlapping intervals, or a prior per time bin, are decoded one interval
-    at a time.
+    at a time. Overlapping windows inside disjoint intervals are decoded
+    together.
+
+    Overlapping windows share spikes, so neighboring rows of an event are
+    correlated even when the spikes hold no sequence. Only the
+    ``unit_identity`` and ``place_field_circular`` nulls keep that
+    correlation, and the others refuse overlapping windows: on simulated
+    events with no sequence, a 5% test of a linear fit with
+    ``time_bin_permutation`` or ``column_cycle`` rejected about 5% of events
+    on tiled 20 ms bins, 12% at 20 ms stepped by 10 ms, 24% at 20 ms stepped
+    by 5 ms and 61% at 80 ms stepped by 5 ms. The two nulls that keep the
+    correlation stayed close to their rate on tiled bins, which depends on
+    the score: 4 to 7% for a linear fit, and about 7% for
+    ``place_field_circular`` with a weighted correlation. Criteria that use
+    no null are not checked, and overlap's effect on them was not measured.
 
     Every time bin's counts and posterior are returned, and held at once:
     about ``n_time_bins * (n_cells + n_bins) * 8`` bytes. For hundreds of
@@ -1985,27 +2020,39 @@ def decode_intervals(
     a time (one :func:`null_events` call per copy, each with its own seed)
     rather than all copies in one call.
     """
+    from neurospatial._interval_table import Intervals
     from neurospatial.decoding import bin_spikes_in_time, decode_position
 
     operation = "decode_intervals()"
     windows = _checked_intervals(intervals, operation)
+    interval_ids = (
+        intervals.interval_ids.tolist()
+        if isinstance(intervals, Intervals)
+        else list(range(len(windows)))
+    )
     ordered = np.argsort(windows[:, 0], kind="stable")
     disjoint = bool(np.all(windows[ordered][1:, 0] >= windows[ordered][:-1, 1]))
     if disjoint and (prior is None or np.ndim(prior) == 1):
         return _decode_intervals_together(
-            env, spike_times, windows, encoding_models, dt=dt, prior=prior
+            env,
+            spike_times,
+            windows,
+            interval_ids,
+            encoding_models,
+            dt=dt,
+            step=step,
+            prior=prior,
         )
     events = []
     counts = []
-    for start, stop in windows:
+    for (start, stop), interval_id in zip(windows, interval_ids, strict=True):
         event_counts, grid = bin_spikes_in_time(
-            spike_times, dt=dt, t_start=float(start), t_stop=float(stop)
+            spike_times, dt=dt, step=step, t_start=float(start), t_stop=float(stop)
         )
-        events.append(
-            decode_position(
-                env, event_counts, encoding_models, dt=dt, prior=prior, times=grid
-            )
+        event = decode_position(
+            env, event_counts, encoding_models, dt=dt, prior=prior, times=grid
         )
+        events.append(replace(event, interval_id=interval_id))
         counts.append(np.asarray(event_counts))
     return events, counts
 
@@ -2018,9 +2065,11 @@ def _decode_intervals_together(
     env: Environment,
     spike_times: Any,
     windows: NDArray[np.float64],
+    interval_ids: list[int],
     encoding_models: Any,
     *,
     dt: float,
+    step: float | None,
     prior: NDArray[np.float64] | None,
 ) -> tuple[list[DecodingResult], list[NDArray[np.int64]]]:
     """:func:`decode_intervals` for disjoint intervals, in one decode.
@@ -2032,16 +2081,23 @@ def _decode_intervals_together(
     """
     from neurospatial._spikes import as_spike_trains
     from neurospatial._time_bins import (
+        _count_spikes_in_overlapping_bins,
         _count_spikes_in_time_bins,
+        _overlapping_time_bins_in_windows,
         _time_bins_in_windows,
     )
     from neurospatial.decoding import DecodingResult, decode_position
-    from neurospatial.decoding._time_bins import validate_dt
+    from neurospatial.decoding._time_bins import validate_dt, validate_step
 
     dt = validate_dt(dt)
+    step = validate_step(step, dt)
     order = np.argsort(windows[:, 0], kind="stable")
     sorted_windows = windows[order]
-    left, right = _time_bins_in_windows(sorted_windows, dt)
+    left, right = (
+        _time_bins_in_windows(sorted_windows, dt)
+        if step is None
+        else _overlapping_time_bins_in_windows(sorted_windows, dt, step)
+    )
     per_window = np.bincount(
         np.searchsorted(sorted_windows[:, 0], left, side="right") - 1,
         minlength=len(sorted_windows),
@@ -2057,7 +2113,12 @@ def _decode_intervals_together(
                 fix=f"use dt <= {span:g} or leave out intervals shorter than dt",
             )
         )
-    all_counts = _count_spikes_in_time_bins(as_spike_trains(spike_times), left, right)
+    trains = as_spike_trains(spike_times)
+    all_counts = (
+        _count_spikes_in_time_bins(trains, left, right)
+        if step is None
+        else _count_spikes_in_overlapping_bins(trains, left, right)
+    )
     decoded = decode_position(
         env,
         all_counts,
@@ -2073,7 +2134,12 @@ def _decode_intervals_together(
     counts: list[NDArray[np.int64]] = [None] * len(windows)  # type: ignore[list-item]
     for slot, (first, last) in zip(order, zip(starts, stops, strict=True), strict=True):
         events[slot] = DecodingResult(
-            posterior=decoded[first:last], env=env, times=centers[first:last]
+            posterior=decoded[first:last],
+            env=env,
+            times=centers[first:last],
+            time_support=np.array([[left[first], right[last - 1]]]),
+            interval_id=interval_ids[slot],
+            dt=dt,
         )
         counts[slot] = all_counts[first:last].copy()
     return events, counts

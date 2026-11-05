@@ -9,8 +9,10 @@ import dataclasses
 import numpy as np
 import pandas as pd
 import pytest
+from numpy.testing import assert_array_equal
 
 from neurospatial import Environment, Intervals
+from neurospatial.decoding import bin_spikes_in_time, decode_position
 from neurospatial.replay import (
     dataset_values,
     decode_intervals,
@@ -146,3 +148,54 @@ def test_a_zero_duration_event_is_refused_not_dropped(session):
     events = Intervals.from_arrays([1.0, 3.0], [1.0, 3.5])
     with pytest.raises(ValueError, match="no duration"):
         relative_rank_template(trains, events)
+
+
+def test_overlapping_windows_decode_like_binning_by_hand(track, session):
+    """``step`` gives the same event as the counts and decode written out."""
+    env, rates = track
+    trains, rows, _ = session
+    expected_counts, grid = bin_spikes_in_time(
+        trains,
+        dt=0.08,
+        step=0.02,
+        t_start=float(rows[0, 0]),
+        t_stop=float(rows[0, 1]),
+    )
+    expected = decode_position(env, expected_counts, rates, dt=0.08, times=grid)
+
+    decoded, counts = decode_intervals(env, trains, rows, rates, dt=0.08, step=0.02)
+
+    assert_array_equal(counts[0], expected_counts)
+    assert_array_equal(decoded[0].times, grid)
+    assert decoded[0].posterior == pytest.approx(expected.posterior, abs=1e-12)
+
+
+def test_overlapping_windows_on_overlapping_intervals_match(track, session):
+    """Both decoding paths give the same event."""
+    env, rates = track
+    trains, rows, _ = session
+    together, _ = decode_intervals(env, trains, rows, rates, dt=0.08, step=0.02)
+    # The extra row overlaps the first and sends the call down the other path.
+    extra = np.array([[rows[0, 0] + 0.01, rows[0, 1] + 0.01]])
+    apart, _ = decode_intervals(
+        env, trains, np.vstack([rows[:1], extra]), rates, dt=0.08, step=0.02
+    )
+    assert apart[0].posterior == pytest.approx(together[0].posterior, abs=1e-12)
+
+
+def test_overlapping_event_records_its_window_span(track, session):
+    env, rates = track
+    trains, rows, _ = session
+    decoded, _ = decode_intervals(env, trains, rows, rates, dt=0.08, step=0.02)
+    n_windows = len(decoded[0].times)
+    start = rows[0, 0]
+    assert decoded[0].time_support == pytest.approx(
+        np.array([[start, start + 0.08 + 0.02 * (n_windows - 1)]])
+    )
+
+
+def test_step_cannot_exceed_dt(track, session):
+    env, rates = track
+    trains, rows, _ = session
+    with pytest.raises(ValueError, match="step"):
+        decode_intervals(env, trains, rows, rates, dt=0.02, step=0.03)
