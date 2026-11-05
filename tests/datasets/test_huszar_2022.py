@@ -426,7 +426,7 @@ LFP_SESSION = "sub-e16-3m2_ses-e16-3m2-211211"
 LFP_CHANNEL = "ch5"
 
 
-def _nrem_trigger_events(rec, peaks, *, eligible=None):
+def _nrem_trigger_events(rec, peaks, *, eligible=None, code_bound=False):
     """``yang_2024``, its counts pooled so a session of 300 units fits in memory.
 
     ``ripple_detection`` keeps one float64 per sample per unit and copies the
@@ -440,6 +440,9 @@ def _nrem_trigger_events(rec, peaks, *, eligible=None):
     rec : Recording
     peaks : ndarray, shape (n_ripples,)
     eligible : ndarray, shape (n, 2), optional
+    code_bound : bool, default False
+        End events where ``find_HSE`` does, at the rate where the trace z-scored
+        over all bins equals the mean raw count per bin, not at the NREM mean.
 
     Returns
     -------
@@ -459,9 +462,16 @@ def _nrem_trigger_events(rec, peaks, *, eligible=None):
     )
     trace = lm.population_trace(recording, bin_width=0.001, smoothing_sigma=0.015)
     mask = recording.intervals_to_mask(rec.epochs["nrem"])
+    nrem = mask[rd.core.nearest_sample_index(grid, trace.time)]
+    bound = 0.0
+    if code_bound:
+        data = np.asarray(trace.data).ravel()
+        at_rate = np.nanmean(data) + pooled.mean() * np.nanstd(data, ddof=1)
+        bound = (at_rate - np.nanmean(data[nrem])) / np.nanstd(data[nrem], ddof=1)
     found = trace.detect(
         threshold=3.0,
-        normalization_mask=mask[rd.core.nearest_sample_index(grid, trace.time)],
+        bound_threshold=bound,
+        normalization_mask=nrem,
         minimum_duration=0.0,
         minimum_event_duration=0.05,
         maximum_duration=0.5,
@@ -706,22 +716,129 @@ def test_agreement_with_yang_event_by_event(yang_events, our_events):
 
 @pytest.mark.realdata
 @NWB_DEVICE_DEPRECATION
-def test_the_gap_in_our_share_is_their_files_selection(yang_events, our_events):
-    """Why only half of ours are theirs: their file holds a subset of their own ids.
+def test_the_gap_in_our_share_is_the_bound_and_the_four_bin_selection(
+    yang_events, validation_session
+):
+    """Why only half of ours are theirs: their events end sooner, and short ones go.
 
-    Their ids run past the events they kept, and each kept id sits where the
-    same rank of our events does, so the ids count a list as long as ours that
-    the file then filters; none of our events under 100 ms is in it.
+    ``find_HSE`` ends an event at the raw rate where the z-score over all bins
+    equals the mean count per bin, a units slip, and the file holds no event under
+    four 20 ms bins. Our trigger with that bound and that selection closes the gap.
     """
     record = huszar_2022.YANG_VALIDATION
     rows, ids = yang_events
     assert ids.max() == record["largest_id"]
     assert len(ids) / ids.max() < 0.5
-    found = _overlapped(rows, our_events)
-    rank = np.searchsorted(our_events[:, 0], rows[found, 1], side="right") - 1
-    assert np.corrcoef(ids[found], rank)[0, 1] > 0.999
-    short = our_events[(our_events[:, 1] - our_events[:, 0]) < 0.1]
-    assert _overlapped(short, rows).mean() == 0.0
+    events = _nrem_trigger_events(
+        validation_session,
+        validation_session.events["ripple_peaks"],
+        code_bound=True,
+    )
+    long_enough = events[(events[:, 1] - events[:, 0]) + 0.001 >= 0.08 - 1e-9]
+    pinned = record["under_the_code_bound"]
+    assert len(events) == pinned["n_ours"]
+    assert len(long_enough) == pinned["n_ours_four_bins"]
+    assert (
+        round(float(_overlapped(rows, long_enough).mean()), 3)
+        == pinned["share_of_theirs_we_overlap"]
+    )
+    assert (
+        round(float(_overlapped(long_enough, rows).mean()), 3)
+        == pinned["share_of_ours_they_overlap"]
+    )
+
+
+def _find_hse(spikes, *, bin_width=0.001):
+    """The rule of neurocode's ``find_HSE``, written from reading it.
+
+    A 1 ms histogram, smoothed by its 150 sample Gaussian of SD 15 samples, is
+    z-scored over all bins. An event starts at a rise past z = 3, and runs between
+    the nearest bins on either side where z is below ``spkmean``, the histogram's
+    mean count per bin. That is a count compared with a z-score, as the code does.
+
+    Parameters
+    ----------
+    spikes : ndarray, shape (n_spikes,)
+        Sorted spike times, seconds.
+
+    Returns
+    -------
+    ndarray, shape (n_events, 2)
+        Each event's start and end, seconds.
+    """
+    from scipy.signal import oaconvolve
+
+    edges = np.arange(-bin_width / 2, spikes[-1] + 1.5 * bin_width, bin_width)
+    counts = np.histogram(spikes, edges)[0].astype(np.float64)
+    offsets = np.arange(150) - 74.5
+    kernel = np.exp(-(offsets**2) / (2 * 15.0**2))
+    smoothed = oaconvolve(counts, kernel / kernel.sum(), "same")
+    z = (smoothed - smoothed.mean()) / smoothed.std(ddof=1)
+    rises = np.flatnonzero(np.diff((z > 3.0).astype(np.int8)) == 1) + 1
+    below = np.flatnonzero(z < counts.mean())
+    bounds, last_stop = [], -1
+    for rise in rises:
+        left = np.searchsorted(below, rise, side="right") - 1
+        start = below[left] if left >= 0 else 0
+        if start > last_stop:
+            right = np.searchsorted(below, rise)
+            last_stop = below[right] if right < below.size else counts.size - 1
+            bounds.append((start, last_stop))
+    return np.array(bounds) * bin_width
+
+
+@pytest.fixture(scope="module")
+def stored_list():
+    """The repository's ``e13_26m1_210913`` list, its spike times and cell types."""
+    from scipy.io import loadmat
+
+    from neurospatial.datasets._fetch import fetch
+
+    record = huszar_2022.YANG_VALIDATION["e13_26m1_210913"]
+    path = {
+        kind: fetch(
+            f"{record['url']}/{name}",
+            name,
+            sha256=sha256,
+            subdir="huszar_2022/yang_2024",
+        )
+        for kind, (name, sha256) in record["files"].items()
+    }
+    options = {"squeeze_me": True, "struct_as_record": False, "mat_dtype": True}
+    events = loadmat(path["events"], **options)["ripple_HSE"].timestamps
+    trains = [
+        np.atleast_1d(np.asarray(train, dtype=np.float64)).ravel()
+        for train in loadmat(path["spikes"], **options)["spike_time"]
+    ]
+    types = loadmat(path["cell_types"], squeeze_me=True)["cell_type"]
+    pyramidal = np.array([kind == "Pyramidal Cell" for kind in types])
+    return events, trains, pyramidal
+
+
+def _share_reproduced(events, trains):
+    """The share of ``events`` whose start and end the rule finds within 1.5 ms."""
+    found = _find_hse(np.sort(np.concatenate(trains)))
+    index = np.searchsorted(found[:, 0], events[:, 0] - 0.0015)
+    index = np.clip(index, 0, found.shape[0] - 1)
+    return float(np.mean(np.all(np.abs(found[index] - events) <= 0.0015, axis=1)))
+
+
+@pytest.mark.realdata
+def test_authors_list_was_made_from_every_unit(stored_list):
+    """The Methods say pyramidal cells; the stored list comes from all 482 units."""
+    events, trains, pyramidal = stored_list
+    record = huszar_2022.YANG_VALIDATION["e13_26m1_210913"]
+    assert (len(events), len(trains), int(pyramidal.sum())) == (
+        record["n_events"],
+        record["n_units"],
+        record["n_pyramidal"],
+    )
+    every_unit = _share_reproduced(events, trains)
+    pyramidal_only = _share_reproduced(
+        events, [train for train, keep in zip(trains, pyramidal, strict=True) if keep]
+    )
+    assert round(every_unit, 3) == record["reproduced_from_every_unit"]
+    assert round(pyramidal_only, 3) == record["reproduced_from_pyramidal_cells"]
 
 
 @pytest.fixture(scope="module")
@@ -762,24 +879,23 @@ def replay_analysis():
 
 def _n_judged(rec, trains, windows, rates):
     """How many windows ``PFEIFFER_FOSTER_2013`` judges trajectories."""
-    from neurospatial.decoding import bin_spikes_in_time, decode_position
+    from neurospatial.datasets._ripple import event_rows
+    from neurospatial.decoding import decode_position
     from neurospatial.replay import detect_replay
     from neurospatial.replay.methods import PFEIFFER_FOSTER_2013
 
     time_bin = PFEIFFER_FOSTER_2013.decoding["time_bin"]
-    step = PFEIFFER_FOSTER_2013.decoding["time_step"]
-    width = round(time_bin / step)
     n_judged = 0
     for start, stop in windows:
-        counts, _ = bin_spikes_in_time(
-            trains, dt=step, t_start=float(start), t_stop=float(stop)
+        # A count belongs to its own millisecond, as in _nrem_trigger_events.
+        counts, centres = event_rows(
+            trains,
+            float(start),
+            float(stop) + 0.001,
+            time_bin=time_bin,
+            step=PFEIFFER_FOSTER_2013.decoding["time_step"],
         )
-        counts = np.asarray(counts)
-        running = np.vstack([np.zeros((1, counts.shape[1]), counts.dtype), counts])
-        running = np.cumsum(running, axis=0)
-        summed = running[width:] - running[:-width]
-        centres = start + time_bin / 2 + step * np.arange(summed.shape[0])
-        decoded = decode_position(rec.env, summed, rates, dt=time_bin, times=centres)
+        decoded = decode_position(rec.env, counts, rates, dt=time_bin, times=centres)
         verdict = detect_replay(
             rec.env, decoded.posterior, centres, replay_method=PFEIFFER_FOSTER_2013
         )

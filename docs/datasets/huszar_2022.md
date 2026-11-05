@@ -196,7 +196,8 @@ The event file `ripple_detection`'s notes name,
 `e13_26m1_210913.rippleHSE.events.mat`, is a pickle-free MATLAB file in the paper's
 GitHub repository (it is not in the Zenodo archive). **Its session is not in this
 dandiset**, whose four sessions of that mouse are 211019, 211116, 211119 and
-211124, so it cannot be compared here.
+211124, so it cannot be compared with these files. The repository does hold that
+session's spike times, which test the list itself (below).
 
 The same repository holds Yang et al.'s analysis file for `e15_13f1_220118`, a
 session of this dandiset: 20 ms bins with an event id on each ripple bin, in a
@@ -213,19 +214,23 @@ this clock. Event by event on the whole session:
 
 Both causes are named, and nothing was tuned:
 
-- **Why half of ours are not in their file.** The file holds a selection of the
-  authors' own events: 4,088 ids of which the largest is 8,758, none shorter than
-  four 20 ms bins. No source read states that selection. Their ids follow the rank
-  of our events (correlation 0.9999, 0.87 of ours per id), so the list it was cut
-  from is about ours, and none of our events under 100 ms is in the file. The
-  state shares agree too: 62% of both are in NREM.
-- **Why 5.7% of theirs are missed.** Of the 232, 145 peak below our trigger of 3
-  SD (99.9% of all their events reach 2.5 SD), and the other 87 lie in a rise
-  above the NREM mean longer than the paper's 500 ms, which the rule as written
-  drops whole. Their bounds and trigger sit tighter and lower than the text says.
-  Normalizing over all bins, as the `find_HSE` code does, is worse (88.4%), and
-  leaving out the 33 units over 5 Hz, as a test of the missing labels, changes
-  little (93.6%).
+- **Why half of ours are not in their file.** Their events end sooner, and the file
+  keeps the longer ones. Their code, `find_HSE`, ends an event where the z-score of the
+  rate over all bins falls below the mean raw count per ms, 0.75 here. That is a units
+  slip: it is not the mean. The code also notes a minimum of about 100 ms for decoding.
+  Their matched events last 100 ms against our 178 ms. With our trigger, an end at that
+  same rate and 80 ms or longer, we have 4,353 events, and the two shares are 96.0% and
+  89.7%.
+- **Why 5.7% of theirs are missed.** Of the 232, 145 peak below our trigger of 3 SD,
+  and the other 87 lie in a rise above the NREM mean longer than the paper's 500 ms,
+  which the tighter bound splits: with it 4.0% are missed. Normalizing over all bins,
+  as `find_HSE` does, is worse (88.3%).
+
+**Their list was made from every unit.** On `e13_26m1_210913`, whose spike times and
+cell types are in the paper's repository, `find_HSE`'s rule on all 482 units finds
+86.8% of their 4,266 stored events to 1.5 ms at both ends, and on the 422 pyramidal
+cells 0.4%. So pooling all sorted units here matches what was run, though the Methods
+say pyramidal cells.
 
 ## Worked result
 
@@ -244,8 +249,8 @@ circularly shifting the spikes.
   35 trials, 20 candidates).
 - Fields from the 325 units with `has_place_field`, over the first recording at
   `min_speed`, with `compute_spatial_rates` on `rec.env`.
-- Decoded in 20 ms bins stepped by 5 ms; judged by `PFEIFFER_FOSTER_2013`
-  unchanged: a MAP step under 20 cm over at least 11 bins and at least 40 cm from
+- Decoded in 20 ms bins stepped by 5 ms to each event's end; judged by
+  `PFEIFFER_FOSTER_2013` unchanged: a MAP step under 20 cm over at least 11 bins and at least 40 cm from
   start to end, geodesic on the closed loops.
 - Two nulls, 20 draws each (seed 2022): every unit shifted by its own offset, and
   all units by one common offset, circularly over the recording, by at least 10 s.
@@ -259,9 +264,18 @@ laps decode to a median 2.0 cm from the mouse, against 69.6 cm with positions
 shuffled.
 
 Read this as evidence that neurospatial finds sequences in these candidates, not
-as a rate of replay: 20 candidates in one session is a small count. Yang et al.'s
-"about 33% of the awake SPW-Rs were significant replays" measures something else,
-and is not compared.
+as a rate of replay. Twenty candidates in one session is a small count, and since every
+null draw is 0, the criterion would pass on 1 of the 20. Yang et al.'s "about 33% of
+the awake SPW-Rs were significant replays" measures something else, and is not compared.
+
+**This judge misses most planted replay, so a low count would not be evidence of
+absence.** We planted replay into the 20 windows. Every spike kept its time, and its
+cell was drawn from these rate maps along a real running path played 15 times faster.
+`PFEIFFER_FOSTER_2013` judged 26 of 300, 8.7%, against 0.7% for events with no content
+and 0.3% for events that stay in one place. Its 20 and 40 cm are a rat's in a 2 x 2 m
+arena, used unchanged on this 79 cm maze. Planted events come from the model the decoder
+assumes, and compression 15 is not calibrated for mice: at that speed a mouse's path
+often falls short of 40 cm. This is a limit of the number, not a measurement of the mice.
 
 ## Cite
 

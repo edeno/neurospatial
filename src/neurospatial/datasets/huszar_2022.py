@@ -155,8 +155,12 @@ WORKED_RESULT: dict[str, Any] = {
         "trajectory length against shuffles, with no stated cutoff or shuffle "
         "count, and gives 'about 33% of the awake SPW-Rs'; that number measures "
         "something else and is not compared",
-        "the candidates pool every sorted unit where the paper uses pyramidal "
-        "cells, since the file does not label them",
+        "the candidates pool every sorted unit, since the file does not label "
+        "cells. The Methods say pyramidal cells; the authors' own stored list on "
+        "e13_26m1_210913 is reproduced only from every unit (YANG_VALIDATION), so "
+        "this matches what was run and not what is written",
+        "PFEIFFER_FOSTER_2013's 20 and 40 cm are a rat's in a 2 x 2 m arena, used "
+        "unchanged on a 79 cm maze",
         "the awake candidates are those on the maze while the file says Awake; "
         "the paper's 'quite awake immobility' has no stated speed",
         "20 candidates in one session is a small count; the shifted-spike draws "
@@ -165,6 +169,22 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "attempted": None,
     "why": None,
+    "planted_recall": {
+        "judged": 26,
+        "planted": 300,
+        "reading": (
+            "replay planted into the 20 windows, keeping every spike's time and "
+            "drawing its cell from these rate maps along a real running path "
+            "played 15 times faster, is judged a trajectory 8.7% of the time. "
+            "Events with no content pass 0.7% and events that stay in one place "
+            "0.3%. So this judge is safe here and nearly blind, 5 of 20 says "
+            "nothing of a rate, and a low count would not be evidence of absence. "
+            "Every null draw is 0, so the criterion would pass on 1 of 20 events. "
+            "This is a limit of what the number can say: planted events come from "
+            "the model the decoder assumes, and compression 15 is not calibrated "
+            "for mice, whose paths at that speed fall short of the 40 cm rule"
+        ),
+    },
 }
 
 #: Yang et al. (2024)'s events on a session of the dandiset against our detection.
@@ -173,7 +193,8 @@ WORKED_RESULT: dict[str, Any] = {
 #: (the animal's four sessions there are 211019, 211116, 211119, 211124), and it
 #: is in the paper's GitHub repository, not its Zenodo archive. The repository's
 #: analysis file for ``e15_13f1_220118`` is on a session of the dandiset, so the
-#: comparison is made there.
+#: comparison is made there; the repository's own spike times for the first
+#: session test the list itself.
 YANG_VALIDATION: dict[str, Any] = {
     "session": "sub-e15-13f1_ses-e15-13f1-220118",
     "file": (
@@ -192,21 +213,63 @@ YANG_VALIDATION: dict[str, Any] = {
     "largest_id": 8758,
     "share_of_theirs_we_overlap": 0.943,
     "share_of_ours_they_overlap": 0.501,
+    "under_the_code_bound": {
+        "n_ours": 7834,
+        "n_ours_four_bins": 4353,
+        "share_of_theirs_we_overlap": 0.96,
+        "share_of_ours_they_overlap": 0.897,
+    },
+    "e13_26m1_210913": {
+        "url": (
+            "https://raw.githubusercontent.com/winnieyangwannan/Selection-of-"
+            "experience-for-memory-by-hippocampal-sharp-wave-ripples/"
+            "f1bc2fb34de4a5b68ff0aad6849c2ea22e9c5cf3/Data"
+        ),
+        "files": {
+            "events": (
+                "e13_26m1_210913.rippleHSE.events.mat",
+                "b791c9e0d310eb673b47dc54bf62d2250ff9312a5a4f68f44bebcec807dc3acb",
+            ),
+            "spikes": (
+                "e13_26m1_210913.spike_time.mat",
+                "1c72e2c8f18ed1e448ef703f98417e938ff6403ddde1831d3dcdc09a2013a3da",
+            ),
+            "cell_types": (
+                "e13_26m1_210913.cell_type.mat",
+                "e88a95ed0b65382cb61295fdd4ffb88e2f4b8a833b71a91ba4c5acfb404b9d26",
+            ),
+        },
+        "n_events": 4266,
+        "n_units": 482,
+        "n_pyramidal": 422,
+        "reproduced_from_every_unit": 0.868,
+        "reproduced_from_pyramidal_cells": 0.004,
+    },
     "why_ours_exceed_theirs": (
-        "the analysis file holds a selection of the authors' own events: 4,088 "
-        "ids, the largest 8,758, none under four 20 ms bins, and no source read "
-        "states that selection. Their ids follow the rank of our events "
-        "(correlation 0.9999, 0.87 of ours per id), so the list they were cut from "
-        "is about ours, and none of our events under 100 ms is in the file"
+        "their events end sooner, and the file keeps those of four or more 20 ms "
+        "bins. neurocode's find_HSE ends an event where the z-score of the rate "
+        "over all bins falls below spkmean, the mean raw count per 1 ms bin (0.75 "
+        "here), which is a units slip, not at the mean, and its source says 'MIN "
+        "FOR DECODING: 100 ms; split in 20 ms'. Their matched events last a median "
+        "100 ms against our 178 ms. With our trigger, an end at that same rate and "
+        "80 ms or longer, ours number 4,353 and the two shares are 96.0% and "
+        "89.7%, so the difference is the bound and the selection, not the events. "
+        "Their ids count find_HSE's list before the ripple requirement (9,064 "
+        "events here, rank per id 1.06)"
     ),
     "why_theirs_are_missed": (
-        "232 of their events: 145 peak below our trigger of 3 SD of the NREM "
-        "rate (99.9% of all their events reach 2.5 SD), and the other 87 lie in an "
-        "excursion above the NREM mean longer than the paper's 500 ms limit, so "
-        "the paper's rule as written drops them whole. So their bounds and "
-        "trigger sit tighter and lower than the text. Neither normalizing over "
-        "all bins, as the find_HSE code does (88.4%), nor leaving out the 33 units "
-        "over 5 Hz (93.6%) explains it"
+        "232 of their events: 145 peak below our trigger of 3 SD of the NREM rate, "
+        "and 87 lie in an excursion above the NREM mean longer than the paper's "
+        "500 ms. The tighter bound splits most of those: with it 163 are missed, "
+        "4.0%. Normalizing over all bins, as find_HSE does, misses more (88.3% "
+        "found), so the stated NREM trigger fits this file better than that code"
+    ),
+    "authors_list_reproduced": (
+        "on e13_26m1_210913, whose spike times, cell types and rippleHSE list are "
+        "all in the paper's repository, find_HSE's rule on all 482 units finds "
+        "86.8% of the 4,266 stored events to 1.5 ms at both ends, and on the 422 "
+        "pyramidal cells 0.4%. So that list was made from every unit, not from "
+        "the pyramidal cells the Methods name"
     ),
 }
 
