@@ -23,7 +23,9 @@ from neurospatial.datasets import (
     fetch_all,
     load,
 )
+from neurospatial.datasets._catalog import _read
 from neurospatial.datasets._checks import run_checks
+from neurospatial.datasets._load import fetch_session
 from neurospatial.datasets._summary import summary_text
 
 DATASET = "synthetic_2026"
@@ -312,6 +314,41 @@ def zipped(synthetic):
         },
     )
     return types.SimpleNamespace(path=path, members=members, used=used)
+
+
+def test_session_of_several_files_fetches_each_into_its_folder(synthetic, tmp_path):
+    """Members with a URL of their own are whole files, each verified."""
+    contents = {"trial001.npz": b"first", "return001.npz": b"second"}
+    for name, data in contents.items():
+        (tmp_path / name).write_bytes(data)
+    registry = _registry({})
+    registry["sessions"] = [
+        {
+            "session": "day1",
+            "archive": "Synthetic 0",
+            "url": "https://example.org/dataset",
+            "file_name": "day1",
+            "sha256": "0" * 64,
+            "size_bytes": sum(map(len, contents.values())),
+            "verified": False,
+            "default": True,
+            "members": [
+                {
+                    "path": name,
+                    "sha256": _digest(data),
+                    "size_bytes": len(data),
+                    "url": (tmp_path / name).as_uri(),
+                }
+                for name, data in contents.items()
+            ],
+        }
+    ]
+    entry = _read(registry, f"{DATASET}.json")[0]
+    assert entry.download_bytes == 11
+    with _downloading():
+        folder = fetch_session(entry, cache=tmp_path / "cache")
+    assert folder == tmp_path / "cache" / DATASET / "day1"
+    assert {p.name: p.read_bytes() for p in folder.iterdir()} == contents
 
 
 def test_zip_member_session_fetches_only_its_members(synthetic, zipped):
