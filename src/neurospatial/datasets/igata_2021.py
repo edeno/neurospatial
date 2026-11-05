@@ -347,7 +347,13 @@ EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
 }
 
 #: Pitfalls of each session checked by hand, with their evidence.
-WATCH_OUTS: dict[str, tuple[str, ...]] = {}
+WATCH_OUTS: dict[str, tuple[str, ...]] = {
+    "180912_detourG01": (
+        "Return run 44 is not in the archive, so the 197 s after trial 44 hold no "
+        "spikes or LFP, and the last trial, 63, has no return file: the session "
+        "has 63 trial files and 61 return files.",
+    ),
+}
 
 _GENERAL = (
     "The readme numbers 14 log columns, and rat 5's files have those 14. The "
