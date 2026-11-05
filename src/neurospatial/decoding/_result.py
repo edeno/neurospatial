@@ -467,6 +467,11 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         outside the spike window, or a remainder shorter than one bin).
         Every time in ``times`` must lie inside a window. The decoders record
         it; ``None`` means the decoded time is unknown.
+    interval_id : int or None, optional
+        The interval this decode came from, for a decoded event:
+        :func:`~neurospatial.replay.decode_intervals` records the ``Intervals``
+        id, or the row of an array. It stays with the event when a list of
+        events is filtered. ``None`` for a decode of no particular interval.
 
     Attributes
     ----------
@@ -480,6 +485,8 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         Read-only spike-recording windows, or ``None`` for assumed coverage.
     time_support : NDArray[np.float64] | None
         Read-only decoded windows, or ``None`` when unknown.
+    interval_id : int or None
+        The interval this event came from, or ``None``.
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed.
 
@@ -542,6 +549,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
     time_support: NDArray[np.float64] | None = field(
         default=None, kw_only=True, compare=False
     )
+    interval_id: int | None = field(default=None, kw_only=True, compare=False)
 
     def __post_init__(self) -> None:
         """Take ownership of input arrays as read-only copies and validate them."""

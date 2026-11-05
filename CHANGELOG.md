@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Replay tables say when each event happened
+
+- `compare_replay_methods` and `event_properties` gain `start_time`, `stop_time`
+  and `interval_id` columns, so an event can be joined to behavior, trials or
+  sleep state. `event` is still the position in the list passed in, which
+  changes when the list is filtered. `start_time` and `stop_time` are the start
+  of the first decoded window and the end of the last, in seconds: a remainder
+  shorter than `dt` is not included. They are NaN when neither the event's
+  `time_support` nor `dt` gives the window width.
+- `DecodingResult.interval_id` is new. `decode_intervals` records the
+  `Intervals` id, or the row of an array, and now records `time_support` on the
+  events it decodes in one pass, as it already did one interval at a time.
+  Joint decodes have no `interval_id`: use `start_time` to join them.
+
 ### Dataset loaders
 
 #### Loading and cataloguing

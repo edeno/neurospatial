@@ -1025,6 +1025,7 @@ def _decode_posterior(
         times=times,
         spike_window=spike_window,
         time_support=time_support,
+        interval_id=None,
     )
 
 

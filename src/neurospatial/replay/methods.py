@@ -68,6 +68,7 @@ from neurospatial.replay._compare import (
     _compare,
     _criterion_label,
 )
+from neurospatial.replay._inputs import _event_identity
 from neurospatial.replay.arms import ArmReplayMethod
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
@@ -3744,8 +3745,15 @@ def compare_replay_methods(
     Returns
     -------
     pandas.DataFrame
-        One row per (event, method): ``event``, ``method``, ``is_replay``,
-        ``score``, ``p_value``, ``n_shuffles_used`` (the shuffles the
+        One row per (event, method): ``event`` (the event's position in
+        ``events``, so it changes if the list is filtered), ``start_time`` and
+        ``stop_time`` (the start of the event's first decoded window and the
+        end of its last, in seconds; NaN when neither the event's
+        ``time_support`` nor ``dt`` gives the window width), ``interval_id``
+        (the interval :func:`~neurospatial.replay.decode_intervals` decoded,
+        NaN for other decodes, such as a joint decode), ``method``,
+        ``is_replay``, ``score``, ``p_value``, ``n_shuffles_used`` (the
+        shuffles the
         p-value counts, smallest over the method's nulls; NaN for methods
         without shuffles), one ``criteria[...]`` column per criterion and a
         ``values[...]`` column with the value it was compared on (such as
@@ -3919,7 +3927,13 @@ def compare_replay_methods(
                     f"compare_replay_methods(): event {index}, method {method.name!r}"
                 ):
                     result = method._compare(compared, stream)
-                rows.append({"event": index, **result.summary()})
+                rows.append(
+                    {
+                        "event": index,
+                        **_event_identity(event, event_times[index], dt),
+                        **result.summary(),
+                    }
+                )
     table = pd.DataFrame(rows)
     table.attrs["rng_entropy"] = _recorded_seed(root)
     table.attrs["rng_seed"] = _rng_seed(rng)

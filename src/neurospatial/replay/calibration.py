@@ -38,7 +38,7 @@ from __future__ import annotations
 import itertools
 import warnings
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
@@ -54,7 +54,11 @@ from neurospatial._validation import (
     validate_integer_at_least,
 )
 from neurospatial.replay._compare import _tolerance
-from neurospatial.replay._inputs import _checked_intervals, _selected_units
+from neurospatial.replay._inputs import (
+    _checked_intervals,
+    _event_identity,
+    _selected_units,
+)
 from neurospatial.stats import _binomial_rate
 
 if TYPE_CHECKING:
@@ -129,6 +133,13 @@ def event_properties(
     pandas.DataFrame
         One row per event, indexed by ``event``:
 
+        - ``start_time``, ``stop_time``: the start of the event's first
+          decoded window and the end of its last, in seconds; NaN when
+          neither the event's ``time_support`` nor ``dt`` gives the window
+          width.
+        - ``interval_id``: the interval
+          :func:`decode_intervals` decoded; NaN for other decodes, such as a
+          joint decode.
         - ``n_time_bins``.
         - ``duration``: last minus first time-bin center, in seconds;
           with ``dt``, ``window_duration`` adds one window, the span
@@ -214,6 +225,7 @@ def event_properties(
         )
         row: dict[str, Any] = {
             "event": index,
+            **_event_identity(event, np.asarray(times), dt),
             "n_time_bins": len(posterior),
             "duration": float(metrics.duration),
             "mean_peak_probability": float(metrics.mean_peak_probability),
@@ -1985,27 +1997,32 @@ def decode_intervals(
     a time (one :func:`null_events` call per copy, each with its own seed)
     rather than all copies in one call.
     """
+    from neurospatial._interval_table import Intervals
     from neurospatial.decoding import bin_spikes_in_time, decode_position
 
     operation = "decode_intervals()"
     windows = _checked_intervals(intervals, operation)
+    interval_ids = (
+        intervals.interval_ids.tolist()
+        if isinstance(intervals, Intervals)
+        else list(range(len(windows)))
+    )
     ordered = np.argsort(windows[:, 0], kind="stable")
     disjoint = bool(np.all(windows[ordered][1:, 0] >= windows[ordered][:-1, 1]))
     if disjoint and (prior is None or np.ndim(prior) == 1):
         return _decode_intervals_together(
-            env, spike_times, windows, encoding_models, dt=dt, prior=prior
+            env, spike_times, windows, interval_ids, encoding_models, dt=dt, prior=prior
         )
     events = []
     counts = []
-    for start, stop in windows:
+    for (start, stop), interval_id in zip(windows, interval_ids, strict=True):
         event_counts, grid = bin_spikes_in_time(
             spike_times, dt=dt, t_start=float(start), t_stop=float(stop)
         )
-        events.append(
-            decode_position(
-                env, event_counts, encoding_models, dt=dt, prior=prior, times=grid
-            )
+        event = decode_position(
+            env, event_counts, encoding_models, dt=dt, prior=prior, times=grid
         )
+        events.append(replace(event, interval_id=interval_id))
         counts.append(np.asarray(event_counts))
     return events, counts
 
@@ -2018,6 +2035,7 @@ def _decode_intervals_together(
     env: Environment,
     spike_times: Any,
     windows: NDArray[np.float64],
+    interval_ids: list[int],
     encoding_models: Any,
     *,
     dt: float,
@@ -2073,7 +2091,11 @@ def _decode_intervals_together(
     counts: list[NDArray[np.int64]] = [None] * len(windows)  # type: ignore[list-item]
     for slot, (first, last) in zip(order, zip(starts, stops, strict=True), strict=True):
         events[slot] = DecodingResult(
-            posterior=decoded[first:last], env=env, times=centers[first:last]
+            posterior=decoded[first:last],
+            env=env,
+            times=centers[first:last],
+            time_support=np.array([[left[first], right[last - 1]]]),
+            interval_id=interval_ids[slot],
         )
         counts[slot] = all_counts[first:last].copy()
     return events, counts

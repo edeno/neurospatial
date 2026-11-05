@@ -5,6 +5,7 @@ Event windows, a decoded event's posterior rows and the times of those rows.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Literal
 
 import numpy as np
@@ -19,6 +20,50 @@ _STEP_WHY = (
     "jumps and the duration compare consecutive time bins, so the rows must "
     "be in time order"
 )
+
+
+def _event_identity(
+    event: Any, times: NDArray[np.float64], dt: float | None
+) -> dict[str, float | int]:
+    """When a decoded event happened and which interval it came from.
+
+    Parameters
+    ----------
+    event : DecodingResult, JointDecodingResult or Mapping
+        The decoded event. Separately decoded templates and the templates of a
+        joint decode share one time grid, so the first one answers.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        The event's time-bin centers, in seconds.
+    dt : float or None
+        Width of each decoding window, in seconds, for an event that does not
+        record the time it covers.
+
+    Returns
+    -------
+    dict
+        ``start_time`` and ``stop_time``, the start of the first decoded window
+        and the end of the last, in seconds, NaN when neither the event nor
+        ``dt`` says how wide the windows were; and ``interval_id``, NaN for an
+        event not decoded from an interval.
+    """
+    if isinstance(event, Mapping):
+        recorded = next(iter(event.values()))
+    elif hasattr(event, "conditional"):
+        recorded = next(iter(event.conditional.values()))
+    else:
+        recorded = event
+    if recorded.time_support is not None:
+        start, stop = recorded.time_support[0, 0], recorded.time_support[-1, 1]
+    elif dt is not None:
+        start, stop = times[0] - dt / 2, times[-1] + dt / 2
+    else:
+        start, stop = np.nan, np.nan
+    interval_id = recorded.interval_id
+    return {
+        "start_time": float(start),
+        "stop_time": float(stop),
+        "interval_id": np.nan if interval_id is None else interval_id,
+    }
 
 
 def _event_rows(intervals: Any) -> NDArray[np.float64]:
