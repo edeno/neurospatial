@@ -93,6 +93,8 @@ from neurospatial.replay.template_match import (
     TemplateMatchMethod,
 )
 from neurospatial.replay.trajectory import (
+    _map_bins,
+    _track_positions,
     detect_trajectory_radon,
     fit_isotonic_trajectory,
     fit_linear_trajectory,
@@ -112,6 +114,7 @@ __all__ = [
     "AMBROSE_2016",
     "BERNERS_LEE_2021",
     "BERNERS_LEE_2022",
+    "BHATTARAI_2020",
     "BUSH_2022",
     "CAREY_2019",
     "CHANG_2025",
@@ -4169,6 +4172,69 @@ def _separate_times(
     return arrays[0]
 
 
+class _CircularShiftTest(NamedTuple):
+    """:func:`_circular_shift_test`'s result.
+
+    Attributes
+    ----------
+    score : float
+        The share of circular shifts with a larger R² than the event's: the
+        event's p-value. NaN when R² is undefined.
+    r_squared : float
+        R² of the event's MAP positions on time.
+    n_shifts : int
+        The shifts compared: one per time bin, the identity among them.
+    """
+
+    score: float
+    r_squared: float
+    n_shifts: int
+
+
+def _circular_shift_test(
+    env: Environment, posterior: NDArray[np.float64], times: NDArray[np.float64]
+) -> _CircularShiftTest:
+    """Test an event's MAP line fit against circular shifts of its decoded positions.
+
+    Bhattarai et al. (2020): R² of the regression of MAP position on time,
+    compared with the R² of the decoded positions circularly shifted in time.
+    The shifts of ``n`` time bins are ``n`` sequences, so all of them are
+    compared rather than a random draw of them, which gives the value 1,000
+    draws estimate with no seed.
+
+    Parameters
+    ----------
+    env : Environment
+        A 1-D environment or a linearized track.
+    posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
+        Posterior mass per bin.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Center time of each row, seconds.
+
+    Returns
+    -------
+    _CircularShiftTest
+        ``score`` is the share of shifts, the identity among them, with an R²
+        above the event's; NaN when the decoded position does not change.
+    """
+    rows, starts, stops = _track_positions(env, posterior, "BHATTARAI_2020")
+    positions = 0.5 * (starts + stops)[_map_bins(rows, starts, stops)]
+    n_shifts = positions.size
+    shifted = positions[(np.arange(n_shifts)[:, None] + np.arange(n_shifts)) % n_shifts]
+    if n_shifts < 2 or np.ptp(positions) == 0:
+        return _CircularShiftTest(np.nan, np.nan, n_shifts)
+    centered_times = times - times.mean()
+    centered = shifted - positions.mean()
+    # Every shift holds the same positions, so only the covariance changes.
+    r_squared = (centered @ centered_times) ** 2 / (
+        (centered[0] @ centered[0]) * (centered_times @ centered_times)
+    )
+    observed = float(r_squared[0])
+    # Rounding must not make a shift with the event's own R² count as larger.
+    larger = r_squared > observed * (1.0 + 1e-12)
+    return _CircularShiftTest(float(larger.mean()), observed, n_shifts)
+
+
 # --------------------------------------------------------------------------
 # Published methods
 # --------------------------------------------------------------------------
@@ -5310,6 +5376,58 @@ SHIN_2019 = dataclasses.replace(
     ),
 )
 
+BHATTARAI_2020 = ReplayMethod(
+    name="bhattarai_2020",
+    reference=(
+        "Bhattarai, B., Lee, J. W., & Jung, M. W. (2020). Distinct effects of "
+        "reward and navigation history on hippocampal forward and reverse "
+        "replays. Proceedings of the National Academy of Sciences, 117(1), "
+        "689-697."
+    ),
+    score=_circular_shift_test,
+    empty_time_bins="drop",
+    criteria=(
+        ReplayCriterion("score", "<", 0.05),
+        ReplayCriterion("n_active_cells", ">=", 5),
+    ),
+    units="cm",
+    decoding={
+        "time_bin": 0.02,
+        "time_step": 0.01,
+        "position_bin": 2.0,
+        "rate_map_smoothing_sd": 6.0,
+        "rate_map_speed": 4.0,
+    },
+    notes=(
+        "SI Appendix, 'Replay events': a linear regression of decoded (MAP) "
+        "position on time-bin number gives R²; 'The R2 value was then compared "
+        "to 1000 shuffled R2 values, that were obtained by circularly shifting "
+        "the decoded positions in time by random numbers of bins'; p is the "
+        "proportion of shuffles with a larger R², and P < 0.05 is replay.",
+        "The score here is that p-value, not R², with the test applied by the "
+        "criterion score < 0.05: replay_significance has no null that shifts "
+        "the decoded positions in time, and time_bin_permutation is a different "
+        "null. An event's p_value is therefore NaN.",
+        "An event of n time bins has n circular shifts, so all of them are "
+        "compared, not 1,000 random draws of them: the same value without the "
+        "draws' noise. No draw has a +1, as in the paper, and a shift counts "
+        "only when its R² is larger. With fewer than 20 time bins, p < 0.05 "
+        "needs no shift to beat the event.",
+        "Time bins without spikes: not stated. They are dropped with their "
+        "times, as Wu et al. (2017) and Karlsson & Frank (2009) do, since with "
+        "no spike the MAP names the position of lowest summed rate.",
+        "Decode with the current block's place cells and rate maps, from "
+        "forced-choice and correct free-choice trials, on the linear path of "
+        "the block's correct sequence, as the paper does; pass those cells' "
+        "spike counts. 'Five or more place cells' is part of a candidate "
+        "event's definition and is applied here to the event's time bins.",
+        "The direction and strength of a replay were measured separately, with "
+        "a weighted correlation of time and position over posterior values "
+        "above 0.01; it plays no part in the verdict. Session sets whose "
+        "median decoding error exceeded 20 cm were excluded (3 of 28).",
+    ),
+)
+
 BUSH_2022 = ReplayMethod(
     name="bush_2022",
     reference=(
@@ -6177,6 +6295,7 @@ PUBLISHED_METHODS: tuple[_AnyReplayMethod, ...] = (
     MICHON_2019,
     MUESSIG_2019,
     SHIN_2019,
+    BHATTARAI_2020,
     IGATA_2021,
     BERNERS_LEE_2021,
     BUSH_2022,

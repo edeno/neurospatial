@@ -39,6 +39,7 @@ OPT_IN = (
     "docs/user-guide/behavior-around-events.md",
     "docs/user-guide/video-annotation.md",
     "docs/user-guide/datasets.md",
+    "docs/datasets/bhattarai_2020.md",
     "docs/datasets/comrie_2026.md",
     "docs/datasets/forli_2025.md",
     "docs/datasets/gardner_2022.md",
