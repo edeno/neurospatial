@@ -295,8 +295,8 @@
   the epochs `empty` and `object_1` to `object_3`; the archive holds no
   object positions, and a watch-out says so. The units table repeats ids
   across probes, so units are named `<area>-<id>`. The head-direction frame
-  is not verified by movement in most sessions (the default's offset is
-  -0.33 rad and drifts). One session
+  is not verified by movement in 24 of the 30 sessions that load: a
+  constant offset, -0.33 rad in the default, not a mirrored frame. One session
   (`26965_2020-Dec-08_11-29-48`, a fifth of its spikes after tracking stops)
   loads only with `accept_failed_checks=("clock",)`.
 - `shipley_2026`: Shipley et al. (2026) mouse CA1 tetrode units on an 8-arm

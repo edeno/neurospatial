@@ -35,11 +35,10 @@ What the loader converts:
   y=0) unit vector") wrapped to [-π, π]. Whether the frame agrees with the
   positions' is checked against the direction of movement above 20 cm/s at
   10 Hz, by the rule the other loaders use (a circular mean within 0.2 rad
-  of 0 and a median absolute deviation under 45 degrees), and the offset
-  must not drift: the circular SD of its 60 s window means must be within
-  0.2 rad too. Where it does not hold, the values are kept and the
-  watch-outs give the offset, its spread and how it drifts over the
-  session.
+  of 0 and a median absolute deviation under 45 degrees). Where it does
+  not hold, the values are kept and the watch-outs give the offset, its
+  spread, and the spread with the heading negated (which tells a mirrored
+  frame from an offset one).
 - unit ids: the units table repeats ids across the probes, so
   :func:`neurospatial.io.nwb.read_units` refuses it. The loader reads the
   table with pynwb and names each unit ``<area>-<id>`` (``LEC-12``,
@@ -138,16 +137,13 @@ BLOCK = 60.0
 HEADING_SPEED = 20.0
 #: ... at about this rate, Hz: at 120 Hz a step's direction is mostly jitter.
 HEADING_RATE = 10.0
-#: Beyond this offset (rad) from the direction of movement, or a drift of the
-#: offset (circular SD of the window means) beyond it, the heading frame is
-#: not taken as the positions' frame ...
+#: Beyond this offset (rad) from the direction of movement, the heading frame
+#: is not taken as the positions' frame ...
 FRAME_TOLERANCE = 0.2
 #: ... nor with a median absolute deviation from the offset of this or more (rad).
 HEADING_SPREAD = float(np.radians(45.0))
-#: Windows (s) over which the offset's drift is measured, and the running
-#: samples each needs.
-DRIFT_WINDOW = 60.0
-DRIFT_MIN_SAMPLES = 10
+#: Running samples needed to compare the heading with movement at all.
+MIN_RUNNING_SAMPLES = 10
 #: Placements of the stated square are searched on this grid, cm.
 PLACEMENT_STEP = 0.5
 #: A sample's coordinates below this (cm) are negative beyond float rounding.
@@ -609,7 +605,7 @@ def _heading_frame(
     every = max(round(1.0 / (HEADING_RATE * float(np.median(np.diff(times))))), 1)
     t, xy, h = times[::every], positions[::every], headings[::every]
     speed = np.linalg.norm(np.diff(xy, axis=0), axis=1) / np.diff(t)
-    if (n_running := int(np.sum(speed > HEADING_SPEED))) < DRIFT_MIN_SAMPLES:
+    if (n_running := int(np.sum(speed > HEADING_SPEED))) < MIN_RUNNING_SAMPLES:
         return Conversion(
             "headings: allocentric in the positions' frame, 0 = +x and "
             "counter-clockwise; not rotated or mirrored",
@@ -625,21 +621,12 @@ def _heading_frame(
         )
     mean, spread = heading_vs_movement(t, xy, h, min_speed=HEADING_SPEED)
     _, negated = heading_vs_movement(t, xy, -h, min_speed=HEADING_SPEED)
-    windows = _drift(t, xy, h)
     measured = (
         f"heading minus the direction of movement above {HEADING_SPEED:g} cm/s "
         f"(every {every}th sample, about {HEADING_RATE:g} Hz): circular mean "
         f"{mean:+.2f} rad, median spread {np.degrees(spread):.0f} degrees; the "
         f"heading negated gives a spread of {np.degrees(negated):.0f} degrees"
     )
-    if windows is not None:
-        n, lowest, highest, sd = windows
-        measured += (
-            f"; over {n} windows of {DRIFT_WINDOW:g} s with at least "
-            f"{DRIFT_MIN_SAMPLES} running samples the window means run from "
-            f"{lowest:+.2f} to {highest:+.2f} rad (circular SD {sd:.0f} degrees)"
-        )
-    drifts = windows is not None and windows[3] > np.degrees(FRAME_TOLERANCE)
     failed = [
         reason
         for fails, reason in (
@@ -650,11 +637,6 @@ def _heading_frame(
             (
                 spread >= HEADING_SPREAD,
                 f"the spread is {np.degrees(HEADING_SPREAD):.0f} degrees or more",
-            ),
-            (
-                drifts,
-                "the window means' circular SD is beyond "
-                f"{np.degrees(FRAME_TOLERANCE):.1f} degrees ({FRAME_TOLERANCE:g} rad)",
             ),
         )
         if fails
@@ -673,15 +655,7 @@ def _heading_frame(
     if not failed:
         return conversion, ()
     consequence = (
-        " The offset is not constant over the session, so no single correction "
-        "follows from movement, and a tuning curve over the whole session is "
-        "smeared by the drift: it pools directions measured with different "
-        "offsets, so its width is inflated and its mean vector length reduced. "
-        "The stored head direction is kept; compute head-direction tuning per "
-        "epoch or per window, where the offset is about constant, and do not "
-        "compare absolute preferred directions."
-        if drifts
-        else " The stored head direction is kept; with a constant offset, "
+        " The stored head direction is kept; with a constant offset, "
         "tuning-curve shapes and widths do not depend on the frame, while "
         "absolute preferred directions and conjunctive position-direction "
         "comparisons do."
@@ -690,31 +664,6 @@ def _heading_frame(
         f"The heading frame is not verified by movement: {measured}; "
         f"{' and '.join(failed)}.{consequence}",
     )
-
-
-def _drift(
-    times: NDArray[np.float64],
-    positions: NDArray[np.float64],
-    headings: NDArray[np.float64],
-) -> tuple[int, float, float, float] | None:
-    """The heading offset per ``DRIFT_WINDOW`` window: count, range, circular SD (deg)."""
-    from neurospatial._angles import wrap_angle
-
-    step = np.diff(positions, axis=0)
-    speed = np.linalg.norm(step, axis=1) / np.diff(times)
-    running = (speed > HEADING_SPEED) & np.isfinite(headings[:-1])
-    offset = wrap_angle(headings[:-1] - np.arctan2(step[:, 1], step[:, 0]))
-    window = ((times[:-1] - times[0]) // DRIFT_WINDOW).astype(int)
-    means = []
-    for k in np.unique(window[running]):
-        mine = running & (window == k)
-        if mine.sum() >= DRIFT_MIN_SAMPLES:
-            means.append(float(np.angle(np.mean(np.exp(1j * offset[mine])))))
-    if len(means) < 2:
-        return None
-    length = float(np.abs(np.mean(np.exp(1j * np.asarray(means)))))
-    sd = float(np.degrees(np.sqrt(-2.0 * np.log(max(length, 1e-12)))))
-    return len(means), min(means), max(means), sd
 
 
 def _repeated_ids(file_units: pd.DataFrame) -> tuple[str, ...]:
