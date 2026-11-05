@@ -42,6 +42,8 @@ from typing import IO, Any
 
 #: Seconds to wait for a connection or a read before giving up.
 TIMEOUT = 300
+#: Sent with each download: Mendeley Data refuses urllib's default with HTTP 403.
+_HEADERS = {"User-Agent": "neurospatial"}
 
 
 def _default_cache() -> Path:
@@ -219,7 +221,8 @@ def fetch(
         return found
 
     def write(tmp: _HashingWriter) -> None:
-        with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
+        request = urllib.request.Request(url, headers=_HEADERS)
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
             shutil.copyfileobj(response, tmp)
 
     return _install(*_download_to_temp(target.path, write), target, sha256)
