@@ -10,8 +10,10 @@ writes the archive's part of a DANDI registry.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -90,17 +92,18 @@ class DatasetInfo:
 
 @dataclass(frozen=True)
 class Member:
-    """One member of a zip archive that a session is read from.
+    """One member of a zip archive, or one file, that a session is read from.
 
     Attributes
     ----------
     path : str
-        The member's path inside the zip.
+        The member's path inside the zip, or the file's path under the
+        session's ``url``.
     sha256 : str
-        The extracted member's SHA-256, which every extraction is verified
-        against.
+        The extracted member's or the file's SHA-256, which every extraction
+        or download is verified against.
     size_bytes : int
-        The extracted member's size.
+        The extracted member's or the file's size.
     """
 
     path: str
@@ -177,6 +180,10 @@ class SessionEntry:
         For a session read from members of a remote zip (``url``), the
         members fetched, each by byte range; empty for a whole file. The
         session's ``sha256`` and ``size_bytes`` are then the zip's.
+    files : tuple of Member
+        For a session read from several files under one folder (``url``), the
+        files fetched; empty otherwise. The session's ``sha256`` is then
+        :func:`files_sha256` of them and its ``size_bytes`` their total.
     videos : tuple of VideoAsset
         The session's video files, fetched only on request; empty where the
         archive has none.
@@ -201,6 +208,7 @@ class SessionEntry:
     license: str
     citation: str
     members: tuple[Member, ...] = ()
+    files: tuple[Member, ...] = ()
     videos: tuple[VideoAsset, ...] = ()
     lfp_files: tuple[LFPFile, ...] = ()
 
@@ -265,6 +273,20 @@ class SessionEntry:
             "provenance": self.provenance(source),
             "verified": self.verified,
         }
+
+
+def files_sha256(files: Iterable[Member]) -> str:
+    """One SHA-256 for a session read from several files.
+
+    The digest of a line ``<sha256>  <path>`` per file, sorted by path, as
+    ``sha256sum`` lists them, so it names every file and its bytes.
+
+    Parameters
+    ----------
+    files : iterable of Member
+    """
+    lines = sorted(f"{file.sha256}  {file.path}\n" for file in files)
+    return hashlib.sha256("".join(lines).encode()).hexdigest()
 
 
 def dataset_ids() -> tuple[str, ...]:
@@ -408,6 +430,23 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
     if members and url is None:
         msg = f"session {row['session']!r}: zip members need the zip's url"
         raise ValueError(msg)
+    files = tuple(
+        Member(
+            path=str(file["path"]),
+            sha256=_sha256(file["sha256"], f"file {file['path']!r}"),
+            size_bytes=int(file["size_bytes"]),
+        )
+        for file in row.get("files", ())
+    )
+    if files and (url is None or members):
+        msg = f"session {row['session']!r}: files need the folder's url and no members"
+        raise ValueError(msg)
+    if files and sha256 != files_sha256(files):
+        msg = f"session {row['session']!r}: sha256 is not files_sha256 of its files"
+        raise ValueError(msg)
+    if files and int(row["size_bytes"]) != sum(file.size_bytes for file in files):
+        msg = f"session {row['session']!r}: size_bytes is not its files' total"
+        raise ValueError(msg)
     videos = tuple(
         VideoAsset(
             asset_path=str(video["asset_path"]),
@@ -444,6 +483,7 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
             else info.citation
         ),
         members=members,
+        files=files,
         videos=videos,
         lfp_files=lfp_files,
     )

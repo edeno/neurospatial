@@ -6,8 +6,8 @@ session's file into a :class:`Recording` with the dataset's own watch-outs;
 ``REQUIRES``, the modules it imports from the ``datasets`` extra; and
 ``WATCH_OUTS``, the pitfalls of each session checked by hand. Its registry,
 ``registry/<dataset>.json``, lists the sessions. :func:`load` fetches the
-file (or, for a session read from zip members, the directory holding them),
-calls ``load_session`` and runs the automatic checks.
+file (or, for a session read from zip members or several files, the
+directory holding them), calls ``load_session`` and runs the automatic checks.
 """
 
 from __future__ import annotations
@@ -182,8 +182,8 @@ def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
     Returns
     -------
     list of Path
-        The cached file of each session (the directory of its members, for
-        one read from zip members), in registry order.
+        The cached file of each session (the directory of its members or
+        files, for one read from those), in registry order.
 
     Raises
     ------
@@ -227,11 +227,12 @@ def fetch_all(dataset: str, *, cache: Path | None = None) -> list[Path]:
 
 
 def _cached(root: Path, entry: SessionEntry) -> bool:
-    """Whether the session's file, or each of its zip members, is in the cache."""
+    """Whether the session's file, or each of its members or files, is in the cache."""
     folder = root / entry.info.dataset
-    if entry.members:
+    if entry.members or entry.files:
         return all(
-            (folder / entry.session / Path(m.path).name).exists() for m in entry.members
+            (folder / entry.session / Path(m.path).name).exists()
+            for m in entry.members + entry.files
         )
     return (folder / entry.file_name).exists()
 
@@ -243,7 +244,8 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     from zip members has each member extracted by byte range into
     ``<cache>/<dataset>/<session>/<member name>``, verified against its own
     SHA-256, and that directory, holding only the session's members, is
-    returned. A download not yet cached is announced first with a
+    returned; a session read from several files is fetched the same way, one
+    file at a time. A download not yet cached is announced first with a
     :class:`DownloadWarning` giving its size, URL and cache directory,
     attributed to the caller of :func:`load` or :func:`fetch_all`.
     """
@@ -270,6 +272,19 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
                 cache=cache,
             )
             for member in entry.members
+        ]
+        return paths[0].parent
+    if entry.files:
+        assert entry.url is not None  # checked when the registry is read
+        paths = [
+            fetch(
+                entry.url + file.path,
+                Path(file.path).name,
+                sha256=file.sha256,
+                subdir=f"{entry.info.dataset}/{entry.session}",
+                cache=cache,
+            )
+            for file in entry.files
         ]
         return paths[0].parent
     return fetch(

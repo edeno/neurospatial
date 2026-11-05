@@ -335,6 +335,67 @@ def test_zip_member_session_fetches_only_its_members(synthetic, zipped):
     assert row["size_bytes"] == sum(len(zipped.members[n]) for n in zipped.used)
 
 
+@pytest.fixture
+def several_files(synthetic):
+    """A session read from two files of a local folder, the third left alone."""
+    from neurospatial.datasets._catalog import Member, files_sha256
+
+    contents = {"spikes.t": b"spikes" * 100, "video.nvt": b"video" * 300}
+    folder = synthetic.archive / "session"
+    folder.mkdir()
+    for name, data in {**contents, "raw.tt": b"raw" * 1000}.items():
+        (folder / name).write_bytes(data)
+    files = [
+        {"path": name, "sha256": _digest(data), "size_bytes": len(data)}
+        for name, data in contents.items()
+    ]
+    _add_session(
+        synthetic,
+        {
+            "session": "several",
+            "archive": "Synthetic 1",
+            "url": folder.as_uri() + "/",
+            "sha256": files_sha256(Member(**file) for file in files),
+            "size_bytes": sum(len(data) for data in contents.values()),
+            "verified": False,
+            "default": False,
+            "files": files,
+        },
+    )
+    return types.SimpleNamespace(contents=contents, files=files)
+
+
+def test_session_of_several_files_fetches_each_and_keeps_them_apart(
+    synthetic, several_files
+):
+    from neurospatial.datasets import catalog
+
+    with _downloading():
+        rec = load(DATASET, "several", cache=synthetic.cache)
+    folder = synthetic.cache / DATASET / "several"
+    assert synthetic.calls == [("several", folder)]
+    assert sorted(path.name for path in folder.iterdir()) == ["spikes.t", "video.nvt"]
+    for name, data in several_files.contents.items():
+        assert (folder / name).read_bytes() == data
+    assert rec.provenance.size_bytes == sum(map(len, several_files.contents.values()))
+    row = catalog().set_index("session").loc["several"]
+    assert row["size_bytes"] == rec.provenance.size_bytes
+    # Cached: no download, so no warning (warnings are errors here).
+    assert load(DATASET, "several", cache=synthetic.cache).session == "several"
+
+
+def test_file_with_another_checksum_is_refused(synthetic, several_files):
+    from neurospatial.datasets._catalog import Member, files_sha256
+
+    rows = synthetic.registry["sessions"][-1]
+    rows["files"][0]["sha256"] = "0" * 64
+    rows["sha256"] = files_sha256(Member(**file) for file in rows["files"])
+    synthetic.registry_path.write_text(json.dumps(synthetic.registry))
+    with pytest.raises(ValueError, match="SHA-256"), _downloading():
+        load(DATASET, "several", cache=synthetic.cache)
+    assert synthetic.calls == []
+
+
 def test_zip_member_with_another_checksum_is_refused(synthetic, zipped):
     synthetic.registry["sessions"][-1]["members"][0]["sha256"] = "0" * 64
     synthetic.registry_path.write_text(json.dumps(synthetic.registry))

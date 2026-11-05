@@ -116,6 +116,28 @@ def test_unknown_dataset_lists_the_known_ones():
         ),
         (
             lambda r: r["sessions"][0].update(
+                files=[{"path": "a.t", "sha256": "0" * 64, "size_bytes": 1}]
+            ),
+            "files need the folder's url",
+        ),
+        (
+            lambda r: r["sessions"][0].update(
+                asset_id=None,
+                url="https://example.org/session/",
+                files=[{"path": "a.t", "sha256": "xyz", "size_bytes": 1}],
+            ),
+            "file 'a.t': sha256 'xyz' is not 64 hex digits",
+        ),
+        (
+            lambda r: r["sessions"][0].update(
+                asset_id=None,
+                url="https://example.org/session/",
+                files=[{"path": "a.t", "sha256": "0" * 64, "size_bytes": 1}],
+            ),
+            "sha256 is not files_sha256 of its files",
+        ),
+        (
+            lambda r: r["sessions"][0].update(
                 videos=[
                     {
                         "asset_path": "v.avi",
