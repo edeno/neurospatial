@@ -4440,7 +4440,9 @@ PFEIFFER_FOSTER_2013 = ReplayMethod(
         "lies less than 20 cm from the previous one; events with fewer than "
         "10 steps (11 time bins) or a start-to-end distance below 40 cm are "
         "eliminated.",
-        "Decoded in a 2-D open field; distances are Euclidean there.",
+        "Decoded in a 2-D open field; distances are Euclidean there. The 20 and "
+        "40 cm are for rats in a 2 x 2 m arena, where path lengths ran 40.0 to "
+        "199.1 cm, and they are not scaled here.",
         "Each trajectory event was also tested against 5,000 cell-identity "
         "and 5,000 2-D place-field shuffles, p = (n + 1) / (r + 1) over the "
         "shuffles classified as trajectory events. Every trajectory event had "
@@ -5342,8 +5344,11 @@ BHATTARAI_2020 = ReplayMethod(
         "proportion of shuffles with a larger R², and P < 0.05 is replay.",
         "The shifts are 1 to n - 1 bins for an event of n time bins, drawn "
         "1,000 times; the p-value is (k + 1) / (1,001), where the paper's "
-        "has no +1. Shifts repeat, so with fewer than 20 time bins p < 0.05 "
-        "needs no shift to score as high as the event.",
+        "has no +1: the verdict at alpha 0.05 is the same, k of at most 49. "
+        "Shifts repeat, so with fewer than 20 time bins p < 0.05 needs no shift "
+        "to score as high as the event. An event with no order then passes "
+        "about one time in n if its time bins are independent, and up to about "
+        "twice that when neighbouring bins share spikes.",
         "Time bins without spikes: not stated. They are dropped with their "
         "times, as Wu et al. (2017) and Karlsson & Frank (2009) do, since with "
         "no spike the MAP names the position of lowest summed rate.",
@@ -5351,7 +5356,9 @@ BHATTARAI_2020 = ReplayMethod(
         "forced-choice and correct free-choice trials, on the linear path of "
         "the block's correct sequence, as the paper does; pass those cells' "
         "spike counts. 'Five or more place cells' is part of a candidate "
-        "event's definition and is applied here to the event's time bins.",
+        "event's definition and is applied here to the event's time bins, so "
+        "they must reach its last spike, or a candidate can fail for a cell "
+        "only that spike holds.",
         "The direction and strength of a replay were measured separately, with "
         "a weighted correlation of time and position over posterior values "
         "above 0.01; it plays no part in the verdict. Session sets whose "
