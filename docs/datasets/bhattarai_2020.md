@@ -187,10 +187,10 @@ each block (20 draws, seed 2026). **It was not met.**
 | --- | --- | --- | --- | --- |
 | Paper, `rat2_set2` (Table S1) | 278 | 153 | 55.0% | |
 | Ours, the paper's recipe | 37 | 9 | 24.3% | 27.0% |
-| Ours, the same bursts with no SWR requirement | 534 | 95 | 17.8% | 15.9% |
+| Ours, the same bursts with no SWR requirement | 534 | 96 | 18.0% | 16.0% |
 | Paper, all 25 sets | 2,573 | 1,342 | 52.2% | |
-| Ours, the paper's recipe, all 25 sets | 187 | 34 | 18.2% | not run |
-| Ours, no SWR requirement, all 25 sets | 5,019 | 788 | 15.7% | not run |
+| Ours, the paper's recipe, all 25 sets | 187 | 35 | 18.7% | not run |
+| Ours, no SWR requirement, all 25 sets | 5,019 | 783 | 15.6% | not run |
 
 Only the second row is the attempt. The others are the paper's numbers and
 diagnostics, stated beside it and not part of the criterion. Where the difference
@@ -203,10 +203,10 @@ comes from:
   534 against 278 here).
 - **The events are longer.** Ours last 232 ms (the paper: 151.9 +/- 61.5 ms). The
   paper does not say how an event ends.
-- **A short event has few shifts.** An event of n time bins has n circular shifts, so
-  under 20 time bins, p < 0.05 means no shift fits better. Ours have a median of
-  about 11. With permuted cells the test still calls about 15% of events replay at
-  alpha 0.05.
+- **A short event has few shifts.** An event of n time bins has n - 1 distinct
+  circular shifts, so under 20 time bins, p < 0.05 means no shift fits as well. Ours
+  have a median of about 11. With permuted cells the test still calls about 14% of
+  events replay at alpha 0.05.
 
 The decoder is not the cause: in-sample running error is about 8.5 cm on this set
 against Table S1's 5 cm, in 50 ms bins. Nothing was tuned to close the gap.

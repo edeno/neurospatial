@@ -174,17 +174,17 @@ WORKED_RESULT: dict[str, Any] = {
             "The loss is at the SWR gate: 793 threshold crossings on this channel "
             "and 24,028 over the 25 sets, against the paper's 132,665 SWRs. "
             "Without the gate the same bursts number 534 here (5,019 over the sets, "
-            "2,573 in the paper), of which 95 are judged replay (17.8%, above that "
-            "null's 95th percentile of 15.9%), and over the sets 788 (15.7%). "
+            "2,573 in the paper), of which 96 are judged replay (18.0%, above that "
+            "null's 95th percentile of 16.0%), and over the sets 783 (15.6%). "
             "Events last 232 ms against the paper's 152 ms. The null itself calls "
-            "about 15% of events replay"
+            "about 14% of events replay"
         ),
     },
     "why": (
         "the paper's candidates need an SWR detected on two tetrodes, and the "
         "archive holds one channel, at its rails for 5% to 56% of each set, whose "
         "ripple-band power rises little at population bursts. On it the paper's "
-        "detector passes 187 candidates over the 25 sets, not 2,573, and 34 "
+        "detector passes 187 candidates over the 25 sets, not 2,573, and 35 "
         "replays, not 1,342. Nothing was tuned to close this"
     ),
 }

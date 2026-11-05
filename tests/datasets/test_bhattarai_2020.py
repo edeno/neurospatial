@@ -675,7 +675,7 @@ def test_replay_on_the_one_channel_pins_the_attempt():
         ]
         block["events"] = bounds[inside]
     replays, n_events, null = _share_and_null(blocks)
-    assert (n_events, replays) == (534, 95)
+    assert (n_events, replays) == (534, 96)
     assert replays / n_events > np.percentile(null, 95)
 
 
