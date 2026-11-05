@@ -30,7 +30,28 @@ CONV = (2.5, 2.0)
 VIDEO_HZ = 30.0
 #: The paper's candidate file for the default session, at its code's last commit.
 PAPERS_COMMIT = "3aebc8e454c3b863b68c20c57421e6c16a6e809b"
-CANDIDATES_SHA256 = "567fd61bbb37c012e9ab4d31ccddd1cf4d19f5182190ec9617797fc16fb4776f"
+#: SHA-256 of each paper session's candidate zip, from its Git LFS pointer.
+CANDIDATES_SHA256 = {
+    "R042-2013-08-17": "c48aa5667ad786603c9112b7fe8f069a56d4ecbbbad5752d0f63c2d394b46b36",
+    "R042-2013-08-18": "b55c56f3ca2e5e94bd3d0fee1c7fa56127dcf2930c3ae0398cf0fdbd188f29fe",
+    "R042-2013-08-19": "0c36308706a886276090377be6495361e01353bc23ad42b98b7fe99043c53489",
+    "R042-2013-08-20": "f81327c025c1d30ddd146d81ea14ffa57a05e835e39c84a5b9535d2f0ec72b88",
+    "R042-2013-08-21": "9e0beed6b0614b19adf7886419383e06d0f59aeba3cbbbc54ec939c45d23519e",
+    "R044-2013-12-21": "889cf35b52f4294a2965cff88862d11768d394ba865fe898c9730cb7c3037d4f",
+    "R044-2013-12-22": "c3b8cd641992704470354a7550f2bf92ed80bf5f751cd02454d017c6f1998d89",
+    "R050-2014-03-29": "567fd61bbb37c012e9ab4d31ccddd1cf4d19f5182190ec9617797fc16fb4776f",
+    "R050-2014-03-30": "c55d9f52149df7031843173f5b42a82923f66785da012653f5823eb5c7b4ce4c",
+    "R050-2014-03-31": "c60d0b2bbe5c8d72a803e82d40cdb0206e0bec91df69ed830ae39363bf9777f0",
+    "R050-2014-04-01": "e8129a1f017a2a5420d6dbfc0e7327bf53fae4d8ad6ea3f31e632b1311605113",
+    "R050-2014-04-02": "795e521953f07c30e248835e353ab34e375065cfc0286f6c18a81a13e60ba3a4",
+    "R050-2014-04-03": "db1cb57a2834c7a5f9cadb000dcd58ddec3155de1f22232765c37eceaccd685d",
+    "R064-2015-04-18": "a009ac912b3ad581165cf4a7170861e456cc6b85436c861fd931cd3fd0d85e2a",
+    "R064-2015-04-19": "c0fbc26c8e51d511129fa7901775a9f860631ba7ed9afacd6bb1e9717f203418",
+    "R064-2015-04-20": "72fa949566b51040bc9816236b7b9741dd3bc3329b926fcd56edf21d651520bb",
+    "R064-2015-04-21": "06e5338780557ce33d310d314557219d78f15681a0ff808646054521cb211d36",
+    "R064-2015-04-22": "f02c5f03c9c2551ab7c1fc38602b050542f02ed85f74810135ac79ef78e69856",
+    "R064-2015-04-23": "38de21b30968002e733eab2043c11bdc5dd93a63d13d9cb9772ecb5bf4f872e7",
+}
 #: Draws of each null, and its seed, as tests/datasets/test_worked_results.py.
 N_NULL = 20
 NULL_SEED = 2026
@@ -297,29 +318,35 @@ def rec():
     return load("carey_2019")
 
 
-@pytest.fixture(scope="module")
-def paper():
-    """The paper's candidates for the default session: its ``evt`` struct."""
+def _paper_candidates(session):
+    """The paper's candidates for a session: its ``evt`` struct."""
     import zipfile
 
     from scipy.io import loadmat
 
     from neurospatial.datasets._fetch import cache_root, fetch
 
-    name = f"{SESSION}-candidates.zip"
+    name = f"{session}-candidates.zip"
     archive = fetch(
         "https://media.githubusercontent.com/media/vandermeerlab/papers/"
         f"{PAPERS_COMMIT}/Carey_etal_submitted/SWRcandidates/{name}",
         name,
-        sha256=CANDIDATES_SHA256,
+        sha256=CANDIDATES_SHA256[session],
         subdir="carey_2019/paper_candidates",
     )
     folder = cache_root() / "carey_2019" / "paper_candidates"
-    member = f"{SESSION}-candidates.mat"
+    member = f"{session}-candidates.mat"
     if not (folder / member).exists():
         with zipfile.ZipFile(archive) as opened:
             opened.extract(member, folder)
-    return loadmat(folder / member, squeeze_me=True, struct_as_record=False)["evt"]
+    return loadmat(
+        folder / member, squeeze_me=True, struct_as_record=False, variable_names=["evt"]
+    )["evt"]
+
+
+@pytest.fixture(scope="module")
+def paper():
+    return _paper_candidates(SESSION)
 
 
 def _intervals_of(evt) -> np.ndarray:
@@ -765,3 +792,36 @@ def test_worked_result_sequences_in_the_candidates(rec, detected, paper):
 def test_the_papers_own_candidates_give_the_same_count(rec, paper):
     left, right = _judged(rec, _intervals_of(paper))
     assert int(np.sum(left | right)) == 64
+
+
+@pytest.mark.realdata
+def test_the_papers_sessions_show_its_shift_in_sequence_content():
+    """Exploratory, on the paper's candidates in its 19 sessions: see ACROSS_SESSIONS.
+
+    Events with a sequence on one side only, per rat, beside Supplementary
+    Fig. 6, and the left share by what was restricted, beside the paper's 0.35
+    and 0.57. CAREY_2019 leaves out the paper's identity-shuffle filter, and
+    these are events, not sequences. The shift in the left share is not a
+    reproduction: shifted rate maps give the same difference (20 draws took an
+    hour, so they are recorded and not rerun here).
+    """
+    record = carey_2019.ACROSS_SESSIONS
+    per_rat: dict[str, int] = {}
+    shares, restrictions, left_trials = [], [], []
+    for session in sorted(carey_2019.PAPER_SESSIONS):
+        rec = load("carey_2019", session)
+        evt = _paper_candidates(session)
+        left, right = _judged(rec, _intervals_of(evt))
+        only_left, only_right = int(np.sum(left & ~right)), int(np.sum(right & ~left))
+        rat = session[:4]
+        per_rat[rat] = per_rat.get(rat, 0) + only_left + only_right
+        shares.append(only_left / (only_left + only_right))
+        restrictions.append(rec.params["restriction"])
+        left_trials.append(float(np.mean(rec.trials.arm == "L")))
+    assert per_rat == record["one_side_per_rat"]
+    shares = np.array(shares)
+    food = np.array(restrictions) == "food"
+    assert round(float(shares[food].mean()), 3) == record["left_share_food"]
+    assert round(float(shares[~food].mean()), 3) == record["left_share_water"]
+    correlation = np.corrcoef(shares, left_trials)[0, 1]
+    assert round(float(correlation), 2) == record["r_with_left_trials"]

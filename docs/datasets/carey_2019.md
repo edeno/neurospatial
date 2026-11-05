@@ -81,10 +81,12 @@ the archive's `README.txt` and `datapackage.json`; the files; the paper's code
 | frames with x or y 0 are NaN | stated | 0 is the file's own mark for no detection, which the lab's `LoadPos.m` drops by default |
 | LFP: stored values x `ADBitVolts` x 1e6, in microvolts, 2 kHz | stated | Each `.ncs` header. On the default session the times equal the paper's candidate file |
 | environment: the T-maze from the authors' drawn left and right trajectories, 3 cm bins | stated | `metadata.coord`, against `keys.m`'s lengths |
-| `track_width`: twice the 99% quantile of trial samples' distance from the track | inferred | A placement tolerance, 54.7 cm on the default session. No source states the track's width, and trials include moments off it |
+| `track_width`: twice the 99% quantile of trial samples' distance from the track | inferred | A placement tolerance, 54.7 cm on the default session, 38 to 118 cm over the sessions. No source states the track's width, and trials include moments off it |
+| 48 spike files of `R064-2015-04-23` read as 64-bit | inferred | Their headers do not say so, but every other 32-bit word is 0 |
 
 The sampling rate is the header's 29.97 Hz; frames are a median 33.1 ms apart, or
-30.2 Hz, on the default session. The stated span is `keys.m`'s `realTrackDims`.
+30.2 Hz, on the default session. The stated span is `keys.m`'s `realTrackDims`, 185
+cm, within 30%, since the head and the pedestals reach past the maze.
 
 ## Watch out
 
@@ -190,6 +192,34 @@ median for the same count is 34. Those are 15 left and 35 right, a left share of
 0.30 on a food-restricted day, where the paper's mean over food-restricted sessions
 is 0.35. The nulls give a median of 0.36, so this one session says nothing about
 that finding.
+
+### Across the paper's 19 sessions
+
+An exploratory run, with no criterion: the same analysis on the paper's own
+candidates in each of its sessions, written down before those sessions ran.
+`carey_2019.ACROSS_SESSIONS` holds the numbers, and a test pins the observed ones.
+
+| | R042 | R044 | R050 | R064 |
+| --- | --- | --- | --- | --- |
+| Events with a sequence on one side | 1,127 | 70 | 366 | 1,584 |
+| The paper's sequences (Supplementary Fig. 6) | 1,257 | 95 | 429 | 1,999 |
+
+In all 3,147 against the paper's 3,780, with no shuffle filter here and events where
+the paper counts sequences. With each unit's spikes shifted before fitting the
+maps, the same total is 2,317 to 2,687 over 20 draws, so it is above every draw,
+but most of it is what the recipe finds anyway. Five of the 19 sessions pass the
+95th percentile of their own null.
+
+The left share looks like the paper's main finding and is not. It is 0.29 on
+food-restricted days and 0.52 on water-restricted days (the paper: 0.35 and 0.57),
+z = -2.65 with the labels permuted, and it correlates -0.69 with the share of left
+trials (the paper: -0.54). But the shifted maps give the same difference, a median
+of -0.223 against the observed -0.227. The left share follows the share of kept
+units on the left (r = 0.83; 43% on food days, 53% on water days), and this analysis
+keeps units per side as the paper's code does. Why the kept units follow the
+restriction was not established. So this analysis, without the paper's
+identity-shuffle filter, cannot tell that shift from a bias of the decoder. It says
+nothing against the paper, which applies that filter.
 
 ## Cite
 

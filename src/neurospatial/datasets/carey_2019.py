@@ -96,6 +96,7 @@ if TYPE_CHECKING:
     from neurospatial.datasets._catalog import SessionEntry
 
 __all__ = [
+    "ACROSS_SESSIONS",
     "EXPECTED_WATCH_OUTS",
     "REQUIRES",
     "WATCH_OUTS",
@@ -253,6 +254,40 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "attempted": None,
     "why": None,
+}
+
+#: Exploratory, apart from ``WORKED_RESULT``: the same analysis on the paper's
+#: own candidates in its 19 sessions. Written down before those sessions ran; the
+#: label permutation and the null were fixed after the counts were seen. No
+#: criterion attaches. It does not reproduce the paper's shift: the left share
+#: differs by restriction just as much with shifted rate maps, and follows the
+#: share of units kept on each side (r = 0.83). Without the paper's
+#: identity-shuffle filter, this analysis cannot tell that shift from a bias.
+ACROSS_SESSIONS: dict[str, Any] = {
+    "what": (
+        "events with a CAREY_2019 sequence on the left or right trajectory only, "
+        "in the paper's 19 sessions, its own candidates, without its "
+        "identity-shuffle filter; events, where the paper counts sequences"
+    ),
+    "one_side_per_rat": {"R042": 1127, "R044": 70, "R050": 366, "R064": 1584},
+    "paper_per_rat": {"R042": 1257, "R044": 95, "R050": 429, "R064": 1999},
+    "left_share_food": 0.294,
+    "left_share_water": 0.520,
+    "paper_left_share": (0.35, 0.57),
+    "label_permutation": {"z": -2.65, "p": 0.0047, "n": 10000, "seed": 2026},
+    "r_with_left_trials": -0.69,
+    "paper_r_with_behavior": -0.54,
+    "left_share_follows_kept_units_r": 0.83,
+    "null_own_offsets": {
+        "draws": 20,
+        "seed": 2026,
+        "difference_observed": -0.227,
+        "difference_median": -0.223,
+        "difference_range": (-0.416, -0.091),
+        "one_side_total_observed": 3147,
+        "one_side_total_range": (2317, 2687),
+        "sessions_above_95th_percentile": 5,
+    },
 }
 
 #: Findings computed from the data that each verified session must report, as
