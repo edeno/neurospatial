@@ -141,6 +141,12 @@ def test_unknown_dataset_lists_the_known_ones():
             ),
             "its led_fit was made on a video with SHA-256",
         ),
+        (
+            lambda r: r["sessions"][0].update(
+                lfp_files=[{"path": "a.mat", "sha256": "xyz", "size_bytes": 1}]
+            ),
+            "LFP file 'a.mat': sha256 'xyz' is not 64 hex digits",
+        ),
     ],
 )
 def test_malformed_registry_refused(change, message):
@@ -149,6 +155,33 @@ def test_malformed_registry_refused(change, message):
     change(registry)
     with pytest.raises(ValueError, match=message):
         _read(registry, "sargolini_2006.json")
+
+
+def test_lfp_files_are_read_at_the_sessions_own_location():
+    """A row's LFP file takes the session's location unless it names another."""
+    registry = _registry("forli_2025")
+    row = registry["sessions"][0]
+    row["lfp_files"] = [
+        {
+            "path": "s/LFP.mat",
+            "sha256": "a" * 64,
+            "size_bytes": 5,
+            "member": "z/LFP.mat",
+            "channels": ["c1"],
+        },
+        {
+            "path": "other.mat",
+            "sha256": "b" * 64,
+            "size_bytes": 6,
+            "url": "https://example.org/other.mat",
+        },
+    ]
+    first, second = _read(registry, "forli_2025.json")[0].lfp_files
+    assert first.url == row["url"]
+    assert first.member == "z/LFP.mat"
+    assert first.channels == ("c1",)
+    assert second.url == "https://example.org/other.mat"
+    assert second.channels == ()
 
 
 def _builder():
