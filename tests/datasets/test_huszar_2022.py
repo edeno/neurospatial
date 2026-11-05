@@ -419,7 +419,7 @@ NWB_DEVICE_DEPRECATION = pytest.mark.filterwarnings(
     "ignore:The 'manufacturer' field is deprecated:DeprecationWarning"
 )
 #: The dandiset's session with the fewest units: few enough for the
-#: full-resolution call, whose float64 counts take 9 GB here.
+#: full-resolution call, whose float64 counts take 5.4 GB here.
 SMALL_SESSION = "sub-e14-2m3_ses-e14-2m3-201017"
 #: The session with the smallest sibling LFP file (5.6 GB), and a channel of it.
 LFP_SESSION = "sub-e16-3m2_ses-e16-3m2-211211"
@@ -430,7 +430,7 @@ def _nrem_trigger_events(rec, peaks, *, eligible=None):
     """``yang_2024``, its counts pooled so a session of 300 units fits in memory.
 
     ``ripple_detection`` keeps one float64 per sample per unit and copies the
-    selection: 180 GB for 376 units over 8 hours at 1 kHz. Every step here is
+    selection: 190 GB for 376 units over 7 hours at 1 kHz, twice that in the copy. Every step here is
     that method's, on one pooled column, except the five-cell rule, which counts
     units from their spike times. ``test_pooled_detection_is_yang_2024`` shows
     the two give the same events.

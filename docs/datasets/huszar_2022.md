@@ -157,7 +157,7 @@ from ripple_detection.literature_methods import Recording, run_method
 from neurospatial.datasets import load
 from neurospatial.datasets._ripple import spike_counts
 
-rec = load("huszar_2022", "sub-e14-2m3_ses-e14-2m3-201017")   # 34 units, about 9 GB
+rec = load("huszar_2022", "sub-e14-2m3_ses-e14-2m3-201017")   # 34 units, 5.4 GB of counts
 last = max(train[-1] for train in rec.spike_times)
 grid = np.arange(int(np.ceil(last * 1000)) + 2) / 1000
 maze, awake = rec.epochs["maze"], rec.epochs["awake"]
@@ -178,7 +178,7 @@ events = run_method("yang_2024", recording, behavior_intervals=eligible)
 ```
 
 `ripple_detection` keeps one float64 per sample per unit and copies the selection,
-which is 180 GB for 376 units over 8 hours at 1 kHz. For a large session pool the
+which is 190 GB for 376 units over 7 hours at 1 kHz, twice that during the copy. For a large session pool the
 counts for the rate and count active units from the spike times, as
 `tests/datasets/test_huszar_2022.py` does. That test shows the two give the same
 events, within rounding, on the session above.
