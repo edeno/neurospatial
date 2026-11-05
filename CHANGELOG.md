@@ -378,12 +378,12 @@
 - `igata_2021`: Igata et al. (2021) rats learning a new route to reward with
   dorsal CA1 units and LFP, 40 sessions of Mendeley Data 4xk5w69yr5
   (CC-BY-4.0) including the paper's five rats, one checked by hand. Each
-  session is stitched from its per-trial files; `igata_2021.path_track()` gives
-  the paper's paths as a 1-D environment. The worked result says nothing here
+  session is stitched from its per-trial files. The worked result says nothing here
   is presented as replay: on the default session the paper's candidate events
   do not stand out from a shifted-spike baseline fixed before detection, and
   `IGATA_2021` judges none of the 596 events that pass it, over four rats'
-  sessions. Trials to the learning point match the paper (25.8 +/- 9.1 against
+  sessions. It also judges 0.7% of planted replay, so that is not evidence of no
+  replay. Trials to the learning point match the paper (25.8 +/- 9.1 against
   26 +/- 9), recorded apart in `igata_2021.LEARNING_RESULT`.
 - A session can be held in several whole files (a registry member with its own
   `url`, fetched into the session's folder as zip members are), and downloads
@@ -393,10 +393,13 @@
   labelled by block, sequence, choice and reward, the paper's complex-spike rule
   (648 of 698 units, its number), one LFP channel on request, and
   `rec.params["sequence_tracks"]`, each sequence's linear path. The worked
-  result is an attempt that failed its criterion: the archive's one saturated
-  LFP channel passes 37 candidate events where the paper has 278 on the default
-  set, and 9 of them are judged replay (24.3%), not above the 27.0% that
-  permuting cell identities gives at its 95th percentile.
+  result does not reproduce the paper: the archive's one LFP channel, clipped in
+  the file, passes 37 candidate events where the paper has 278 on the default
+  set. Of them 11 are judged replay (29.7%), above the 24.6% that permuting cell
+  identities gives at its 95th percentile, by two events and not firmly. The
+  low count is not caused by the clipping; the channel itself is the likelier
+  cause (inferred). Planted replay is judged 18.6% of the time, so the share is
+  not a rate of replay.
 - `neurospatial.replay.methods.BHATTARAI_2020`: the line fit of Bhattarai et al.
   (2020) on the MAP positions, tested against 1,000 circular shifts of the
   decoded positions in time at alpha 0.05, so an event has a `p_value`.
@@ -415,10 +418,13 @@
   channels. The worked result is a sanity property of our own analysis, not the
   paper's: 5 of 20 `yang_2024` ripple candidates on the maze are judged
   trajectories by `PFEIFFER_FOSTER_2013`, none in 40 shifted-spike draws. Twenty
-  candidates give no rate, and a null of zeros cannot show calibration. Yang et
+  candidates give no rate, a null of zeros cannot show calibration (the criterion
+  would pass on 1 of 20), and this judge passes 8.7% of planted replay. Yang et
   al. (2024)'s events for `e15_13f1_220118`: 94.3% of theirs overlap one of ours,
-  and 50.1% of ours overlap one of theirs, since their file holds a selection
-  of its own events. `scripts/build_dataset_registry.py` lists a
+  and 50.1% of ours overlap one of theirs. Under their code's bound and their
+  file's four-bin selection the shares are 96.0% and 89.7%. Their stored list on
+  `e13_26m1_210913` is reproduced from every unit, not from pyramidal cells.
+  `scripts/build_dataset_registry.py` lists a
   sibling `-raw_ecephys` file as the session's LFP, not as a session.
 - Epochs a file lists past the end of its data are clipped to the recording
   (its first to last sample or spike) by one rule for every loader, when

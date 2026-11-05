@@ -350,7 +350,7 @@ ALL = [
 def test_record_is_complete(module):
     """Each record has the same fields; a result has its quote, a non-result says why."""
     record = module.WORKED_RESULT
-    assert set(record) == RECORD_KEYS
+    assert set(record) - {"planted_recall"} == RECORD_KEYS
     if record["status"] == "not possible yet":
         assert record["level"] is None
         assert record["ours"] is None
@@ -368,3 +368,32 @@ def test_record_is_complete(module):
         assert record["why"] is None
         for field in ("finding", "quote", "source", "criterion", "parameters"):
             assert record[field], field
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        bhattarai_2020.WORKED_RESULT,
+        forli_2025.OWN_3D_ANALYSIS,
+        huszar_2022.WORKED_RESULT,
+        igata_2021.WORKED_RESULT,
+    ],
+    ids=["bhattarai_2020", "forli_2025", "huszar_2022", "igata_2021"],
+)
+def test_replay_records_state_what_planted_replay_limits(record):
+    """A replay count is read beside its recall, with the control's own limits."""
+    planted = record["planted_recall"]
+    reading = planted["reading"]
+    assert f"{100 * planted['judged'] / planted['planted']:.1f}%" in reading
+    assert "limit of what the number can say" in reading
+    assert "the model the decoder assumes" in reading
+    assert "compression 15" in reading
+    assert "evidence" in reading
+
+
+def test_huszar_record_says_its_criterion_is_easy_to_pass():
+    """Every null draw is 0, so one judged event would meet the criterion."""
+    assert (
+        "would pass on 1 of 20"
+        in huszar_2022.WORKED_RESULT["planted_recall"]["reading"]
+    )
