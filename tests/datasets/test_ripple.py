@@ -17,6 +17,7 @@ from neurospatial.datasets import Conversion, LFPSource, Recording
 from neurospatial.datasets._lfp import LFPFile
 from neurospatial.datasets._ripple import (
     RIPPLE_DETECTION_COMMIT,
+    event_rows,
     ripple_recording,
     spike_counts,
 )
@@ -313,3 +314,65 @@ class TestKnownEventsAreFound:
             ripple_recording(rec, simulated.lfps[:, :1], simulated.time),
         )
         assert not any(self._found(events))
+
+
+def _in_a_row(train, start, stop, *, time_bin, step):
+    """Whether each spike of ``train`` is in a row, counted one row at a time."""
+    counts, _ = event_rows([train], start, stop, time_bin=time_bin, step=step)
+    n_rows = counts.shape[0]
+    left = start + step * np.arange(n_rows)
+    right = np.minimum(left + time_bin, stop)
+    held = (train[:, None] >= left) & (train[:, None] < right)
+    return held.any(axis=1)
+
+
+@pytest.mark.parametrize(
+    ("time_bin", "step"), [(0.02, 0.01), (0.02, 0.005), (0.02, 0.02)]
+)
+@pytest.mark.parametrize("stop", [0.1, 0.105, 0.1051, 0.1099, 0.113])
+def test_event_rows_hold_every_spike_up_to_the_stop(time_bin, step, stop):
+    """The last spike is in a row for any width, and nothing past the stop is."""
+    train = np.sort(np.random.default_rng(0).uniform(0.0, 0.2, 200))
+    inside = (train >= 0.0) & (train < stop)
+    assert np.array_equal(
+        _in_a_row(train, 0.0, stop, time_bin=time_bin, step=step), inside
+    )
+    last = np.array([stop - 1e-6])
+    assert event_rows([last], 0.0, stop, time_bin=time_bin, step=step)[0].sum() >= 1
+    assert event_rows([np.array([stop])], 0.0, stop, time_bin=time_bin, step=step)[
+        0
+    ].sum() == (0)
+
+
+def test_event_rows_equal_hand_summed_steps_over_whole_steps():
+    """Over whole steps the rows are the sum of tiled bins, row for row and on time."""
+    from neurospatial.decoding import bin_spikes_in_time
+
+    rng = np.random.default_rng(1)
+    trains = [np.sort(rng.uniform(1.0, 1.2, 40)) for _ in range(3)]
+    counts, centers = event_rows(trains, 1.0, 1.14, time_bin=0.02, step=0.005)
+    tiled, _ = bin_spikes_in_time(trains, dt=0.005, t_start=1.0, t_stop=1.14)
+    running = np.vstack([np.zeros((1, 3), np.int64), np.cumsum(tiled, axis=0)])
+    np.testing.assert_array_equal(counts, running[4:] - running[:-4])
+    np.testing.assert_allclose(centers, 1.01 + 0.005 * np.arange(counts.shape[0]))
+
+
+def test_event_rows_add_one_cut_row_for_a_partial_step():
+    """A partial step adds one row, no narrower than a bin less a step."""
+    train = np.array([0.0449])
+    full, _ = event_rows([train], 0.0, 0.04, time_bin=0.02, step=0.01)
+    partial, _ = event_rows([train], 0.0, 0.045, time_bin=0.02, step=0.01)
+    assert (full.shape[0], partial.shape[0]) == (3, 4)
+    assert (full.sum(), partial.sum()) == (0, 1)
+
+
+def test_event_rows_give_one_row_to_an_event_shorter_than_a_bin():
+    counts, centers = event_rows(
+        [np.array([0.001, 0.008]), np.array([0.02])],
+        0.0,
+        0.01,
+        time_bin=0.02,
+        step=0.01,
+    )
+    np.testing.assert_array_equal(counts, [[2, 0]])
+    np.testing.assert_allclose(centers, [0.01])

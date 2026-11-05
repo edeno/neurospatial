@@ -25,7 +25,7 @@ from neurospatial.datasets._lfp import GAP_PERIODS
 if TYPE_CHECKING:
     from neurospatial.datasets._recording import Recording
 
-__all__ = ["RIPPLE_DETECTION_COMMIT", "ripple_recording", "spike_counts"]
+__all__ = ["RIPPLE_DETECTION_COMMIT", "event_rows", "ripple_recording", "spike_counts"]
 
 #: The ``ripple_detection`` commit the worked results were run with; the same
 #: one pyproject.toml pins for development.
@@ -89,6 +89,69 @@ def spike_counts(
     for unit, (sample, tally) in enumerate(zip(samples, tallies, strict=True)):
         counts[sample, unit] = tally
     return counts
+
+
+def event_rows(
+    spike_times: Sequence[NDArray[np.float64]],
+    start: float,
+    stop: float,
+    *,
+    time_bin: float,
+    step: float,
+) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
+    """Count an event's spikes in overlapping time bins that reach its end.
+
+    Rows are ``time_bin`` wide and start every ``step`` from ``start``. The last
+    row is the first to reach ``stop`` and is cut there, so that every spike in
+    ``[start, stop)`` is in a row and none after ``stop`` is. Whole steps alone,
+    as ``bin_spikes_in_time`` tiles them, would lose a spike in the last partial
+    step, which for an event that ends at its last spike is that spike.
+
+    The cut row is between ``time_bin - step`` and ``time_bin`` wide. It keeps
+    its place on the grid and is decoded as a whole row, so a window of ``n``
+    full steps gets the same rows as ``bin_spikes_in_time`` summed by hand.
+
+    Parameters
+    ----------
+    spike_times : sequence of ndarray, each shape (n_spikes,)
+        Sorted spike times of each unit, seconds.
+    start, stop : float
+        The event's half-open ``[start, stop)``, seconds. An event bound that is a
+        sample's time holds that sample's spikes only up to the next sample, so
+        pass one sample past it.
+    time_bin, step : float
+        Row width and spacing, seconds.
+
+    Returns
+    -------
+    counts : ndarray, shape (n_rows, n_units)
+        Spikes per row, each spike in as many rows as overlap it.
+    centers : ndarray, shape (n_rows,)
+        Each row's nominal centre, ``time_bin / 2`` after its left edge, evenly
+        spaced even for a cut row.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> train = np.array([0.0, 0.035, 0.0449, 0.06])
+    >>> counts, centers = event_rows([train], 0.0, 0.045, time_bin=0.02, step=0.01)
+    >>> counts[:, 0].tolist()
+    [1, 0, 1, 2]
+    >>> centers.round(3).tolist()
+    [0.01, 0.02, 0.03, 0.04]
+    """
+    # The tolerance keeps a width that is a whole number of steps from rounding up.
+    n_steps = int(np.ceil((stop - start - time_bin) / step - 1e-9))
+    left = start + step * np.arange(max(n_steps, 0) + 1)
+    right = np.minimum(left + time_bin, stop)
+    counts = np.array(
+        [
+            np.searchsorted(train, right) - np.searchsorted(train, left)
+            for train in spike_times
+        ],
+        dtype=np.int64,
+    ).T
+    return counts, left + time_bin / 2
 
 
 def _speed_on_grid(
