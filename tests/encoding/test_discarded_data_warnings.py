@@ -45,6 +45,50 @@ def test_partial_spike_drop_warns_above_5pct(open_field_120s):
         compute_spatial_rates(session.env, shifted, times, positions)
 
 
+def _flight_tunnel():
+    """A 200 m track in metres with 1 m bins, and spikes along it."""
+    rng = np.random.default_rng(0)
+    times = np.arange(0.0, 600.0, 0.02)
+    x = 100.0 + 90.0 * np.sin(times / 20.0)
+    positions = np.column_stack([x, rng.normal(0.0, 0.3, times.size)])
+    env = Environment.from_samples(positions, bin_size=1.0, units="m")
+    spikes = np.sort(rng.uniform(0.0, 600.0, 500))
+    return env, spikes, times, positions
+
+
+@pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde"])
+def test_default_bandwidth_far_below_bins_warns(method):
+    """The 5 cm default on 1 m bins smooths by almost nothing."""
+    env, spikes, times, positions = _flight_tunnel()
+    with pytest.warns(UserWarning, match=r"5 cm default.*far below the 1 m bin"):
+        result = compute_spatial_rate(env, spikes, times, positions, method=method)
+    assert result.analysis_settings["bandwidth"] == pytest.approx(0.05)
+
+
+def test_binned_method_on_large_bins_does_not_warn():
+    """``method="binned"`` without a bandwidth asks for no smoothing."""
+    env, spikes, times, positions = _flight_tunnel()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compute_spatial_rate(env, spikes, times, positions, method="binned")
+
+
+def test_explicit_bandwidth_on_large_bins_does_not_warn():
+    env, spikes, times, positions = _flight_tunnel()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compute_spatial_rate(env, spikes, times, positions, bandwidth=2.0)
+
+
+def test_default_bandwidth_on_rodent_bins_does_not_warn(open_field_120s):
+    session = open_field_120s
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compute_spatial_rate(
+            session.env, session.spike_times[0], session.times, session.positions
+        )
+
+
 def test_tiny_spatial_bandwidth_warns(open_field_120s):
     session = open_field_120s
     env, spikes = session.env, session.spike_times[0]

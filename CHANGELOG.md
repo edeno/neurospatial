@@ -16,6 +16,13 @@
   events it decodes in one pass, as it already did one interval at a time.
   Joint decodes have no `interval_id`: use `start_time` to join them.
 
+### The 5 cm default bandwidth warns on large bins
+
+- A kernel method with the default bandwidth now warns when 5 cm is below a
+  quarter of the bin size, as an explicit bandwidth already did. On 1 m bins
+  it smoothed by almost nothing without saying so. The warning also catches an
+  `Environment` whose `units` are wrong. Pass `bandwidth=` to silence it.
+
 ### Dataset loaders
 
 #### Loading and cataloguing
