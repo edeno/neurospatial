@@ -386,3 +386,45 @@ def test_builder_lists_one_variant_with_its_videos():
     written["sessions"][0]["videos"][0]["asset_path"] = f"{stem}/gone.avi"
     with pytest.raises(ValueError, match=r"gone\.avi"):
         builder.build(written, "0.1", _api(pages))
+
+
+def test_builder_lists_a_sibling_file_as_lfp_and_leaves_out_sessions_not_offered():
+    builder = _builder()
+    registry = {
+        "archive": {
+            "dandiset": "000552",
+            "lfp_variant": "-raw",
+            "no_lfp": ["sub-3_ses-3"],
+            "not_offered": ["sub-2_ses-2"],
+        }
+    }
+    assets = [
+        _asset("sub-1/sub-1_ses-1_behavior+ecephys.nwb", "a" * 64),
+        _asset("sub-1/sub-1_ses-1-raw_ecephys.nwb", "b" * 64),
+        _asset("sub-2/sub-2_ses-2_behavior+ecephys.nwb", "c" * 64),
+        _asset("sub-3/sub-3_ses-3_behavior+ecephys.nwb", "d" * 64),
+        _asset("sub-3/sub-3_ses-3-raw_ecephys.nwb", "e" * 64),
+    ]
+    api = builder.API
+    get = _api(
+        {
+            f"{api}/dandisets/000552/versions/0.1/": {
+                "license": ["spdx:CC-BY-4.0"],
+                "citation": "A citation",
+            },
+            f"{api}/dandisets/000552/versions/0.1/assets/"
+            "?page_size=200&metadata=true": {"results": assets, "next": None},
+        }
+    )
+    built = builder.build(registry, "0.1", get)
+    rows = {row["session"]: row for row in built["sessions"]}
+    assert set(rows) == {"sub-1_ses-1", "sub-3_ses-3"}
+    assert rows["sub-1_ses-1"]["lfp_files"] == [
+        {
+            "path": "sub-1_ses-1-raw_ecephys.nwb",
+            "asset_id": "id-sub-1/sub-1_ses-1-raw_ecephys.nwb",
+            "sha256": "b" * 64,
+            "size_bytes": 1000,
+        }
+    ]
+    assert "lfp_files" not in rows["sub-3_ses-3"]

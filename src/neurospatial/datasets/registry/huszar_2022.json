@@ -1,0 +1,961 @@
+{
+  "dataset": "huszar_2022",
+  "paper": "Husz\u00e1r et al. (2022)",
+  "paper_citation": "Husz\u00e1r R, Zhang Y, Blockus H, Buzs\u00e1ki G (2022). Preconfigured dynamics in the hippocampus are guided by embryonic birthdate and rate of neurogenesis. Nature Neuroscience 25, 1201-1212. https://doi.org/10.1038/s41593-022-01138-x",
+  "species": "mouse",
+  "brain_regions": [
+    "hippocampus CA1"
+  ],
+  "apparatus": "79 x 79 cm figure-eight maze raised 61 cm above the ground, with spatial alternation for water reward, between rest in the home cage; some sessions add a second maze",
+  "archive": {
+    "dandiset": "000552",
+    "lfp_variant": "-raw",
+    "not_offered": [
+      "sub-e13-1f1_ses-e13-1f1-200228",
+      "sub-e13-1f1_ses-e13-1f1-200229",
+      "sub-e13-1f1_ses-e13-1f1-200305",
+      "sub-e13-1f1_ses-e13-1f1-200306",
+      "sub-e13-1f1_ses-e13-1f1-200307",
+      "sub-e13-1m1_ses-e13-1m1-200220",
+      "sub-e13-1m1_ses-e13-1m1-200221",
+      "sub-e13-1m1_ses-e13-1m1-200222",
+      "sub-e13-1m1_ses-e13-1m1-200223",
+      "sub-e13-1m1_ses-e13-1m1-200224",
+      "sub-e13-1m1_ses-e13-1m1-200225",
+      "sub-e13-1m1_ses-e13-1m1-200226",
+      "sub-e13-1m1_ses-e13-1m1-200227",
+      "sub-e13-1m1_ses-e13-1m1-200228",
+      "sub-e13-1m1_ses-e13-1m1-200229",
+      "sub-e13-1m1_ses-e13-1m1-200305",
+      "sub-e13-1m1_ses-e13-1m1-200306",
+      "sub-e14-1m1_ses-e14-1m1-200130",
+      "sub-e14-1m1_ses-e14-1m1-200201",
+      "sub-e14-1m1_ses-e14-1m1-200203",
+      "sub-e14-1m1_ses-e14-1m1-200204",
+      "sub-e14-1m1_ses-e14-1m1-200205",
+      "sub-e14-1m1_ses-e14-1m1-200206",
+      "sub-e14-1m1_ses-e14-1m1-200207",
+      "sub-e14-1m1_ses-e14-1m1-200208",
+      "sub-e14-1m1_ses-e14-1m1-200210",
+      "sub-e14-1m1_ses-e14-1m1-200211",
+      "sub-e14-1m1_ses-e14-1m1-200212",
+      "sub-e14-1m1_ses-e14-1m1-200213",
+      "sub-e15-4m1_ses-e15-4m1-191121",
+      "sub-e15-4m1_ses-e15-4m1-191125",
+      "sub-e15-4m1_ses-e15-4m1-191203",
+      "sub-e15-4m2_ses-e15-4m2-191212",
+      "sub-e15-4m2_ses-e15-4m2-191213",
+      "sub-e15-4m2_ses-e15-4m2-191215",
+      "sub-e15-4m2_ses-e15-4m2-191216",
+      "sub-e15-5m1_ses-e15-5m1-200313-1",
+      "sub-e15-5m1_ses-e15-5m1-200313-2",
+      "sub-e15-5m1_ses-e15-5m1-200314"
+    ],
+    "not_offered_why": "their files hold ripples and sleep states but no units, position or trials",
+    "version": "0.230630.2304",
+    "url": "https://dandiarchive.org/dandiset/000552/0.230630.2304",
+    "citation": "Husz\u00e1r, Roman; Zhang, Yunchang; Blockus, Heike; Buzs\u00e1ki, Gy\u00f6rgy (2023) Preconfigured dynamics in the hippocampus are guided by embryonic birthdate and rate of neurogenesis (Version 0.230630.2304) [Data set]. DANDI archive. https://doi.org/10.48324/dandi.000552/0.230630.2304",
+    "no_lfp": [
+      "sub-e16-3m1_ses-e16-3m1-210203"
+    ]
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 30.0,
+      "basis": "stated",
+      "source": "Yang et al. 2024, Science, Supplementary Materials (Behavior, dataset 1): head-mounted red LEDs tracked with an overhead camera 'at a frame rate of 30-Hz'"
+    },
+    "position_span": {
+      "value": [
+        63.2,
+        139.2
+      ],
+      "basis": "inferred",
+      "source": "Husz\u00e1r et al. 2022 states 'a customized 79 x 79 cm2 figure-eight maze'; 20% below it, up to 20% above the 116 cm the samples of the longest second maze span (a linear maze no source read gives a size for)"
+    },
+    "speed_limit": {
+      "value": 526.5,
+      "basis": "stated",
+      "source": "Iriarte-D\u00edaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Mus musculus runs at most 43.88 body lengths/s at a 0.080 m body length, 3.51 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a red LED on the head, which swings faster than the body, and no source read states head speed"
+    }
+  },
+  "sessions": [
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210302",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210302_behavior+ecephys.nwb",
+      "asset_id": "47be899c-27a8-4864-a1e9-d7a3f92e522e",
+      "sha256": "29a87a048b210ab5dbf3070cf28f11a1d02d3f3b5d3861958658755b4d094484",
+      "size_bytes": 150416379,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210312",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210312_behavior+ecephys.nwb",
+      "asset_id": "6d20875b-c51f-4eef-a86f-bb4591557c49",
+      "sha256": "fea63ca90ebd5cfda22f9d4037061966dc2a31ae76bf3acb617b666893fd493b",
+      "size_bytes": 121439655,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210314",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210314_behavior+ecephys.nwb",
+      "asset_id": "21149a8c-029c-4667-9858-a36f6b88b7e1",
+      "sha256": "2dd258d173f6dbb1b8595907f20706b6248fd90ad7f1aec3279ef71501427ff3",
+      "size_bytes": 108922341,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210315",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210315_behavior+ecephys.nwb",
+      "asset_id": "3e84096b-effc-43fd-97f9-13c2ce97b79f",
+      "sha256": "1cd046426e50e6a87a6987e29f7e51e3a664447b7f590a01ccb0488e8cd97f24",
+      "size_bytes": 107929787,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210317",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210317_behavior+ecephys.nwb",
+      "asset_id": "25b641ae-5a56-49c2-893c-7dd19d039912",
+      "sha256": "3d28703e8c3e216743020f2d74d19f5b9b23752f0a49d7cc7f5d481323bf9c5f",
+      "size_bytes": 116986503,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210319",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210319_behavior+ecephys.nwb",
+      "asset_id": "2e721648-4134-4d24-a1c2-128f7bbb4960",
+      "sha256": "0d454aaece6d13643844ad46e41a8099542c3e985f03949c99f89ec57bf6744f",
+      "size_bytes": 113329300,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210322",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210322_behavior+ecephys.nwb",
+      "asset_id": "0ecc6d56-9003-4ddc-bcc3-e30c7fb8a934",
+      "sha256": "c4bfa0eb027052423a03d8b4cc2ea7500d70c92b96f81c13a873bbe70a893d19",
+      "size_bytes": 113693445,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210328",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210328_behavior+ecephys.nwb",
+      "asset_id": "03277cbc-52b3-4311-99f5-9f4757db30a3",
+      "sha256": "92f75117bc3384ee1d5f3d0010f7a3d5d0fe9a0448872b836cbbe2311f0f4af3",
+      "size_bytes": 157029539,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-16f1_ses-e13-16f1-210331",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-16f1/sub-e13-16f1_ses-e13-16f1-210331_behavior+ecephys.nwb",
+      "asset_id": "ace2936d-9c8b-4b38-999e-432b657be202",
+      "sha256": "bba512e4f89adbc3ed1e39235c3a6b3342a1ae30cb701c2c7bfdc4d09697ac95",
+      "size_bytes": 133506238,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-26m1_ses-e13-26m1-211019",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-26m1/sub-e13-26m1_ses-e13-26m1-211019_behavior+ecephys.nwb",
+      "asset_id": "eadd4fec-ffef-4445-b4f6-32a309f076c9",
+      "sha256": "a7022f648fd34aedb56df8de2bd9ddcbc209b8b839d71a60dda9a53cfedf3075",
+      "size_bytes": 213185239,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e13-26m1_ses-e13-26m1-211019-raw_ecephys.nwb",
+          "asset_id": "37a1d7c8-d741-4416-9d74-7a28681522d0",
+          "sha256": "d1cf778849de2d303f5fcbdaf118aa6713b4426ba9a30a928e8a887ec6d3a150",
+          "size_bytes": 147353047025
+        }
+      ]
+    },
+    {
+      "session": "sub-e13-26m1_ses-e13-26m1-211116",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-26m1/sub-e13-26m1_ses-e13-26m1-211116_behavior+ecephys.nwb",
+      "asset_id": "630cde1e-ce81-473b-bc00-ea09e3b557fe",
+      "sha256": "b3504f288161ff7cd53e669d44dd639a2e2bcda9b1a0e2278435309eea52d636",
+      "size_bytes": 153552379,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e13-26m1_ses-e13-26m1-211116-raw_ecephys.nwb",
+          "asset_id": "631a1be1-8783-4a5b-ae27-4ae77837662e",
+          "sha256": "21ba1da0f667175e1e4bbcf5aa8aac84cbd0c02abbe73253de4e0b8630f58955",
+          "size_bytes": 123466980268
+        }
+      ]
+    },
+    {
+      "session": "sub-e13-26m1_ses-e13-26m1-211119",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-26m1/sub-e13-26m1_ses-e13-26m1-211119_behavior+ecephys.nwb",
+      "asset_id": "b23133ab-b36c-4fc2-bff1-1b583bf32ec3",
+      "sha256": "ca18b9fda20635556d851a9e61f0d1c0adc8f64a7215eda745606dcd0e1204e9",
+      "size_bytes": 197606946,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e13-26m1_ses-e13-26m1-211124",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e13-26m1/sub-e13-26m1_ses-e13-26m1-211124_behavior+ecephys.nwb",
+      "asset_id": "f9c61d2e-bf19-4ca4-8441-1d0172b4c140",
+      "sha256": "c6ddb0761364a8bb5c7d7faa44852cde32dd3aa0d155679946df7dda91f7201f",
+      "size_bytes": 150864404,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e13-26m1_ses-e13-26m1-211124-raw_ecephys.nwb",
+          "asset_id": "a9015965-76da-41b0-a3ae-cd23733e38ff",
+          "sha256": "3b62171d4fc69beec3c15ef77087c1d17bb966b5f8364e59a2ce49bd9ea09fdf",
+          "size_bytes": 133154801566
+        }
+      ]
+    },
+    {
+      "session": "sub-e14-2m2_ses-e14-2m2-201013",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m2/sub-e14-2m2_ses-e14-2m2-201013_behavior+ecephys.nwb",
+      "asset_id": "21391a16-66cc-4d79-8afb-585144673fec",
+      "sha256": "fe7b51f14f05d35236773f625efe7f57fc412c66ece50e492b1222b13debf9a7",
+      "size_bytes": 186884571,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m2_ses-e14-2m2-201017",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m2/sub-e14-2m2_ses-e14-2m2-201017_behavior+ecephys.nwb",
+      "asset_id": "5bca65ab-c421-4b10-a01b-3da50894b396",
+      "sha256": "0f1549f8d97c2726815a4500b1e7c807dfb30f05215b6657c774d79f30938877",
+      "size_bytes": 90965780,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m2_ses-e14-2m2-201019",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m2/sub-e14-2m2_ses-e14-2m2-201019_behavior+ecephys.nwb",
+      "asset_id": "61ea529d-46db-42e6-b742-17588b2f70a2",
+      "sha256": "3ab5f99419a9d0070ef6b5bc468841b75467ac95f538e9735312fa0d29aa3d4a",
+      "size_bytes": 96035051,
+      "verified": false,
+      "default": true,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m2_ses-e14-2m2-201022",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m2/sub-e14-2m2_ses-e14-2m2-201022_behavior+ecephys.nwb",
+      "asset_id": "92aa9c2a-50bc-4f14-91fd-807bed092868",
+      "sha256": "a2aad6cb77bafbf93ade41a020cb37a7bbd66263b93f6cf6521eed13679280b0",
+      "size_bytes": 105477784,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m3_ses-e14-2m3-201017",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m3/sub-e14-2m3_ses-e14-2m3-201017_behavior+ecephys.nwb",
+      "asset_id": "21688f2b-431d-4a06-b1e2-b7f85cef7768",
+      "sha256": "9f1cb855ee40b8b998736bf51d03a6e8e2fdef625fc9b3f8e5509b520bc93abc",
+      "size_bytes": 84619425,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m3_ses-e14-2m3-201019",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m3/sub-e14-2m3_ses-e14-2m3-201019_behavior+ecephys.nwb",
+      "asset_id": "04748c6b-825e-4eb2-ac83-1bbc53546050",
+      "sha256": "6e3a96bf06afe5e269e6fb5c220f3138cc1c0b768222c28b499ec5dee57dc956",
+      "size_bytes": 72501308,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m3_ses-e14-2m3-201118",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m3/sub-e14-2m3_ses-e14-2m3-201118_behavior+ecephys.nwb",
+      "asset_id": "27eb0cae-2867-4182-b682-ffde70e7af4f",
+      "sha256": "933d3a06e466916d8955cb550e0889a04b71e3d01ed898455536e04fec5d1ee2",
+      "size_bytes": 53214448,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m3_ses-e14-2m3-201121",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m3/sub-e14-2m3_ses-e14-2m3-201121_behavior+ecephys.nwb",
+      "asset_id": "f36a3ffe-1aa2-4019-a8fc-07b03bb2b38e",
+      "sha256": "f4f08fe3960a8e6c41433f7e828b5d9f424d58d575321586610bf1d3a4bf05be",
+      "size_bytes": 41281925,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m3_ses-e14-2m3-201125",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m3/sub-e14-2m3_ses-e14-2m3-201125_behavior+ecephys.nwb",
+      "asset_id": "618076be-30e4-438a-820c-e761453a2c81",
+      "sha256": "e161228c41f993603f0f5873ba8d7f9aebdfafa76049cdd6ba6d150e330398f5",
+      "size_bytes": 126579642,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m3_ses-e14-2m3-201129",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m3/sub-e14-2m3_ses-e14-2m3-201129_behavior+ecephys.nwb",
+      "asset_id": "8750bc9a-a6d7-4468-9957-b0ca00570632",
+      "sha256": "2d9145f44cc098c8007e50adcfd92d2fd80de652cc1ed03ecf10be738fe3f751",
+      "size_bytes": 83763741,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m3_ses-e14-2m3-201206",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m3/sub-e14-2m3_ses-e14-2m3-201206_behavior+ecephys.nwb",
+      "asset_id": "ab1d16d4-9c88-489a-89b1-389447cd6338",
+      "sha256": "9bc938b552394ae1bf8c6931a1c3253cae482c2ee6a49a30f54775dd8d92c391",
+      "size_bytes": 90977009,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e14-2m3_ses-e14-2m3-201208",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e14-2m3/sub-e14-2m3_ses-e14-2m3-201208_behavior+ecephys.nwb",
+      "asset_id": "43d65b23-8e3e-40a8-99e1-33ba543e3563",
+      "sha256": "7134013c69879f8c1993ab93c7c4ad578651cfddb4d0b8c6730edd3f60db0c61",
+      "size_bytes": 94693660,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-10m1_ses-e15-10m1-200716",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-10m1/sub-e15-10m1_ses-e15-10m1-200716_behavior+ecephys.nwb",
+      "asset_id": "1475cd52-5f20-4302-a713-97a06fb2a78b",
+      "sha256": "d85e09ae8491142fbfba82b0b96abd0ed2332da99a50af7c183ce18027d1c8f6",
+      "size_bytes": 119325029,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-10m1_ses-e15-10m1-200719",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-10m1/sub-e15-10m1_ses-e15-10m1-200719_behavior+ecephys.nwb",
+      "asset_id": "e81769f8-2620-4d01-a43d-5c857f4026f4",
+      "sha256": "55fb457182dd0ee063e30ec0ecaa34c5e92a538d399358802fde7bd09b73d8d2",
+      "size_bytes": 113069115,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-10m1_ses-e15-10m1-200723",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-10m1/sub-e15-10m1_ses-e15-10m1-200723_behavior+ecephys.nwb",
+      "asset_id": "e594f7a9-37f3-437c-b805-410dfb35afb6",
+      "sha256": "e48853b39d5739ce9cc61715fcb5ed484a822b0b1590a5fb72b9fa6f633b7d74",
+      "size_bytes": 110461854,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-10m1_ses-e15-10m1-200727",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-10m1/sub-e15-10m1_ses-e15-10m1-200727_behavior+ecephys.nwb",
+      "asset_id": "c1f183f1-b2e0-4639-80eb-481984f177b0",
+      "sha256": "0962e931f1b9f53baf7abed0e8f4b3ade683999022ec79ccf996baec6dabd464",
+      "size_bytes": 138715855,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-10m1_ses-e15-10m1-200803",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-10m1/sub-e15-10m1_ses-e15-10m1-200803_behavior+ecephys.nwb",
+      "asset_id": "5dc5a5eb-0e67-45b1-88d6-4c88b4972827",
+      "sha256": "499869bfe048f8460d8f540fbf72d8a0d6a76a2d0d3bbc1bfb65e8ae61b97fe9",
+      "size_bytes": 145668013,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-10m1_ses-e15-10m1-200809",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-10m1/sub-e15-10m1_ses-e15-10m1-200809_behavior+ecephys.nwb",
+      "asset_id": "bfee39ff-11ea-41e0-af22-91fbdfd91a3f",
+      "sha256": "90da40926d95903197a3ebe1fe61ab712d75c4c78a54a9f2326e7a913bb413c2",
+      "size_bytes": 102359493,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-10m1_ses-e15-10m1-200812",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-10m1/sub-e15-10m1_ses-e15-10m1-200812_behavior+ecephys.nwb",
+      "asset_id": "a316d402-2e0a-4209-a602-a41a629a9dd5",
+      "sha256": "b5604732f3444eb72ca23fa286d5254222d20c69b35fef894733a91baebb2576",
+      "size_bytes": 119676318,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-13f1_ses-e15-13f1-220117",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-13f1/sub-e15-13f1_ses-e15-13f1-220117_behavior+ecephys.nwb",
+      "asset_id": "3af386b1-0db7-460f-b394-7dca8f9b1e24",
+      "sha256": "ea31f668a3a333c4253e7ae7fcfa50cb15a5f953fb3bd9dae022babfc7bbb16f",
+      "size_bytes": 270053655,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e15-13f1_ses-e15-13f1-220117-raw_ecephys.nwb",
+          "asset_id": "9f3b0bd1-8228-4942-8a26-f69d74bae64f",
+          "sha256": "53cababa409c23aab40253388bddab4b6e96124277c80051ec64a57096962d68",
+          "size_bytes": 6838127257
+        }
+      ]
+    },
+    {
+      "session": "sub-e15-13f1_ses-e15-13f1-220118",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-13f1/sub-e15-13f1_ses-e15-13f1-220118_behavior+ecephys.nwb",
+      "asset_id": "576ed4dd-4988-4f1b-8bb2-292eed48dacb",
+      "sha256": "c599a188c063fb61b746d1626a6bf01733117c28a1ac2eb3b67a34d2c4b47757",
+      "size_bytes": 316840553,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e15-13f1_ses-e15-13f1-220118-raw_ecephys.nwb",
+          "asset_id": "f5efb607-f8b4-4e1e-9242-dcff37f5f880",
+          "sha256": "d81692ebb82bb8a84adb70a256ac57f7bc81d635b2c1e9e465faff66c42803f8",
+          "size_bytes": 183608028765
+        }
+      ]
+    },
+    {
+      "session": "sub-e15-13f1_ses-e15-13f1-220119",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-13f1/sub-e15-13f1_ses-e15-13f1-220119_behavior+ecephys.nwb",
+      "asset_id": "1a886634-9fae-4cdd-909d-cfe461269647",
+      "sha256": "067c92e7ebabcb5e4dd339502d04697b60f9c77ca8cc1f06e025f3e6d5ea62da",
+      "size_bytes": 321612382,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e15-13f1_ses-e15-13f1-220119-raw_ecephys.nwb",
+          "asset_id": "44000714-6b12-4b31-813a-8516cf9295f7",
+          "sha256": "7ce81a700e3e3d0665ae777fce828e149e07ded66dd3e108117a711268874fa3",
+          "size_bytes": 180414749521
+        }
+      ]
+    },
+    {
+      "session": "sub-e15-13f1_ses-e15-13f1-220120",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-13f1/sub-e15-13f1_ses-e15-13f1-220120_behavior+ecephys.nwb",
+      "asset_id": "3de2b63e-5fc6-4f75-8087-545fcfae904b",
+      "sha256": "50d285934459ead67728c73ea0edbe13baf142d4c109e06483788a58994ae7a6",
+      "size_bytes": 259673178,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e15-13f1_ses-e15-13f1-220120-raw_ecephys.nwb",
+          "asset_id": "ce399dfb-64d8-4a21-bb3a-3014f0524486",
+          "sha256": "69c8672a416240f3eea179c73e4ad32f35ff407edbe0192f1bbada4e22f38260",
+          "size_bytes": 166191418883
+        }
+      ]
+    },
+    {
+      "session": "sub-e15-9f1_ses-e15-9f1-200715",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-9f1/sub-e15-9f1_ses-e15-9f1-200715_behavior+ecephys.nwb",
+      "asset_id": "fb9d4cb1-347e-407e-9327-2449836aa557",
+      "sha256": "642905ceee4136aa9f59bc918f6b21e32c33476e8da1d38fb4784da758fa7b41",
+      "size_bytes": 144817728,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-9f1_ses-e15-9f1-200717",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-9f1/sub-e15-9f1_ses-e15-9f1-200717_behavior+ecephys.nwb",
+      "asset_id": "ed803a6f-7bca-4d2f-be17-18e13544dc24",
+      "sha256": "7762f4b3dc12391eaa5085991e289fe9fa3645d797aecde99052faa4b2608e7d",
+      "size_bytes": 105830627,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-9f1_ses-e15-9f1-200720",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-9f1/sub-e15-9f1_ses-e15-9f1-200720_behavior+ecephys.nwb",
+      "asset_id": "ee9eea3d-c2b8-4d2f-9f98-866863dae368",
+      "sha256": "d7b1ef3bd16bef13a2f49aa5d61b403678006758291b2de687091a43693e4f07",
+      "size_bytes": 132240179,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-9f1_ses-e15-9f1-200723",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-9f1/sub-e15-9f1_ses-e15-9f1-200723_behavior+ecephys.nwb",
+      "asset_id": "be713c96-10e7-43f1-b3c0-8973226c655d",
+      "sha256": "f6c8d1a16a5b1a2f17b5cdd1851a1f4944cbefffaf386b903775590413a53038",
+      "size_bytes": 127332179,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-9f1_ses-e15-9f1-200729",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-9f1/sub-e15-9f1_ses-e15-9f1-200729_behavior+ecephys.nwb",
+      "asset_id": "d640bacc-1b61-4db2-8678-05682c4bd8f4",
+      "sha256": "b7abb9f45ba899ded995cf7456e82a703df1d1512bee547a3240b18684dab316",
+      "size_bytes": 129463219,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-9f1_ses-e15-9f1-200802",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-9f1/sub-e15-9f1_ses-e15-9f1-200802_behavior+ecephys.nwb",
+      "asset_id": "9927137f-eecd-4bbf-9ea6-755d851689e5",
+      "sha256": "2d71dad175a258bed8775a931907ef57910adf88d11a8a8c1eab8436f91dde27",
+      "size_bytes": 96115005,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e15-9f1_ses-e15-9f1-200809",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e15-9f1/sub-e15-9f1_ses-e15-9f1-200809_behavior+ecephys.nwb",
+      "asset_id": "12982501-773d-4e68-89c3-e567616d2ebf",
+      "sha256": "db802a63afed6bde20e580d2323e6b491cd30f64a70e4ce2cd041cf795ba17dc",
+      "size_bytes": 89927816,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-200823",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-200823_behavior+ecephys.nwb",
+      "asset_id": "947e17c8-bf6c-4ede-b4b9-c4eb086605a0",
+      "sha256": "abc38e8a9159629b392b4c95c4936d5e9b8837d02cdb59cf1f4a9d9c58921a0a",
+      "size_bytes": 148019545,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-200917",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-200917_behavior+ecephys.nwb",
+      "asset_id": "3416b7bc-2064-4fea-941f-e674006b9318",
+      "sha256": "4bc1cfe4249371236331e89171c13232565669c1a651d67f8d79d49324c2986f",
+      "size_bytes": 96603609,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-200918",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-200918_behavior+ecephys.nwb",
+      "asset_id": "346ad598-f6c5-4946-8657-bafc6eb4fadc",
+      "sha256": "9a41c7d4dc8e3cca688ac11481806b4e3abaf2cd7b25e24dcb726b6cb05c51cc",
+      "size_bytes": 125756910,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-200919",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-200919_behavior+ecephys.nwb",
+      "asset_id": "17f6c96d-c0df-4f05-a3b1-e1bb64ed0265",
+      "sha256": "becf8783fba2c93cf365200ba5d2ab5df4e85d1bcc19032060d8fbdda6c6fbc7",
+      "size_bytes": 142759437,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-200920",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-200920_behavior+ecephys.nwb",
+      "asset_id": "f8525970-1d69-4384-98fa-4f108228700f",
+      "sha256": "19c2381bf0ed89e4ed8649496fe86e753620a7693d68cfc84d41e7f0ec9ad1ea",
+      "size_bytes": 128818748,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-200923",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-200923_behavior+ecephys.nwb",
+      "asset_id": "306488af-df40-40e3-80c6-4c4944228ed8",
+      "sha256": "462440f42661274073749023b674da7b2cd8419a02ff561201482bc3d9d7df1a",
+      "size_bytes": 75976457,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-201001",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-201001_behavior+ecephys.nwb",
+      "asset_id": "b791ae16-fe4d-4a3d-b93a-be1b8eb9b14a",
+      "sha256": "7a3c1f70e5b6679dbf5c6204ef5a473813dc7e00a38ed96c7f7f146868735766",
+      "size_bytes": 94579228,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-201002",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-201002_behavior+ecephys.nwb",
+      "asset_id": "65117160-c0ac-4ab5-bc79-4e89683533ef",
+      "sha256": "8dd5eb4086f2d33aab24e993fe1c05db714e5d1609e387eb6c4ef78b57b9e408",
+      "size_bytes": 92747508,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-1f1_ses-e16-1f1-201004",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-1f1/sub-e16-1f1_ses-e16-1f1-201004_behavior+ecephys.nwb",
+      "asset_id": "2f001df0-6d9a-4bb8-ad86-3b794b49127a",
+      "sha256": "21687acad16985fbe24e3bce407cb05b46fc58738f908579fba6cc8f5497aea8",
+      "size_bytes": 89677302,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-2m1_ses-e16-2m1-201116",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-2m1/sub-e16-2m1_ses-e16-2m1-201116_behavior+ecephys.nwb",
+      "asset_id": "04581ee0-5d42-45ac-809d-2079ee7bf077",
+      "sha256": "a6e7acd8fc7e1be9b3df37fb9dd226875604156522445f9e699524854795809d",
+      "size_bytes": 83139082,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-2m1_ses-e16-2m1-201119",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-2m1/sub-e16-2m1_ses-e16-2m1-201119_behavior+ecephys.nwb",
+      "asset_id": "a4a466ba-dbb0-43bd-9b0e-fe9dd4057bdd",
+      "sha256": "4b58e19d464704e2a4a64f1cead89275681840557fcb592a327dd5d920786abf",
+      "size_bytes": 63121481,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-2m1_ses-e16-2m1-201121",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-2m1/sub-e16-2m1_ses-e16-2m1-201121_behavior+ecephys.nwb",
+      "asset_id": "1db47626-7ec1-4995-b458-f092fb7dc5c7",
+      "sha256": "198add331d3df57b1e36f69716ec626ea0bffe9340fc5c91b1513dece02dd8aa",
+      "size_bytes": 47110801,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-2m1_ses-e16-2m1-201129",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-2m1/sub-e16-2m1_ses-e16-2m1-201129_behavior+ecephys.nwb",
+      "asset_id": "1a75b3f0-dba4-4f02-a5fb-b79d09a50457",
+      "sha256": "5760ed4d4f10f67a70c4075ff7dafacedf7fab3a47dd5ca395e2814cf3e154c5",
+      "size_bytes": 55592300,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-2m1_ses-e16-2m1-201206",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-2m1/sub-e16-2m1_ses-e16-2m1-201206_behavior+ecephys.nwb",
+      "asset_id": "a5eb34a0-aba1-4c3e-bc76-77edbbf448de",
+      "sha256": "ff8877982dfacf89bccf8ccbeac30d24a8fa7b4cf37f7e2681f4c1814df5013c",
+      "size_bytes": 53742382,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-3m1_ses-e16-3m1-210111",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-3m1/sub-e16-3m1_ses-e16-3m1-210111_behavior+ecephys.nwb",
+      "asset_id": "929bc9be-8434-440c-8910-a581134c5a95",
+      "sha256": "eec9df5eb5225ac15a5ae55d544503270209160a0451fecd7f2d6be2f2d99567",
+      "size_bytes": 91097679,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-3m1_ses-e16-3m1-210119",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-3m1/sub-e16-3m1_ses-e16-3m1-210119_behavior+ecephys.nwb",
+      "asset_id": "e4a25cc6-4d21-4a58-8728-30e15dbd9445",
+      "sha256": "2f88bf90543f8905fb4cb16d1e1160ee6bd67b5fe4d9f10dfb3b305b65b45e51",
+      "size_bytes": 152808660,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-3m1_ses-e16-3m1-210201",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-3m1/sub-e16-3m1_ses-e16-3m1-210201_behavior+ecephys.nwb",
+      "asset_id": "75a0be1f-61da-4377-bcd0-42dce58cc810",
+      "sha256": "b495df7c1d06231ad6633f097d4159d9d39a07301e882590c03dcb0b86d71395",
+      "size_bytes": 2455041501,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e16-3m1_ses-e16-3m1-210201-raw_ecephys.nwb",
+          "asset_id": "ba27dbc6-a62e-4414-a471-ebe7b9142636",
+          "sha256": "7101c03dc914e6b6ad2e275903ee375c98e6faa533bf1e8270a5357292136a40",
+          "size_bytes": 54480321649
+        }
+      ]
+    },
+    {
+      "session": "sub-e16-3m1_ses-e16-3m1-210203",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-3m1/sub-e16-3m1_ses-e16-3m1-210203_behavior+ecephys.nwb",
+      "asset_id": "0410c9e8-c6b7-471f-8424-ad99d401bcd0",
+      "sha256": "9f15852ff8809a25e074cedff2fb64746c15f2c81d069721a3270a2e75a6488d",
+      "size_bytes": 150713841,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-e16-3m2_ses-e16-3m2-211210",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-3m2/sub-e16-3m2_ses-e16-3m2-211210_behavior+ecephys.nwb",
+      "asset_id": "3094cafe-6444-49a1-bbfa-1b39d5de561e",
+      "sha256": "b30d757d773d635b8d30bb3a34d46713f8e0a1dbdfc51471553497b9e846f613",
+      "size_bytes": 277061128,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e16-3m2_ses-e16-3m2-211210-raw_ecephys.nwb",
+          "asset_id": "22d1c8ec-b8ec-48cb-8749-f40d4398f195",
+          "sha256": "e4f26e204128c7cd8e8a52cfa0cb4f4af8775b305372908e4d4128bc360b7080",
+          "size_bytes": 179992553932
+        }
+      ]
+    },
+    {
+      "session": "sub-e16-3m2_ses-e16-3m2-211211",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-3m2/sub-e16-3m2_ses-e16-3m2-211211_behavior+ecephys.nwb",
+      "asset_id": "8a703b33-f1c4-4dd0-a264-a1ec62494cf6",
+      "sha256": "a30fc9d4625d4bbff888bc1b331a59ffaa422828443318c1cd98d6c8dee8fec3",
+      "size_bytes": 183057682,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e16-3m2_ses-e16-3m2-211211-raw_ecephys.nwb",
+          "asset_id": "45eaa61d-f6b1-4f00-9fb3-afe62d5456ce",
+          "sha256": "e62606fc7b85b8b76905041cd7eb1ac970c25cf06cc27fed02f022cde249f2fa",
+          "size_bytes": 5617216582
+        }
+      ]
+    },
+    {
+      "session": "sub-e16-3m2_ses-e16-3m2-211212",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-3m2/sub-e16-3m2_ses-e16-3m2-211212_behavior+ecephys.nwb",
+      "asset_id": "a40fe835-eac5-4151-9154-7ff11a7b9ecd",
+      "sha256": "e2ca2fd8dc1bd6fae8f32d7d7d4e108266b44188104090a336143afcda09451e",
+      "size_bytes": 182240207,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e16-3m2_ses-e16-3m2-211212-raw_ecephys.nwb",
+          "asset_id": "eeabde8d-2d2e-4885-a03d-35132170ed9e",
+          "sha256": "53953991e568bdde89b87f6e7e48cf5cdb258337e4317d36f8ee9b8d0193ffa6",
+          "size_bytes": 138996655725
+        }
+      ]
+    },
+    {
+      "session": "sub-e16-3m2_ses-e16-3m2-211213",
+      "archive": "DANDI 000552",
+      "asset_path": "sub-e16-3m2/sub-e16-3m2_ses-e16-3m2-211213_behavior+ecephys.nwb",
+      "asset_id": "d088cd89-71ff-4b48-b123-5c1a5eb345e1",
+      "sha256": "ac9a1be62799a15330aa2650214ba3c818aba23a5cdcfa12ab6f2af3bc5202b0",
+      "size_bytes": 168402114,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": "",
+      "lfp_files": [
+        {
+          "path": "sub-e16-3m2_ses-e16-3m2-211213-raw_ecephys.nwb",
+          "asset_id": "069fd751-9871-4536-9eb2-b88f056e08a8",
+          "sha256": "9d94006e72dc94549990f7812a0db10d102955e46bd9ebd63d42d1759ea81f91",
+          "size_bytes": 150700842661
+        }
+      ]
+    }
+  ],
+  "license": "CC-BY-4.0"
+}
