@@ -74,6 +74,8 @@ from numpy.typing import NDArray
 
 from neurospatial.datasets._lfp import LFPSource
 from neurospatial.datasets._neuralynx import (
+    _spike_words,
+    is_64_bit,
     read_events,
     read_lfp,
     read_spike_times,
@@ -277,7 +279,7 @@ WATCH_OUTS: dict[str, tuple[str, ...]] = {
 _NUMBER = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 _ALIAS = re.compile(r"ExpKeys\.(\w+)\s*;")
 _ASSIGN = re.compile(r"^\s*ExpKeys\.(\w+)\s*=\s*(.*)$")
-_UNIT = re.compile(r"-(TT\d+)_(\d+)\.(_?t)$")
+_UNIT = re.compile(r"-(TT\d+)r?_(\d+)\.(_?t)$")
 
 
 def _key_value(text: str) -> Any:
@@ -338,8 +340,8 @@ def _one(folder: Path, pattern: str) -> Path:
     return found[0]
 
 
-def _read_units(folder: Path) -> tuple[tuple[NDArray[np.float64], ...], Any]:
-    """Every sorted unit of the session, by tetrode and cluster, and its table."""
+def _read_units(folder: Path) -> tuple[tuple[NDArray[np.float64], ...], Any, int]:
+    """Every sorted unit by tetrode and cluster, its table, and its 64-bit files."""
     import pandas as pd
 
     named = sorted(
@@ -348,6 +350,7 @@ def _read_units(folder: Path) -> tuple[tuple[NDArray[np.float64], ...], Any]:
         if (match := _UNIT.search(path.name)) is not None
     )
     trains = tuple(np.sort(read_spike_times(row[3])) for row in named)
+    n_wide = sum(is_64_bit(_spike_words(row[3])) for row in named)
     table = pd.DataFrame(
         {
             "brain_region": "dorsal CA1",
@@ -357,7 +360,7 @@ def _read_units(folder: Path) -> tuple[tuple[NDArray[np.float64], ...], Any]:
         },
         index=pd.Index([f"{row[0]}_{row[1]}" for row in named], name="unit_id"),
     )
-    return trains, table
+    return trains, table, n_wide
 
 
 def read_session_lfp(
@@ -685,7 +688,7 @@ def _cut_out(folder: Path, name: str) -> NDArray[np.float64] | None:
 def _within(
     rows: NDArray[np.float64], times: NDArray[np.float64]
 ) -> NDArray[np.float64]:
-    """``rows`` cut to the recording: the file runs them from 0 to infinity."""
+    """``rows`` cut to the recording, empty ones dropped: some run 0 to infinity."""
     clipped = np.clip(rows, times[0], times[-1])
     return clipped[clipped[:, 0] < clipped[:, 1]]
 
@@ -714,6 +717,7 @@ def _epochs(
     }
     notes = []
     if (kept := _cut_out(folder, "*-times.mat")) is not None:
+        kept = _within(kept, times)
         epochs["spikes_kept"] = kept
         notes.append(
             f"Spikes were cut out while the rat ate: {len(kept)} rows of "
@@ -880,7 +884,7 @@ def load_session(
         )
         raise ValueError(msg)
     positions = _positions_cm(track.x, track.y, factor)
-    spike_times, units = _read_units(folder)
+    spike_times, units, n_wide = _read_units(folder)
     left, right = coord.coordL_cm.T, coord.coordR_cm.T
     choice = np.asarray(coord.chp_cm, dtype=np.float64)
     graph = track_graph(left, right, choice)
@@ -893,6 +897,14 @@ def load_session(
     bad = np.atleast_1d(keys["badTrials"]).astype(np.intp)
     matched = matched_trials(arms, bad)
     epochs, notes = _epochs(keys, metadata, folder, matched, track.times)
+    if n_wide:
+        notes = (
+            *notes,
+            f"{n_wide} of {len(units)} spike files hold 64-bit times, though their "
+            "headers do not say so: every other 32-bit word is 0. The loader reads "
+            "the times; the lab's LoadSpikes.m reads 32 bits, which adds a spike "
+            "at 0 s before each.",
+        )
     event_times, texts = read_events(_one(folder, "*-Events.nev"))
     words = np.array(texts, dtype=object)
     events: dict[str, NDArray[np.float64]] = {

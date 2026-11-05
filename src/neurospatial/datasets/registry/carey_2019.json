@@ -21,11 +21,11 @@
   },
   "position_span": {
    "value": [
-    148.0,
-    222.0
+    129.5,
+    240.5
    ],
    "basis": "stated",
-   "source": "keys.m realTrackDims, 185 x 167 cm, or 139 x 185 cm for R042: the largest span of the tracked positions must lie within 20% of 185 cm"
+   "source": "keys.m realTrackDims, 185 x 167 cm, or 139 x 185 cm for R042: the largest span of the tracked positions must lie within 30% of 185 cm, wider than the usual 20% because the head and the rest pedestals reach past the maze (the 24 sessions span 190 to 223 cm)"
   },
   "speed_limit": {
    "value": 393.0,
