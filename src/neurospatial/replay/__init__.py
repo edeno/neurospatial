@@ -150,11 +150,12 @@ neurospatial.replay.methods : The published recipes (FOSTER_WILSON_2006,
 Significance
 ------------
 replay_significance : Test any replay score against shuffled events
-    Eight nulls: column-cycle, unit-identity and pseudo-event (the default,
+    Nine nulls: column-cycle, unit-identity and pseudo-event (the default,
     Davidson et al. 2009), spike-train and place-field circular shifts,
     time-bin permutation (the "time swap" or "time-bin shuffle" of Silva
     et al. 2015, Grosmark & Buzsáki 2016, Maboudi et al. 2018 and Farooq
-    et al. 2019), spike times redrawn uniformly in the event (Stella et
+    et al. 2019), circular shifts of the time bins (Bhattarai et al.
+    2020), spike times redrawn uniformly in the event (Stella et
     al. 2019) and the weighted column cycle (Farooq et al. 2019); the
     event is significant when every null run rejects it.
 

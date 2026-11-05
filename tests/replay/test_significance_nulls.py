@@ -20,6 +20,7 @@ ALL_NULLS = (
     "spike_train_circular",
     "place_field_circular",
     "time_bin_permutation",
+    "time_bin_circular",
     "spike_time_uniform",
     "column_cycle_weighted",
 )

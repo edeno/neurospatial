@@ -630,12 +630,13 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
     "bhattarai_2020": (
         ReplayMethod,
         {
-            "score": "_circular_shift_test",
+            "score": "fit_linear_trajectory",
+            "score_options": {"method": "map"},
+            "nulls": ("time_bin_circular",),
+            "n_shuffles": 1000,
+            "alpha": 0.05,
             "empty_time_bins": "drop",
-            "criteria": (
-                ("score", "<", 0.05, None, False),
-                ("n_active_cells", ">=", 5, None, False),
-            ),
+            "criteria": (("n_active_cells", ">=", 5, None, False),),
             "units": "cm",
             "decoding": {
                 "time_bin": 0.02,

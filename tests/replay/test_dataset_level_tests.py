@@ -376,6 +376,7 @@ class TestDatasetValues:
                 {"column_cycle_weighted": {"edge_exclusion": 10.0}},
             ),
             ("time_bin_permutation", None),
+            ("time_bin_circular", None),
         ],
     )
     def test_moment_tables_equal_measuring_each_shuffle(
@@ -415,8 +416,8 @@ class TestDatasetValues:
             b = slow[column].to_numpy(dtype=float)
             np.testing.assert_array_equal(np.isnan(a), np.isnan(b), err_msg=column)
             np.testing.assert_allclose(a, b, rtol=0, atol=1e-9, err_msg=column)
-        if null == "time_bin_permutation":
-            # The frozen event's permuted rows are all alike: no score, and
+        if null in ("time_bin_permutation", "time_bin_circular"):
+            # The frozen event's shifted rows are all alike: no score, and
             # no criterion value of a method that thresholds the score.
             frozen_rows = fast[fast["event"] == len(events) - 1]
             assert frozen_rows["score"].isna().all()
@@ -454,7 +455,13 @@ class TestDatasetValues:
         np.testing.assert_allclose(fast, slow, rtol=0, atol=1e-9)
 
     @pytest.mark.parametrize(
-        "null", ["column_cycle", "column_cycle_weighted", "time_bin_permutation"]
+        "null",
+        [
+            "column_cycle",
+            "column_cycle_weighted",
+            "time_bin_permutation",
+            "time_bin_circular",
+        ],
     )
     def test_fast_path_weighs_every_time_bin_alike(self, track, null):
         """Rows summing to 1 within DecodingResult's tolerance, not exactly.
