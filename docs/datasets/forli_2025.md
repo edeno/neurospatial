@@ -206,11 +206,17 @@ these maps cannot show a trajectory:
   positions shuffled (100 ms bins, fields from the even flights, decoding the
   odd ones).
 
+A low count here is not evidence of no replay. We planted replay into 300 of the
+windows. Every spike kept its time, and its cell was drawn from these rate maps along a
+real flight played 15 times faster. The rule judged 1 of the 300, 0.3%. This is a limit
+of the number, not a measurement of the bat: planted events come from the model the
+decoder assumes, and compression 15 is not calibrated for bats.
+
 How it was run: `events["swr_probe2"]`, peak ± 0.15 s, overlapping windows
 merged, kept inside the neural recording and clear of the file's flights; 134
 units with more spikes in the flights than there are flights and at most 2 Hz;
 fields over the flights from 3-D `compute_spatial_rates` (diffusion KDE,
-bandwidth 0.2 m); 20 ms bins stepped by 5 ms; judged by the rule of
+bandwidth 0.2 m); 20 ms bins stepped by 5 ms to each window's end; judged by the rule of
 `PFEIFFER_FOSTER_2013`, a MAP step under 0.6 m over at least 11 bins and at
 least 1.2 m from start to end. The two distances are our choice: the published
 20 and 40 cm scaled from a 2 m arena to this 5.8 m room, rounded. A shuffle per

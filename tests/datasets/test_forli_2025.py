@@ -413,7 +413,8 @@ def _decoding_units(rec):
 
 def _n_judged_trajectories(rec, trains, windows, rates):
     """How many windows the rule judges trajectories, decoding each in sliding bins."""
-    from neurospatial.decoding import bin_spikes_in_time, decode_position
+    from neurospatial.datasets._ripple import event_rows
+    from neurospatial.decoding import decode_position
     from neurospatial.replay import ReplayCriterion, ReplaySegmentation, detect_replay
     from neurospatial.replay.methods import PFEIFFER_FOSTER_2013
 
@@ -432,18 +433,12 @@ def _n_judged_trajectories(rec, trains, windows, rates):
             ),
         ),
     )
-    width = round(time_bin / step)
     n_judged = 0
     for start, stop in windows:
-        counts, _ = bin_spikes_in_time(
-            trains, dt=step, t_start=float(start), t_stop=float(stop)
+        counts, centres = event_rows(
+            trains, float(start), float(stop), time_bin=time_bin, step=step
         )
-        counts = np.asarray(counts)
-        running = np.vstack([np.zeros((1, counts.shape[1]), counts.dtype), counts])
-        running = np.cumsum(running, axis=0)
-        summed = running[width:] - running[:-width]
-        centres = start + time_bin / 2 + step * np.arange(summed.shape[0])
-        decoded = decode_position(rec.env, summed, rates, dt=time_bin, times=centres)
+        decoded = decode_position(rec.env, counts, rates, dt=time_bin, times=centres)
         verdict = detect_replay(
             rec.env, decoded.posterior, centres, replay_method=method
         )

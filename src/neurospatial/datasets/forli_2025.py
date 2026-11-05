@@ -182,7 +182,7 @@ OWN_3D_ANALYSIS: dict[str, Any] = {
     "n_windows": 2535,
     "n_units": 134,
     "null_own_offsets": (0, 0, 2, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 2, 0, 1, 0, 0),
-    "null_common_offset": (2, 2, 0, 0, 1, 2, 1, 6, 3, 2, 0, 2, 2, 2, 1, 2, 2, 4, 1, 1),
+    "null_common_offset": (2, 2, 0, 0, 1, 2, 1, 6, 3, 2, 0, 2, 2, 2, 1, 2, 3, 4, 1, 1),
     "window_half_width": 0.15,
     "bandwidth": 0.2,
     "time_bin": 0.02,
@@ -203,6 +203,19 @@ OWN_3D_ANALYSIS: dict[str, Any] = {
         "this 5.8 m room, rounded"
     ),
     "held_out_flights": {"median_error_m": 2.197, "shuffled_error_m": 2.380},
+    "planted_recall": {
+        "judged": 1,
+        "planted": 300,
+        "reading": (
+            "replay planted into 300 of the windows, keeping every spike's time "
+            "and drawing its cell from these rate maps along a real flight played "
+            "15 times faster, is judged a trajectory 0.3% of the time. So this "
+            "judge passes almost no known replay here, and 2 of 2,535 is not "
+            "evidence that the bat replays nothing. This is a limit of what the "
+            "number can say: planted events come from the model the decoder "
+            "assumes, and compression 15 is not calibrated for bats"
+        ),
+    },
     "watch_out": (
         "The 3-D decode of the ripple events is neurospatial's own analysis, "
         "not the paper's: its replay analysis was 1-D, along clustered flight "
