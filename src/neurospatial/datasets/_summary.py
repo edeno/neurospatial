@@ -1,10 +1,10 @@
 """The text printed for a loaded recording: what it is and what to watch for.
 
-Six sections, in this order: identity (paper, animal, session, apparatus,
+Seven sections, in this order: identity (paper, animal, session, apparatus,
 archive, license, the file's size and URL, citation), time (duration, clock, sampling rate, epochs),
 tracking (what was tracked, tracked share, longest gap, speed with its
-fastest step, head-direction coverage), environment, neurons, and "Watch out", which is always printed in
-full. The ranges are computed from the arrays; the rest comes from the
+fastest step, head-direction coverage), environment, neurons, LFP where the
+dataset publishes it, and "Watch out", which is always printed in full. The ranges are computed from the arrays; the rest comes from the
 recording's own fields.
 """
 
@@ -40,7 +40,8 @@ def summary_text(rec: Recording) -> str:
     -------
     str
         The identity lines, then the labelled sections Time, Epochs,
-        Tracking, Environment, Neurons and Watch out, one line each or more.
+        Tracking, Environment, Neurons, LFP (where the dataset publishes it)
+        and Watch out, one line each or more.
     """
     lines = [
         *_identity(rec),
@@ -49,6 +50,7 @@ def summary_text(rec: Recording) -> str:
         *_labelled("Tracking", _tracking(rec)),
         *_labelled("Environment", _environment(rec)),
         *_labelled("Neurons", _neurons(rec)),
+        *_labelled("LFP", _lfp(rec)),
         *_watch_out(rec),
     ]
     return "\n".join(lines)
@@ -169,6 +171,19 @@ def _tracking(rec: Recording) -> list[str]:
             f"{HEADING_BIN_DEGREES}° bins ({rec.heading_source})"
         )
     return lines
+
+
+def _lfp(rec: Recording) -> list[str]:
+    from neurospatial.datasets._load import _size
+
+    if rec.lfp is None:
+        return []
+    n_channels = len(rec.lfp.channels)
+    named = "channel" if n_channels == 1 else "channels"
+    return [
+        f"{n_channels} {named} at {rec.lfp.sampling_rate:g} Hz, "
+        f"{_size(rec.lfp.size_bytes)}, fetched on request -> rec.lfp.fetch()"
+    ]
 
 
 def _quantity(value: float, unit: str) -> str:

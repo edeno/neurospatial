@@ -254,6 +254,31 @@ repeats the caveat above. A session without a calibration refuses
 `animation(video=True)` with an `InputError` that names each source tried; the
 frames are never stretched over the environment's extent.
 
+## Read the LFP
+
+Where the dataset publishes the local field potential, `rec.lfp` is an
+`LFPSource`: the files that hold it, the sampling rate, what each channel is, the
+unit and how the times reach the recording's clock. It is `None` where there
+is no LFP. LFP is often much larger than the rest of a session, so nothing is
+downloaded at load; the summary says it exists and how large it is.
+`rec.lfp.fetch()` downloads what the channels you ask for need, verifies each
+file against its SHA-256, and returns the samples and their times:
+
+<!-- docs-test: skip needs a download -->
+```python
+rec = load("forli_2025")
+print(dict(rec.lfp.channels))  # each channel, and what it is
+samples, lfp_times = rec.lfp.fetch(rec.lfp.ripple_channels)
+```
+
+`samples` has shape `(n_time, n_channels)`, in `rec.lfp.unit`, with columns in
+the order you asked for. `lfp_times` are seconds on the same clock as
+`rec.spike_times`, and are not on the tracking samples of `rec.times`.
+`rec.lfp.ripple_channels` names the channels the paper chose for ripple
+detection, where it states them. `rec.lfp.unit_basis` and
+`rec.lfp.times_basis` say where the scale and the times come from, as
+`rec.conversions` does for the rest of the session.
+
 ## Move to pynapple or NWB
 
 The arrays hand off to other tools unchanged. To pynapple, `to_pynapple`

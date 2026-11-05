@@ -8,7 +8,9 @@ one session (the dataset's default unless ``session=`` names another), and
 (:class:`Conversion`), where the file came from (:class:`Provenance`), and
 every known pitfall of the session. Where the dataset publishes the
 session's video, ``rec.video`` is a :class:`VideoSource`: the file, its
-frame times and its pixel-to-cm calibration, fetched only on request.
+frame times and its pixel-to-cm calibration, fetched only on request. Where
+it publishes the LFP, ``rec.lfp`` is an :class:`LFPSource`: where it is, what
+each channel is, and its unit and clock, also fetched only on request.
 Printing a recording shows its full summary. A
 session whose spikes, events or epochs disagree with the tracking clock, or
 whose positions disagree with the stated apparatus, raises
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 from neurospatial.datasets._catalog import catalog
 from neurospatial.datasets._errors import DatasetCheckError, DownloadWarning
+from neurospatial.datasets._lfp import LFPSource
 from neurospatial.datasets._load import fetch_all, load
 from neurospatial.datasets._recording import Conversion, Provenance, Recording
 from neurospatial.datasets._video import VideoSource
@@ -30,6 +33,7 @@ __all__ = [
     "Conversion",
     "DatasetCheckError",
     "DownloadWarning",
+    "LFPSource",
     "Provenance",
     "Recording",
     "VideoSource",

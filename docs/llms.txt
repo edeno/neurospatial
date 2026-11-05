@@ -262,6 +262,7 @@ required.
 - `Conversion` (class): One change a loader made to the file's values, and why it is right.
 - `DatasetCheckError` (class): Raised when a loaded session fails a check that refuses the load.
 - `DownloadWarning` (class): Issued before a session's file is downloaded: its size, URL and cache.
+- `LFPSource` (class): A session's LFP: where it is, its channels, and its unit and clock.
 - `Provenance` (class): Where a session's file came from and when it was fetched.
 - `Recording` (class): One session of a public dataset, as the arrays analyses take.
 - `VideoSource` (class): A session's camera video: where it is, its frame times and its calibration.

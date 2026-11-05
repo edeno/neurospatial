@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     from neurospatial import Environment, Intervals
     from neurospatial.animation import Animation
+    from neurospatial.datasets._lfp import LFPSource
     from neurospatial.datasets._video import VideoSource
     from neurospatial.io.nwb import NWBUnits
 
@@ -278,6 +279,12 @@ class Recording(ReadOnlyArraysMixin):
         is, its frame times and its pixel-to-cm calibration, each with its
         basis. Nothing is downloaded until ``rec.video.fetch()`` or
         ``rec.animation(video=True)``. None without a video.
+    lfp : LFPSource or None
+        The session's local field potential, where the dataset publishes it:
+        where it is, its sampling rate, what each channel is, and its unit and
+        clock, each with its basis. Nothing is downloaded until
+        ``rec.lfp.fetch()``, which returns the samples and their times on the
+        recording's clock. None without an LFP.
 
     Raises
     ------
@@ -329,6 +336,7 @@ class Recording(ReadOnlyArraysMixin):
     failed_checks: tuple[str, ...] = ()
     verified: bool = False
     video: VideoSource | None = None
+    lfp: LFPSource | None = None
 
     #: Physical unit of each ``summary()`` key; ``{units}`` is
     #: ``position_units``.
