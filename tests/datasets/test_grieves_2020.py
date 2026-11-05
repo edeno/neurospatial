@@ -89,7 +89,7 @@ def write_session(
 
     The lattice part is 50 Hz of a path in mm; ``lattice.poh`` is the
     direction of movement in the 2-D positions' frame, in degrees, plus
-    ``heading_offset`` (rad). One tetrode: cluster 0 (unsorted) and
+    ``heading_offset`` (rad), and ``lattice.pov`` the 2-D speed. One tetrode: cluster 0 (unsorted) and
     clusters 1 and 2, spiking from 0 s to the end of the last part, or to
     ``spikes_until``. Both ``pot`` and the spike times are stored as
     ``times_dtype``, float32 as in the archive.
@@ -103,6 +103,7 @@ def write_session(
     speed = np.r_[np.nan, np.linalg.norm(step, axis=1)]
     flat = camera(xyz)
     move = np.diff(flat, axis=0)
+    flat_speed = np.r_[np.nan, np.linalg.norm(move, axis=1) / np.diff(times)]
     azimuth = np.r_[np.arctan2(move[:, 1], move[:, 0]), 0.0] + heading_offset
     azimuth[-1] = azimuth[-2]
     bars = _bars_mm()[: 3 * n_bars]
@@ -151,6 +152,7 @@ def write_session(
         _row(lattice2, "pox", flat[:, 0])
         _row(lattice2, "poy", flat[:, 1])
         _row(lattice2, "poh", np.degrees(np.mod(azimuth, 2 * np.pi)))
+        _row(lattice2, "pov", flat_speed * velocity_scale)
         trains = {
             "r999_01012020_t3_c0": np.sort(rng.uniform(0.0, end, 5000)),
             "r999_01012020_t3_c1": np.sort(rng.uniform(0.0, end, 300)),
@@ -401,25 +403,59 @@ def test_held_runs_are_found_from_eleven_identical_samples():
     np.testing.assert_array_equal(held_runs(values), [[1, 11]])
 
 
-def test_held_and_zero_azimuths_are_reported_and_kept(tmp_path, session_entry):
+def test_held_azimuths_are_reported_and_kept(tmp_path, session_entry):
     from neurospatial.datasets import grieves_2020
 
     folder, _ = _folder(tmp_path)
 
     def hold(values):
         values[1000:1100] = values[1000]
-        values[2000:2300] = 0.0
+        values[2000:2300] = values[2000]
 
     _edit(folder, "sdata/lattice/poh", hold)
     rec = grieves_2020.load_session(session_entry("grieves_2020"), folder)
-    (held,) = [t for t in rec.watch_outs if "heading samples repeat" in t]
+    (held,) = [t for t in rec.watch_outs if "repeat the sample before" in t]
     assert "2 runs of 11 or more identical headings (398 repeated samples" in held
     assert np.all(rec.headings[1000:1100] == rec.headings[1000])
-    (zero,) = [t for t in rec.watch_outs if "stored as exactly 0 deg" in t]
-    assert "(300) are stored as exactly 0 deg in lattice.poh, 300 of them" in zero
+    assert not any("exactly 0" in t for t in rec.watch_outs)
+
+
+def test_an_azimuth_and_speed_both_zero_is_nan_and_a_zero_alone_is_kept(
+    tmp_path, session_entry
+):
+    """poh == 0 with pov == 0 marks no azimuth; poh == 0 with pov != 0 stays 0."""
+    from neurospatial.datasets import grieves_2020
+
+    folder, _ = _folder(tmp_path)
+
+    def zero(values):
+        values[2000:2300] = 0.0
+        values[3000:3005] = 0.0
+
+    def still(values):
+        values[2000:2300] = 0.0
+
+    _edit(folder, "sdata/lattice/poh", zero)
+    _edit(folder, "sdata/lattice/pov", still)
+    rec = grieves_2020.load_session(session_entry("grieves_2020"), folder)
+    assert np.isnan(rec.headings[2000:2300]).all()
     # Under the mirror, 0 deg stays 0: the samples are kept where they were.
-    assert "at 0.0 rad in rec.headings" in zero
-    assert np.all(rec.headings[2000:2300] == 0.0)
+    assert np.all(rec.headings[3000:3005] == 0.0)
+    assert np.isfinite(np.delete(rec.headings, np.s_[2000:2300])).all()
+    lost = next(c for c in rec.conversions if c.text.startswith("headings: NaN"))
+    assert lost.basis == "inferred"
+    assert lost.text.startswith("headings: NaN at the 300 samples whose lattice.poh")
+    n = rec.times.size
+    assert f"exactly 0 in 305 of {n} samples" in lost.evidence
+    assert "300 of them (98.4%) with lattice.pov" in lost.evidence
+    assert "pov is never exactly 0 where poh is not" in lost.evidence
+    assert "100% of them lie in runs of 11 or more, the longest 6 s" in lost.evidence
+    (finding,) = [t for t in rec.watch_outs if "both exactly 0" in t]
+    assert finding.startswith(f"{300 / n:.1%} of heading samples (300) have")
+    assert "they are NaN in rec.headings" in finding
+    assert f"{5 / (n - 300):.2%} of the other samples (5) are exactly 0 deg" in finding
+    assert "kept as stored, at 0.0 rad in rec.headings" in finding
+    assert "NaN where poh and pov are both 0" in rec.heading_source
 
 
 def test_samples_outside_the_cube_are_counted(tmp_path, session_entry):
@@ -507,14 +543,19 @@ def test_loads_default_session(session_entry, assert_default_session):
     assert rec.env.n_bins == 35 * 39 * 33
     assert rec.params["lattice_bars"].shape == (147, 2, 3)
     # The survey's evidence: position speed / pov 10.03; heading minus
-    # movement in the positions' frame mean 0.8 deg, spread 42 deg.
+    # movement in the positions' frame, without the 46,411 samples whose poh
+    # and pov are both 0, mean 0.9 deg, spread 33 deg.
     assert "is 10.03 times the stored velocity pov" in rec.conversions[0].evidence
     heading = next(c for c in rec.conversions if c.text.startswith("headings"))
     assert heading.basis == "inferred"
     assert "(here -poh)" in heading.text
     assert (
-        "circular mean 0.8 deg and median absolute deviation 42.3" in heading.evidence
+        "circular mean 0.9 deg and median absolute deviation 32.8" in heading.evidence
     )
+    assert np.isnan(rec.headings).sum() == 46_411
+    lost = next(c for c in rec.conversions if c.text.startswith("headings: NaN"))
+    assert "exactly 0 in 48585 of 182099 samples (26.7%)" in lost.evidence
+    assert "46411 of them (95.5%) with lattice.pov" in lost.evidence
     assert "not verified" not in rec.heading_source
     span = np.nanmax(rec.positions, axis=0) - np.nanmin(rec.positions, axis=0)
     np.testing.assert_allclose(span, [154.5, 170.8, 147.8], atol=0.1)

@@ -52,9 +52,14 @@ What the loader converts:
   rotation or reflection, a scale and a shift) is fitted over the samples
   the two series share, and its rotation or reflection turns the azimuth.
   Where the 2-D positions are the 3-D x, y mirrored in y and shifted,
-  exactly (the default session), this is ``-poh``. The heading is then
-  compared with the direction of movement; a session where they disagree
-  keeps the turned azimuth and says the frame is not verified.
+  exactly (the default session), this is ``-poh``. A sample whose ``poh``
+  and 2-D speed ``lattice.pov`` are both exactly 0 has no azimuth: its
+  heading is NaN (an inferred ``Conversion``: no source read says what a 0
+  means). In every session ``pov`` is exactly 0 only where ``poh`` is,
+  while the head keeps moving in no preferred direction; a 0 with ``pov``
+  not 0 is kept. The remaining headings are then compared with the direction
+  of movement; a session where they disagree keeps the turned azimuth and
+  says the frame is not verified.
 - epochs: ``square1``, ``lattice`` and ``square2`` from
   ``part_config.<part>.times``, a row per recording. Only the lattice part
   is tracked here: the square parts are a different apparatus, so they are
@@ -203,8 +208,8 @@ _SUPPLEMENT = "the Supplementary Methods of Grieves et al. 2020"
 #: verified session must report, as patterns searched for in its watch_outs.
 EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
     "926_06042018": (
-        r"are stored as exactly 0 deg in lattice\.poh",
-        r"heading samples repeat the sample before",
+        r"have lattice\.poh and lattice\.pov both exactly 0",
+        r"samples with a heading repeat the sample before",
         r"lie outside the lattice's cube",
         r"stored in single precision",
     ),
@@ -264,6 +269,8 @@ class _Session:
     flat_times: NDArray[np.float64]
     flat: NDArray[np.float64]
     azimuth: NDArray[np.float64]
+    #: ``lattice.pov``, the 2-D speed, at each 2-D sample.
+    flat_speed: NDArray[np.float64]
     parts: dict[str, NDArray[np.float64]]
     recordings: tuple[str, ...]
     sampling_rate: float
@@ -337,7 +344,8 @@ def load_session(
     positions = raw.stored / MM_PER_CM
     bars = _bars_cm(raw.bars)
     frame = _frame_map(raw)
-    headings = _turned_headings(raw, frame)
+    lost = _lost(raw)
+    headings = _turned_headings(raw, frame, lost)
     offset, spread = heading_vs_movement(
         times, positions[:, :2], headings, min_speed=HEADING_SPEED
     )
@@ -380,7 +388,8 @@ def load_session(
         headings=headings,
         heading_source=(
             "lattice.poh, the file's head azimuth, turned into the positions' "
-            "frame" + ("" if verified else "; the frame is not verified by movement")
+            "frame, NaN where poh and pov are both 0"
+            + ("" if verified else "; the frame is not verified by movement")
         ),
         epochs=clipped.epochs,
         params={
@@ -428,6 +437,7 @@ def load_session(
                 "it (1064 in all, every session read when the loader was written)",
             ),
             _heading_conversion(raw, frame, offset, spread, verified),
+            *_lost_conversion(raw, lost, times, positions, headings),
             Conversion(
                 "epochs: part_config.<part>.times as stored (s), a row per recording",
                 "stated",
@@ -462,7 +472,7 @@ def load_session(
             *_parts_past_the_spikes(raw.parts, clipped.epochs, times, spike_times),
             *_unknown_configuration(raw),
             *_unverified_heading(frame, offset, spread, verified),
-            *_zero_azimuths(raw, frame),
+            *_lost_and_zero_azimuths(raw, frame, lost),
             *_held_headings(times, positions, headings),
             *_outside_cube(positions, bars, in_grid),
             *_recording_days(raw),
@@ -541,6 +551,7 @@ def _read(path: Path) -> _Session:
             flat_times=_vector(flat, "pot"),
             flat=np.column_stack([_vector(flat, "pox"), _vector(flat, "poy")]),
             azimuth=np.radians(_vector(flat, "poh")),
+            flat_speed=_vector(flat, "pov"),
             parts=dict(sorted(parts.items(), key=lambda item: item[1][0, 0])),
             recordings=recordings,
             sampling_rate=float(_vector(sdata, "position_srate_hz")[0]),
@@ -680,13 +691,23 @@ def _frame_map(raw: _Session) -> _FrameMap:
     )
 
 
-def _turned_headings(raw: _Session, frame: _FrameMap) -> NDArray[np.float64]:
+def _lost(raw: _Session) -> NDArray[np.bool_]:
+    """The 2-D samples without an azimuth: ``poh`` and ``pov`` both exactly 0."""
+    lost: NDArray[np.bool_] = (raw.azimuth == 0) & (raw.flat_speed == 0)
+    return lost
+
+
+def _turned_headings(
+    raw: _Session, frame: _FrameMap, lost: NDArray[np.bool_]
+) -> NDArray[np.float64]:
     """``poh`` turned by the map's rotation or reflection, at each 3-D sample.
 
-    A 3-D sample with no 2-D sample at its time gets NaN.
+    A 3-D sample with no 2-D sample at its time, or whose 2-D sample is
+    ``lost`` (shape (n_2d,)), gets NaN.
     """
     in_3d, in_2d = _paired(raw)
-    unit = np.column_stack([np.cos(raw.azimuth[in_2d]), np.sin(raw.azimuth[in_2d])])
+    azimuth = np.where(lost, np.nan, raw.azimuth)[in_2d]
+    unit = np.column_stack([np.cos(azimuth), np.sin(azimuth)])
     turned = unit @ frame.rotation.T
     headings = np.full(raw.times.size, np.nan)
     headings[in_3d] = np.arctan2(turned[:, 1], turned[:, 0])
@@ -867,24 +888,105 @@ def _unverified_heading(
     )
 
 
-def _zero_azimuths(raw: _Session, frame: _FrameMap) -> tuple[str, ...]:
-    """A watch-out for azimuths stored as exactly 0, and where they are in ``rec.headings``."""
-    zero = raw.azimuth == 0
-    if not zero.any():
+def _lost_conversion(
+    raw: _Session,
+    lost: NDArray[np.bool_],
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    headings: NDArray[np.float64],
+) -> tuple[Conversion, ...]:
+    """The inferred Conversion of the samples without an azimuth to NaN, with this session's evidence.
+
+    ``lost``, shape (n_2d,), marks the 2-D samples whose ``poh`` and ``pov``
+    are both exactly 0; ``headings`` are the turned headings, NaN there.
+    """
+    if not lost.any():
         return ()
-    in_runs = held_runs(raw.azimuth)
-    n_in_runs = int(sum(zero[a : b + 1].sum() for a, b in in_runs if zero[a]))
-    turned = frame.rotation @ np.array([1.0, 0.0])
-    value = float(np.arctan2(turned[1], turned[0]))
-    return (
-        f"{zero.mean():.1%} of heading samples ({int(zero.sum())}) are stored as "
-        f"exactly 0 deg in lattice.poh, {n_in_runs} of them in runs of "
-        f"{MIN_HELD_REPEATS + 1} or more identical values: no direction a rat "
-        "holds that exactly for that long, so most likely samples without an "
-        "azimuth, though the file does not say. They are kept, at "
-        f"{value!r} rad in rec.headings (rec.headings == {value!r} selects "
-        "them); head-direction tuning counts them as a direction.",
+    zero = raw.azimuth == 0
+    still = (raw.flat_speed == 0) & ~zero
+    in_3d, in_2d = _paired(raw)
+    lost_3d = np.zeros(times.size, dtype=bool)
+    lost_3d[in_3d] = lost[in_2d]
+    step = np.diff(positions, axis=0)
+    speed = np.linalg.norm(step, axis=1) / np.diff(times)
+    moving = np.arctan2(step[:, 1], step[:, 0])
+    running = np.linalg.norm(step[:, :2], axis=1) / np.diff(times) > HEADING_SPEED
+    resultant_lost = np.abs(np.mean(np.exp(1j * moving[running & lost_3d[:-1]])))
+    other = running & np.isfinite(headings[:-1])
+    resultant_other = np.abs(
+        np.mean(np.exp(1j * (headings[:-1][other] - moving[other])))
     )
+    edges = np.diff(np.r_[0, lost.astype(np.int8), 0])
+    starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    long = stops - starts > MIN_HELD_REPEATS
+    longest = float(np.max(raw.flat_times[stops - 1] - raw.flat_times[starts]))
+    height = positions[:, 2]
+    low, high = np.nanpercentile(height, [25, 75])
+    return (
+        Conversion(
+            f"headings: NaN at the {int(lost.sum())} samples whose lattice.poh and "
+            "lattice.pov are both exactly 0, taken to have no azimuth",
+            "inferred",
+            "no source read says what a 0 in poh means; lattice.poh is exactly 0 "
+            f"in {int(zero.sum())} of {zero.size} samples ({zero.mean():.1%}), "
+            f"{int(lost.sum())} of them ({lost.sum() / zero.sum():.1%}) with "
+            "lattice.pov, the 2-D speed, also exactly 0, and pov is "
+            + (
+                "never exactly 0 where poh is not"
+                if not still.any()
+                else f"exactly 0 in {int(still.sum())} samples where poh is not"
+            )
+            + "; over those samples the "
+            "head keeps moving (3-D speed median "
+            f"{np.nanmedian(speed[lost_3d[:-1]]):.3g} cm/s, against "
+            f"{np.nanmedian(speed[~lost_3d[:-1]]):.3g} cm/s elsewhere) in no "
+            f"preferred direction (above {HEADING_SPEED:g} cm/s the direction of "
+            f"movement has mean resultant length {resultant_lost:.3f}, where "
+            "heading minus movement has "
+            f"{resultant_other:.3f} over the other headings); "
+            f"{(stops - starts)[long].sum() / lost.sum():.0%} of them lie in runs "
+            f"of {MIN_HELD_REPEATS + 1} or more, the longest {longest:.0f} s; and "
+            f"they are {lost_3d[height <= low].mean():.1%} of the samples in the "
+            f"lowest quarter of heights and {lost_3d[height >= high].mean():.1%} "
+            "in the highest",
+        ),
+    )
+
+
+def _lost_and_zero_azimuths(
+    raw: _Session, frame: _FrameMap, lost: NDArray[np.bool_]
+) -> tuple[str, ...]:
+    """A watch-out for the samples without an azimuth (NaN) and the 0 deg azimuths kept.
+
+    ``lost``, shape (n_2d,), marks the 2-D samples whose ``poh`` and ``pov``
+    are both exactly 0.
+    """
+    kept = (raw.azimuth == 0) & ~lost
+    if not lost.any() and not kept.any():
+        return ()
+    text = []
+    if lost.any():
+        text.append(
+            f"{lost.mean():.1%} of heading samples ({int(lost.sum())}) have "
+            "lattice.poh and lattice.pov both exactly 0, which the loader takes to "
+            "mark a sample without an azimuth (the headings Conversion gives the "
+            "evidence): they are NaN in rec.headings, so head-direction tuning "
+            "leaves them out."
+        )
+    if kept.any():
+        turned = frame.rotation @ np.array([1.0, 0.0])
+        value = float(np.arctan2(turned[1], turned[0]))
+        axes = ", ".join(
+            str(int(np.sum(raw.azimuth == np.radians(deg)))) for deg in (90, 180, 270)
+        )
+        text.append(
+            f"{kept.sum() / (~lost).sum():.2%} of the other samples "
+            f"({int(kept.sum())}) are exactly 0 deg in lattice.poh with pov not 0, "
+            f"against {axes} at exactly 90, 180 and 270 deg, so they may be "
+            "azimuths along an axis; they are kept as stored, at "
+            f"{value!r} rad in rec.headings."
+        )
+    return (" ".join(text),)
 
 
 def held_runs(values: NDArray[np.float64]) -> NDArray[np.intp]:
@@ -923,14 +1025,15 @@ def _held_headings(
     runs = held_runs(headings)
     if not len(runs):
         return ()
-    repeat = headings[1:] == headings[:-1]
+    repeat = (headings[1:] == headings[:-1])[np.isfinite(headings[1:])]
     seconds = times[runs[:, 1]] - times[runs[:, 0]]
     steps = np.linalg.norm(np.diff(positions, axis=0), axis=1)
     path = np.r_[0.0, np.cumsum(np.nan_to_num(steps))]
     moved = path[runs[:, 1]] - path[runs[:, 0]]
     n_held = int(np.sum(runs[:, 1] - runs[:, 0]))
     return (
-        f"{repeat.mean():.1%} of heading samples repeat the sample before; "
+        f"{repeat.mean():.1%} of the samples with a heading repeat the sample "
+        "before; "
         f"{len(runs)} runs of {MIN_HELD_REPEATS + 1} or more identical headings "
         f"({n_held} repeated samples, {seconds.sum():.0f} s in all, the longest "
         f"{seconds.max():.1f} s), over which the head moves a median "

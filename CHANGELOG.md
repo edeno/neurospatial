@@ -328,9 +328,13 @@
   the positions' frame by the file's own map between its 2-D and 3-D
   positions, checked against movement; the square-arena parts are epochs;
   the lattice's 147 bars are in `params["lattice_bars"]`; the environment is
-  the authors' 5 cm voxel grid. Azimuths stored as exactly 0 (26.7% of the
-  default's) are kept and reported. One session (`951_13092018`, a 207.7 cm
-  span) loads only with `accept_failed_checks=("units",)`.
+  the authors' 5 cm voxel grid. Samples whose azimuth `poh` and 2-D speed
+  `pov` are both exactly 0 (25.5% of the default's), which the head moves
+  through in no preferred direction, are NaN headings (an inferred
+  `Conversion`); a 0 with `pov` not 0 is kept. The heading frame is
+  verified by movement in 47 of the 57 sessions. One session
+  (`951_13092018`, a 207.7 cm span) loads only with
+  `accept_failed_checks=("units",)`.
 - Epochs a file lists past the end of its data are clipped to the recording
   (its first to last sample or spike) by one rule for every loader, when
   they overhang by more than the clock check allows; a row wholly outside is
