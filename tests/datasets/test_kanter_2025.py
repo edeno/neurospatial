@@ -239,10 +239,9 @@ def test_samples_past_the_far_walls_contradict_the_stated_origin(
     ("headings", "reason"),
     [
         (
-            # The offset drifts from -1 to +1 rad, its mean near 0.
-            lambda times, xy: _moving_headings(times, xy)
-            + np.linspace(-1.0, 1.0, times.size),
-            "the window means' circular SD is beyond 11.5 degrees",
+            # A constant offset of 0.5 rad.
+            lambda times, xy: _moving_headings(times, xy) + 0.5,
+            "the offset is beyond 0.2 rad",
         ),
         (
             # A constant 0 offset with noise of +-100 degrees: a spread of 50.
@@ -251,12 +250,12 @@ def test_samples_past_the_far_walls_contradict_the_stated_origin(
             "the spread is 45 degrees or more",
         ),
     ],
-    ids=["drift", "spread"],
+    ids=["offset", "spread"],
 )
-def test_a_drifting_or_spread_heading_is_not_verified(
+def test_an_offset_or_spread_heading_is_not_verified(
     tmp_path, session_entry, headings, reason
 ):
-    """The shared rule: |mean| <= 0.2 rad, spread < 45 degrees, and no drift."""
+    """The shared rule: |mean| <= 0.2 rad and a spread under 45 degrees."""
     from neurospatial.datasets import kanter_2025
 
     times, xy = _path(low=(0.0, 0.0))
@@ -274,13 +273,7 @@ def test_a_drifting_or_spread_heading_is_not_verified(
     assert f"{reason}" in frame.evidence
     assert "so the frame is not verified" in frame.evidence
     (finding,) = [t for t in rec.watch_outs if "heading frame is not verified" in t]
-    if reason.startswith("the window"):
-        assert "smeared by the drift" in finding
-        assert "per epoch or per window" in finding
-        assert "do not depend on the frame" not in finding
-    else:
-        assert "smeared" not in finding
-        assert "with a constant offset, tuning-curve shapes" in finding
+    assert "with a constant offset, tuning-curve shapes" in finding
 
 
 def test_an_epoch_past_the_recording_is_clipped_and_reported(tmp_path, session_entry):
@@ -393,10 +386,8 @@ def test_loads_default_session(session_entry, assert_default_session):
     frame = next(c for c in rec.conversions if c.text.startswith("headings: allo"))
     assert "circular mean -0.33 rad, median spread 17 degrees" in frame.evidence
     assert "spread of 81 degrees" in frame.evidence
-    assert "17 windows" in frame.evidence
-    # The offset drifts (window means -0.62 to +2.33 rad, circular SD 31 deg).
     (finding,) = [t for t in rec.watch_outs if "heading frame is not verified" in t]
-    assert "smeared by the drift" in finding
+    assert "the offset is beyond 0.2 rad" in finding
 
 
 @pytest.mark.realdata

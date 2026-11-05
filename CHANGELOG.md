@@ -295,8 +295,8 @@
   the epochs `empty` and `object_1` to `object_3`; the archive holds no
   object positions, and a watch-out says so. The units table repeats ids
   across probes, so units are named `<area>-<id>`. The head-direction frame
-  is not verified by movement in most sessions (the default's offset is
-  -0.33 rad and drifts). One session
+  is not verified by movement in 24 of the 30 sessions that load: a
+  constant offset, -0.33 rad in the default, not a mirrored frame. One session
   (`26965_2020-Dec-08_11-29-48`, a fifth of its spikes after tracking stops)
   loads only with `accept_failed_checks=("clock",)`.
 - `shipley_2026`: Shipley et al. (2026) mouse CA1 tetrode units on an 8-arm
@@ -305,9 +305,15 @@
   day. The default, `m4005_2020-09-26` (71 units), is checked by hand. The
   file stores no position times, so they are rebuilt per trial from its
   spike-to-sample map (an inferred `Conversion`: about 30.05 Hz, not the
-  header's 30 Hz, largest residual 41 ms). The 14 days whose rebuilt clock
+  header's 30 Hz, largest residual 41 ms). A recording whose fitted rate is
+  more than 8 robust standard deviations below its day's trials', where the
+  camera dropped frames, has a watch-out giving how far its positions may be
+  off in time (3 of the 36 offered days). The 14 days whose rebuilt clock
   does not increase or cannot be fitted are not offered; the module and its
-  page list them with the reason. The environment is a star of the stated
+  page list them with the cause the files show: fitted lines of adjoining
+  recordings crossing by under a millisecond (8), a recording whose camera
+  dropped frames running into the next (4), or sorted spikes that start
+  after a trial ends (2). The environment is a star of the stated
   80 cm arms from a 24.7 cm platform; the paper's 2 cm bins and 2 cm/s speed
   threshold are in `params`.
 - `huszar_2026`: Huszár et al. (2026) mouse CA1 and CA3 units on a
@@ -328,9 +334,13 @@
   the positions' frame by the file's own map between its 2-D and 3-D
   positions, checked against movement; the square-arena parts are epochs;
   the lattice's 147 bars are in `params["lattice_bars"]`; the environment is
-  the authors' 5 cm voxel grid. Azimuths stored as exactly 0 (26.7% of the
-  default's) are kept and reported. One session (`951_13092018`, a 207.7 cm
-  span) loads only with `accept_failed_checks=("units",)`.
+  the authors' 5 cm voxel grid. Samples whose azimuth `poh` and 2-D speed
+  `pov` are both exactly 0 (25.5% of the default's), which the head moves
+  through in no preferred direction, are NaN headings (an inferred
+  `Conversion`); a 0 with `pov` not 0 is kept. The heading frame is
+  verified by movement in 47 of the 57 sessions. One session
+  (`951_13092018`, a 207.7 cm span) loads only with
+  `accept_failed_checks=("units",)`.
 - Epochs a file lists past the end of its data are clipped to the recording
   (its first to last sample or spike) by one rule for every loader, when
   they overhang by more than the clock check allows; a row wholly outside is

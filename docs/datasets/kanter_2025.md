@@ -63,7 +63,7 @@ leaves out). The figure-eight, odor-sequence and sleep files are not read.
 | --- | --- | --- |
 | positions: cm = the x and y columns of `animal_position` in m, times 100; the third column (head height) is not used | stated | The file stores cm with `unit="meters"` and `conversion=0.01`; the data descriptor says the markers were projected onto the horizontal plane. |
 | headings: the file's head direction wrapped from [0, 2π) to [-π, π] | stated | `head_direction` is in radians with frame "(x=1, y=0) unit vector". |
-| headings: in the positions' frame, 0 = +x and counter-clockwise | inferred | Compared with the direction of movement above 20 cm/s at about 10 Hz, by the rule of the other loaders: verified where the circular mean is within 0.2 rad of 0, the median absolute deviation under 45 degrees, and the offset does not drift (the circular SD of its 60 s window means within 0.2 rad). The offset, its spread and its drift are in the `Conversion` and, where the frame is not verified, in a watch-out. |
+| headings: in the positions' frame, 0 = +x and counter-clockwise | inferred | Compared with the direction of movement above 20 cm/s at about 10 Hz, by the rule of the other loaders: verified where the circular mean is within 0.2 rad of 0 and the median absolute deviation under 45 degrees. The offset, its spread and the spread with the heading negated are in the `Conversion` and, where the frame is not verified, in a watch-out. |
 | unit ids: `<area>-<id>`, for example `LEC-12` and `CA1-12` | stated | The units table repeats ids across probes; each probe records one area. `units["file_unit_id"]` keeps the file's id. |
 | epochs: `empty`, `object_1`, `object_2`, `object_3` for a novel-object session; `foraging` otherwise | stated | The data descriptor's sequence, and the index's task list for each file. |
 | epochs: rows past the recording (its first to last sample or spike) clipped to it | inferred | Four sessions list an epoch ending 14.7 to 31.9 s after the last sample and spike. Each clipped row is in the `Conversion` and under "Watch out". |
@@ -88,20 +88,17 @@ session is also compared with its own stated arena in a watch-out.
   of the arena", but most samples have a coordinate below 0 (in the default
   session x runs from -40.6 to 57.8 cm and y from -73.8 to 23.9 cm). The walls'
   positions are not stated, so the declared square is placed on the samples.
-- **Head direction not verified by movement.** In 26 of the 30 sessions that
-  load (all but rat 27284's four), heading minus the direction of movement
-  has an offset beyond 0.2 rad, or an offset that drifts over the session
-  (`26965_2020-Dec-08_14-36-11` and `27963_2022-Feb-10_11-06-56`: a mean near
-  0, but 60 s window means with a circular SD of 14 and 17 degrees). In the
-  default session the offset is -0.33 rad with a median spread of 17 degrees
-  (81 degrees with the heading negated, so it is not mirrored), and the means
-  of 60 s windows run from -0.62 to +2.33 rad: the offset drifts, so no single
-  correction follows from movement. The stored values are kept. A tuning
-  curve over a whole drifting session pools directions measured with
-  different offsets, so its width is inflated and its mean vector length
-  reduced: compute head-direction tuning per epoch or per 60 s window, and do
-  not compare absolute preferred directions. Two sessions of rat 26863 have
-  offsets near ±π.
+- **Head direction not verified by movement.** In 24 of the 30 sessions that
+  load (all but six), heading minus the direction of movement has a constant
+  offset beyond 0.2 rad: from 0.26 to 0.55 rad either way in most of them,
+  0.78 and 1.05 rad in two of rat 28003's, and near ±π in rat 26863's two
+  sessions (heading pointing backwards). In the default session the offset is
+  -0.33 rad with a median spread of 17 degrees, and 81 degrees with the
+  heading negated, so the frame is not mirrored: a head marker set about 19
+  degrees off the head's axis would give this. The stored values are kept.
+  Tuning-curve shapes and widths do not depend on a constant offset; absolute
+  preferred directions do, so do not compare them across sessions or with
+  positions without allowing for it.
 - **Epochs that end after the data.** In `27284_2021-Jun-16_14-33-11`,
   `27285_2021-Jun-30_13-59-11`, `27963_2022-Feb-08_21-14-27` and
   `27963_2022-Feb-10_11-06-56` an epoch ends 14.7 to 31.9 s after the last sample

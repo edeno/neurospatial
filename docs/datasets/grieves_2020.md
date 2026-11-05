@@ -66,6 +66,7 @@ Table 1), the record's `Summary data readme.m`, and the files.
 | times: `lattice_3d.pot` as stored, seconds | stated | The file's `position_srate_hz` is 50 and `pot` steps 0.02 s. The clock joins the session's recordings end to end (below). |
 | units: every tetrode/cluster field, cluster 0 of each tetrode left out | inferred | The cluster-0 fields hold only spike times, with none of the per-cell analyses the other clusters have. Without them every rat's sessions hold the number of cells Supplementary Table 1 gives for it (1064 in all). |
 | headings: `lattice.poh`, degrees to radians, turned into the positions' frame | inferred | No source read gives `poh`'s unit or frame. It runs from 0 to 360, so degrees, and is taken to be an azimuth in the frame of the 2-D positions `lattice.pox/poy`. The loader fits the map from those 2-D positions to the 3-D x and y (a rotation or reflection, a scale and a shift) and turns the azimuth by its rotation or reflection. In the default session the 2-D positions are the 3-D x, y mirrored in y and shifted, sample by sample, so the heading is `-poh`; the turned azimuth follows the direction of movement (below). |
+| headings: NaN where `lattice.poh` and the 2-D speed `lattice.pov` are both exactly 0 | inferred | No source read says what a 0 in `poh` means. In the default session `poh` is exactly 0 in 26.7% of samples (48,585); 95.5% of those (46,411) also have `pov` exactly 0, and in all 57 sessions `pov` is never exactly 0 where `poh` is not. Over those samples the head keeps moving (median 3-D speed 10.4 cm/s, 12.1 elsewhere) in no preferred direction, in runs of up to 44 s, more often high in the lattice: samples without an azimuth. The `Conversion` gives these numbers for each session. A 0 with `pov` not 0 is kept. |
 | epochs: `square1`, `lattice`, `square2` from `part_config`, a row per recording | stated | The file's `part_config` and `session_names`. |
 | epochs: rows past the recording (its first to last sample or spike) clipped to it | inferred | In two sessions `square2` ends after the last sorted spike, past the clock check's slack. Each clipped row is in the `Conversion` and under "Watch out". `params["analysis_epochs"]` and the decoding blocks come from the clipped rows. |
 | `params["lattice_bars"]`: the lattice's 147 bars, `lattice_3d.lx/ly/lz` / 10, shape (147, 2, 3) | stated | The readme: maze outlines are stored as `lx`, `ly`, `lz`; each bar is 97 cm, the lattice's side. |
@@ -106,24 +107,27 @@ ax.set(xlabel="x (cm)", ylabel="y (cm)", zlabel="z (cm)")
   rests of about 10 minutes between parts are not on it. In one session
   (`894_09012018`) the recordings were made on two days. The summary says so
   where the recordings' names give different dates.
-- **Azimuths stored as exactly 0.** In the default session 26.7% of `poh`
-  samples are exactly 0 deg, most in long runs while the head moves: no
-  direction a rat holds that exactly, so most likely samples without an
-  azimuth, though the file does not say. They are kept; the summary gives the
-  value they have in `rec.headings`, which selects them. The head-direction
-  histogram of the overview shows them as a peak at 0.
-- **Held azimuths.** 27.8% of the default session's heading samples repeat the
-  sample before, in runs of up to 44 s while the head moves along its path.
-  The summary counts them.
-- **Heading frames not verified.** In 16 of the 56 sessions that load, the
+- **Headings missing where the azimuth is lost.** Where `poh` and `pov` are
+  both exactly 0, `rec.headings` is NaN: 25.5% of the default session's
+  samples, and 67% to 99% in six of the seven sessions of rats 850 and 851,
+  so a head-direction analysis there rests on few samples. Another 2,174 samples
+  of the default session are exactly 0 deg with `pov` not 0, about as many as
+  at exactly 90, 180 or 270 deg (1,218 to 1,473), so they may be real
+  azimuths along an axis; they are kept. The summary gives both counts.
+- **Held azimuths.** 3.1% of the default session's headings repeat the sample
+  before, in runs of up to 0.8 s while the head moves along its path. The
+  summary counts them.
+- **Heading frames not verified.** In 9 of the 56 sessions that load, the
   turned azimuth does not follow the direction of movement (circular mean
-  within 0.2 rad of 0 and median absolute deviation under 45 deg). In 8 of
-  them the 2-D positions hold still for more than half of their steps, so
-  their map to the 3-D frame is undetermined; in the other 8 the mean is
-  within 8 deg of 0 but the spread is above 45 deg. The refused session
-  `951_13092018`, loaded with `accept_failed_checks=("units",)`, is not
-  verified either: its mean is 179 deg. Those sessions keep the azimuth and
-  say the frame is not verified.
+  within 0.2 rad of 0 and median absolute deviation under 45 deg), checked on
+  the headings that are not NaN. In 8 of them the 2-D positions hold still
+  for more than half of their steps, so their map to the 3-D frame is
+  undetermined (52% to 99% of their headings are NaN); in the other,
+  `852_22032017`, the mean is 1 deg from 0 but the spread is 54 deg. The
+  refused session `951_13092018`, loaded with
+  `accept_failed_checks=("units",)`, is not verified either: its mean is
+  180 deg. Those sessions keep the azimuth and say the frame is not
+  verified.
 - **The head beyond the bars.** 24.9% of the default session's samples lie
   outside the lattice's cube, up to 33 cm beyond a face: the tracked head of a
   rat on the outer bars. The environment, the authors' grid, holds all of

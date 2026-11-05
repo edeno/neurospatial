@@ -79,14 +79,23 @@ Each day is read from four members of its `PhyOutput/OldData` folder:
   times between trials are not.
 - **Days not offered.** The archive holds 50 days of 15 mice; 14 days cannot
   be put on one increasing clock, so the catalog does not list them (all three
-  days of m4232 among them). In 12 a trial's fitted line starts before the
-  previous trial's ends. In the 9 where the overlap is under one frame
-  interval (33 ms), the file's spike-to-sample map gives the spikes at the
-  boundary to both trials. The other 3 (`m4201_2019-12-17`,
-  `m4202_2019-12-16`, `m4020_2020-08-18`, 0.8 to 10.6 s, each where a trial
-  follows the rest S1) are more than that can explain, and no source read
-  says why. In 2 a trial has no spikes mapped to it, so its samples cannot be
-  timed:
+  days of m4232 among them). The file's map puts each spike at the nearest
+  frame, with each recording's frames timed by a straight line from its
+  first to its last camera timestamp (the `experiment_1_pos.npy` of each
+  recording folder, which the loader does not read). In 12 days a
+  recording's fitted line starts before the previous one's ends. In 8 the
+  overlap is 0.04 to 0.75 ms: recordings follow each other on this clock with
+  gaps from under 1 ms to about 100 ms (0.2 ms on an offered day), so these
+  are two fitted lines with no gap between them crossing by a fraction of a
+  frame. In the other 4 the earlier recording's camera dropped frames, so its
+  straight line spans more than its place on the spike clock and runs into
+  the next recording: rest S1 in `m4201_2019-12-17`, `m4202_2019-12-16` and
+  `m4020_2020-08-18` (overlaps of 0.8 to 10.6 s; S1's camera timestamps hold
+  35, 25 and 332 gaps over 0.1 s and depart from a straight line by up to
+  3.8, 2.3 and 8.9 s) and trial 0 in `m4604_2022-03-02`. In
+  `m4020_2020-08-18` the file's own map splits the spikes of 3727.6 to
+  3738.2 s between S1 and trial 6, interleaved. In 2 days the sorted spikes
+  start late, so a trial has no spikes to time its samples:
 
   | Day | Why it is not offered |
   | --- | --- |
@@ -98,16 +107,31 @@ Each day is read from four members of its `PhyOutput/OldData` folder:
   | `m4232_2020-12-18` | Trial 9 starts 0.11 ms before trial 8 ends |
   | `m4232_2020-12-19` | Trial 5 starts 0.04 ms before trial 4 ends |
   | `m4376_2021-08-16` | Trial 9 starts 0.75 ms before trial 8 ends |
-  | `m4604_2022-03-02` | Trial 1 starts 28.95 ms before trial 0 ends |
-  | `m4201_2019-12-17` | Trial 6 starts 796.89 ms before rest S1 ends |
-  | `m4202_2019-12-16` | Trial 6 starts 1381.64 ms before rest S1 ends |
-  | `m4020_2020-08-18` | Trial 6 starts 10583.43 ms before rest S1 ends |
-  | `m4020_2020-08-21` | Trials 0 to 3 have no spikes mapped to them |
-  | `m4578_2021-10-18` | Trial 0 has no spikes mapped to it |
+  | `m4604_2022-03-02` | Trial 1 starts 28.95 ms before trial 0 ends; trial 0 is fitted at 30.034 Hz against the trials' 30.051 Hz (dropped frames) |
+  | `m4201_2019-12-17` | Trial 6 starts 796.89 ms before rest S1 ends; S1 is fitted at 30.004 Hz against 30.050 Hz (dropped frames) |
+  | `m4202_2019-12-16` | Trial 6 starts 1381.64 ms before rest S1 ends; S1 is fitted at 30.024 Hz against 30.051 Hz (dropped frames) |
+  | `m4020_2020-08-18` | Trial 6 starts 10583.43 ms before rest S1 ends; S1 is fitted at 29.668 Hz against 30.050 Hz (dropped frames) |
+  | `m4020_2020-08-21` | Trials 0 to 3 have no spikes mapped to them: the good units' first spike is at 818.68 s |
+  | `m4578_2021-10-18` | Trial 0 has no spikes mapped to it: the first spike of any cluster is at 480.77 s |
 
 - **Rebuilt position times.** Within a trial the times are a straight line:
   dropped frames, if any, are not located. The summary gives each day's
-  fitted rates and residuals. In the 2021 and 2022 days of some mice every
+  fitted rates and residuals.
+- **Recordings slowed by dropped frames.** The file's map times each
+  recording's frames by a straight line from its first to its last camera
+  timestamp. Where the camera dropped frames, the line spans more time than
+  the frames left take, so the recording's fitted rate falls below the
+  day's trials'. A recording more than 8 robust standard deviations of the
+  trials' rates below their median gets a watch-out giving that extra time,
+  about how far its positions may be off; the positions are kept. On the
+  offered days this is rest `S2` of `m4098_2020-10-26` (1.54 s) and of
+  `m4202_2019-12-15` (1.04 s), and the exploration trial of
+  `m4020_2020-08-19` (5.05 s); the camera's own timestamps depart from the
+  line by 2.0, 0.64 and 4.9 s there. Rates above the median, which dropped
+  frames cannot cause, reach 6.4 robust standard deviations on the offered
+  days. On the six offered days whose camera timestamps were read (these
+  three, the default, `m4005_2020-09-24` and `m4201_2019-12-16`), every
+  other recording's camera times stay within 0.23 s of its line. In the 2021 and 2022 days of some mice every
   fitted rate is exactly 30 Hz, so the file's map was likely built from the
   header's rate and the fit cannot measure the camera.
 - **No headings.** The file stores one LED (`n_leds` 1), though the Methods fit
