@@ -100,6 +100,35 @@
   5 %) and measures nothing. On any environment the outside share is split into stopped and moving
   samples at `params["min_speed"]` where the dataset sets it.
 
+- `Recording.lfp` holds the session's local field potential where the dataset
+  publishes it, as a new `neurospatial.datasets.LFPSource`, and is None
+  otherwise: the files or zip members with their checksums and sizes, the
+  sampling rate, what each channel is, the channels the paper chose for
+  ripple detection, and the unit and clock, each with a `Conversion`. Nothing
+  is fetched at load, and the summary gives its size.
+  `rec.lfp.fetch(channels=None, *, cache=None, stream=False)` downloads only
+  the files the channels need and returns the samples and their times on the
+  recording's clock, refusing a reader whose arrays break that contract.
+  A registry row pins the files in `lfp_files`.
+- `forli_2025`'s ripple tables are `rec.events`: `ripple_candidates_probe<n>`
+  every row of a probe's table, `swr_probe<n>` the rows at the paper's minimum
+  correlation of 0.2, by their peak times, with `params["ripple_probe"]` the
+  file's best probe. The session now fetches 1.1 GB rather than 260 MB, since
+  the tables sit in files that also hold each event's waveforms.
+  `rec.lfp` reads any of its 384 channels from the three LFP members (2.2 GB),
+  in arbitrary units, since the files state none.
+- `forli_2025.OWN_3D_ANALYSIS` records our own decode of the bat's ripple events
+  in the room's voxels, which is not the paper's 1-D replay analysis and is not
+  compared with its numbers. Its sanity property, fixed before the run, was not
+  met: 2 of 2,535 windows judged trajectories, against 95th percentiles of 2
+  and 4.1 with shifted spikes. It says nothing about replay in this session:
+  held-out flights decode to a median 2.2 m from the bat against 2.4 m by
+  chance, and a watch-out says so.
+- `ripple_detection`, pinned to a commit, joins the `dev` dependency group, not
+  the `datasets` extra: it is unreleased, and PyPI refuses git dependencies.
+  The private `neurospatial.datasets._ripple.ripple_recording` builds its
+  recording from a session and its fetched LFP for the worked results.
+
 #### Looking at a session
 
 - `Recording.plot_overview(*, fig=None)` draws six panels: the environment with
@@ -208,8 +237,8 @@
   during free flight, the demo session `Dataset_3_14543_240419` of Zenodo
   15738988 (CC-BY-4.0), checked by hand: 289 units on three Neuropixels
   probes, 3-D positions in metres (inferred from the room's size and the
-  flight threshold) at 120 Hz, 38 flights. Only the five needed members of
-  the 3.3 GB zip are fetched (260 MB). Putative duplicate units are pooled
+  flight threshold) at 120 Hz, 38 flights. Only the nine needed members of
+  the 3.3 GB zip are fetched (1.1 GB). Putative duplicate units are pooled
   and spikes within 1 ms dropped, as the record's `NP_Bat_Demo.m` does. The
   declared environment is the room the file's `r_lim` bounds, every voxel
   active; 3.7% of samples (0.1% of them in the file's flights) lie past its -y

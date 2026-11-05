@@ -22,7 +22,7 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 | [`grosmark_2016`](../datasets/grosmark_2016.md) | rat, dorsal CA1 | linear and circular mazes, with sleep before and after | OSF `hu5ma` (license not stated); DANDI 000044 (CC-BY-4.0) | reproduced (level B) |
 | [`peyrache_2015`](../datasets/peyrache_2015.md) | mouse, anterior thalamus | open arena, head direction only | OSF `jb2gd` (license not stated) | reproduced (level A) |
 | [`sargolini_2006`](../datasets/sargolini_2006.md) | rat, medial entorhinal cortex | 1 m open field | DANDI 000582 (CC-BY-4.0) | not possible yet |
-| [`forli_2025`](../datasets/forli_2025.md) | Egyptian fruit bat, dorsal hippocampus | flight room, 3-D | Zenodo 15738988 (CC-BY-4.0) | not possible yet; a 3-D attempt did not reproduce the paper (15.2% of flight-active units tuned against 71%) |
+| [`forli_2025`](../datasets/forli_2025.md) | Egyptian fruit bat, dorsal hippocampus | flight room, 3-D | Zenodo 15738988 (CC-BY-4.0) | not possible yet; a 3-D attempt did not reproduce the paper (15.2% of flight-active units tuned against 71%), and our own 3-D decode of its ripple events failed its sanity check |
 | [`valero_2022`](../datasets/valero_2022.md) | mouse, CA1 | linear track, with video | DANDI 000568 (CC-BY-4.0) | not possible yet |
 | [`vollan_2025`](../datasets/vollan_2025.md) | rat, medial entorhinal cortex and hippocampus | open field (box or circle) and 200 cm linear track, head direction with position | EBRAINS 10.25493/R5FR-EDG (CC-BY-SA-4.0) | not possible yet; module grid scores match the authors' for modules 1 and 2, not module 3 (0.185 against 0.685) |
 | [`gardner_2022`](../datasets/gardner_2022.md) | rat, medial entorhinal cortex grid modules | 1.5 m open field, head direction with position | Figshare 16764508 (CC0) | not possible yet |
@@ -278,6 +278,10 @@ the order you asked for. `lfp_times` are seconds on the same clock as
 detection, where it states them. `rec.lfp.unit_basis` and
 `rec.lfp.times_basis` say where the scale and the times come from, as
 `rec.conversions` does for the rest of the session.
+
+Ask for the channels you need: [`forli_2025`](../datasets/forli_2025.md), the one
+dataset here with an LFP so far, holds 384 channels, one 53 MB in memory and all
+of them 405 GB.
 
 ## Move to pynapple or NWB
 
