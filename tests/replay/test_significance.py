@@ -805,6 +805,7 @@ class TestReplaySignificance:
                 env,
                 posterior,
                 times,
+                nulls=("unit_identity",),
                 spike_counts=counts,
                 encoding_models=rates,
                 dt=0.05,

@@ -2002,9 +2002,15 @@ def decode_intervals(
     together.
 
     Overlapping windows share spikes, so neighboring rows of an event are
-    correlated. The ``spike_time_uniform`` null refuses them. The nulls that
-    treat rows independently still run, as in the published methods, but
-    those shuffles do not keep that correlation.
+    correlated even when the spikes hold no sequence. Only the
+    ``unit_identity`` and ``place_field_circular`` nulls keep that
+    correlation, and the others refuse overlapping windows: on simulated
+    events with no sequence, a 5% test with ``time_bin_permutation`` or
+    ``column_cycle`` rejected about 5% of events on tiled 20 ms bins, 12% at
+    20 ms stepped by 10 ms, 24% at 20 ms stepped by 5 ms and 61% at 80 ms
+    stepped by 5 ms; ``unit_identity`` and ``place_field_circular`` rejected
+    4 to 7%. Criteria that use no null are not checked, so the number of
+    rows and how similar they are changes what such a threshold means.
 
     Every time bin's counts and posterior are returned, and held at once:
     about ``n_time_bins * (n_cells + n_bins) * 8`` bytes. For hundreds of

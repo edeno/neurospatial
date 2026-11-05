@@ -22,6 +22,48 @@ _STEP_WHY = (
 )
 
 
+def _recorded_decode(event: Any) -> Any:
+    """The ``DecodingResult`` holding an event's record of its time.
+
+    Separately decoded templates and the templates of a joint decode share one
+    time grid, so the first one answers.
+    """
+    if isinstance(event, Mapping):
+        return next(iter(event.values()))
+    if hasattr(event, "conditional"):
+        return next(iter(event.conditional.values()))
+    return event
+
+
+def _window_width(
+    event: Any, times: NDArray[np.float64], dt: float | None
+) -> float | None:
+    """Width of an event's decoding windows, or ``None`` if nothing says.
+
+    Parameters
+    ----------
+    event : DecodingResult, JointDecodingResult or Mapping
+        The decoded event.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        The event's time-window centers, in seconds.
+    dt : float or None
+        The width, if the caller gave it.
+
+    Returns
+    -------
+    float or None
+        ``dt``, or the width left by ``time_support``: one unbroken decoded
+        window spans the first start to the last stop, which is ``width`` plus
+        the span of the centers. ``None`` without either.
+    """
+    if dt is not None:
+        return dt
+    support = _recorded_decode(event).time_support
+    if support is None or len(support) != 1:
+        return None
+    return float(support[0, 1] - support[0, 0]) - float(times[-1] - times[0])
+
+
 def _event_identity(
     event: Any, times: NDArray[np.float64], dt: float | None
 ) -> dict[str, float | int]:
@@ -30,8 +72,7 @@ def _event_identity(
     Parameters
     ----------
     event : DecodingResult, JointDecodingResult or Mapping
-        The decoded event. Separately decoded templates and the templates of a
-        joint decode share one time grid, so the first one answers.
+        The decoded event.
     times : NDArray[np.float64], shape (n_time_bins,)
         The event's time-bin centers, in seconds.
     dt : float or None
@@ -46,12 +87,7 @@ def _event_identity(
         ``dt`` says how wide the windows were; and ``interval_id``, NaN for an
         event not decoded from an interval.
     """
-    if isinstance(event, Mapping):
-        recorded = next(iter(event.values()))
-    elif hasattr(event, "conditional"):
-        recorded = next(iter(event.conditional.values()))
-    else:
-        recorded = event
+    recorded = _recorded_decode(event)
     if recorded.time_support is not None:
         start, stop = recorded.time_support[0, 0], recorded.time_support[-1, 1]
     elif dt is not None:

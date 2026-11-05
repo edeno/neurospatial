@@ -23,6 +23,18 @@
   settings record (`time_bin`, `time_step`) can be run directly: 20 ms stepped
   by 5 ms is `dt=0.02, step=0.005`. Windows are whole, a spike counts in every
   window that holds it, and `step` must be at most `dt`.
+- `replay_significance`, `detect_replay` and `compare_replay_methods` refuse
+  `column_cycle`, `column_cycle_weighted`, `time_bin_permutation`,
+  `pseudo_event` and `spike_train_circular` on overlapping windows. Those
+  windows share spikes, so neighboring rows are correlated without any
+  sequence, and these shuffles lose that. On simulated events with no sequence
+  a 5% test rejected about 12% of events at 20 ms stepped by 10 ms, 24% at 20 ms
+  stepped by 5 ms and 61% at 80 ms stepped by 5 ms (`spike_train_circular`: 6%
+  and 26% at the last two). `unit_identity` and `place_field_circular` stayed at
+  4 to 7% and still run. Of the 12 recipes that publish overlapping windows,
+  this affects `WU_2017`, which now needs tiled bins or another null.
+  `compare_replay_methods` also reads the window width from each event's
+  `time_support`; a posterior passed as an array needs `dt=` to be checked.
 
 ### The 5 cm default bandwidth warns on large bins
 

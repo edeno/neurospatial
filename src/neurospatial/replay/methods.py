@@ -68,7 +68,7 @@ from neurospatial.replay._compare import (
     _compare,
     _criterion_label,
 )
-from neurospatial.replay._inputs import _event_identity
+from neurospatial.replay._inputs import _event_identity, _window_width
 from neurospatial.replay.arms import ArmReplayMethod
 from neurospatial.replay.circular import fit_circular_sequence
 from neurospatial.replay.correlation import weighted_correlation
@@ -87,6 +87,7 @@ from neurospatial.replay.significance import (
     _POOL_NULLS,
     _ROW_MOVING_NULLS,
     _checked_null_options,
+    _refuse_shuffling_overlapping_windows,
 )
 from neurospatial.replay.template_match import (
     JI_WILSON_2007,
@@ -3879,6 +3880,12 @@ def compare_replay_methods(
             "template_bias": template_bias,
         },
     )
+    # Nulls on the posterior need no dt, so read the width from the event too.
+    for method in replay_methods:
+        for event, times in zip(events, event_times, strict=True):
+            _refuse_shuffling_overlapping_windows(
+                getattr(method, "nulls", ()), times, _window_width(event, times, dt)
+            )
     pool = _pseudo_event_pool(events) if needs_pool else None
     rng = _concrete_seed(rng)
     root = _root(rng)
@@ -4274,6 +4281,10 @@ WU_2017 = ReplayMethod(
         "Dropped time bins keep their times; the paper regresses on time-bin "
         "number and does not say whether bins are renumbered.",
         "The paper's p-value has no +1; here it is (k + 1) / (n + 1).",
+        "The paper's 20 ms windows stepped by 10 ms are refused with this "
+        "null, which loses the correlation of overlapping rows: a 5% test "
+        "rejected 11.5% of simulated events with no sequence, against 5.2% on "
+        "tiled 20 ms bins. Decode tiled bins, or change the null.",
         "Mou et al. (2022; Mou, X., Pokhrel, A., Suresh, P., & Ji, D., "
         "Observational learning promotes hippocampal remote awake replay "
         "toward future reward locations, Neuron, 110(5), 891-902) used this "

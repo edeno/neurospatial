@@ -909,10 +909,18 @@ visited get no mass), and decode the null events with the same prior.
 - **Candidate events.** Pass your event intervals in seconds, on the same
   clock as the spike times. `decode_intervals` decodes them in time bins
   with one set of rate maps. Several papers decoded overlapping windows
-  (`method.decoding`, e.g. 20 ms windows stepped by 10 ms for `WU_2017`):
-  pass `decode_intervals(env, spike_times, intervals, rates, dt=0.02,
-  step=0.01)`. Do the same for real and null events, and pass the window
-  width, `dt=0.02`, to the replay functions.
+  (`method.decoding`, e.g. 20 ms windows stepped by 10 ms for
+  `MUESSIG_2019`): pass `decode_intervals(env, spike_times, intervals, rates,
+  dt=0.02, step=0.01)`. Do the same for real and null events, and pass the
+  window width, `dt=0.02`, to the replay functions.
+- **Shuffles on overlapping windows.** Overlapping windows share spikes, so
+  neighboring rows are correlated even without a sequence. Most shuffles
+  lose that correlation, and a 5% test on simulated events with no sequence
+  then rejected 12% of events at 20 ms stepped by 10 ms and 24% at 20 ms
+  stepped by 5 ms. Those nulls refuse overlapping windows. Only `unit_identity`
+  and `place_field_circular` keep the rows, and stayed at 4 to 7%. `WU_2017`
+  published 20 ms stepped by 10 ms with a time-bin shuffle, so run it on tiled
+  bins or with one of these nulls.
 - **Shuffles.** Keep each recipe's published `n_shuffles`. Give `rng` a
   fixed seed and report it.
 - **Two running directions or two tracks.** Decode each event's spike
