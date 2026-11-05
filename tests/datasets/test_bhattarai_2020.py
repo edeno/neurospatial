@@ -531,7 +531,7 @@ def _replay_events(rec):
     positions[np.all(positions == 0, axis=1)] = np.nan
     blocks = []
     for _, block in table.groupby(["session", "block"]):
-        track = bhattarai_2020.sequence_track(block["sequence"].iloc[0])
+        track = rec.params["sequence_tracks"][block["sequence"].iloc[0]]
         template = block[block["forced"] | block["rewarded"]]
         rates = compute_spatial_rates(
             track,

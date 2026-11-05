@@ -75,10 +75,10 @@ Analysis choices (``params``):
   maps (SI Appendix);
 - ``min_speed`` 4 cm/s, the paper's cutoff for its rate maps;
 - ``dt`` 0.02 s and ``time_step`` 0.01 s, the paper's replay decoding bins;
-- ``analysis_epochs``, the first trial's start to the last trial's end.
-
-:func:`sequence_track` builds the linear path of one sequence, from the start
-of a trial to the reward site, the track the paper decodes each block on.
+- ``analysis_epochs``, the first trial's start to the last trial's end;
+- ``sequence_tracks``, each sequence's 1-D environment from :func:`sequence_track`,
+  its linear path from the start of a trial to the reward site, the track the
+  paper decodes each block on.
 """
 
 from __future__ import annotations
@@ -963,9 +963,6 @@ def load_session(
     )
     lfp = _lfp_source(entry, index, folder)
     rat, _ = entry.session.split("_")
-    sequences = {
-        name: int(np.sum((labels["sequence"] == name) & ~forced)) for name in SEQUENCES
-    }
     return Recording(
         **entry.identity(path_or_stream),
         animal=f"rat {rat.removeprefix('rat')} (male Sprague Dawley)",
@@ -1016,7 +1013,7 @@ def load_session(
             "dt": DT,
             "time_step": TIME_STEP,
             "analysis_epochs": clipped_task.epochs["task"],
-            "free_trials_per_sequence": sequences,
+            "sequence_tracks": {name: sequence_track(name) for name in SEQUENCES},
         },
         conversions=(
             Conversion(

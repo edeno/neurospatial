@@ -27,7 +27,7 @@ sessions[["session", "n_units", "size_bytes", "verified", "default"]].head()
 <!-- docs-test: skip needs a download -->
 ```python
 from neurospatial import compute_spatial_rates
-from neurospatial.datasets import bhattarai_2020, load
+from neurospatial.datasets import load
 
 rec = load("bhattarai_2020")          # fetches 50 MB of the 659 MB zip
 trials = rec.trials.intervals_table()
@@ -35,7 +35,7 @@ block = trials[(trials["session"] == 1) & (trials["block"] == 1)]
 template = block[block["forced"] | block["rewarded"]]
 
 # The paper's rate maps: one linear path per sequence, above 4 cm/s
-track = bhattarai_2020.sequence_track(block["sequence"].iloc[0])
+track = rec.params["sequence_tracks"][block["sequence"].iloc[0]]
 rates = compute_spatial_rates(
     track,
     rec.spike_times,
@@ -139,11 +139,12 @@ and the files. `lfp.mat` is MATLAB 7.3 (HDF5); the others are MATLAB 5.0.
 | `min_speed` | 4 cm/s | the paper's rate maps exclude "periods of immobility (speed < 4 cm/s)" |
 | `dt`, `time_step` | 0.02 s, 0.01 s | the paper's replay decoding bins |
 | `analysis_epochs` | first trial's start to last trial's end | all the task |
+| `sequence_tracks` | one 1-D environment per sequence | the paper's linear path |
 
-`bhattarai_2020.sequence_track(sequence)` builds the 1-D path of one sequence,
-from the start of a trial to the reward site. The paper projects positions onto a
-linear path and decodes each block on its correct path; this is that track.
-`neurospatial.replay.methods.BHATTARAI_2020` is the paper's replay test.
+Each entry of `rec.params["sequence_tracks"]` runs from the start of a trial to the
+reward site. The paper projects positions onto a linear path and decodes each block
+on its correct path; this is that track. `neurospatial.replay.methods.BHATTARAI_2020`
+is the paper's replay test.
 
 ## Worked result
 
@@ -164,7 +165,7 @@ power rises little at population bursts.
 **The attempt, with the paper's recipe and preset.** On the default set:
 
 - complex-spike units by the paper's rule; for each block, binned rate maps on
-  `sequence_track` (2 cm, bandwidth 6 cm, above 4 cm/s, forced and correct
+  `rec.params["sequence_tracks"]` (2 cm, bandwidth 6 cm, above 4 cm/s, forced and correct
   free-choice trials);
 - place cells: units `detect_place_fields` finds a field in, our choice as the
   design states, not the paper's three criteria. Each set's union is close to
