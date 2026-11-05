@@ -23,8 +23,15 @@ for ``sub-10073_ses-17010302_behavior+ecephys.nwb``). Only NWB assets are
 sessions. Where a dandiset publishes each session in several variants (DANDI
 000568: with and without the raw voltage), ``archive.variant`` names the one
 to list (``"-no-raw-data"``); only NWB files whose session entity ends with
-it are sessions, and it is dropped from the session id. Other assets in a
-folder named after an NWB file's stem are the external files its
+it are sessions, and it is dropped from the session id. Where a dandiset
+publishes a session's LFP in a file of its own (DANDI 000552:
+``..._ses-X-raw_ecephys.nwb`` beside ``..._ses-X_behavior+ecephys.nwb``),
+``archive.lfp_variant`` names that file's suffix (``"-raw"``): it is not a
+session, and it is listed under the session's ``lfp_files`` with its path, id,
+size and digest, except for the sessions in ``archive.no_lfp`` (such a file with
+only raw voltage). ``archive.not_offered`` lists the session ids of NWB assets the
+loader cannot read as sessions (with ``archive.not_offered_why``). Other assets
+in a folder named after an NWB file's stem are the external files its
 ImageSeries name (videos); each is listed under the session's ``videos``
 with its path, id, size and digest, keeping the ``landmarks`` a person
 placed on it and the ``led_fit`` that ``fit_video_led_calibration.py``
@@ -132,17 +139,27 @@ def build(registry: Mapping[str, Any], version: str, get: Fetch = get_json) -> d
     """
     dandiset = registry["archive"]["dandiset"]
     variant = registry["archive"].get("variant", "")
+    lfp_variant = registry["archive"].get("lfp_variant")
+    not_offered = set(registry["archive"].get("not_offered", ()))
+    no_lfp = set(registry["archive"].get("no_lfp", ()))
     meta = get(f"{API}/dandisets/{dandiset}/versions/{version}/")
     rows = registry.get("sessions", [])
     elsewhere = [entry for entry in rows if "url" in entry]
     known = {entry["session"]: entry for entry in rows if "url" not in entry}
     sessions = list(elsewhere)
     assets = list_assets(dandiset, version, get)
+    lfp = {
+        session_id(asset["path"]).removesuffix(lfp_variant): asset
+        for asset in assets
+        if lfp_variant and session_id(asset["path"]).endswith(lfp_variant)
+    }
     nwb = [
         asset
         for asset in assets
         if asset["path"].endswith(".nwb")
         and session_id(asset["path"]).endswith(variant)
+        and session_id(asset["path"]) not in not_offered
+        and not (lfp_variant and session_id(asset["path"]).endswith(lfp_variant))
     ]
     for asset in nwb:
         session = session_id(asset["path"]).removesuffix(variant)
@@ -163,6 +180,8 @@ def build(registry: Mapping[str, Any], version: str, get: Fetch = get_json) -> d
         }
         if videos := _videos(asset["path"], assets, old.get("videos", [])):
             entry["videos"] = videos
+        if session in lfp and session not in no_lfp:
+            entry["lfp_files"] = [_lfp_file(lfp[session])]
         sessions.append(entry)
     names = [entry["session"] for entry in sessions]
     if len(set(names)) != len(names):
@@ -191,6 +210,16 @@ def _located(asset: Mapping[str, Any]) -> dict[str, Any]:
     """An asset's path, id, digest and size, as a registry row gives them."""
     return {
         "asset_path": asset["path"],
+        "asset_id": asset["asset_id"],
+        "sha256": asset["metadata"]["digest"]["dandi:sha2-256"],
+        "size_bytes": int(asset["size"]),
+    }
+
+
+def _lfp_file(asset: Mapping[str, Any]) -> dict[str, Any]:
+    """A session's LFP file as its ``lfp_files`` row: cached under its file name."""
+    return {
+        "path": Path(asset["path"]).name,
         "asset_id": asset["asset_id"],
         "sha256": asset["metadata"]["digest"]["dandi:sha2-256"],
         "size_bytes": int(asset["size"]),

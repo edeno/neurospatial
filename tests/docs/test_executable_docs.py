@@ -45,6 +45,7 @@ OPT_IN = (
     "docs/datasets/gardner_2022.md",
     "docs/datasets/grieves_2020.md",
     "docs/datasets/grosmark_2016.md",
+    "docs/datasets/huszar_2022.md",
     "docs/datasets/huszar_2026.md",
     "docs/datasets/kanter_2025.md",
     "docs/datasets/peyrache_2015.md",
