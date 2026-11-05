@@ -90,22 +90,25 @@ class DatasetInfo:
 
 @dataclass(frozen=True)
 class Member:
-    """One member of a zip archive that a session is read from.
+    """One file of a session held in several: a zip member, or a file of its own.
 
     Attributes
     ----------
     path : str
-        The member's path inside the zip.
+        The member's path inside the zip, or the name of a file of its own.
     sha256 : str
         The extracted member's SHA-256, which every extraction is verified
         against.
     size_bytes : int
         The extracted member's size.
+    url : str or None
+        Where a file of its own is downloaded from; None for a zip member.
     """
 
     path: str
     sha256: str
     size_bytes: int
+    url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -175,8 +178,10 @@ class SessionEntry:
         The paper's citation, then the citation of the session's archive.
     members : tuple of Member
         For a session read from members of a remote zip (``url``), the
-        members fetched, each by byte range; empty for a whole file. The
-        session's ``sha256`` and ``size_bytes`` are then the zip's.
+        members fetched, each by byte range; for a session of several files,
+        those files; empty for one whole file. The session's ``sha256`` and
+        ``size_bytes`` are then the zip's, or for several files the SHA-256
+        of their checksums in order, one per line, and their total size.
     videos : tuple of VideoAsset
         The session's video files, fetched only on request; empty where the
         archive has none.
@@ -388,7 +393,8 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
 
     A row from an archive other than the dataset's gives its own
     ``license`` and ``data_citation``; a row read from zip members gives
-    ``members``, each with ``path``, ``sha256`` and ``size_bytes``. A row with
+    ``members``, each with ``path``, ``sha256`` and ``size_bytes``, and a
+    member that is a file of its own also its ``url``. A row with
     an LFP gives ``lfp_files``, each an :class:`LFPFile`'s fields, located at
     the row's own ``url`` or ``asset_id`` unless it names another.
     """
@@ -402,6 +408,7 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
             path=str(member["path"]),
             sha256=_sha256(member["sha256"], f"member {member['path']!r}"),
             size_bytes=int(member["size_bytes"]),
+            url=member.get("url"),
         )
         for member in row.get("members", ())
     )

@@ -192,6 +192,21 @@ def test_fetch_gives_up_on_a_stalled_server(source, tmp_path, monkeypatch):
     assert timeouts == [_fetch.TIMEOUT]
 
 
+def test_fetch_names_itself_to_the_server(source, tmp_path, monkeypatch):
+    """Mendeley Data answers urllib's default User-Agent with HTTP 403."""
+    url, digest = source
+    opened = urllib.request.urlopen
+    agents = []
+
+    def recording(request, *args, **kwargs):
+        agents.append(request.get_header("User-agent"))
+        return opened(request, *args, **kwargs)
+
+    monkeypatch.setattr(urllib.request, "urlopen", recording)
+    fetch(url, "data.bin", sha256=digest, subdir="demo", cache=tmp_path / "cache")
+    assert agents == ["neurospatial"]
+
+
 def test_fetch_refuses_mismatched_existing_file(source, tmp_path):
     url, digest = source
     existing = tmp_path / "cache" / "demo" / "data.bin"
