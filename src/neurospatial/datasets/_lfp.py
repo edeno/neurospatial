@@ -258,8 +258,10 @@ class LFPSource:
         ----------
         channels : sequence of str, optional
             The channels to read, in the order of the returned columns.
-            Default: every channel, in the order of ``channels``. Only the
-            files holding them are fetched.
+            Default: ``ripple_channels`` where the dataset states them, else
+            every channel, in the order of ``channels``: a session can hold
+            hundreds of channels, more than fits in memory. Only the files
+            holding them are fetched.
         cache : path, optional
             The cache directory. Default: the one the session was loaded into
             (``$NEUROSPATIAL_DATA_DIR``, else ``~/.cache/neurospatial/datasets``).
@@ -285,13 +287,16 @@ class LFPSource:
             If a downloaded file's SHA-256 differs from the pinned one, or the
             reader's arrays break the contract above.
         """
-        chosen = tuple(self.channels) if channels is None else tuple(channels)
+        if channels is None:
+            chosen = self.ripple_channels or tuple(self.channels)
+        else:
+            chosen = tuple(channels)
         if unknown := [name for name in chosen if name not in self.channels]:
             raise InputError(
                 _format_error(
                     f"{self.dataset}: the LFP has no channels {unknown}.",
                     why=f"it holds {list(self.channels)}.",
-                    fix="pick from rec.lfp.channels, or pass channels=None for all.",
+                    fix="pick from rec.lfp.channels; tuple(rec.lfp.channels) reads them all.",
                 )
             )
         if not chosen:
@@ -300,7 +305,7 @@ class LFPSource:
                     f"{self.dataset}: no LFP channels were asked for.",
                     why="this dataset's paper may state no ripple channel, which "
                     "leaves rec.lfp.ripple_channels empty.",
-                    fix="pick from rec.lfp.channels, or pass channels=None for all.",
+                    fix="pick from rec.lfp.channels; tuple(rec.lfp.channels) reads them all.",
                 )
             )
         files = self._files_of(chosen)

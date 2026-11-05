@@ -262,7 +262,10 @@ unit and how the times reach the recording's clock. It is `None` where there
 is no LFP. LFP is often much larger than the rest of a session, so nothing is
 downloaded at load; the summary says it exists and how large it is.
 `rec.lfp.fetch()` downloads what the channels you ask for need, verifies each
-file against its SHA-256, and returns the samples and their times:
+file against its SHA-256, and returns the samples and their times. With no
+channels it reads `rec.lfp.ripple_channels` where the dataset states them, and
+every channel otherwise, because a session can hold more channels than fit in
+memory:
 
 <!-- docs-test: skip needs a download -->
 ```python

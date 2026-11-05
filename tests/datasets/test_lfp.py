@@ -85,14 +85,27 @@ def test_columns_follow_the_order_asked_for(tmp_path):
     assert samples[0].tolist() == [2.0, 1.0]
 
 
-def test_second_fetch_is_silent_and_default_reads_every_channel(tmp_path):
+def test_second_fetch_is_silent(tmp_path):
     source = _source(tmp_path, cache=tmp_path / "cache")
     with pytest.warns(DownloadWarning):
         source.fetch()
     with warnings.catch_warnings():
         warnings.simplefilter("error", DownloadWarning)
+        source.fetch()
+
+
+@pytest.mark.parametrize(
+    ("ripple_channels", "first_row"),
+    [(("b",), [2.0]), ((), [1.0, 2.0])],
+    ids=["the ripple channels", "every channel when none is stated"],
+)
+def test_the_default_channels(tmp_path, ripple_channels, first_row):
+    source = _source(
+        tmp_path, cache=tmp_path / "cache", ripple_channels=ripple_channels
+    )
+    with pytest.warns(DownloadWarning):
         samples, _ = source.fetch()
-    assert samples[0].tolist() == [1.0, 2.0]
+    assert samples[0].tolist() == first_row
 
 
 def test_a_changed_file_is_refused(tmp_path):
