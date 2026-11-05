@@ -108,7 +108,12 @@
   is fetched at load, and the summary gives its size.
   `rec.lfp.fetch(channels=None, *, cache=None, stream=False)` downloads only
   the files the channels need and returns the samples and their times on the
-  recording's clock, refusing a reader whose arrays break that contract.
+  recording's clock, refusing a reader whose arrays break that contract. With
+  no channels it reads `ripple_channels` where the dataset states them, else
+  every channel up to 32; a larger source with none stated (`huszar_2022`'s,
+  in files of up to 184 GB) raises an `InputError` with its size, telling you to
+  choose from `rec.lfp.channels`, and the summary prints
+  `rec.lfp.fetch(channels)` for it. `tuple(rec.lfp.channels)` reads them all.
   A registry row pins the files in `lfp_files`.
 - `forli_2025`'s ripple tables are `rec.events`: `ripple_candidates_probe<n>`
   every row of a probe's table, `swr_probe<n>` the rows at the paper's minimum
@@ -370,6 +375,51 @@
   verified by movement in 47 of the 57 sessions. One session
   (`951_13092018`, a 207.7 cm span) loads only with
   `accept_failed_checks=("units",)`.
+- `igata_2021`: Igata et al. (2021) rats learning a new route to reward with
+  dorsal CA1 units and LFP, 40 sessions of Mendeley Data 4xk5w69yr5
+  (CC-BY-4.0) including the paper's five rats, one checked by hand. Each
+  session is stitched from its per-trial files; `igata_2021.path_track()` gives
+  the paper's paths as a 1-D environment. The worked result says nothing here
+  is presented as replay: on the default session the paper's candidate events
+  do not stand out from a shifted-spike baseline fixed before detection, and
+  `IGATA_2021` judges none of the 596 events that pass it, over four rats'
+  sessions. Trials to the learning point match the paper (25.8 +/- 9.1 against
+  26 +/- 9), recorded apart in `igata_2021.LEARNING_RESULT`.
+- A session can be held in several whole files (a registry member with its own
+  `url`, fetched into the session's folder as zip members are), and downloads
+  send `User-Agent: neurospatial`, which Mendeley Data requires.
+- `bhattarai_2020`: Bhattarai et al. (2020) rat dorsal CA1 in a spatial
+  sequence memory task, 25 session sets (Figshare 10032866, CC0), with trials
+  labelled by block, sequence, choice and reward, the paper's complex-spike rule
+  (648 of 698 units, its number), one LFP channel on request, and
+  `rec.params["sequence_tracks"]`, each sequence's linear path. The worked
+  result is an attempt that failed its criterion: the archive's one saturated
+  LFP channel passes 37 candidate events where the paper has 278 on the default
+  set, and 9 of them are judged replay (24.3%), not above the 27.0% that
+  permuting cell identities gives at its 95th percentile.
+- `neurospatial.replay.methods.BHATTARAI_2020`: the line fit of Bhattarai et al.
+  (2020) on the MAP positions, tested against 1,000 circular shifts of the
+  decoded positions in time at alpha 0.05, so an event has a `p_value`.
+- `replay_significance` (and `detect_replay`, `dataset_values`,
+  `shuffle_events`) gain the null `"time_bin_circular"`: the posterior's time
+  bins shifted circularly by 1 to n - 1 bins, which keeps the order of the
+  decoded positions and moves where the sequence starts. It differs from
+  `"time_bin_permutation"`, which breaks the order. An event of n time bins has
+  n - 1 distinct shifts, so under 20 time bins p < 0.05 needs no shift to score
+  as high as the event.
+- `huszar_2022`: Huszár et al. (2022), DANDI 000552 (CC-BY-4.0): mouse CA1 on a
+  figure-eight maze with sleep states, ripples and rewards, 65 sessions, one
+  checked by hand; the environment is a track graph with both loops closed. LFP
+  for 12 sessions lies in sibling raw files of 5.6 to 184 GB, read by byte range
+  with `stream=True`; no source names its ripple channels, so `fetch()` needs
+  channels. The worked result is a sanity property of our own analysis, not the
+  paper's: 5 of 20 `yang_2024` ripple candidates on the maze are judged
+  trajectories by `PFEIFFER_FOSTER_2013`, none in 40 shifted-spike draws. Twenty
+  candidates give no rate, and a null of zeros cannot show calibration. Yang et
+  al. (2024)'s events for `e15_13f1_220118`: 94.3% of theirs overlap one of ours,
+  and 50.1% of ours overlap one of theirs, since their file holds a selection
+  of its own events. `scripts/build_dataset_registry.py` lists a
+  sibling `-raw_ecephys` file as the session's LFP, not as a session.
 - Epochs a file lists past the end of its data are clipped to the recording
   (its first to last sample or spike) by one rule for every loader, when
   they overhang by more than the clock check allows; a row wholly outside is

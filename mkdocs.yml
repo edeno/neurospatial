@@ -201,6 +201,9 @@ nav:
       - "Shipley 2026: radial maze and rest (mouse)": datasets/shipley_2026.md
       - "Huszár 2026: cheeseboard maze (mouse)": datasets/huszar_2026.md
       - "Grieves 2020: 3-D climbing lattice (rat)": datasets/grieves_2020.md
+      - "Igata 2021: learning a new route (rat)": datasets/igata_2021.md
+      - "Bhattarai 2020: replay in a sequence task (rat)": datasets/bhattarai_2020.md
+      - "Huszár 2022: figure-eight maze with sleep and ripples (mouse)": datasets/huszar_2022.md
   - Visualization:
       - Field Animation: user-guide/animation.md
       - Animation Overlays: animation_overlays.md

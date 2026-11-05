@@ -4,7 +4,7 @@ You want to try an analysis on a real recording: place fields from a rat in a
 maze, head-direction tuning from a mouse's thalamus, decoding from a bat in
 flight. Finding the archive, reading its file layout, and working out the
 units, the clock and the apparatus can take longer than the analysis.
-`neurospatial.datasets` does that work once, for fourteen published datasets, and
+`neurospatial.datasets` does that work once, for sixteen published datasets, and
 hands you the arrays neurospatial's functions take.
 
 ```bash
@@ -31,6 +31,9 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 | [`shipley_2026`](../datasets/shipley_2026.md) | mouse (App NL-G-F and wild type), CA1 | 8-arm radial maze (track graph), with rest | UCL RDR 30902972 (CC-BY-4.0) | not possible yet |
 | [`huszar_2026`](../datasets/huszar_2026.md) | mouse, CA1 and CA3 | 90 cm cheeseboard maze, learning trials, reward wells, ripples | DANDI 001880 (CC0-1.0) | not possible yet |
 | [`grieves_2020`](../datasets/grieves_2020.md) | rat, CA1 | 3-D climbing lattice (0.97 m cube, aligned or tilted) | UCL RDR 9926477 (CC0) | not possible yet |
+| [`igata_2021`](../datasets/igata_2021.md) | rat, dorsal CA1 | 1 m lattice field with a start, a goal and a return path; the rat learns a new route; LFP | Mendeley Data 4xk5w69yr5 (CC-BY-4.0) | not possible yet; nothing is presented as replay: on the default session the candidate events do not stand out from a shifted-spike baseline, and `IGATA_2021` judges none of the 596 events that pass it over four rats' sessions. Trials to the learning point match the paper (25.8 +/- 9.1 against 26 +/- 9) |
+| [`bhattarai_2020`](../datasets/bhattarai_2020.md) | rat, dorsal CA1 | loop with two rings, four sequences to one reward; one LFP channel | Figshare 10032866 (CC0) | not possible yet; the paper's replay recipe on the archive's one saturated LFP channel failed its sanity check (37 candidates against the paper's 278 on the default set; 9 judged replay, 24.3%, against 27.0% at the 95th percentile with permuted cells); the complex-spike rule gives the paper's 648 of 698 units |
+| [`huszar_2022`](../datasets/huszar_2022.md) | mouse, CA1 | figure-eight maze with sleep; LFP for 12 sessions | DANDI 000552 (CC-BY-4.0) | a sanity property of our own analysis, not the paper's: 5 of 20 awake ripple candidates are judged trajectories, none in 40 shifted-spike draws (20 candidates give no rate, and a null of zeros cannot show calibration) |
 
 Each dataset has a page with what was recorded, the conversions the loader
 applied and the evidence for them, the pitfalls, the worked result and how to
@@ -284,9 +287,12 @@ detection, where it states them. `rec.lfp.unit_basis` and
 `rec.lfp.times_basis` say where the scale and the times come from, as
 `rec.conversions` does for the rest of the session.
 
-Ask for the channels you need: [`forli_2025`](../datasets/forli_2025.md), the one
-dataset here with an LFP so far, holds 384 channels, one 53 MB in memory and all
-of them 405 GB.
+Ask for the channels you need: [`forli_2025`](../datasets/forli_2025.md) holds 384
+channels, one 53 MB in memory and all of them 405 GB, and
+[`huszar_2022`](../datasets/huszar_2022.md)'s LFP sits in raw files of up to
+184 GB, which `stream=True` reads by byte range. Four datasets have an LFP:
+`forli_2025`, `igata_2021` (every tetrode of the session, read from its own
+files), `bhattarai_2020` (one channel) and `huszar_2022` (12 sessions).
 
 ## Move to pynapple or NWB
 
