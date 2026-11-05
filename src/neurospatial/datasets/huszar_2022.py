@@ -728,8 +728,8 @@ def _lfp_watch_out(entry: SessionEntry) -> str:
         f"The LFP sits in a {gigabytes:.0f} GB file beside the raw voltage, so read "
         "a channel by byte range, rec.lfp.fetch(['ch1'], stream=True). No source "
         "names the ripple channels ('manually selected channels', "
-        f"{_PAPER}), so rec.lfp.ripple_channels is empty and fetch() asks for "
-        "every channel."
+        f"{_PAPER}), so rec.lfp.ripple_channels is empty and fetch() needs "
+        "channels."
     )
 
 

@@ -103,7 +103,8 @@ so a session outside 63 to 139 cm loads with a watch-out.
   first recording only.
 - **LFP.** Twelve sessions have one, in a raw file of up to 184 GB, so read a
   channel with `rec.lfp.fetch(["ch1"], stream=True)`. No source names the ripple
-  channels ("manually selected channels"), so `rec.lfp.ripple_channels` is empty.
+  channels ("manually selected channels"), so `rec.lfp.ripple_channels` is empty and
+  `rec.lfp.fetch()` with no channels raises: name the channels.
   `sub-e16-3m1_ses-e16-3m1-210201` also holds a copy in its own file, whose
   metadata state 30 kHz for a 1,250 Hz series, so the loader reads the raw file's.
   `sub-e16-3m1_ses-e16-3m1-210203`'s raw file holds only the raw voltage.

@@ -108,6 +108,71 @@ def test_the_default_channels(tmp_path, ripple_channels, first_row):
     assert samples[0].tolist() == first_row
 
 
+def read_wide(sources, channels):
+    """One file holding every channel: zeros, at ``RATE`` from time 0."""
+    return np.zeros((10, len(channels))), np.arange(10) / RATE
+
+
+def _wide_source(folder, n_channels, **changes) -> LFPSource:
+    """``n_channels`` channels in one file, which a default fetch would read whole."""
+    data = b"x" * 2048
+    (folder / "wide.bin").write_bytes(data)
+    file = LFPFile(
+        path="s1/wide.bin",
+        sha256=_digest(data),
+        size_bytes=len(data),
+        url=(folder / "wide.bin").as_uri(),
+    )
+    names = {f"ch{i}": f"channel {i}" for i in range(n_channels)}
+    fields = {
+        "dataset": "demo",
+        "files": (file,),
+        "sampling_rate": RATE,
+        "channels": names,
+        "unit": "uV",
+        "unit_basis": STATED,
+        "times_basis": ON_CLOCK,
+        "reader": read_wide,
+        "cache": folder / "cache",
+    }
+    return LFPSource(**(fields | changes))
+
+
+def test_many_channels_with_no_ripple_channel_need_channels(tmp_path):
+    """No default for a source of 33 channels: nothing is downloaded."""
+    source = _wide_source(tmp_path, 33)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DownloadWarning)
+        with pytest.raises(
+            InputError, match=r"needs channels[\s\S]*2\.05 kB[\s\S]*Fix:"
+        ):
+            source.fetch()
+    assert not (tmp_path / "cache").exists()
+    with pytest.raises(InputError, match=r"rec\.lfp\.fetch\(channels\)"):
+        source.fetch(stream=True)
+
+
+def test_asking_for_the_channels_reads_them_all(tmp_path):
+    source = _wide_source(tmp_path, 33)
+    with pytest.warns(DownloadWarning):
+        samples, _ = source.fetch(tuple(source.channels))
+    assert samples.shape == (10, 33)
+
+
+@pytest.mark.parametrize(
+    ("n_channels", "ripple_channels", "n_read"),
+    [(32, (), 32), (33, ("ch5",), 1)],
+    ids=["32 channels is still the default", "stated ripple channels"],
+)
+def test_the_default_stands_up_to_32_channels_or_stated_ripples(
+    tmp_path, n_channels, ripple_channels, n_read
+):
+    source = _wide_source(tmp_path, n_channels, ripple_channels=ripple_channels)
+    with pytest.warns(DownloadWarning):
+        samples, _ = source.fetch()
+    assert samples.shape == (10, n_read)
+
+
 def test_a_changed_file_is_refused(tmp_path):
     source = _source(tmp_path)
     (tmp_path / "a.txt").write_bytes(b"9\n9\n")
@@ -289,3 +354,13 @@ def test_recording_carries_it_and_the_summary_says_so(tmp_path, square_recording
     assert "LFP 2 channels at 1000 Hz" in text
     assert "fetched on request -> rec.lfp.fetch()" in text
     assert dict(pickle.loads(pickle.dumps(rec)).lfp.channels) == dict(rec.lfp.channels)
+
+
+def test_summary_hint_names_the_channels_a_large_source_needs(
+    tmp_path, square_recording
+):
+    for n_channels, hint in ((32, "rec.lfp.fetch()"), (33, "rec.lfp.fetch(channels)")):
+        rec = dataclasses.replace(
+            square_recording, lfp=_wide_source(tmp_path, n_channels)
+        )
+        assert f"fetched on request -> {hint}" in " ".join(summary_text(rec).split())

@@ -264,8 +264,10 @@ downloaded at load; the summary says it exists and how large it is.
 `rec.lfp.fetch()` downloads what the channels you ask for need, verifies each
 file against its SHA-256, and returns the samples and their times. With no
 channels it reads `rec.lfp.ripple_channels` where the dataset states them, and
-every channel otherwise, because a session can hold more channels than fit in
-memory:
+every channel otherwise, up to 32 channels. A source of more channels with no
+stated ripple channel raises an error that gives its size, because its files
+can run to hundreds of gigabytes and its samples to more than fit in memory:
+choose from `rec.lfp.channels`. `tuple(rec.lfp.channels)` reads them all:
 
 <!-- docs-test: skip needs a download -->
 ```python

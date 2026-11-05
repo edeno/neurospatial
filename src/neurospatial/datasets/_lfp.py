@@ -51,6 +51,10 @@ GAP_PERIODS = 1.5
 #: The median step between samples may differ from one sampling period by this
 #: share; beyond it, the stated rate does not describe the samples.
 RATE_TOLERANCE = 0.01
+#: ``fetch()`` with no channels reads every channel only up to this many, unless
+#: ripple channels are stated: beyond it a session's files run to hundreds of
+#: gigabytes and its samples to more than memory.
+_MAX_DEFAULT_CHANNELS = 32
 
 
 @dataclass(frozen=True)
@@ -242,6 +246,11 @@ class LFPSource:
         """The bytes of every file that holds the LFP."""
         return sum(file.size_bytes for file in self.files)
 
+    @property
+    def _needs_channels(self) -> bool:
+        """Whether ``fetch()`` with no channels would read too much to default."""
+        return not self.ripple_channels and len(self.channels) > _MAX_DEFAULT_CHANNELS
+
     def fetch(
         self,
         channels: Sequence[str] | None = None,
@@ -259,9 +268,11 @@ class LFPSource:
         channels : sequence of str, optional
             The channels to read, in the order of the returned columns.
             Default: ``ripple_channels`` where the dataset states them, else
-            every channel, in the order of ``channels``: a session can hold
-            hundreds of channels, more than fits in memory. Only the files
-            holding them are fetched.
+            every channel, in the order of ``channels``, when the source has
+            at most 32. A larger source with no stated ripple channel needs
+            ``channels``, since its files can run to hundreds of gigabytes:
+            ``tuple(rec.lfp.channels)`` reads them all. Only the files
+            holding the channels are fetched.
         cache : path, optional
             The cache directory. Default: the one the session was loaded into
             (``$NEUROSPATIAL_DATA_DIR``, else ``~/.cache/neurospatial/datasets``).
@@ -281,13 +292,31 @@ class LFPSource:
         Raises
         ------
         InputError
-            If ``channels`` names an unknown channel, or ``stream=True`` for a
-            file outside DANDI.
+            If ``channels`` names an unknown channel, is omitted for a source
+            of more than 32 channels with no ripple channels stated, or
+            ``stream=True`` for a file outside DANDI.
         ValueError
             If a downloaded file's SHA-256 differs from the pinned one, or the
             reader's arrays break the contract above.
         """
         if channels is None:
+            if self._needs_channels:
+                from neurospatial.datasets._load import _size
+
+                sizes = sorted(file.size_bytes for file in self.files)
+                raise InputError(
+                    _format_error(
+                        f"{self.dataset}: fetch() needs channels for this LFP.",
+                        why=f"it holds {len(self.channels)} channels in "
+                        f"{len(self.files)} file(s) of {_size(self.size_bytes)} "
+                        f"(largest {_size(sizes[-1])}), and no ripple channels "
+                        "are stated, so a default would download and read "
+                        "all of them.",
+                        fix="pick channels from rec.lfp.channels and call "
+                        "rec.lfp.fetch(channels); tuple(rec.lfp.channels) "
+                        "reads them all.",
+                    )
+                )
             chosen = self.ripple_channels or tuple(self.channels)
         else:
             chosen = tuple(channels)

@@ -180,9 +180,10 @@ def _lfp(rec: Recording) -> list[str]:
         return []
     n_channels = len(rec.lfp.channels)
     named = "channel" if n_channels == 1 else "channels"
+    call = "rec.lfp.fetch(channels)" if rec.lfp._needs_channels else "rec.lfp.fetch()"
     return [
         f"{n_channels} {named} at {rec.lfp.sampling_rate:g} Hz, "
-        f"{_size(rec.lfp.size_bytes)}, fetched on request -> rec.lfp.fetch()"
+        f"{_size(rec.lfp.size_bytes)}, fetched on request -> {call}"
     ]
 
 
