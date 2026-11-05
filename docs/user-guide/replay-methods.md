@@ -925,8 +925,8 @@ visited get no mass), and decode the null events with the same prior.
   24% at 20 ms stepped by 5 ms. Those nulls refuse overlapping windows. Only
   `unit_identity` and `place_field_circular` keep the rows, and they stayed
   close to their rate on tiled bins. `WU_2017` published 20 ms stepped by
-  10 ms with a time-bin shuffle, so run it on tiled bins or with one of these
-  nulls. An event from `decode_intervals` or `decode_position` records its
+  10 ms with a time-bin shuffle, so it runs as published and warns that its
+  p-values are too small. An event from `decode_intervals` or `decode_position` records its
   window width as `dt`; for a posterior passed as an array, pass `dt=` or
   nothing can tell that its rows overlap.
 - **Shuffles.** Keep each recipe's published `n_shuffles`. Give `rng` a

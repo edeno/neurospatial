@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -26,6 +27,7 @@ from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _name_key, _root, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     is_integer_at_least,
     validate_callable,
@@ -795,7 +797,8 @@ def _refuse_shuffling_overlapping_windows(
     width: float | None,
     *,
     operation: str = _OPERATION,
-) -> None:
+    published: bool = False,
+) -> bool:
     """Refuse nulls that cannot test windows closer together than ``width``.
 
     Overlapping windows share spikes, so neighboring rows are correlated even
@@ -812,35 +815,68 @@ def _refuse_shuffling_overlapping_windows(
         Width of each window, in seconds; ``None`` when unknown, which cannot
         be checked.
     operation : str
-        The calling function, for the refusal message.
+        The calling function, for the message.
+    published : bool, default=False
+        The method's paper used these windows, so warn instead of refusing:
+        reproducing a published method is a legitimate analysis.
+
+    Returns
+    -------
+    bool
+        Whether a warning was issued.
+
+    Warns
+    -----
+    UserWarning
+        If ``published`` and a null in ``_OVERLAP_BLIND_NULLS`` tests
+        overlapping windows.
 
     Raises
     ------
     ValueError
         If a null in ``_OVERLAP_BLIND_NULLS`` is asked to test overlapping
-        windows.
+        windows, unless ``published``.
     """
     blind = [name for name in nulls if name in _OVERLAP_BLIND_NULLS]
     spacing = np.diff(np.sort(np.asarray(times, dtype=np.float64).ravel()))
     if not blind or width is None or not spacing.size:
-        return
+        return False
     # The median ignores missing rows and clock jitter, which the centers of
     # tiled bins carry (float32 storage, rounding on a Unix clock). The 1%
     # matches the allowance of _time_bins_in_windows.
     step = float(np.median(spacing))
     if step >= width * 0.99:
-        return
+        return False
+    why = (
+        "overlapping windows share spikes, so neighboring rows are correlated "
+        "even without a sequence, and these shuffles lose that correlation. On "
+        "simulated events with no sequence a 5% test rejected about 12% of "
+        "events at 20 ms stepped by 10 ms, 24% at 20 ms stepped by 5 ms and 61% "
+        "at 80 ms stepped by 5 ms"
+    )
+    fix = (
+        "decode in windows that tile the event (no step), or use a null that "
+        "keeps the rows: unit_identity or place_field_circular"
+    )
+    windows = f"times are about {step:g} s apart with windows {width:g} s wide."
+    if published:
+        warnings.warn(
+            _format_error(
+                f"{operation}: p-values from {blind} are too small on overlapping "
+                f"windows: {windows} The method's paper used such windows, so it "
+                "runs as published.",
+                why=why,
+                fix=fix,
+            ),
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        return True
     raise ValueError(
         _format_error(
-            f"{operation} cannot test overlapping windows with {blind}: times "
-            f"are about {step:g} s apart with windows {width:g} s wide.",
-            why="overlapping windows share spikes, so neighboring rows are "
-            "correlated even without a sequence, and these shuffles lose that "
-            "correlation. On simulated events with no sequence a 5% test "
-            "rejected about 24% of events at 20 ms stepped by 5 ms and 61% at "
-            "80 ms stepped by 5 ms",
-            fix="decode in windows that tile the event (no step), or use a null "
-            "that keeps the rows: unit_identity or place_field_circular",
+            f"{operation} cannot test overlapping windows with {blind}: {windows}",
+            why=why,
+            fix=fix,
         )
     )
 

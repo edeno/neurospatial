@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType, SimpleNamespace
@@ -1145,6 +1146,12 @@ class ReplayMethod:
         return None if self.nulls else "no_test"
 
     @property
+    def _publishes_overlapping_windows(self) -> bool:
+        """Whether the paper's windows, in ``decoding``, overlap."""
+        width, step = self.decoding.get("time_bin"), self.decoding.get("time_step")
+        return width is not None and step is not None and step < width
+
+    @property
     def _needs_spike_counts(self) -> bool:
         """Whether :func:`detect_replay` needs the event's spike counts.
 
@@ -1765,7 +1772,8 @@ def detect_replay(
         decoding inputs or a pseudo-event pool); if one of its nulls cannot
         test overlapping windows and the event's are, from the width a decode
         recorded or else ``dt`` (see
-        :func:`~neurospatial.replay.replay_significance`); if the method counts
+        :func:`~neurospatial.replay.replay_significance`), unless the method's
+        ``decoding`` publishes overlapping windows, which warns; if the method counts
         active cells and ``spike_counts`` is summed over cells; if
         ``valid_time_bins`` is not one boolean per time bin; if the method's
         ``units`` are not the environment's; if a joint decode is given
@@ -1858,6 +1866,7 @@ def detect_replay(
         times,
         _window_width(posterior, dt),
         operation="detect_replay()",
+        published=replay_method._publishes_overlapping_windows,
     )
     measured = _measure_event(replay_method, event, rng, test=True)
     if isinstance(measured, ReplayDetectionResult):
@@ -3893,9 +3902,14 @@ def compare_replay_methods(
     # Nulls on the posterior need no dt, so the width comes from the event.
     for method in replay_methods:
         for event, times in zip(events, event_times, strict=True):
-            _refuse_shuffling_overlapping_windows(
-                getattr(method, "nulls", ()), times, _window_width(event, dt)
-            )
+            if _refuse_shuffling_overlapping_windows(
+                getattr(method, "nulls", ()),
+                times,
+                _window_width(event, dt),
+                operation="compare_replay_methods()",
+                published=getattr(method, "_publishes_overlapping_windows", False),
+            ):
+                break  # One warning per method, not one per event.
     pool = _pseudo_event_pool(events) if needs_pool else None
     rng = _concrete_seed(rng)
     root = _root(rng)
@@ -3942,9 +3956,17 @@ def compare_replay_methods(
             for method in replay_methods:
                 stream = stream_for(index, method)
                 # A shuffle test's warning names the event and method it is about.
-                with _warnings_with_context(
-                    f"compare_replay_methods(): event {index}, method {method.name!r}"
+                with (
+                    _warnings_with_context(
+                        f"compare_replay_methods(): event {index}, "
+                        f"method {method.name!r}"
+                    ),
+                    warnings.catch_warnings(),
                 ):
+                    # Said once for the method above.
+                    warnings.filterwarnings(
+                        "ignore", message=r"detect_replay\(\): p-values from"
+                    )
                     result = method._compare(compared, stream)
                 rows.append(
                     {
@@ -4291,10 +4313,10 @@ WU_2017 = ReplayMethod(
         "Dropped time bins keep their times; the paper regresses on time-bin "
         "number and does not say whether bins are renumbered.",
         "The paper's p-value has no +1; here it is (k + 1) / (n + 1).",
-        "The paper's 20 ms windows stepped by 10 ms are refused with this "
-        "null, which loses the correlation of overlapping rows: a 5% test "
+        "The paper's 20 ms windows stepped by 10 ms run, with a warning: this "
+        "null loses the correlation of overlapping rows, and a 5% test "
         "rejected 11.5% of simulated events with no sequence, against 5.2% on "
-        "tiled 20 ms bins. Decode tiled bins, or change the null.",
+        "tiled 20 ms bins.",
         "Mou et al. (2022; Mou, X., Pokhrel, A., Suresh, P., & Ji, D., "
         "Observational learning promotes hippocampal remote awake replay "
         "toward future reward locations, Neuron, 110(5), 891-902) used this "

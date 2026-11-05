@@ -2004,7 +2004,8 @@ def decode_intervals(
     Overlapping windows share spikes, so neighboring rows of an event are
     correlated even when the spikes hold no sequence. Only the
     ``unit_identity`` and ``place_field_circular`` nulls keep that
-    correlation, and the others refuse overlapping windows: on simulated
+    correlation, and the others refuse overlapping windows, or warn for a
+    method whose paper published them: on simulated
     events with no sequence, a 5% test of a linear fit with
     ``time_bin_permutation`` or ``column_cycle`` rejected about 5% of events
     on tiled 20 ms bins, 12% at 20 ms stepped by 10 ms, 24% at 20 ms stepped

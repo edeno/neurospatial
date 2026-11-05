@@ -32,8 +32,10 @@
   about 12% of events at 20 ms stepped by 10 ms, 24% at 20 ms stepped by 5 ms
   and 61% at 80 ms stepped by 5 ms (`spike_train_circular`: 6% and 26% at the
   last two). `unit_identity` and `place_field_circular` stayed close to their
-  rate on tiled bins and still run. Of the 12 recipes that publish overlapping
-  windows, this affects `WU_2017`, which now needs tiled bins or another null.
+  rate on tiled bins and still run. A method whose `decoding` settings publish
+  overlapping windows warns instead, so it can be run as published: of the 12
+  such recipes this applies to `WU_2017`. `dataset_values` and `shuffle_events`
+  take the null directly, so they refuse it for every method.
 - `DecodingResult.dt` is new: the decoders record each window's width, and it
   decides whether rows overlap, ahead of any `dt=` passed to a replay function.
   A posterior passed as an array records nothing, so pass `dt=` for it to be

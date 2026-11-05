@@ -4,9 +4,11 @@ Overlapping windows share spikes, so neighboring rows of an event are
 correlated even when the spikes carry no sequence. These nulls lose that
 correlation, so the observed event looks smoother than its shuffles and a 5%
 test rejects far too often. The two nulls that re-decode the same rows keep it.
+A recipe whose paper published such windows still runs, and warns.
 """
 
 import dataclasses
+import warnings
 
 import numpy as np
 import pytest
@@ -57,8 +59,14 @@ WINDOWS = np.array([[0.5, 0.7], [1.5, 1.7]])
 
 
 def _method(null):
+    """A method that does not publish overlapping windows, so they are refused."""
     return dataclasses.replace(
-        WU_2017, name=null, nulls=(null,), n_shuffles=5, empty_time_bins="keep"
+        WU_2017,
+        name=null,
+        nulls=(null,),
+        n_shuffles=5,
+        empty_time_bins="keep",
+        decoding={"time_bin": 0.02},
     )
 
 
@@ -147,15 +155,61 @@ def test_detect_replay_refuses_posterior_only_nulls(track, spikes, null):
         )
 
 
-def test_detect_replay_refuses_the_published_wu_2017_windows(track, spikes):
+def test_detect_replay_warns_on_windows_the_method_publishes(track, spikes):
+    """``WU_2017`` used 20 ms stepped by 10 ms, so it runs as published and warns."""
     env, rates = track
     events, counts = decode_intervals(env, spikes, WINDOWS, rates, dt=0.02, step=0.01)
-    with pytest.raises(ValueError, match="time_bin_permutation"):
-        detect_replay(
+    with pytest.warns(UserWarning, match="too small") as record:
+        result = detect_replay(
             env,
             events[0].posterior,
             events[0].times,
             replay_method=dataclasses.replace(WU_2017, n_shuffles=5),
+            spike_counts=counts[0],
+            dt=0.02,
+            rng=0,
+        )
+    assert len(record) == 1
+    assert "time_bin_permutation" in str(record[0].message)
+    assert np.isfinite(result.p_value)
+
+
+def test_compare_warns_once_for_a_method_that_publishes_the_windows(track, spikes):
+    """One warning per method, not one per event."""
+    env, rates = track
+    events, counts = decode_intervals(env, spikes, WINDOWS, rates, dt=0.02, step=0.01)
+    method = dataclasses.replace(WU_2017, n_shuffles=5)
+    with pytest.warns(UserWarning, match="too small") as record:
+        table = compare_replay_methods(
+            env, events, replay_methods=[method], spike_counts=counts, rng=0
+        )
+    assert sum("too small" in str(item.message) for item in record) == 1
+    assert "compare_replay_methods()" in str(record[0].message)
+    assert np.isfinite(table["p_value"]).all()
+
+
+def test_a_tiled_event_does_not_warn_for_a_method_that_publishes_overlap(track, spikes):
+    env, rates = track
+    events, counts = decode_intervals(env, spikes, WINDOWS, rates, dt=0.02)
+    method = dataclasses.replace(WU_2017, n_shuffles=5)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compare_replay_methods(
+            env, events, replay_methods=[method], spike_counts=counts, rng=0
+        )
+
+
+def test_overlap_the_method_does_not_publish_is_still_refused(track, spikes):
+    """The warning is for reproducing a paper, not for adding overlap to one."""
+    env, rates = track
+    events, counts = decode_intervals(env, spikes, WINDOWS, rates, dt=0.02, step=0.01)
+    method = dataclasses.replace(WU_2017, n_shuffles=5, decoding={"time_bin": 0.02})
+    with pytest.raises(ValueError, match="cannot test overlapping"):
+        detect_replay(
+            env,
+            events[0].posterior,
+            events[0].times,
+            replay_method=method,
             spike_counts=counts[0],
             dt=0.02,
             rng=0,
