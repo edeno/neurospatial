@@ -27,12 +27,16 @@ sessions[["session", "n_units", "size_bytes", "verified", "default"]].head(10)
 <!-- docs-test: skip needs a download -->
 ```python
 from neurospatial import compute_spatial_rates
-from neurospatial.datasets import igata_2021, load
+from neurospatial.datasets import load
 
 rec = load("igata_2021")              # 4.3 GB: its 124 files, read from a zip
-track = igata_2021.path_track()       # the paper's paths as a 1-D environment
 rates = compute_spatial_rates(
-    track, rec.spike_times, rec.times, rec.positions, min_speed=5.0, bandwidth=5.0
+    rec.env,
+    rec.spike_times,
+    rec.times,
+    rec.positions,
+    min_speed=rec.params["min_speed"],
+    bandwidth=5.0,
 )
 ```
 
@@ -126,10 +130,12 @@ its 12-frame behavioral decoding window; `train_epochs` and `test_epochs`,
 alternating trials; and on the learning days `learning_point`, the number of
 `G01` trials before the paper's learning point.
 
-`igata_2021.path_track()` joins the paper's straight path lines (SI Fig. S1I)
-into one 1-D environment, with lines through the start area, the goal area and the
-return path. The paper decodes each path on its own line; this graph holds them
-on one axis so `IGATA_2021`'s place-field shuffle can run.
+The worked result does not use `rec.env`. It joins the paper's straight path lines
+(SI Fig. S1I) into one 1-D environment, with lines through the start area, the goal
+area and the return path. The paper decodes each path on its own line; this graph
+holds them on one axis so `IGATA_2021`'s place-field shuffle can run. The graph is
+built in `tests/datasets/test_igata_2021.py` from the dataset's own `path_track`,
+which is not a public name.
 
 ## Worked result
 

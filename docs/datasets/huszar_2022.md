@@ -156,11 +156,17 @@ import numpy as np
 from ripple_detection.literature_methods import Recording, run_method
 
 from neurospatial.datasets import load
-from neurospatial.datasets._ripple import spike_counts
 
 rec = load("huszar_2022", "sub-e14-2m3_ses-e14-2m3-201017")   # 34 units, 5.4 GB of counts
 last = max(train[-1] for train in rec.spike_times)
 grid = np.arange(int(np.ceil(last * 1000)) + 2) / 1000
+# One row per ms: a count belongs to the millisecond it falls in.
+multiunit = np.column_stack(
+    [
+        np.bincount(np.searchsorted(grid, train, side="right") - 1, minlength=grid.size)
+        for train in rec.spike_times
+    ]
+)
 maze, awake = rec.epochs["maze"], rec.epochs["awake"]
 starts = np.maximum(maze[:, 0, None], awake[:, 0])
 stops = np.minimum(maze[:, 1, None], awake[:, 1])
@@ -168,7 +174,7 @@ eligible = np.column_stack([starts[stops > starts], stops[stops > starts]])
 recording = Recording.from_arrays(
     grid,
     1000.0,
-    multiunit=spike_counts(rec.spike_times, grid, sampling_rate=1000.0),
+    multiunit=multiunit,
     pyramidal=np.ones(rec.n_units, dtype=bool),          # no labels: every unit
     sleep_intervals=rec.epochs["nrem"],
     external_ripples=np.column_stack(
