@@ -920,12 +920,15 @@ visited get no mass), and decode the null events with the same prior.
   window width, `dt=0.02`, to the replay functions.
 - **Shuffles on overlapping windows.** Overlapping windows share spikes, so
   neighboring rows are correlated even without a sequence. Most shuffles
-  lose that correlation, and a 5% test on simulated events with no sequence
-  then rejected 12% of events at 20 ms stepped by 10 ms and 24% at 20 ms
-  stepped by 5 ms. Those nulls refuse overlapping windows. Only `unit_identity`
-  and `place_field_circular` keep the rows, and stayed at 4 to 7%. `WU_2017`
-  published 20 ms stepped by 10 ms with a time-bin shuffle, so run it on tiled
-  bins or with one of these nulls.
+  lose that correlation, and a 5% test of a linear fit on simulated events
+  with no sequence then rejected 12% of events at 20 ms stepped by 10 ms and
+  24% at 20 ms stepped by 5 ms. Those nulls refuse overlapping windows. Only
+  `unit_identity` and `place_field_circular` keep the rows, and they stayed
+  close to their rate on tiled bins. `WU_2017` published 20 ms stepped by
+  10 ms with a time-bin shuffle, so run it on tiled bins or with one of these
+  nulls. An event from `decode_intervals` or `decode_position` records its
+  window width as `dt`; for a posterior passed as an array, pass `dt=` or
+  nothing can tell that its rows overlap.
 - **Shuffles.** Keep each recipe's published `n_shuffles`. Give `rng` a
   fixed seed and report it.
 - **Two running directions or two tracks.** Decode each event's spike

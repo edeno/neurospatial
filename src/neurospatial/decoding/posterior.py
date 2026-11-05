@@ -581,6 +581,7 @@ def decode_position(
         times=times,
         spike_window=None,
         time_support=centered_bin_support(times, dt),
+        dt=dt,
     )
 
 
@@ -1004,6 +1005,7 @@ def _decode_posterior(
     times: NDArray[np.float64] | None,
     spike_window: Any,
     time_support: NDArray[np.float64] | None,
+    dt: float,
 ) -> DecodingResult:
     """Decode the full posterior into one preallocated array; see ``_posterior_blocks``."""
     posterior = np.empty((n_time, env.n_bins), dtype=dtype)
@@ -1026,6 +1028,7 @@ def _decode_posterior(
         spike_window=spike_window,
         time_support=time_support,
         interval_id=None,
+        dt=dt,
     )
 
 

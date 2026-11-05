@@ -35,33 +35,25 @@ def _recorded_decode(event: Any) -> Any:
     return event
 
 
-def _window_width(
-    event: Any, times: NDArray[np.float64], dt: float | None
-) -> float | None:
+def _window_width(event: Any, dt: float | None) -> float | None:
     """Width of an event's decoding windows, or ``None`` if nothing says.
+
+    The width the decoder recorded wins: ``dt`` can be the step between
+    windows by mistake, and a posterior given as an array records nothing.
 
     Parameters
     ----------
-    event : DecodingResult, JointDecodingResult or Mapping
+    event : DecodingResult, JointDecodingResult, Mapping or array
         The decoded event.
-    times : NDArray[np.float64], shape (n_time_bins,)
-        The event's time-window centers, in seconds.
     dt : float or None
-        The width, if the caller gave it.
+        The width the caller gave, if any.
 
     Returns
     -------
     float or None
-        ``dt``, or the width left by ``time_support``: one unbroken decoded
-        window spans the first start to the last stop, which is ``width`` plus
-        the span of the centers. ``None`` without either.
     """
-    if dt is not None:
-        return dt
-    support = _recorded_decode(event).time_support
-    if support is None or len(support) != 1:
-        return None
-    return float(support[0, 1] - support[0, 0]) - float(times[-1] - times[0])
+    recorded = getattr(_recorded_decode(event), "dt", None)
+    return dt if recorded is None else float(recorded)
 
 
 def _event_identity(

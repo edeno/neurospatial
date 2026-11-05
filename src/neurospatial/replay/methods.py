@@ -1762,7 +1762,10 @@ def detect_replay(
     ------
     ValueError
         If the method needs an input that is not given (spike counts,
-        decoding inputs or a pseudo-event pool); if the method counts
+        decoding inputs or a pseudo-event pool); if one of its nulls cannot
+        test overlapping windows and the event's are, from the width a decode
+        recorded or else ``dt`` (see
+        :func:`~neurospatial.replay.replay_significance`); if the method counts
         active cells and ``spike_counts`` is summed over cells; if
         ``valid_time_bins`` is not one boolean per time bin; if the method's
         ``units`` are not the environment's; if a joint decode is given
@@ -1848,6 +1851,13 @@ def detect_replay(
         template=template,
         pseudo_event_pool=pseudo_event_pool,
         valid_time_bins=valid_time_bins,
+    )
+    # Nulls on the posterior are not given dt, so check it here.
+    _refuse_shuffling_overlapping_windows(
+        replay_method.nulls,
+        times,
+        _window_width(posterior, dt),
+        operation="detect_replay()",
     )
     measured = _measure_event(replay_method, event, rng, test=True)
     if isinstance(measured, ReplayDetectionResult):
@@ -3880,11 +3890,11 @@ def compare_replay_methods(
             "template_bias": template_bias,
         },
     )
-    # Nulls on the posterior need no dt, so read the width from the event too.
+    # Nulls on the posterior need no dt, so the width comes from the event.
     for method in replay_methods:
         for event, times in zip(events, event_times, strict=True):
             _refuse_shuffling_overlapping_windows(
-                getattr(method, "nulls", ()), times, _window_width(event, times, dt)
+                getattr(method, "nulls", ()), times, _window_width(event, dt)
             )
     pool = _pseudo_event_pool(events) if needs_pool else None
     rng = _concrete_seed(rng)

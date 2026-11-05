@@ -472,6 +472,10 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         :func:`~neurospatial.replay.decode_intervals` records the ``Intervals``
         id, or the row of an array. It stays with the event when a list of
         events is filtered. ``None`` for a decode of no particular interval.
+    dt : float or None, optional
+        Width of each decoding window in seconds, recorded by the decoders.
+        Windows closer together than ``dt`` overlap and share spikes.
+        ``None`` means the width is unknown.
 
     Attributes
     ----------
@@ -487,6 +491,8 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         Read-only decoded windows, or ``None`` when unknown.
     interval_id : int or None
         The interval this event came from, or ``None``.
+    dt : float or None
+        Width of each decoding window in seconds, or ``None`` when unknown.
     spike_window_assumed : bool
         Whether spike-recording coverage was assumed.
 
@@ -550,6 +556,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         default=None, kw_only=True, compare=False
     )
     interval_id: int | None = field(default=None, kw_only=True, compare=False)
+    dt: float | None = field(default=None, kw_only=True, compare=False)
 
     def __post_init__(self) -> None:
         """Take ownership of input arrays as read-only copies and validate them."""

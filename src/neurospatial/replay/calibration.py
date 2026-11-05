@@ -2005,12 +2005,14 @@ def decode_intervals(
     correlated even when the spikes hold no sequence. Only the
     ``unit_identity`` and ``place_field_circular`` nulls keep that
     correlation, and the others refuse overlapping windows: on simulated
-    events with no sequence, a 5% test with ``time_bin_permutation`` or
-    ``column_cycle`` rejected about 5% of events on tiled 20 ms bins, 12% at
-    20 ms stepped by 10 ms, 24% at 20 ms stepped by 5 ms and 61% at 80 ms
-    stepped by 5 ms; ``unit_identity`` and ``place_field_circular`` rejected
-    4 to 7%. Criteria that use no null are not checked, so the number of
-    rows and how similar they are changes what such a threshold means.
+    events with no sequence, a 5% test of a linear fit with
+    ``time_bin_permutation`` or ``column_cycle`` rejected about 5% of events
+    on tiled 20 ms bins, 12% at 20 ms stepped by 10 ms, 24% at 20 ms stepped
+    by 5 ms and 61% at 80 ms stepped by 5 ms. The two nulls that keep the
+    correlation stayed close to their rate on tiled bins, which depends on
+    the score: 4 to 7% for a linear fit, and about 7% for
+    ``place_field_circular`` with a weighted correlation. Criteria that use
+    no null are not checked, and overlap's effect on them was not measured.
 
     Every time bin's counts and posterior are returned, and held at once:
     about ``n_time_bins * (n_cells + n_bins) * 8`` bytes. For hundreds of
@@ -2137,6 +2139,7 @@ def _decode_intervals_together(
             times=centers[first:last],
             time_support=np.array([[left[first], right[last - 1]]]),
             interval_id=interval_ids[slot],
+            dt=dt,
         )
         counts[slot] = all_counts[first:last].copy()
     return events, counts

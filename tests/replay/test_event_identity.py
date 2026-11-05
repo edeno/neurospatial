@@ -174,3 +174,17 @@ def test_interval_id_survives_replace(track, spikes):
     assert (
         dataclasses.replace(events[2], posterior=events[2].posterior).interval_id == 2
     )
+
+
+@pytest.mark.parametrize("step", [None, 0.005], ids=["tiled", "overlapping"])
+def test_decoded_events_record_their_window_width(track, spikes, step):
+    """``dt`` is the width of each window, however far apart they start."""
+    env, rates = track
+    events, _ = decode_intervals(env, spikes, WINDOWS, rates, dt=DT, step=step)
+    assert [event.dt for event in events] == [DT, DT, DT]
+
+
+def test_decode_position_records_its_window_width(track):
+    env, rates = track
+    counts = np.ones((3, 8), dtype=np.int64)
+    assert decode_position(env, counts, rates, dt=DT).dt == DT

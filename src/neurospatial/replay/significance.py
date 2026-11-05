@@ -790,7 +790,11 @@ def _track_env(
 
 
 def _refuse_shuffling_overlapping_windows(
-    nulls: Sequence[str], times: NDArray[np.float64], width: float | None
+    nulls: Sequence[str],
+    times: NDArray[np.float64],
+    width: float | None,
+    *,
+    operation: str = _OPERATION,
 ) -> None:
     """Refuse nulls that cannot test windows closer together than ``width``.
 
@@ -807,6 +811,8 @@ def _refuse_shuffling_overlapping_windows(
     width : float or None
         Width of each window, in seconds; ``None`` when unknown, which cannot
         be checked.
+    operation : str
+        The calling function, for the refusal message.
 
     Raises
     ------
@@ -818,14 +824,16 @@ def _refuse_shuffling_overlapping_windows(
     spacing = np.diff(np.sort(np.asarray(times, dtype=np.float64).ravel()))
     if not blind or width is None or not spacing.size:
         return
-    # Allow round-off in times built as start + k * step.
-    if np.min(spacing) >= width * (1.0 - 1e-6):
+    # The median ignores missing rows and clock jitter, which the centers of
+    # tiled bins carry (float32 storage, rounding on a Unix clock). The 1%
+    # matches the allowance of _time_bins_in_windows.
+    step = float(np.median(spacing))
+    if step >= width * 0.99:
         return
     raise ValueError(
         _format_error(
-            f"{_OPERATION} cannot test overlapping windows with {blind}: times "
-            f"are as little as {np.min(spacing):g} s apart with windows "
-            f"{width:g} s wide.",
+            f"{operation} cannot test overlapping windows with {blind}: times "
+            f"are about {step:g} s apart with windows {width:g} s wide.",
             why="overlapping windows share spikes, so neighboring rows are "
             "correlated even without a sequence, and these shuffles lose that "
             "correlation. On simulated events with no sequence a 5% test "
