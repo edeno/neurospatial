@@ -65,10 +65,15 @@ What the loader converts:
   and times the samples with it: an inferred ``Conversion``. On the default
   day the fitted rates are 30.047 to 30.064 Hz, not the header's 30 Hz, and
   the largest residual is 41 ms (about one frame); the residuals are
-  reported for every day. The loader refuses a day where the fitted times
-  do not increase (a trial's line starts before the previous trial's ends)
-  or a trial has too few spikes to fit; the days that do are not offered
-  (above).
+  reported for every day. A recording fitted slower than the day's trials
+  by more than ``SLOW_RATE_SD`` robust standard deviations of their rates
+  has a watch-out: dropped frames bend the camera's times away from the
+  straight line the file's map assumes, so its positions may be off in time
+  by about the time its line spans beyond its frames at the trials' rate
+  (on 3 of the 36 offered days; the positions are kept). The loader refuses
+  a day where the fitted times do not increase (a trial's line starts before
+  the previous trial's ends) or a trial has too few spikes to fit; the days
+  that do are not offered (above).
 - headings: none. The file has one LED (``n_leds`` 1) though the Methods
   fit two, and ``pos.dir`` equals ``dir_disp``, the direction of
   displacement, not of the head.
@@ -160,6 +165,21 @@ DT = 0.25
 RESIDUAL = 0.05
 #: Fewest spikes a trial's line is fitted on.
 MIN_FIT_SPIKES = 100
+#: A recording whose fitted rate is below the median of the day's trials'
+#: rates by more than this many robust standard deviations of those rates
+#: (1.4826 x their median absolute deviation) is reported as slowed by
+#: dropped frames. The residuals cannot show dropped frames: the file's map
+#: puts each spike at its nearest frame on a straight line, so on every
+#: recording their RMS is about 9.6 ms, a frame / sqrt(12). The rates can: a
+#: dropped frame lengthens the line over the frames left, so only slows the
+#: fit. Rates above the median, which dropped frames cannot cause, reach 6.4
+#: robust SDs on the offered days (7.9 on the days not offered, all in short
+#: trials), so 8 is past the rates' own scatter. Checked against the camera
+#: timestamps (``experiment_1_pos.npy``) when the threshold was set: the
+#: three recordings of offered days beyond it depart from their line by 0.64
+#: to 4.9 s, and the slowest within it (m4005_2020-09-24's exploration trial,
+#: 7.3) by 0.21 s, as much as some recordings at the median rate do.
+SLOW_RATE_SD = 8.0
 #: Fewest samples beyond the platform an arm's direction is fitted on.
 MIN_ARM_SAMPLES = 100
 #: Samples within this distance (cm) of the platform's edge are left out of
@@ -396,6 +416,7 @@ def load_session(
         watch_outs=(
             *WATCH_OUTS.get(entry.session, ()),
             fit.watch_out,
+            *fit.slow_watch_outs,
             *_genotype_watch_out(mouse),
             _direction_watch_out(dirs, displacement),
             _PROCESSED,
@@ -420,10 +441,27 @@ def _cluster_id(row: dict[str, str]) -> int:
 
 
 class PositionClock(NamedTuple):
-    """How the position samples were timed: the conversion's evidence and a watch-out."""
+    """How the position samples were timed.
+
+    Attributes
+    ----------
+    evidence : str
+        The conversion's evidence: the fitted rates and residuals.
+    watch_out : str
+        The watch-out on the rebuilt clock.
+    slow : dict of str to str
+        For each recording (by name) whose fitted rate is below the day's
+        trials' median by more than ``SLOW_RATE_SD`` robust standard
+        deviations, a clause saying by how much; empty where every fitted
+        rate is the header's 30 Hz.
+    slow_watch_outs : tuple of str
+        A watch-out for each of those recordings.
+    """
 
     evidence: str
     watch_out: str
+    slow: dict[str, str]
+    slow_watch_outs: tuple[str, ...]
 
 
 def position_times(
@@ -451,7 +489,8 @@ def position_times(
         Per trial, the least-squares line from sample index to spike time,
         evaluated at each of the trial's samples.
     clock : PositionClock
-        The fitted rates and residuals, as evidence and as a watch-out.
+        The fitted rates and residuals, as evidence and as a watch-out, and
+        the recordings slowed by dropped frames.
 
     Raises
     ------
@@ -460,7 +499,7 @@ def position_times(
     """
     index = np.asarray(pos_sample, dtype=np.float64) - 1
     times = np.empty(int(trial_ends[-1]))
-    rates, worst, n_far, n_fitted = [], 0.0, 0, 0
+    rates, n_frames, worst, n_far, n_fitted = [], [], 0.0, 0, 0
     starts = np.r_[0, trial_ends[:-1]]
     for name, start, stop in zip(names, starts, trial_ends, strict=True):
         inside = (index >= start) & (index < stop)
@@ -478,17 +517,19 @@ def position_times(
         n_fitted += n
         times[start:stop] = intercept + slope * np.arange(start, stop)
         rates.append(1.0 / slope)
+        n_frames.append(int(stop - start))
     low, high = min(rates), max(rates)
     measured = (
         f"fitted rates {low:.3f} to {high:.3f} Hz against the header's 30 Hz; the "
         f"largest residual is {worst * 1e3:.0f} ms, and {n_far} of {n_fitted} "
         f"spikes lie more than {RESIDUAL * 1e3:.0f} ms from their trial's line"
     )
+    at_header = bool(np.allclose(rates, 30.0, atol=1e-4))
     exact = (
         " Every fitted rate is the header's 30 Hz: the file's map was likely "
         "built from that rate, so the fit reproduces it and does not measure "
         "the camera."
-        if np.allclose(rates, 30.0, atol=1e-4)
+        if at_header
         else ""
     )
     watch_out = (
@@ -497,7 +538,53 @@ def position_times(
         "from the spikes over a day. Times within a trial are a straight line: "
         "dropped frames, if any, are not located."
     )
-    return times, PositionClock(f"{measured} (over {len(rates)} trials)", watch_out)
+    slow = {} if at_header else _slow_recordings(names, rates, n_frames)
+    return times, PositionClock(
+        f"{measured} (over {len(rates)} trials)",
+        watch_out,
+        slow,
+        tuple(
+            f"{clause[0].upper()}{clause[1:]}. The file's map times each "
+            "recording's frames by a straight line from its first to its last "
+            "camera timestamp, and the camera's dropped frames bend its times "
+            "away from that line, so this recording's positions may be off in "
+            "time by up to about that much. They are kept."
+            for clause in slow.values()
+        ),
+    )
+
+
+def _recording(name: str) -> str:
+    """``"rest 'S2'"`` or ``"trial '3'"``."""
+    return f"{'rest' if name.startswith('S') else 'trial'} {name!r}"
+
+
+def _slow_recordings(
+    names: list[str], rates: list[float], n_frames: list[int]
+) -> dict[str, str]:
+    """Each recording fitted slower than the day's trials by more than ``SLOW_RATE_SD``.
+
+    The day's trials are the recordings not named ``S*`` (rest). Each is
+    given as a clause saying by how much and how much longer its line spans
+    than its frames take at the trials' median rate.
+    """
+    trials = np.array(
+        [r for n, r in zip(names, rates, strict=True) if not n.startswith("S")]
+    )
+    median = float(np.median(trials))
+    spread = 1.4826 * float(np.median(np.abs(trials - median)))
+    slow = {}
+    for name, rate, n in zip(names, rates, n_frames, strict=True):
+        below = (median - rate) / spread
+        if below > SLOW_RATE_SD:
+            excess = (n - 1) * (1.0 / rate - 1.0 / median)
+            slow[name] = (
+                f"{_recording(name)} is fitted at {rate:.3f} Hz, {below:.1f} robust "
+                f"SDs below the {median:.3f} Hz median of the day's trials (robust "
+                f"SD {spread * 1e3:.2f} mHz), so its line spans {excess:.2f} s more "
+                f"than its {n} frames take at that rate"
+            )
+    return slow
 
 
 def unit_table(rows: list[dict[str, str]], good: NDArray[np.int64]) -> pd.DataFrame:

@@ -305,7 +305,10 @@
   day. The default, `m4005_2020-09-26` (71 units), is checked by hand. The
   file stores no position times, so they are rebuilt per trial from its
   spike-to-sample map (an inferred `Conversion`: about 30.05 Hz, not the
-  header's 30 Hz, largest residual 41 ms). The 14 days whose rebuilt clock
+  header's 30 Hz, largest residual 41 ms). A recording whose fitted rate is
+  more than 8 robust standard deviations below its day's trials', where the
+  camera dropped frames, has a watch-out giving how far its positions may be
+  off in time (3 of the 36 offered days). The 14 days whose rebuilt clock
   does not increase or cannot be fitted are not offered; the module and its
   page list them with the reason. The environment is a star of the stated
   80 cm arms from a 24.7 cm platform; the paper's 2 cm bins and 2 cm/s speed

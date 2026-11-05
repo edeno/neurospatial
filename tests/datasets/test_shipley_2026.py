@@ -31,8 +31,10 @@ def _star_path(n_per_arm=400, seed=0, skip_arm=None):
     return path + rng.normal(0.0, 1.0, path.shape)
 
 
-def _write_members(folder, *, trial_names=("0", "1", "S2"), spikes_in=None, gap=0.05):
-    """The four members for a day of three trials at 30.05 Hz.
+def _write_members(
+    folder, *, trial_names=("0", "1", "S2"), spikes_in=None, gap=0.05, rates=None
+):
+    """The four members for a day of three trials at 30.05 Hz, or at ``rates`` (Hz).
 
     Trials follow each other on the concatenated clock ``gap`` s apart. Each
     spike is mapped to its nearest frame, as the authors' nearest-neighbour
@@ -44,9 +46,9 @@ def _write_members(folder, *, trial_names=("0", "1", "S2"), spikes_in=None, gap=
     path = _star_path()
     n_trial = len(path)
     xy, times, ends, start = [], [], [], 0.0
-    for _ in trial_names:
+    for rate in rates or [CAMERA_HZ] * len(trial_names):
         xy.append(path)
-        t = start + np.arange(n_trial) / CAMERA_HZ
+        t = start + np.arange(n_trial) / rate
         times.append(t)
         ends.append(n_trial * (len(ends) + 1))
         start = t[-1] + gap
@@ -244,6 +246,40 @@ def test_position_times_report_the_header_rate_when_the_map_used_it():
     )
     np.testing.assert_allclose(times, np.arange(3000) / 30.0, atol=1e-9)
     assert "Every fitted rate is the header's 30 Hz" in clock.watch_out
+    assert clock.slow == {}
+    assert clock.slow_watch_outs == ()
+
+
+def test_a_recording_slowed_by_dropped_frames_is_reported(tmp_path, session_entry):
+    """A rest 30 mHz slower than its day's trials (20 robust SDs): kept, reported."""
+    from neurospatial.datasets import shipley_2026
+
+    names = ("0", "1", "2", "3", "4", "S2")
+    rates = (30.050, 30.052, 30.048, 30.051, 30.049, 30.020)
+    times, *_ = _write_members(tmp_path, trial_names=names, rates=rates)
+    rec = shipley_2026.load_session(session_entry("shipley_2026"), tmp_path)
+    np.testing.assert_allclose(rec.times, times, atol=2e-3)
+    (finding,) = [t for t in rec.watch_outs if "robust SDs below" in t]
+    assert finding.startswith("Rest 'S2' is fitted at 30.020 Hz,")
+    assert "below the 30.050 Hz median of the day's trials" in finding
+    # 3199 frame intervals at 30.020 rather than 30.050 Hz: 0.106 s longer,
+    # to within the fitted rates' rounding of the nearest-frame map.
+    spans = float(finding.split("its line spans ")[1].split(" s more")[0])
+    assert spans == pytest.approx(3199 * (1 / 30.020 - 1 / 30.050), abs=0.01)
+    assert "s more than its 3200 frames take at that rate" in finding
+    assert "positions may be off in time by up to about that much" in finding
+    assert finding.endswith("They are kept.")
+
+
+def test_trials_within_the_rates_scatter_are_not_reported(tmp_path, session_entry):
+    from neurospatial.datasets import shipley_2026
+
+    names = ("0", "1", "2", "3", "4", "S2")
+    # S2 10 mHz slow: 6.7 robust SDs (1.48 mHz) below the trials' median.
+    rates = (30.050, 30.052, 30.048, 30.051, 30.049, 30.040)
+    _write_members(tmp_path, trial_names=names, rates=rates)
+    rec = shipley_2026.load_session(session_entry("shipley_2026"), tmp_path)
+    assert not any("robust SDs below" in t for t in rec.watch_outs)
 
 
 @pytest.mark.realdata
@@ -261,6 +297,8 @@ def test_loads_default_session(session_entry, assert_default_session):
     clock = next(c for c in rec.conversions if c.text.startswith("times:"))
     assert "fitted rates 30.047 to 30.064 Hz" in clock.evidence
     assert "largest residual is 41 ms" in clock.evidence
+    # No recording's fitted rate is slowed by dropped frames past the trials'.
+    assert not any("robust SDs below" in t for t in rec.watch_outs)
     assert rec.env.is_linearized_track
     assert rec.env.units == "cm"
 

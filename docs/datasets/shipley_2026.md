@@ -107,7 +107,22 @@ Each day is read from four members of its `PhyOutput/OldData` folder:
 
 - **Rebuilt position times.** Within a trial the times are a straight line:
   dropped frames, if any, are not located. The summary gives each day's
-  fitted rates and residuals. In the 2021 and 2022 days of some mice every
+  fitted rates and residuals.
+- **Recordings slowed by dropped frames.** The file's map times each
+  recording's frames by a straight line from its first to its last camera
+  timestamp. Where the camera dropped frames, the line spans more time than
+  the frames left take, so the recording's fitted rate falls below the
+  day's trials'. A recording more than 8 robust standard deviations of the
+  trials' rates below their median gets a watch-out giving that extra time,
+  about how far its positions may be off; the positions are kept. On the
+  offered days this is rest `S2` of `m4098_2020-10-26` (1.54 s) and of
+  `m4202_2019-12-15` (1.04 s), and the exploration trial of
+  `m4020_2020-08-19` (5.05 s); the camera's own timestamps depart from the
+  line by 2.0, 0.64 and 4.9 s there. Rates above the median, which dropped
+  frames cannot cause, reach 6.4 robust standard deviations on the offered
+  days. On the six offered days whose camera timestamps were read (these
+  three, the default, `m4005_2020-09-24` and `m4201_2019-12-16`), every
+  other recording's camera times stay within 0.23 s of its line. In the 2021 and 2022 days of some mice every
   fitted rate is exactly 30 Hz, so the file's map was likely built from the
   header's rate and the fit cannot measure the camera.
 - **No headings.** The file stores one LED (`n_leds` 1), though the Methods fit
