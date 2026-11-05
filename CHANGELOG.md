@@ -36,6 +36,15 @@
   `compare_replay_methods` also reads the window width from each event's
   `time_support`; a posterior passed as an array needs `dt=` to be checked.
 
+### Documentation corrections
+
+- The replay guide no longer says published replay scores correlate weakly in
+  general. Tingley & Peyrache's rank-order values (R = 0.003 to 0.126) come from
+  released code that correlates sort orders, so they depend on cell numbering.
+- `differential-operators.md` no longer cites Stachenfeld et al. 2017 for flow
+  fields, which that paper does not discuss, or claims a successor
+  representation that the example does not compute.
+
 ### The 5 cm default bandwidth warns on large bins
 
 - A kernel method with the default bandwidth now warns when 5 cm is below a

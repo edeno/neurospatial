@@ -5,7 +5,7 @@ of population activity) and decoded them with place fields from running.
 Which events are replay? Published methods answer this differently. Each
 combines a score for how well the decoded positions follow a path, shuffles
 that say how large a score arises by chance, and thresholds. On the same
-events, their scores correlate weakly (Tingley & Peyrache 2020), and their
+events, their scores can disagree (Tingley & Peyrache 2020), and their
 false-positive rates differ even at the same α (Takigawa et al. 2024). Before
 you interpret a replay rate, know how much it depends on the method.
 
@@ -274,7 +274,12 @@ they agree. `WU_2017` and `TIROLE_2022` correlate at 0.21 with signs and
 between two signed scores, which then also agree on direction (0.89 to
 0.97 here). Tingley & Peyrache correlated the signed weighted correlation
 with the unsigned Radon line fit (R = 0.194), so part of that low value can
-come from the signs alone. `DAVIDSON_2009`'s line fit correlates weakly
+come from the signs alone. Their rank-order values (R = 0.003 to 0.126) are
+also hard to read: their released code correlates two sort orders, not ranks,
+so the value depends on how the cells are numbered, and a perfect reverse
+sequence scores about 0 under random numbering.
+`rank_order_correlation` does not depend on the numbering. `DAVIDSON_2009`'s
+line fit correlates weakly
 with every other score even without signs, because it scores stationary
 events as high as sweeps. Tingley & Peyrache also asked how each score
 holds up as an event degrades (their Fig. 4): `simulate_replay_event(...,

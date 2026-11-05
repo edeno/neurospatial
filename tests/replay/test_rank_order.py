@@ -115,6 +115,18 @@ class TestCorrelation:
             ).score
             assert again == pytest.approx(score, rel=1e-12)
 
+    def test_a_reverse_sequence_scores_minus_one_under_any_numbering(self, track):
+        """Correlating sort indices gives about 0 here; ranks give exactly -1."""
+        env, rates, _ = track
+        rng = np.random.default_rng(3)
+        trains = _in_field_order(8, order=np.arange(8)[::-1])
+        for _ in range(5):
+            relabel = rng.permutation(8)
+            score = rank_order_correlation(
+                env, [trains[i] for i in relabel], INTERVAL, rates[relabel]
+            ).score
+            assert score == pytest.approx(-1.0)
+
     def test_field_center_differs_from_peak_for_a_skewed_field(self, track):
         env, rates, _ = track
         x = env.bin_centers[:, 0]
