@@ -5395,8 +5395,8 @@ BHATTARAI_2020 = ReplayMethod(
         "time_bin": 0.02,
         "time_step": 0.01,
         "position_bin": 2.0,
-        "smoothing": 6.0,
-        "min_speed": 4.0,
+        "rate_map_smoothing_sd": 6.0,
+        "rate_map_speed": 4.0,
     },
     notes=(
         "SI Appendix, 'Replay events': a linear regression of decoded (MAP) "
