@@ -11,6 +11,9 @@ code.
 
 Sargolini et al. (2006), Valero et al. (2022) and Forli et al. (2025) have
 no test: their ``WORKED_RESULT`` says why a result is not possible yet.
+Bhattarai et al. (2020), Igata et al. (2021) and Huszar et al. (2022) are
+tested in their own files (``test_bhattarai_2020.py`` and so on), which pin
+their recorded numbers; this file checks only that their records are complete.
 """
 
 from __future__ import annotations
@@ -20,9 +23,12 @@ import pytest
 from scipy.special import i0, i1
 
 from neurospatial.datasets import (
+    bhattarai_2020,
     comrie_2026,
     forli_2025,
     grosmark_2016,
+    huszar_2022,
+    igata_2021,
     load,
     peyrache_2015,
     sargolini_2006,
@@ -328,9 +334,12 @@ RECORD_KEYS = {
 }
 ATTEMPT_KEYS = {"value", "criterion", "parameters", "differs"}
 ALL = [
+    bhattarai_2020,
     comrie_2026,
     forli_2025,
     grosmark_2016,
+    huszar_2022,
+    igata_2021,
     peyrache_2015,
     sargolini_2006,
     valero_2022,
