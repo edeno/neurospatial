@@ -2013,7 +2013,10 @@ def decode_intervals(
     correlation stayed close to their rate on tiled bins, which depends on
     the score: 4 to 7% for a linear fit, and about 7% for
     ``place_field_circular`` with a weighted correlation. Criteria that use
-    no null are not checked, and overlap's effect on them was not measured.
+    no null are not checked, but shared spikes affect them too: at published
+    windows, recipes that test only continuity or distance called up to 90%
+    of those events replay, depending on event length and firing rate.
+    Measure this on null events decoded with the same ``dt`` and ``step``.
 
     Every time bin's counts and posterior are returned, and held at once:
     about ``n_time_bins * (n_cells + n_bins) * 8`` bytes. For hundreds of

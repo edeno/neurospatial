@@ -929,6 +929,21 @@ visited get no mass), and decode the null events with the same prior.
   p-values are too small. An event from `decode_intervals` or `decode_position` records its
   window width as `dt`; for a posterior passed as an array, pass `dt=` or
   nothing can tell that its rows overlap.
+- **Fixed criteria on overlapping windows.** Recipes without a shuffle test
+  are not refused or warned about, but shared spikes affect them too, because
+  rows that share spikes look continuous. On simulated events with no
+  sequence, at each recipe's published windows, `CAREY_2019` called 3 to 90%
+  of events replay, `WIDLOSKI_FOSTER_2022` 2 to 29%, `PFEIFFER_FOSTER_2015` 9
+  to 19% and `PFEIFFER_FOSTER_2013` 0 to 6%, while `MALLORY_2025`,
+  `AMBROSE_2016` and `BERNERS_LEE_2022`, which also require a high weighted
+  correlation, stayed at 3% or less. The rate rose with event length, and for
+  most of these recipes with firing rate, so a fixed criterion has no single
+  false-positive rate and replay rates may not compare across conditions. These
+  simulations do not show that the papers' results are wrong: real events have
+  structure, and the recipes leave out some of the papers' other steps. Measure
+  it on your own events before you interpret a rate: make
+  `null_events(spike_times, intervals, kind="spike_time_uniform")`, decode them
+  with the same `dt` and `step`, and read `detection_rates` of the table.
 - **Shuffles.** Keep each recipe's published `n_shuffles`. Give `rng` a
   fixed seed and report it.
 - **Two running directions or two tracks.** Decode each event's spike

@@ -44,6 +44,11 @@
 
 ### Documentation corrections
 
+- The replay guide and `decode_intervals` now say that overlapping windows also
+  affect recipes with fixed criteria, which have no null to refuse. On simulated
+  events with no sequence, at published windows, `CAREY_2019` called 3 to 90% of
+  events replay and `WIDLOSKI_FOSTER_2022` 2 to 29%, depending on event length
+  and firing rate. The guide shows how to measure this with `null_events`.
 - The replay guide no longer says published replay scores correlate weakly in
   general. Tingley & Peyrache's rank-order values (R = 0.003 to 0.126) come from
   released code that correlates sort orders, so they depend on cell numbering.
