@@ -1,0 +1,1064 @@
+{
+  "dataset": "bhattarai_2020",
+  "paper": "Bhattarai et al. (2020)",
+  "paper_citation": "Bhattarai B, Lee JW, Jung MW (2020). Distinct effects of reward and navigation history on hippocampal forward and reverse replays. Proceedings of the National Academy of Sciences 117(1):689-697. https://doi.org/10.1073/pnas.1912533117",
+  "species": "rat",
+  "brain_regions": [
+    "dorsal CA1"
+  ],
+  "apparatus": "spatial sequence memory maze: a loop of about 3 m with a figure 8-shaped section of two rings, four spatial sequences (RR, LL, RL, LR) to one reward site, sliding doors, a 3 s delay",
+  "license": "CC0",
+  "archive": {
+    "name": "Figshare 10032866 (version 2)",
+    "url": "https://doi.org/10.6084/m9.figshare.10032866.v2",
+    "citation": "Bhattarai, Baburam; Lee, Jong Won; Jung, Min Whan (2019). Supplementary data: Distinct effects of reward and navigation history on hippocampal forward and reverse replays. figshare. Dataset. https://doi.org/10.6084/m9.figshare.10032866.v2"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 30.0,
+      "basis": "stated",
+      "source": "the SI Appendix of Bhattarai, Lee & Jung 2020: 'head position (sampling rate, 30 Hz)'"
+    },
+    "position_span": {
+      "value": [
+        150.0,
+        220.0
+      ],
+      "basis": "inferred",
+      "source": "no source read states the maze's span. At 3.6 pixels per cm the maze's samples span about 150 cm along x in every set (155 to 690 pixels), and the samples at (0, 0) stretch the span to 190 to 198 cm; the maze is about 3 m round (the linearized maze of Fig. 3A)"
+    },
+    "speed_limit": {
+      "value": 393.0,
+      "basis": "stated",
+      "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a head-mounted LED pair, which swings faster than the body, and no source read states head speed"
+    }
+  },
+  "sessions": [
+    {
+      "session": "rat1_set1",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 15,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat1_set2",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 15,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat1_set3",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 16,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat1_set4",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 21,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat1_set5",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 26,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat1_set6",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 31,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat2_set1",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 42,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat2_set2",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": true,
+      "default": true,
+      "n_units": 42,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ],
+      "verification": "Checked by hand on 2026-11-04 against MetaData.docx, the paper and its SI Appendix (read in full: Materials and Methods, Fig. S1, Table S1). Files: the zip's MD5 and size are those Figshare publishes (8ddf1504..., 658,989,513 bytes); its SHA-256 was computed from one full download; each member read is pinned by its own SHA-256. MATLAB versions: lfp.mat 7.3 (HDF5), the others 5.0. Order of the cells: the share of rewarded free-choice trials follows Table S1's Performance column row by row, 78.3% against 78.2% here, and the paper's rule for complex-spike cells gives 648 of 698 units over all cells, the paper's number. Time: 130,079 samples at a median 0.03352 s (29.8 Hz, the SI's 30 Hz), 632.3 to 4973.2 s; the units' spikes lie inside it; lfp.mat is 2 kHz with no gap, from 632.287 s. Trials: 159 of events.mat match beh.mat row by row at shift 0: the start of reward equals beh.mat's last sensor plus one constant, 20 ms median difference, one row (the last of session 1) 44 s off. Two sessions of four blocks in random order, the head clusters at the reward site at the start of reward, and each trial's label names the arms the head ran through. Position scale: not stated; 3.6 pixels per cm from the 300 cm linearized maze of Fig. 3A and the 30 cm from nozzle to trial start. Heading against movement: +4.3 deg mean, 15 deg spread, after converting the stored bearing. LFP: 21.4% of samples at +/-327.67; population rate 1.52 times baseline at ripple-power peaks. Overview figure and animation frames looked at: the path runs the maze's loop, the head sweeps at the reward site, the rate of off-maze samples is low on this set; the Environment panel is squeezed by a legend with one entry per graph edge (a plotting issue, not the data)."
+    },
+    {
+      "session": "rat2_set3",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 23,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat2_set4",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 27,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat2_set5",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 23,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat2_set6",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 17,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat2_set7",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 26,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat2_set8",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 23,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat2_set9",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 35,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set1",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 41,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set2",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 30,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set3",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 33,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set4",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 26,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set5",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 20,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set6",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 32,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set7",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 38,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set8",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 38,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set9",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 31,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    },
+    {
+      "session": "rat3_set10",
+      "archive": "Figshare 10032866 (version 2)",
+      "url": "https://ndownloader.figshare.com/files/18089546",
+      "file_name": "DataSet.zip",
+      "sha256": "772d59a1bc13a3fcbfb9fb195e41875439501c1c3a0c5b0a871326a49af1dd3a",
+      "size_bytes": 658989513,
+      "verified": false,
+      "default": false,
+      "n_units": 27,
+      "members": [
+        {
+          "path": "VT.mat",
+          "sha256": "a394bba405449877d3d587b94ef0f379d7a5e889d84ee8fa543f0c7507422e2b",
+          "size_bytes": 26156537
+        },
+        {
+          "path": "spikes.mat",
+          "sha256": "9d53289b4d579acefeba47cff066e806f589861a6cffd47cb72304b9bfef8c18",
+          "size_bytes": 23411375
+        },
+        {
+          "path": "events.mat",
+          "sha256": "b692cd648af81a68d6afa331153130a18e6737e3d8aa184e1dbde040443ac804",
+          "size_bytes": 101271
+        },
+        {
+          "path": "beh.mat",
+          "sha256": "88abfeb1dcacefaa28707659722037453aad083c3daa5b664a796bff911af1bd",
+          "size_bytes": 84305
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "lfp.mat",
+          "member": "lfp.mat",
+          "sha256": "fcc390d25d51f19fdf9ccdc9133a2053549fad9ce1e98087e40903b5100b455b",
+          "size_bytes": 1080882885
+        }
+      ]
+    }
+  ]
+}
