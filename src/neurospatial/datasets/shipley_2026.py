@@ -22,12 +22,26 @@ tetrode the curated spikes' times and position samples). The archive holds
 and the default is mouse m4005 on 2020-09-26.
 
 Not offered: 14 days whose position samples cannot be put on one increasing
-clock, so loading them would raise ``ValueError``. In 12 a trial's fitted
-line starts before the previous trial's ends. In the 9 where the overlap is
-under one frame interval (33 ms), the file's spike-to-sample map gives the
-spikes at the boundary to both trials; the 3 overlaps of 0.8 to 10.6 s,
-after a rest, are more than that can explain, and no source read says why.
-In 2 a trial has no spikes mapped to it, so its samples cannot be timed:
+clock, so loading them would raise ``ValueError``. The file's map puts each
+spike at the nearest frame, the frames of each recording timed by a straight
+line from its first to its last camera timestamp (``experiment_1_pos.npy``,
+one per recording folder of the zip, which the loader does not read). In 12
+a recording's fitted line starts before the previous one's ends:
+
+- In 8 by 0.04 to 0.75 ms. The recordings follow each other on this clock
+  with gaps from under 1 ms to about 100 ms (0.2 ms on an offered day), so
+  these are the lines fitted to two recordings with no gap between them
+  crossing by a fraction of a frame.
+- In 4 the earlier recording's camera dropped frames, so its straight line
+  spans more than its place on the spike clock and runs into the next
+  recording; its fitted rate is below the day's trials' (``SLOW_RATE_SD``).
+  The three after rest S1 overlap by 0.8 to 10.6 s; S1's camera timestamps
+  (of m4201_2019-12-17, m4202_2019-12-16 and m4020_2020-08-18 below) hold
+  35, 25 and 332 gaps over 0.1 s and depart from a straight line by up to
+  3.8, 2.3 and 8.9 s.
+
+In 2 the sorted spikes start late, so a trial has no spikes to time its
+samples:
 
 - ``m4005_2020-09-28``: trial 8 starts 0.53 ms before trial 7 ends;
 - ``m4101_2020-11-03``: trial 2 starts 0.34 ms before trial 1 ends;
@@ -37,16 +51,24 @@ In 2 a trial has no spikes mapped to it, so its samples cannot be timed:
 - ``m4232_2020-12-18``: trial 9 starts 0.11 ms before trial 8 ends;
 - ``m4232_2020-12-19``: trial 5 starts 0.04 ms before trial 4 ends;
 - ``m4376_2021-08-16``: trial 9 starts 0.75 ms before trial 8 ends;
-- ``m4604_2022-03-02``: trial 1 starts 28.95 ms before trial 0 ends;
-- ``m4201_2019-12-17``: trial 6 starts 796.89 ms before rest S1 ends;
-- ``m4202_2019-12-16``: trial 6 starts 1381.64 ms before rest S1 ends;
-- ``m4020_2020-08-18``: trial 6 starts 10583.43 ms before rest S1 ends;
-- ``m4020_2020-08-21``: trials 0 to 3 have no spikes mapped to them;
-- ``m4578_2021-10-18``: trial 0 has no spikes mapped to it.
+- ``m4604_2022-03-02``: trial 1 starts 28.95 ms before trial 0 ends, whose
+  camera dropped frames (fitted 30.034 Hz against the trials' 30.051 Hz);
+- ``m4201_2019-12-17``: trial 6 starts 796.89 ms before rest S1 ends (S1
+  fitted 30.004 Hz against the trials' 30.050 Hz);
+- ``m4202_2019-12-16``: trial 6 starts 1381.64 ms before rest S1 ends (S1
+  fitted 30.024 Hz against 30.051 Hz);
+- ``m4020_2020-08-18``: trial 6 starts 10583.43 ms before rest S1 ends (S1
+  fitted 29.668 Hz against 30.050 Hz); the file's own map splits the spikes
+  of 3727.6 to 3738.2 s between S1 and trial 6, interleaved;
+- ``m4020_2020-08-21``: trials 0 to 3 have no spikes mapped to them: the
+  good units' first spike is at 818.68 s;
+- ``m4578_2021-10-18``: trial 0 has no spikes mapped to it: the first spike
+  of any cluster is at 480.77 s.
 
 Sources read: the paper (Shipley, Abrate, Hayman, Chan & Barry 2026,
 Current Biology 36, 859-871.e5, on Europe PMC, PMC7619514), the record's
-description and its ``MouseStats.xlsx``, and the files.
+description and its ``MouseStats.xlsx``, the files, and the camera
+timestamps of the days not offered and of six offered days.
 
 What the loader converts:
 
@@ -295,19 +317,33 @@ def load_session(
         trial_at = int(np.searchsorted(ends, k + 1, side="right"))
         overlap = float(times[k] - times[k + 1])
         frame = float(np.median(np.diff(times)))
-        cause = (
-            "under one frame interval: the file's spike-to-sample map puts "
-            "spikes of both trials at the boundary"
-            if overlap < frame
-            else f"more than one frame interval ({frame * 1e3:.1f} ms), which "
-            "spikes at the boundary mapped to both trials cannot explain; no "
-            "source read says why"
-        )
+        earlier = names[trial_at - 1]
+        if earlier in fit.slow:
+            cause = (
+                f": {fit.slow[earlier]}, as where its camera dropped frames: the "
+                "file's map times its frames by a straight line from its first to "
+                "its last camera timestamp, which then runs past its place on the "
+                "spike clock and into the next recording"
+            )
+        elif overlap < frame:
+            cause = (
+                f", under one frame interval ({frame * 1e3:.1f} ms): the recordings "
+                "follow each other on this clock with gaps from under 1 ms to "
+                "about 100 ms, and the lines fitted to two with no gap between "
+                "them cross by a fraction of a frame"
+            )
+        else:
+            cause = (
+                f", more than one frame interval ({frame * 1e3:.1f} ms), with "
+                f"{_recording(earlier)} fitted within the scatter of the day's "
+                "trials' rates, so neither the fit nor dropped frames explain it; "
+                "no source read says why"
+            )
         msg = (
             f"{entry.session}: the rebuilt position times do not increase at "
-            f"sample {k + 1}, where trial {names[trial_at]!r} starts "
-            f"{overlap * 1e3:.2f} ms before trial {names[trial_at - 1]!r} ends, "
-            f"{cause}; so the samples cannot be put on one clock"
+            f"sample {k + 1}, where {_recording(names[trial_at])} starts "
+            f"{overlap * 1e3:.2f} ms before {_recording(earlier)} ends{cause}; "
+            "so the samples cannot be put on one clock"
         )
         raise ValueError(msg)
     header = dict(np.atleast_2d(trial.pos.header))

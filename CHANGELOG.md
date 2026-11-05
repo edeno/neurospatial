@@ -310,7 +310,10 @@
   camera dropped frames, has a watch-out giving how far its positions may be
   off in time (3 of the 36 offered days). The 14 days whose rebuilt clock
   does not increase or cannot be fitted are not offered; the module and its
-  page list them with the reason. The environment is a star of the stated
+  page list them with the cause the files show: fitted lines of adjoining
+  recordings crossing by under a millisecond (8), a recording whose camera
+  dropped frames running into the next (4), or sorted spikes that start
+  after a trial ends (2). The environment is a star of the stated
   80 cm arms from a 24.7 cm platform; the paper's 2 cm bins and 2 cm/s speed
   threshold are in `params`.
 - `huszar_2026`: Huszár et al. (2026) mouse CA1 and CA3 units on a

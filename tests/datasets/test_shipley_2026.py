@@ -218,10 +218,28 @@ def test_trials_that_overlap_on_the_clock_are_refused(tmp_path, session_entry):
     overlap = float(str(raised.value).split("starts ")[1].split(" ms")[0])
     assert overlap == pytest.approx(500.0, abs=2.0)
     assert "where trial '1' starts" in str(raised.value)
-    assert "before trial '0' ends" in str(raised.value)
-    # Half a second is more than a frame: the boundary spikes cannot explain it.
-    assert "more than one frame interval" in str(raised.value)
-    assert "cannot explain; no source read says why" in str(raised.value)
+    assert "before trial '0' ends, more than one frame interval" in str(raised.value)
+    # Half a second is more than a frame, and trial 0 is fitted at the
+    # trials' rate: neither the fit nor dropped frames explain it.
+    assert "neither the fit nor dropped frames explain it" in str(raised.value)
+    assert "no source read says why" in str(raised.value)
+
+
+def test_an_overlap_after_a_slowed_recording_is_put_down_to_dropped_frames(
+    tmp_path, session_entry
+):
+    """Rest S1 30 mHz slower than the trials, overlapping trial 0 by 0.5 s."""
+    from neurospatial.datasets import shipley_2026
+
+    names = ("S1", "0", "1", "2", "3", "4")
+    rates = (30.020, 30.050, 30.052, 30.048, 30.051, 30.049)
+    _write_members(tmp_path, trial_names=names, rates=rates, gap=-0.5)
+    with pytest.raises(ValueError, match="do not increase") as raised:
+        shipley_2026.load_session(session_entry("shipley_2026"), tmp_path)
+    message = str(raised.value)
+    assert "where trial '0' starts" in message
+    assert "before rest 'S1' ends: rest 'S1' is fitted at 30.020 Hz" in message
+    assert "as where its camera dropped frames" in message
 
 
 def test_an_overlap_under_one_frame_is_put_down_to_the_boundary_spikes(
@@ -232,9 +250,10 @@ def test_an_overlap_under_one_frame_is_put_down_to_the_boundary_spikes(
     _write_members(tmp_path, gap=-0.01)
     with pytest.raises(ValueError, match="do not increase") as raised:
         shipley_2026.load_session(session_entry("shipley_2026"), tmp_path)
-    assert "under one frame interval: the file's spike-to-sample map" in str(
+    assert "under one frame interval (33.3 ms): the recordings follow" in str(
         raised.value
     )
+    assert "cross by a fraction of a frame" in str(raised.value)
 
 
 def test_position_times_report_the_header_rate_when_the_map_used_it():
