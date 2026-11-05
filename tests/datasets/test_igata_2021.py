@@ -500,3 +500,373 @@ def test_no_sorted_units_where_the_catalog_says():
     rec = load("igata_2021", "180825_detourG01")
     assert rec.n_units == 0
     assert any("no sorted units" in text for text in rec.watch_outs)
+
+
+def _stop_runs(times, speed):
+    """[first, last] time of each run of samples under 5 cm/s, split at grid gaps."""
+    stopped = np.nan_to_num(speed, nan=np.inf) < igata_2021.MIN_SPEED
+    edges = np.flatnonzero(np.diff(np.r_[0, stopped.astype(np.int8), 0]))
+    breaks = np.flatnonzero(np.diff(times) > 1.5 / igata_2021.LFP_HZ) + 1
+    rows = []
+    for first, last in zip(edges[::2], edges[1::2] - 1, strict=True):
+        start = first
+        for stop in breaks[(breaks > first) & (breaks <= last)]:
+            rows.append((start, stop - 1))
+            start = stop
+        rows.append((start, last))
+    runs = np.array(rows)
+    runs = runs[runs[:, 1] > runs[:, 0]]
+    return np.column_stack([times[runs[:, 0]], times[runs[:, 1]]])
+
+
+def _clear_of(stops, events):
+    """``stops`` with every event's span taken out, sorted rows."""
+    spans = events[["start_time", "end_time"]].to_numpy()
+    free = []
+    for first, last in stops:
+        now = first
+        row = int(np.searchsorted(spans[:, 1], first))
+        while row < len(spans) and spans[row, 0] < last:
+            if spans[row, 0] > now:
+                free.append((now, spans[row, 0]))
+            now = max(now, spans[row, 1])
+            row += 1
+        if last > now:
+            free.append((now, last))
+    return np.array(free)
+
+
+def _mean_over(cumulative, times, starts, duration):
+    first = np.searchsorted(times, starts)
+    last = np.searchsorted(times, starts + duration, side="right")
+    return (cumulative[last] - cumulative[first]) / np.maximum(last - first, 1)
+
+
+def _overall_ripple_power(signals, stopped):
+    """The SI's Mahalanobis distance from per-tetrode mean and SD vectors."""
+    envelope = np.asarray(signals.envelope((150.0, 250.0)))
+    smooth = np.column_stack(
+        [signals.smooth(envelope[:, k], 0.004) for k in range(envelope.shape[1])]
+    )
+    z = (smooth - smooth[stopped].mean(axis=0)) / smooth[stopped].std(axis=0)
+    return np.sqrt(np.sum(z**2, axis=1))
+
+
+def _ripple_tests(events, candidates, stops, power, times):
+    """Whether each event's mean power tops the 95th percentile of 100 stopped windows."""
+    cumulative = np.r_[0.0, np.cumsum(power)]
+    values = _mean_over(
+        cumulative,
+        times,
+        events["start_time"].to_numpy(),
+        events["duration"].to_numpy(),
+    )
+    free = _clear_of(stops, candidates)
+    lengths = free[:, 1] - free[:, 0]
+    rng = np.random.default_rng(igata_2021.CANDIDATE_BASELINE["seed"])
+    passed = np.zeros(len(events), dtype=bool)
+    for row, (value, duration) in enumerate(
+        zip(values, events["duration"].to_numpy(), strict=True)
+    ):
+        fits = np.flatnonzero(lengths >= duration)
+        weights = lengths[fits] - duration
+        chosen = rng.choice(fits, size=100, p=weights / weights.sum())
+        starts = free[chosen, 0] + rng.uniform(size=100) * (lengths[chosen] - duration)
+        windows = _mean_over(cumulative, times, starts, duration)
+        passed[row] = value > np.percentile(windows, 95)
+    return passed
+
+
+def _shifted_counts(counts, draw):
+    """Each unit's counts rolled by its own offset, at least 10 s from either end."""
+    margin = round(10.0 * igata_2021.LFP_HZ)
+    seeds = np.random.SeedSequence(igata_2021.CANDIDATE_BASELINE["seed"]).spawn(
+        igata_2021.CANDIDATE_BASELINE["n_draws"]
+    )
+    offsets = np.random.default_rng(seeds[draw]).integers(
+        margin, counts.shape[0] - margin, size=counts.shape[1]
+    )
+    return (
+        np.column_stack(
+            [
+                np.roll(counts[:, unit], int(offsets[unit]))
+                for unit in range(counts.shape[1])
+            ]
+        ),
+        offsets,
+    )
+
+
+def _judge(track, rates, trains, start, stop, seed):
+    """One event against ``IGATA_2021``, decoded in 20 ms bins stepped by 10 ms."""
+    from neurospatial.decoding import bin_spikes_in_time, decode_position
+    from neurospatial.replay import detect_replay
+    from neurospatial.replay.methods import IGATA_2021
+
+    counts, _ = bin_spikes_in_time(
+        trains, dt=0.01, t_start=float(start), t_stop=float(stop)
+    )
+    counts = np.asarray(counts)
+    running = np.cumsum(
+        np.vstack([np.zeros((1, counts.shape[1]), counts.dtype), counts]), axis=0
+    )
+    summed = running[2:] - running[:-2]
+    centres = start + 0.01 + 0.01 * np.arange(summed.shape[0])
+    decoded = decode_position(track, summed, rates, dt=0.02, times=centres)
+    return detect_replay(
+        track,
+        decoded.posterior,
+        centres,
+        replay_method=IGATA_2021,
+        spike_counts=summed,
+        encoding_models=rates,
+        dt=0.02,
+        rng=seed,
+    )
+
+
+def _event_seed(row):
+    return int(np.random.SeedSequence((2026, row)).generate_state(1)[0])
+
+
+@pytest.fixture(scope="module")
+def candidates():
+    """The default session's candidates, baseline and tests, as the record's were run."""
+    pytest.importorskip("ripple_detection.literature_methods")
+    from ripple_detection.literature_methods import Recording as Signals
+    from ripple_detection.literature_methods import run_method
+
+    from neurospatial.datasets._ripple import (
+        _speed_on_grid,
+        ripple_recording,
+        spike_counts,
+    )
+
+    rec = load("igata_2021")
+    tetrodes = [name for name in rec.lfp.channels if name != "ref"]
+    samples, times = rec.lfp.fetch(tetrodes)
+    signals = ripple_recording(rec, samples, times)
+    speed = np.asarray(signals.speed)
+    stopped = np.nan_to_num(speed, nan=np.inf) < igata_2021.MIN_SPEED
+    stops = _stop_runs(times, speed)
+    every = run_method("igata_2021", signals)
+    immobile = run_method("igata_2021", signals, behavior_intervals=stops)
+    power = _overall_ripple_power(signals, stopped)
+    ripple_passed = _ripple_tests(immobile, every, stops, power, times)
+    del signals
+
+    counts = spike_counts(rec.spike_times, times, sampling_rate=igata_2021.LFP_HZ)
+    on_grid = _speed_on_grid(rec, times)
+    null_counts, null_peaks, null_events, null_offsets = [], [], [], []
+    for draw in range(igata_2021.CANDIDATE_BASELINE["n_draws"]):
+        shifted, offsets = _shifted_counts(counts, draw)
+        null = Signals.from_arrays(
+            times,
+            igata_2021.LFP_HZ,
+            lfps=samples[:, :1],
+            multiunit=shifted,
+            speed=on_grid,
+        )
+        found = run_method("igata_2021", null, behavior_intervals=stops)
+        null_counts.append(len(found))
+        null_peaks.append(found["max_zscore"].to_numpy())
+        null_events.append(found)
+        null_offsets.append(offsets)
+        del null, shifted
+    return {
+        "rec": rec,
+        "times": times,
+        "stopped": stopped,
+        "every": every,
+        "immobile": immobile,
+        "ripple_passed": ripple_passed,
+        "null_counts": np.array(null_counts),
+        "null_peaks": np.concatenate(null_peaks),
+        "null_events": null_events,
+        "null_offsets": null_offsets,
+    }
+
+
+@pytest.fixture(scope="module")
+def path_rates(candidates):
+    rec = candidates["rec"]
+    track = path_track()
+    rates = _rates(rec, track)
+    return track, rates
+
+
+def _rates(rec, track):
+    from neurospatial import compute_spatial_rates
+
+    return compute_spatial_rates(
+        track,
+        rec.spike_times,
+        rec.times,
+        rec.positions,
+        min_speed=igata_2021.MIN_SPEED,
+        bandwidth=igata_2021.CANDIDATE_BASELINE["bandwidth"],
+    )
+
+
+def _survivors(candidates):
+    peak = np.percentile(candidates["null_peaks"], 95)
+    return candidates["ripple_passed"] & (
+        candidates["immobile"]["max_zscore"].to_numpy() > peak
+    )
+
+
+@pytest.mark.realdata
+def test_candidates_are_what_the_record_says(candidates):
+    """Every count, on the default session, recomputed with the fixed seeds."""
+    record = igata_2021.CANDIDATE_BASELINE
+    row = record["sessions"]["180912_detourG01"]
+    stop_minutes = candidates["stopped"].sum() / igata_2021.LFP_HZ / 60.0
+    assert len(candidates["every"]) == row["candidates"]
+    assert len(candidates["immobile"]) == row["immobile"]
+    assert round(stop_minutes, 2) == row["stop_minutes"]
+    assert tuple(candidates["null_counts"].tolist()) == row["null_immobile"]
+    assert int(candidates["ripple_passed"].sum()) == row["ripple_passed"]
+    assert int(_survivors(candidates).sum()) == row["survivors"]
+
+
+@pytest.mark.realdata
+def test_candidates_do_not_stand_out_under_the_fixed_rule(candidates):
+    """The count test fails, the ripple test passes, so they do not stand out."""
+    from scipy.stats import binomtest
+
+    n_immobile = len(candidates["immobile"])
+    assert n_immobile < np.percentile(candidates["null_counts"], 95)
+    passed = int(candidates["ripple_passed"].sum())
+    assert binomtest(passed, n_immobile, 0.05, alternative="greater").pvalue < 0.01
+    assert igata_2021.CANDIDATE_BASELINE["stand_out"] is False
+
+
+@pytest.mark.realdata
+def test_candidates_hold_real_ripples_among_chance_events(candidates):
+    """Survivors carry more ripple power and more units than the other candidates."""
+    events = candidates["immobile"]
+    survivors = _survivors(candidates)
+    assert 0 < survivors.sum() < len(events)
+    assert (
+        events["max_zscore"][survivors].median()
+        > 1.5 * events["max_zscore"][~survivors].median()
+    )
+
+
+@pytest.mark.realdata
+def test_survivors_are_judged_as_the_record_says(candidates, path_rates):
+    """Each surviving event, against the unmodified preset; a slow test."""
+    track, rates = path_rates
+    rec = candidates["rec"]
+    events = candidates["immobile"][_survivors(candidates)]
+    verdicts = [
+        _judge(track, rates, rec.spike_times, start, stop, _event_seed(row))
+        for row, (start, stop) in enumerate(
+            zip(events["start_time"], events["end_time"], strict=True)
+        )
+    ]
+    row = igata_2021.CANDIDATE_BASELINE["sessions"]["180912_detourG01"]
+    assert sum(v.is_replay for v in verdicts) == row["survivors_judged"]
+    assert sum(v.segment is not None for v in verdicts) == row["survivors_with_segment"]
+
+
+@pytest.mark.realdata
+def test_held_out_running_decodes_near_the_rat():
+    """The maps carry position: the replay result is not a failure of the maps."""
+    from neurospatial import compute_spatial_rates
+    from neurospatial.decoding import bin_spikes_in_time, decode_position
+
+    rec = load("igata_2021")
+    track = path_track()
+    rates = compute_spatial_rates(
+        track,
+        rec.spike_times,
+        rec.times,
+        rec.positions,
+        min_speed=igata_2021.MIN_SPEED,
+        bandwidth=5.0,
+        epochs=rec.params["train_epochs"],
+    )
+    speed = np.asarray(rec._speed)
+    decoded, actual = [], []
+    for start, stop in rec.params["test_epochs"]:
+        counts, _ = bin_spikes_in_time(
+            rec.spike_times,
+            dt=rec.params["dt"],
+            t_start=float(start),
+            t_stop=float(stop),
+        )
+        centres = (
+            start + rec.params["dt"] / 2 + rec.params["dt"] * np.arange(len(counts))
+        )
+        result = decode_position(
+            track, np.asarray(counts), rates, dt=rec.params["dt"], times=centres
+        )
+        at = np.minimum(np.searchsorted(rec.times, centres), rec.times.size - 1)
+        moving = speed[at] > igata_2021.MIN_SPEED
+        peaks = np.asarray(result.posterior).argmax(axis=1)
+        decoded.append(track.bin_centers[peaks][moving])
+        actual.append(rec.positions[at][moving])
+    decoded, actual = np.concatenate(decoded), np.concatenate(actual)
+    error = np.median(np.linalg.norm(decoded - actual, axis=1))
+    shuffled = np.random.default_rng(0).permutation(decoded)
+    assert error < 15.0
+    assert error < np.median(np.linalg.norm(shuffled - actual, axis=1)) / 4
+
+
+def _rolled_trains(rec, times, offsets):
+    """Spike trains moved on the LFP grid by each unit's offset, as the counts were."""
+    n_time = times.size
+    trains = []
+    for train, offset in zip(rec.spike_times, offsets, strict=True):
+        index = np.clip(np.searchsorted(times, train, side="right") - 1, 0, n_time - 1)
+        trains.append(np.sort(times[(index + int(offset)) % n_time]))
+    return trains
+
+
+@pytest.mark.realdata
+@pytest.mark.parametrize(
+    ("which", "key"),
+    [("real", "first_100_real"), ("null", "first_100_null_0")],
+)
+def test_judged_counts_recompute_on_a_slice(candidates, path_rates, which, key):
+    """The whole sets take an hour, so the first 100 events of each stand in."""
+    track, rates = path_rates
+    rec = candidates["rec"]
+    if which == "real":
+        events, trains = candidates["immobile"], rec.spike_times
+    else:
+        events = candidates["null_events"][0]
+        trains = _rolled_trains(rec, candidates["times"], candidates["null_offsets"][0])
+    verdicts = [
+        _judge(track, rates, trains, start, stop, _event_seed(row))
+        for row, (start, stop) in enumerate(
+            zip(events["start_time"][:100], events["end_time"][:100], strict=True)
+        )
+    ]
+    judged, with_segment = igata_2021.CANDIDATE_BASELINE["sessions"][
+        "180912_detourG01"
+    ][key]
+    assert sum(v.is_replay for v in verdicts) == judged
+    assert sum(v.segment is not None for v in verdicts) == with_segment
+
+
+@pytest.mark.realdata
+def test_learning_record_matches_the_sessions():
+    points = tuple(
+        load("igata_2021", f"{day}_detourG01").params["learning_point"]
+        for day in igata_2021.LEARNING_RATS
+    )
+    assert points == igata_2021.LEARNING_RESULT["points"]
+    values = np.array(points, dtype=float)
+    mean, sem = igata_2021.LEARNING_RESULT["ours"]
+    assert round(values.mean(), 1) == mean
+    assert round(values.std(ddof=1) / np.sqrt(values.size), 1) == sem
+
+
+def test_record_says_plainly_what_the_number_is_not():
+    record = igata_2021.WORKED_RESULT
+    assert record["status"] == "not possible yet"
+    assert record["ours"] is None
+    assert "not a replay rate" in record["attempted"]["differs"]
+    assert igata_2021.CANDIDATE_BASELINE["stand_out"] is False

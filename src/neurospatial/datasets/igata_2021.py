@@ -18,7 +18,7 @@ paper cites version 1), one uncompressed ``.npz`` per trial and per return run.
   and rat 5 180107 (22), the unit counts the SI states. Its members are read by
   byte range. The readme does not mention this zip: its folders ``rat1`` to
   ``rat5`` and those counts identify it.
-- The 1,496 files beside it hold other days: 180913, the only one with many
+- The 1,510 files beside it hold other days: 180913, the only one with many
   units (111), is the day after rat 1's, and the SI's day-2 condition has the
   same design; the rest have up to 7 units or none, and hold the closed-loop
   stimulation of the paper's Fig. 5 where a ``trial_stim`` field says so. The
@@ -84,7 +84,9 @@ from neurospatial.datasets._pickled import SpikeUnpickler, pickle_imports
 from neurospatial.datasets._recording import Conversion, Recording
 
 __all__ = [
+    "CANDIDATE_BASELINE",
     "EXPECTED_WATCH_OUTS",
+    "LEARNING_RESULT",
     "REQUIRES",
     "WATCH_OUTS",
     "WORKED_RESULT",
@@ -93,20 +95,204 @@ __all__ = [
     "path_track",
 ]
 
+_PAPER = "Igata et al. 2021"
+_SI = f"{_PAPER}, SI Appendix"
+
 #: The paper's finding this dataset reproduces, or why there is none yet.
 WORKED_RESULT: dict[str, Any] = {
     "status": "not possible yet",
     "level": None,
-    "finding": "",
-    "quote": "",
-    "source": "",
-    "paper": None,
+    "finding": (
+        "trajectory events among the paper's synchronous events; no such share "
+        "is stated in the text, only a figure, so this was never a number to match"
+    ),
+    "quote": (
+        '"Trajectory sequences covering more than 4 time bins (60 ms) and a '
+        "cumulative distance of more than 20 cm were included in the further "
+        'analyses." and "Trajectory events were defined from the trajectory '
+        'sequences where p < 0.05." (SI Appendix, "Trajectory events")'
+    ),
+    "source": f"{_SI}, read from Europe PMC (PMC7817193)",
+    "paper": "no share stated in the text; Fig. 4G and Fig. S14B plot it",
     "ours": None,
     "criterion": None,
     "parameters": None,
-    "unmatched": (),
-    "attempted": None,
-    "why": "no replay analysis has been recorded yet",
+    "unmatched": (
+        "the Gaussian-mixture split after the candidates: ripple_detection's "
+        "igata_2021 stops at the candidates, and the SI's split is under-specified",
+        "the paper's maps and MAP are per path and per phase; ours are one map "
+        "of one session, one MAP over the joined paths",
+    ),
+    "attempted": {
+        "value": 0.004,
+        "criterion": (
+            "the candidates stand out from the no-ripple baseline fixed in "
+            "writing before any detection (CANDIDATE_BASELINE), and the judged "
+            "share tops the largest of three null draws; the first was not met"
+        ),
+        "parameters": (
+            "default session; candidates from ripple_detection's igata_2021, "
+            "wholly inside stops (speed < 5 cm/s): 1,688; every unit, session "
+            "speed. Maps: compute_spatial_rates on path_track(), 2 cm bins, "
+            "speed > 5 cm/s, 5 cm bandwidth. Decoded in 20 ms bins stepped by 10 "
+            "ms, judged by IGATA_2021 unmodified, 1000 surrogates: 7 of 1,688"
+        ),
+        "differs": (
+            "this is not a replay rate. The 7 events are the shortest candidates "
+            "(median 68 ms against 130 ms) and none of the 263 that survive the "
+            "baseline is among them: the surrogates also hold a trajectory, so "
+            "p rises with duration and no survivor reaches 0.05 (smallest 0.08)"
+        ),
+    },
+    "why": (
+        "the replay test cannot be read here. On the default session the "
+        "candidates do not stand out by count, since shifted spikes give more "
+        "of them; two thirds of them do carry ripple power, and the 263 that "
+        "pass both tests look like sharp-wave ripples, yet IGATA_2021 judges "
+        "none of those. Rats 2 and 3 pass the fixed rule by two judged events "
+        "each (9 against 7, 16 against 14) and rat 4 fails it; across the four "
+        "rats' 596 survivors, judged on their own, none is judged. So no number "
+        "here is presented as replay"
+    ),
+}
+
+#: The candidate detector against a no-ripple baseline, fixed in writing before
+#: it was run on any real session. ``igata_2021`` in ``ripple_detection`` is the
+#: candidate stage only: it has no Gaussian mixture and no speed rule on events.
+CANDIDATE_BASELINE: dict[str, Any] = {
+    "what": (
+        "how ripple_detection's igata_2021 candidates compare with the same "
+        "detector on spikes shifted per unit, and with random stopped windows"
+    ),
+    "seed": 2026,
+    "n_draws": 20,
+    "bandwidth": 5.0,
+    "rule": (
+        "Immobile candidates lie wholly inside a run of speed < 5 cm/s. They "
+        "stand out if their count tops the 95th percentile of the 20 null "
+        "counts (each unit circularly shifted by its own offset, at least 10 s "
+        "from either end) and the share of them above the 95th percentile of "
+        "100 random stopped windows of their duration, in mean overall ripple "
+        "power, tops 5% at p < 0.01. An event survives if it passes that power "
+        "test and its peak z-scored rate tops the 95th percentile of all null "
+        "immobile candidates' peaks"
+    ),
+    "stand_out": False,  # the default session; each session's is in "sessions"
+    "why_the_count_test_fails_here": (
+        "shifting moves running spikes into stops: the stopped population rate "
+        "is 0.355 Hz per unit (SD 0.408) in the file and 0.444 (SD 0.338) in "
+        "draw 0, so the threshold falls from 1.171 to 1.119 Hz. The null is "
+        "thus generous to chance events, and the count test is a hard one"
+    ),
+    "mixture_reading": (
+        "one reading of the SI's under-specified split, a diagnostic only: peak "
+        "z-scored rate and peak overall ripple power, a 1-D two-component "
+        "mixture on each, keeping the higher component of either. It keeps "
+        "1,120 of the default session's 1,688 (0.52 Hz of stop) and all 263 "
+        "survivors"
+    ),
+    "sessions": {
+        "180912_detourG01": {
+            "candidates": 4222,
+            "immobile": 1688,
+            "stop_minutes": 36.13,
+            "null_immobile": (
+                1922,
+                1896,
+                1904,
+                1922,
+                1906,
+                1957,
+                1921,
+                1943,
+                1940,
+                1936,
+                1904,
+                1987,
+                1952,
+                1965,
+                1964,
+                1935,
+                1966,
+                1966,
+                1983,
+                1986,
+            ),
+            "ripple_passed": 1116,
+            "survivors": 263,
+            "stand_out": False,
+            "judged": 7,
+            "null_judged": ((1, 1922), (7, 1896), (4, 1904)),
+            "survivors_judged": 0,
+            "survivors_with_segment": 214,
+            "first_100_real": (0, 55),
+            "first_100_null_0": (0, 35),
+        },
+        "180912_detourS01": {
+            "candidates": 594,
+            "immobile": 250,
+            "stop_minutes": 5.91,
+            "null_p95": 252.5,
+            "ripple_passed": 161,
+            "survivors": 35,
+            "stand_out": False,
+        },
+        "180824_detourG01": {
+            "candidates": 2005,
+            "immobile": 1041,
+            "stop_minutes": 24.25,
+            "null_p95": 1010.45,
+            "ripple_passed": 672,
+            "survivors": 93,
+            "stand_out": True,
+            "judged": 9,
+            "null_judged": ((1, 978), (3, 958), (7, 1038)),
+            "survivors_judged": 0,
+            "survivors_with_segment": 48,
+        },
+        "180208_detourG01": {
+            "candidates": 2790,
+            "immobile": 1743,
+            "stop_minutes": 27.46,
+            "null_p95": 1695.25,
+            "ripple_passed": 328,
+            "survivors": 18,
+            "stand_out": True,
+            "judged": 16,
+            "null_judged": ((14, 1663), (5, 1695), (6, 1643)),
+            "survivors_judged": 0,
+            "survivors_with_segment": 13,
+        },
+        "180303_detourG01": {
+            "candidates": 3390,
+            "immobile": 2090,
+            "stop_minutes": 36.26,
+            "null_p95": 2041.65,
+            "ripple_passed": 1172,
+            "survivors": 222,
+            "stand_out": True,
+            "judged": 5,
+            "null_judged": ((15, 1984), (4, 1931), (7, 1990)),
+            "survivors_judged": 0,
+            "survivors_with_segment": 126,
+        },
+    },
+}
+
+#: A published number the files reproduce: behaviour, not replay.
+LEARNING_RESULT: dict[str, Any] = {
+    "quote": (
+        '"The rats required 26 \u00b1 9 trials (\u223c30 min) to progress from '
+        'reward replacement to the learning point (n = 5 rats)." (Results)'
+    ),
+    "points": (46, 9, 7, 49, 18),
+    "paper": (26, 9),
+    "ours": (25.8, 9.1),
+    "note": (
+        "data are mean and SEM, as the SI gives them. The SI does not align "
+        "its 5-trial window; a centred one is used, and a trailing one gives "
+        "27.4 and 8.8, which rounds to 27 and 9"
+    ),
 }
 
 #: Modules of the ``datasets`` extra the loader imports.
@@ -147,8 +333,6 @@ _CHECKPOINT, _TIMEOUT, _REWARD_PORT, _READY = 8, 9, 10, 12
 _S, _C1, _C2, _G = "U", "S", "G", "E"
 _FIELD_LETTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXY")
 _FILE = re.compile(r"(?P<session>.+)_(?P<kind>trial|return)(?P<number>\d+)\.npz")
-_PAPER = "Igata et al. 2021"
-_SI = f"{_PAPER}, SI Appendix"
 _README = "the archive's readme.txt"
 _FIELDS = "virtual_maze_field.py"
 
@@ -178,6 +362,11 @@ _GENERAL = (
     "cross a door the rat found closed.",
     "LFP values step by 0.25, and no source read gives their unit, so "
     "rec.lfp.unit is 'arbitrary'.",
+    "ripple_detection's igata_2021 finds candidates only: the SI's Gaussian-"
+    "mixture split after them is under-specified, and has no code to follow. "
+    "Candidates are not synchronous events: on the four rats checked, spikes "
+    "shifted per unit give about as many, and IGATA_2021 judges none of the "
+    "events that pass a no-ripple baseline (CANDIDATE_BASELINE).",
 )
 
 
