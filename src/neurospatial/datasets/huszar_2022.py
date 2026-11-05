@@ -254,8 +254,8 @@ YANG_VALIDATION: dict[str, Any] = {
         "100 ms against our 178 ms. With our trigger, an end at that same rate and "
         "80 ms or longer, ours number 4,353 and the two shares are 96.0% and "
         "89.7%, so the difference is the bound and the selection, not the events. "
-        "Their ids count find_HSE's list before the ripple requirement (9,064 "
-        "events here, rank per id 1.06)"
+        "Their ids follow find_HSE's list before the ripple requirement (9,064 "
+        "events here, rank per id 1.06), not ours after it"
     ),
     "why_theirs_are_missed": (
         "232 of their events: 145 peak below our trigger of 3 SD of the NREM rate, "
