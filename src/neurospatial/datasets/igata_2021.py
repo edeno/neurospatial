@@ -135,13 +135,27 @@ WORKED_RESULT: dict[str, Any] = {
             "wholly inside stops (speed < 5 cm/s): 1,688; every unit, session "
             "speed. Maps: compute_spatial_rates on path_track(), 2 cm bins, "
             "speed > 5 cm/s, 5 cm bandwidth. Decoded in 20 ms bins stepped by 10 "
-            "ms, judged by IGATA_2021 unmodified, 1000 surrogates: 7 of 1,688"
+            "ms, every row kept to the event's end, judged by IGATA_2021 unmodified, "
+            "1000 surrogates: 6 of 1,688"
         ),
         "differs": (
-            "this is not a replay rate. The 7 events are the shortest candidates "
+            "this is not a replay rate. The 6 events are the shortest candidates "
             "(median 68 ms against 130 ms) and none of the 263 that survive the "
             "baseline is among them: the surrogates also hold a trajectory, so "
             "p rises with duration and no survivor reaches 0.05 (smallest 0.08)"
+        ),
+    },
+    "planted_recall": {
+        "judged": 2,
+        "planted": 300,
+        "reading": (
+            "replay planted into 150 survivors and 150 other immobile events, "
+            "keeping every spike's time and drawing its cell from these rate maps "
+            "along a real running path played 15 times faster, is judged replay "
+            "0.7% of the time. So this test passes almost no known replay here, "
+            "and 0 of 596 is not evidence that the events hold none. This is a "
+            "limit of what the number can say: planted events come from the model "
+            "the decoder assumes, and compression 15 is a choice"
         ),
     },
     "why": (
@@ -149,10 +163,10 @@ WORKED_RESULT: dict[str, Any] = {
         "candidates do not stand out by count, since shifted spikes give more "
         "of them; two thirds of them do carry ripple power, and the 263 that "
         "pass both tests look like sharp-wave ripples, yet IGATA_2021 judges "
-        "none of those. Rats 2 and 3 pass the fixed rule by two judged events "
-        "each (9 against 7, 16 against 14) and rat 4 fails it; across the four "
-        "rats' 596 survivors, judged on their own, none is judged. So no number "
-        "here is presented as replay"
+        "none of those. Rats 2 and 3 pass the fixed rule (11 judged against 6, "
+        "13 against 12) and rat 4 fails it; across the four rats' 596 survivors, "
+        "judged on their own, none is judged. So no number here is presented as "
+        "replay"
     ),
 }
 
@@ -221,12 +235,12 @@ CANDIDATE_BASELINE: dict[str, Any] = {
             "ripple_passed": 1116,
             "survivors": 263,
             "stand_out": False,
-            "judged": 7,
-            "null_judged": ((1, 1922), (7, 1896), (4, 1904)),
+            "judged": 6,
+            "null_judged": ((4, 1922), (4, 1896), (3, 1904)),
             "survivors_judged": 0,
             "survivors_with_segment": 214,
-            "first_100_real": (0, 55),
-            "first_100_null_0": (0, 35),
+            "first_100_real": (1, 56),
+            "first_100_null_0": (0, 37),
         },
         "180912_detourS01": {
             "candidates": 594,
@@ -245,10 +259,10 @@ CANDIDATE_BASELINE: dict[str, Any] = {
             "ripple_passed": 672,
             "survivors": 93,
             "stand_out": True,
-            "judged": 9,
-            "null_judged": ((1, 978), (3, 958), (7, 1038)),
+            "judged": 11,
+            "null_judged": ((1, 978), (2, 958), (6, 1038)),
             "survivors_judged": 0,
-            "survivors_with_segment": 48,
+            "survivors_with_segment": 50,
         },
         "180208_detourG01": {
             "candidates": 2790,
@@ -258,10 +272,10 @@ CANDIDATE_BASELINE: dict[str, Any] = {
             "ripple_passed": 328,
             "survivors": 18,
             "stand_out": True,
-            "judged": 16,
-            "null_judged": ((14, 1663), (5, 1695), (6, 1643)),
+            "judged": 13,
+            "null_judged": ((12, 1663), (8, 1695), (5, 1643)),
             "survivors_judged": 0,
-            "survivors_with_segment": 13,
+            "survivors_with_segment": 14,
         },
         "180303_detourG01": {
             "candidates": 3390,
@@ -271,10 +285,10 @@ CANDIDATE_BASELINE: dict[str, Any] = {
             "ripple_passed": 1172,
             "survivors": 222,
             "stand_out": True,
-            "judged": 5,
-            "null_judged": ((15, 1984), (4, 1931), (7, 1990)),
+            "judged": 6,
+            "null_judged": ((11, 1984), (2, 1931), (4, 1990)),
             "survivors_judged": 0,
-            "survivors_with_segment": 126,
+            "survivors_with_segment": 129,
         },
     },
 }

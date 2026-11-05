@@ -599,26 +599,26 @@ def _shifted_counts(counts, draw):
 
 def _judge(track, rates, trains, start, stop, seed):
     """One event against ``IGATA_2021``, decoded in 20 ms bins stepped by 10 ms."""
-    from neurospatial.decoding import bin_spikes_in_time, decode_position
+    from neurospatial.datasets._ripple import event_rows
+    from neurospatial.decoding import decode_position
     from neurospatial.replay import detect_replay
     from neurospatial.replay.methods import IGATA_2021
 
-    counts, _ = bin_spikes_in_time(
-        trains, dt=0.01, t_start=float(start), t_stop=float(stop)
+    # The event's end is a sample's time, and that sample's spikes count to its end.
+    counts, centres = event_rows(
+        trains,
+        float(start),
+        float(stop) + 1 / igata_2021.LFP_HZ,
+        time_bin=0.02,
+        step=0.01,
     )
-    counts = np.asarray(counts)
-    running = np.cumsum(
-        np.vstack([np.zeros((1, counts.shape[1]), counts.dtype), counts]), axis=0
-    )
-    summed = running[2:] - running[:-2]
-    centres = start + 0.01 + 0.01 * np.arange(summed.shape[0])
-    decoded = decode_position(track, summed, rates, dt=0.02, times=centres)
+    decoded = decode_position(track, counts, rates, dt=0.02, times=centres)
     return detect_replay(
         track,
         decoded.posterior,
         centres,
         replay_method=IGATA_2021,
-        spike_counts=summed,
+        spike_counts=counts,
         encoding_models=rates,
         dt=0.02,
         rng=seed,

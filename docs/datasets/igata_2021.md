@@ -161,11 +161,11 @@ the 95th percentile of null peaks.
 
 | Session | Stopped candidates, per stop minute | Null 95th percentile | Beat the windows | Stand out | Survivors | Judged, real | Judged, three nulls | Survivors judged |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Rat 1 `G01` (default) | 1,688, 46.7 | 1,986 | 66% | no | 263 | 7 of 1,688 | 1, 7, 4 | 0 |
+| Rat 1 `G01` (default) | 1,688, 46.7 | 1,986 | 66% | no | 263 | 6 of 1,688 | 4, 4, 3 | 0 |
 | Rat 1 `S01` | 250, 42.3 | 252 | 64% | no | 35 | not run | not run | not run |
-| Rat 2 `G01` | 1,041, 42.9 | 1,010 | 65% | yes | 93 | 9 of 1,041 | 1, 3, 7 | 0 |
-| Rat 3 `G01` | 1,743, 63.5 | 1,695 | 19% | yes | 18 | 16 of 1,743 | 14, 5, 6 | 0 |
-| Rat 4 `G01` | 2,090, 57.6 | 2,042 | 56% | yes | 222 | 5 of 2,090 | 15, 4, 7 | 0 |
+| Rat 2 `G01` | 1,041, 42.9 | 1,010 | 65% | yes | 93 | 11 of 1,041 | 1, 2, 6 | 0 |
+| Rat 3 `G01` | 1,743, 63.5 | 1,695 | 19% | yes | 18 | 13 of 1,743 | 12, 8, 5 | 0 |
+| Rat 4 `G01` | 2,090, 57.6 | 2,042 | 56% | yes | 222 | 6 of 2,090 | 11, 2, 4 | 0 |
 
 Rat 5 has too few units for the paper's own sequence analyses, and was not run.
 
@@ -180,11 +180,10 @@ Rat 5 has too few units for the paper's own sequence analyses, and was not run.
   ripples: a sharp deflection, a ripple-band burst and a population burst. Many
   others have no ripple at all.
 - `IGATA_2021` judges under 1% of them, close to its share on shifted spikes.
-  Rats 2 and 3 clear the fixed rule by two events each, and rat 4 does not.
+  Rats 2 and 3 clear the fixed rule, by 5 events and 1, and rat 4 does not.
 - Those judged events are the shortest candidates, a median of 68 ms on the default
-  session against 130 ms for all. None of the 596 survivors is judged when they are
-  judged on their own (the smallest p is 0.07). One survivor is among rat 3's 16 in
-  the larger run, where its surrogates draw another seed.
+  session against 130 ms for all. None of the 596 survivors is judged, on their own
+  (the smallest p is 0.07) or in the larger run.
 - The maps are not the problem: held-out running decodes 11.6 cm from the rat, in
   0.49 s bins, against 65.9 cm with shuffled positions.
 
@@ -193,6 +192,13 @@ hold a short trajectory too, and more so in a longer event, so p rises with
 duration. `IGATA_2021`'s notes warn of this where 40 cm is a large share of the
 environment. Here one MAP runs over all the joined paths, where the paper took one
 per path. That cause is an explanation we have not tested.
+
+**A low count here is not evidence of no replay.** We planted replay into 150
+survivors and 150 other immobile events. Every spike kept its time, and its cell was
+drawn from these rate maps along a real running path played 15 times faster.
+`IGATA_2021` judged 2 of the 300, 0.7%. This is a limit of the number, not a measurement
+of the rats: planted events come from the model the decoder assumes, and compression
+15 is a choice.
 
 A mixture split read one way (peak rate and peak ripple power, two components each,
 keeping the higher of either) keeps 1,120 of the default session's 1,688
