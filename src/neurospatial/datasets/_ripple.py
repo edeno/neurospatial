@@ -142,7 +142,7 @@ def event_rows(
     """
     # The tolerance keeps a width that is a whole number of steps from rounding up.
     n_steps = int(np.ceil((stop - start - time_bin) / step - 1e-9))
-    left = start + step * np.arange(max(n_steps, 0) + 1)
+    left = start + step * np.arange(max(n_steps, 0) + 1, dtype=np.float64)
     right = np.minimum(left + time_bin, stop)
     counts = np.array(
         [
