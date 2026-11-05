@@ -166,3 +166,23 @@ def test_get_n_bins_refuses_a_range_that_is_not_finite(dimension_range):
 def test_get_n_bins_refuses_positions_with_no_finite_row():
     with pytest.raises(ValueError, match=r"no row[\s\S]*Fix:"):
         get_n_bins(np.full((3, 2), np.nan), bin_size=1.0)
+
+
+def test_track_plot_labels_original_edges_once():
+    """A graph of many edges gets one legend line for them, not one each."""
+    import matplotlib.pyplot as plt
+
+    from neurospatial import Environment
+
+    env = Environment.linear_track(
+        node_positions=[[0, 0], [40, 0], [40, 40], [0, 40], [0, 80]],
+        bin_size=10.0,
+        units="cm",
+    )
+    ax = env.plot()
+    try:
+        labels = ax.get_legend_handles_labels()[1]
+        assert labels.count("original edges") == 1
+        assert len(labels) == len(set(labels))
+    finally:
+        plt.close(ax.figure)
