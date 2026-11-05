@@ -134,6 +134,19 @@ at load. The summary says the LFP exists and its size.
    paper's method and judging them with neurospatial.
 4. The two event-by-event validations above.
 
+## Final audit against each paper and its code (maintainer's requirement)
+
+Before the PR opens, each dataset's detection, decoding and replay judging is
+checked step by step against the paper's text and, where public, the
+authors' code, by someone who did not write that loader. For each step the
+audit records what the paper says, what the code does, what ours does, and
+whether they match. A difference is fixed, or stated in the worked result
+with its reason. A step neither source settles is listed as unsettled.
+
+Published code is read for comparison only where its license does not allow
+adapting it. This covers `ripple_detection`'s `literature_methods` and the
+`neurospatial.replay` presets as well as the loaders.
+
 ## Non-goals
 
 - Frank-lab datasets (next).
