@@ -1,0 +1,202 @@
+# Carey et al. (2019): rat CA1 replay on a food-or-water T-maze
+
+**The question.** When a rat's motivation changes from food to water, does
+hippocampal replay move toward the outcome it now wants? These are tetrode
+recordings from dorsal CA1 of four rats over six days each, on a T-maze with
+food on the left and water on the right, with long rests before, during and
+after the task. The rat was restricted of food or of water overnight, so the
+same maze had a different value each day. The session suits replay on two
+trajectories that share a stem, and detection tested against the authors' own
+events.
+
+| | |
+| --- | --- |
+| Dataset id | `carey_2019` |
+| Animal and region | Male Long-Evans rats R042, R044, R050, R064; dorsal CA1 |
+| Apparatus | Elevated T-maze, a stem and two arms of about 334 cm from start to reward (257 cm for R042, which had no start platform yet), with rest pedestals beside the arms |
+| Archive | DataLad `labs/mvdm/MotivationalT` (ODC-PDDL-1.0): one folder of loose files per session, about 240 to 300 MB each to load, 20 MB per LFP channel on request |
+| Sessions | 24, the paper's 19 and five it left out. One is checked by hand: the default `R050-2014-03-29` (72 units, 30 rated good, 42 questionable) |
+
+<!-- docs-test: run -->
+```python
+from neurospatial.datasets import catalog
+
+sessions = catalog().query("dataset == 'carey_2019'")
+sessions[["session", "n_units", "size_bytes", "verified", "default"]].head()
+```
+
+<!-- docs-test: skip needs a download -->
+```python
+from neurospatial import compute_spatial_rates
+from neurospatial.datasets import carey_2019, load
+
+rec = load("carey_2019")
+env = carey_2019.trajectory_environment(
+    rec.params["left_trajectory"], track_width=rec.params["track_width"]
+)
+rates = compute_spatial_rates(
+    env,
+    rec.spike_times,
+    rec.times,
+    rec.positions,
+    epochs=rec.epochs["matched_left"],
+    min_speed=rec.params["min_speed"],
+    method="binned",
+    bandwidth=rec.params["bin_size"],
+)
+
+samples, times = rec.lfp.fetch(rec.lfp.ripple_channels[:1])  # the paper's channel
+```
+
+## What was recorded
+
+Each day had three parts. The rat rested on a terracotta flower pot for 20 to 30
+minutes (`rec.epochs["prerecord"]`), ran 40 minutes of the task (`"task"`), and
+rested 5 to 15 minutes more (`"postrecord"`). In the task it ran from the stem
+to the choice point and turned left for food pellets or right for sucrose water,
+then was moved to a pedestal beside that arm until the next trial
+(`"rest_left_pedestal"`, `"rest_right_pedestal"`). A barrier at the choice point
+forced some trials down the unfavoured arm, so that place fields could be
+estimated on both.
+
+`rec.trials` has `arm` (`L` or `R`) and `bad`. `rec.events` holds the photobeam
+and dispenser events, named as the lab's `getEvents_Tmaze.m` names them, and
+`hand_labelled_swr`, the 50 ripples (150 in one session) someone marked by hand,
+80 ms each. `rec.params["restriction"]` says what was withheld that day,
+`"layout"` where the food was, and `"in_paper"` whether the paper used the session.
+`rec.epochs["matched_left"]` and `["matched_right"]` are equal numbers of each
+side without the bad trials, the paper's rule.
+
+Sources read: the paper and its supplement (Nature Neuroscience 22, 1450-1459);
+the archive's `README.txt` and `datapackage.json`; the files; the paper's code
+(github.com/vandermeerlab/papers at 3aebc8e) and the lab's code it pins
+(github.com/vandermeerlab/vandermeerlab at ad0bbd4), read and not run.
+
+## Units and conversions
+
+| What the loader did | Basis | Evidence |
+| --- | --- | --- |
+| spike times: `.t` and `._t` big-endian `uint32` / 10,000, in s | stated | Each file's header: tenths of a millisecond. The two extensions are `units["quality"]`, `good` and `questionable` |
+| positions: pixels / `keys.m` `convFact`, in cm | stated | `keys.m`, and the authors' trajectories in pixels and cm differ by exactly these factors |
+| frames with x or y 0 are NaN | stated | 0 is the file's own mark for no detection, which the lab's `LoadPos.m` drops by default |
+| LFP: stored values x `ADBitVolts` x 1e6, in microvolts, 2 kHz | stated | Each `.ncs` header. On the default session the times equal the paper's candidate file |
+| environment: the T-maze from the authors' drawn left and right trajectories, 3 cm bins | stated | `metadata.coord`, against `keys.m`'s lengths |
+| `track_width`: twice the 99% quantile of trial samples' distance from the track | inferred | A placement tolerance, 54.7 cm on the default session. No source states the track's width, and trials include moments off it |
+
+The sampling rate is the header's 29.97 Hz; frames are a median 33.1 ms apart, or
+30.2 Hz, on the default session. The stated span is `keys.m`'s `realTrackDims`.
+
+## Watch out
+
+- **Zeros become NaN here.** Other datasets keep samples at (0, 0) as stored. In
+  this format 0 means no detection, so frames with a 0 are NaN: 3.7% of the
+  default session.
+- **Most of a session is off the track.** The rat rests on a pot or pedestal 30 to
+  50 cm from the track, so 62.8% of the default session's tracked samples fall in
+  no bin. `rec.env` is the track only; the summary's generic words about head
+  spread do not apply to these samples.
+- **Questionable units.** `._t` clusters are the lab's rating of 5, "questionable".
+  The paper's code loads them for detection and decoding, and its "at least 40
+  cells" needs them. Filter on `units["quality"]` if you want the others.
+- **Which ripple channel.** `keys.m` lists `goodSWR`, best first, but in 3 of the 24
+  sessions, this one among them, the paper's candidate file names another of
+  them. `rec.lfp.ripple_channels` starts with the candidate file's channel.
+- **Mirrored plots.** Positions are on the camera's axes, whose y runs down the
+  image. With y up, a plot puts the left (food) arm on the rat's right.
+- **No headings.** The tracker's angle field does not follow movement: minus the
+  direction of movement it has a median spread of 74 degrees.
+- **The LFP lags the spikes by about 2 ms.** The headers state a 1984 us filter
+  delay with compensation disabled. Neither the lab's code nor the loader
+  removes it.
+- **R042's spikes are cut.** The spike files leave out the times the rat ate;
+  `rec.epochs["spikes_kept"]` holds what is left, so a silence outside it is not
+  silence. R042 was also recorded referenced to ground, and its stem is shorter.
+- **R044's headstage came off.** `rec.epochs["headstage_attached"]` holds the
+  attached time, and in three sessions `"headstage_attached_by_hand"` the file
+  the paper's detection also used. The paper kept only two of its six sessions.
+- **A session is about a hundred files.** They are fetched one at a time. The
+  archive is one server, so do not fetch from it in parallel.
+
+## Analysis choices
+
+| `rec.params` | Value | Source |
+| --- | --- | --- |
+| `bin_size` | 3 cm | the paper: "approximately 3 cm per bin" |
+| `min_speed` | 4 cm/s | the paper's run threshold and detection limit (its code: 5 and 10 pixels/s) |
+| `dt` | 0.25 s | our choice, for held-out decoding of running |
+| `analysis_epochs` | the trials | |
+| `train_epochs`, `test_epochs` | even and odd trials | held-out decoding |
+
+## Validation against the paper's events
+
+The paper's code ships its candidate events, one file per session, and each
+stores the paper's joint score sample by sample. Its repository's license speaks
+of software and not of data, so the files are not redistributed; a test downloads
+one. So detection can be checked before any event logic.
+
+Run on the default session, `CSC03a`, with the 50 hand-labelled SWRs:
+
+| Step | Result |
+| --- | --- |
+| Our joint score against the stored one | r = 0.9999997; 99.99% of samples above 4 agree |
+| `literature_methods.carey_2019` as packaged | 1,328 events against the paper's 1,654; 73.5% of the paper's overlap ours, 91.6% of ours overlap the paper's |
+| With the paper's theta channel only | 1,363; 78.3% and 95.0% |
+| With the paper's speed only | 1,632; 92.9% and 94.1% |
+| With both | 1,678; 98.6% and 97.2% |
+
+The score matching says the data are read right and that these 50 examples build
+the published template. The gap is in two inputs, not in the score:
+
+- **Speed, the larger part.** The paper's `dxdt.m` picks an adaptive window up to
+  1 s, then smooths by 0.5 s, and thresholds 10 pixels/s. The session speed given
+  to the detector is smoothed by 0.1 s, against 4 cm/s, so it crosses the
+  threshold more often: of 4,628 events above the score threshold, 1,974 survive
+  it against 2,516.
+- **Theta channel.** `ripple_detection`'s `carey_2019` filters theta from the
+  ripple channel; the paper's code uses `goodTheta`, here the reference channel
+  `HS1R2`.
+
+Nothing was tuned. Use the packaged method as it is and expect fewer events, or
+pass the paper's two inputs to `Carey_candidate_detector` as
+`tests/datasets/test_carey_2019.py` does.
+
+## Worked result
+
+**Status: sanity property (level B).** A property of the detection and decoder,
+not a number of the paper, which states no count for one session.
+
+Each candidate is decoded on the left and right trajectories, in 25 ms windows
+stepped by 5 ms, with rate maps from the matched trials above 4 cm/s, and judged
+by `CAREY_2019`. A candidate counts when a sequence overlaps it. The two nulls and
+the criterion were fixed in writing before any decode.
+
+| | Events with a sequence | 95th percentile, 20 draws |
+| --- | --- | --- |
+| Our 1,328 candidates | 65 (4.9%) | |
+| Maps fitted with each unit's spikes shifted | 22 to 65, median 37 | 52.65 |
+| Decoded spikes all shifted by one offset | 2 to 14 | 10.2 |
+| The paper's 1,654 candidates | 64 | 61.8 and 12 |
+
+The criterion is met. It is not a strong result: the first null keeps each event's
+burst, and its median is more than half the observed count, with one draw equal
+to it. That is what the recipe's fixed criteria let through: a 50 ms sequence
+is about two independent 25 ms windows. The paper removes these with an
+identity-shuffle filter over the whole session, which `CAREY_2019` does not apply.
+
+Against the paper: Supplementary Fig. 6 gives 429 sequences for R050's six
+sessions, about 71 a session, after that filter. Here 50 events hold a sequence on
+one side only, a number with no shuffle filter behind it, and the first null's
+median for the same count is 34. Those are 15 left and 35 right, a left share of
+0.30 on a food-restricted day, where the paper's mean over food-restricted sessions
+is 0.35. The nulls give a median of 0.36, so this one session says nothing about
+that finding.
+
+## Cite
+
+Carey AA, Tanaka Y, van der Meer MAA (2019). Reward revaluation biases hippocampal
+replay content away from the preferred outcome. Nature Neuroscience 22, 1450-1459.
+<https://doi.org/10.1038/s41593-019-0464-6>
+
+Data: van der Meer, M. (2017) MotivationalT: extracellular tetrode recordings from
+the dorsal CA1 area of the hippocampus in behaving rats [Data set]. DataLad.
+<http://datasets.datalad.org/?dir=/labs/mvdm/MotivationalT>
