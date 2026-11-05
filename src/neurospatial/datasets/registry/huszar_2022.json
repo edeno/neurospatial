@@ -1,7 +1,7 @@
 {
   "dataset": "huszar_2022",
-  "paper": "Husz\u00e1r et al. (2022)",
-  "paper_citation": "Husz\u00e1r R, Zhang Y, Blockus H, Buzs\u00e1ki G (2022). Preconfigured dynamics in the hippocampus are guided by embryonic birthdate and rate of neurogenesis. Nature Neuroscience 25, 1201-1212. https://doi.org/10.1038/s41593-022-01138-x",
+  "paper": "Huszár et al. (2022)",
+  "paper_citation": "Huszár R, Zhang Y, Blockus H, Buzsáki G (2022). Preconfigured dynamics in the hippocampus are guided by embryonic birthdate and rate of neurogenesis. Nature Neuroscience 25, 1201-1212. https://doi.org/10.1038/s41593-022-01138-x",
   "species": "mouse",
   "brain_regions": [
     "hippocampus CA1"
@@ -54,7 +54,7 @@
     "not_offered_why": "their files hold ripples and sleep states but no units, position or trials",
     "version": "0.230630.2304",
     "url": "https://dandiarchive.org/dandiset/000552/0.230630.2304",
-    "citation": "Husz\u00e1r, Roman; Zhang, Yunchang; Blockus, Heike; Buzs\u00e1ki, Gy\u00f6rgy (2023) Preconfigured dynamics in the hippocampus are guided by embryonic birthdate and rate of neurogenesis (Version 0.230630.2304) [Data set]. DANDI archive. https://doi.org/10.48324/dandi.000552/0.230630.2304",
+    "citation": "Huszár, Roman; Zhang, Yunchang; Blockus, Heike; Buzsáki, György (2023) Preconfigured dynamics in the hippocampus are guided by embryonic birthdate and rate of neurogenesis (Version 0.230630.2304) [Data set]. DANDI archive. https://doi.org/10.48324/dandi.000552/0.230630.2304",
     "no_lfp": [
       "sub-e16-3m1_ses-e16-3m1-210203"
     ]
@@ -71,12 +71,12 @@
         139.2
       ],
       "basis": "inferred",
-      "source": "Husz\u00e1r et al. 2022 states 'a customized 79 x 79 cm2 figure-eight maze'; 20% below it, up to 20% above the 116 cm the samples of the longest second maze span (a linear maze no source read gives a size for)"
+      "source": "Huszár et al. 2022 states 'a customized 79 x 79 cm2 figure-eight maze'; 20% below it, up to 20% above the 116 cm the samples of the longest second maze span (a linear maze no source read gives a size for)"
     },
     "speed_limit": {
       "value": 526.5,
       "basis": "stated",
-      "source": "Iriarte-D\u00edaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Mus musculus runs at most 43.88 body lengths/s at a 0.080 m body length, 3.51 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a red LED on the head, which swings faster than the body, and no source read states head speed"
+      "source": "Iriarte-Díaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Mus musculus runs at most 43.88 body lengths/s at a 0.080 m body length, 3.51 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a red LED on the head, which swings faster than the body, and no source read states head speed"
     }
   },
   "sessions": [
@@ -89,7 +89,7 @@
       "size_bytes": 150416379,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 135,
       "verification": ""
     },
     {
@@ -101,7 +101,7 @@
       "size_bytes": 121439655,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 124,
       "verification": ""
     },
     {
@@ -113,7 +113,7 @@
       "size_bytes": 108922341,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 121,
       "verification": ""
     },
     {
@@ -125,7 +125,7 @@
       "size_bytes": 107929787,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 114,
       "verification": ""
     },
     {
@@ -137,7 +137,7 @@
       "size_bytes": 116986503,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 130,
       "verification": ""
     },
     {
@@ -149,7 +149,7 @@
       "size_bytes": 113329300,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 120,
       "verification": ""
     },
     {
@@ -161,7 +161,7 @@
       "size_bytes": 113693445,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 104,
       "verification": ""
     },
     {
@@ -173,7 +173,7 @@
       "size_bytes": 157029539,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 211,
       "verification": ""
     },
     {
@@ -185,7 +185,7 @@
       "size_bytes": 133506238,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 154,
       "verification": ""
     },
     {
@@ -197,7 +197,7 @@
       "size_bytes": 213185239,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 271,
       "verification": "",
       "lfp_files": [
         {
@@ -217,7 +217,7 @@
       "size_bytes": 153552379,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 209,
       "verification": "",
       "lfp_files": [
         {
@@ -237,7 +237,7 @@
       "size_bytes": 197606946,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 191,
       "verification": ""
     },
     {
@@ -249,7 +249,7 @@
       "size_bytes": 150864404,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 182,
       "verification": "",
       "lfp_files": [
         {
@@ -269,7 +269,7 @@
       "size_bytes": 186884571,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 200,
       "verification": ""
     },
     {
@@ -281,7 +281,7 @@
       "size_bytes": 90965780,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 86,
       "verification": ""
     },
     {
@@ -291,10 +291,10 @@
       "asset_id": "61ea529d-46db-42e6-b742-17588b2f70a2",
       "sha256": "3ab5f99419a9d0070ef6b5bc468841b75467ac95f538e9735312fa0d29aa3d4a",
       "size_bytes": 96035051,
-      "verified": false,
+      "verified": true,
       "default": true,
-      "n_units": null,
-      "verification": ""
+      "n_units": 113,
+      "verification": "2026-11-04: the survey's evidence re-checked on the public loader's output: 113 units, 46,660 samples at 30 Hz, 21 trials, 4,297 ripples, 7 sleep-state bouts of REM; every linear position jump is at the seam, 0.3 to 222.0 cm, with the camera moving under 1 cm; rewards at two corners; population firing peaks at the ripple peaks. The overview and animation frames were looked at."
     },
     {
       "session": "sub-e14-2m2_ses-e14-2m2-201022",
@@ -305,7 +305,7 @@
       "size_bytes": 105477784,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 184,
       "verification": ""
     },
     {
@@ -317,7 +317,7 @@
       "size_bytes": 84619425,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 34,
       "verification": ""
     },
     {
@@ -329,7 +329,7 @@
       "size_bytes": 72501308,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 36,
       "verification": ""
     },
     {
@@ -341,7 +341,7 @@
       "size_bytes": 53214448,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 54,
       "verification": ""
     },
     {
@@ -353,7 +353,7 @@
       "size_bytes": 41281925,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 56,
       "verification": ""
     },
     {
@@ -365,7 +365,7 @@
       "size_bytes": 126579642,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 74,
       "verification": ""
     },
     {
@@ -377,7 +377,7 @@
       "size_bytes": 83763741,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 72,
       "verification": ""
     },
     {
@@ -389,7 +389,7 @@
       "size_bytes": 90977009,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 63,
       "verification": ""
     },
     {
@@ -401,7 +401,7 @@
       "size_bytes": 94693660,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 63,
       "verification": ""
     },
     {
@@ -413,7 +413,7 @@
       "size_bytes": 119325029,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 99,
       "verification": ""
     },
     {
@@ -425,7 +425,7 @@
       "size_bytes": 113069115,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 83,
       "verification": ""
     },
     {
@@ -437,7 +437,7 @@
       "size_bytes": 110461854,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 98,
       "verification": ""
     },
     {
@@ -449,7 +449,7 @@
       "size_bytes": 138715855,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 97,
       "verification": ""
     },
     {
@@ -461,7 +461,7 @@
       "size_bytes": 145668013,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 75,
       "verification": ""
     },
     {
@@ -473,7 +473,7 @@
       "size_bytes": 102359493,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 127,
       "verification": ""
     },
     {
@@ -485,7 +485,7 @@
       "size_bytes": 119676318,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 125,
       "verification": ""
     },
     {
@@ -497,7 +497,7 @@
       "size_bytes": 270053655,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 376,
       "verification": "",
       "lfp_files": [
         {
@@ -517,7 +517,7 @@
       "size_bytes": 316840553,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 363,
       "verification": "",
       "lfp_files": [
         {
@@ -537,7 +537,7 @@
       "size_bytes": 321612382,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 343,
       "verification": "",
       "lfp_files": [
         {
@@ -557,7 +557,7 @@
       "size_bytes": 259673178,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 303,
       "verification": "",
       "lfp_files": [
         {
@@ -577,7 +577,7 @@
       "size_bytes": 144817728,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 69,
       "verification": ""
     },
     {
@@ -589,7 +589,7 @@
       "size_bytes": 105830627,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 69,
       "verification": ""
     },
     {
@@ -601,7 +601,7 @@
       "size_bytes": 132240179,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 70,
       "verification": ""
     },
     {
@@ -613,7 +613,7 @@
       "size_bytes": 127332179,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 84,
       "verification": ""
     },
     {
@@ -625,7 +625,7 @@
       "size_bytes": 129463219,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 118,
       "verification": ""
     },
     {
@@ -637,7 +637,7 @@
       "size_bytes": 96115005,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 72,
       "verification": ""
     },
     {
@@ -649,7 +649,7 @@
       "size_bytes": 89927816,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 128,
       "verification": ""
     },
     {
@@ -661,7 +661,7 @@
       "size_bytes": 148019545,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 47,
       "verification": ""
     },
     {
@@ -673,7 +673,7 @@
       "size_bytes": 96603609,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 62,
       "verification": ""
     },
     {
@@ -685,7 +685,7 @@
       "size_bytes": 125756910,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 63,
       "verification": ""
     },
     {
@@ -697,7 +697,7 @@
       "size_bytes": 142759437,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 65,
       "verification": ""
     },
     {
@@ -709,7 +709,7 @@
       "size_bytes": 128818748,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 76,
       "verification": ""
     },
     {
@@ -721,7 +721,7 @@
       "size_bytes": 75976457,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 65,
       "verification": ""
     },
     {
@@ -733,7 +733,7 @@
       "size_bytes": 94579228,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 54,
       "verification": ""
     },
     {
@@ -745,7 +745,7 @@
       "size_bytes": 92747508,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 91,
       "verification": ""
     },
     {
@@ -757,7 +757,7 @@
       "size_bytes": 89677302,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 81,
       "verification": ""
     },
     {
@@ -769,7 +769,7 @@
       "size_bytes": 83139082,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 50,
       "verification": ""
     },
     {
@@ -781,7 +781,7 @@
       "size_bytes": 63121481,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 58,
       "verification": ""
     },
     {
@@ -793,7 +793,7 @@
       "size_bytes": 47110801,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 60,
       "verification": ""
     },
     {
@@ -805,7 +805,7 @@
       "size_bytes": 55592300,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 69,
       "verification": ""
     },
     {
@@ -817,7 +817,7 @@
       "size_bytes": 53742382,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 64,
       "verification": ""
     },
     {
@@ -829,7 +829,7 @@
       "size_bytes": 91097679,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 203,
       "verification": ""
     },
     {
@@ -841,7 +841,7 @@
       "size_bytes": 152808660,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 145,
       "verification": ""
     },
     {
@@ -853,7 +853,7 @@
       "size_bytes": 2455041501,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 167,
       "verification": "",
       "lfp_files": [
         {
@@ -873,7 +873,7 @@
       "size_bytes": 150713841,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 182,
       "verification": ""
     },
     {
@@ -885,7 +885,7 @@
       "size_bytes": 277061128,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 195,
       "verification": "",
       "lfp_files": [
         {
@@ -905,7 +905,7 @@
       "size_bytes": 183057682,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 197,
       "verification": "",
       "lfp_files": [
         {
@@ -925,7 +925,7 @@
       "size_bytes": 182240207,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 200,
       "verification": "",
       "lfp_files": [
         {
@@ -945,7 +945,7 @@
       "size_bytes": 168402114,
       "verified": false,
       "default": false,
-      "n_units": null,
+      "n_units": 207,
       "verification": "",
       "lfp_files": [
         {
