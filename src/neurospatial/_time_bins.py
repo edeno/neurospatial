@@ -125,6 +125,63 @@ def _time_bins_in_windows(
     return left, right
 
 
+def _overlapping_time_bins_in_windows(
+    windows: NDArray[np.float64], dt: float, step: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Whole bins of width ``dt`` starting every ``step`` in each window.
+
+    As :func:`_time_bins_in_windows`, with bins that overlap. Each window holds
+    only whole bins, so none runs past ``stop``, and its last bin can end up to
+    ``step`` before ``stop``.
+
+    Parameters
+    ----------
+    windows : ndarray, shape (n_windows, 2)
+        Sorted, disjoint windows (seconds).
+    dt : float
+        Bin width (seconds), already validated.
+    step : float
+        Seconds between the starts of neighboring bins, below ``dt``, already
+        validated.
+
+    Returns
+    -------
+    left, right : ndarray, shape (n_time_bins,)
+        Bin edges, ``left = start + step * k`` and ``right = left + dt``,
+        clamped to the window's stop. Count them with
+        :func:`_count_spikes_in_overlapping_bins`.
+    """
+    start, stop = windows[:, 0], windows[:, 1]
+    rounding = _time_bin_rounding(windows, step)
+    room = (stop - start - dt) / step
+    slack = rounding / step + 4.0 * np.finfo(np.float64).eps * np.abs(room)
+    n_per = np.maximum(np.floor(room + slack) + 1, 0).astype(np.int64)
+    window_idx = np.repeat(np.arange(windows.shape[0]), n_per)
+    left = start[window_idx] + step * ragged_arange(n_per)
+    return left, np.minimum(left + dt, stop[window_idx])
+
+
+def _count_spikes_in_overlapping_bins(
+    spike_trains: Sequence[NDArray[np.float64]],
+    left: NDArray[np.float64],
+    right: NDArray[np.float64],
+) -> NDArray[np.int64]:
+    """Count spikes per half-open bin ``[left[i], right[i])``, bins may overlap.
+
+    A spike counts once in every bin that holds it, so bins sharing time share
+    spikes.
+
+    Returns
+    -------
+    ndarray of int64, shape (n_time_bins, n_neurons)
+    """
+    counts = np.zeros((left.size, len(spike_trains)), dtype=np.int64)
+    for unit, train in enumerate(spike_trains):
+        spikes = np.sort(np.asarray(train, dtype=np.float64).ravel())
+        counts[:, unit] = np.searchsorted(spikes, right) - np.searchsorted(spikes, left)
+    return counts
+
+
 def _count_spikes_in_time_bins(
     spike_trains: Sequence[NDArray[np.float64]],
     left: NDArray[np.float64],

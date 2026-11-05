@@ -907,16 +907,12 @@ visited get no mass), and decode the null events with the same prior.
   min_speed=...)`. Unsupported bins are NaN, which the decoder treats as
   outside the track.
 - **Candidate events.** Pass your event intervals in seconds, on the same
-  clock as the spike times. `decode_intervals` decodes them in
-  non-overlapping time bins with one set of rate maps. Several papers
-  decoded overlapping windows (`method.decoding`, e.g. 20 ms windows stepped
-  by 10 ms for `WU_2017`). For those, bin each interval at the step,
-  `counts, grid = bin_spikes_in_time(spike_times, dt=0.01, t_start=start,
-  t_stop=stop)`, and add each pair of neighboring rows to make 20 ms
-  windows, `counts[:-1] + counts[1:]`, centered at
-  `(grid[:-1] + grid[1:]) / 2`. Decode them with
-  `decode_position(env, windows, rates, dt=0.02, times=centers)`. Do the
-  same for real and null events.
+  clock as the spike times. `decode_intervals` decodes them in time bins
+  with one set of rate maps. Several papers decoded overlapping windows
+  (`method.decoding`, e.g. 20 ms windows stepped by 10 ms for `WU_2017`):
+  pass `decode_intervals(env, spike_times, intervals, rates, dt=0.02,
+  step=0.01)`. Do the same for real and null events, and pass the window
+  width, `dt=0.02`, to the replay functions.
 - **Shuffles.** Keep each recipe's published `n_shuffles`. Give `rng` a
   fixed seed and report it.
 - **Two running directions or two tracks.** Decode each event's spike
@@ -962,7 +958,8 @@ visited get no mass), and decode the null events with the same prior.
   time bins again with the rate maps permuted across cells. Its mean
   posterior spread and mean center-of-mass jump must each be smaller than
   in at least 96 of 100 shuffles (`tested_quantities`). Pass the 80 ms
-  windows stepped by 5 ms as the event, `dt=0.08`, the rate maps as
+  windows stepped by 5 ms as the event (`dt=0.08, step=0.005`), the rate
+  maps as
   `encoding_models` and the animal's speed rule as `valid_time_bins`. The
   table reports each quantity and its p-value, such as `mean_spread` and
   `tested_p_values[mean_spread]`.

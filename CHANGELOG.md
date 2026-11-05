@@ -16,6 +16,14 @@
   events it decodes in one pass, as it already did one interval at a time.
   Joint decodes have no `interval_id`: use `start_time` to join them.
 
+### Overlapping decoding windows
+
+- `decode_intervals` and `bin_spikes_in_time` take `step=`, the time between the
+  starts of windows of width `dt`, so the overlapping windows that 12 recipe
+  settings record (`time_bin`, `time_step`) can be run directly: 20 ms stepped
+  by 5 ms is `dt=0.02, step=0.005`. Windows are whole, a spike counts in every
+  window that holds it, and `step` must be at most `dt`.
+
 ### The 5 cm default bandwidth warns on large bins
 
 - A kernel method with the default bandwidth now warns when 5 cm is below a

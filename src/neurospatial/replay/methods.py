@@ -652,6 +652,8 @@ class ReplayMethod:
         ``template_choice`` and the ``"template_fraction"`` criterion.
     decoding : Mapping[str, Any]
         The paper's decoding settings, for reference (not enforced).
+        ``time_bin`` and ``time_step`` are the ``dt`` and ``step`` of
+        :func:`~neurospatial.replay.decode_intervals`.
     notes : tuple of str
         Choices the paper does not specify, and reference-code bugs not
         reproduced.

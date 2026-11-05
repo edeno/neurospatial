@@ -1933,15 +1933,16 @@ def decode_intervals(
     encoding_models: Any,
     *,
     dt: float,
+    step: float | None = None,
     prior: NDArray[np.float64] | None = None,
 ) -> tuple[list[DecodingResult], list[NDArray[np.int64]]]:
-    """Decode each interval in non-overlapping time bins of width ``dt``.
+    """Decode each interval in time windows of width ``dt``.
 
     A convenience for candidate events and null events alike. Decode real
-    and null events with the same function and settings: this one only
-    makes non-overlapping bins on one set of rate maps, while many
-    published methods decode overlapping windows (their ``decoding``
-    settings) or jointly over templates.
+    and null events with the same function and settings. Windows tile the
+    interval unless ``step`` overlaps them, as many published methods do (the
+    ``time_bin`` and ``time_step`` of their ``decoding`` settings). It decodes
+    on one set of rate maps; some methods decode jointly over templates.
 
     Parameters
     ----------
@@ -1956,21 +1957,29 @@ def decode_intervals(
     encoding_models : array of shape (n_cells, n_bins), or SpatialRatesResult
         Each cell's rate map on ``env``, in Hz.
     dt : float
-        Time-bin width, in seconds.
+        Time-window width, in seconds.
+    step : float or None
+        Seconds between the starts of neighboring windows, above 0 and at most
+        ``dt``, as for :func:`~neurospatial.decoding.bin_spikes_in_time`. None
+        tiles the interval. Pass the same ``dt`` to the replay functions:
+        ``dt`` is the width of each window, not the time between them.
     prior : NDArray[np.float64] or None
         Prior over bins, as for :func:`~neurospatial.decoding.decode_position`.
 
     Returns
     -------
     events : list of DecodingResult
-        Each interval's decoded posterior, with the time-bin centers.
+        Each interval's decoded posterior, with the time-window centers, the
+        decoded time as ``time_support`` and the interval as ``interval_id``:
+        the ``Intervals`` id, or the row of an array.
     spike_counts : list of NDArray[np.int64]
         Each interval's spike counts, ``(n_time_bins, n_cells)``.
 
     Raises
     ------
     ValueError
-        If an interval holds no time bin of width ``dt``, or for inputs
+        If ``step`` is not above 0 and at most ``dt``, if an interval holds no
+        time bin of width ``dt``, or for inputs
         :func:`~neurospatial.decoding.bin_spikes_in_time` or
         :func:`~neurospatial.decoding.decode_position` refuse.
 
@@ -1989,7 +1998,13 @@ def decode_intervals(
     this way against 11 s one interval at a time, which matters for the
     many surrogate events of a data-set-level test.
     Overlapping intervals, or a prior per time bin, are decoded one interval
-    at a time.
+    at a time. Overlapping windows inside disjoint intervals are decoded
+    together.
+
+    Overlapping windows share spikes, so neighboring rows of an event are
+    correlated. The ``spike_time_uniform`` null refuses them. The nulls that
+    treat rows independently still run, as in the published methods, but
+    those shuffles do not keep that correlation.
 
     Every time bin's counts and posterior are returned, and held at once:
     about ``n_time_bins * (n_cells + n_bins) * 8`` bytes. For hundreds of
@@ -2011,13 +2026,20 @@ def decode_intervals(
     disjoint = bool(np.all(windows[ordered][1:, 0] >= windows[ordered][:-1, 1]))
     if disjoint and (prior is None or np.ndim(prior) == 1):
         return _decode_intervals_together(
-            env, spike_times, windows, interval_ids, encoding_models, dt=dt, prior=prior
+            env,
+            spike_times,
+            windows,
+            interval_ids,
+            encoding_models,
+            dt=dt,
+            step=step,
+            prior=prior,
         )
     events = []
     counts = []
     for (start, stop), interval_id in zip(windows, interval_ids, strict=True):
         event_counts, grid = bin_spikes_in_time(
-            spike_times, dt=dt, t_start=float(start), t_stop=float(stop)
+            spike_times, dt=dt, step=step, t_start=float(start), t_stop=float(stop)
         )
         event = decode_position(
             env, event_counts, encoding_models, dt=dt, prior=prior, times=grid
@@ -2039,6 +2061,7 @@ def _decode_intervals_together(
     encoding_models: Any,
     *,
     dt: float,
+    step: float | None,
     prior: NDArray[np.float64] | None,
 ) -> tuple[list[DecodingResult], list[NDArray[np.int64]]]:
     """:func:`decode_intervals` for disjoint intervals, in one decode.
@@ -2050,16 +2073,23 @@ def _decode_intervals_together(
     """
     from neurospatial._spikes import as_spike_trains
     from neurospatial._time_bins import (
+        _count_spikes_in_overlapping_bins,
         _count_spikes_in_time_bins,
+        _overlapping_time_bins_in_windows,
         _time_bins_in_windows,
     )
     from neurospatial.decoding import DecodingResult, decode_position
-    from neurospatial.decoding._time_bins import validate_dt
+    from neurospatial.decoding._time_bins import validate_dt, validate_step
 
     dt = validate_dt(dt)
+    step = validate_step(step, dt)
     order = np.argsort(windows[:, 0], kind="stable")
     sorted_windows = windows[order]
-    left, right = _time_bins_in_windows(sorted_windows, dt)
+    left, right = (
+        _time_bins_in_windows(sorted_windows, dt)
+        if step is None
+        else _overlapping_time_bins_in_windows(sorted_windows, dt, step)
+    )
     per_window = np.bincount(
         np.searchsorted(sorted_windows[:, 0], left, side="right") - 1,
         minlength=len(sorted_windows),
@@ -2075,7 +2105,12 @@ def _decode_intervals_together(
                 fix=f"use dt <= {span:g} or leave out intervals shorter than dt",
             )
         )
-    all_counts = _count_spikes_in_time_bins(as_spike_trains(spike_times), left, right)
+    trains = as_spike_trains(spike_times)
+    all_counts = (
+        _count_spikes_in_time_bins(trains, left, right)
+        if step is None
+        else _count_spikes_in_overlapping_bins(trains, left, right)
+    )
     decoded = decode_position(
         env,
         all_counts,
