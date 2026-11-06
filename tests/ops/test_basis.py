@@ -632,8 +632,26 @@ class TestEstimateSpectralRadius:
         expected_bound = 2.0 * float(np.max(laplacian.diagonal()))
         assert radius == pytest.approx(expected_bound)
 
+    @pytest.mark.parametrize("ulps", [-8, -1, 1, 8])
+    def test_arpack_rounding_noise_does_not_reach_the_basis(
+        self, simple_2d_env, monkeypatch, ulps
+    ):
+        """ARPACK's last bits can differ between calls; the basis must not."""
+        import scipy.sparse.linalg
+
+        first = chebyshev_filter_basis(simple_2d_env, n_centers=5, rng=0)
+        eigsh = scipy.sparse.linalg.eigsh
+
+        def noisy(*args, **kwargs):
+            values = eigsh(*args, **kwargs)
+            return values + ulps * np.spacing(values)
+
+        monkeypatch.setattr(scipy.sparse.linalg, "eigsh", noisy)
+        again = chebyshev_filter_basis(simple_2d_env, n_centers=5, rng=0)
+        np.testing.assert_array_equal(again, first)
+
     def test_estimate_is_the_largest_eigenvalue_on_every_call(self, simple_2d_env):
-        """A fixed ARPACK start vector: the same float each call, and exact.
+        """A fixed ARPACK start vector: the same float each call, and accurate.
 
         The vector of ones is this Laplacian's eigenvector of eigenvalue 0,
         so the start vector must not be it.
@@ -643,7 +661,8 @@ class TestEstimateSpectralRadius:
         laplacian = self._laplacian(simple_2d_env).astype(float)
         dense = np.max(np.linalg.eigvalsh(laplacian.toarray()))
         radii = [_estimate_spectral_radius(laplacian) for _ in range(3)]
-        assert radii[0] == pytest.approx(dense, rel=1e-12)
+        # Rounding to 12 significant digits moves it by at most 5e-12.
+        assert radii[0] == pytest.approx(dense, rel=6e-12)
         assert radii[1] == radii[0]
         assert radii[2] == radii[0]
         first = chebyshev_filter_basis(simple_2d_env, n_centers=5, rng=0)

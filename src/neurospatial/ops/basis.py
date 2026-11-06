@@ -1144,8 +1144,9 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
     """
     Estimate largest eigenvalue of a symmetric positive semi-definite Laplacian.
 
-    Uses scipy.sparse.linalg.eigsh from a fixed start vector, so the estimate
-    is the same on every call. When ``eigsh`` does not converge, returns the
+    Uses scipy.sparse.linalg.eigsh from a fixed start vector, rounded to 12
+    significant digits, so the estimate is the same on every call. When
+    ``eigsh`` does not converge, returns the
     Gershgorin upper bound ``2 * max(diagonal)``, an exact upper bound that
     may be loose for highly irregular graphs (it only makes the Chebyshev
     scaling less efficient, not wrong); no warning is issued.
@@ -1178,7 +1179,9 @@ def _estimate_spectral_radius(laplacian: Any) -> float:
         eigenvalues = eigsh(
             laplacian, k=1, which="LM", v0=start, return_eigenvectors=False
         )
-        return float(eigenvalues[0])
+        # ARPACK's last bits can still differ between calls on some machines,
+        # and the rescaling would carry them through the whole Chebyshev basis.
+        return float(f"{eigenvalues[0]:.11e}")
     except (ArpackNoConvergence, ArpackError):
         # ARPACK failed to converge on the largest eigenvalue. Fall back to the
         # Gershgorin upper bound lambda_max <= 2 * max(diagonal): the diagonal

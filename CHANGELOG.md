@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Spatial bases
+
+- `chebyshev_filter_basis` rounds its spectral radius to 12 significant digits,
+  so rounding noise in the ARPACK estimate no longer changes the basis between
+  calls with the same `rng`. The radius changes by at most 5e-12 relative to
+  before. A radius within a few ULP of a rounding boundary can still differ
+  between calls, about 0.2% of values.
+
 ### Event tables
 
 - `add_positions`, `align_events`, `events_to_intervals` and
