@@ -31,6 +31,14 @@
 
 ### Trials
 
+- `detect_trials` and `detect_region_visits` take `min_dwell=`, the shortest
+  visit that counts, in seconds. The default, 0, keeps every entry. An entry to
+  a region is an arrival, so on a task with wells along a route, walking past a
+  well ended the trial: 40 simulated runs gave 56 trials, and `min_dwell=1.8`
+  recovered 40.
+- `detect_trials` warns when many visits crossed their region at about running
+  speed, and the docs say that duration cannot find a trial that stepped out of
+  a region, stood and came back.
 - `Trial.success` is removed. It meant "reached some other region", so a wrong
   arm counted as a success. Use `trial.outcome == "reached"`, and add your
   task's own correct and error labels with `Intervals.with_fields`.

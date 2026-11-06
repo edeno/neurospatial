@@ -9,6 +9,7 @@ W-track alternation) are the same.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -19,7 +20,8 @@ from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.behavior.segmentation import Trial
-from neurospatial.behavior.visits import _observed_visits
+from neurospatial.behavior.visits import RegionVisit, _observed_visits
+from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
     from neurospatial._interval_table import Intervals
@@ -169,6 +171,68 @@ def trials_between_visits(
     )
 
 
+def _warn_about_running_through(
+    env: Environment,
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    visits: Sequence[RegionVisit],
+    regions: Sequence[str],
+) -> None:
+    """Warn when many visits crossed a region at about running speed.
+
+    A visit counts when the animal moved at least half the region's extent
+    between entering and leaving, at no less than half the median speed
+    outside the regions. A stop is too slow, and jitter at a region's edge
+    moves too little. It takes two such visits, and a tenth of all visits, so
+    the occasional detour does not warn. A visit of one or two samples is
+    left out: it holds too few samples to say how the animal moved.
+    """
+    complete = [
+        v
+        for v in visits
+        if v.entry_observed and v.exit_observed and v.stop_index - v.start_index >= 3
+    ]
+    if len(complete) < 2:
+        return
+    clock = np.asarray(times, dtype=np.float64)
+    path = np.asarray(positions, dtype=np.float64)
+    inside = np.zeros(len(clock), dtype=bool)
+    for visit in visits:
+        inside[visit.start_index : visit.stop_index] = True
+    outside = np.flatnonzero(~inside[:-1] & ~inside[1:])
+    steps = np.linalg.norm(path[outside + 1] - path[outside], axis=1)
+    speeds = steps / np.diff(clock)[outside]
+    speeds = speeds[np.isfinite(speeds)]
+    if speeds.size == 0:
+        return
+    running_speed = float(np.median(speeds))
+    extents = {}
+    for name in regions:
+        mask = _require_region_mask(
+            env, name, operation="detect_trials()", argument="regions"
+        )
+        centers = env.bin_centers[mask]
+        extents[name] = float(np.linalg.norm(np.ptp(centers, axis=0)))
+    crossed = 0
+    for visit in complete:
+        moved = float(np.linalg.norm(path[visit.stop_index] - path[visit.start_index]))
+        duration = visit.stop_time - visit.start_time
+        crossed += (
+            moved >= extents[visit.region] / 2 and moved >= running_speed / 2 * duration
+        )
+    if crossed >= 2 and 10 * crossed >= len(visits):
+        warnings.warn(
+            f"detect_trials(): {crossed} of {len(visits)} visits crossed their "
+            "region at about running speed, so these trials end where the "
+            "animal passed a region, not where it stopped. Fix: pass "
+            "min_dwell= with the shortest stop you count as an arrival, in "
+            "seconds, or read arrivals from hardware with "
+            "trials_between_visits.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
 @reads_pynapple_samples
 def detect_trials(
     env: Environment,
@@ -176,6 +240,7 @@ def detect_trials(
     positions: NDArray[np.float64],
     *,
     regions: Sequence[str],
+    min_dwell: float = 0.0,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -208,6 +273,12 @@ def detect_trials(
         The regions trials start and end in, for example
         ``["well_1", "well_2", "well_3"]``. They must not share bins; point
         regions are refused.
+    min_dwell : float, default=0.0
+        Shortest visit that counts as arriving, in seconds. A trial runs
+        through a shorter visit without ending, so a route past a well is one
+        trial. With the default every entry is an arrival, which suits wells
+        at dead ends. A warning says when many visits look like running
+        through. See :func:`detect_region_visits`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge. A longer
         gap ends observation; ``None`` bridges every gap.
@@ -247,9 +318,12 @@ def detect_trials(
         the region's size: make it cover where the animal rests (a larger
         ``radius``). To drop the ones left, look at
         ``trials[trials.outcome == "returned"].durations`` and choose a
-        threshold well below your shortest real run.
-        ``analysis_settings`` records the regions, ``max_gap`` and
-        ``epochs``.
+        threshold well below your shortest real run. Duration does not find
+        a trial that stepped out of a region, stood and came back, which can
+        outlast a real run. Select on how far the trial went from its start,
+        not on summed path length: tracking jitter adds up over a long stand.
+        ``analysis_settings`` records the regions, ``min_dwell``, ``max_gap``
+        and ``epochs``.
 
     Raises
     ------
@@ -300,10 +374,13 @@ def detect_trials(
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
+        min_dwell=min_dwell,
         call="detect_trials",
         result="no trial can be observed",
     )
     visits = observed.visits
+    if min_dwell == 0.0:
+        _warn_about_running_through(env, times, positions, visits, regions)
     trials: list[Trial] = []
     for i, visit in enumerate(visits):
         if not visit.exit_observed:

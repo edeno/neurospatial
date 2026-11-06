@@ -1099,6 +1099,20 @@ short" rule belongs to your task, so apply it yourself, for example
 `trials[trials.durations < 15.0]`. For the visits themselves (time at each
 well), use [`detect_region_visits`](#observed-region-visits).
 
+Any entry to a region is an arrival. That suits wells at dead ends, where the
+animal has to stop, but on a task with wells along a route, walking past a well
+ends the trial. A warning says when many visits crossed their region at about
+running speed. Pass `min_dwell=` with the shortest stop you count as an arrival,
+in seconds, or use hardware arrivals as below. Published analyses use either
+hardware events or a position rule that also requires a slow animal or a long
+enough stop, and `min_dwell` is off by default because the right length depends
+on your task.
+
+Duration does not separate every bad trial. A trial that stepped just out of a
+region, stood there and came back can outlast a real run, so to drop these,
+select on how far the trial went from its start. Summed path length fails here,
+because tracking jitter adds up during a long stand.
+
 **From port events.** When the visits come from hardware, such as nose-poke or
 beam-break times in a task log, bring them as a table with one row per visit
 and build the trials with `trials_between_visits`. Map the port names to the

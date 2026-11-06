@@ -175,6 +175,7 @@ def _observed_visits(
     max_gap: float | None,
     epochs: Any,
     break_before: ArrayLike | None,
+    min_dwell: float,
     call: str,
     result: str,
 ) -> _ObservedVisits:
@@ -191,6 +192,14 @@ def _observed_visits(
     windows = as_intervals(epochs, name="epochs")
     clock, bins, tracked = sample_bins(env, times, positions, call=call, epochs=windows)
     validate_max_gap(max_gap)
+    if not (np.isfinite(min_dwell) and min_dwell >= 0):
+        raise ValueError(
+            _format_error(
+                f"{call}(): min_dwell must be finite and >= 0, got {min_dwell}.",
+                why="it is the shortest time in seconds that counts as a visit.",
+                fix="pass a duration in seconds, or 0 to count every entry.",
+            )
+        )
     if isinstance(regions, str):
         msg = f"{call}(): regions must be a sequence of names, for example ['left', 'right']."
         raise TypeError(msg)
@@ -250,6 +259,7 @@ def _observed_visits(
 
     settings: dict[str, Any] = {
         "regions": names,
+        "min_dwell": float(min_dwell),
         **gate_settings(max_gap, windows),
         "break_before_given": breaks is not None,
     }
@@ -294,6 +304,15 @@ def _observed_visits(
             stop_index = (
                 int(kept[stop_k]) if exit_observed else int(kept[stop_k - 1]) + 1
             )
+            visit_stop = float(clock[stop_k] if exit_observed else run_end_time)
+            entry_observed = bool(start > run_start)
+            # A visit cut off by a break may have lasted longer than was seen.
+            if (
+                entry_observed
+                and exit_observed
+                and visit_stop - float(clock[start]) < min_dwell
+            ):
+                continue
             visits.append(
                 RegionVisit(
                     run_id=run_id,
@@ -301,8 +320,8 @@ def _observed_visits(
                     start_index=start_index,
                     stop_index=stop_index,
                     start_time=float(clock[start]),
-                    stop_time=float(clock[stop_k] if exit_observed else run_end_time),
-                    entry_observed=bool(start > run_start),
+                    stop_time=visit_stop,
+                    entry_observed=entry_observed,
                     exit_observed=exit_observed,
                 )
             )
@@ -316,6 +335,7 @@ def detect_region_visits(
     positions: NDArray[np.float64],
     *,
     regions: Sequence[str],
+    min_dwell: float = 0.0,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -347,6 +367,13 @@ def detect_region_visits(
         Regions that overlap in area may not share active bins; ambiguous
         membership raises rather than using the order of names as a
         priority rule. Point regions are refused (see Raises).
+    min_dwell : float, default=0.0
+        Shortest visit, in seconds. A shorter visit is not reported, so an
+        animal running through a well without stopping makes no visit. A visit
+        cut off by a gap or the edge of the recording is kept, because it may
+        have lasted longer than was seen. The time is per visit: a rest split
+        by jitter across a region's edge can lose every piece, so make the
+        region cover where the animal rests. ``0`` counts every entry.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -374,7 +401,7 @@ def detect_region_visits(
         indices and ``run_id``. Censored visits at recording boundaries are
         kept; a visit seen in one sample has zero duration (an observation
         with no time, absent from ``windows``). ``analysis_settings`` records
-        the regions, ``max_gap`` and ``epochs``.
+        the regions, ``min_dwell``, ``max_gap`` and ``epochs``.
 
     Raises
     ------
@@ -418,6 +445,7 @@ def detect_region_visits(
         max_gap=max_gap,
         epochs=epochs,
         break_before=break_before,
+        min_dwell=min_dwell,
         call="detect_region_visits",
         result="every visit ends at its first sample",
     )

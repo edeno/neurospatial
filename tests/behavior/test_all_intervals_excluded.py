@@ -266,6 +266,8 @@ def test_disabling_the_gap_gate_is_silent(coarse_track, name):
     with warnings.catch_warnings():
         # The toy trials have identical kinematics; that warning is not under test.
         warnings.filterwarnings("ignore", message="No variation in ")
+        # The toy animal never stops, which is true but not under test.
+        warnings.filterwarnings("ignore", message=".*crossed their region.*")
         warnings.filterwarnings("error", message=".*excluded ALL.*")
         CALLS[name](env, times, positions, max_gap=None)
 
