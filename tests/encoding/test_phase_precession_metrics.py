@@ -1299,8 +1299,20 @@ class TestPhasePrecessionShufflePvalue:
         assert a.p_value == b.p_value
 
 
+def _written_out_rho(positions, phases, slope):
+    """The circular correlation of phase and wrapped position, by hand."""
+    phi = phases % (2 * np.pi)
+    theta = (abs(slope) * positions) % (2 * np.pi)
+    phi_mean = np.arctan2(np.sin(phi).sum(), np.cos(phi).sum())
+    theta_mean = np.arctan2(np.sin(theta).sum(), np.cos(theta).sum())
+    sin_phi, sin_theta = np.sin(phi - phi_mean), np.sin(theta - theta_mean)
+    return (sin_phi * sin_theta).sum() / np.sqrt(
+        (sin_phi**2).sum() * (sin_theta**2).sum()
+    )
+
+
 class TestRho:
-    """``rho`` is the circular correlation at the fitted slope, signed by it."""
+    """``rho`` is the circular correlation at the fitted slope, with its own sign."""
 
     def test_perfect_lines_read_minus_and_plus_one(self) -> None:
         from neurospatial.encoding.phase_precession import compute_phase_precession
@@ -1318,16 +1330,10 @@ class TestRho:
 
         d = precessing_spikes
         fit = compute_phase_precession(d["positions"], d["phases"], n_shuffles=9, rng=0)
-        phi = d["phases"] % (2 * np.pi)
-        start = fit.position_range[0]
-        theta = (abs(fit.slope) * (d["positions"] - start)) % (2 * np.pi)
-        phi_mean = np.arctan2(np.sin(phi).sum(), np.cos(phi).sum())
-        theta_mean = np.arctan2(np.sin(theta).sum(), np.cos(theta).sum())
-        sin_phi, sin_theta = np.sin(phi - phi_mean), np.sin(theta - theta_mean)
-        expected = (sin_phi * sin_theta).sum() / np.sqrt(
-            (sin_phi**2).sum() * (sin_theta**2).sum()
+        expected = _written_out_rho(
+            d["positions"] - fit.position_range[0], d["phases"], fit.slope
         )
-        assert fit.rho == pytest.approx(np.copysign(abs(expected), fit.slope))
+        assert fit.rho == pytest.approx(expected)
 
     def test_does_not_depend_on_position_units(self, precessing_spikes) -> None:
         from neurospatial.encoding.phase_precession import compute_phase_precession
@@ -1370,11 +1376,12 @@ class TestRho:
         assert means[0.75][1] == pytest.approx(means[0.25][1], abs=0.02)
 
     @pytest.mark.filterwarnings("ignore:The best-fitting phase-position slope")
-    def test_takes_the_sign_of_the_slope_even_on_weak_cells(self) -> None:
-        """The raw coefficient can disagree with the slope on a poor fit."""
+    def test_keeps_its_own_sign_on_weak_cells(self) -> None:
+        """A poor fit can give a small rho against the slope; it is not flipped."""
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         stimulus = np.random.default_rng(5)
+        opposed = 0
         for _ in range(60):
             positions = stimulus.uniform(0.0, 1.0, 40)
             phases = 5.0 - 2 * np.pi * positions + stimulus.vonmises(0, 0.5, 40)
@@ -1385,7 +1392,11 @@ class TestRho:
                 n_shuffles=1,
                 rng=0,
             )
-            assert np.sign(fit.rho) == np.sign(fit.slope)
+            assert fit.rho == pytest.approx(
+                _written_out_rho(positions, phases, fit.slope)
+            )
+            opposed += np.sign(fit.rho) != np.sign(fit.slope)
+        assert opposed > 0
 
     def test_is_nan_below_five_spikes(self) -> None:
         from neurospatial.encoding.phase_precession import compute_phase_precession
