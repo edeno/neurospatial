@@ -197,10 +197,10 @@ CANDIDATE_CHANNELS = {
 #: The worked result: sequences in the paper's candidate events, judged by
 #: CAREY_2019, against nulls fixed in writing before any decode.
 WORKED_RESULT: dict[str, Any] = {
-    "status": "sanity property",
+    "status": "tested against chance",
     "level": "B",
     "finding": (
-        "a sanity property of the detection and decoder, not a number of the "
+        "a test against chance of the detection and decoder, not a number of the "
         "paper: whether candidate events hold left or right sequences more often "
         "than when the rate maps or the spikes are shifted"
     ),
@@ -254,7 +254,9 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "unmatched": (
         "the paper's identity-shuffle filter (500 shuffles over the whole "
-        "session) is not applied, and no claim is made about what it does",
+        "session) is not applied: in Generate_DecSeqShuf.m, shuf_Q(shuf_mask) "
+        "uses row numbers as linear indices, so every shuffled time bin is read "
+        "from the session's first bin",
         "spike density by a 2 ms Gaussian before the 25 ms boxcar is not applied, "
         "because decode_position takes whole counts",
         "the code's speed is dxdt.m's; here the session's speed, smoothed over "

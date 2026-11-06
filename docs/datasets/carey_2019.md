@@ -162,9 +162,10 @@ pass the paper's two inputs to `Carey_candidate_detector` as
 
 ## Worked result
 
-**Status: sanity property (level B). Its fixed criterion is not met.** A property of
-the detection and decoder, not a number of the paper, which states no count for one
-session.
+**Status: tested against chance (level B). Not met: 43 sequences against a null 95th
+percentile of 45.6.** This check finds 5.7% of planted replay in this session, so it
+cannot show whether these events hold replay. It tests the detection and decoder, and
+it is not a number of the paper, which states no count for one session.
 
 The analysis follows the paper's code where the code and the text differ, since the
 code made the published numbers.
@@ -182,7 +183,8 @@ finds sequences of at least 10 of them within each contiguous run, with the
 preset `CAREY_2019`'s rules in the code's bins. Then, in the
 code's order, each side keeps sequences that overlap a candidate and last at least
 50 ms, and loses any that overlap the other side's. Two steps are not applied: the
-paper's identity-shuffle filter, about which we make no claim, and the 2 ms Gaussian
+paper's identity-shuffle filter, because in `Generate_DecSeqShuf.m`
+`shuf_Q(shuf_mask)` uses row numbers as linear indices, so every shuffled time bin is read from the session's first bin, and the 2 ms Gaussian
 spike density, because `decode_position` takes whole counts.
 
 The criterion and both nulls were fixed in writing for events, before any decode.
