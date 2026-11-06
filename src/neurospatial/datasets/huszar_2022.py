@@ -103,14 +103,14 @@ __all__ = [
     "load_session",
 ]
 
-#: A sanity property of our own awake-replay analysis, not a finding of either
+#: A test against chance of our own awake-replay analysis, not a finding of either
 #: paper: Yang et al.'s replay is a UMAP manifold test, which is no preset here.
 #: The test is in ``tests/datasets/test_huszar_2022.py``.
 WORKED_RESULT: dict[str, Any] = {
-    "status": "sanity property",
+    "status": "tested against chance",
     "level": "B",
     "finding": (
-        "a sanity property of our own analysis, not a finding of either paper: "
+        "a test against chance of our own analysis, not a finding of either paper: "
         "awake ripple candidates on the maze are judged trajectories more often "
         "than the same windows after circularly shifting the spikes"
     ),

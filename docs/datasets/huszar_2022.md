@@ -234,7 +234,7 @@ say pyramidal cells.
 
 ## Worked result
 
-**Status: a sanity property of our own analysis, level B.** This is neurospatial's
+**Status: a test against chance of our own analysis, level B.** This is neurospatial's
 method on Yang et al.'s candidates, **not the paper's analysis**. Yang et al.
 judge replay by distance to a UMAP manifold and trajectory length against
 shuffles, which states no cutoff or shuffle count and is not a preset in

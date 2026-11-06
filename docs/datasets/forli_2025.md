@@ -177,7 +177,7 @@ How it differs from the paper:
 Source: Forli et al. 2025, Nature, Results and Methods ("Identification of
 spatially tuned cells"), read on PubMed Central, PMC12460160.
 
-### Our own 3-D analysis of the ripple events: its sanity check failed
+### Our own 3-D analysis of the ripple events: its test against chance failed
 
 This is neurospatial's own analysis, recorded in
 `forli_2025.OWN_3D_ANALYSIS`. **It is not the paper's replay analysis, and its

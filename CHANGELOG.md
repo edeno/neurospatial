@@ -124,7 +124,7 @@
   in arbitrary units, since the files state none.
 - `forli_2025.OWN_3D_ANALYSIS` records our own decode of the bat's ripple events
   in the room's voxels, which is not the paper's 1-D replay analysis and is not
-  compared with its numbers. Its sanity property, fixed before the run, was not
+  compared with its numbers. Its test against chance, fixed before the run, was not
   met: 2 of 2,535 windows judged trajectories, against 95th percentiles of 2
   and 4.1 with shifted spikes. It says nothing about replay in this session:
   held-out flights decode to a median 2.2 m from the bat against 2.4 m by
@@ -418,7 +418,7 @@
   checked by hand; the environment is a track graph with both loops closed. LFP
   for 12 sessions lies in sibling raw files of 5.6 to 184 GB, read by byte range
   with `stream=True`; no source names its ripple channels, so `fetch()` needs
-  channels. The worked result is a sanity property of our own analysis, not the
+  channels. The worked result is a test against chance of our own analysis, not the
   paper's: 5 of 20 `yang_2024` ripple candidates on the maze are judged
   trajectories by `PFEIFFER_FOSTER_2013`, none in 40 shifted-spike draws. Twenty
   candidates give no rate, a null of zeros cannot show calibration (the criterion
@@ -439,7 +439,7 @@
   file (r = 0.9999997). `ripple_detection`'s `carey_2019` overlaps 73.5% of the
   paper's 1,654 events and 91.6% of its own 1,328 are the paper's; with the paper's
   speed and theta channel that becomes 98.6% and 97.2%. The worked result is a
-  sanity property on the route of the paper's code where it differs from the
+  test against chance on the route of the paper's code where it differs from the
   text (5 cm/s, an exposure of 5 ms, 111 bins per trajectory, sequences over the
   whole session): 43 sequences on those candidates, above the shifted-spike null
   (95th percentile 8.0) and not above the shifted-maps null (45.6), so its fixed
@@ -478,7 +478,7 @@
   (65%) are head-direction cells by the paper's criteria, against its 71%.
   `grosmark_2016` (level B, a property): 50% of directional rate-map peaks
   lie within 20 cm of a stem end, against at most 36.5% with shifted spikes.
-  `comrie_2026` (a sanity property, not a finding of the preprint): 92% of
+  `comrie_2026` (a test against chance, not a finding of the preprint): 92% of
   held-out running time bins decode to the rat's own track segment, against
   35% for always naming the most visited segment and at most 29% with
   shifted spikes. `forli_2025`, `sargolini_2006`, `valero_2022` and the

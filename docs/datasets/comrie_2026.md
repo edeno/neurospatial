@@ -93,7 +93,7 @@ alternating 60 s blocks; and `head_orientation`.
 
 ## Worked result
 
-**Status: a sanity property, not a finding of the preprint. Level B.**
+**Status: a test against chance, not a finding of the preprint. Level B.**
 
 While the rat runs, the decoded position usually lies on the rat's own track
 segment. This is a property of the data and the decoder, not something the

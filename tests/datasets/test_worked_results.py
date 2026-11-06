@@ -242,7 +242,7 @@ def test_grosmark_place_fields_enriched_near_the_ends():
 
 @pytest.mark.realdata
 def test_comrie_decoding_mostly_local_while_running():
-    """Level B sanity property: running time decodes to the rat's own segment.
+    """Level B test against chance: running time decodes to the rat's own segment.
 
     Not a finding of the preprint: its Introduction says place cells'
     activity "typically signals the actual location of the animal" (citing
@@ -364,7 +364,7 @@ def test_record_is_complete(module):
             assert isinstance(attempted["value"], float)
             assert attempted["differs"]
     else:
-        assert record["status"] in {"reproduced", "sanity property"}
+        assert record["status"] in {"reproduced", "tested against chance"}
         assert record["level"] in {"A", "B"}
         assert isinstance(record["ours"], float)
         assert record["attempted"] is None

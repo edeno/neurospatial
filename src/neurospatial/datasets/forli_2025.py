@@ -159,13 +159,13 @@ WORKED_RESULT: dict[str, Any] = {
     ),
 }
 
-#: A sanity property of neurospatial's own 3-D analysis of the ripple events. It
+#: A test against chance of neurospatial's own 3-D analysis of the ripple events. It
 #: is not the paper's replay analysis and makes no claim about it: this is why
 #: it is apart from ``WORKED_RESULT``, the record of the paper's finding.
 OWN_3D_ANALYSIS: dict[str, Any] = {
     "status": "not met",
     "what": (
-        "a sanity property of our own analysis in the room's 3-D voxels, not "
+        "a test against chance of our own analysis in the room's 3-D voxels, not "
         "the paper's replay analysis and not comparable with its numbers"
     ),
     "property": (
@@ -220,7 +220,7 @@ OWN_3D_ANALYSIS: dict[str, Any] = {
     "watch_out": (
         "The 3-D decode of the ripple events is neurospatial's own analysis, "
         "not the paper's: its replay analysis was 1-D, along clustered flight "
-        "paths, which neurospatial cannot build yet. Its fixed sanity property "
+        "paths, which neurospatial cannot build yet. Its fixed test against chance "
         "was not met (2 of 2,535 windows judged trajectories, against 95th "
         "percentiles of 2 and 4.1 with shifted spikes), and this says nothing "
         "about replay in this session. 3-D place fields here barely reproduce "

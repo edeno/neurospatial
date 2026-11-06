@@ -16,9 +16,18 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 
 ## The datasets
 
+The last column says how far each dataset's result was checked.
+
+- **Reproduced:** we matched a number or finding from the paper.
+- **Tested against chance:** we ran the analysis with a pass mark fixed in advance,
+  and compared the result with the same analysis on data whose structure was broken
+  on purpose. This is not a finding of the paper. *Not met* means the result did not
+  clear the mark, and the dataset's page says what that can and cannot mean.
+- **Not possible yet:** the paper's result cannot be checked yet, and the page says why.
+
 | Dataset | Animal and region | Apparatus | Archive (license) | Worked result |
 | --- | --- | --- | --- | --- |
-| [`comrie_2026`](../datasets/comrie_2026.md) | rat, hippocampus | spatial bandit maze (track graph) | Zenodo 23020757 (CC-BY-4.0) | a sanity property, not a paper finding |
+| [`comrie_2026`](../datasets/comrie_2026.md) | rat, hippocampus | spatial bandit maze (track graph) | Zenodo 23020757 (CC-BY-4.0) | tested against chance, not a paper finding |
 | [`grosmark_2016`](../datasets/grosmark_2016.md) | rat, dorsal CA1 | linear and circular mazes, with sleep before and after | OSF `hu5ma` (license not stated); DANDI 000044 (CC-BY-4.0) | reproduced (level B) |
 | [`peyrache_2015`](../datasets/peyrache_2015.md) | mouse, anterior thalamus | open arena, head direction only | OSF `jb2gd` (license not stated) | reproduced (level A) |
 | [`sargolini_2006`](../datasets/sargolini_2006.md) | rat, medial entorhinal cortex | 1 m open field | DANDI 000582 (CC-BY-4.0) | not possible yet |
@@ -33,8 +42,8 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 | [`grieves_2020`](../datasets/grieves_2020.md) | rat, CA1 | 3-D climbing lattice (0.97 m cube, aligned or tilted) | UCL RDR 9926477 (CC0) | not possible yet |
 | [`igata_2021`](../datasets/igata_2021.md) | rat, dorsal CA1 | 1 m lattice field with a start, a goal and a return path; the rat learns a new route; LFP | Mendeley Data 4xk5w69yr5 (CC-BY-4.0) | not possible yet; nothing is presented as replay: on the default session the candidate events do not stand out from a shifted-spike baseline, and `IGATA_2021` judges none of the 596 events that pass it over four rats' sessions, which says little since it judges 0.7% of planted replay. Trials to the learning point match the paper (25.8 +/- 9.1 against 26 +/- 9) |
 | [`bhattarai_2020`](../datasets/bhattarai_2020.md) | rat, dorsal CA1 | loop with two rings, four sequences to one reward; one LFP channel | Figshare 10032866 (CC0) | not possible yet; the paper's replay recipe on the archive's one LFP channel passes 37 candidates against the paper's 278 on the default set, and 11 judged replay (29.7%) only just clears its sanity check (24.6% at the 95th percentile with permuted cells); planted replay is judged 18.6% of the time, so this is no rate of replay; the complex-spike rule gives the paper's 648 of 698 units |
-| [`huszar_2022`](../datasets/huszar_2022.md) | mouse, CA1 | figure-eight maze with sleep; LFP for 12 sessions | DANDI 000552 (CC-BY-4.0) | a sanity property of our own analysis, not the paper's: 5 of 20 awake ripple candidates are judged trajectories, none in 40 shifted-spike draws (20 candidates give no rate, a null of zeros cannot show calibration, and this judge passes 8.7% of planted replay) |
-| [`carey_2019`](../datasets/carey_2019.md) | rat, dorsal CA1 | T-maze with food and water arms, rest pedestals; LFP per channel | DataLad MotivationalT (ODC-PDDL-1.0) | sanity property: our score matches the paper's stored score (r = 0.9999997); 73.5% and 91.6% agreement with its 1,654 events, 98.6% and 97.2% with its speed and theta; on the route of the paper's code, 43 sequences on 1,328 candidates are above the shifted-spike null (8.0) and not the shifted-maps null (45.6), so the fixed criterion is not met, and planted replay is judged 5.7% of the time |
+| [`huszar_2022`](../datasets/huszar_2022.md) | mouse, CA1 | figure-eight maze with sleep; LFP for 12 sessions | DANDI 000552 (CC-BY-4.0) | tested against chance of our own analysis, not the paper's: 5 of 20 awake ripple candidates are judged trajectories, none in 40 shifted-spike draws (20 candidates give no rate, a null of zeros cannot show calibration, and this judge passes 8.7% of planted replay) |
+| [`carey_2019`](../datasets/carey_2019.md) | rat, dorsal CA1 | T-maze with food and water arms, rest pedestals; LFP per channel | DataLad MotivationalT (ODC-PDDL-1.0) | tested against chance, **not met**: on the route of the paper's code, 43 sequences on 1,328 candidates against a null 95th percentile of 45.6, with 5.7% of planted replay found, so it cannot show whether these events hold replay. Detection matches: our score matches the paper's stored score (r = 0.9999997); 73.5% and 91.6% agreement with its 1,654 events, 98.6% and 97.2% with its speed and theta |
 
 Each dataset has a page with what was recorded, the conversions the loader
 applied and the evidence for them, the pitfalls, the worked result and how to

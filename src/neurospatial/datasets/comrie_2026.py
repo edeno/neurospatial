@@ -103,14 +103,14 @@ __all__ = [
     "load_session",
 ]
 
-#: A level B sanity property of the data and decoder, not a finding of the
+#: A level B test against chance of the data and decoder, not a finding of the
 #: preprint, tested against measured baselines
 #: (``tests/datasets/test_worked_results.py``).
 WORKED_RESULT: dict[str, Any] = {
-    "status": "sanity property",
+    "status": "tested against chance",
     "level": "B",
     "finding": (
-        "a sanity property of the data and decoder, not a finding of the "
+        "a test against chance of the data and decoder, not a finding of the "
         "preprint: while the rat runs, the decoded position usually lies on "
         "the rat's own track segment"
     ),
