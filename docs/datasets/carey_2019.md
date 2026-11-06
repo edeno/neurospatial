@@ -194,6 +194,29 @@ median for the same count is 34. Those are 15 left and 35 right, a left share of
 is 0.35. The nulls give a median of 0.36, so this one session says nothing about
 that finding.
 
+**What the number can say.** We planted replay into each of the 1,328 candidates,
+once on each trajectory. Every spike kept its time. Within the candidate, the cell
+of each kept unit's spike was drawn from that side's rate maps along a real running
+path played 15 times faster. Each was then judged as the candidates were, by a
+sequence on either side that overlaps it.
+
+| Planted into the 1,328 candidates, each side | Judged replay |
+| --- | --- |
+| Sweep along a path | 262 of 2,656, 9.9% |
+| Stays in one place | 280 of 2,656, 10.5% |
+| No position content | 87 of 2,656, 3.3% |
+
+The planted events do decode to their paths, a median 6 cm off against 14.5 cm
+by chance, so the loss is in the rule. Recall depends on length: 0.7% of sweeps
+under 60 ms are judged (10 of 1,440), 8.6% from 60 to 90 ms, and 46.6% at 90 ms or
+more (181 of 388). The path stays inside the candidate, the median candidate is
+under 60 ms, and the rule needs 50 ms of it, so a real sequence that runs past its
+candidate's ends is not what this measures. This judge passes about one known
+replay in ten at these spike counts, and it passes a stationary event as often. So
+4.7% is not a rate of replay, and a low share is not evidence that replay is absent.
+This is a limit of the number, not a measurement of these rats: planted events come
+from the model the decoder assumes, and compression 15 is a choice.
+
 ### Across the paper's 19 sessions
 
 An exploratory run, with no criterion: the same analysis on the paper's own

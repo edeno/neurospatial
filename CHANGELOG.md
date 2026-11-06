@@ -438,6 +438,7 @@
   speed and theta channel that becomes 98.6% and 97.2%. The worked result is a
   sanity property: 65 of the candidates hold a `CAREY_2019` sequence, above both
   fixed nulls (95th percentiles 52.65 and 10.2), by a thin margin over the first.
+  Planted replay is judged 9.9% of the time, so that share is not a rate of replay.
   Over the paper's 19 sessions the left share of sequences differs by restriction
   as in the paper, and just as much with shifted rate maps, and it follows the
   units kept on each side, so on this analysis it is not a reproduction. The

@@ -377,11 +377,12 @@ def test_record_is_complete(module):
     "record",
     [
         bhattarai_2020.WORKED_RESULT,
+        carey_2019.WORKED_RESULT,
         forli_2025.OWN_3D_ANALYSIS,
         huszar_2022.WORKED_RESULT,
         igata_2021.WORKED_RESULT,
     ],
-    ids=["bhattarai_2020", "forli_2025", "huszar_2022", "igata_2021"],
+    ids=["bhattarai_2020", "carey_2019", "forli_2025", "huszar_2022", "igata_2021"],
 )
 def test_replay_records_state_what_planted_replay_limits(record):
     """A replay count is read beside its recall, with the control's own limits."""

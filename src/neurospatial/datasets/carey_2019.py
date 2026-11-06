@@ -257,6 +257,23 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "attempted": None,
     "why": None,
+    "planted_recall": {
+        "judged": 262,
+        "planted": 2656,
+        "reading": (
+            "replay planted into the 1,328 candidates, once on each trajectory, "
+            "keeping every spike's time and drawing its cell from these rate maps "
+            "along a real running path played 15 times faster, is judged replay "
+            "9.9% of the time. Events with no content pass 3.3% and events that "
+            "stay in one place 10.5%. It depends on the event's length: 0.7% under "
+            "60 ms, and 46.6% at 90 ms or more, since the path stays inside the "
+            "candidate and the rule needs 50 ms of it. So this judge passes about "
+            "one known replay in ten here, 4.7% is not a rate of replay, and a low "
+            "share is not evidence of its absence. This is a limit of what the "
+            "number can say, not a measurement of the rats: planted events come "
+            "from the model the decoder assumes, and compression 15 is a choice"
+        ),
+    },
 }
 
 #: Exploratory, apart from ``WORKED_RESULT``: the same analysis on the paper's
