@@ -28,21 +28,18 @@ sessions[["session", "n_units", "size_bytes", "verified", "default"]].head()
 <!-- docs-test: skip needs a download -->
 ```python
 from neurospatial import compute_spatial_rates
-from neurospatial.datasets import carey_2019, load
+from neurospatial.datasets import load
 
 rec = load("carey_2019")
-env = carey_2019.trajectory_environment(
-    rec.params["left_trajectory"], track_width=rec.params["track_width"]
-)
 rates = compute_spatial_rates(
-    env,
+    rec.env,
     rec.spike_times,
     rec.times,
     rec.positions,
     epochs=rec.epochs["matched_left"],
     min_speed=rec.params["min_speed"],
     method="binned",
-    bandwidth=float(env.bin_sizes.mean()),
+    bandwidth=rec.params["bin_size"],
 )
 
 samples, times = rec.lfp.fetch(rec.lfp.ripple_channels[:1])  # the paper's channel
