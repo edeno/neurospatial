@@ -669,6 +669,87 @@ class TestDecodePosition:
                 simple_env, spike_counts_fractional, encoding_models, dt=0.025
             )
 
+    def test_fractional_counts_is_the_poisson_form_of_the_smoothed_values(
+        self, simple_env: Environment
+    ) -> None:
+        """Checked by hand: n log(rate dt) - rate dt, normalized over bins."""
+        from neurospatial.decoding.posterior import decode_position
+
+        rng = np.random.default_rng(0)
+        rates = rng.uniform(0.1, 5.0, (3, simple_env.n_bins))
+        smoothed = rng.uniform(0.0, 2.0, (4, 3))
+        result = decode_position(
+            simple_env, smoothed, rates, dt=0.025, fractional_counts=True
+        )
+        expected = rates * 0.025
+        log_likelihood = smoothed @ np.log(expected) - expected.sum(axis=0)
+        by_hand = np.exp(log_likelihood - log_likelihood.max(axis=1, keepdims=True))
+        by_hand /= by_hand.sum(axis=1, keepdims=True)
+        np.testing.assert_allclose(result.posterior, by_hand)
+
+    def test_fractional_counts_changes_nothing_on_whole_counts(
+        self, simple_env: Environment
+    ) -> None:
+        from neurospatial.decoding.posterior import decode_position
+
+        rates = np.random.default_rng(1).uniform(0.1, 5.0, (2, simple_env.n_bins))
+        counts = np.array([[0, 1], [2, 0]])
+        np.testing.assert_array_equal(
+            decode_position(
+                simple_env, counts, rates, dt=0.025, fractional_counts=True
+            ).posterior,
+            decode_position(simple_env, counts, rates, dt=0.025).posterior,
+        )
+
+    @pytest.mark.parametrize(
+        ("bad", "message"), [(np.nan, "NaN or Inf"), (-0.5, "negative")]
+    )
+    def test_fractional_counts_still_refuses_what_no_count_can_be(
+        self, simple_env: Environment, bad: float, message: str
+    ) -> None:
+        from neurospatial.decoding.posterior import decode_position
+
+        with pytest.raises(ValueError, match=message):
+            decode_position(
+                simple_env,
+                np.array([[0.5, bad]]),
+                np.ones((2, simple_env.n_bins)),
+                dt=0.025,
+                fractional_counts=True,
+            )
+
+    def test_the_fractional_refusal_names_the_option(
+        self, simple_env: Environment
+    ) -> None:
+        from neurospatial.decoding.posterior import decode_position
+
+        with pytest.raises(ValueError, match=r"fractional_counts=True"):
+            decode_position(
+                simple_env,
+                np.array([[0.5, 1.0]]),
+                np.ones((2, simple_env.n_bins)),
+                dt=0.025,
+            )
+
+    def test_summary_takes_fractional_counts_as_the_full_decoder_does(
+        self, simple_env: Environment
+    ) -> None:
+        from neurospatial.decoding.posterior import (
+            decode_position,
+            decode_position_summary,
+        )
+
+        rng = np.random.default_rng(2)
+        rates = rng.uniform(0.1, 5.0, (2, simple_env.n_bins))
+        smoothed = rng.uniform(0.0, 2.0, (6, 2))
+        full = decode_position(
+            simple_env, smoothed, rates, dt=0.025, fractional_counts=True
+        )
+        summary = decode_position_summary(
+            simple_env, smoothed, rates, dt=0.025, fractional_counts=True
+        )
+        np.testing.assert_array_equal(summary.map_bin, full.map_bin)
+
     def test_validate_accepts_float_spike_counts_with_integer_values(
         self,
         simple_env: Environment,

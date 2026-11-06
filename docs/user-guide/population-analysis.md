@@ -669,7 +669,9 @@ assert different_tetrodes.explained_variance > 0.5
 Decoding turns the population's spike counts into an estimate of position in
 each time bin, using the rate maps as the encoding model. It uses the same
 ingredients as this guide: rate maps from `compute_spatial_rates` and counts
-from `bin_spikes_in_time`, in the same unit order.
+from `bin_spikes_in_time`, in the same unit order. A method that smooths spikes
+in time before decoding passes `fractional_counts=True` to `decode_position`; the
+posterior's width is then not calibrated, because one spike is shared between bins.
 
 - [One-call decoding with `decode_session`](workflows.md#workflow-2-bayesian-decoding-one-call)
   fits the maps and decodes the same recording.

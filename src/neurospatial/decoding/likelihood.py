@@ -171,7 +171,9 @@ class _PoissonRates:
         expected_counts = np.maximum(encoding_models, min_rate) * dt
         return cls(np.log(expected_counts), expected_counts.sum(axis=0))
 
-    def log_likelihood(self, spike_counts: NDArray[np.int64]) -> NDArray[np.float64]:
+    def log_likelihood(
+        self, spike_counts: NDArray[np.int64 | np.float64]
+    ) -> NDArray[np.float64]:
         """Log-likelihood of ``(n_time_bins, n_neurons)`` counts at every bin."""
         spike_counts = np.asarray(spike_counts)
         # A 1-D (n_neurons,) array would matmul to (n_bins,), silently dropping

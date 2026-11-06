@@ -367,7 +367,7 @@ def normalize_to_posterior(
 @reads_pynapple_samples
 def decode_position(
     env: Environment,
-    spike_counts: NDArray[np.int64],
+    spike_counts: NDArray[np.int64 | np.float64],
     encoding_models: NDArray[np.float64] | SpatialRatesResult,
     *,
     dt: float,
@@ -377,6 +377,7 @@ def decode_position(
     validate: bool = True,
     dtype: Any = np.float64,
     time_chunk: int | None = None,
+    fractional_counts: bool = False,
 ) -> DecodingResult:
     """Decode position from a precomputed spike-count matrix and rate maps.
 
@@ -388,7 +389,7 @@ def decode_position(
     ----------
     env : Environment
         Spatial environment defining the discretization.
-    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+    spike_counts : NDArray[np.int64] or NDArray[np.float64], shape (n_time_bins, n_neurons)
         Spike counts per neuron per time bin.
     encoding_models : NDArray[np.float64] or SpatialRatesResult, shape (n_neurons, n_bins)
         Firing rate maps (place fields) for each neuron, in Hz.
@@ -459,7 +460,8 @@ def decode_position(
         - Reject NaN/Inf entries in spike_counts.
         - Reject negative spike_counts (must be non-negative integers).
         - Reject fractional spike_counts when given a float dtype
-          (cast to integer first or fix the upstream binning bug).
+          (cast to integer first or fix the upstream binning bug), unless
+          ``fractional_counts=True``.
         - Reject Inf entries in encoding_models.
 
         Pass ``validate=False`` to skip these checks inside a hot loop with
@@ -474,6 +476,15 @@ def decode_position(
     time_chunk : int or None, default=None
         Number of time bins computed at once; ``None`` computes all of them
         together. See Notes.
+    fractional_counts : bool, default=False
+        Accept smoothed spike counts, such as a Gaussian spike density summed
+        over a window. Each value ``n`` enters as ``n * log(rate * dt) - rate
+        * dt``, the Poisson form used by decoders that smooth spikes in time.
+        This is not the likelihood of observed counts: smoothing shares one
+        spike between time bins, so a posterior's width is not calibrated.
+        NaN, Inf and negative values are still refused when ``validate`` is
+        True. ``False`` refuses fractional values, which are more often rates
+        or spike times passed by mistake.
 
     Returns
     -------
@@ -569,7 +580,7 @@ def decode_position(
         context="decode_position",
     )
     if validate:
-        _validate_spike_counts(spike_counts)
+        _validate_spike_counts(spike_counts, fractional=fractional_counts)
     return _decode_posterior(
         env,
         lambda start, stop: spike_counts[start:stop],
@@ -871,8 +882,10 @@ def _warn_if_zero_filled(models: NDArray[Any], *, context: str) -> None:
     )
 
 
-def _validate_spike_counts(spike_counts: NDArray[Any]) -> None:
-    """Refuse non-finite, negative or fractional spike counts.
+def _validate_spike_counts(
+    spike_counts: NDArray[Any], *, fractional: bool = False
+) -> None:
+    """Refuse non-finite, negative or, unless ``fractional``, fractional counts.
 
     Raises
     ------
@@ -903,7 +916,7 @@ def _validate_spike_counts(spike_counts: NDArray[Any]) -> None:
     # Float counts must hold exact integers (a common shape after histogramming
     # into a float64 column). A fractional value like 0.5 is meaningless under
     # the Poisson likelihood and would produce a "valid"-looking posterior.
-    if not np.issubdtype(spike_counts.dtype, np.integer):
+    if not fractional and not np.issubdtype(spike_counts.dtype, np.integer):
         rounded = np.floor(spike_counts)
         is_integer_valued = np.equal(spike_counts, rounded)
         if not is_integer_valued.all():
@@ -922,13 +935,14 @@ def _validate_spike_counts(spike_counts: NDArray[Any]) -> None:
                     fix="bin spike times with bin_spikes_in_time(spike_times, "
                     "dt=...) and pass the counts; cast with "
                     "spike_counts.astype(np.int64) only if the values are "
-                    "counts stored as floats.",
+                    "counts stored as floats; pass fractional_counts=True only "
+                    "if they are deliberately smoothed counts.",
                 )
             )
 
 
 def _posterior_blocks(
-    count_block: Callable[[int, int], NDArray[np.int64]],
+    count_block: Callable[[int, int], NDArray[np.int64 | np.float64]],
     n_time: int,
     rates: _PoissonRates,
     prior: NDArray[np.float64] | None,
@@ -995,7 +1009,7 @@ def _posterior_blocks(
 
 def _decode_posterior(
     env: Environment,
-    count_block: Callable[[int, int], NDArray[np.int64]],
+    count_block: Callable[[int, int], NDArray[np.int64 | np.float64]],
     n_time: int,
     rates: _PoissonRates,
     prior: NDArray[np.float64] | None,
@@ -1034,7 +1048,7 @@ def _decode_posterior(
 
 def _decode_summary(
     env: Environment,
-    count_block: Callable[[int, int], NDArray[np.int64]],
+    count_block: Callable[[int, int], NDArray[np.int64 | np.float64]],
     n_time: int,
     rates: _PoissonRates,
     prior: NDArray[np.float64] | None,
@@ -1102,7 +1116,7 @@ def _decode_summary(
 @reads_pynapple_samples
 def decode_position_summary(
     env: Environment,
-    spike_counts: NDArray[np.int64],
+    spike_counts: NDArray[np.int64 | np.float64],
     encoding_models: NDArray[np.float64] | SpatialRatesResult,
     *,
     dt: float,
@@ -1112,6 +1126,7 @@ def decode_position_summary(
     validate: bool = True,
     dtype: Any = np.float64,
     time_chunk: int = 1024,
+    fractional_counts: bool = False,
 ) -> DecodingSummary:
     """Memory-safe decode that streams per-time reductions, not the posterior.
 
@@ -1128,7 +1143,7 @@ def decode_position_summary(
     ----------
     env : Environment
         Spatial environment defining the discretization.
-    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
+    spike_counts : NDArray[np.int64] or NDArray[np.float64], shape (n_time_bins, n_neurons)
         Spike counts per neuron per time bin.
     encoding_models : NDArray[np.float64] or SpatialRatesResult, shape (n_neurons, n_bins)
         Firing-rate maps (place fields) for each neuron, or a
@@ -1159,6 +1174,8 @@ def decode_position_summary(
         ``(n_time_bins, n_bins)`` posterior transiently, defeating the purpose
         of this streamed summary decoder. Use :func:`decode_position` if you
         want the full posterior.
+    fractional_counts : bool, default=False
+        Accept smoothed spike counts, as in :func:`decode_position`.
 
     Returns
     -------
@@ -1226,7 +1243,7 @@ def decode_position_summary(
         context="decode_position_summary",
     )
     if validate:
-        _validate_spike_counts(spike_counts)
+        _validate_spike_counts(spike_counts, fractional=fractional_counts)
 
     # Check times before decoding (cheap, avoids a wasted full decode).
     times_arr: NDArray[np.float64] | None = None

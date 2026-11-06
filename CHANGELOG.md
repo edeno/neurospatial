@@ -18,6 +18,13 @@
   before. A radius within a few ULP of a rounding boundary can still differ
   between calls, about 0.2% of values.
 
+### Decoding
+
+- `decode_position` and `decode_position_summary` take `fractional_counts=True`
+  for smoothed spike counts, such as a Gaussian spike density summed over a
+  window, while still refusing NaN, Inf and negative values. Without it fractional
+  values are refused as before, and that message now names the option.
+
 ### Event tables
 
 - `add_positions`, `align_events`, `events_to_intervals` and
