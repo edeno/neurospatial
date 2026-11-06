@@ -1147,8 +1147,8 @@ class Intervals(Generic[R]):
         >>> rescored = detected.with_fields(outcome=["censored"], end_region=[None])
         >>> rescored
         Intervals[Trial]: 1 interval in [0, 8) s; fields: start_region, end_region, outcome
-        >>> rescored[0].success
-        False
+        >>> rescored[0].outcome
+        'censored'
         """
         data = {name: self._field_array(name) for name in self._dtypes}
         for name, values in columns.items():

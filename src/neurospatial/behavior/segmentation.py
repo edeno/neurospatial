@@ -315,8 +315,6 @@ class Trial:
           of the recording); ``stop_time`` is the last observed time, and
           the trial's result is unknown. Leave censored trials out of
           success rates rather than counting them as errors.
-    success : bool
-        Read-only property, ``outcome == 'reached'``.
     """
 
     start_time: float
@@ -373,11 +371,6 @@ class Trial:
                     "that came back, or the different region it reached.",
                 )
             )
-
-    @property
-    def success(self) -> bool:
-        """Whether the trial reached an end region (``outcome == 'reached'``)."""
-        return self.outcome == "reached"
 
 
 @reads_pynapple_samples

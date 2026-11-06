@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Trials
+
+- `Trial.success` is removed. It meant "reached some other region", so a wrong
+  arm counted as a success. Use `trial.outcome == "reached"`, and add your
+  task's own correct and error labels with `Intervals.with_fields`.
+
 ### Replay tables say when each event happened
 
 - `compare_replay_methods` and `event_properties` gain `start_time`, `stop_time`

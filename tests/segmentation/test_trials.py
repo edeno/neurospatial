@@ -9,16 +9,7 @@ from neurospatial.behavior import detect_trials
 
 
 class TestTrialRecord:
-    """Trial stores how it ended; success is derived from the outcome."""
-
-    def test_success_is_derived_from_outcome(self):
-        from neurospatial.behavior.segmentation import Trial
-
-        assert Trial(0.0, 1.0, "start", "left", "reached").success is True
-        for outcome in ("returned", "censored"):
-            assert Trial(0.0, 1.0, "start", None, outcome).success is False
-        with pytest.raises(TypeError):
-            Trial(0.0, 1.0, "start", "left", success=True)  # type: ignore[call-arg]
+    """Trial stores how it ended."""
 
     def test_scalars_are_plain_floats(self):
         from neurospatial.behavior.segmentation import Trial
