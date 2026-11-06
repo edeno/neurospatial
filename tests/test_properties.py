@@ -25,7 +25,7 @@ import networkx as nx
 import numpy as np
 import pytest
 from environment_helpers import track_for
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
 from numpy.typing import NDArray
@@ -1447,6 +1447,7 @@ class TestMeanResultantLengthProperties:
             ),
         )
     )
+    @example(np.array([0.0, 1e-9, np.pi, np.pi]))  # R is about 2.5e-10
     @settings(deadline=1000)  # Use profile's max_examples
     def test_rotation_invariant(self, angles: NDArray[np.float64]) -> None:
         """Property: R is invariant to rotation of all angles."""
@@ -1456,10 +1457,12 @@ class TestMeanResultantLengthProperties:
         r_original = mean_resultant_length(angles)
         r_rotated = mean_resultant_length(rotated_angles)
 
+        # R can be near 0, where rounding is large relative to R itself.
         np.testing.assert_allclose(
             r_original,
             r_rotated,
             rtol=1e-10,
+            atol=1e-14,
             err_msg="R should be rotation invariant",
         )
 
