@@ -266,8 +266,9 @@ class PhasePrecessionResult(ResultMixin):
     rho : float
         Circular correlation in [-1, 1] between phase and position wrapped at
         the fitted slope, the coefficient many papers report for
-        circular-linear regression. Signed by ``slope``, so precession is
-        negative. Descriptive: it does not determine ``p_value``, and it
+        circular-linear regression, negative for precession. It keeps its own
+        sign, so a weak value can oppose ``slope``. Descriptive: it does not
+        determine ``p_value``, and it
         depends on the slope as well as the scatter (see
         :func:`compute_phase_precession`). NaN below 5 spikes, or when the
         phases or the wrapped positions do not vary.
@@ -781,9 +782,13 @@ def compute_phase_precession(
 
     **Rho.** ``rho`` correlates phase with position wrapped at the fitted
     slope, ``mod(|slope| * x, 2*pi)``, using each variable's circular mean
-    (the circular-circular coefficient of Jammalamadaka & Sarma, 1988), and
-    takes the sign of the slope, as in the FMA Toolbox and Barry lab code. Use
-    it to compare
+    (the circular-circular coefficient of Jammalamadaka & Sarma, 1988). It
+    keeps its own sign, as in the example the Kempter lab publishes for its
+    2012 method. The FMA Toolbox and Barry lab code give it the slope's sign,
+    which differs only on weak fits. In simulation the two signs disagreed in
+    18-21% of untuned cells, in 8% of weakly precessing cells with 20 spikes
+    (von Mises phase noise, kappa 1) and 2% with 50, and in none at kappa 4
+    or more. Use it to compare
     with published values. To compare how tightly spikes follow the line
     across cells or conditions, use ``mean_resultant_length``, which does not
     depend on the slope. In simulation, 100 spikes with von Mises phase noise
@@ -980,12 +985,11 @@ def _phase_precession(
     )
 
     # Rho is descriptive, NOT the significance. The wrapped position uses the
-    # slope's magnitude, and the result takes the slope's sign, as labs report it.
+    # slope's magnitude, so precession reads negative.
     rho = np.nan
     if len(phases) >= 5:
         wrapped = (abs(normalized_slope) * normalized) % (2 * np.pi)
-        rho = abs(circular_circular_correlation(phases, wrapped)[0])
-        rho = float(np.copysign(rho, normalized_slope))
+        rho = float(circular_circular_correlation(phases, wrapped)[0])
 
     return PhasePrecessionResult(
         slope=float(normalized_slope / width),
