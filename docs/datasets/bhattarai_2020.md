@@ -162,8 +162,9 @@ set: 278 candidates and 153 replays for `rat2_set2`, and its columns do sum to
 2,573 and 1,342.
 
 **Why it is not possible yet.** A candidate must coincide with an SWR detected on
-two tetrodes, and the archive holds one channel, saturated in part, whose ripple
-power rises little at population bursts.
+two tetrodes, and the archive holds one channel, whose ripple power rises little at
+population bursts. That channel is clipped, but the clipping is not why the count is
+low (below).
 
 **The attempt, with the paper's recipe and preset.** On the default set:
 
