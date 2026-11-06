@@ -218,12 +218,16 @@ WORKED_RESULT: dict[str, Any] = {
         "in running (8% to 87% of samples, against 0.1% to 20% when still), the "
         "crossing rate does not follow them over the sets (Spearman 0.15; 0.29 "
         "per s on the five least clipped sets, 0.32 on the five most), and "
-        "clipping a clean set harder raises the count. The likelier cause, "
-        "inferred, is which channel this is: population bursts raise its 100-250 "
-        "Hz power only 1.4 times, with no spectral peak, at moments with almost "
-        "no clipping, and the files do not say which channel it is. On it the "
-        "paper's detector passes 187 candidates over the 25 sets, not 2,573, and "
-        "42 replays, not 1,342. Nothing was tuned to close this"
+        "clipping a clean set harder raises the count. A threshold from clean, "
+        "still or reward-period samples gives at most 0.24 SWRs per correct "
+        "trial, not 0.61. The likelier cause, inferred, is which channel this "
+        "is, and the files do not say. Its ripple is weak: population bursts in "
+        "the reward period raise its 100-250 Hz power only 1.4 times, and at "
+        "rest, away from any rail, 1.7 times at 160 to 190 Hz over 1.3 times at "
+        "300 to 400 Hz, a small peak in 20 of the 25 sets, with a median 17% of "
+        "bursts above moments 0.5 s away (5% by chance). On it the paper's "
+        "detector passes 187 candidates over the 25 sets, not 2,573, and 42 "
+        "replays, not 1,342. Nothing was tuned to close this"
     ),
 }
 

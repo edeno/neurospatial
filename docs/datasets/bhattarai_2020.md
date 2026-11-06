@@ -239,9 +239,13 @@ Where the difference from the paper comes from:
 - **Probably the channel, not its rails.** The low count does not come from clipping.
   The rails sit in running, and the crossing rate does not follow them over the sets
   (Spearman 0.15). Clipping a clean set harder raises the count. A threshold from
-  samples far from a rail doubles the reward-zone count, no more. The likelier cause,
-  which is inferred, is which channel this is: population bursts raise its 100-250 Hz
-  power only 1.4 times, with no spectral peak, at moments with almost no clipping.
+  samples far from a rail doubles the reward-zone count, no more: taken from clean,
+  still or reward-period samples it gives at most 0.24 SWRs per correct trial, not
+  0.61. The likelier cause, which is inferred, is which channel this is. Its ripple is
+  weak. In the reward period population bursts raise its 100-250 Hz power only 1.4
+  times. At rest, away from any rail, power rises 1.7 times at 160 to 190 Hz, over 1.3
+  times at 300 to 400 Hz, a small peak in 20 of the 25 sets, and a median 17% of bursts
+  stand out from moments 0.5 s away (5% by chance).
 - **The events are longer.** The recipe's last 232 ms and the bursts 244 ms (the paper:
   151.9 +/- 61.5 ms). The paper does not say how an event ends. Ending at the next
   silence gives 174 ms.
