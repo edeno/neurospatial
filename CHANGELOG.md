@@ -2,6 +2,64 @@
 
 ## [Unreleased]
 
+### Several sessions
+
+- The interoperability guide shows how to keep settings when joining tables.
+  `pd.concat` silently empties `attrs` that differ between tables, even by one
+  value, at the step the replay and reactivation guides recommend.
+
+### Comparing maps
+
+- The `field_stability` docs no longer give stable and unstable bands, which had
+  no source, and they now say that `np.nanmean` leaves out cells that fell
+  silent. The guide points to `compare_spatial_rates`, which gives the same
+  correlation per unit with a `status` for each unit not scored.
+- The `population_vector_correlation` docs no longer say it is near 0 wherever
+  the code is unrelated. Cells that keep their rates give a positive value with
+  every field moved: 0.16 to 0.72 in simulation. The guide shows how to compare
+  each location with distant locations.
+
+### Phase precession
+
+- `PhasePrecessionResult.correlation` is replaced by `rho`, the circular
+  correlation between phase and position wrapped at the fitted slope, signed by
+  the slope, so precession is negative. Of 15 precession papers read, 6 report
+  this coefficient and 2 the old one. The old value was the circular-linear
+  correlation, which falls as the slope steepens even on a noiseless line
+  (0.78 at one cycle across the field, 0.39 at two) and did not use the fit, so
+  it did not say how tightly spikes follow the line, as the guide claimed.
+  `rho` also changes with the slope, and it is noisy near one cycle: compare
+  cells and conditions with `mean_resultant_length`, and compare with papers
+  with `rho`. `circular_linear_correlation` is unchanged.
+- The docs for `compute_phase_precession`, `has_phase_precession` and
+  `rayleigh_test` now say their p-values assume independent spikes. With burst
+  sizes measured on running CA1 spikes, simulated null cells reached `p < 0.05`
+  in 10-19% (precession) and 12-17% (Rayleigh) of cells, not 5%. Testing one
+  phase per burst gave 4-6% for Rayleigh.
+
+### Laps
+
+- `detect_laps(method="auto")` warns when trips along another route are common.
+  It keeps only laps like the first circuit, so on continuous alternation it
+  returned 10 of 20 laps, all one way, with no warning. `method="region"` with
+  the start region on the shared stem gives both routes.
+- `detect_laps(method="auto")` also warns when it finds no circuit at all. A
+  recording that starts at a junction used to return no laps with no message.
+
+### Trials
+
+- `detect_trials` and `detect_region_visits` take `min_dwell=`, the shortest
+  visit that counts, in seconds. The default, 0, keeps every entry. An entry to
+  a region is an arrival, so on a task with wells along a route, walking past a
+  well ended the trial: 40 simulated runs gave 56 trials, and `min_dwell=1.8`
+  recovered 40.
+- `detect_trials` warns when many visits crossed their region without slowing
+  down, and the docs say that duration cannot find a trial that stepped out of
+  a region, stood and came back.
+- `Trial.success` is removed. It meant "reached some other region", so a wrong
+  arm counted as a success. Use `trial.outcome == "reached"`, and add your
+  task's own correct and error labels with `Intervals.with_fields`.
+
 ### Replay tables say when each event happened
 
 - `compare_replay_methods` and `event_properties` gain `start_time`, `stop_time`

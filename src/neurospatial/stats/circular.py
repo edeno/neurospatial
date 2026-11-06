@@ -537,6 +537,14 @@ def rayleigh_test(
     samples, where ``exp(-z)`` is anti-conservative. For n < 6 it is
     conservative (p too large) below p = 0.01.
 
+    **Independence.** The test assumes independent angles. Spike phases are
+    not independent when spikes come in bursts, because spikes in a burst
+    share nearly the same phase. With burst sizes measured on running CA1
+    spikes in two recordings (1.2 to 1.3 spikes per event, grouping
+    inter-spike intervals up to 10 ms), simulated uniform phases reached
+    ``p < 0.05`` in 12-17% of cells, not 5%. Testing one phase per burst gave
+    4-6%.
+
     **Weighted variant.** When ``weights`` are supplied this is the
     grouped-data Rayleigh test: weights are frequencies, the resultant
     length is the weighted mean resultant length
@@ -665,6 +673,12 @@ def circular_linear_correlation(
     Under independence, ``n * r**2`` is approximately chi-squared with as many
     degrees of freedom as the fit (2, or 1 for collinear cos/sin). The
     approximation is conservative for small samples (n < 20).
+
+    ``r`` is not a measure of how tightly points follow a wrapped line. The
+    fit has one cycle of cosine and sine to work with, so a noiseless line
+    that turns through ``c`` whole cycles gives ``r = sqrt(6) / (pi * c)``:
+    0.78 at one cycle and 0.39 at two. For phase precession use
+    ``mean_resultant_length`` or ``rho`` from ``compute_phase_precession``.
 
     Examples
     --------

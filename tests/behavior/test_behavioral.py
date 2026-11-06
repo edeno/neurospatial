@@ -251,7 +251,7 @@ def test_time_to_goal_failed_trials():
 
     times = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])
 
-    # Create failed trial (end_region=None, success=False)
+    # Create failed trial (end_region=None)
     trials = Intervals(
         [
             Trial(

@@ -210,10 +210,20 @@ stability = field_stability(
 - `'pearson'`: Pearson correlation (linear relationship, parametric)
 - `'spearman'`: Spearman rank correlation (monotonic relationship, non-parametric)
 
-**Interpretation:**
-- **>0.7**: Highly stable field
-- **0.3-0.7**: Moderately stable
-- **<0.3**: Unstable or remapped field
+This is the rate-map correlation labs use: one cell's two maps, correlated
+across the bins defined in both. Which two maps you pass sets the question. Odd
+against even laps, or two halves of a session, measure stability. Two conditions
+measure remapping. There is no general cutoff for "stable", because the value
+also depends on occupancy, smoothing and the cell, so compare a value between
+conditions with the same cell's split of one condition.
+
+A cell silent in one map returns NaN, and `np.nanmean` leaves it out. Those are
+often the cells that changed most: in a simulation where the other cells did not
+change, the mean stayed 1.00 with 15%, 30% and 50% of cells silent in one
+condition. For a population, use
+[`compare_spatial_rates`](#population-vector-correlation), which gives the same
+correlation for each unit and a `status` saying why any unit was not scored, and
+report how many were left out.
 
 ## Population-Level Metrics
 
@@ -388,6 +398,60 @@ lacks occupancy or has a NaN rate there, or where every cell has the same rate. 
 condition are left out (`unit_selection="exact"` refuses them instead), and
 maps estimated on different environments need an explicit `bin_mapping=`, such
 as `part.bin_mapping_from(env).pairs` for a subset of the arena.
+
+**How much of the score is rate level?** Each location is scored by correlating
+across cells, so cells that keep their overall rate give a positive value even
+when every field has moved: 0.16 to 0.72 in a simulation of 100 cells with
+lognormal peak rates, one Gaussian field each and out-of-field firing up to 40%
+of the peak, rising with that firing. The value reaches 0 only when cells also change their rates. To see how
+much of your score comes from this, correlate each location with distant
+locations as well, as the Ji lab's analysis code does:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial.encoding import compute_spatial_rates, population_vector_correlation
+from neurospatial.ops import pairwise_distances
+from neurospatial.simulation import linear_track_session
+
+session = linear_track_session(duration=120.0, n_place_cells=12, n_laps=10, rng=0)
+unit_ids = np.arange(101, 113)  # the same units, in the same order, in both
+rates_a, rates_b = (
+    compute_spatial_rates(
+        session.env, session.spike_times, session.times, session.positions,
+        unit_ids=unit_ids, epochs=window, bandwidth=5.0, min_occupancy=0.05,
+    )
+    for window in ([0.0, 60.0], [60.0, 120.0])
+)
+
+bins = np.flatnonzero(rates_a.spatial_support & rates_b.spatial_support)
+a = rates_a.firing_rates[:, bins]
+b = rates_b.firing_rates[:, bins]
+across = np.corrcoef(a.T, b.T)[: bins.size, bins.size :]  # location in a by location in b
+
+distance = pairwise_distances(session.env.connectivity, bins)
+far = np.isfinite(distance) & (distance >= 30.0)  # beyond one field width, in cm
+
+same = np.nanmedian(np.diag(across))
+distant = np.nanmedian(across[far])
+print(f"same location {same:.2f}, distant locations {distant:.2f}")
+assert same > 0.9 > distant
+assert np.isclose(same, np.nanmedian(population_vector_correlation(rates_a, rates_b)))
+```
+
+`same` is the usual score and `distant` is what rate level gives alone, so read
+`same` against `distant`, not against 0. This simulation has few cells and no
+remapping, so `distant` is below zero. Between the two halves of real sessions,
+using units under 5 Hz, `same` and `distant` were 0.83 and 0.26 on
+`grosmark_2016`, and 0.90 and 0.18 on `comrie_2026`. In simulation, the difference between them was 0.01
+to 0.06 with every field moved, 0.90 with no remapping, 0.43 with rate remapping
+only, and 0 with global remapping.
+
+Dividing each cell by its peak first is a common alternative, and it answers a
+different question. Dividing by the peak across both maps gave negative values
+when rates were redrawn (-0.05 to -0.26). Dividing each map by its own peak hides
+rate remapping, which then scores 1.0.
 
 With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
 then be the same units in the same order in both, and pass
@@ -968,16 +1032,30 @@ little less than one theta cycle) across the 28 cm field, with p = 0.001,
 the smallest p-value 1000 shuffles can give. `slope` is in radians per cm;
 `normalized_slope` is the phase change across `position_range`. The
 p-value comes from shuffling which phase goes with which position and
-re-fitting the slope each time, and it is calibrated: on simulated spikes
-with no phase-position relationship it fell below 0.05 in 2-5% of cells
-for 10 to 200 spikes. `result.correlation` and `result.mean_resultant_length`
-describe how tightly the spikes follow the line; neither has a cutoff.
+re-fitting the slope each time, and it is calibrated for independent spikes:
+on simulated spikes with no phase-position relationship it fell below 0.05 in
+2-5% of cells for 10 to 200 spikes. Spikes in bursts are not independent. With
+burst sizes measured on running CA1 spikes in two recordings, simulated
+no-precession cells reached `p < 0.05` in 10-19% of cells, so read the fraction
+of significant weak or low-count cells with that in mind.
+
+Two numbers describe the fit, and neither has a cutoff.
+`result.mean_resultant_length` says how tightly the spikes follow the line,
+and it does not change with the slope, so use it to compare cells or
+conditions. `result.rho` is the coefficient many papers report: the circular
+correlation between phase and position wrapped at the fitted slope, negative
+for precession. Use it to compare with published values, but it depends on the
+slope as well as the scatter. With the same phase noise (von Mises, kappa 4,
+about 0.5 rad), `rho` was
+-0.65, -0.86, -0.89 and -0.75 at 0.25, 0.5, 0.75 and 1 cycles across the field,
+and near one cycle it also varies much more from cell to cell. Two groups with
+different slopes can have different `rho` and the same scatter.
 
 Choices that change the answer:
 
 - **Direction of travel.** With raw track positions, the leftward runs give
   +0.18 rad/cm, which reads as recession. Pooling both directions in raw
-  positions mixes the two slopes and the correlation drops to near zero.
+  positions mixes the two slopes and `rho` drops to near zero.
 - **One field, its own range.** Spikes from two fields, or from the whole
   track with the default range (the spike extent), give a slope pinned at
   the search bound of one theta cycle across the range, several times too

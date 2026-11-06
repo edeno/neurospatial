@@ -669,7 +669,6 @@ def test_with_fields_of_owned_fields_keeps_the_record_class() -> None:
         Trial(0.0, 8.0, "home", None, "censored"),
         Trial(10.0, 17.0, "home", None, "returned"),
     ]
-    assert [trial.success for trial in relabelled] == [False, False]
     assert relabelled.fields == ("start_region", "end_region", "outcome")
     assert relabelled.interval_ids.tolist() == [3, 5]
     assert relabelled.analysis_settings == {"detector": "test"}

@@ -1082,8 +1082,12 @@ def population_vector_correlation(
     The result correlates that vector in condition 1 with the same location's
     vector in condition 2, across cells, giving one value per location. This
     is the remapping measure of Leutgeb et al. (2005): near 1 where the
-    population fires the same way in both conditions, near 0 where the code at
-    that location is unrelated.
+    population fires the same way in both conditions. It is near 0 where the
+    code at that location is unrelated only when cells also change their
+    overall rates. Cells that keep their rates give a positive value even when
+    every field has moved: 0.16 to 0.72 in simulation, rising with out-of-field
+    firing, and 0.25 and 0.42 on two CA1 sessions with each cell's map scrambled.
+    Compare with the correlation between distant locations, as in the guide.
 
     Pass the two ``SpatialRatesResult`` of ``compute_spatial_rates(...,
     epochs=..., unit_ids=...)``, one per condition. Units are then paired by

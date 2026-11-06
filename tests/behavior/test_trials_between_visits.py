@@ -223,4 +223,4 @@ def test_visits_are_intervals_with_region(w_track_session):
 def test_trial_regions_are_names(start_region, end_region, outcome, match):
     with pytest.raises((TypeError, ValueError), match=match):
         Trial(0.0, 1.0, start_region, end_region, outcome)
-    assert Trial(0.0, 1.0, "well_1", "well_2", "reached").success
+    assert Trial(0.0, 1.0, "well_1", "well_2", "reached").outcome == "reached"

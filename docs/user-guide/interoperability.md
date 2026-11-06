@@ -347,6 +347,39 @@ recompute and rewrite those. Results you construct by hand without these choices
 have `analysis_settings=None`. CSV does not preserve
 DataFrame attributes: save the settings as a JSON sidecar, or use NetCDF/NWB.
 
+### Combining sessions
+
+Every table keeps its settings in `table.attrs`, but `pd.concat` silently empties
+`attrs` when they differ between tables, even by one value. A table joined across sessions then no longer records how it was
+made. Collect the settings yourself before you combine, with the package version:
+
+<!-- docs-test: run -->
+```python
+from importlib.metadata import version
+
+import pandas as pd
+
+from neurospatial import compute_spatial_rates
+from neurospatial.simulation import linear_track_session
+
+session = linear_track_session(duration=60.0, n_place_cells=4, n_laps=4, rng=0)
+tables = {
+    name: compute_spatial_rates(
+        session.env, session.spike_times, session.times, session.positions,
+        bandwidth=bandwidth, min_occupancy=0.05,
+    ).summary_table()
+    for name, bandwidth in {"day_1": 5.0, "day_2": 8.0}.items()
+}
+assert pd.concat(tables.values()).attrs == {}  # the settings are gone
+
+combined = pd.concat(table.assign(session=name) for name, table in tables.items())
+combined.attrs["sessions"] = {name: table.attrs for name, table in tables.items()}
+combined.attrs["neurospatial_version"] = version("neurospatial")
+assert combined.attrs["sessions"]["day_2"]["bandwidth"] == 8.0
+```
+
+Parquet keeps these attributes. CSV does not.
+
 ## `BayesianDecoder`
 
 `BayesianDecoder` is an optional **object wrapper** over the functional

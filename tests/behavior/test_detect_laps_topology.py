@@ -138,7 +138,10 @@ def test_figure_eight_track_has_loops():
         [np.linspace(nodes[a], nodes[b], 40, endpoint=False) for a, b in order]
     )
     positions = np.vstack([circuit] * 3)
-    laps = detect_laps(env, np.arange(len(positions)) / 30.0, positions)
+    # The start is the crossing, so the first circuit is one lobe and the
+    # trips round the other lobe are in no lap, which the warning reports.
+    with pytest.warns(UserWarning, match=r"3 trips .* against 3 laps"):
+        laps = detect_laps(env, np.arange(len(positions)) / 30.0, positions)
     assert len(laps) >= 2
 
 

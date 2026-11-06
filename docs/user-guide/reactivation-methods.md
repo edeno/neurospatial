@@ -789,7 +789,9 @@ in the two rest periods.
   EV against REV) or across patterns (t test of the differences against 0).
   Run each session in its own call, add a `session` column and concatenate
   the tables; `reactivation_detection_rates(table, groups=["session"])`
-  summarizes them.
+  summarizes them. `pd.concat` drops `attrs` that differ between tables, so
+  [collect each session's settings](interoperability.md#combining-sessions)
+  first.
 - **Your own variant.** `dataclasses.replace(KUDRIMOTI_1999, name=...,
   dt=0.2)` changes one choice and keeps the rest; give it a new name.
 

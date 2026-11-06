@@ -1114,7 +1114,7 @@ class Intervals(Generic[R]):
             record class with the new values, so ``outcome="reached"``
             without an ``end_region`` is refused as it is for a ``Trial``.
             When every name is such a field, the result holds the rebuilt
-            records, so a ``Trial`` stays a ``Trial`` (with its ``success``).
+            records, so a ``Trial`` stays a ``Trial``.
             A new field gives :class:`Interval` rows with the existing fields
             followed by the new ones; consumers read fields by name, so they
             work the same on either.
@@ -1147,8 +1147,8 @@ class Intervals(Generic[R]):
         >>> rescored = detected.with_fields(outcome=["censored"], end_region=[None])
         >>> rescored
         Intervals[Trial]: 1 interval in [0, 8) s; fields: start_region, end_region, outcome
-        >>> rescored[0].success
-        False
+        >>> rescored[0].outcome
+        'censored'
         """
         data = {name: self._field_array(name) for name in self._dtypes}
         for name, values in columns.items():

@@ -453,6 +453,18 @@ class TestCircularLinearCorrelation:
         with pytest.raises(ValueError, match="at least 3"):
             circular_linear_correlation(phases, positions)
 
+    @pytest.mark.parametrize("cycles", [1, 2, 3])
+    def test_noiseless_wrapped_line_falls_with_the_number_of_cycles(
+        self, cycles: int
+    ) -> None:
+        """A line through c whole cycles gives sqrt(6) / (pi * c), not 1."""
+        from neurospatial.stats.circular import circular_linear_correlation
+
+        positions = (np.arange(4000) + 0.5) / 4000
+        phases = (1.0 - 2 * np.pi * cycles * positions) % (2 * np.pi)
+        r, _ = circular_linear_correlation(phases, positions)
+        assert r == pytest.approx(np.sqrt(6) / (np.pi * cycles), abs=1e-3)
+
     def test_degenerate_case_constant_linear_variable(self) -> None:
         """Constant linear variable (no variation) gives an undefined (NaN) r."""
         from neurospatial.stats.circular import circular_linear_correlation
