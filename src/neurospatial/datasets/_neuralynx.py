@@ -3,7 +3,8 @@
 Fixed-layout binaries, so no Neuralynx library is needed. ``.ncs``, ``.nvt`` and
 ``.nev`` files open with a 16 kB ASCII header, then little-endian records whose
 timestamps are in microseconds. MClust's ``.t`` and ``._t`` files open with a
-text header, then big-endian 32-bit timestamps in units of 100 microseconds.
+text header, then big-endian timestamps in units of 100 microseconds, 32-bit
+as a rule and 64-bit in some files.
 Each function reads one file and returns what it stores, in seconds and in the
 file's own values: choosing a scale or a rule for missing samples is the
 loader's.
@@ -13,7 +14,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -192,6 +193,32 @@ def read_events(
     return times, tuple(text.decode("latin-1").strip() for text in records["text"])
 
 
+def _spike_words(path: str | os.PathLike[str]) -> NDArray[np.unsignedinteger[Any]]:
+    """The big-endian 32-bit words after an MClust file's header."""
+    data = Path(path).read_bytes()
+    marker = data.find(b"%%ENDHEADER")
+    end = data.find(b"\n", marker)
+    if marker < 0 or end < 0:
+        msg = f"{Path(path).name}: no MClust header (%%ENDHEADER not found)"
+        raise ValueError(msg)
+    return np.frombuffer(data, dtype=">u4", offset=end + 1)
+
+
+def is_64_bit(words: NDArray[np.unsignedinteger[Any]]) -> bool:
+    """Whether MClust words are 64-bit times, every high word zero.
+
+    The header does not say. The times are in tenths of a millisecond, so their
+    high words are zero; 32-bit times are not zero every other word. Two words
+    alone cannot show it, and are read as 32-bit.
+
+    Parameters
+    ----------
+    words : ndarray, shape (n_words,)
+        The file's big-endian 32-bit words.
+    """
+    return bool(words.size >= 4 and words.size % 2 == 0 and not np.any(words[::2]))
+
+
 def read_spike_times(path: str | os.PathLike[str]) -> NDArray[np.float64]:
     """The spike times of an MClust ``.t`` or ``._t`` file, in stored order.
 
@@ -209,11 +236,6 @@ def read_spike_times(path: str | os.PathLike[str]) -> NDArray[np.float64]:
     ValueError
         If the file has no MClust header.
     """
-    data = Path(path).read_bytes()
-    marker = data.find(b"%%ENDHEADER")
-    end = data.find(b"\n", marker)
-    if marker < 0 or end < 0:
-        msg = f"{Path(path).name}: no MClust header (%%ENDHEADER not found)"
-        raise ValueError(msg)
-    ticks = np.frombuffer(data, dtype=">u4", offset=end + 1)
+    words = _spike_words(path)
+    ticks = words[1::2] if is_64_bit(words) else words
     return ticks.astype(np.float64) * _TICK

@@ -108,6 +108,21 @@ def test_mclust_times_are_big_endian_tenths_of_a_millisecond(tmp_path, line_end)
     assert read_spike_times(path) == pytest.approx([1500.0, 1500.0123])
 
 
+def test_mclust_times_stored_in_64_bits_are_read_from_their_low_words(tmp_path):
+    path = tmp_path / "TT01_1.t"
+    path.write_bytes(
+        b"%%BEGINHEADER\n%%ENDHEADER\n" + struct.pack(">QQ", 24_008_830, 24_047_235)
+    )
+    assert read_spike_times(path) == pytest.approx([2400.883, 2404.7235])
+
+
+def test_a_32_bit_file_with_a_spike_at_zero_is_not_taken_for_64_bits(tmp_path):
+    path = tmp_path / "TT01_1.t"
+    words = struct.pack(">IIII", 0, 15, 20, 30)
+    path.write_bytes(b"%%BEGINHEADER\n%%ENDHEADER\n" + words)
+    assert read_spike_times(path) == pytest.approx([0.0, 0.0015, 0.002, 0.003])
+
+
 def test_a_file_without_an_mclust_header_is_refused(tmp_path):
     path = tmp_path / "TT04_1.t"
     path.write_bytes(b"\x00\x01\x02\x03")
