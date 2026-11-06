@@ -401,8 +401,9 @@ as `part.bin_mapping_from(env).pairs` for a subset of the arena.
 
 **How much of the score is rate level?** Each location is scored by correlating
 across cells, so cells that keep their overall rate give a positive value even
-when every field has moved: 0.16 to 0.72 in simulation, rising with out-of-field
-firing. The value reaches 0 only when cells also change their rates. To see how
+when every field has moved: 0.16 to 0.72 in a simulation of 100 cells with
+lognormal peak rates, one Gaussian field each and out-of-field firing up to 40%
+of the peak, rising with that firing. The value reaches 0 only when cells also change their rates. To see how
 much of your score comes from this, correlate each location with distant
 locations as well, as the Ji lab's analysis code does:
 
@@ -441,9 +442,9 @@ assert np.isclose(same, np.nanmedian(population_vector_correlation(rates_a, rate
 
 `same` is the usual score and `distant` is what rate level gives alone, so read
 `same` against `distant`, not against 0. This simulation has few cells and no
-remapping, so `distant` is below zero. Between the two halves of real CA1
-sessions, `same` and `distant` were 0.83 and 0.26 on `grosmark_2016`, and 0.90
-and 0.18 on `comrie_2026`. In simulation, the difference between them was 0.01
+remapping, so `distant` is below zero. Between the two halves of real sessions,
+using units under 5 Hz, `same` and `distant` were 0.83 and 0.26 on
+`grosmark_2016`, and 0.90 and 0.18 on `comrie_2026`. In simulation, the difference between them was 0.01
 to 0.06 with every field moved, 0.90 with no remapping, 0.43 with rate remapping
 only, and 0 with global remapping.
 
@@ -1035,17 +1036,18 @@ re-fitting the slope each time, and it is calibrated for independent spikes:
 on simulated spikes with no phase-position relationship it fell below 0.05 in
 2-5% of cells for 10 to 200 spikes. Spikes in bursts are not independent. With
 burst sizes measured on running CA1 spikes in two recordings, simulated
-no-precession cells reached `p < 0.05` in 10-18% of cells, so read the fraction
+no-precession cells reached `p < 0.05` in 10-19% of cells, so read the fraction
 of significant weak or low-count cells with that in mind.
 
 Two numbers describe the fit, and neither has a cutoff.
 `result.mean_resultant_length` says how tightly the spikes follow the line,
 and it does not change with the slope, so use it to compare cells or
-conditions. `result.rho` is the coefficient most papers report: the circular
+conditions. `result.rho` is the coefficient many papers report: the circular
 correlation between phase and position wrapped at the fitted slope, negative
 for precession. Use it to compare with published values, but it depends on the
-slope as well as the scatter. With the same 0.5 rad of phase noise, `rho` was
--0.65, -0.86, -0.89 and -0.74 at 0.25, 0.5, 0.75 and 1 cycles across the field,
+slope as well as the scatter. With the same phase noise (von Mises, kappa 4,
+about 0.5 rad), `rho` was
+-0.65, -0.86, -0.89 and -0.75 at 0.25, 0.5, 0.75 and 1 cycles across the field,
 and near one cycle it also varies much more from cell to cell. Two groups with
 different slopes can have different `rho` and the same scatter.
 

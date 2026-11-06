@@ -350,8 +350,7 @@ DataFrame attributes: save the settings as a JSON sidecar, or use NetCDF/NWB.
 ### Combining sessions
 
 Every table keeps its settings in `table.attrs`, but `pd.concat` silently empties
-`attrs` when they differ between tables, even by one value, and `groupby` also
-clears them. A table joined across sessions then no longer records how it was
+`attrs` when they differ between tables, even by one value. A table joined across sessions then no longer records how it was
 made. Collect the settings yourself before you combine, with the package version:
 
 <!-- docs-test: run -->

@@ -1101,8 +1101,8 @@ well), use [`detect_region_visits`](#observed-region-visits).
 
 Any entry to a region is an arrival. That suits wells at dead ends, where the
 animal has to stop, but on a task with wells along a route, walking past a well
-ends the trial. A warning says when many visits crossed their region at about
-running speed. Pass `min_dwell=` with the shortest stop you count as an arrival,
+ends the trial. A warning says when many visits crossed their region without
+slowing down. Pass `min_dwell=` with the shortest stop you count as an arrival,
 in seconds, or use hardware arrivals as below. Published analyses use either
 hardware events or a position rule that also requires a slow animal or a long
 enough stop, and `min_dwell` is off by default because the right length depends

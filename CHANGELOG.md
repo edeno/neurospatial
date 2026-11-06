@@ -34,7 +34,7 @@
 - The docs for `compute_phase_precession`, `has_phase_precession` and
   `rayleigh_test` now say their p-values assume independent spikes. With burst
   sizes measured on running CA1 spikes, simulated null cells reached `p < 0.05`
-  in 10-18% (precession) and 13-17% (Rayleigh) of cells, not 5%. Testing one
+  in 10-19% (precession) and 12-17% (Rayleigh) of cells, not 5%. Testing one
   phase per burst gave 4-6% for Rayleigh.
 
 ### Laps
@@ -53,8 +53,8 @@
   a region is an arrival, so on a task with wells along a route, walking past a
   well ended the trial: 40 simulated runs gave 56 trials, and `min_dwell=1.8`
   recovered 40.
-- `detect_trials` warns when many visits crossed their region at about running
-  speed, and the docs say that duration cannot find a trial that stepped out of
+- `detect_trials` warns when many visits crossed their region without slowing
+  down, and the docs say that duration cannot find a trial that stepped out of
   a region, stood and came back.
 - `Trial.success` is removed. It meant "reached some other region", so a wrong
   arm counted as a success. Use `trial.outcome == "reached"`, and add your

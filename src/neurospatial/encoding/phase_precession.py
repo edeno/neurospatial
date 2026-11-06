@@ -265,9 +265,9 @@ class PhasePrecessionResult(ResultMixin):
         and maximum spike position when it was not given.
     rho : float
         Circular correlation in [-1, 1] between phase and position wrapped at
-        the fitted slope, the coefficient most labs report for circular-linear
-        regression (Kempter et al., 2012). Signed by ``slope``, so precession
-        is negative. Descriptive: it does not determine ``p_value``, and it
+        the fitted slope, the coefficient many papers report for
+        circular-linear regression. Signed by ``slope``, so precession is
+        negative. Descriptive: it does not determine ``p_value``, and it
         depends on the slope as well as the scatter (see
         :func:`compute_phase_precession`). NaN below 5 spikes, or when the
         phases or the wrapped positions do not vary.
@@ -726,8 +726,8 @@ def compute_phase_precession(
     the position coordinate runs. In simulation, a precessing field crossed
     toward smaller track positions gave ``slope = +0.18`` rad/cm in raw
     track coordinates and ``-0.18`` rad/cm after flipping the coordinate;
-    pooling raw positions from both directions gave ``rho = 0.04``, against
-    ``-0.71`` in distance into the field.
+    pooling raw positions from both directions gave ``|rho|`` of about 0.05,
+    against ``rho`` of about -0.73 in distance into the field.
     Fit each running direction separately, or pool them in a coordinate
     that increases along each run (distance into the field), as in the
     example below.
@@ -767,9 +767,9 @@ def compute_phase_precession(
     precession analyses generally do, but spikes in a burst share a position
     and nearly share a phase, so the test sees more independent evidence than
     there is. With burst sizes measured on running CA1 spikes in two recordings
-    (about 1.3 spikes per event, grouping inter-spike intervals up to 10 ms),
+    (1.2 to 1.3 spikes per event, grouping inter-spike intervals up to 10 ms),
     simulated cells with no phase-position relationship reached ``p < 0.05``
-    in 10-18% of cells, not 5%. Only the burst sizes were measured; the phases
+    in 10-19% of cells, not 5%. Only the burst sizes were measured; the phases
     were simulated. Strongly precessing cells stay significant, so the risk
     is in the fraction of weak or low-count cells called significant.
 
@@ -781,17 +781,19 @@ def compute_phase_precession(
 
     **Rho.** ``rho`` correlates phase with position wrapped at the fitted
     slope, ``mod(|slope| * x, 2*pi)``, using each variable's circular mean
-    (the circular-circular coefficient of Jammalamadaka & Sarma, 1988, as in
-    Kempter et al., 2012), and takes the sign of the slope. Use it to compare
+    (the circular-circular coefficient of Jammalamadaka & Sarma, 1988), and
+    takes the sign of the slope, as in the FMA Toolbox and Barry lab code. Use
+    it to compare
     with published values. To compare how tightly spikes follow the line
     across cells or conditions, use ``mean_resultant_length``, which does not
-    depend on the slope. In simulation, 100 spikes with 0.5 rad of phase noise
-    had a resultant length of 0.86 to 0.87 at every slope, while ``|rho|`` was
-    0.65, 0.86, 0.89 and 0.74 at 0.25, 0.5, 0.75 and 1 cycles across the field.
+    depend on the slope. In simulation, 100 spikes with von Mises phase noise
+    (kappa 4, about 0.5 rad) had a resultant length of 0.87 at every slope,
+    while ``|rho|`` was 0.65, 0.86, 0.89 and 0.75 at 0.25, 0.5, 0.75 and 1
+    cycles across the field.
     A shallow slope wraps position onto a short arc, which lowers ``rho``.
     Near one cycle the phases cover the whole circle and their circular mean
     is poorly defined, so ``rho`` also becomes noisy: its SD across cells was
-    0.20 at one cycle against 0.03 at 0.75 cycles.
+    0.19 at one cycle against 0.03 at 0.75 cycles.
 
     Examples
     --------
@@ -1076,7 +1078,7 @@ def has_phase_precession(
     ``alpha / 2``. Spikes in bursts are not independent, and the p-value is
     too small for them; see :func:`compute_phase_precession`.
     There is no ``rho`` cutoff: ``|rho|`` of untuned spikes shrinks with the
-    spike count (it reached 0.2 in 59% of untuned 10-spike cells and 1% of
+    spike count (it reached 0.2 in 63% of untuned 10-spike cells and 1% of
     200-spike cells), so a fixed cutoff means a different error rate at every
     spike count, and real but weak precession can have a small ``|rho|`` and
     a small p-value.

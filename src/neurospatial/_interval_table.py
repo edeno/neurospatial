@@ -1114,7 +1114,7 @@ class Intervals(Generic[R]):
             record class with the new values, so ``outcome="reached"``
             without an ``end_region`` is refused as it is for a ``Trial``.
             When every name is such a field, the result holds the rebuilt
-            records, so a ``Trial`` stays a ``Trial`` (with its ``success``).
+            records, so a ``Trial`` stays a ``Trial``.
             A new field gives :class:`Interval` rows with the existing fields
             followed by the new ones; consumers read fields by name, so they
             work the same on either.

@@ -297,7 +297,7 @@ class TestPhasePrecession:
         assert result.p_value == 0.1
 
     def test_rho_in_valid_range(self) -> None:
-        """Correlation should be in [0, 1]."""
+        """Rho should be in [-1, 1]."""
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
         rng = np.random.default_rng(42)
@@ -1368,6 +1368,24 @@ class TestRho:
             )
         assert means[0.75][0] > means[0.25][0] + 0.15
         assert means[0.75][1] == pytest.approx(means[0.25][1], abs=0.02)
+
+    @pytest.mark.filterwarnings("ignore:The best-fitting phase-position slope")
+    def test_takes_the_sign_of_the_slope_even_on_weak_cells(self) -> None:
+        """The raw coefficient can disagree with the slope on a poor fit."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(5)
+        for _ in range(60):
+            positions = stimulus.uniform(0.0, 1.0, 40)
+            phases = 5.0 - 2 * np.pi * positions + stimulus.vonmises(0, 0.5, 40)
+            fit = compute_phase_precession(
+                positions,
+                phases % (2 * np.pi),
+                position_range=(0.0, 1.0),
+                n_shuffles=1,
+                rng=0,
+            )
+            assert np.sign(fit.rho) == np.sign(fit.slope)
 
     def test_is_nan_below_five_spikes(self) -> None:
         from neurospatial.encoding.phase_precession import compute_phase_precession
