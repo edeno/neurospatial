@@ -220,3 +220,81 @@ def test_defaulted_t_start_is_named_in_the_bounds_error() -> None:
     with pytest.raises(ValueError, match="earliest spike") as err:
         bin_spikes_in_time(spike_trains, dt=0.1, t_stop=1.0)
     assert "Fix:" in str(err.value)
+
+
+class TestOverlappingWindows:
+    """``step`` starts a window of width ``dt`` every ``step`` seconds."""
+
+    def test_counts_are_hand_computed(self) -> None:
+        # Windows [0, .02) [.01, .03) [.02, .04) [.03, .05) [.04, .06).
+        spikes = [np.array([0.005, 0.015, 0.025]), np.array([0.035, 0.0599])]
+        counts, centers = bin_spikes_in_time(
+            spikes, dt=0.02, step=0.01, t_start=0.0, t_stop=0.06
+        )
+        assert_array_equal(counts, [[2, 0], [2, 0], [1, 1], [0, 1], [0, 1]])
+        assert_allclose(centers, [0.01, 0.02, 0.03, 0.04, 0.05])
+
+    def test_a_window_includes_its_start_and_excludes_its_stop(self) -> None:
+        counts, _ = bin_spikes_in_time(
+            [np.array([0.01, 0.02])], dt=0.02, step=0.01, t_start=0.0, t_stop=0.04
+        )
+        # [0, .02) has 0.01; [.01, .03) has both; [.02, .04) has 0.02.
+        assert_array_equal(counts.ravel(), [1, 2, 1])
+
+    def test_counts_do_not_depend_on_spike_order(self) -> None:
+        spikes = [np.array([0.035, 0.005, 0.025])]
+        counts, _ = bin_spikes_in_time(
+            spikes, dt=0.02, step=0.01, t_start=0.0, t_stop=0.04
+        )
+        assert_array_equal(counts.ravel(), [1, 1, 2])
+
+    def test_step_equal_to_dt_matches_the_tiled_bins(self) -> None:
+        rng = np.random.default_rng(0)
+        spikes = [rng.uniform(0.0, 1.0, 50) for _ in range(4)]
+        tiled = bin_spikes_in_time(spikes, dt=0.02, t_start=0.0, t_stop=1.0)
+        stepped = bin_spikes_in_time(
+            spikes, dt=0.02, step=0.02, t_start=0.0, t_stop=1.0
+        )
+        assert_array_equal(stepped[0], tiled[0])
+        assert_array_equal(stepped[1], tiled[1])
+
+    def test_matches_adding_neighboring_bins(self) -> None:
+        """A 20 ms window stepped by 10 ms is two neighboring 10 ms bins."""
+        rng = np.random.default_rng(1)
+        spikes = [rng.uniform(0.0, 1.0, 80) for _ in range(5)]
+        fine, grid = bin_spikes_in_time(spikes, dt=0.01, t_start=0.0, t_stop=1.0)
+        counts, centers = bin_spikes_in_time(
+            spikes, dt=0.02, step=0.01, t_start=0.0, t_stop=1.0
+        )
+        assert_array_equal(counts, fine[:-1] + fine[1:])
+        assert_allclose(centers, (grid[:-1] + grid[1:]) / 2)
+
+    def test_every_window_is_whole(self) -> None:
+        """No window runs past t_stop; the last whole window ends at or before it."""
+        _, centers = bin_spikes_in_time(
+            [np.array([0.01])], dt=0.08, step=0.005, t_start=0.0, t_stop=0.1
+        )
+        assert_allclose(centers, 0.04 + 0.005 * np.arange(5))
+
+    def test_windows_stay_inside_each_epoch(self) -> None:
+        _, centers = bin_spikes_in_time(
+            [np.array([0.01])],
+            dt=0.02,
+            step=0.01,
+            epochs=[(0.0, 0.03), (1.0, 1.04)],
+        )
+        assert_allclose(centers, [0.01, 0.02, 1.01, 1.02, 1.03])
+
+    def test_neuron_x_time_transposes(self) -> None:
+        spikes = [np.array([0.005]), np.array([0.025])]
+        args = {"dt": 0.02, "step": 0.01, "t_start": 0.0, "t_stop": 0.04}
+        time_first, _ = bin_spikes_in_time(spikes, **args)
+        neuron_first, _ = bin_spikes_in_time(spikes, orient="neuron_x_time", **args)
+        assert_array_equal(neuron_first, time_first.T)
+
+    @pytest.mark.parametrize("step", [0.0, -0.01, np.inf, np.nan, 0.03])
+    def test_refuses_a_step_that_is_not_in_zero_to_dt(self, step) -> None:
+        with pytest.raises(ValueError, match="step"):
+            bin_spikes_in_time(
+                [np.array([0.01])], dt=0.02, step=step, t_start=0.0, t_stop=1.0
+            )

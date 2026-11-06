@@ -753,7 +753,9 @@ def dataset_values(
     Raises
     ------
     ValueError
-        If ``null`` is not a null this method can draw, ``shared`` is given
+        If ``null`` is not a null this method can draw or cannot test the
+        events' overlapping windows (see
+        :func:`~neurospatial.replay.replay_significance`), ``shared`` is given
         for a null that acts on each event, ``n_datasets`` is not a positive
         integer, a quantity is not a scalar of TrajectoryMetrics, an event is
         not a DecodingResult with times or was decoded on an environment
@@ -1396,6 +1398,7 @@ class _NullContext:
         root: np.random.SeedSequence,
         operation: str,
     ) -> _NullContext:
+        from neurospatial.replay._inputs import _window_width
         from neurospatial.replay.nulls import (
             _POSTERIOR_SHUFFLE_ALTERNATIVE,
             _track_order,
@@ -1404,9 +1407,17 @@ class _NullContext:
             _EventDecoder,
             _missing_decoding_inputs,
             _refuse_missing_decoding_inputs,
+            _refuse_shuffling_overlapping_windows,
             _require_contiguous_time_bins,
         )
 
+        for event in events:
+            _refuse_shuffling_overlapping_windows(
+                (null,),
+                np.asarray(event.times, dtype=np.float64),
+                _window_width(event, dt),
+                operation=operation,
+            )
         spec = _NULL_SPECS[null]
         if spec.along_track:
             order = _track_order(
@@ -2152,8 +2163,6 @@ def shuffle_events(
     operation = "shuffle_events()"
     validate_integer_at_least(n_datasets, 1, name="n_datasets", owner=operation)
     validate_choice(null, _NULLS, name="null", owner=operation)
-    from neurospatial.decoding import DecodingResult
-
     decoded = _decoded_events(env, events, operation)
     counts = _event_counts(spike_counts, decoded, operation)
     options = _null_options_of(null, null_options, operation)
@@ -2182,9 +2191,7 @@ def shuffle_events(
                 index, np.asarray(event.posterior, dtype=np.float64), event_counts
             )
         ):
-            posteriors[k].append(
-                DecodingResult(posterior=posterior, env=env, times=event.times)
-            )
+            posteriors[k].append(dataclasses.replace(event, posterior=posterior))
             if new_counts is not None:
                 shuffled_counts[k].append(np.asarray(new_counts))
     return [

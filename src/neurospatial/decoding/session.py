@@ -863,6 +863,7 @@ def _decode_with_models(
         times=centers,
         spike_window=spike_window,
         time_support=time_support,
+        dt=dt,
     )
 
 

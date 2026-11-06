@@ -5,6 +5,7 @@ Event windows, a decoded event's posterior rows and the times of those rows.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Literal
 
 import numpy as np
@@ -19,6 +20,78 @@ _STEP_WHY = (
     "jumps and the duration compare consecutive time bins, so the rows must "
     "be in time order"
 )
+
+
+def _recorded_decode(event: Any) -> Any:
+    """The ``DecodingResult`` holding an event's record of its time.
+
+    Separately decoded templates and the templates of a joint decode share one
+    time grid, so the first one answers.
+    """
+    if isinstance(event, Mapping):
+        return next(iter(event.values()))
+    if hasattr(event, "conditional"):
+        return next(iter(event.conditional.values()))
+    return event
+
+
+def _window_width(event: Any, dt: float | None) -> float | None:
+    """Width of an event's decoding windows, or ``None`` if nothing says.
+
+    The width the decoder recorded wins: ``dt`` can be the step between
+    windows by mistake, and a posterior given as an array records nothing.
+
+    Parameters
+    ----------
+    event : DecodingResult, JointDecodingResult, Mapping or array
+        The decoded event.
+    dt : float or None
+        The width the caller gave, if any.
+
+    Returns
+    -------
+    float or None
+    """
+    recorded = getattr(_recorded_decode(event), "dt", None)
+    return dt if recorded is None else float(recorded)
+
+
+def _event_identity(
+    event: Any, times: NDArray[np.float64], dt: float | None
+) -> dict[str, float | int]:
+    """When a decoded event happened and which interval it came from.
+
+    Parameters
+    ----------
+    event : DecodingResult, JointDecodingResult or Mapping
+        The decoded event.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        The event's time-bin centers, in seconds.
+    dt : float or None
+        Width of each decoding window, in seconds, for an event that does not
+        record the time it covers.
+
+    Returns
+    -------
+    dict
+        ``start_time`` and ``stop_time``, the start of the first decoded window
+        and the end of the last, in seconds, NaN when neither the event nor
+        ``dt`` says how wide the windows were; and ``interval_id``, NaN for an
+        event not decoded from an interval.
+    """
+    recorded = _recorded_decode(event)
+    if recorded.time_support is not None:
+        start, stop = recorded.time_support[0, 0], recorded.time_support[-1, 1]
+    elif dt is not None:
+        start, stop = times[0] - dt / 2, times[-1] + dt / 2
+    else:
+        start, stop = np.nan, np.nan
+    interval_id = recorded.interval_id
+    return {
+        "start_time": float(start),
+        "stop_time": float(stop),
+        "interval_id": np.nan if interval_id is None else interval_id,
+    }
 
 
 def _event_rows(intervals: Any) -> NDArray[np.float64]:

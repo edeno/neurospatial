@@ -3894,9 +3894,9 @@ def _spatial_rate_maps(
     window_messages : bool, default=True
         False when ``windows`` are a piece of the recording the caller chose,
         such as one direction label's runs: a piece with no usable interval
-        is an empty map, not a refusal, and the excluded-interval and
-        spike-time-window messages are left to the caller, which checks the
-        whole recording once.
+        is an empty map, not a refusal, and the excluded-interval,
+        spike-time-window and bandwidth messages are left to the caller, which
+        checks the whole recording once.
 
     Returns
     -------
@@ -4054,7 +4054,8 @@ def _spatial_rate_maps(
     # The inputs are valid, so a bandwidth below a bin or a units-free
     # default is announced here rather than ahead of an input error, and
     # also for a population with no units: the bandwidth is wrong either way.
-    warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
+    if window_messages:
+        warn_about_bandwidth(env, bandwidth, resolved_bandwidth, method)
 
     if n_neurons == 0:
         empty = _to_backend(
@@ -5813,12 +5814,12 @@ def compute_directional_place_fields(
         break_before=breaks,
         warn_on_drop=warn_on_drop,
     )
-    if bandwidth is None and method in ("diffusion_kde", "gaussian_kde"):
-        # A units-free default warns here, once per call; the per-label maps
-        # then get the resolved value, so they do not warn once per label.
-        resolved = resolve_spatial_bandwidth(env, None)
-        if warn_about_bandwidth(env, None, resolved, method):
-            bandwidth = resolved
+    # The bandwidth is announced here, once per call: the per-label maps run
+    # with window_messages=False.
+    if bandwidth is not None or method in ("diffusion_kde", "gaussian_kde"):
+        warn_about_bandwidth(
+            env, bandwidth, resolve_spatial_bandwidth(env, bandwidth), method
+        )
     for code in order:
         label = values[code]
         label_windows = run_windows[run_codes == code]

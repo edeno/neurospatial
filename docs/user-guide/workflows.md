@@ -312,7 +312,7 @@ rates_cm = compute_spatial_rates(
 )
 rates_m = compute_spatial_rates(
     env_in_meters, session.spike_times, session.times, session.positions,
-    unit_ids=session.unit_ids,
+    bandwidth=5.0, unit_ids=session.unit_ids,
 )
 try:
     compare_spatial_rates(rates_cm, rates_m)

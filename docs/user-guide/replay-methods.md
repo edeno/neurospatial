@@ -5,7 +5,7 @@ of population activity) and decoded them with place fields from running.
 Which events are replay? Published methods answer this differently. Each
 combines a score for how well the decoded positions follow a path, shuffles
 that say how large a score arises by chance, and thresholds. On the same
-events, their scores correlate weakly (Tingley & Peyrache 2020), and their
+events, their scores can disagree (Tingley & Peyrache 2020), and their
 false-positive rates differ even at the same α (Takigawa et al. 2024). Before
 you interpret a replay rate, know how much it depends on the method.
 
@@ -275,7 +275,12 @@ they agree. `WU_2017` and `TIROLE_2022` correlate at 0.21 with signs and
 between two signed scores, which then also agree on direction (0.89 to
 0.97 here). Tingley & Peyrache correlated the signed weighted correlation
 with the unsigned Radon line fit (R = 0.194), so part of that low value can
-come from the signs alone. `DAVIDSON_2009`'s line fit correlates weakly
+come from the signs alone. Their rank-order values (R = 0.003 to 0.126) are
+also hard to read: their released code correlates two sort orders, not ranks,
+so the value depends on how the cells are numbered, and a perfect reverse
+sequence scores about 0 under random numbering.
+`rank_order_correlation` does not depend on the numbering. `DAVIDSON_2009`'s
+line fit correlates weakly
 with every other score even without signs, because it scores stationary
 events as high as sweeps. Tingley & Peyrache also asked how each score
 holds up as an event degrades (their Fig. 4): `simulate_replay_event(...,
@@ -949,16 +954,38 @@ visited get no mass), and decode the null events with the same prior.
   min_speed=...)`. Unsupported bins are NaN, which the decoder treats as
   outside the track.
 - **Candidate events.** Pass your event intervals in seconds, on the same
-  clock as the spike times. `decode_intervals` decodes them in
-  non-overlapping time bins with one set of rate maps. Several papers
-  decoded overlapping windows (`method.decoding`, e.g. 20 ms windows stepped
-  by 10 ms for `WU_2017`). For those, bin each interval at the step,
-  `counts, grid = bin_spikes_in_time(spike_times, dt=0.01, t_start=start,
-  t_stop=stop)`, and add each pair of neighboring rows to make 20 ms
-  windows, `counts[:-1] + counts[1:]`, centered at
-  `(grid[:-1] + grid[1:]) / 2`. Decode them with
-  `decode_position(env, windows, rates, dt=0.02, times=centers)`. Do the
-  same for real and null events.
+  clock as the spike times. `decode_intervals` decodes them in time bins
+  with one set of rate maps. Several papers decoded overlapping windows
+  (`method.decoding`, e.g. 20 ms windows stepped by 10 ms for
+  `MUESSIG_2019`): pass `decode_intervals(env, spike_times, intervals, rates,
+  dt=0.02, step=0.01)`. Do the same for real and null events, and pass the
+  window width, `dt=0.02`, to the replay functions.
+- **Shuffles on overlapping windows.** Overlapping windows share spikes, so
+  neighboring rows are correlated even without a sequence. Most shuffles
+  lose that correlation, and a 5% test of a linear fit on simulated events
+  with no sequence then rejected 12% of events at 20 ms stepped by 10 ms and
+  24% at 20 ms stepped by 5 ms. Those nulls refuse overlapping windows. Only
+  `unit_identity` and `place_field_circular` keep the rows, and they stayed
+  close to their rate on tiled bins. `WU_2017` published 20 ms stepped by
+  10 ms with a time-bin shuffle, so it runs as published and warns that its
+  p-values are too small. An event from `decode_intervals` or `decode_position` records its
+  window width as `dt`; for a posterior passed as an array, pass `dt=` or
+  nothing can tell that its rows overlap.
+- **Fixed criteria on overlapping windows.** Recipes without a shuffle test
+  are not refused or warned about, but shared spikes affect them too, because
+  rows that share spikes look continuous. On simulated events with no
+  sequence, at each recipe's published windows, `CAREY_2019` called 3 to 90%
+  of events replay, `WIDLOSKI_FOSTER_2022` 2 to 29%, `PFEIFFER_FOSTER_2015` 9
+  to 19% and `PFEIFFER_FOSTER_2013` 0 to 6%, while `MALLORY_2025`,
+  `AMBROSE_2016` and `BERNERS_LEE_2022`, which also require a high weighted
+  correlation, stayed at 3% or less. The rate rose with event length, and for
+  most of these recipes with firing rate, so a fixed criterion has no single
+  false-positive rate and replay rates may not compare across conditions. These
+  simulations do not show that the papers' results are wrong: real events have
+  structure, and the recipes leave out some of the papers' other steps. Measure
+  it on your own events before you interpret a rate: make
+  `null_events(spike_times, intervals, kind="spike_time_uniform")`, decode them
+  with the same `dt` and `step`, and read `detection_rates` of the table.
 - **Shuffles.** Keep each recipe's published `n_shuffles`. Give `rng` a
   fixed seed and report it.
 - **Two running directions or two tracks.** Decode each event's spike
@@ -1004,7 +1031,8 @@ visited get no mass), and decode the null events with the same prior.
   time bins again with the rate maps permuted across cells. Its mean
   posterior spread and mean center-of-mass jump must each be smaller than
   in at least 96 of 100 shuffles (`tested_quantities`). Pass the 80 ms
-  windows stepped by 5 ms as the event, `dt=0.08`, the rate maps as
+  windows stepped by 5 ms as the event (`dt=0.08, step=0.005`), the rate
+  maps as
   `encoding_models` and the animal's speed rule as `valid_time_bins`. The
   table reports each quantity and its p-value, such as `mean_spread` and
   `tested_p_values[mean_spread]`.

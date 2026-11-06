@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
+import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -26,6 +27,7 @@ from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._random import _name_key, _root, _stream
 from neurospatial._results import ResultMixin, reduce_through_constructor
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial._validation import (
     is_integer_at_least,
     validate_callable,
@@ -156,6 +158,14 @@ _COUNT_CHANGING_NULLS = tuple(
     name for name, spec in _NULL_SPECS.items() if spec.spreads_spikes
 )
 _POOL_NULLS = tuple(name for name, spec in _NULL_SPECS.items() if spec.needs == "pool")
+# Measured on events with no sequence; see _refuse_shuffling_overlapping_windows.
+_OVERLAP_BLIND_NULLS = (
+    "column_cycle",
+    "column_cycle_weighted",
+    "time_bin_permutation",
+    "pseudo_event",
+    "spike_train_circular",
+)
 _DECODING_INPUTS = "spike_counts, encoding_models and dt"
 
 
@@ -504,9 +514,14 @@ def replay_significance(
     ValueError
         For inputs ``score`` refuses; if a null in ``nulls`` is unknown or
         lacks its inputs; if ``null_options`` names a null that is not run or
-        an option the null does not take; if ``"spike_time_uniform"`` is run
-        on time bins less than ``dt`` apart, or it or
-        ``"spike_train_circular"`` on time bins more than ``dt`` apart; if
+        an option the null does not take; if ``"column_cycle"``,
+        ``"column_cycle_weighted"``, ``"time_bin_permutation"``,
+        ``"pseudo_event"``, ``"spike_train_circular"`` or
+        ``"spike_time_uniform"`` is run on overlapping windows, time bins less
+        than ``dt`` apart (only ``"unit_identity"`` and
+        ``"place_field_circular"`` keep the rows' shared spikes); if
+        ``"spike_time_uniform"`` or
+        ``"spike_train_circular"`` is run on time bins more than ``dt`` apart; if
         only some of ``spike_counts``, ``encoding_models`` and ``dt`` are
         given; if decoding
         ``spike_counts`` with ``encoding_models``, ``dt`` and ``prior`` does
@@ -788,6 +803,96 @@ def _track_env(
     return env[template]
 
 
+def _refuse_shuffling_overlapping_windows(
+    nulls: Sequence[str],
+    times: NDArray[np.float64],
+    width: float | None,
+    *,
+    operation: str = _OPERATION,
+    published: bool = False,
+) -> bool:
+    """Refuse nulls that cannot test windows closer together than ``width``.
+
+    Overlapping windows share spikes, so neighboring rows are correlated even
+    without a sequence, and these nulls lose that correlation: the observed
+    event then looks smoother than every shuffle, whatever it holds.
+
+    Parameters
+    ----------
+    nulls : sequence of str
+        The nulls to run; only those in ``_OVERLAP_BLIND_NULLS`` are refused.
+    times : NDArray[np.float64], shape (n_time_bins,)
+        Time-window centers, in seconds.
+    width : float or None
+        Width of each window, in seconds; ``None`` when unknown, which cannot
+        be checked.
+    operation : str
+        The calling function, for the message.
+    published : bool, default=False
+        The method's paper used these windows, so warn instead of refusing:
+        reproducing a published method is a legitimate analysis.
+
+    Returns
+    -------
+    bool
+        Whether a warning was issued.
+
+    Warns
+    -----
+    UserWarning
+        If ``published`` and a null in ``_OVERLAP_BLIND_NULLS`` tests
+        overlapping windows.
+
+    Raises
+    ------
+    ValueError
+        If a null in ``_OVERLAP_BLIND_NULLS`` is asked to test overlapping
+        windows, unless ``published``.
+    """
+    blind = [name for name in nulls if name in _OVERLAP_BLIND_NULLS]
+    spacing = np.diff(np.sort(np.asarray(times, dtype=np.float64).ravel()))
+    if not blind or width is None or not spacing.size:
+        return False
+    # The median ignores missing rows and clock jitter, which the centers of
+    # tiled bins carry (float32 storage, rounding on a Unix clock). The 1%
+    # matches the allowance of _time_bins_in_windows.
+    step = float(np.median(spacing))
+    if step >= width * 0.99:
+        return False
+    why = (
+        "overlapping windows share spikes, so neighboring rows are correlated "
+        "even without a sequence, and these shuffles lose that correlation. On "
+        "simulated events with no sequence a 5% test rejected about 12% of "
+        "events at 20 ms stepped by 10 ms, 24% at 20 ms stepped by 5 ms and 61% "
+        "at 80 ms stepped by 5 ms"
+    )
+    fix = (
+        "decode in windows that tile the event (no step), or use a null that "
+        "keeps the rows: unit_identity or place_field_circular"
+    )
+    windows = f"times are about {step:g} s apart with windows {width:g} s wide."
+    if published:
+        warnings.warn(
+            _format_error(
+                f"{operation}: p-values from {blind} are too small on overlapping "
+                f"windows: {windows} The method's paper used such windows, so it "
+                "runs as published.",
+                why=why,
+                fix=fix,
+            ),
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
+        return True
+    raise ValueError(
+        _format_error(
+            f"{operation} cannot test overlapping windows with {blind}: {windows}",
+            why=why,
+            fix=fix,
+        )
+    )
+
+
 def _check_nulls_fit_event(
     run: Sequence[str],
     times: NDArray[np.float64],
@@ -797,10 +902,12 @@ def _check_nulls_fit_event(
 ) -> None:
     """Refuse nulls that cannot shuffle this event as it is given.
 
-    The nulls that spread spikes need contiguous time bins; spike counts in
-    ``score_options`` would not follow the nulls that move rows; and the
-    pseudo-event null has no spike counts to zero its empty time bins with.
+    Some nulls cannot test overlapping windows; the nulls that spread spikes
+    need contiguous time bins; spike counts in ``score_options`` would not
+    follow the nulls that move rows; and the pseudo-event null has no spike
+    counts to zero its empty time bins with.
     """
+    _refuse_shuffling_overlapping_windows(run, times, dt)
     spreading = [name for name in run if name in _COUNT_CHANGING_NULLS]
     if spreading:
         assert dt is not None  # _nulls_to_run needs the decoding inputs.

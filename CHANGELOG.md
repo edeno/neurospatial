@@ -2,6 +2,67 @@
 
 ## [Unreleased]
 
+### Replay tables say when each event happened
+
+- `compare_replay_methods` and `event_properties` gain `start_time`, `stop_time`
+  and `interval_id` columns, so an event can be joined to behavior, trials or
+  sleep state. `event` is still the position in the list passed in, which
+  changes when the list is filtered. `start_time` and `stop_time` are the start
+  of the first decoded window and the end of the last, in seconds: a remainder
+  shorter than `dt` is not included. They are NaN when neither the event's
+  `time_support` nor `dt` gives the window width.
+- `DecodingResult.interval_id` is new. `decode_intervals` records the
+  `Intervals` id, or the row of an array, and now records `time_support` on the
+  events it decodes in one pass, as it already did one interval at a time.
+  Joint decodes have no `interval_id`: use `start_time` to join them.
+
+### Overlapping decoding windows
+
+- `decode_intervals` and `bin_spikes_in_time` take `step=`, the time between the
+  starts of windows of width `dt`, so the overlapping windows that 12 recipe
+  settings record (`time_bin`, `time_step`) can be run directly: 20 ms stepped
+  by 5 ms is `dt=0.02, step=0.005`. Windows are whole, a spike counts in every
+  window that holds it, and `step` must be at most `dt`.
+- `replay_significance`, `detect_replay`, `compare_replay_methods`,
+  `dataset_values` and `shuffle_events` refuse `column_cycle`,
+  `column_cycle_weighted`, `time_bin_permutation`, `pseudo_event` and
+  `spike_train_circular` on overlapping windows. Those windows share spikes, so
+  neighboring rows are correlated without any sequence, and these shuffles lose
+  that. On simulated events with no sequence a 5% test of a linear fit rejected
+  about 12% of events at 20 ms stepped by 10 ms, 24% at 20 ms stepped by 5 ms
+  and 61% at 80 ms stepped by 5 ms (`spike_train_circular`: 6% and 26% at the
+  last two). `unit_identity` and `place_field_circular` stayed close to their
+  rate on tiled bins and still run. A method whose `decoding` settings publish
+  overlapping windows warns instead, so it can be run as published: of the 12
+  such recipes this applies to `WU_2017`. `dataset_values` and `shuffle_events`
+  take the null directly, so they refuse it for every method.
+- `DecodingResult.dt` is new: the decoders record each window's width, and it
+  decides whether rows overlap, ahead of any `dt=` passed to a replay function.
+  A posterior passed as an array records nothing, so pass `dt=` for it to be
+  checked. `shuffle_events` now keeps each event's `dt`, `interval_id` and
+  `time_support`.
+
+### Documentation corrections
+
+- The replay guide and `decode_intervals` now say that overlapping windows also
+  affect recipes with fixed criteria, which have no null to refuse. On simulated
+  events with no sequence, at published windows, `CAREY_2019` called 3 to 90% of
+  events replay and `WIDLOSKI_FOSTER_2022` 2 to 29%, depending on event length
+  and firing rate. The guide shows how to measure this with `null_events`.
+- The replay guide no longer says published replay scores correlate weakly in
+  general. Tingley & Peyrache's rank-order values (R = 0.003 to 0.126) come from
+  released code that correlates sort orders, so they depend on cell numbering.
+- `differential-operators.md` no longer cites Stachenfeld et al. 2017 for flow
+  fields, which that paper does not discuss, or claims a successor
+  representation that the example does not compute.
+
+### The 5 cm default bandwidth warns on large bins
+
+- A kernel method with the default bandwidth now warns when 5 cm is below a
+  quarter of the bin size, as an explicit bandwidth already did. On 1 m bins
+  it smoothed by almost nothing without saying so. The warning also catches an
+  `Environment` whose `units` are wrong. Pass `bandwidth=` to silence it.
+
 ### Dataset loaders
 
 #### Loading and cataloguing
