@@ -60,6 +60,7 @@ from neurospatial.replay import (
 from neurospatial.replay.methods import (
     DAVIDSON_2009,
     DIBA_BUZSAKI_2007,
+    GROSMARK_2016,
     SILVA_2015,
     TIROLE_2022,
     WU_2017,
@@ -389,6 +390,47 @@ More real events, not more copies, narrow them.
   those cells' fields still lie along it.
 - `SILVA_2015` has no shuffles, and its thresholds keep its rate low on
   every kind.
+
+### The place-field circular shuffle
+
+`"place_field_circular"` shifts each cell's rate map by its own random number of
+bins and wraps it around the ends of the track. `GROSMARK_2016`, `TIROLE_2022`,
+`OLAFSDOTTIR_2016`, `OLAFSDOTTIR_2017` and `IGATA_2021` use it. On a real linear
+track it can call events with no sequence content replay far above α: 18.8% at
+p < 0.05 on Grosmark et al.'s Achilles session, with the same events at 5.6% on maps
+of shifted spikes. Grosmark et al.'s own Poisson surrogates show the same offset
+(Fig. S8A), so this is a property of the shuffle, not of the code.
+
+The cause is that real maps are not like shifted ones. A shifted field that reaches
+an end splits between both ends, which a real field never does, and real fields
+crowd near the track's ends. Decoding with shifted maps then gives a wider
+posterior, which lowers the null's weighted correlation.
+
+The presets keep the published shuffle. If you compare a rate across sessions or
+conditions, or read it as an amount of replay, also test with
+`"time_bin_permutation"`, which breaks the order of the decoded positions. On the
+same data this took no-content events to 2 to 8% in a separate check. Requiring
+both is a change from the published method, so say so when you report it:
+
+<!-- docs-test: run -->
+```python
+both = dataclasses.replace(
+    GROSMARK_2016,
+    n_shuffles=200,
+    nulls=("place_field_circular", "time_bin_permutation"),
+)
+stricter = compare_replay_methods(
+    env,
+    events,
+    replay_methods=[both],
+    spike_counts=counts,
+    spike_times=rest_spikes,
+    encoding_models=rates,
+    dt=dt,
+    rng=0,
+)
+print(f"{stricter['is_replay'].sum()} of {len(stricter)} events")
+```
 
 ## Rates depend on the event
 

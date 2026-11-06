@@ -410,6 +410,9 @@
   `"time_bin_permutation"`, which breaks the order. An event of n time bins has
   n - 1 distinct shifts, so under 20 time bins p < 0.05 needs no shift to score
   as high as the event.
+- The replay methods guide explains why `"place_field_circular"` calls events with
+  no sequence content replay above α, and how to test with `"time_bin_permutation"`
+  as well. `IGATA_2021`'s notes now say what its p-value measures.
 - `huszar_2022`: Huszár et al. (2022), DANDI 000552 (CC-BY-4.0): mouse CA1 on a
   figure-eight maze with sleep states, ripples and rewards, 65 sessions, one
   checked by hand; the environment is a track graph with both loops closed. LFP
