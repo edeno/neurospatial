@@ -54,6 +54,7 @@ Lap
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -1320,7 +1321,10 @@ def detect_laps(
       'reference' when the first circuit is atypical. A space without a loop
       (a linear track, a tree maze, an open arena) raises: use
       :func:`detect_trials` for its runs, or 'reference' to segment round
-      trips against a template.
+      trips against a template. With two recurring routes, as in continuous
+      alternation, the first circuit fits only one of them: the other
+      route's trips are in no lap, and a warning says so when they are
+      common. Use 'region' there.
     - **Region**: A lap is a trip out of a start region and round the loop
       back into it, useful for well-controlled tasks with clear start zones.
       The start region cuts the loop track into a stretch on each side of
@@ -1334,7 +1338,10 @@ def detect_laps(
       ``[entry, entry that ends its trip)``, starting at the entry that
       precedes the trip, so time spent on a turn back belongs to no lap.
       When the recording starts inside the start region, the first lap
-      starts at the first sample. ``overlap_score`` is NaN.
+      starts at the first sample. ``overlap_score`` is NaN. On a maze with
+      two routes, place the region on the stretch both routes share. A
+      region on one route's arm counts the trip round both routes as one
+      lap: 20 alternating circuits gave 9 laps, each two circuits long.
 
       "Stay away from the region" is measured in connectivity-graph steps:
       the bins ``k`` and ``k + 1`` steps from the region form a band, and
@@ -1583,6 +1590,17 @@ def detect_laps(
     else:
         found = _first_circuit(position_bins, runs, env)
         if found is None:
+            if position_bins.size:
+                warnings.warn(
+                    "detect_laps(): no lap found, because no trip from the first "
+                    "observed position went round a loop and came back to it. "
+                    "This also happens when the recording starts at a junction, "
+                    "where a start line does not cut the loop. Fix: pass "
+                    "method='region' with a start_region drawn across the track, "
+                    "or method='reference' with reference_lap=.",
+                    UserWarning,
+                    stacklevel=2,
+                )
             return Intervals(laps, record_type=Lap, analysis_settings=settings)
         template = found
     anchor = int(template[0])
@@ -1590,20 +1608,35 @@ def detect_laps(
     adjacency = nx.to_scipy_sparse_array(
         env.connectivity, nodelist=range(env.n_bins), weight=None, format="csr"
     )
+    n_matched = n_elsewhere = 0
     for run in runs:
-        laps.extend(
-            _detect_laps_search_contiguous(
-                position_bins[run],
-                times[run],
-                env,
-                template=_widen(template, adjacency),
-                adjacency=adjacency,
-                anchor=anchor,
-                zone=zone,
-                min_overlap=min_overlap,
-                direction=direction,
-                linear=linear,
-            )
+        run_laps, run_matched, run_elsewhere = _detect_laps_search_contiguous(
+            position_bins[run],
+            times[run],
+            env,
+            template=_widen(template, adjacency),
+            adjacency=adjacency,
+            anchor=anchor,
+            zone=zone,
+            min_overlap=min_overlap,
+            direction=direction,
+            linear=linear,
+        )
+        laps.extend(run_laps)
+        n_matched += run_matched
+        n_elsewhere += run_elsewhere
+    if method == "auto" and n_elsewhere > 1 and n_elsewhere >= n_matched / 4:
+        warnings.warn(
+            f"detect_laps(): {n_elsewhere} trips left the start line and came "
+            f"back along a route the first circuit does not cover, against "
+            f"{n_matched} laps that match it. method='auto' keeps only laps "
+            "like the first circuit, so the other route's laps are not in the "
+            "result. Fix: on a maze with two routes, such as continuous "
+            "alternation, pass method='region' with a start_region on the "
+            "stretch both routes share. To count one route on purpose, pass "
+            "method='reference' with reference_lap=.",
+            UserWarning,
+            stacklevel=2,
         )
     return Intervals(laps, record_type=Lap, analysis_settings=settings)
 
@@ -1862,7 +1895,7 @@ def _detect_laps_search_contiguous(
     min_overlap: float,
     direction: str,
     linear: NDArray[np.float64] | None,
-) -> list[Lap]:
+) -> tuple[list[Lap], int, int]:
     """Split one recording into laps at passes through the template's start.
 
     A lap ends at the first pass ``p`` for which some stretch from an
@@ -1871,11 +1904,23 @@ def _detect_laps_search_contiguous(
     therefore starts the next lap afresh instead of being merged into it,
     while a lap whose route crosses the start line midway (a figure-eight)
     is still found whole, because its second half alone does not match.
+
+    Returns the laps kept by ``direction``, the number that matched before
+    that filter, and the number of stretches between passes in no lap that
+    ran mostly outside the template: another route, not a turn back.
     """
+
+    def elsewhere(stretches: list[NDArray[np.bool_]]) -> int:
+        return sum(
+            2 * np.count_nonzero(stretch & ~template) > np.count_nonzero(stretch)
+            for stretch in stretches
+        )
+
     laps: list[Lap] = []
+    n_matched = n_elsewhere = 0
     passes = _pass_samples(position_bins, env, anchor, zone)
     if not passes:
-        return laps
+        return laps, n_matched, n_elsewhere
     # A pass after a stretch that never leaves one ring around the start
     # zone (jitter across its edge, a pause at the start line) continues
     # the previous pass.
@@ -1906,6 +1951,8 @@ def _detect_laps_search_contiguous(
                 break
         else:
             continue
+        n_matched += 1
+        n_elsewhere += elsewhere(pieces[:k])
         lap_start = starts[k]
         lap_direction = _detect_lap_direction(
             env.bin_centers, position_bins[lap_start:candidate], linear
@@ -1921,7 +1968,7 @@ def _detect_laps_search_contiguous(
             )
         starts, pieces = [candidate], []
         reach = np.zeros_like(template)
-    return laps
+    return laps, n_matched, n_elsewhere + elsewhere(pieces)
 
 
 # =============================================================================

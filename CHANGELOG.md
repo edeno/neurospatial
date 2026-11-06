@@ -20,6 +20,15 @@
   in 10-18% (precession) and 13-17% (Rayleigh) of cells, not 5%. Testing one
   phase per burst gave 4-6% for Rayleigh.
 
+### Laps
+
+- `detect_laps(method="auto")` warns when trips along another route are common.
+  It keeps only laps like the first circuit, so on continuous alternation it
+  returned 10 of 20 laps, all one way, with no warning. `method="region"` with
+  the start region on the shared stem gives both routes.
+- `detect_laps(method="auto")` also warns when it finds no circuit at all. A
+  recording that starts at a junction used to return no laps with no message.
+
 ### Trials
 
 - `Trial.success` is removed. It meant "reached some other region", so a wrong

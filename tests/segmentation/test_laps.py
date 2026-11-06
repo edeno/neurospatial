@@ -208,7 +208,8 @@ class TestDetectLaps:
 
         from neurospatial.behavior.segmentation import detect_laps
 
-        laps = detect_laps(env, times, positions, method="auto", min_overlap=0.8)
+        with pytest.warns(UserWarning, match="no lap found"):
+            laps = detect_laps(env, times, positions, method="auto", min_overlap=0.8)
 
         # Half a circuit should not produce laps
         assert len(laps) == 0
@@ -782,3 +783,99 @@ class TestTemplateLapsSkipTurnBacks:
         ]
         laps = detect_laps(env, np.arange(len(positions)) / self.FS, positions)
         self._assert_laps(laps, [(8.0, 18.0, 10.0), (18.0, 28.0, 10.0)])
+
+
+class TestAutoWarnsAboutAnotherRoute:
+    """method="auto" keeps one route, so it says when another is common."""
+
+    @staticmethod
+    def _figure_eight():
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+
+        area = box(0, 0, 120, 100).difference(box(10, 10, 55, 90))
+        area = area.difference(box(65, 10, 110, 90))
+        return Environment.from_polygon(area, bin_size=2.5, units="cm")
+
+    @staticmethod
+    def _path(corners, speed=40.0, fps=30.0):
+        corners = np.asarray(corners, dtype=float)
+        along = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(corners, axis=0), axis=1))]
+        steps = np.arange(0.0, along[-1], speed / fps)
+        return np.column_stack(
+            [np.interp(steps, along, corners[:, axis]) for axis in (0, 1)]
+        )
+
+    def _session(self, routes):
+        left = [(60, 50), (60, 95), (5, 95), (5, 5), (60, 5), (60, 50)]
+        right = [(60, 50), (60, 95), (115, 95), (115, 5), (60, 5), (60, 50)]
+        positions = np.vstack(
+            [self._path(left if route == "L" else right) for route in routes]
+        )
+        noise = np.random.default_rng(0).normal(0.0, 0.3, positions.shape)
+        return positions + noise, np.arange(len(positions)) / 30.0
+
+    def test_alternation_warns_and_a_region_on_the_stem_finds_both_routes(self) -> None:
+        from shapely.geometry import box
+
+        from neurospatial import Regions
+        from neurospatial.behavior import detect_laps
+
+        env = self._figure_eight()
+        positions, times = self._session("LR" * 10)
+        with pytest.warns(UserWarning, match=r"\d+ trips .* against 10 laps"):
+            laps = detect_laps(env, times, positions)
+        assert len(laps) == 10
+        assert len(set(laps.direction)) == 1
+
+        regions = Regions()
+        regions.add("stem", polygon=box(55, 20, 65, 30))
+        by_region = detect_laps(
+            env.with_regions(regions),
+            times,
+            positions,
+            method="region",
+            start_region="stem",
+        )
+        assert len(by_region) >= 19
+        assert set(by_region.direction) == {"clockwise", "counter-clockwise"}
+
+    @pytest.mark.filterwarnings("error::UserWarning")
+    def test_one_route_is_silent(self) -> None:
+        from neurospatial.behavior import detect_laps
+
+        positions, times = self._session("L" * 20)
+        assert len(detect_laps(self._figure_eight(), times, positions)) == 20
+
+    @pytest.mark.filterwarnings("error::UserWarning")
+    def test_a_rare_other_route_is_silent(self) -> None:
+        from neurospatial.behavior import detect_laps
+
+        routes = "LLLLLLLRLLLLLLLRLLLLL"
+        positions, times = self._session(routes)
+        laps = detect_laps(self._figure_eight(), times, positions)
+        assert len(laps) == routes.count("L")
+
+    @pytest.mark.filterwarnings("error::UserWarning")
+    def test_an_explicit_template_is_a_choice(self) -> None:
+        from neurospatial.behavior import detect_laps
+
+        env = self._figure_eight()
+        positions, times = self._session("LR" * 10)
+        one_lap = env.bin_at(positions[times < 7.0])
+        laps = detect_laps(
+            env, times, positions, method="reference", reference_lap=one_lap
+        )
+        assert len(laps) == 10
+
+    def test_a_start_at_the_junction_says_why_no_lap_was_found(self) -> None:
+        from neurospatial.behavior import detect_laps
+
+        corners = [(60, 5), (60, 95), (5, 95), (5, 5), (60, 5)]
+        positions = np.vstack([self._path(corners)] * 6)
+        positions += np.random.default_rng(0).normal(0.0, 0.3, positions.shape)
+        times = np.arange(len(positions)) / 30.0
+        with pytest.warns(UserWarning, match="no lap found"):
+            laps = detect_laps(self._figure_eight(), times, positions)
+        assert len(laps) == 0
