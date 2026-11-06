@@ -210,10 +210,20 @@ stability = field_stability(
 - `'pearson'`: Pearson correlation (linear relationship, parametric)
 - `'spearman'`: Spearman rank correlation (monotonic relationship, non-parametric)
 
-**Interpretation:**
-- **>0.7**: Highly stable field
-- **0.3-0.7**: Moderately stable
-- **<0.3**: Unstable or remapped field
+This is the rate-map correlation labs use: one cell's two maps, correlated
+across the bins defined in both. Which two maps you pass sets the question. Odd
+against even laps, or two halves of a session, measure stability. Two conditions
+measure remapping. There is no general cutoff for "stable", because the value
+also depends on occupancy, smoothing and the cell, so compare a value between
+conditions with the same cell's split of one condition.
+
+A cell silent in one map returns NaN, and `np.nanmean` leaves it out. Those are
+often the cells that changed most: in a simulation where the other cells did not
+change, the mean stayed 1.00 with 15%, 30% and 50% of cells silent in one
+condition. For a population, use
+[`compare_spatial_rates`](#population-vector-correlation), which gives the same
+correlation for each unit and a `status` saying why any unit was not scored, and
+report how many were left out.
 
 ## Population-Level Metrics
 
@@ -388,6 +398,59 @@ lacks occupancy or has a NaN rate there, or where every cell has the same rate. 
 condition are left out (`unit_selection="exact"` refuses them instead), and
 maps estimated on different environments need an explicit `bin_mapping=`, such
 as `part.bin_mapping_from(env).pairs` for a subset of the arena.
+
+**How much of the score is rate level?** Each location is scored by correlating
+across cells, so cells that keep their overall rate give a positive value even
+when every field has moved: 0.16 to 0.72 in simulation, rising with out-of-field
+firing. The value reaches 0 only when cells also change their rates. To see how
+much of your score comes from this, correlate each location with distant
+locations as well, as the Ji lab's analysis code does:
+
+<!-- docs-test: run -->
+```python
+import numpy as np
+
+from neurospatial.encoding import compute_spatial_rates, population_vector_correlation
+from neurospatial.ops import pairwise_distances
+from neurospatial.simulation import linear_track_session
+
+session = linear_track_session(duration=120.0, n_place_cells=12, n_laps=10, rng=0)
+unit_ids = np.arange(101, 113)  # the same units, in the same order, in both
+rates_a, rates_b = (
+    compute_spatial_rates(
+        session.env, session.spike_times, session.times, session.positions,
+        unit_ids=unit_ids, epochs=window, bandwidth=5.0, min_occupancy=0.05,
+    )
+    for window in ([0.0, 60.0], [60.0, 120.0])
+)
+
+bins = np.flatnonzero(rates_a.spatial_support & rates_b.spatial_support)
+a = rates_a.firing_rates[:, bins]
+b = rates_b.firing_rates[:, bins]
+across = np.corrcoef(a.T, b.T)[: bins.size, bins.size :]  # location in a by location in b
+
+distance = pairwise_distances(session.env.connectivity, bins)
+far = np.isfinite(distance) & (distance >= 30.0)  # beyond one field width, in cm
+
+same = np.nanmedian(np.diag(across))
+distant = np.nanmedian(across[far])
+print(f"same location {same:.2f}, distant locations {distant:.2f}")
+assert same > 0.9 > distant
+assert same == np.nanmedian(population_vector_correlation(rates_a, rates_b))
+```
+
+`same` is the usual score and `distant` is what rate level gives alone, so read
+`same` against `distant`, not against 0. This simulation has few cells and no
+remapping, so `distant` is below zero. Between the two halves of real CA1
+sessions, `same` and `distant` were 0.83 and 0.26 on `grosmark_2016`, and 0.90
+and 0.18 on `comrie_2026`. In simulation, the difference between them was 0.01
+to 0.06 with every field moved, 0.90 with no remapping, 0.43 with rate remapping
+only, and 0 with global remapping.
+
+Dividing each cell by its peak first is a common alternative, and it answers a
+different question. Dividing by the peak across both maps gave negative values
+when rates were redrawn (-0.05 to -0.26). Dividing each map by its own peak hides
+rate remapping, which then scores 1.0.
 
 With your own `(n_units, n_bins)` matrices, pass two arrays instead. Rows must
 then be the same units in the same order in both, and pass

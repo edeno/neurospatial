@@ -424,8 +424,9 @@ def field_stability(
         more stable place fields. NaN when the correlation is undefined:
         fewer than 3 bins are finite in both maps (two points always give
         exactly +-1), or either map is flat over those bins. NaN is not 0
-        ("uncorrelated"); skip such cells with ``np.nanmean`` or
-        ``np.isfinite`` when averaging across cells.
+        ("uncorrelated"). Averaging with ``np.nanmean`` is common, but it leaves
+        out the cells that fell silent, which are often the ones that changed
+        most: report how many were left out (see Notes).
 
     Raises
     ------
@@ -434,10 +435,20 @@ def field_stability(
 
     Notes
     -----
-    **Interpretation**:
-    - High stability (r > 0.7): Reliable, stable place field
-    - Medium stability (0.3 < r < 0.7): Moderately stable
-    - Low stability (r < 0.3): Unstable or remapped field
+    This is the rate-map correlation labs use: one cell's two maps, correlated
+    across bins, over the bins defined in both. The two maps set what it means:
+    odd against even laps or two halves of a session measure stability, and two
+    conditions measure remapping. How high a value counts as stable depends on
+    occupancy, smoothing and the cell, so compare a value between conditions
+    with the same cell's split of one condition, not with a fixed cutoff.
+
+    **Averaging across cells**: a cell silent in one map is flat, so it returns
+    NaN and ``np.nanmean`` leaves it out. In a simulation where the other cells
+    did not change, the mean stayed 1.00 with 15%, 30% and 50% of cells silent
+    in one condition. :func:`compare_spatial_rates` correlates every unit and
+    gives each a ``status`` that says why it was not scored, such as
+    ``"constant_rates_b"``. Labs often select cells first, for example by rate
+    in both conditions, which has the same effect, so state the selection.
 
     **Edge Cases**:
     - A map flat over the paired bins returns NaN (correlation undefined).

@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Several sessions
+
+- The interoperability guide shows how to keep settings when joining tables.
+  `pd.concat` silently empties `attrs` that differ between tables, even by one
+  value, at the step the replay and reactivation guides recommend.
+
+### Comparing maps
+
+- The `field_stability` docs no longer give stable and unstable bands, which had
+  no source, and they now say that `np.nanmean` leaves out cells that fell
+  silent. The guide points to `compare_spatial_rates`, which gives the same
+  correlation per unit with a `status` for each unit not scored.
+- The `population_vector_correlation` docs no longer say it is near 0 wherever
+  the code is unrelated. Cells that keep their rates give a positive value with
+  every field moved: 0.16 to 0.72 in simulation. The guide shows how to compare
+  each location with distant locations.
+
 ### Phase precession
 
 - `PhasePrecessionResult.correlation` is replaced by `rho`, the circular
