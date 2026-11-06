@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from neurospatial._exceptions import InputError, _format_error
 from neurospatial.datasets._checks import Stated
+from neurospatial.datasets._lfp import LFPFile
 from neurospatial.datasets._recording import Provenance
 
 if TYPE_CHECKING:
@@ -89,22 +90,25 @@ class DatasetInfo:
 
 @dataclass(frozen=True)
 class Member:
-    """One member of a zip archive that a session is read from.
+    """One file of a session held in several: a zip member, or a file of its own.
 
     Attributes
     ----------
     path : str
-        The member's path inside the zip.
+        The member's path inside the zip, or the name of a file of its own.
     sha256 : str
         The extracted member's SHA-256, which every extraction is verified
         against.
     size_bytes : int
         The extracted member's size.
+    url : str or None
+        Where a file of its own is downloaded from; None for a zip member.
     """
 
     path: str
     sha256: str
     size_bytes: int
+    url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -174,11 +178,16 @@ class SessionEntry:
         The paper's citation, then the citation of the session's archive.
     members : tuple of Member
         For a session read from members of a remote zip (``url``), the
-        members fetched, each by byte range; empty for a whole file. The
-        session's ``sha256`` and ``size_bytes`` are then the zip's.
+        members fetched, each by byte range; for a session of several files,
+        those files; empty for one whole file. The session's ``sha256`` and
+        ``size_bytes`` are then the zip's, or for several files the SHA-256
+        of their checksums in order, one per line, and their total size.
     videos : tuple of VideoAsset
         The session's video files, fetched only on request; empty where the
         archive has none.
+    lfp_files : tuple of LFPFile
+        The files that hold the session's LFP, fetched only on request; empty
+        where the archive has none. The loader builds ``rec.lfp`` from them.
     """
 
     info: DatasetInfo
@@ -198,6 +207,7 @@ class SessionEntry:
     citation: str
     members: tuple[Member, ...] = ()
     videos: tuple[VideoAsset, ...] = ()
+    lfp_files: tuple[LFPFile, ...] = ()
 
     @property
     def download_url(self) -> str:
@@ -383,7 +393,10 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
 
     A row from an archive other than the dataset's gives its own
     ``license`` and ``data_citation``; a row read from zip members gives
-    ``members``, each with ``path``, ``sha256`` and ``size_bytes``.
+    ``members``, each with ``path``, ``sha256`` and ``size_bytes``, and a
+    member that is a file of its own also its ``url``. A row with
+    an LFP gives ``lfp_files``, each an :class:`LFPFile`'s fields, located at
+    the row's own ``url`` or ``asset_id`` unless it names another.
     """
     sha256 = _sha256(row["sha256"], f"session {row['session']!r}")
     asset_id, url = row.get("asset_id"), row.get("url")
@@ -395,6 +408,7 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
             path=str(member["path"]),
             sha256=_sha256(member["sha256"], f"member {member['path']!r}"),
             size_bytes=int(member["size_bytes"]),
+            url=member.get("url"),
         )
         for member in row.get("members", ())
     )
@@ -411,6 +425,9 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
             led_fit=_led_fit(_keyed(video, "led_fit")),
         )
         for video in row.get("videos", ())
+    )
+    lfp_files = tuple(
+        _lfp_file(item, asset_id=asset_id, url=url) for item in row.get("lfp_files", ())
     )
     location = row.get("asset_path") or row.get("file_name") or str(url)
     return SessionEntry(
@@ -435,6 +452,21 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
         ),
         members=members,
         videos=videos,
+        lfp_files=lfp_files,
+    )
+
+
+def _lfp_file(item: dict[str, Any], *, asset_id: Any, url: Any) -> LFPFile:
+    """One ``lfp_files`` row; without a location of its own, the session's."""
+    own = item.get("asset_id") is not None or item.get("url") is not None
+    return LFPFile(
+        path=str(item["path"]),
+        sha256=_sha256(item["sha256"], f"LFP file {item['path']!r}"),
+        size_bytes=int(item["size_bytes"]),
+        url=item.get("url") if own else url,
+        asset_id=item.get("asset_id") if own else asset_id,
+        member=item.get("member"),
+        channels=tuple(item.get("channels", ())),
     )
 
 

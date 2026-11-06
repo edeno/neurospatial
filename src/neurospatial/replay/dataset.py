@@ -659,14 +659,14 @@ def dataset_values(
         None measures the events as they are, as data set 0. Otherwise a
         null of :func:`~neurospatial.replay.replay_significance` (for a
         replay method: ``"column_cycle"``, ``"column_cycle_weighted"``,
-        ``"time_bin_permutation"``, ``"pseudo_event"``, ``"unit_identity"``,
-        ``"spike_train_circular"``, ``"place_field_circular"`` or
-        ``"spike_time_uniform"``), or ``"cell_order"`` for a rank-order
+        ``"time_bin_permutation"``, ``"time_bin_circular"``,
+        ``"pseudo_event"``, ``"unit_identity"``, ``"spike_train_circular"``,
+        ``"place_field_circular"`` or ``"spike_time_uniform"``), or ``"cell_order"`` for a rank-order
         method: the field positions permuted among the event's active
         template cells. The column-cycle nulls shift each row along the
         track, so need a 1-D environment or a linearized track;
-        ``"time_bin_permutation"`` and ``"pseudo_event"`` keep the bins as
-        numbered and work on any environment, such as an open-field arena.
+        ``"time_bin_permutation"``, ``"time_bin_circular"`` and
+        ``"pseudo_event"`` keep the bins as numbered and work on any environment, such as an open-field arena.
         Spike-level surrogate data sets (rate-matched
         Poisson, jitter) are made with
         :func:`~neurospatial.replay.null_events` instead; measure them with
@@ -1504,6 +1504,10 @@ class _NullContext:
             return np.array(identity), np.asarray(
                 (destination - source[None, :]) % n_bins, dtype=np.intp
             )
+        if self.null == "time_bin_circular":
+            starts = generator.integers(1, max(n_time, 2), size=(self.n_datasets, 1))
+            circular = (identity - starts) % n_time
+            return np.asarray(circular, dtype=np.intp), np.zeros(shape, dtype=np.intp)
         order = np.argsort(generator.random(shape), axis=1)
         return np.asarray(order, dtype=np.intp), np.zeros(shape, dtype=np.intp)
 
@@ -1672,7 +1676,7 @@ class _MomentTables:
         # Only the shifts that can be drawn are tabulated.
         self.shifts = (
             np.zeros(1, dtype=np.intp)
-            if context.null == "time_bin_permutation"
+            if context.null in ("time_bin_permutation", "time_bin_circular")
             else np.arange(n_bins)
         )
         along = posterior[:, order]  # (n_time, n_bins), in track order
@@ -2105,10 +2109,11 @@ def shuffle_events(
         A null of :func:`~neurospatial.replay.replay_significance` that
         shuffles each event: ``"column_cycle"``,
         ``"column_cycle_weighted"``, ``"time_bin_permutation"``,
-        ``"pseudo_event"``, ``"unit_identity"``,
+        ``"time_bin_circular"``, ``"pseudo_event"``, ``"unit_identity"``,
         ``"spike_train_circular"``, ``"place_field_circular"`` or
         ``"spike_time_uniform"``. ``"time_bin_permutation"`` permutes each
-        event's posterior rows and its spike-count rows together, so a
+        event's posterior rows (``"time_bin_circular"`` shifts them
+        circularly) and its spike-count rows together, so a
         null that decodes again afterwards decodes the permuted counts
         (Grosmark & Buzsáki's time-bin-shuffle surrogate).
         ``"pseudo_event"`` keeps each event's counts unchanged next to

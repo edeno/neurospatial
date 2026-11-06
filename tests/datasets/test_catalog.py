@@ -141,6 +141,12 @@ def test_unknown_dataset_lists_the_known_ones():
             ),
             "its led_fit was made on a video with SHA-256",
         ),
+        (
+            lambda r: r["sessions"][0].update(
+                lfp_files=[{"path": "a.mat", "sha256": "xyz", "size_bytes": 1}]
+            ),
+            "LFP file 'a.mat': sha256 'xyz' is not 64 hex digits",
+        ),
     ],
 )
 def test_malformed_registry_refused(change, message):
@@ -149,6 +155,33 @@ def test_malformed_registry_refused(change, message):
     change(registry)
     with pytest.raises(ValueError, match=message):
         _read(registry, "sargolini_2006.json")
+
+
+def test_lfp_files_are_read_at_the_sessions_own_location():
+    """A row's LFP file takes the session's location unless it names another."""
+    registry = _registry("forli_2025")
+    row = registry["sessions"][0]
+    row["lfp_files"] = [
+        {
+            "path": "s/LFP.mat",
+            "sha256": "a" * 64,
+            "size_bytes": 5,
+            "member": "z/LFP.mat",
+            "channels": ["c1"],
+        },
+        {
+            "path": "other.mat",
+            "sha256": "b" * 64,
+            "size_bytes": 6,
+            "url": "https://example.org/other.mat",
+        },
+    ]
+    first, second = _read(registry, "forli_2025.json")[0].lfp_files
+    assert first.url == row["url"]
+    assert first.member == "z/LFP.mat"
+    assert first.channels == ("c1",)
+    assert second.url == "https://example.org/other.mat"
+    assert second.channels == ()
 
 
 def _builder():
@@ -353,3 +386,45 @@ def test_builder_lists_one_variant_with_its_videos():
     written["sessions"][0]["videos"][0]["asset_path"] = f"{stem}/gone.avi"
     with pytest.raises(ValueError, match=r"gone\.avi"):
         builder.build(written, "0.1", _api(pages))
+
+
+def test_builder_lists_a_sibling_file_as_lfp_and_leaves_out_sessions_not_offered():
+    builder = _builder()
+    registry = {
+        "archive": {
+            "dandiset": "000552",
+            "lfp_variant": "-raw",
+            "no_lfp": ["sub-3_ses-3"],
+            "not_offered": ["sub-2_ses-2"],
+        }
+    }
+    assets = [
+        _asset("sub-1/sub-1_ses-1_behavior+ecephys.nwb", "a" * 64),
+        _asset("sub-1/sub-1_ses-1-raw_ecephys.nwb", "b" * 64),
+        _asset("sub-2/sub-2_ses-2_behavior+ecephys.nwb", "c" * 64),
+        _asset("sub-3/sub-3_ses-3_behavior+ecephys.nwb", "d" * 64),
+        _asset("sub-3/sub-3_ses-3-raw_ecephys.nwb", "e" * 64),
+    ]
+    api = builder.API
+    get = _api(
+        {
+            f"{api}/dandisets/000552/versions/0.1/": {
+                "license": ["spdx:CC-BY-4.0"],
+                "citation": "A citation",
+            },
+            f"{api}/dandisets/000552/versions/0.1/assets/"
+            "?page_size=200&metadata=true": {"results": assets, "next": None},
+        }
+    )
+    built = builder.build(registry, "0.1", get)
+    rows = {row["session"]: row for row in built["sessions"]}
+    assert set(rows) == {"sub-1_ses-1", "sub-3_ses-3"}
+    assert rows["sub-1_ses-1"]["lfp_files"] == [
+        {
+            "path": "sub-1_ses-1-raw_ecephys.nwb",
+            "asset_id": "id-sub-1/sub-1_ses-1-raw_ecephys.nwb",
+            "sha256": "b" * 64,
+            "size_bytes": 1000,
+        }
+    ]
+    assert "lfp_files" not in rows["sub-3_ses-3"]

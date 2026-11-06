@@ -609,9 +609,11 @@ def plot_track(
         node_size=300,
         node_color="#1f77b4",
     )
-    for node_id1, node_id2 in linearization.graph.edges:
+    for k, (node_id1, node_id2) in enumerate(linearization.graph.edges):
         pos = np.stack((original_node_pos[node_id1], original_node_pos[node_id2]))
-        ax.plot(pos[:, 0], pos[:, 1], color="gray", zorder=-1, label="original edges")
+        # One legend entry for all edges, not one line per edge.
+        label = "original edges" if k == 0 else None
+        ax.plot(pos[:, 0], pos[:, 1], color="gray", zorder=-1, label=label)
     if one_dimensional:
         _label_nodes_above(ax, original_node_pos)
     else:

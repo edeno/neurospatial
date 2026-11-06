@@ -4198,6 +4198,7 @@ dev = [
     { name = "pytest-mpl" },
     { name = "pytest-xdist" },
     { name = "qtpy" },
+    { name = "ripple-detection" },
     { name = "ruff" },
     { name = "statsmodels" },
 ]
@@ -4286,6 +4287,7 @@ dev = [
     { name = "pytest-mpl", specifier = ">=0.18.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "qtpy", specifier = ">=2.4" },
+    { name = "ripple-detection", git = "https://github.com/Eden-Kramer-Lab/ripple_detection?rev=0eddae64a5ebf7b810fb1ec693643b1673650142" },
     { name = "ruff", specifier = ">=0.14.3" },
     { name = "statsmodels", specifier = ">=0.14.0" },
 ]
@@ -6427,6 +6429,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fb/d2/8920e102050a0de7bfabeb4c4614a49248cf8d5d7a8d01885fbb24dc767a/rich-14.2.0.tar.gz", hash = "sha256:73ff50c7c0c1c77c8243079283f4edb376f0f6442433aecb8ce7e6d0b92d1fe4", size = 219990, upload-time = "2025-10-09T14:16:53.064Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/25/7a/b0178788f8dc6cafce37a212c99565fa1fe7872c70c6c9c1e1a372d9d88f/rich-14.2.0-py3-none-any.whl", hash = "sha256:76bc51fe2e57d2b1be1f96c524b890b816e334ab4c1e45888799bfaab0021edd", size = 243393, upload-time = "2025-10-09T14:16:51.245Z" },
+]
+
+[[package]]
+name = "ripple-detection"
+version = "1.7.2.dev369+g0eddae64a"
+source = { git = "https://github.com/Eden-Kramer-Lab/ripple_detection?rev=0eddae64a5ebf7b810fb1ec693643b1673650142#0eddae64a5ebf7b810fb1ec693643b1673650142" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pandas" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [[package]]

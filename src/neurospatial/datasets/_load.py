@@ -243,7 +243,8 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     from zip members has each member extracted by byte range into
     ``<cache>/<dataset>/<session>/<member name>``, verified against its own
     SHA-256, and that directory, holding only the session's members, is
-    returned. A download not yet cached is announced first with a
+    returned; a session of several files is cached there the same way. A
+    download not yet cached is announced first with a
     :class:`DownloadWarning` giving its size, URL and cache directory,
     attributed to the caller of :func:`load` or :func:`fetch_all`.
     """
@@ -261,12 +262,21 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
         )
     if entry.members:
         assert entry.url is not None  # checked when the registry is read
+        subdir = f"{entry.info.dataset}/{entry.session}"
         paths = [
             fetch_zip_member(
                 entry.url,
                 member.path,
                 sha256=member.sha256,
-                subdir=f"{entry.info.dataset}/{entry.session}",
+                subdir=subdir,
+                cache=cache,
+            )
+            if member.url is None
+            else fetch(
+                member.url,
+                Path(member.path).name,
+                sha256=member.sha256,
+                subdir=subdir,
                 cache=cache,
             )
             for member in entry.members

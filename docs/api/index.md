@@ -201,7 +201,8 @@ Detecting the candidate events (ripples, population bursts) is not included.
 - `replay_significance()`: Test any replay score against shuffles:
   column-cycle, unit-identity and pseudo-event (the default), spike-train
   and place-field circular shifts, time-bin permutation (the "time swap"),
-  spike times redrawn uniformly in the event (`"spike_time_uniform"`,
+  circular shifts of the time bins (`"time_bin_circular"`, Bhattarai et
+  al. 2020), spike times redrawn uniformly in the event (`"spike_time_uniform"`,
   Stella et al. 2019) and the weighted column cycle
   (`"column_cycle_weighted"`, Farooq et al. 2019; options through
   `null_options=`); significant when every null run rejects the event
@@ -504,9 +505,9 @@ Loaders for published spatial neuroscience datasets, requiring
 - `catalog()`: One row per session of every dataset, without downloading
 - `load()`, `fetch_all()`: Download, verify, check and read a session; download
   every session of a dataset
-- `Recording`, `Conversion`, `Provenance`, `VideoSource`: A loaded session, each
-  conversion applied (with its basis), where the file came from, and a session's
-  camera video
+- `Recording`, `Conversion`, `Provenance`, `VideoSource`, `LFPSource`: A loaded
+  session, each conversion applied (with its basis), where the file came from,
+  and a session's camera video and local field potential, fetched on request
 - `DatasetCheckError`: Raised when a session fails the clock or units check
 - `DownloadWarning`: Issued before a session's file is downloaded, with its
   size, URL and cache directory

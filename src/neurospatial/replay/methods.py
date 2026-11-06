@@ -115,6 +115,7 @@ __all__ = [
     "AMBROSE_2016",
     "BERNERS_LEE_2021",
     "BERNERS_LEE_2022",
+    "BHATTARAI_2020",
     "BUSH_2022",
     "CAREY_2019",
     "CHANG_2025",
@@ -4498,7 +4499,9 @@ PFEIFFER_FOSTER_2013 = ReplayMethod(
         "lies less than 20 cm from the previous one; events with fewer than "
         "10 steps (11 time bins) or a start-to-end distance below 40 cm are "
         "eliminated.",
-        "Decoded in a 2-D open field; distances are Euclidean there.",
+        "Decoded in a 2-D open field; distances are Euclidean there. The 20 and "
+        "40 cm are for rats in a 2 x 2 m arena, where path lengths ran 40.0 to "
+        "199.1 cm, and they are not scaled here.",
         "Each trajectory event was also tested against 5,000 cell-identity "
         "and 5,000 2-D place-field shuffles, p = (n + 1) / (r + 1) over the "
         "shuffles classified as trajectory events. Every trajectory event had "
@@ -4621,11 +4624,17 @@ CAREY_2019 = ReplayMethod(
         "sequences that overlap a sharp-wave ripple and match one arm, not "
         "both; those event-level rules are not applied here.",
         "Counts in 5 ms bins summed over a 25 ms boxcar.",
-        "The paper discards sequences whose time bins appear in more than "
-        "5% of sequences found in per-time-bin cell-identity shuffles of the "
-        "session. Generate_DecSeqShuf.m reads every shuffled time bin from "
-        "the first one, so its shuffles are not that null; the session-level "
-        "test is not applied.",
+        "The paper's text discards sequences whose time bins appear in more "
+        "than 5% of sequences found in 500 identity shuffles of the tuning "
+        "curves over the session; Generate_DecSeqShuf.m instead permutes "
+        "spike counts within each time bin, and shuf_Q(shuf_mask) uses row "
+        "numbers as linear indices, so every shuffled time bin is read from "
+        "the session's first bin. That session-level filter is not applied "
+        "here.",
+        "DecodeZ.m uses the 5 ms step as the exposure for the 25 ms counts: "
+        "pass dt=0.005 to follow it. Generate_DecSeqShuf.m smooths spikes with "
+        "a 2 ms Gaussian, which is not applied, since decode_position takes "
+        "whole counts.",
     ),
 )
 
@@ -4660,19 +4669,26 @@ IGATA_2021 = ReplayMethod(
         "cumulative distance of more than 20 cm.",
         "Tested against 1,000 surrogate events decoded with each cell's "
         "tuning curve shifted across all location bins: p is the share of "
-        "surrogates in which a trajectory event is also detected. The paper "
-        "shifted the unsmoothed rate maps and smoothed them again (5 cm); "
-        "here the given rate maps are shifted. The place-field shuffle needs "
-        "a 1-D environment or a track.",
+        "surrogates in which a trajectory event is also detected. The SI does "
+        "not say whether a cell's map shifts as a whole, and 'individual "
+        "firing rates' may mean each bin; here each cell's whole map shifts. "
+        "The paper shifted the unsmoothed rate maps and smoothed them again "
+        "(5 cm); here the given rate maps are shifted. The place-field "
+        "shuffle needs a 1-D environment or a track.",
         "The paper computed the MAP of each maze path separately and "
         "extended sequences into neighboring paths; here one MAP over the "
         "whole environment.",
         "The paper's p-value is the share of surrogates; here it is (k + 1) / (n + 1).",
-        "Shifted fields keep cells that fire in neighboring time bins "
-        "together, so surrogates often decode a short trajectory too. In "
-        "simulated sweeps, about half of the surrogates on a 2 m track and "
-        "2-6% on a 10 m track held one: the test has little power where "
-        "40 cm is a large share of the environment.",
+        "The score is 1 if an event holds a sequence and 0 if not, so p is "
+        "only the share of surrogates that hold one. That share depends on "
+        "spike count and event length, not on the event: it rises with "
+        "spikes, and a real event's score cannot. A simulated perfect 120 cm "
+        "sweep with 240 spikes passes the rule every time and has p = 0.56. "
+        "Pfeiffer & Foster's identical test works because at most 0.3% of "
+        "surrogates pass their stricter rule; 7 to 56% pass this one on the "
+        "same maps and events. The preset does what the SI says; do not read "
+        "its verdicts as evidence about replay. The authors' code is not "
+        "public, so why the paper's rates are far higher is not settled.",
     ),
 )
 
@@ -5366,6 +5382,59 @@ SHIN_2019 = dataclasses.replace(
         "the share of shuffles with a larger R² comes from Karlsson & Frank "
         "(2009), which it cites, and the lineage code. Here (k + 1) / (n + "
         "1), the same verdict at alpha 0.05 with 1,500 shuffles.",
+    ),
+)
+
+BHATTARAI_2020 = ReplayMethod(
+    name="bhattarai_2020",
+    reference=(
+        "Bhattarai, B., Lee, J. W., & Jung, M. W. (2020). Distinct effects of "
+        "reward and navigation history on hippocampal forward and reverse "
+        "replays. Proceedings of the National Academy of Sciences, 117(1), "
+        "689-697."
+    ),
+    score=fit_linear_trajectory,
+    score_options={"method": "map"},
+    nulls=("time_bin_circular",),
+    n_shuffles=1000,
+    alpha=0.05,
+    empty_time_bins="drop",
+    criteria=(ReplayCriterion("n_active_cells", ">=", 5),),
+    units="cm",
+    decoding={
+        "time_bin": 0.02,
+        "time_step": 0.01,
+        "position_bin": 2.0,
+        "rate_map_smoothing_sd": 6.0,
+        "rate_map_speed": 4.0,
+    },
+    notes=(
+        "SI Appendix, 'Replay events': a linear regression of decoded (MAP) "
+        "position on time-bin number gives R²; 'The R2 value was then compared "
+        "to 1000 shuffled R2 values, that were obtained by circularly shifting "
+        "the decoded positions in time by random numbers of bins'; p is the "
+        "proportion of shuffles with a larger R², and P < 0.05 is replay.",
+        "The shifts are 1 to n - 1 bins for an event of n time bins, drawn "
+        "1,000 times; the p-value is (k + 1) / (1,001), where the paper's "
+        "has no +1: the verdict at alpha 0.05 is the same, k of at most 49. "
+        "Shifts repeat, so with fewer than 20 time bins p < 0.05 needs no shift "
+        "to score as high as the event. An event with no order then passes "
+        "about one time in n if its time bins are independent, and up to about "
+        "twice that when neighbouring bins share spikes.",
+        "Time bins without spikes: not stated. They are dropped with their "
+        "times, as Wu et al. (2017) and Karlsson & Frank (2009) do, since with "
+        "no spike the MAP names the position of lowest summed rate.",
+        "Decode with the current block's place cells and rate maps, from "
+        "forced-choice and correct free-choice trials, on the linear path of "
+        "the block's correct sequence, as the paper does; pass those cells' "
+        "spike counts. 'Five or more place cells' is part of a candidate "
+        "event's definition and is applied here to the event's time bins, so "
+        "they must reach its last spike, or a candidate can fail for a cell "
+        "only that spike holds.",
+        "The direction and strength of a replay were measured separately, with "
+        "a weighted correlation of time and position over posterior values "
+        "above 0.01; it plays no part in the verdict. Session sets whose "
+        "median decoding error exceeded 20 cm were excluded (3 of 28).",
     ),
 )
 
@@ -6236,6 +6305,7 @@ PUBLISHED_METHODS: tuple[_AnyReplayMethod, ...] = (
     MICHON_2019,
     MUESSIG_2019,
     SHIN_2019,
+    BHATTARAI_2020,
     IGATA_2021,
     BERNERS_LEE_2021,
     BUSH_2022,

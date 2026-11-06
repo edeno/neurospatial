@@ -9,17 +9,21 @@ room). Flights are the authors' segmentation at a 0.5 m/s velocity
 threshold.
 
 Where it lives: Zenodo record 15738988 (CC-BY-4.0), the demo session
-``Dataset_3_14543_240419`` in ``Demo_Session.zip`` (3.3 GB). Only the five
-members the loader needs are read, by HTTP byte range (260 MB): the behavior
-file, the three Kilosort 4 single-unit tables and the merge list, each
-verified against its own SHA-256. The single-unit tables are MATLAB
-``table`` objects, read with ``mat-io``, which installs only on Python 3.11
-or later.
+``Dataset_3_14543_240419`` in ``Demo_Session.zip`` (3.3 GB). Only the nine
+members the loader needs are read, by HTTP byte range (1.1 GB): the behavior
+file, the three Kilosort 4 single-unit tables, the merge list, the three
+ripple files (817 MB, which also hold each probe's ripple-channel trace and
+every event's waveforms) and the best-probe choice, each verified against its
+own SHA-256. The single-unit and ripple tables are MATLAB ``table`` objects,
+read with ``mat-io``, which installs only on Python 3.11 or later.
 
 Sources read: the paper (Forli, Fan, Qi & Yartsev 2025, Nature,
 doi:10.1038/s41586-025-09341-z, accelerated article preview, Methods), the
 record's ``NP_Bat_Demo.m`` (whose header describes every variable) and
-``How to use.pdf``, and the files.
+``How to use.pdf``, the paper's code at github.com/kevin-qi/ripple-bat, commit
+6812188d (``NP_RippleDetect_AF_v0.m``, which builds the ripple tables, and
+``NP_Spatial_AF_v9_SWRs.m``, which reads them; read, not reused: the repository
+states no license), and the files.
 
 What the loader converts:
 
@@ -38,6 +42,12 @@ What the loader converts:
   starts before the neural recording, so the flights used for analysis are
   clipped to the recording, taken as the first to last spike of any unit
   (the files hold no recording start or stop).
+- ripple events: ``RPL_out.table.t`` of each probe as stored, seconds on the
+  LFP's clock, which is the spikes' (the population rate peaks within 10 ms
+  before the table's times). ``t`` is the peak of the smoothed ripple power.
+  ``events["ripple_candidates_probe<n>"]`` holds every row;
+  ``events["swr_probe<n>"]`` the rows at the paper's minimum correlation of
+  0.2 with the average event. The table's other columns are not kept.
 
 The declared environment is the room: every voxel of a grid that tiles
 ``r_lim`` ("boundaries of the room/outdoor arena", the script) exactly, so
@@ -57,18 +67,24 @@ Analysis choices (``params``):
 - ``analysis_epochs``: flights during the neural recording, so rate maps
   describe the bat in flight; ``train_epochs`` / ``test_epochs``: even and
   odd of those flights, for held-out decoding;
-- ``dt`` 0.25 s, as for the 2-D datasets.
+- ``dt`` 0.25 s, as for the 2-D datasets;
+- ``ripple_probe``: the probe whose events analyses use, the file's choice
+  (``BPC_Dataset_*.mat``).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import os
+import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial.datasets._lfp import LFPSource
+from neurospatial.datasets._matio import load_mat
 from neurospatial.datasets._recording import Conversion, Recording, tracked_mask
 
 if TYPE_CHECKING:
@@ -77,6 +93,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "EXPECTED_WATCH_OUTS",
+    "OWN_3D_ANALYSIS",
     "REQUIRES",
     "WATCH_OUTS",
     "WORKED_RESULT",
@@ -142,6 +159,77 @@ WORKED_RESULT: dict[str, Any] = {
     ),
 }
 
+#: A test against chance of neurospatial's own 3-D analysis of the ripple events. It
+#: is not the paper's replay analysis and makes no claim about it: this is why
+#: it is apart from ``WORKED_RESULT``, the record of the paper's finding.
+OWN_3D_ANALYSIS: dict[str, Any] = {
+    "status": "not met",
+    "what": (
+        "a test against chance of our own analysis in the room's 3-D voxels, not "
+        "the paper's replay analysis and not comparable with its numbers"
+    ),
+    "property": (
+        "windows around ripple events are judged trajectories more often than "
+        "the same windows after circularly shifting the spikes"
+    ),
+    "criterion": (
+        "the count of judged windows exceeds the 95th percentile of the counts "
+        "of each of two nulls, 20 draws each (seed 2026): every unit shifted "
+        "by its own offset, and all units by one common offset, circularly "
+        "over the neural recording, by at least 10 s; fixed before the run, "
+        "and not met"
+    ),
+    "n_judged": 2,
+    "n_windows": 2535,
+    "n_units": 134,
+    "null_own_offsets": (0, 0, 2, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 2, 0, 1, 0, 0),
+    "null_common_offset": (2, 2, 0, 0, 1, 2, 1, 6, 3, 2, 0, 2, 2, 2, 1, 2, 3, 4, 1, 1),
+    "window_half_width": 0.15,
+    "bandwidth": 0.2,
+    "time_bin": 0.02,
+    "time_step": 0.005,
+    "max_jump": 0.6,
+    "min_distance": 1.2,
+    "parameters": (
+        "events['swr_probe2'], peak +/- 0.15 s, overlapping windows merged, "
+        "kept when inside the neural recording and clear of the file's "
+        "flights; units with more spikes in the analysed flights than there "
+        "are flights, at most 2 Hz (one over the mean interspike interval); "
+        "fields from 3-D compute_spatial_rates over the flights (diffusion "
+        "KDE, bandwidth 0.2 m) on rec.env's voxels; decoded in 20 ms bins "
+        "stepped by 5 ms with the default prior; judged by "
+        "PFEIFFER_FOSTER_2013's rule, a MAP step under 0.6 m over at least 11 "
+        "bins and at least 1.2 m from start to end. Those two distances are "
+        "our choice: the published 20 and 40 cm scaled from a 2 m arena to "
+        "this 5.8 m room, rounded"
+    ),
+    "held_out_flights": {"median_error_m": 2.197, "shuffled_error_m": 2.380},
+    "planted_recall": {
+        "judged": 1,
+        "planted": 300,
+        "reading": (
+            "replay planted into 300 of the windows, keeping every spike's time "
+            "and drawing its cell from these rate maps along a real flight played "
+            "15 times faster, is judged a trajectory 0.3% of the time. So this "
+            "judge passes almost no known replay here, and 2 of 2,535 is not "
+            "evidence that the bat replays nothing. This is a limit of what the "
+            "number can say: planted events come from the model the decoder "
+            "assumes, and compression 15 is not calibrated for bats"
+        ),
+    },
+    "watch_out": (
+        "The 3-D decode of the ripple events is neurospatial's own analysis, "
+        "not the paper's: its replay analysis was 1-D, along clustered flight "
+        "paths, which neurospatial cannot build yet. Its fixed test against chance "
+        "was not met (2 of 2,535 windows judged trajectories, against 95th "
+        "percentiles of 2 and 4.1 with shifted spikes), and this says nothing "
+        "about replay in this session. 3-D place fields here barely reproduce "
+        "between halves of the session (median Spearman correlation 0.15), and "
+        "held-out flights decode to a median 2.2 m from the bat, against 2.4 m "
+        "by chance, so these maps cannot show a trajectory."
+    ),
+}
+
 #: Modules of the ``datasets`` extra the loader imports.
 REQUIRES = ("matio", "fsspec")
 
@@ -150,6 +238,12 @@ DT = 0.25
 PROBES = (1, 2, 3)
 #: Spikes of one unit closer than this are one spike counted twice, s.
 CLOSE = 0.001
+#: Least correlation of an event's waveform with the average event, for it to
+#: count as a sharp-wave ripple (the paper's Methods).
+MIN_SWR_CORRELATION = 0.2
+#: The LFP's sampling rate, Hz: NP_Bat_Demo.m's '1250 Hz, default', and the
+#: median step of ``t_ds``.
+LFP_RATE = 1250.0
 #: Mean rate above which NP_Bat_Demo.m sets a unit aside as a putative
 #: interneuron, Hz.
 INTERNEURON_RATE = 2.0
@@ -157,7 +251,30 @@ INTERNEURON_RATE = 2.0
 PAPER_ROOM = (5.6, 5.2, 2.5)
 _PAPER = "the Methods of Forli et al. 2025"
 _SCRIPT = "the record's NP_Bat_Demo.m"
+_DETECTOR = (
+    "NP_RippleDetect_AF_v0.m in the paper's code (github.com/kevin-qi/ripple-bat, "
+    "commit 6812188d)"
+)
 
+_RIPPLES = (
+    "The ripple events are the authors', and neurospatial did not detect them. "
+    f"The files give them at 1 kHz (RPL_out.Fs; {_DETECTOR}), where {_PAPER} "
+    "state the LFP was down-sampled to 500 Hz for processing. "
+    "Their ripple band is 100 to 200 Hz, inside the 0.5 to 200 Hz the headstage "
+    "recorded as LFP. Flight is excluded with the wing beats of the headstage's "
+    "accelerometer, not the file's flights."
+)
+_REST = (
+    "The ripple events are outside flight, and nothing here says the bat was "
+    "awake: the files hold no sleep scoring, and a resting bat may doze."
+)
+_LFP_SCALE = (
+    "rec.lfp is in arbitrary units: red_out.voltage_scaling is a "
+    "'voltage scaling factor, to get the actual LFP value' "
+    f"({_SCRIPT}), with no unit, and {_PAPER} state the LFP was amplified "
+    "125 to 250 times, which the factor may or may not include. Compare "
+    "channels of one session; do not read the values as microvolts."
+)
 _PROCESSED = (
     "Positions are the authors' processed behavior, not raw tracking: "
     f"{_SCRIPT} says 'Processing mainly includes smoothing of position and "
@@ -174,6 +291,7 @@ EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
         r"samples farther from the last believable sample",
         r"lie outside the declared environment",
         r"units have no spikes in the analysed epochs",
+        r"of the \d+ SWRs on probe 2 lie in the file's flight samples",
     ),
 }
 
@@ -182,6 +300,11 @@ WATCH_OUTS: dict[str, tuple[str, ...]] = {
     "Dataset_3_14543_240419": (
         "This is the record's one demo session; the paper reports 23 sessions "
         f"from six bats ({_PAPER}), and the record holds no other.",
+        OWN_3D_ANALYSIS["watch_out"],
+        "rec.lfp holds 384 channels of 6.6 million samples: one channel is 53 MB "
+        "in memory and all of them 405 GB, so ask rec.lfp.fetch for the "
+        "channels you need. Their times are red_out.t_ds as stored: 55 steps "
+        "exceed 1.5 sampling periods, the longest 7.6 ms.",
     ),
 }
 
@@ -210,6 +333,8 @@ def load_session(
     names = [Path(member.path).name for member in entry.members]
     behavior = loadmat(folder / _named(names, "Extracted_Behavior_"), squeeze_me=True)
     groups = _merge_groups(folder / _named(names, "merges_"))
+    best = loadmat(folder / _named(names, "BPC_"))["best_prb_ch"]
+    ripple_probe = int(best[0, 0])
     units: dict[str, NDArray[np.float64]] = {}
     dropped = 0
     for probe in PROBES:
@@ -232,6 +357,12 @@ def load_session(
         max(float(train[-1]) for train in trains),
     )
     neural_flights = _clip(flight_windows, recorded)
+    ripples = {
+        probe: _ripple_file(folder / _named(names, f"RPL_probe{probe}."))
+        for probe in PROBES
+    }
+    events = _ripple_events(ripples)
+    lfp = _lfp_source(entry, ripples, ripple_probe, folder)
     env, placement = _declared_room(positions, room, entry.session)
     ids = list(units)
     table = pd.DataFrame(
@@ -275,6 +406,7 @@ def load_session(
             "flight": flight_windows,
             "neural_recording": np.array([recorded]),
         },
+        events=events,
         params={
             "bin_size": BIN_SIZE,
             "dt": DT,
@@ -282,6 +414,7 @@ def load_session(
             "analysis_epochs": neural_flights,
             "train_epochs": neural_flights[::2],
             "test_epochs": neural_flights[1::2],
+            "ripple_probe": ripple_probe,
         },
         conversions=(
             Conversion(
@@ -330,13 +463,45 @@ def load_session(
                 "fraction of a second of its edges",
             ),
             placement,
+            lfp.unit_basis,
+            lfp.times_basis,
+            Conversion(
+                "events['ripple_candidates_probe<n>']: RPL_out.table.t as stored, "
+                "s; events['swr_probe<n>']: its rows with corr at least "
+                f"{MIN_SWR_CORRELATION:g}",
+                "stated",
+                f"{_DETECTOR} takes t from findpeaks on the ripple power, in "
+                "seconds on the LFP's time vector, which "
+                f"{_SCRIPT} states is 'synchronized with the other data "
+                f"streams'; {_PAPER} keep events of 'a minimum correlation value "
+                "of 0.2'",
+            ),
+            Conversion(
+                f"params['ripple_probe']: {ripple_probe}, best_prb_ch of "
+                "BPC_Dataset_*.mat",
+                "stated",
+                f"{_SCRIPT}: 'Best probe and channel for LFP analysis'; "
+                "NP_Spatial_AF_v9_SWRs.m in the paper's code loads that probe's "
+                "ripple file",
+            ),
         ),
         watch_outs=(
             *WATCH_OUTS.get(entry.session, ()),
             _before_recording(times, flight_windows, recorded),
             _interneurons(units),
             _PROCESSED,
+            _swrs_in_flight(
+                events[f"swr_probe{ripple_probe}"],
+                len(ripples[ripple_probe].table),
+                ripple_probe,
+                times,
+                np.asarray(behavior["bflying"], dtype=bool),
+            ),
+            _RIPPLES,
+            _REST,
+            _LFP_SCALE,
         ),
+        lfp=lfp,
     )
 
 
@@ -360,14 +525,182 @@ def _merge_groups(path: Path) -> list[list[list[int]]]:
     ]
 
 
-def _good_units(path: Path) -> Any:
-    """The ``out.good_units`` table of a Kilosort 4 single-unit file."""
-    import matio
-
-    value: Any = matio.load_from_mat(str(path))["out"]["good_units"]
+def _unwrapped(value: Any) -> Any:
+    """``value`` out of the one-element object arrays ``mat-io`` wraps it in."""
     while isinstance(value, np.ndarray) and value.dtype == object and value.size == 1:
         value = value.item()
     return value
+
+
+def _good_units(path: Path) -> Any:
+    """The ``out.good_units`` table of a Kilosort 4 single-unit file."""
+    return _unwrapped(load_mat(path)["out"]["good_units"])
+
+
+class _RippleFile(NamedTuple):
+    """What the loader reads of an ``RPL_probe*.mat``."""
+
+    table: Any  # RPL_out.table: t, corr and others, one row per event
+    probe_info: Any  # RPL_out.probe_info: ch, xPos, yPos, one row per LFP channel
+    channel: int  # RPL_out.ch: the probe's best channel for SWRs
+
+
+def _ripple_file(path: Path) -> _RippleFile:
+    """The ripple table, the probe's channels and its best channel for SWRs."""
+    out = load_mat(path)["RPL_out"]
+    return _RippleFile(
+        table=_unwrapped(out["table"]),
+        probe_info=_unwrapped(out["probe_info"]),
+        channel=int(np.ravel(_unwrapped(out["ch"]))[0]),
+    )
+
+
+def _lfp_source(
+    entry: SessionEntry,
+    ripples: dict[int, _RippleFile],
+    ripple_probe: int,
+    folder: Path,
+) -> LFPSource:
+    """The session's LFP: each probe's member, one channel per recorded site."""
+    channels: dict[str, str] = {}
+    held: dict[int, tuple[str, ...]] = {}
+    for probe, ripple in ripples.items():
+        info = ripple.probe_info
+        names = {
+            _channel_name(probe, int(ch)): (
+                f"probe {probe}, channel {int(ch)}, {x:g} um across and {y:g} um "
+                "from the tip"
+                + (
+                    ", the channel the record keeps for this probe's SWRs"
+                    if int(ch) == ripple.channel
+                    else ""
+                )
+            )
+            for ch, x, y in zip(info["ch"], info["xPos"], info["yPos"], strict=True)
+        }
+        channels.update(names)
+        held[probe] = tuple(names)
+    return LFPSource(
+        dataset=entry.info.dataset,
+        files=tuple(
+            dataclasses.replace(file, channels=held[_probe_of(file.path)])
+            for file in entry.lfp_files
+        ),
+        sampling_rate=LFP_RATE,
+        channels=channels,
+        unit="arbitrary",
+        unit_basis=Conversion(
+            "LFP: red_out.lfp (int16) * red_out.voltage_scaling; no unit is stated",
+            "stated",
+            f"{_SCRIPT}: 'voltage scaling factor, to get the actual LFP value', "
+            "and the same product in its code",
+        ),
+        times_basis=Conversion(
+            "LFP times: red_out.t_ds as stored, s",
+            "stated",
+            f"{_SCRIPT}: 'time vector for the LFP, synchronized with the other "
+            "data streams'",
+        ),
+        reader=read_lfp,
+        ripple_channels=(_channel_name(ripple_probe, ripples[ripple_probe].channel),),
+        cache=folder.parents[1],
+    )
+
+
+def _channel_name(probe: int, channel: int) -> str:
+    """``"probe2-ch388"``: a channel's name in ``rec.lfp``."""
+    return f"probe{probe}-ch{channel}"
+
+
+def _probe_of(path: str | Path) -> int:
+    """The probe an ``LFP_probe<n>.mat`` holds."""
+    found = re.search(r"LFP_probe(\d+)\.mat$", str(path))
+    assert found is not None  # the registry's file names
+    return int(found.group(1))
+
+
+def read_lfp(
+    sources: tuple[str | Path, ...], channels: tuple[str, ...]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Read channels of ``LFP_probe*.mat``, MATLAB v7.3 (HDF5) files.
+
+    Parameters
+    ----------
+    sources : tuple of path
+        The probes' files.
+    channels : tuple of str
+        Channel names, ``probe<n>-ch<id>``.
+
+    Returns
+    -------
+    samples : ndarray, shape (n_time, n_channels)
+        ``red_out.lfp * red_out.voltage_scaling``, in the order of ``channels``.
+    times : ndarray, shape (n_time,)
+        ``red_out.t_ds``, seconds.
+
+    Raises
+    ------
+    ValueError
+        If the probes asked for do not share one time vector.
+    """
+    import h5py
+
+    columns: dict[str, NDArray[np.float64]] = {}
+    times: NDArray[np.float64] | None = None
+    for source in sources:
+        probe = _probe_of(source)
+        with h5py.File(source, "r") as file:
+            out = file["red_out"]
+            # MATLAB's columns are HDF5's rows: lfp is (n_channels, n_time).
+            ids = np.asarray(out["channelMap"]).ravel().astype(int).tolist()
+            scale = float(np.asarray(out["voltage_scaling"]).item())
+            clock = np.asarray(out["t_ds"], dtype=np.float64).ravel()
+            for row, channel in enumerate(ids):
+                name = _channel_name(probe, channel)
+                if name in channels:
+                    columns[name] = np.asarray(out["lfp"][row], np.float64) * scale
+        if times is not None and not np.array_equal(times, clock):
+            msg = (
+                f"{Path(source).name} has its own time vector, so its channels "
+                "cannot share rows with the other probe's; fetch one probe at a "
+                "time"
+            )
+            raise ValueError(msg)
+        times = clock
+    assert times is not None  # fetch asks for at least one file
+    return np.column_stack([columns[name] for name in channels]), times
+
+
+def _ripple_events(ripples: dict[int, _RippleFile]) -> dict[str, NDArray[np.float64]]:
+    """Each probe's ripple peaks: every row, and the rows that count as SWRs."""
+    events = {}
+    for probe, ripple in ripples.items():
+        peaks = np.asarray(ripple.table["t"], dtype=np.float64)
+        correlation = np.asarray(ripple.table["corr"], dtype=np.float64)
+        events[f"ripple_candidates_probe{probe}"] = peaks
+        events[f"swr_probe{probe}"] = peaks[correlation >= MIN_SWR_CORRELATION]
+    return events
+
+
+def _swrs_in_flight(
+    swrs: NDArray[np.float64],
+    n_candidates: int,
+    probe: int,
+    times: NDArray[np.float64],
+    flying: NDArray[np.bool_],
+) -> str:
+    """How many of a probe's SWRs lie in the behavior file's flight samples."""
+    nearest = np.clip(np.searchsorted(times, swrs), 0, times.size - 1)
+    n_flying = int(flying[nearest].sum())
+    return (
+        f"{n_flying} of the {swrs.size} SWRs on probe {probe} lie in the file's "
+        f"flight samples (bflying), since the detector found flight another way. "
+        f"Of {n_candidates} rows of that probe's table, {swrs.size} reach the "
+        f"paper's minimum correlation of {MIN_SWR_CORRELATION:g} "
+        f"(events['swr_probe{probe}']); events['ripple_candidates_probe{probe}'] "
+        "holds them all, including a burst of rows at about 10 Hz in the first "
+        "seconds of the recording, which the files do not explain."
+    )
 
 
 def _probe_units(

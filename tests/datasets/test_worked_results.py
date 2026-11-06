@@ -11,6 +11,10 @@ code.
 
 Sargolini et al. (2006), Valero et al. (2022) and Forli et al. (2025) have
 no test: their ``WORKED_RESULT`` says why a result is not possible yet.
+Bhattarai et al. (2020), Carey et al. (2019), Igata et al. (2021) and Huszar et
+al. (2022) are tested in their own files (``test_bhattarai_2020.py`` and so on),
+which pin
+their recorded numbers; this file checks only that their records are complete.
 """
 
 from __future__ import annotations
@@ -20,9 +24,13 @@ import pytest
 from scipy.special import i0, i1
 
 from neurospatial.datasets import (
+    bhattarai_2020,
+    carey_2019,
     comrie_2026,
     forli_2025,
     grosmark_2016,
+    huszar_2022,
+    igata_2021,
     load,
     peyrache_2015,
     sargolini_2006,
@@ -234,7 +242,7 @@ def test_grosmark_place_fields_enriched_near_the_ends():
 
 @pytest.mark.realdata
 def test_comrie_decoding_mostly_local_while_running():
-    """Level B sanity property: running time decodes to the rat's own segment.
+    """Level B test against chance: running time decodes to the rat's own segment.
 
     Not a finding of the preprint: its Introduction says place cells'
     activity "typically signals the actual location of the animal" (citing
@@ -328,9 +336,13 @@ RECORD_KEYS = {
 }
 ATTEMPT_KEYS = {"value", "criterion", "parameters", "differs"}
 ALL = [
+    bhattarai_2020,
+    carey_2019,
     comrie_2026,
     forli_2025,
     grosmark_2016,
+    huszar_2022,
+    igata_2021,
     peyrache_2015,
     sargolini_2006,
     valero_2022,
@@ -341,7 +353,7 @@ ALL = [
 def test_record_is_complete(module):
     """Each record has the same fields; a result has its quote, a non-result says why."""
     record = module.WORKED_RESULT
-    assert set(record) == RECORD_KEYS
+    assert set(record) - {"planted_recall"} == RECORD_KEYS
     if record["status"] == "not possible yet":
         assert record["level"] is None
         assert record["ours"] is None
@@ -352,10 +364,40 @@ def test_record_is_complete(module):
             assert isinstance(attempted["value"], float)
             assert attempted["differs"]
     else:
-        assert record["status"] in {"reproduced", "sanity property"}
+        assert record["status"] in {"reproduced", "tested against chance"}
         assert record["level"] in {"A", "B"}
         assert isinstance(record["ours"], float)
         assert record["attempted"] is None
         assert record["why"] is None
         for field in ("finding", "quote", "source", "criterion", "parameters"):
             assert record[field], field
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        bhattarai_2020.WORKED_RESULT,
+        carey_2019.WORKED_RESULT,
+        forli_2025.OWN_3D_ANALYSIS,
+        huszar_2022.WORKED_RESULT,
+        igata_2021.WORKED_RESULT,
+    ],
+    ids=["bhattarai_2020", "carey_2019", "forli_2025", "huszar_2022", "igata_2021"],
+)
+def test_replay_records_state_what_planted_replay_limits(record):
+    """A replay count is read beside its recall, with the control's own limits."""
+    planted = record["planted_recall"]
+    reading = planted["reading"]
+    assert f"{100 * planted['judged'] / planted['planted']:.1f}%" in reading
+    assert "limit of what the number can say" in reading
+    assert "the model the decoder assumes" in reading
+    assert "compression 15" in reading
+    assert "evidence" in reading
+
+
+def test_huszar_record_says_its_criterion_is_easy_to_pass():
+    """Every null draw is 0, so one judged event would meet the criterion."""
+    assert (
+        "would pass on 1 of 20"
+        in huszar_2022.WORKED_RESULT["planted_recall"]["reading"]
+    )

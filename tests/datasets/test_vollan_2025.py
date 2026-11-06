@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import warnings
 
 import numpy as np
@@ -63,7 +64,8 @@ def _write_session(
 ):
     """A ``Dsession`` file laid out as mat_files.md describes, through scipy."""
     # The loader reads the file with mat-io, which the datasets extra installs.
-    pytest.importorskip("matio")
+    if importlib.util.find_spec("matio") is None:
+        pytest.skip("needs the datasets extra")
     import scipy.io as sio
 
     if hd is None:

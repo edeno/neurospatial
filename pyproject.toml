@@ -485,6 +485,11 @@ dev = [
     "ipywidgets>=8.0,<9.0",  # notebook widget view and its docs example
     "qtpy>=2.4",  # Qt imports in the animation tests
     "imageio-ffmpeg>=0.5.1",  # ffmpeg that video export encodes with
+    # Candidate-event detectors for the datasets' worked results, tests and docs.
+    # Pinned to a master commit here (see [tool.uv.sources]) because it is
+    # unreleased and PyPI rejects git dependencies, so it cannot go in the
+    # `datasets` extra; move it there once 2.0 is on PyPI.
+    "ripple-detection",
 ]
 docs = [
     "mkdocs>=1.6.0",
@@ -515,3 +520,7 @@ skip = "uv.lock,*.ipynb,*.npz,*.pkl,*.svg,*.png,site"
 # Domain terms, author names and abbreviations: allocentric (allo), phase
 # precession, theta trough, Zar (2010), standard errors (SEMs), N-dimensional.
 ignore-words-list = "abl,allo,alo,disjointness,nd,precesses,precessing,sems,theses,trough,unparseable,zar"
+
+[tool.uv.sources]
+# Unreleased: see the note in the `dev` dependency group.
+ripple-detection = { git = "https://github.com/Eden-Kramer-Lab/ripple_detection", rev = "0eddae64a5ebf7b810fb1ec693643b1673650142" }

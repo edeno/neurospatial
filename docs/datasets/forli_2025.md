@@ -26,8 +26,9 @@ catalog().query("dataset == 'forli_2025'")[["session", "n_units", "size_bytes", 
 ```python
 from neurospatial.datasets import load
 
-rec = load("forli_2025")              # fetches 260 MB of the 3.3 GB zip
+rec = load("forli_2025")              # fetches 1.1 GB of the 3.3 GB zip
 print(rec.positions.shape, rec.env.n_bins)
+print(rec.events["swr_probe2"].size)  # the authors' sharp-wave ripples
 ```
 
 ## What was recorded
@@ -39,15 +40,20 @@ markers on the neural recording headstage, tracked by 16 motion-capture cameras
 (the paper's Methods, for the indoor room). Flights are the authors'
 segmentation at a 0.5 m/s velocity threshold.
 
-Only the five members the loader needs are read from the zip, by HTTP byte
-range (260 MB): the behavior file, the three Kilosort 4 single-unit tables and
-the merge list, each verified against its own SHA-256. The single-unit tables
-are MATLAB `table` objects, read with `mat-io`.
+Only the nine members the loader needs are read from the zip, by HTTP byte
+range (1.1 GB): the behavior file, the three Kilosort 4 single-unit tables, the
+merge list, the three ripple files (817 MB, which also hold each probe's
+ripple-channel trace and every event's waveforms) and the best-probe choice,
+each verified against its own SHA-256. The single-unit and ripple tables are
+MATLAB `table` objects, read with `mat-io`.
 
 Sources read: the paper (Forli, Fan, Qi & Yartsev 2025, Nature,
 doi:10.1038/s41586-025-09341-z, accelerated article preview, Methods), the
 record's `NP_Bat_Demo.m` (whose header describes every variable) and
-`How to use.pdf`, and the files.
+`How to use.pdf`, the paper's code at github.com/kevin-qi/ripple-bat, commit
+6812188d (`NP_RippleDetect_AF_v0.m`, which builds the ripple tables, and
+`NP_Spatial_AF_v9_SWRs.m`, which reads them; read, not reused: the repository
+states no license), and the files.
 
 ## Units and conversions
 
@@ -60,6 +66,8 @@ record's `NP_Bat_Demo.m` (whose header describes every variable) and
 | `epochs["flight"]` from the 1-based sample indices `f_smp` | stated | The file. |
 | `epochs["neural_recording"]` from the first to the last spike of any unit; `params["analysis_epochs"]` the flights clipped to it | inferred | The files hold no recording start or stop. |
 | environment: every voxel of a grid that tiles `r_lim` exactly (29 x 26 x 11 cells of 0.2 x 0.2 x 0.209 m) | stated | `r_lim`, "boundaries of the room/outdoor arena" (the script); the file's frame, not fitted. |
+| `events["ripple_candidates_probe<n>"]`: `RPL_out.table.t` as stored, s; `events["swr_probe<n>"]`: its rows with `corr` at least 0.2 | stated | `NP_RippleDetect_AF_v0.m` takes `t` from `findpeaks` on the ripple power, in seconds on the LFP's time vector, which the script states is "synchronized with the other data streams"; the paper keeps events of "a minimum correlation value of 0.2". On the data, the population rate peaks in the 10 ms before `t`. |
+| `params["ripple_probe"]`: `best_prb_ch` of `BPC_Dataset_*.mat`, probe 2 | stated | The script's "Best probe and channel for LFP analysis"; `NP_Spatial_AF_v9_SWRs.m` loads that probe's ripple file. |
 
 The grid has the whole number of cells nearest to each side over 0.2 m, a tie
 going to fewer, larger cells: the 2.3 m height is 11.5 cells of 0.2 m, and
@@ -92,13 +100,37 @@ not zero.
   preprocessed ... to obtain continuous and smooth 3D positional data". Speeds
   and held-sample counts describe that processing as much as the tracking.
 
+- **The ripple events are the authors'.** `rec.events` holds each probe's table
+  by its peak times: `ripple_candidates_probe<n>` every row, `swr_probe<n>` the
+  rows at the paper's minimum correlation of 0.2 with the average event (3,350
+  of 4,943 on probe 2, the file's best probe). The table's other columns
+  (amplitude, duration, channel) are not kept. neurospatial did not detect
+  these events. The files give them at 1 kHz, where the paper states 500 Hz.
+  Flight was excluded with the headstage's accelerometer, not the file's
+  flights, so a few SWRs lie in `bflying` samples; the summary counts them.
+  The first seconds of the recording hold a burst of rows at about 10 Hz, which
+  the files do not explain.
+- **Not known to be awake.** The events are outside flight, but the files hold
+  no sleep scoring, and a resting bat may doze.
+- **The LFP is large and has no stated unit.** `rec.lfp` holds 384 channels at
+  1250 Hz. One channel is 53 MB in memory and all of them 405 GB, so ask for the
+  channels you need. The file gives a "voltage scaling factor" with no unit,
+  so values are arbitrary units: do not read them as microvolts. Times are
+  `red_out.t_ds` as stored, with 55 steps over 1.5 sampling periods, the longest
+  7.6 ms.
+- **A 3-D decode here cannot show a trajectory.** See the worked result: the
+  paper's replay analysis was 1-D along clustered flight paths, which
+  neurospatial cannot build yet, and 3-D fields here barely reproduce between
+  halves of the session.
+
 ## Analysis choices
 
 `rec.params`: `bin_size` 0.2 m (3-D bins about the size of a bat's body);
 `min_speed`, the file's `v_th`, the authors' flight threshold; `analysis_epochs`,
 the flights during the neural recording, so rate maps describe the bat in
 flight; `train_epochs` and `test_epochs`, even and odd of those flights, for
-held-out decoding; `dt` 0.25 s, as for the 2-D datasets.
+held-out decoding; `dt` 0.25 s, as for the 2-D datasets; `ripple_probe`, the
+probe whose events analyses use.
 
 ## Worked result
 
@@ -144,6 +176,52 @@ How it differs from the paper:
 
 Source: Forli et al. 2025, Nature, Results and Methods ("Identification of
 spatially tuned cells"), read on PubMed Central, PMC12460160.
+
+### Our own 3-D analysis of the ripple events: its test against chance failed
+
+This is neurospatial's own analysis, recorded in
+`forli_2025.OWN_3D_ANALYSIS`. **It is not the paper's replay analysis, and its
+numbers are not comparable with the paper's.** The paper's replay analysis was
+1-D, along clustered flight paths, which neurospatial cannot build yet. Here the
+authors' ripple events are decoded in the room's 3-D voxels instead.
+
+The property, fixed before the run: windows around ripple events are judged
+trajectories more often than the same windows after circularly shifting the
+spikes, above the 95th percentile of each of two nulls (20 draws each, seed
+2026).
+
+| | Windows judged trajectories, of 2,535 |
+| --- | --- |
+| ripple events | 2 |
+| every unit shifted by its own offset | 0 to 2, 95th percentile 2 |
+| all units shifted by one common offset | 0 to 6, 95th percentile 4.1 |
+
+**The property was not met, and this says nothing about replay in this
+session.** A count this small cannot separate the events from their nulls, and
+these maps cannot show a trajectory:
+
+- 3-D place fields barely reproduce between halves of the session (median
+  Spearman correlation 0.15, above);
+- held-out flights decode to a median 2.2 m from the bat, against 2.4 m with the
+  positions shuffled (100 ms bins, fields from the even flights, decoding the
+  odd ones).
+
+A low count here is not evidence of no replay. We planted replay into 300 of the
+windows. Every spike kept its time, and its cell was drawn from these rate maps along a
+real flight played 15 times faster. The rule judged 1 of the 300, 0.3%. This is a limit
+of the number, not a measurement of the bat: planted events come from the model the
+decoder assumes, and compression 15 is not calibrated for bats.
+
+How it was run: `events["swr_probe2"]`, peak ± 0.15 s, overlapping windows
+merged, kept inside the neural recording and clear of the file's flights; 134
+units with more spikes in the flights than there are flights and at most 2 Hz;
+fields over the flights from 3-D `compute_spatial_rates` (diffusion KDE,
+bandwidth 0.2 m); 20 ms bins stepped by 5 ms to each window's end; judged by the rule of
+`PFEIFFER_FOSTER_2013`, a MAP step under 0.6 m over at least 11 bins and at
+least 1.2 m from start to end. The two distances are our choice: the published
+20 and 40 cm scaled from a 2 m arena to this 5.8 m room, rounded. A shuffle per
+draw takes about a minute and a half, so the test reruns the count and the first
+draw of each null.
 
 ## Cite
 

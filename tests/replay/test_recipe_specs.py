@@ -627,6 +627,26 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             },
         },
     ),
+    "bhattarai_2020": (
+        ReplayMethod,
+        {
+            "score": "fit_linear_trajectory",
+            "score_options": {"method": "map"},
+            "nulls": ("time_bin_circular",),
+            "n_shuffles": 1000,
+            "alpha": 0.05,
+            "empty_time_bins": "drop",
+            "criteria": (("n_active_cells", ">=", 5, None, False),),
+            "units": "cm",
+            "decoding": {
+                "time_bin": 0.02,
+                "time_step": 0.01,
+                "position_bin": 2.0,
+                "rate_map_smoothing_sd": 6.0,
+                "rate_map_speed": 4.0,
+            },
+        },
+    ),
     "shin_2019": (
         ReplayMethod,
         {

@@ -135,6 +135,7 @@ _NULL_SPECS: Mapping[str, _NullSpec] = MappingProxyType(
         ),
         "place_field_circular": _NullSpec(needs="decoding", shareable=True),
         "time_bin_permutation": _NullSpec(moves_rows=True, rolls=True),
+        "time_bin_circular": _NullSpec(moves_rows=True, rolls=True),
         "spike_time_uniform": _NullSpec(
             needs="decoding", moves_rows=True, spreads_spikes=True
         ),
@@ -344,6 +345,17 @@ def replay_significance(
       independently, so with a prior that is the same in every time bin this
       equals permuting the spike counts and decoding again (Maboudi et al.'s
       form); with a time-varying prior it also moves each time bin's prior.
+    - ``"time_bin_circular"``: the posterior's time bins are shifted
+      circularly in time by a random number of bins, from 1 to
+      ``n_time_bins - 1`` (a shift of 0 is the event itself), so the order of the decoded positions is kept
+      and only where the sequence starts changes (Bhattarai et al. 2020,
+      "circularly shifting the decoded positions in time by random numbers
+      of bins"). Needs only the posterior. Unlike ``"time_bin_permutation"``
+      it keeps each position's neighbours, so a smooth trajectory stays
+      nearly smooth and only its wrap-around breaks. An event of ``n`` time
+      bins has only ``n - 1`` distinct shifts, so shuffles repeat, and with
+      fewer than 20 time bins ``p < 0.05`` needs no shift to score as high
+      as the event.
     - ``"spike_time_uniform"``: each cell's spikes in the event are placed
       uniformly at random over the event window and the event decoded
       again, the "spike jittering" of Stella et al. (2019). Each cell keeps
@@ -1125,6 +1137,15 @@ def _time_bin_permutation_shuffles(
     )
 
 
+def _time_bin_circular_shuffles(
+    event: _EventShuffles,
+) -> Iterable[NDArray[np.float64]]:
+    """The event's rows circularly shifted in time by random numbers of bins."""
+    posterior, generator = event.posterior, event.generator
+    shifts = generator.integers(1, max(len(posterior), 2), size=event.n_shuffles)
+    return (np.roll(posterior, int(shift), axis=0) for shift in shifts)
+
+
 def _spike_time_uniform_shuffles(
     event: _EventShuffles,
 ) -> Iterable[NDArray[np.float64]]:
@@ -1168,6 +1189,7 @@ _SHUFFLED_POSTERIORS: Mapping[
         "spike_train_circular": _spike_train_circular_shuffles,
         "place_field_circular": _place_field_circular_shuffles,
         "time_bin_permutation": _time_bin_permutation_shuffles,
+        "time_bin_circular": _time_bin_circular_shuffles,
         "spike_time_uniform": _spike_time_uniform_shuffles,
         "column_cycle_weighted": _column_cycle_weighted_shuffles,
     }

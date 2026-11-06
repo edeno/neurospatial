@@ -99,6 +99,7 @@ from neurospatial.datasets._arenas import (
     fitted_rectangle,
     shape_fill,
 )
+from neurospatial.datasets._matio import load_mat
 from neurospatial.datasets._params import alternating_blocks
 from neurospatial.datasets._recording import (
     Conversion,
@@ -446,10 +447,9 @@ def read_session(path: Path) -> dict[str, Any]:
         If a grid module holds more units than its ``nUnits``, or a unit's
         ``acorrCluId`` names no module.
     """
-    import matio
     import pandas as pd
 
-    d = matio.load_from_mat(str(path))["Dsession"]
+    d = load_mat(path)["Dsession"]
 
     def series(name: str) -> NDArray[np.float64]:
         return np.asarray(_value(d[name]), dtype=np.float64).ravel()

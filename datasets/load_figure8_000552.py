@@ -1,48 +1,26 @@
 """Huszár, Zhang, Blockus & Buzsáki mouse CA1 on a figure-8 maze (DANDI 000552).
 
 What was recorded: 113 CA1 units in mouse ``e14_2m2`` across a sleep, maze,
-sleep session (18,557 s). On the figure-8 maze the animal ran 21 rewarded
-alternation trials; position was tracked at 30 Hz only on the maze (7,891–9,483
-s, inside the maze epoch 7,859–9,492 s), as camera (x, y) in cm and as a
-linearized position along the track, 0–222 cm. The linearization runs around
-the maze as a loop: 0 and 222 cm are the same place (both ends sit at camera
-(85, 43) cm), so the linear position jumps by about 216 cm 62 times. The file also holds 4,297 detected ripples and Awake, Non-REM
-and REM sleep states.
+sleep session (18,557 s). The file holds 21 rewarded alternation trials, position
+at 30 Hz only on the maze, 4,297 ripples, and Awake, Non-REM and REM states.
 
-Where it lives: DANDI 000552, version 0.230630.2304, one 96 MB NWB file,
-CC-BY-4.0.
+The session is read by ``neurospatial.datasets.load("huszar_2022")``, whose
+module (``neurospatial/datasets/huszar_2022.py``) and docs page give the file,
+the conversions (camera positions in cm, the linearized position, a loop, in
+``rec.linearized``), the declared figure eight with both loops closed, and the
+watch-outs. ``_record.from_public`` converts it to the survey's record.
 
-What the loader converts: nothing changes units. ``positions`` is the
-camera (x, y) in cm; the linearized track position (cm) is kept in
-``params["linearized"]``, as for the other 2-D tracks: a loop cannot be
-declared on a line, where 0 and 222 cm are different points (G-021). Ripples
-and sleep states are read with pynwb because they live in ``processing/``
-tables that ``read_intervals`` does not search.
+Analysis choices are the public loader's ``params``: ``bin_size`` 2 cm,
+``min_speed`` 4 cm/s, ``dt`` 0.25 s, ``replay_dt`` 0.02 s, trials alternating
+within each visited arm as the train and test epochs.
 
-Declared environment (``geometry["environment"]``): the figure-8 as a track
-graph with both loops closed, a rectangle with a bar across its middle (six
-nodes, seven edges, every edge kept), its node positions fitted to the
-camera samples (``_tracks.figure8_candidates``, ``fit_nodes``); no source
-read here states its size or width. ``geometry["lap_start_region"]`` cuts
-the centre bar at its middle, which every trial crosses once.
-
-Analysis choices (``params``):
-
-- ``bin_size`` 2 cm: the position bin of the ``GROSMARK_2016`` replay
-  recipe (112 bins along the 222 cm linearized coordinate).
-- ``min_speed`` 4 cm/s: excludes stops at the reward wells, where the animal
-  is still and ripples happen, from the running rate maps.
-- ``train_epochs``/``test_epochs``: trials alternating within each loop
-  (the trials table's ``visited_arm``, checked against the side of the
-  centre bar the samples run on), so position decoding is tested on held-out
-  laps of both loops. Consecutive trials alternate between the loops (19 of
-  the 20 pairs), so even and odd trials would split them by loop.
-- ``dt`` 0.25 s: running-decoding bin, as for the open-field datasets.
-- ``replay_dt`` 0.02 s: the decoding bin of both ``DAVIDSON_2009`` and
-  ``GROSMARK_2016``.
-- ``events["ripples"]``: the 71 ripples inside the maze epoch (awake ripples,
-  decoded with the maze's own rate maps). The 4,226 sleep ripples are not
-  replayed, to keep the shuffle tests to minutes.
+Survey-only: ``events["ripples"]``, the 71 ripples inside the maze epoch (awake
+ripples, decoded with the maze's own rate maps; the 4,226 sleep ripples are not
+replayed, to keep the shuffle tests to minutes), every row in
+``events["all_ripples"]``; ``geometry["track_length_cm"]`` and
+``geometry["lap_start_region"]``, a cut across the centre bar at its middle, which
+every trial crosses once; the declared track's facts the environment fidelity
+study reads; ``params["nwb_source"]`` and ``params["readers_used"]``.
 """
 
 from __future__ import annotations
@@ -54,26 +32,18 @@ import numpy as np
 from _record import (
     Range,
     Recording,
-    alternate_within,
+    SurveyOnly,
     check_expectations,
+    from_public,
+    public_file,
     validate_recording,
 )
-from _tracks import (
-    best_fit,
-    cut_region,
-    declared_geometry,
-    edge_lengths,
-    figure8_candidates,
-)
-
-from neurospatial.datasets._fetch import dandi_asset_url, fetch
+from _tracks import cut_region, public_track_facts
 
 DATASET = {
     "key": "figure8_000552",
-    "title": "Huszár et al., mouse CA1 on a figure-8 maze with sleep and ripples",
-    "source": "https://dandiarchive.org/dandiset/000552/0.230630.2304",
-    "license": "CC-BY-4.0",
-    "download_size": "96.0 MB",
+    "public": "huszar_2022",
+    "session": "sub-e14-2m2_ses-e14-2m2-201019",
 }
 
 # Pre-registered from the dandiset description and a metadata probe of this
@@ -95,156 +65,53 @@ EXPECTATIONS: dict[str, Any] = {
     "sleep_states_present": lambda rec: len(rec.epochs) > 0,
 }
 
-_PATH = "sub-e14-2m2/sub-e14-2m2_ses-e14-2m2-201019_behavior+ecephys.nwb"
-_ASSET_ID = "61ea529d-46db-42e6-b742-17588b2f70a2"
-_SHA256 = "3ab5f99419a9d0070ef6b5bc468841b75467ac95f538e9735312fa0d29aa3d4a"
-_LINEAR = "processing/behavior/LinearizedPosition/LinearizedSpatialSeries"
-_CAMERA = "processing/behavior/SubjectPosition/SpatialSeries"
-_FIT_CAP_CM = 10.0
-
 
 def load(cache: Path | None = None) -> Recording:
-    """Fetch the session and return it as a ``Recording`` (camera x, y in cm)."""
-    import pynwb
+    """The session from ``neurospatial.datasets``; camera (x, y) in cm."""
+    from neurospatial.datasets import load as load_public
 
-    from neurospatial.io.nwb import read_intervals, read_position, read_units
-
-    path = fetch(
-        dandi_asset_url(_ASSET_ID),
-        Path(_PATH).name,
-        sha256=_SHA256,
-        subdir=DATASET["key"],
-        cache=cache,
-    )
-    with pynwb.NWBHDF5IO(path, "r", load_namespaces=True) as io:
-        nwbfile = io.read()
-        linear = read_position(nwbfile, position_name=_LINEAR)
-        camera = read_position(nwbfile, position_name=_CAMERA)
-        units = read_units(nwbfile)
-        trials = read_intervals(nwbfile, interval_name="trials")
-        session_epochs = read_intervals(nwbfile, interval_name="epochs")
-        states = nwbfile.processing["behavior"]["SleepStates"].to_dataframe()
-        ripple_table = nwbfile.processing["ecephys"]["Ripples"].to_dataframe()
-        ripples = ripple_table[["start_time", "stop_time"]].to_numpy(dtype=float)
-
-    if linear.units != "cm" or camera.units != "cm":
-        msg = f"expected cm positions, got {linear.units!r} and {camera.units!r}"
-        raise ValueError(msg)
-    times = np.asarray(linear.times, dtype=float)
-    if not np.array_equal(np.asarray(camera.times, dtype=float), times):
-        msg = "the camera and linearized series have different timestamps"
-        raise ValueError(msg)
-    trial_windows = np.column_stack([np.asarray(trials.start), np.asarray(trials.stop)])
-    epoch_windows = np.column_stack(
-        [np.asarray(session_epochs.start), np.asarray(session_epochs.stop)]
-    )
-    maze = epoch_windows[
-        (epoch_windows[:, 0] <= times[0]) & (epoch_windows[:, 1] >= times[-1])
-    ]
-    in_maze = (ripples[:, 0] >= maze[0, 0]) & (ripples[:, 1] <= maze[0, 1])
-    xy = np.asarray(camera.positions, dtype=float)
-    graph, _ = best_fit(figure8_candidates(xy), xy, cap=_FIT_CAP_CM)
+    rec = load_public(DATASET["public"], DATASET["session"], cache=cache)
+    ripples = rec.events["ripples"]
+    ((start, stop),) = rec.epochs["maze"]
+    in_maze = (ripples[:, 0] >= start) & (ripples[:, 1] <= stop)
+    graph = rec.env.binning.linearization.graph
     bar = [np.asarray(graph.nodes[n]["pos"]) for n in ("bar_0", "bar_1")]
-    # Consecutive trials alternate between the loops (``visited_arm`` left,
-    # right), so train and test alternate within each loop. Checked: each
-    # trial's median signed offset from the centre bar's line puts every
-    # left trial on one side and every right trial on the other. The label
-    # comes from the same time-sorted rows as the windows (this file's
-    # trials table is already in time order).
-    arm = np.asarray([str(a) for a in trials.visited_arm])
-    along = (bar[1] - bar[0]) / np.linalg.norm(bar[1] - bar[0])
-    side = []
-    for start, stop in trial_windows:
-        rel = xy[(times >= start) & (times < stop)] - bar[0]
-        side.append(np.nanmedian(along[0] * rel[:, 1] - along[1] * rel[:, 0]))
-    side = np.sign(side)
-    if (
-        set(arm) != {"left", "right"}
-        or any(len(set(side[arm == label])) != 1 for label in ("left", "right"))
-        or side[arm == "left"][0] == side[arm == "right"][0]
-    ):
-        msg = (
-            "trials' visited_arm no longer puts left and right trials on opposite"
-            " sides of the centre bar; recheck the labels"
-        )
-        raise ValueError(msg)
-    train = alternate_within(arm)
-    region = cut_region(
-        "centre_bar",
-        0.5 * (bar[0] + bar[1]),
-        bar[1] - bar[0],
-        half_length=2.0,
-        half_width=10.0,
-    )
-    declared, declared_line = declared_geometry(
-        graph,
-        xy,
-        times=times,
-        kind="figure-8: a rectangle with a bar across its middle, both loops closed",
-        source="DANDI 000552 (figure-8 maze); no size or width stated",
-        bin_size=2.0,
-        physical_width=None,
-        units="cm",
-        name=DATASET["key"],
-        placed_by="fitted to the samples",
-        placement=f"node positions fitted to the camera samples; edges (cm):"
-        f" {edge_lengths(graph)}",
-        tracked_point="not stated",
-        speed_thresholds=(4.0, 30.0),
-    )
-    epochs = {
-        "maze": maze,
-        "trials": trial_windows,
-        **{
-            str(label).lower().replace("-", "_"): states.loc[
-                states["label"] == label, ["start_time", "stop_time"]
-            ].to_numpy(dtype=float)
-            for label in sorted(states["label"].unique())
+    why_events = "awake ripples only, to keep the shuffle tests to minutes"
+    return from_public(
+        rec,
+        key=DATASET["key"],
+        events={
+            "ripples": SurveyOnly(ripples[in_maze], why_events),
+            "all_ripples": SurveyOnly(ripples, why_events),
         },
-    }
-    return Recording(
-        dataset=DATASET["key"],
-        session="e14_2m2_201019",
-        source=f"{DATASET['source']} {_PATH}",
-        license=DATASET["license"],
-        times=times,
-        positions=xy,
-        position_units="cm",
-        spike_times=tuple(
-            np.asarray(spikes, dtype=float) for spikes in units.spike_times
-        ),
-        unit_ids=np.asarray(units.unit_ids),
-        epochs=epochs,
-        events={"ripples": ripples[in_maze], "all_ripples": ripples},
         geometry={
-            "track_length_cm": 222.0,
-            **declared,
-            "lap_start_region": region,
+            "track_length_cm": SurveyOnly(222.0, "the linearized coordinate's span"),
+            "lap_start_region": SurveyOnly(
+                cut_region(
+                    "centre_bar",
+                    0.5 * (bar[0] + bar[1]),
+                    bar[1] - bar[0],
+                    half_length=2.0,
+                    half_width=10.0,
+                ),
+                "the lap operation's start, across the centre bar at its middle",
+            ),
+            **public_track_facts(
+                rec,
+                declared_from="fitted to the samples",
+                physical_width=None,
+                speed_thresholds=(4.0, 30.0),
+            ),
         },
         params={
-            "bin_size": 2.0,
-            "min_speed": 4.0,
-            "dt": 0.25,
-            "replay_dt": 0.02,
-            "analysis_epochs": maze,
-            "train_epochs": trial_windows[train],
-            "test_epochs": trial_windows[~train],
-            "nwb_source": str(path),
-            "readers_used": ("units",),
-            "linearized": np.asarray(linear.positions, dtype=float).ravel(),
+            "nwb_source": SurveyOnly(
+                public_file(DATASET["public"], DATASET["session"], cache=cache),
+                "the cached NWB file the session was read from",
+            ),
+            "readers_used": SurveyOnly(
+                ("units",), "the io.nwb readers the public loader calls"
+            ),
         },
-        conversions=(
-            f"positions: {_CAMERA} (cm)",
-            f"params['linearized']: {_LINEAR} (cm), 0 and 222 cm the same place",
-            "events['ripples']: Ripples table rows inside the maze epoch;"
-            " every row in events['all_ripples']",
-            "epochs: sleep states by label from processing/behavior/SleepStates (pynwb)",
-            f"train/test: trials alternating within visited_arm ({int((arm == 'left').sum())}"
-            f" left, {int((arm == 'right').sum())} right; each label on its own side of"
-            " the centre bar)",
-            declared_line,
-            "geometry['lap_start_region']: across the centre bar at its middle",
-        ),
     )
 
 
