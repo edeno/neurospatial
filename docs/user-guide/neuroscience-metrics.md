@@ -436,7 +436,7 @@ same = np.nanmedian(np.diag(across))
 distant = np.nanmedian(across[far])
 print(f"same location {same:.2f}, distant locations {distant:.2f}")
 assert same > 0.9 > distant
-assert same == np.nanmedian(population_vector_correlation(rates_a, rates_b))
+assert np.isclose(same, np.nanmedian(population_vector_correlation(rates_a, rates_b)))
 ```
 
 `same` is the usual score and `distant` is what rate level gives alone, so read
