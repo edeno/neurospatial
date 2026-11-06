@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Datasets
+
+- Loading `forli_2025` or `vollan_2025` no longer changes pandas settings for the
+  rest of the session. Importing mat-io turns on `future.infer_string`, so text
+  in every later table became string dtype. Text columns of these two datasets
+  now follow your own setting: `object` in pandas 2 by default. Their values are
+  unchanged on the sessions checked.
+
 ### Spatial bases
 
 - `chebyshev_filter_basis` rounds its spectral radius to 12 significant digits,

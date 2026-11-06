@@ -404,3 +404,21 @@ def test_module_absent_below_its_python_says_so(
     monkeypatch.setattr(_load, "_python_version", lambda: (3, 11))
     with pytest.raises(ImportError, match=r"pip install 'neurospatial\[datasets\]'"):
         load(DATASET, cache=synthetic.cache)
+
+
+def test_importing_a_reader_keeps_the_pandas_settings(tmp_path, monkeypatch):
+    """mat-io turns on pandas' string dtype on import; the session keeps its own."""
+    import pandas as pd
+
+    (tmp_path / "flips_a_pandas_option.py").write_text(
+        "import pandas as pd\n"
+        "pd.options.future.infer_string = not pd.options.future.infer_string\n"
+    )
+    monkeypatch.syspath_prepend(tmp_path)
+    monkeypatch.delitem(sys.modules, "flips_a_pandas_option", raising=False)
+    before = pd.get_option("future.infer_string")
+
+    _load._require("flips_a_pandas_option", "a dataset")
+
+    assert pd.get_option("future.infer_string") == before
+    sys.modules.pop("flips_a_pandas_option", None)
