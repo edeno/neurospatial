@@ -26,6 +26,7 @@ from neurospatial._intervals import (
 )
 from neurospatial._observation import validate_break_before
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._validation import validate_finite_scalar
 from neurospatial.behavior._position_bins import (
     bridge_missing_positions,
     gate_settings,
@@ -192,14 +193,7 @@ def _observed_visits(
     windows = as_intervals(epochs, name="epochs")
     clock, bins, tracked = sample_bins(env, times, positions, call=call, epochs=windows)
     validate_max_gap(max_gap)
-    if not (np.isfinite(min_dwell) and min_dwell >= 0):
-        raise ValueError(
-            _format_error(
-                f"{call}(): min_dwell must be finite and >= 0, got {min_dwell}.",
-                why="it is the shortest time in seconds that counts as a visit.",
-                fix="pass a duration in seconds, or 0 to count every entry.",
-            )
-        )
+    validate_finite_scalar(min_dwell, name="min_dwell", positive=False)
     if isinstance(regions, str):
         msg = f"{call}(): regions must be a sequence of names, for example ['left', 'right']."
         raise TypeError(msg)
@@ -371,7 +365,8 @@ def detect_region_visits(
         Shortest visit, in seconds. A shorter visit is not reported, so an
         animal running through a well without stopping makes no visit. A visit
         cut off by a gap or the edge of the recording is kept, because it may
-        have lasted longer than was seen. The time is per visit: a rest split
+        have lasted longer than was seen. A gap no longer than ``max_gap``
+        counts toward the visit. The time is per visit: a rest split
         by jitter across a region's edge can lose every piece, so make the
         region cover where the animal rests. ``0`` counts every entry.
     max_gap : float or None, default=1.0

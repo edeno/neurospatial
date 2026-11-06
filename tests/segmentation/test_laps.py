@@ -1,6 +1,7 @@
 """Tests for lap detection functions."""
 
 import itertools
+import warnings
 
 import numpy as np
 import pytest
@@ -868,6 +869,39 @@ class TestAutoWarnsAboutAnotherRoute:
             env, times, positions, method="reference", reference_lap=one_lap
         )
         assert len(laps) == 10
+
+    def test_a_quarter_as_many_other_trips_warns_and_one_does_not(self) -> None:
+        from neurospatial.behavior import detect_laps
+
+        env = self._figure_eight()
+        positions, times = self._session("LLLR" * 5)
+        with pytest.warns(UserWarning, match=r"\d+ trips .* against 15 laps"):
+            detect_laps(env, times, positions)
+        positions, times = self._session("LR" + "L" * 3)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert len(detect_laps(env, times, positions)) == 4
+
+    def test_a_route_sharing_most_of_the_template_still_warns(self) -> None:
+        """Trips round one lobe lie mostly on a first circuit of the outer ring."""
+        from neurospatial.behavior import detect_laps
+
+        outer = [
+            (5, 50),
+            (5, 95),
+            (60, 95),
+            (115, 95),
+            (115, 5),
+            (60, 5),
+            (5, 5),
+            (5, 50),
+        ]
+        lobe = [(5, 50), (5, 95), (60, 95), (60, 5), (5, 5), (5, 50)]
+        positions = np.vstack([self._path(outer), self._path(lobe)] * 10)
+        positions += np.random.default_rng(0).normal(0.0, 0.3, positions.shape)
+        times = np.arange(len(positions)) / 30.0
+        with pytest.warns(UserWarning, match=r"\d+ trips .* against 10 laps"):
+            detect_laps(self._figure_eight(), times, positions)
 
     def test_a_start_at_the_junction_says_why_no_lap_was_found(self) -> None:
         from neurospatial.behavior import detect_laps

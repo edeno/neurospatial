@@ -19,6 +19,7 @@ from numpy.typing import ArrayLike, NDArray
 from neurospatial._exceptions import _format_error
 from neurospatial._intervals import DEFAULT_MAX_GAP
 from neurospatial._pynapple import reads_pynapple_samples
+from neurospatial._stacklevel import _external_stacklevel
 from neurospatial.behavior.segmentation import Trial
 from neurospatial.behavior.visits import RegionVisit, _observed_visits
 from neurospatial.ops.mapping import _require_region_mask
@@ -178,14 +179,17 @@ def _warn_about_running_through(
     visits: Sequence[RegionVisit],
     regions: Sequence[str],
 ) -> None:
-    """Warn when many visits crossed a region at about running speed.
+    """Warn when many visits crossed a region without slowing down.
 
-    A visit counts when the animal moved at least half the region's extent
-    between entering and leaving, at no less than half the median speed
-    outside the regions. A stop is too slow, and jitter at a region's edge
-    moves too little. It takes two such visits, and a tenth of all visits, so
-    the occasional detour does not warn. A visit of one or two samples is
-    left out: it holds too few samples to say how the animal moved.
+    A visit counts when the animal got at least half the region's narrower
+    side from where it came in, and its net speed through the region was at
+    least half its net speed over an equal time before or after. A stop is
+    too slow against the run that led to it, and jitter at a region's edge
+    moves too little. Comparing each visit with the moments around it needs no
+    session-wide running speed, which long rests would drag down. It takes two
+    such visits, and a tenth of all visits, so the occasional detour does not
+    warn. A visit of one or two samples is left out: it holds too few samples
+    to say how the animal moved.
     """
     complete = [
         v
@@ -196,40 +200,40 @@ def _warn_about_running_through(
         return
     clock = np.asarray(times, dtype=np.float64)
     path = np.asarray(positions, dtype=np.float64)
-    inside = np.zeros(len(clock), dtype=bool)
-    for visit in visits:
-        inside[visit.start_index : visit.stop_index] = True
-    outside = np.flatnonzero(~inside[:-1] & ~inside[1:])
-    steps = np.linalg.norm(path[outside + 1] - path[outside], axis=1)
-    speeds = steps / np.diff(clock)[outside]
-    speeds = speeds[np.isfinite(speeds)]
-    if speeds.size == 0:
-        return
-    running_speed = float(np.median(speeds))
-    extents = {}
+
+    def net_speed(first: int, last: int) -> float:
+        elapsed = clock[last] - clock[first]
+        if elapsed <= 0:
+            return np.nan
+        return float(np.linalg.norm(path[last] - path[first]) / elapsed)
+
+    narrowest = {}
     for name in regions:
         mask = _require_region_mask(
             env, name, operation="detect_trials()", argument="regions"
         )
-        centers = env.bin_centers[mask]
-        extents[name] = float(np.linalg.norm(np.ptp(centers, axis=0)))
+        narrowest[name] = float(np.ptp(env.bin_centers[mask], axis=0).min())
     crossed = 0
     for visit in complete:
-        moved = float(np.linalg.norm(path[visit.stop_index] - path[visit.start_index]))
-        duration = visit.stop_time - visit.start_time
-        crossed += (
-            moved >= extents[visit.region] / 2 and moved >= running_speed / 2 * duration
-        )
+        entry, leave = visit.start_index, visit.stop_index
+        moved = float(np.linalg.norm(path[leave] - path[entry]))
+        if moved < narrowest[visit.region] / 2:
+            continue
+        span = clock[leave] - clock[entry]
+        earlier = np.searchsorted(clock, clock[entry] - span)
+        later = np.searchsorted(clock, clock[leave] + span, side="right") - 1
+        around = (net_speed(int(earlier), entry), net_speed(leave, int(later)))
+        finite = [speed for speed in around if np.isfinite(speed)]
+        crossed += bool(finite) and moved / span >= max(finite) / 2
     if crossed >= 2 and 10 * crossed >= len(visits):
         warnings.warn(
             f"detect_trials(): {crossed} of {len(visits)} visits crossed their "
-            "region at about running speed, so these trials end where the "
-            "animal passed a region, not where it stopped. Fix: pass "
-            "min_dwell= with the shortest stop you count as an arrival, in "
-            "seconds, or read arrivals from hardware with "
-            "trials_between_visits.",
+            "region without slowing down, so these trials end where the animal "
+            "passed a region, not where it stopped. Fix: pass min_dwell= with "
+            "the shortest stop you count as an arrival, in seconds, or read "
+            "arrivals from hardware with trials_between_visits.",
             UserWarning,
-            stacklevel=3,
+            stacklevel=_external_stacklevel(),
         )
 
 
@@ -276,9 +280,11 @@ def detect_trials(
     min_dwell : float, default=0.0
         Shortest visit that counts as arriving, in seconds. A trial runs
         through a shorter visit without ending, so a route past a well is one
-        trial. With the default every entry is an arrival, which suits wells
-        at dead ends. A warning says when many visits look like running
-        through. See :func:`detect_region_visits`.
+        trial. A visit cut off by a gap before it reached this length is not
+        an arrival, and the trial is censored. With the default every entry
+        is an arrival, which suits wells at dead ends. A warning says when
+        many visits look like running through. See
+        :func:`detect_region_visits`.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge. A longer
         gap ends observation; ``None`` bridges every gap.
@@ -386,7 +392,16 @@ def detect_trials(
         if not visit.exit_observed:
             continue  # observation ended inside the region: no departure
         following = visits[i + 1] if i + 1 < len(visits) else None
-        if following is not None and following.run_id == visit.run_id:
+        # A cut-off visit too short to be sure of is no arrival: observation
+        # stopped first.
+        if (
+            following is not None
+            and following.run_id == visit.run_id
+            and (
+                following.exit_observed
+                or following.stop_time - following.start_time >= min_dwell
+            )
+        ):
             trials.append(
                 _trial(
                     visit.stop_time,
