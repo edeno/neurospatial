@@ -1,5 +1,7 @@
 """Tests for events module core functionality."""
 
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -8,6 +10,7 @@ from numpy.testing import assert_allclose
 from neurospatial.events._core import (
     PeriEventResult,
     PopulationPeriEventResult,
+    _event_times,
     _validate_events_dataframe,
     plot_peri_event_histogram,
 )
@@ -225,6 +228,42 @@ class TestValidateEventsDataframe:
         with pytest.raises(ValueError, match="non-numeric values"):
             _validate_events_dataframe(df)
 
+    @pytest.mark.parametrize(
+        "column",
+        [
+            pd.Series(["a", "b"], dtype="string"),
+            pd.Series(["1.5", "2.5"], dtype=pd.StringDtype(na_value=np.nan)),
+            pd.Series(["a", "b"], dtype="category"),
+            pd.to_datetime(["2020-01-01", "2020-01-02"]).tz_localize("UTC"),
+            pd.to_timedelta([1.0, 2.0], unit="s"),
+            pd.Series([True, False]),
+            pd.Series([True, False], dtype="boolean"),
+            pd.Series([1.0 + 0j, 2.0 + 0j]),
+        ],
+        ids=[
+            "string",
+            "pandas-3-text",
+            "category",
+            "timezone-datetime",
+            "timedelta",
+            "bool",
+            "nullable-bool",
+            "complex",
+        ],
+    )
+    def test_column_of_anything_but_real_numbers_raises(self, column):
+        """Every dtype is refused with the same message, naming the dtype."""
+        df = pd.DataFrame({"timestamp": column})
+        with pytest.raises(
+            ValueError, match=rf"non-numeric.*{re.escape(str(column.dtype))}"
+        ):
+            _validate_events_dataframe(df)
+
+    @pytest.mark.parametrize("dtype", ["Float64", "Int64", "float32", "int64"])
+    def test_real_numbers_pass_in_any_numeric_dtype(self, dtype):
+        df = pd.DataFrame({"timestamp": pd.Series([1, 2], dtype=dtype)})
+        _validate_events_dataframe(df)
+
     def test_context_in_error_message(self):
         """Context should appear in error message."""
         df = pd.DataFrame({"time": [1.0, 2.0]})
@@ -241,6 +280,49 @@ class TestValidateEventsDataframe:
 # =============================================================================
 # Test plot_peri_event_histogram
 # =============================================================================
+
+
+class TestNullableEventTimes:
+    """Times in pandas' nullable dtypes, as read from Parquet or Arrow."""
+
+    @pytest.mark.parametrize("dtype", ["Float64", "Int64"])
+    def test_each_function_gives_what_float_times_give(self, dtype):
+        from neurospatial import Intervals
+        from neurospatial.events import (
+            add_positions,
+            align_events,
+            events_to_intervals,
+            filter_by_intervals,
+        )
+
+        floats = pd.DataFrame({"timestamp": [1.0, 2.0, 5.0]})
+        nullable = floats.astype(dtype)
+        stops = pd.DataFrame({"timestamp": [1.5, 3.0, 6.0]}).astype("Float64")
+        window = Intervals.from_arrays([0.5], [2.5])
+        times = np.arange(0.0, 7.0, 0.5)
+        positions = np.c_[times, np.zeros_like(times)]
+
+        for call in (
+            lambda df: add_positions(df, times=times, positions=positions),
+            lambda df: align_events(df, floats, (-1.0, 1.0)),
+            lambda df: filter_by_intervals(df, window),
+        ):
+            pd.testing.assert_frame_equal(
+                call(nullable).astype(float, errors="ignore"),
+                call(floats).astype(float, errors="ignore"),
+                check_dtype=False,
+            )
+        np.testing.assert_array_equal(
+            events_to_intervals(nullable, stops).start,
+            events_to_intervals(floats, stops.astype(float)).start,
+        )
+
+    @pytest.mark.parametrize("dtype", ["Float64", "Int64"])
+    def test_missing_time_reads_as_a_nan_time(self, dtype):
+        """pd.NA gets the message for a row with no time, naming the row."""
+        df = pd.DataFrame({"timestamp": pd.Series([1, None, 3], dtype=dtype)})
+        with pytest.raises(ValueError, match=r"1 NaN or inf time.*first at row 1"):
+            _event_times(df, "timestamp", name="events", call="add_positions()")
 
 
 class TestPlotPeriEventHistogram:

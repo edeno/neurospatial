@@ -1525,12 +1525,15 @@ def _validate_events_dataframe(
         raise ValueError(msg)
 
     # Check timestamp is numeric
-    if not np.issubdtype(df[timestamp_column].dtype, np.number):
+    dtype = df[timestamp_column].dtype
+    if not pd.api.types.is_any_real_numeric_dtype(dtype):
         msg = (
-            f"Timestamp column '{timestamp_column}' contains non-numeric values.\n"
+            f"Timestamp column '{timestamp_column}' contains non-numeric values "
+            f"(dtype {dtype}).\n"
             "  Why: Timestamps must be numeric (seconds from session start).\n"
-            f"  Fix: Convert timestamps: df['{timestamp_column}'] = "
-            f"df['{timestamp_column}'].astype(float)"
+            f"  Fix: Convert them to seconds: df['{timestamp_column}'].astype(float) "
+            f"for text, df['{timestamp_column}'].dt.total_seconds() for a timedelta "
+            "(subtract the session start from a datetime first)."
         )
         raise ValueError(msg)
 
@@ -1561,7 +1564,7 @@ def _event_times(
         If ``column`` is missing or not numeric, or holds NaN or inf.
     """
     _validate_events_dataframe(df, timestamp_column=column, context=f"{call} {name}")
-    times: NDArray[np.float64] = df[column].to_numpy(dtype=np.float64)
+    times: NDArray[np.float64] = df[column].to_numpy(dtype=np.float64, na_value=np.nan)
     bad = np.flatnonzero(~np.isfinite(times))
     if bad.size:
         msg = (

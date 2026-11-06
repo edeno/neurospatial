@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Event tables
+
+- `add_positions`, `align_events`, `events_to_intervals` and
+  `filter_by_intervals` now read times in pandas' nullable `Float64` and `Int64`
+  columns; they used to stop with a NumPy `TypeError`. `pd.NA` counts as a
+  missing time.
+- A time column of text in pandas' string dtype, the default from pandas 3, now
+  gets the "non-numeric" `ValueError` that says how to convert it, not a NumPy
+  `TypeError`. So does a category or a timezone-aware datetime column.
+- A timedelta time column is now refused. It used to pass as numbers, and the
+  times were read in nanoseconds rather than seconds.
+
 ### Several sessions
 
 - The interoperability guide shows how to keep settings when joining tables.
