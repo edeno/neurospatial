@@ -341,7 +341,7 @@ def test_sequence_track_measures_distance_along_the_trial():
 
 def test_read_lfp_takes_one_cell_of_a_v73_file(tmp_path):
     """A cell array of references, each (2, n_time): MATLAB's columns are HDF5's rows."""
-    import h5py
+    h5py = pytest.importorskip("h5py")
 
     path = tmp_path / "lfp.mat"
     with h5py.File(path, "w") as file:
