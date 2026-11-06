@@ -596,10 +596,11 @@
   paper's 1,654 events and 91.6% of its own 1,328 are the paper's; with the paper's
   speed and theta channel that becomes 98.6% and 97.2%. The worked result is a
   test against chance on the route of the paper's code where it differs from the
-  text (5 cm/s, an exposure of 5 ms, 111 bins per trajectory, sequences over the
-  whole session): 43 sequences on those candidates, above the shifted-spike null
-  (95th percentile 8.0) and not above the shifted-maps null (45.6), so its fixed
-  criterion is not met. Planted replay is judged 5.7% of the time, so that count
+  text (5 cm/s, an exposure of 5 ms, a 2 ms spike density, 111 bins per trajectory,
+  sequences over the whole session): 41 sequences on those candidates, above the
+  shifted-spike null (95th percentile 8.0) and not above the shifted-maps null
+  (52.35), so its fixed criterion is not met. Planted replay is judged 5.8% of the
+  time, so that count
   is not a rate of replay. Over the paper's 19 sessions the left share differs by
   restriction as in the paper, and as much with shifted rate maps, and it follows
   the units kept on each side, so on this analysis it is not a reproduction. The

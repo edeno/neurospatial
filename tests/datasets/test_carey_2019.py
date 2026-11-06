@@ -63,6 +63,10 @@ MIN_SPIKES = 25
 TRACK_ENDS = (20.0, 15.0)
 #: DecodeZ.m: the Poisson exposure is the 5 ms step, for 25 ms counts.
 EXPOSURE = STEP
+#: MakeQfromS.m: each unit's 5 ms counts are smoothed by a Gaussian of 2 ms SD,
+#: 0.4 bins, before the sum. Past 5 bins its weights are under 1e-34.
+_SPIKE_DENSITY = np.exp(-0.5 * (np.arange(-5, 6) / (0.002 / STEP)) ** 2)
+SPIKE_DENSITY = _SPIKE_DENSITY / _SPIKE_DENSITY.sum()
 #: Generate_DecSeq.m: a time row needs this many active cells, and a sequence
 #: this many rows; a jump of up to 40 cm counts in bins of pathlength / 112.
 MIN_ACTIVE_CELLS, MIN_ROWS = 4, 10
@@ -70,9 +74,9 @@ MAX_JUMP_CM, N_EDGES = 40.0, 112
 #: The worked result: sequences left and right on our candidates and the
 #: paper's; events a sequence overlaps, on one side or the other only; and
 #: each null's range and 95th percentile.
-OURS_SEQUENCES, PAPER_SEQUENCES = (11, 32), (13, 34)
-OURS_EVENTS = (59, 10, 31)
-FITTED_RANGE, FITTED_P95 = (17, 57), 45.6
+OURS_SEQUENCES, PAPER_SEQUENCES = (9, 32), (11, 34)
+OURS_EVENTS = (60, 8, 31)
+FITTED_RANGE, FITTED_P95 = (18, 59), 52.35
 MOVED_RANGE, MOVED_P95 = (0, 8), 8.0
 
 KEYS = """
@@ -263,6 +267,14 @@ def test_blocks_are_runs_of_active_rows_long_enough_for_a_sequence():
     active[15:24] = True  # 9 rows
     active[30:] = True  # 10 rows, to the end
     assert _blocks(active).tolist() == [[2, 12], [30, 40]]
+
+
+def test_spike_density_is_makeqfroms_gaussian_of_two_ms():
+    """gausskernel at SD 0.4 bins, normalized, keeps a spike's mass near its bin."""
+    # By hand: exp(-1 / (2 * 0.4**2)) = 0.0439, so 1 / (1 + 2 * 0.0439) at the centre.
+    assert SPIKE_DENSITY[5] == pytest.approx(0.9192, abs=1e-4)
+    assert SPIKE_DENSITY.sum() == pytest.approx(1.0)
+    np.testing.assert_allclose(SPIKE_DENSITY, SPIKE_DENSITY[::-1])
 
 
 def test_a_candidate_overlaps_strictly_and_the_other_side_also_by_a_touch():
@@ -541,18 +553,32 @@ def _rates_on_side(rec, side, trains):
     return env, np.array(units), rates, (_jump_bins(rec) + 0.5) * bin_width
 
 
+def _window_sums(fine):
+    """Sums of five 5 ms bins, a row every bin."""
+    running = np.vstack([np.zeros((1, fine.shape[1]), fine.dtype), fine]).cumsum(axis=0)
+    return running[N_SUMMED:] - running[:-N_SUMMED]
+
+
 def _summed_counts(trains, start, stop):
-    """Counts in 25 ms windows stepped by 5 ms over [start, stop), and their centres."""
+    """25 ms windows stepped by 5 ms over [start, stop).
+
+    Returns the counts, which decide the active cells, the same windows of the
+    code's spike density, which are decoded, and their centres.
+    """
+    from scipy.ndimage import convolve1d
+
     from neurospatial.decoding import bin_spikes_in_time
 
     fine, _ = bin_spikes_in_time(
         trains, dt=STEP, t_start=float(start), t_stop=float(stop)
     )
     fine = np.asarray(fine)
-    running = np.vstack([np.zeros((1, fine.shape[1]), fine.dtype), fine]).cumsum(axis=0)
-    summed = running[N_SUMMED:] - running[:-N_SUMMED]
+    density = convolve1d(
+        fine.astype(np.float64), SPIKE_DENSITY, axis=0, mode="constant"
+    )
+    summed = _window_sums(fine)
     centres = start + STEP * N_SUMMED / 2 + STEP * np.arange(summed.shape[0])
-    return summed, centres
+    return summed, _window_sums(density), centres
 
 
 def _blocks(active) -> np.ndarray:
@@ -562,11 +588,12 @@ def _blocks(active) -> np.ndarray:
     return blocks[blocks[:, 1] - blocks[:, 0] >= MIN_ROWS]
 
 
-def _sequences_in(model, summed, centres) -> np.ndarray:
+def _sequences_in(model, summed, smoothed, centres) -> np.ndarray:
     """(n, 2) first and last row times of each sequence in these 25 ms rows.
 
-    Rows with too few active cells are left out, and ``replay_segments`` runs
-    within each contiguous run of the rest, decoded with an exposure of 5 ms.
+    Rows with too few active cells in ``summed`` are left out, and
+    ``replay_segments`` runs within each contiguous run of the rest, with
+    ``smoothed`` decoded at an exposure of 5 ms.
     """
     from neurospatial.decoding import decode_position
     from neurospatial.replay import replay_segments
@@ -577,7 +604,12 @@ def _sequences_in(model, summed, centres) -> np.ndarray:
         return np.empty((0, 2))
     rows = np.concatenate([np.arange(first, last) for first, last in blocks])
     posterior = decode_position(
-        env, summed[rows], rates, dt=EXPOSURE, times=centres[rows]
+        env,
+        smoothed[rows],
+        rates,
+        dt=EXPOSURE,
+        times=centres[rows],
+        fractional_counts=True,
     ).posterior
     cuts = np.cumsum(blocks[:, 1] - blocks[:, 0])[:-1]
     found = []
@@ -815,7 +847,11 @@ def test_the_papers_speed_and_theta_channel_close_the_gap(rec, lfp, paper):
 @pytest.mark.realdata
 def test_decoding_rows_are_25_ms_windows_5_ms_apart(rec):
     """What the worked result decodes: overlapping windows, truly summed."""
-    summed, centres = _summed_counts(rec.spike_times, 3100.0, 3101.0)
+    summed, smoothed, centres = _summed_counts(rec.spike_times, 3100.0, 3101.0)
+    # The density only spreads a spike across neighbouring windows.
+    assert smoothed.shape == summed.shape
+    assert not np.allclose(smoothed, summed)
+    assert np.all(smoothed >= 0)
     assert np.allclose(np.diff(centres), 0.005)
     assert centres[0] == pytest.approx(3100.0125)
     assert summed.shape == (196, rec.n_units)

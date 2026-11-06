@@ -162,8 +162,8 @@ pass the paper's two inputs to `Carey_candidate_detector` as
 
 ## Worked result
 
-**Status: tested against chance (level B). Not met: 43 sequences against a null 95th
-percentile of 45.6.** This check finds 5.7% of planted replay in this session, so it
+**Status: tested against chance (level B). Not met: 41 sequences against a null 95th
+percentile of 52.35.** This check finds 5.8% of planted replay in this session, so it
 cannot show whether these events hold replay. It tests the detection and decoder, and
 it is not a number of the paper, which states no count for one session.
 
@@ -178,37 +178,42 @@ code made the published numbers.
 | Largest step of a sequence | 40 cm | 13 bins, 17 for R042 |
 
 The whole session is counted in 25 ms windows stepped by 5 ms, on each trajectory's
-own units. Windows with at least 4 active cells are decoded, and `replay_segments`
-finds sequences of at least 10 of them within each contiguous run, with the
+own units. As in `MakeQfromS.m`, each unit's 5 ms counts are first smoothed by a
+Gaussian of 2 ms SD, and the summed values are decoded with `fractional_counts=True`.
+Windows with at least 4 active cells, counted from the raw spikes, are decoded, and
+`replay_segments` finds sequences of at least 10 of them within each contiguous run, with the
 preset `CAREY_2019`'s rules in the code's bins. Then, in the
 code's order, each side keeps sequences that overlap a candidate and last at least
-50 ms, and loses any that overlap the other side's. Two steps are not applied: the
+50 ms, and loses any that overlap the other side's. One step is not applied: the
 paper's identity-shuffle filter, because in `Generate_DecSeqShuf.m`
-`shuf_Q(shuf_mask)` uses row numbers as linear indices, so every shuffled time bin is read from the session's first bin, and the 2 ms Gaussian
-spike density, because `decode_position` takes whole counts.
+`shuf_Q(shuf_mask)` uses row numbers as linear indices, so every shuffled time bin is
+read from the session's first bin.
 
 The criterion and both nulls were fixed in writing for events, before any decode.
 The count moved to sequences before this count was seen, with the same draws and
-seeds. Event counts of an earlier route at 4 cm/s had been seen by then.
+seeds. Event counts of an earlier route at 4 cm/s had been seen by then. The spike
+density was added later, once `decode_position` could take it, and written down before
+it ran. By then the count without it had been seen: 43 against 45.6, also not met. The
+criterion, nulls and draws did not change.
 
 | | Sequences | 95th percentile, 20 draws |
 | --- | --- | --- |
-| Our 1,328 candidates | 43 (11 left, 32 right) | |
-| Maps fitted with each unit's spikes shifted | 17 to 57, median 34 | 45.6 |
+| Our 1,328 candidates | 41 (9 left, 32 right) | |
+| Maps fitted with each unit's spikes shifted | 18 to 59, median 38 | 52.35 |
 | Decoded spikes all shifted by one offset | 0 to 8 | 8.0 |
-| The paper's 1,654 candidates | 47 (13 left, 34 right) | 57.65 and 8.05 |
+| The paper's 1,654 candidates | 45 (11 left, 34 right) | 64.5 and 9.0 |
 
 The criterion is not met. The count exceeds the second null and not the first, on
 our candidates and on the paper's. The first null keeps each event's burst and
 breaks only which place each cell codes, so a count of this size is what these fixed
 rules give without that code: a 50 ms sequence is about two independent 25 ms
 windows. The old count, candidates that a sequence overlaps before the two sides are
-compared, is 59 here, above both 95th percentiles for that count, 51.85 and 10.05.
+compared, is 60 here, just above both 95th percentiles for that count, 59.65 and 10.05.
 The criterion now asks about sequences, the count the paper makes.
 
 Against the paper: Supplementary Fig. 6 gives 429 sequences for R050's six sessions,
-with no figure per session. Here the 43 are 11 left and 32 right, a left share of
-0.26 on a food-restricted day, where the paper's mean over food-restricted sessions
+with no figure per session. Here the 41 are 9 left and 32 right, a left share of
+0.22 on a food-restricted day, where the paper's mean over food-restricted sessions
 is 0.35. The first null gives a median of 0.34, so this one session says nothing
 about that finding.
 
@@ -219,18 +224,18 @@ path played 15 times faster. Each was then judged by the route above.
 
 | Planted into the 1,328 candidates, each side | Judged replay |
 | --- | --- |
-| Sweep along a path | 152 of 2,656, 5.7% |
-| Stays in one place | 173 of 2,656, 6.5% |
-| No position content | 85 of 2,656, 3.2% |
+| Sweep along a path | 155 of 2,656, 5.8% |
+| Stays in one place | 175 of 2,656, 6.6% |
+| No position content | 93 of 2,656, 3.5% |
 
-Before the two sides are compared the sweep is 9.5%: a planted sequence that also
-decodes on the other side is removed. Recall depends on length: 0.2% of sweeps under
-60 ms are judged (3 of 1,440), 6.9% from 60 to 90 ms, and 23.7% at 90 ms or more (92
+Before the two sides are compared the sweep is 9.9%: a planted sequence that also
+decodes on the other side is removed. Recall depends on length: 0.1% of sweeps under
+60 ms are judged (2 of 1,440), 7.1% from 60 to 90 ms, and 24.2% at 90 ms or more (94
 of 388). The path stays inside the candidate, the median candidate is under 60 ms,
 and the rule needs 50 ms of it, so a real sequence that runs past its candidate's
 ends is not what this measures. This judge passes about one known replay in twenty
 at these spike counts, and it passes a stationary event as often. The real
-candidates' 3.2% is no more than events with no content pass. It is not a rate of
+candidates' 3.1% is no more than events with no content pass. It is not a rate of
 replay, and a low share is not evidence that replay is absent. This is a limit of
 the number, not a measurement of these rats: planted events come from the model the
 decoder assumes, and compression 15 is a choice.
@@ -244,21 +249,21 @@ holds the numbers, and a test pins the observed ones.
 
 | | R042 | R044 | R050 | R064 |
 | --- | --- | --- | --- | --- |
-| Sequences here | 1,142 | 86 | 369 | 1,723 |
+| Sequences here | 1,196 | 90 | 391 | 1,842 |
 | The paper's sequences (Supplementary Fig. 6) | 1,257 | 95 | 429 | 1,999 |
-| Events with a sequence on one side, the old count | 1,093 | 85 | 360 | 1,671 |
+| Events with a sequence on one side, the old count | 1,134 | 89 | 378 | 1,767 |
 
-In all 3,320 against the paper's 3,780, without the two steps named above. With each
-unit's spikes shifted before fitting the maps, the same total is 2,554 to 3,081 over
-20 draws, median 2,771. So it is above every draw, but most of it is what the rules
+In all 3,519 against the paper's 3,780, without the step named above. With each
+unit's spikes shifted before fitting the maps, the same total is 2,854 to 3,407 over
+20 draws, median 3,086. So it is above every draw, but most of it is what the rules
 find anyway. Three of the 19 sessions pass the 95th percentile of their own null.
 
 The left share looks like the paper's main finding and is not a reproduction of it.
-It is 0.37 on food-restricted days and 0.59 on water-restricted days (the paper: 0.35
-and 0.57), z = -2.69 with the labels permuted, and it correlates -0.68 with the share
+It is 0.37 on food-restricted days and 0.58 on water-restricted days (the paper: 0.35
+and 0.57), z = -2.58 with the labels permuted, and it correlates -0.66 with the share
 of left trials (the paper: -0.54). But the shifted maps give the same difference: a
-median of -0.251 against the observed -0.220, and 12 of 20 draws reach it. The left
-share follows the share of kept units on the left (r = 0.90; 44% on food days, 54% on
+median of -0.258 against the observed -0.207, and 16 of 20 draws reach it. The left
+share follows the share of kept units on the left (r = 0.89; 44% on food days, 54% on
 water days), and this analysis keeps units per side as the paper's code does. Why the
 kept units follow the restriction was not established. So this analysis cannot tell
 that shift from a bias of the decoder.

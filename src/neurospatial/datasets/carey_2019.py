@@ -218,20 +218,21 @@ WORKED_RESULT: dict[str, Any] = {
         "no number for one session; 429 sequences over R050's 6 sessions, with "
         "no figure per session, from a pipeline with filters CAREY_2019 leaves out"
     ),
-    "ours": 0.032,
+    "ours": 0.031,
     "criterion": (
-        "not met. 43 sequences (11 left, 32 right), 0.032 per candidate, remain on "
+        "not met. 41 sequences (9 left, 32 right), 0.031 per candidate, remain on "
         "the 1,328 candidates, and the criterion asks that they exceed the 95th "
         "percentile of each null (20 draws, seed 2026). They do not exceed the "
         "first: rate maps fitted on spikes with each unit shifted by its own "
-        "offset within the task give 17 to 57 sequences, median 34, 95th "
-        "percentile 45.6. They exceed the second: decoded spikes all shifted by "
+        "offset within the task give 18 to 59 sequences, median 38, 95th "
+        "percentile 52.35. They exceed the second: decoded spikes all shifted by "
         "one offset over the recording give 0 to 8, 95th percentile 8.0. The "
         "criterion was fixed for events before any decode, and moved to sequences "
         "before this count was seen, to follow the paper's code; the event "
-        "counts of an earlier route at 4 cm/s had been seen. Events that an "
-        "eligible sequence overlaps number 59, against 95th percentiles of 51.85 "
-        "and 10.05"
+        "counts of an earlier route at 4 cm/s had been seen. The spike density "
+        "was added later, written down before it ran, after the count without "
+        "it was seen: 43 against 45.6, also not met. Events that an eligible "
+        "sequence overlaps number 60, against 95th percentiles of 59.65 and 10.05"
     ),
     "parameters": (
         "literature_methods.carey_2019 at ripple_detection 0eddae64 as packaged, "
@@ -243,9 +244,10 @@ WORKED_RESULT: dict[str, Any] = {
         "s before its next centre photobeam, the track's first 20 and last 15 cm "
         "left out on the pathlength scale, units with at least 25 such spikes "
         "(37 left, 44 right). Decoding: the whole session in 5 ms bins from each "
-        "side's first spike, summed over 25 ms, rows 5 ms apart, exposure dt "
-        "0.005 as DecodeZ.m, the default prior (uniform over space), rows with "
-        "at least 4 active units. Sequences: replay_segments per contiguous run "
+        "side's first spike, each unit smoothed by a Gaussian of 2 ms SD as "
+        "MakeQfromS.m, summed over 25 ms, rows 5 ms apart, exposure dt 0.005 as "
+        "DecodeZ.m, fractional_counts=True, the default prior (uniform over space), rows with "
+        "at least 4 active units in the raw counts. Sequences: replay_segments per contiguous run "
         "of such rows, MAP steps of up to 13 bins (round(40 / (pathlength / "
         "112)), 17 for R042), at least 10 rows. Then the order of "
         "getEligibleSequences.m on each side: overlap with a candidate, at least "
@@ -257,8 +259,6 @@ WORKED_RESULT: dict[str, Any] = {
         "session) is not applied: in Generate_DecSeqShuf.m, shuf_Q(shuf_mask) "
         "uses row numbers as linear indices, so every shuffled time bin is read "
         "from the session's first bin",
-        "spike density by a 2 ms Gaussian before the 25 ms boxcar is not applied, "
-        "because decode_position takes whole counts",
         "the code's speed is dxdt.m's; here the session's speed, smoothed over "
         "0.1 s, against the same 5 cm/s",
         "all sequences of exactly 50 ms, 11 rows, are kept; the code's comparison "
@@ -268,25 +268,25 @@ WORKED_RESULT: dict[str, Any] = {
         "the detection differs, and its gates are those of the packaged method "
         "(about 4 cm/s; the code's 10 pixels/s is 3.4 to 4.2 cm/s by axis and "
         "rat): see the page's validation. On the paper's own 1,654 candidates "
-        "the same analysis gives 47 sequences (13 left, 34 right), against 95th "
-        "percentiles of 57.65 and 8.05",
+        "the same analysis gives 45 sequences (11 left, 34 right), against 95th "
+        "percentiles of 64.5 and 9.0",
     ),
     "attempted": None,
     "why": None,
     "planted_recall": {
-        "judged": 152,
+        "judged": 155,
         "planted": 2656,
         "reading": (
             "replay planted into the 1,328 candidates, once on each trajectory, "
             "keeping every spike's time and drawing its cell from these rate maps "
             "along a real running path played 15 times faster, is judged replay "
-            "5.7% of the time, or 9.5% before the two sides are compared, since a "
+            "5.8% of the time, or 9.9% before the two sides are compared, since a "
             "planted sequence that also decodes on the other side is removed. "
-            "Events with no content pass 3.2% and events that stay in one place "
-            "6.5%. It depends on the event's length: 0.2% under 60 ms and 23.7% at "
+            "Events with no content pass 3.5% and events that stay in one place "
+            "6.6%. It depends on the event's length: 0.1% under 60 ms and 24.2% at "
             "90 ms or more, since the path stays inside the candidate and the rule "
             "needs 50 ms of it. So this judge passes about one known replay in "
-            "twenty here, the real candidates' 3.2% is no more than events with no "
+            "twenty here, the real candidates' 3.1% is no more than events with no "
             "content pass, it is not a rate of replay, and a low share is not "
             "evidence of its absence. This is a limit of what the number can say, "
             "not a measurement of the rats: planted events come from the model the "
@@ -306,28 +306,28 @@ WORKED_RESULT: dict[str, Any] = {
 ACROSS_SESSIONS: dict[str, Any] = {
     "what": (
         "CAREY_2019 sequences left after the order of the paper's code, in its 19 "
-        "sessions, on its own candidates, with its identity-shuffle filter and "
-        "its spike density not applied"
+        "sessions, on its own candidates, with its identity-shuffle filter not "
+        "applied"
     ),
-    "sequences_per_rat": {"R042": 1142, "R044": 86, "R050": 369, "R064": 1723},
+    "sequences_per_rat": {"R042": 1196, "R044": 90, "R050": 391, "R064": 1842},
     "paper_per_rat": {"R042": 1257, "R044": 95, "R050": 429, "R064": 1999},
-    "one_side_events_per_rat": {"R042": 1093, "R044": 85, "R050": 360, "R064": 1671},
-    "left_share_food": 0.372,
-    "left_share_water": 0.592,
+    "one_side_events_per_rat": {"R042": 1134, "R044": 89, "R050": 378, "R064": 1767},
+    "left_share_food": 0.369,
+    "left_share_water": 0.576,
     "paper_left_share": (0.35, 0.57),
-    "label_permutation": {"z": -2.69, "p": 0.0029, "n": 10000, "seed": 2026},
-    "r_with_left_trials": -0.68,
+    "label_permutation": {"z": -2.58, "p": 0.0059, "n": 10000, "seed": 2026},
+    "r_with_left_trials": -0.66,
     "paper_r_with_behavior": -0.54,
-    "left_share_follows_kept_units_r": 0.90,
+    "left_share_follows_kept_units_r": 0.89,
     "null_own_offsets": {
         "draws": 20,
         "seed": 2026,
-        "difference_observed": -0.220,
-        "difference_median": -0.251,
-        "difference_range": (-0.401, -0.109),
-        "draws_at_or_beyond_observed": 12,
-        "sequences_total_observed": 3320,
-        "sequences_total_range": (2554, 3081),
+        "difference_observed": -0.207,
+        "difference_median": -0.258,
+        "difference_range": (-0.418, -0.136),
+        "draws_at_or_beyond_observed": 16,
+        "sequences_total_observed": 3519,
+        "sequences_total_range": (2854, 3407),
         "sessions_above_95th_percentile": 3,
     },
 }
