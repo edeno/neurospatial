@@ -17,7 +17,7 @@ class TestPhasePrecessionResult:
             slope=-0.1,
             position_range=(0.0, 40.0),
             offset=1.0,
-            correlation=0.5,
+            rho=-0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
             slope_at_bound=False,
@@ -32,7 +32,7 @@ class TestPhasePrecessionResult:
             slope=-0.1,
             position_range=(0.0, 40.0),
             offset=1.0,
-            correlation=0.2,
+            rho=-0.2,
             p_value=0.10,
             mean_resultant_length=0.5,
             slope_at_bound=False,
@@ -47,7 +47,7 @@ class TestPhasePrecessionResult:
             slope=-0.1,
             position_range=(0.0, 40.0),
             offset=1.0,
-            correlation=0.5,
+            rho=-0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
             slope_at_bound=False,
@@ -64,7 +64,7 @@ class TestPhasePrecessionResult:
             slope=0.1,
             position_range=(0.0, 40.0),
             offset=1.0,
-            correlation=0.5,
+            rho=-0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
             slope_at_bound=False,
@@ -80,7 +80,7 @@ class TestPhasePrecessionResult:
             slope=-0.1,
             position_range=(0.0, 40.0),
             offset=1.0,
-            correlation=0.05,
+            rho=-0.05,
             p_value=0.4,
             mean_resultant_length=0.2,
             slope_at_bound=False,
@@ -90,20 +90,20 @@ class TestPhasePrecessionResult:
         assert "not significant" in interp
 
     def test_interpretation_reports_numbers_without_strength_labels(self) -> None:
-        """Correlation and fit quality are reported as values, not named bands."""
+        """Rho and fit quality are reported as values, not named bands."""
         from neurospatial.encoding.phase_precession import PhasePrecessionResult
 
         result = PhasePrecessionResult(
             slope=-0.1,
             position_range=(0.0, 40.0),
             offset=1.0,
-            correlation=0.55,
+            rho=-0.55,
             p_value=0.01,
             mean_resultant_length=0.75,
             slope_at_bound=False,
         )
         interp = result.interpretation()
-        assert "r=0.550" in interp
+        assert "rho=-0.550" in interp
         assert "R=0.750" in interp
         for label in ("strong", "moderate", "weak", "excellent", "good", "poor"):
             assert label not in interp.lower()
@@ -118,7 +118,7 @@ class TestPhasePrecessionResult:
             slope=-0.1,
             position_range=(0.0, 40.0),
             offset=1.0,
-            correlation=0.5,
+            rho=-0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
             slope_at_bound=False,
@@ -134,7 +134,7 @@ class TestPhasePrecessionResult:
             slope=-0.1,
             position_range=(0.0, 40.0),
             offset=1.0,
-            correlation=0.5,
+            rho=-0.5,
             p_value=0.01,
             mean_resultant_length=0.8,
             slope_at_bound=False,
@@ -296,7 +296,7 @@ class TestPhasePrecession:
         assert result.slope == pytest.approx(-5.0 / 1e8, rel=1e-3)
         assert result.p_value == 0.1
 
-    def test_correlation_in_valid_range(self) -> None:
+    def test_rho_in_valid_range(self) -> None:
         """Correlation should be in [0, 1]."""
         from neurospatial.encoding.phase_precession import compute_phase_precession
 
@@ -306,7 +306,7 @@ class TestPhasePrecession:
 
         result = compute_phase_precession(positions, phases)
 
-        assert 0 <= result.correlation <= 1
+        assert -1 <= result.rho <= 1
 
     def test_pvalue_in_valid_range(self) -> None:
         """P-value should be in [0, 1]."""
@@ -375,7 +375,7 @@ class TestPhasePrecession:
 
         result = compute_phase_precession(positions, phases_deg, angle_unit="deg")
 
-        assert 0 <= result.correlation <= 1
+        assert -1 <= result.rho <= 1
 
     def test_default_position_range_is_the_spike_extent(self) -> None:
         """Without position_range the fit is normalized over the spike positions."""
@@ -529,13 +529,12 @@ class TestHasPhasePrecession:
         with pytest.raises(ValueError, match=match):
             has_phase_precession(positions, phases, **kwargs)
 
-    def test_detects_weak_precession_with_low_correlation(self) -> None:
+    def test_detects_weak_precession_with_low_rho(self) -> None:
         """A weakly coupled precessing cell is detected by its shuffle p-value.
 
-        Phase coupling is weak (von Mises kappa 0.5) and the circular-linear
-        correlation is only about 0.09, yet the fitted precession is far
-        stronger than chance; the screen depends on the calibrated p-value,
-        not on a correlation cutoff.
+        Phase coupling is weak (von Mises kappa 0.5) and ``rho`` is only about
+        -0.13, yet the fitted precession is far stronger than chance; the
+        screen depends on the p-value, not on a ``rho`` cutoff.
         """
         from neurospatial.encoding.phase_precession import (
             compute_phase_precession,
@@ -549,7 +548,7 @@ class TestHasPhasePrecession:
             2 * np.pi
         )
         result = compute_phase_precession(positions, phases, n_shuffles=200, rng=0)
-        assert result.correlation < 0.1
+        assert abs(result.rho) < 0.2
         assert result.p_value < 0.01
         assert has_phase_precession(positions, phases, rng=0) is True
 
@@ -648,7 +647,7 @@ class TestDirectionOfTravel:
             distance, phases, position_range=(0.0, width), rng=0
         )
         assert pooled_distance.slope == pytest.approx(-5.0 / width, abs=0.02)
-        assert pooled_distance.correlation > 3 * pooled_raw.correlation
+        assert abs(pooled_distance.rho) > 3 * abs(pooled_raw.rho)
 
 
 class TestFieldCutByTrackEnd:
@@ -1299,22 +1298,88 @@ class TestPhasePrecessionShufflePvalue:
         b = compute_phase_precession(d["positions"], d["phases"], n_shuffles=200, rng=7)
         assert a.p_value == b.p_value
 
-    def test_phase_precession_correlation_is_descriptive(
-        self, precessing_spikes
-    ) -> None:
+
+class TestRho:
+    """``rho`` is the circular correlation at the fitted slope, signed by it."""
+
+    def test_perfect_lines_read_minus_and_plus_one(self) -> None:
         from neurospatial.encoding.phase_precession import compute_phase_precession
-        from neurospatial.stats.circular import circular_linear_correlation
+
+        positions = np.linspace(0.0, 1.0, 200)
+        for sign in (-1.0, 1.0):
+            phases = (2.0 + sign * np.pi * positions) % (2 * np.pi)
+            fit = compute_phase_precession(
+                positions, phases, position_range=(0.0, 1.0), n_shuffles=9, rng=0
+            )
+            assert fit.rho == pytest.approx(sign, abs=1e-6)
+
+    def test_matches_the_coefficient_written_out(self, precessing_spikes) -> None:
+        from neurospatial.encoding.phase_precession import compute_phase_precession
 
         d = precessing_spikes
-        result = compute_phase_precession(
-            d["positions"], d["phases"], n_shuffles=200, rng=0
+        fit = compute_phase_precession(d["positions"], d["phases"], n_shuffles=9, rng=0)
+        phi = d["phases"] % (2 * np.pi)
+        start = fit.position_range[0]
+        theta = (abs(fit.slope) * (d["positions"] - start)) % (2 * np.pi)
+        phi_mean = np.arctan2(np.sin(phi).sum(), np.cos(phi).sum())
+        theta_mean = np.arctan2(np.sin(theta).sum(), np.cos(theta).sum())
+        sin_phi, sin_theta = np.sin(phi - phi_mean), np.sin(theta - theta_mean)
+        expected = (sin_phi * sin_theta).sum() / np.sqrt(
+            (sin_phi**2).sum() * (sin_theta**2).sum()
         )
-        assert 0.0 <= result.correlation <= 1.0
-        wrapped = d["phases"] % (2 * np.pi)
-        expected, _ = circular_linear_correlation(
-            angles=wrapped, linear_values=d["positions"]
+        assert fit.rho == pytest.approx(np.copysign(abs(expected), fit.slope))
+
+    def test_does_not_depend_on_position_units(self, precessing_spikes) -> None:
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        d = precessing_spikes
+        in_cm = compute_phase_precession(
+            d["positions"], d["phases"], n_shuffles=9, rng=0
         )
-        assert result.correlation == pytest.approx(expected, rel=1e-9)
+        in_m = compute_phase_precession(
+            d["positions"] / 100.0, d["phases"], n_shuffles=9, rng=0
+        )
+        assert in_m.rho == pytest.approx(in_cm.rho, abs=1e-6)
+
+    def test_resultant_length_not_rho_stays_put_as_the_slope_steepens(self) -> None:
+        """Same scatter at two slopes: rho differs, the resultant length does not."""
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        stimulus = np.random.default_rng(3)
+        means = {}
+        for cycles in (0.25, 0.75):
+            fits = []
+            for _ in range(40):
+                positions = stimulus.uniform(0.0, 1.0, 100)
+                phases = 5.0 - 2 * np.pi * cycles * positions
+                phases = (phases + stimulus.vonmises(0, 4.0, 100)) % (2 * np.pi)
+                fits.append(
+                    compute_phase_precession(
+                        positions,
+                        phases,
+                        position_range=(0.0, 1.0),
+                        n_shuffles=1,
+                        rng=0,
+                    )
+                )
+            means[cycles] = (
+                np.mean([abs(fit.rho) for fit in fits]),
+                np.mean([fit.mean_resultant_length for fit in fits]),
+            )
+        assert means[0.75][0] > means[0.25][0] + 0.15
+        assert means[0.75][1] == pytest.approx(means[0.25][1], abs=0.02)
+
+    def test_is_nan_below_five_spikes(self) -> None:
+        from neurospatial.encoding.phase_precession import compute_phase_precession
+
+        fit = compute_phase_precession(
+            np.array([0.0, 1.0, 2.0, 3.0]),
+            np.array([3.0, 2.0, 1.0, 0.0]),
+            min_spikes=4,
+            n_shuffles=9,
+            rng=0,
+        )
+        assert np.isnan(fit.rho)
 
 
 class TestHasPhasePrecessionValidation:

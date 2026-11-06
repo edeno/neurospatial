@@ -970,14 +970,24 @@ the smallest p-value 1000 shuffles can give. `slope` is in radians per cm;
 p-value comes from shuffling which phase goes with which position and
 re-fitting the slope each time, and it is calibrated: on simulated spikes
 with no phase-position relationship it fell below 0.05 in 2-5% of cells
-for 10 to 200 spikes. `result.correlation` and `result.mean_resultant_length`
-describe how tightly the spikes follow the line; neither has a cutoff.
+for 10 to 200 spikes.
+
+Two numbers describe the fit, and neither has a cutoff.
+`result.mean_resultant_length` says how tightly the spikes follow the line,
+and it does not change with the slope, so use it to compare cells or
+conditions. `result.rho` is the coefficient most papers report: the circular
+correlation between phase and position wrapped at the fitted slope, negative
+for precession. Use it to compare with published values, but it depends on the
+slope as well as the scatter. With the same 0.5 rad of phase noise, `rho` was
+-0.65, -0.86, -0.89 and -0.74 at 0.25, 0.5, 0.75 and 1 cycles across the field,
+and near one cycle it also varies much more from cell to cell. Two groups with
+different slopes can have different `rho` and the same scatter.
 
 Choices that change the answer:
 
 - **Direction of travel.** With raw track positions, the leftward runs give
   +0.18 rad/cm, which reads as recession. Pooling both directions in raw
-  positions mixes the two slopes and the correlation drops to near zero.
+  positions mixes the two slopes and `rho` drops to near zero.
 - **One field, its own range.** Spikes from two fields, or from the whole
   track with the default range (the spike extent), give a slope pinned at
   the search bound of one theta cycle across the range, several times too

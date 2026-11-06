@@ -666,6 +666,12 @@ def circular_linear_correlation(
     degrees of freedom as the fit (2, or 1 for collinear cos/sin). The
     approximation is conservative for small samples (n < 20).
 
+    ``r`` is not a measure of how tightly points follow a wrapped line. The
+    fit has one cycle of cosine and sine to work with, so a noiseless line
+    that turns through ``c`` whole cycles gives ``r = sqrt(6) / (pi * c)``:
+    0.78 at one cycle and 0.39 at two. For phase precession use
+    ``mean_resultant_length`` or ``rho`` from ``compute_phase_precession``.
+
     Examples
     --------
     >>> import numpy as np

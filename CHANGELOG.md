@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Phase precession
+
+- `PhasePrecessionResult.correlation` is replaced by `rho`, the circular
+  correlation between phase and position wrapped at the fitted slope, signed by
+  the slope, so precession is negative. Of 15 precession papers read, 6 report
+  this coefficient and 2 the old one. The old value was the circular-linear
+  correlation, which falls as the slope steepens even on a noiseless line
+  (0.78 at one cycle across the field, 0.39 at two) and did not use the fit, so
+  it did not say how tightly spikes follow the line, as the guide claimed.
+  `rho` also changes with the slope, and it is noisy near one cycle: compare
+  cells and conditions with `mean_resultant_length`, and compare with papers
+  with `rho`. `circular_linear_correlation` is unchanged.
+
 ### Trials
 
 - `Trial.success` is removed. It meant "reached some other region", so a wrong
