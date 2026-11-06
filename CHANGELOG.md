@@ -597,8 +597,6 @@
   restriction as in the paper, and as much with shifted rate maps, and it follows
   the units kept on each side, so on this analysis it is not a reproduction. The
   page does not assess the paper's own finding.
-- Loading `forli_2025` or `vollan_2025` no longer turns on pandas'
-  `future.infer_string` for the whole process, which `import matio` does.
 - Epochs a file lists past the end of its data are clipped to the recording
   (its first to last sample or spike) by one rule for every loader, when
   they overhang by more than the clock check allows; a row wholly outside is

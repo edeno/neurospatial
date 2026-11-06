@@ -134,14 +134,10 @@ def _python_version() -> tuple[int, int]:
 
 
 def _require(name: str, dataset: str) -> None:
-    """Import a module of the ``datasets`` extra, keeping the pandas settings.
+    """Import a module of the ``datasets`` extra, keeping the pandas settings."""
+    from neurospatial.datasets._matio import keeping_pandas_options
 
-    Importing mat-io turns on ``future.infer_string`` for the whole process.
-    """
-    import pandas as pd
-
-    current = pd.get_option("future.infer_string")
-    with pd.option_context("future.infer_string", current):
+    with keeping_pandas_options():
         _import_or_explain(name, dataset)
 
 
