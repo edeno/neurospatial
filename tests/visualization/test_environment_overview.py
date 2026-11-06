@@ -177,9 +177,10 @@ def test_polygon_grid_outlines_its_polygon():
 @pytest.mark.slow
 @pytest.mark.wallclock
 def test_a_hundred_thousand_bins_draw_in_seconds():
-    env = Environment.from_samples(
-        np.random.default_rng(0).uniform(0, 100, (200_000, 2)), bin_size=0.28
-    )
+    with pytest.warns(UserWarning, match="Creating large grid"):
+        env = Environment.from_samples(
+            np.random.default_rng(0).uniform(0, 100, (200_000, 2)), bin_size=0.28
+        )
     assert env.n_bins > 100_000
     start = time.perf_counter()
     env.plot().figure.canvas.draw()
