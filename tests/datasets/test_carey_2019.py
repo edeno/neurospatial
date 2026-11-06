@@ -55,14 +55,25 @@ CANDIDATES_SHA256 = {
 #: Draws of each null, and its seed, as tests/datasets/test_worked_results.py.
 N_NULL = 20
 NULL_SEED = 2026
-#: The window around a candidate that is decoded: a sequence must fit in it.
-PAD = 0.25
 #: Decoding rows: counts in 5 ms bins, summed over five of them.
 STEP, N_SUMMED = 0.005, 5
 #: Generate_DecSeq.m: fewest gated spikes for a unit, and the track's ends left
 #: out of the rate maps, from the start and the end of the trajectory, cm.
 MIN_SPIKES = 25
 TRACK_ENDS = (20.0, 15.0)
+#: DecodeZ.m: the Poisson exposure is the 5 ms step, for 25 ms counts.
+EXPOSURE = STEP
+#: Generate_DecSeq.m: a time row needs this many active cells, and a sequence
+#: this many rows; a jump of up to 40 cm counts in bins of pathlength / 112.
+MIN_ACTIVE_CELLS, MIN_ROWS = 4, 10
+MAX_JUMP_CM, N_EDGES = 40.0, 112
+#: The worked result: sequences left and right on our candidates and the
+#: paper's; events a sequence overlaps, on one side or the other only; and
+#: each null's range and 95th percentile.
+OURS_SEQUENCES, PAPER_SEQUENCES = (11, 32), (13, 34)
+OURS_EVENTS = (59, 10, 31)
+FITTED_RANGE, FITTED_P95 = (17, 57), 45.6
+MOVED_RANGE, MOVED_P95 = (0, 8), 8.0
 
 KEYS = """
 ExpKeys.RestrictionType = 'food'; % note, 'what' was *withheld*
@@ -217,6 +228,9 @@ def test_trajectory_environment_runs_from_the_stem_to_the_arms_end():
     env = carey_2019.trajectory_environment(left, track_width=10.0, name="left")
     assert env.is_linearized_track
     assert env.units == "cm"
+    assert env.n_bins == carey_2019.TRAJECTORY_BINS
+    length = np.linalg.norm(np.diff(left, axis=0), axis=1).sum()
+    assert env.bin_sizes.sum() == pytest.approx(length, abs=2.0)
     linear = np.asarray(env.to_linear(left[[10, 300, -1]]))
     assert np.all(np.diff(linear) > 0)
     assert linear[-1] - linear[0] == pytest.approx(
@@ -241,6 +255,22 @@ def test_matched_trials_take_the_nearest_of_the_commoner_side(arms, bad, left, r
     )
     assert matched[0].tolist() == left
     assert matched[1].tolist() == right
+
+
+def test_blocks_are_runs_of_active_rows_long_enough_for_a_sequence():
+    active = np.zeros(40, dtype=bool)
+    active[2:12] = True  # 10 rows
+    active[15:24] = True  # 9 rows
+    active[30:] = True  # 10 rows, to the end
+    assert _blocks(active).tolist() == [[2, 12], [30, 40]]
+
+
+def test_a_candidate_overlaps_strictly_and_the_other_side_also_by_a_touch():
+    """IntersectIV takes a strict overlap; DifferenceIV counts shared ends."""
+    rows = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    others = np.array([[2.0, 3.0], [5.5, 5.6]])
+    assert _meets(rows, others).tolist() == [False, False, True]
+    assert _meets(rows, others, closed=True).tolist() == [True, True, True]
 
 
 def test_a_left_arm_on_the_right_of_travel_is_named_mirrored(session):
@@ -430,17 +460,42 @@ def _papers_speed(times) -> np.ndarray:
     return np.interp(times, clock, speed, left=np.nan, right=np.nan)
 
 
+def _intersection(rows, others) -> np.ndarray:
+    """The parts of (n, 2) ``rows`` inside (m, 2) ``others``, in order."""
+    starts = np.maximum.outer(rows[:, 0], others[:, 0])
+    stops = np.minimum.outer(rows[:, 1], others[:, 1])
+    overlap = starts < stops
+    return np.column_stack([starts[overlap], stops[overlap]])
+
+
 def _trial_epochs(rec, side) -> np.ndarray:
-    """A side's matched trials, each from 1 s before its next centre photobeam."""
+    """A side's matched trials, each from 1 s before its next centre photobeam.
+
+    As Generate_DecSeq.m, they leave out what R042's ``*times.mat`` cuts and
+    R044's seconds with no spike at all.
+    """
     rows = np.array(rec.epochs[f"matched_{side}"])
     centre = rec.events["center_photobeam"]
     following = np.minimum(np.searchsorted(centre, rows[:, 0]), centre.size - 1)
     rows[:, 0] = centre[following] - 1.0
-    return rows[rows[:, 0] < rows[:, 1]]
+    rows = rows[rows[:, 0] < rows[:, 1]]
+    if rec.session.startswith("R042"):
+        return _intersection(rows, rec.epochs["spikes_kept"])
+    if rec.session.startswith("R044"):
+        spikes = np.concatenate(rec.spike_times)
+        edges = np.arange(spikes.min(), spikes.max() + 2.0)
+        fired = np.histogram(spikes, edges)[0] > 0
+        return _intersection(rows, np.column_stack([edges[:-1], edges[1:]])[fired])
+    return rows
+
+
+def _jump_bins(rec) -> int:
+    """The largest step of a sequence, bins: the code's round(40 / (L / 112))."""
+    return round(MAX_JUMP_CM / (rec.params["pathlength"] / N_EDGES))
 
 
 def _rates_on_side(rec, side, trains):
-    """One trajectory's track, the units kept, and their speed-gated rate maps."""
+    """One trajectory's track, the units kept, their rate maps, and the jump limit."""
     from neurospatial import compute_spatial_rates
 
     env = carey_2019.trajectory_environment(
@@ -448,13 +503,15 @@ def _rates_on_side(rec, side, trains):
         track_width=rec.params["track_width"],
         name=side,
     )
+    bin_width = float(env.bin_sizes.sum()) / env.n_bins
+    pathlength = rec.params["pathlength"]
     placed = np.zeros(rec.times.size, dtype=bool)
     tracked = np.flatnonzero(np.isfinite(rec.positions).all(axis=1))
     placed[tracked] = np.asarray(env.bin_at(rec.positions[tracked])) >= 0
     linear = np.full(rec.times.size, np.nan)
     linear[placed] = np.asarray(env.to_linear(rec.positions[placed]))
-    length = float(np.max(np.asarray(env.to_linear(env.bin_centers))))
-    kept = (linear >= TRACK_ENDS[0]) & (linear <= length - TRACK_ENDS[1])
+    linear *= pathlength / float(env.bin_sizes.sum())  # the code's scale
+    kept = (linear >= TRACK_ENDS[0]) & (linear <= pathlength - TRACK_ENDS[1])
     positions = np.array(rec.positions)
     positions[~kept] = np.nan
 
@@ -477,17 +534,11 @@ def _rates_on_side(rec, side, trains):
         epochs=epochs,
         min_speed=min_speed,
         method="binned",
-        bandwidth=rec.params["bin_size"],
+        bandwidth=bin_width,
     )
-    return env, np.array(units), rates
-
-
-def _windows_around(events) -> np.ndarray:
-    """Each event plus ``PAD`` on each side, overlapping windows merged."""
-    starts = np.sort(events[:, 0] - PAD)
-    stops = np.sort(events[:, 1] + PAD)
-    new = np.r_[True, starts[1:] > stops[:-1]]
-    return np.column_stack([starts[new], stops[np.r_[new[1:], True]]])
+    # A jump of up to this many bins continues a sequence; half a bin more
+    # separates it from the next count of bins, whose pieces differ at corners.
+    return env, np.array(units), rates, (_jump_bins(rec) + 0.5) * bin_width
 
 
 def _summed_counts(trains, start, stop):
@@ -504,46 +555,90 @@ def _summed_counts(trains, start, stop):
     return summed, centres
 
 
-def _sequences(model, trains, windows, events):
-    """Which events a CAREY_2019 sequence of this side overlaps."""
+def _blocks(active) -> np.ndarray:
+    """(n, 2) first and past-last rows of each run of ``active`` of ``MIN_ROWS`` or more."""
+    edges = np.flatnonzero(np.diff(np.r_[False, active, False].astype(np.int8)))
+    blocks = edges.reshape(-1, 2)
+    return blocks[blocks[:, 1] - blocks[:, 0] >= MIN_ROWS]
+
+
+def _sequences_in(model, summed, centres) -> np.ndarray:
+    """(n, 2) first and last row times of each sequence in these 25 ms rows.
+
+    Rows with too few active cells are left out, and ``replay_segments`` runs
+    within each contiguous run of the rest, decoded with an exposure of 5 ms.
+    """
     from neurospatial.decoding import decode_position
-    from neurospatial.replay import detect_replay
+    from neurospatial.replay import replay_segments
+
+    env, _, rates, max_jump = model
+    blocks = _blocks(np.sum(summed > 0, axis=1) >= MIN_ACTIVE_CELLS)
+    if blocks.shape[0] == 0:
+        return np.empty((0, 2))
+    rows = np.concatenate([np.arange(first, last) for first, last in blocks])
+    posterior = decode_position(
+        env, summed[rows], rates, dt=EXPOSURE, times=centres[rows]
+    ).posterior
+    cuts = np.cumsum(blocks[:, 1] - blocks[:, 0])[:-1]
+    found = []
+    for piece, times in zip(
+        np.split(np.asarray(posterior), cuts),
+        np.split(centres[rows], cuts),
+        strict=True,
+    ):
+        segments = replay_segments(
+            env, piece, times, max_jump=max_jump, method="map", min_time_bins=MIN_ROWS
+        )
+        found.append(np.column_stack([segments.start_times, segments.end_times]))
+    return np.vstack(found)
+
+
+def _scan(model, trains) -> np.ndarray:
+    """Sequences of one side over the whole session, from its first spike."""
+    chosen = [trains[unit] for unit in model[1]]
+    start = min(train[0] for train in chosen if train.size)
+    stop = max(train[-1] for train in chosen if train.size) + STEP
+    return _sequences_in(model, *_summed_counts(chosen, start, stop))
+
+
+def _meets(rows, others, *, closed=False) -> np.ndarray:
+    """Which (n, 2) ``rows`` overlap any of ``others``; ``closed`` counts a touch."""
+    before, after = ("right", "left") if closed else ("left", "right")
+    started = np.searchsorted(np.sort(others[:, 0]), rows[:, 1], side=before)
+    ended = np.searchsorted(np.sort(others[:, 1]), rows[:, 0], side=after)
+    return started > ended
+
+
+def _eligible(sequences, events) -> np.ndarray:
+    """getEligibleSequences.m's first steps: overlap with a candidate, then 50 ms."""
     from neurospatial.replay.methods import CAREY_2019
 
-    env, units, rates = model
-    chosen = [trains[unit] for unit in units]
     (criterion,) = CAREY_2019.criteria
-    hit = np.zeros(len(events), dtype=bool)
-    for start, stop in windows:
-        summed, centres = _summed_counts(chosen, start, stop)
-        decoded = decode_position(env, summed, rates, dt=STEP * N_SUMMED, times=centres)
-        verdict = detect_replay(
-            env,
-            decoded.posterior,
-            centres,
-            replay_method=CAREY_2019,
-            spike_counts=summed,
-        )
-        segments = verdict.segments
-        if segments is None:
-            continue
-        passing = segments.durations >= criterion.threshold - 1e-9
-        for first, last in zip(
-            segments.start_times[passing], segments.end_times[passing], strict=True
-        ):
-            hit |= (events[:, 0] < last) & (events[:, 1] > first)
-    return hit
+    lasting = sequences[:, 1] - sequences[:, 0] >= criterion.threshold - 1e-9
+    return sequences[_meets(sequences, events) & lasting]
 
 
 def _judged(rec, events, *, fit_on=None, decode=None):
-    """Left and right verdicts per event, the rate maps from ``fit_on`` spikes."""
+    """Sequences of each side in ``events``, and what the old event count gives.
+
+    The rate maps come from ``fit_on`` spikes and the decoding from ``decode``.
+    The last step of getEligibleSequences.m takes from each side what overlaps
+    the other side's eligible sequences.
+    """
     fit_on = rec.spike_times if fit_on is None else fit_on
     decode = rec.spike_times if decode is None else decode
-    windows = _windows_around(events)
-    return tuple(
-        _sequences(_rates_on_side(rec, side, fit_on), decode, windows, events)
+    left, right = (
+        _eligible(_scan(_rates_on_side(rec, side, fit_on), decode), events)
         for side in ("left", "right")
     )
+    hit_left, hit_right = _meets(events, left), _meets(events, right)
+    return {
+        "left": int(np.sum(~_meets(left, right, closed=True))),
+        "right": int(np.sum(~_meets(right, left, closed=True))),
+        "events": int(np.sum(hit_left | hit_right)),
+        "events_left": int(np.sum(hit_left & ~hit_right)),
+        "events_right": int(np.sum(hit_right & ~hit_left)),
+    }
 
 
 def _own_offsets(rec, draw):
@@ -738,7 +833,7 @@ def test_rate_maps_are_speed_gated_and_exclude_rest(rec):
     """The gate is on: rest spikes and slow spikes do not reach the maps."""
     from neurospatial import compute_spatial_rates
 
-    env, _, rates = _rates_on_side(rec, "left", rec.spike_times)
+    env, _, rates, _ = _rates_on_side(rec, "left", rec.spike_times)
     assert rates.analysis_settings["min_speed"] == rec.params["min_speed"]
     assert rates.analysis_settings["epochs"] == _trial_epochs(rec, "left").tolist()
     # Trains firing only at rest, or only while slow in a trial, give empty maps.
@@ -762,65 +857,77 @@ def test_rate_maps_are_speed_gated_and_exclude_rest(rec):
 
 
 @pytest.mark.realdata
-def test_worked_result_sequences_in_the_candidates(rec, detected, paper):
-    """Level B, fixed in writing before any decode: above each of two nulls.
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_a_jump_is_the_codes_number_of_bins(rec, side):
+    """round(40 / (pathlength / 112)) bins continue a sequence, and one more ends it."""
+    from neurospatial.ops.distance import geodesic_distance_matrix
 
-    The count is of candidates a left or right sequence overlaps. Null A fits
-    the rate maps on spikes with each unit shifted alone within the task,
+    env, _, _, max_jump = _rates_on_side(rec, side, rec.spike_times)
+    distance = geodesic_distance_matrix(env.connectivity, weight="distance")
+    jump = _jump_bins(rec)
+    assert jump == 13
+    bins = np.arange(env.n_bins - jump - 1)
+    assert np.all(distance[bins, bins + jump] < max_jump)
+    assert np.all(distance[bins, bins + jump + 1] >= max_jump)
+
+
+@pytest.mark.realdata
+def test_worked_result_sequences_in_the_candidates(rec, detected):
+    """Level B, on the paper's code's route: above each of two nulls.
+
+    The count is of sequences left after the code's order: overlap with a
+    candidate, at least 50 ms, then removal against the other side. Null A
+    fits the rate maps on spikes with each unit shifted alone within the task,
     which keeps each event's burst and breaks which place each cell codes.
     Null B decodes all spikes shifted by one offset, which keeps co-firing and
     moves it off the events.
     """
     record = carey_2019.WORKED_RESULT
-    left, right = _judged(rec, detected)
-    count = int(np.sum(left | right))
-    assert count == 65
-    assert int(np.sum(left & ~right)) == 15
-    assert int(np.sum(right & ~left)) == 35
+    seen = _judged(rec, detected)
+    count = seen["left"] + seen["right"]
     assert record["ours"] == round(count / len(detected), 3)
+    assert (seen["left"], seen["right"]) == OURS_SEQUENCES
+    assert (seen["events"], seen["events_left"], seen["events_right"]) == OURS_EVENTS
     fitted, moved = [], []
     for draw in range(N_NULL):
         sides = _judged(rec, detected, fit_on=_own_offsets(rec, draw))
-        fitted.append(int(np.sum(sides[0] | sides[1])))
+        fitted.append(sides["left"] + sides["right"])
         sides = _judged(rec, detected, decode=_common_offset(rec, draw))
-        moved.append(int(np.sum(sides[0] | sides[1])))
-    assert count > np.percentile(fitted, 95)
-    assert count > np.percentile(moved, 95)
-    assert (min(fitted), max(fitted)) == (22, 65)
-    assert (min(moved), max(moved)) == (2, 14)
+        moved.append(sides["left"] + sides["right"])
+    assert (min(fitted), max(fitted)) == FITTED_RANGE
+    assert (min(moved), max(moved)) == MOVED_RANGE
+    assert round(float(np.percentile(fitted, 95)), 2) == FITTED_P95
+    assert round(float(np.percentile(moved, 95)), 2) == MOVED_P95
 
 
 @pytest.mark.realdata
-def test_the_papers_own_candidates_give_the_same_count(rec, paper):
-    left, right = _judged(rec, _intervals_of(paper))
-    assert int(np.sum(left | right)) == 64
+def test_the_papers_own_candidates_give_their_count(rec, paper):
+    seen = _judged(rec, _intervals_of(paper))
+    assert (seen["left"], seen["right"]) == PAPER_SEQUENCES
 
 
 @pytest.mark.realdata
-def test_the_papers_sessions_show_its_shift_in_sequence_content():
+def test_the_left_share_over_the_papers_sessions():
     """Exploratory, on the paper's candidates in its 19 sessions: see ACROSS_SESSIONS.
 
-    Events with a sequence on one side only, per rat, beside Supplementary
-    Fig. 6, and the left share by what was restricted, beside the paper's 0.35
-    and 0.57. CAREY_2019 leaves out the paper's identity-shuffle filter, and
-    these are events, not sequences. The shift in the left share is not a
-    reproduction: shifted rate maps give the same difference (20 draws took an
-    hour, so they are recorded and not rerun here).
+    Sequences per rat beside Supplementary Fig. 6, and the left share by what
+    was restricted, beside the paper's 0.35 and 0.57. The paper's identity-shuffle
+    filter is not applied. The left share is not a reproduction of the
+    paper's finding: see the record for shifted rate maps (20 draws are recorded,
+    not rerun here).
     """
     record = carey_2019.ACROSS_SESSIONS
     per_rat: dict[str, int] = {}
     shares, restrictions, left_trials = [], [], []
     for session in sorted(carey_2019.PAPER_SESSIONS):
         rec = load("carey_2019", session)
-        evt = _paper_candidates(session)
-        left, right = _judged(rec, _intervals_of(evt))
-        only_left, only_right = int(np.sum(left & ~right)), int(np.sum(right & ~left))
+        seen = _judged(rec, _intervals_of(_paper_candidates(session)))
         rat = session[:4]
-        per_rat[rat] = per_rat.get(rat, 0) + only_left + only_right
-        shares.append(only_left / (only_left + only_right))
+        per_rat[rat] = per_rat.get(rat, 0) + seen["left"] + seen["right"]
+        shares.append(seen["left"] / (seen["left"] + seen["right"]))
         restrictions.append(rec.params["restriction"])
         left_trials.append(float(np.mean(rec.trials.arm == "L")))
-    assert per_rat == record["one_side_per_rat"]
+    assert per_rat == record["sequences_per_rat"]
     shares = np.array(shares)
     food = np.array(restrictions) == "food"
     assert round(float(shares[food].mean()), 3) == record["left_share_food"]

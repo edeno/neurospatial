@@ -43,18 +43,19 @@ The declared environment is the T-maze as a graph of the authors' two drawn
 trajectories (``coordL_cm`` and ``coordR_cm``, joined at ``chp_cm``), 3 cm bins.
 The rest pedestals and the flower pot lie off the track, so samples there fall
 in no bin. :func:`trajectory_environment` gives the left or right trajectory
-alone, as the paper decodes them.
+alone in 111 bins, as the paper's code decodes them.
 
 Analysis choices (``params``):
 
-- ``bin_size`` 3 cm and ``min_speed`` 4 cm/s, the paper's text; its code gates
-  runs at 5 cm/s and detection at 10 pixels/s, 3.4 to 4.2 cm/s by axis and rat;
+- ``bin_size`` 3 cm, the paper's, for ``rec.env``, and ``min_speed`` 5 cm/s, the
+  run gate of its code; its text says about 4 cm/s. The code's detection gate
+  is 10 pixels/s, 3.4 to 4.2 cm/s by axis and rat;
 - ``analysis_epochs``: the trials; ``train_epochs`` / ``test_epochs``: their
   even and odd rows, for held-out decoding at ``dt`` 0.25 s;
 - ``restriction``, what was withheld, ``layout`` and ``session_type``, from
   ``keys.m``; ``in_paper``, whether the paper analysed the session;
-- ``left_trajectory``, ``right_trajectory``, ``choice_point`` and
-  ``track_width``, cm;
+- ``left_trajectory``, ``right_trajectory``, ``choice_point``, ``track_width``
+  and ``pathlength``, the length ``keys.m`` states, cm;
 - ``theta_channel``, the session's ``goodTheta`` first channel.
 
 ``rec.lfp.ripple_channels`` is the session's ``goodSWR`` with the channel the
@@ -117,12 +118,14 @@ REQUIRES: tuple[str, ...] = ()
 PATH_TOLERANCE = 0.5
 #: The paper's linearized bins: "approximately 3 cm per bin", cm.
 BIN_SIZE = 3.0
+#: Bins of one drawn trajectory, as ``Generate_DecSeqShuf.m``'s 112 edges.
+TRAJECTORY_BINS = 111
 #: The share of trial samples the placement tolerance leaves outside the track.
 TOLERANCE_QUANTILE = 0.99
 #: The rate of the sessions' ``.ncs`` files, Hz (each header's SamplingFrequency).
 LFP_RATE = 2000.0
-#: The speed threshold of the paper's text, for detection and run epochs, cm/s.
-MIN_SPEED = 4.0
+#: The run gate of the paper's code, cm/s; its text says about 4 cm/s.
+MIN_SPEED = 5.0
 #: Above this speed, cm/s, the tracker's angle is compared with movement.
 HEADING_MIN_SPEED = 10.0
 #: The decoding bin of ``params["dt"]``, s.
@@ -198,8 +201,8 @@ WORKED_RESULT: dict[str, Any] = {
     "level": "B",
     "finding": (
         "a sanity property of the detection and decoder, not a number of the "
-        "paper: candidate events hold left or right sequences more often than "
-        "when the rate maps or the spikes are shifted"
+        "paper: whether candidate events hold left or right sequences more often "
+        "than when the rate maps or the spikes are shifted"
     ),
     "quote": (
         '"3,780 total sequences were detected across all animals and sessions" '
@@ -215,99 +218,115 @@ WORKED_RESULT: dict[str, Any] = {
         "no number for one session; 429 sequences over R050's 6 sessions, with "
         "no figure per session, from a pipeline with filters CAREY_2019 leaves out"
     ),
-    "ours": 0.049,
+    "ours": 0.032,
     "criterion": (
-        "65 of the 1,328 candidates (4.9%) hold a sequence on the left or right "
-        "trajectory, which exceeds the 95th percentile of each null (20 draws, "
-        "seed 2026): rate maps fitted on spikes with each unit shifted by its "
-        "own offset within the task, 22 to 65 events, 95th percentile 52.65; "
-        "decoded spikes all shifted by one offset over the recording, 2 to 14 "
-        "events, 95th percentile 10.2. Fixed in writing before any decode. The "
-        "margin over the first null is thin: its median is 37 events, and one "
-        "draw equals the observed count"
+        "not met. 43 sequences (11 left, 32 right), 0.032 per candidate, remain on "
+        "the 1,328 candidates, and the criterion asks that they exceed the 95th "
+        "percentile of each null (20 draws, seed 2026). They do not exceed the "
+        "first: rate maps fitted on spikes with each unit shifted by its own "
+        "offset within the task give 17 to 57 sequences, median 34, 95th "
+        "percentile 45.6. They exceed the second: decoded spikes all shifted by "
+        "one offset over the recording give 0 to 8, 95th percentile 8.0. The "
+        "criterion was fixed for events before any decode, and moved to sequences "
+        "before this count was seen, to follow the paper's code; the event "
+        "counts of an earlier route at 4 cm/s had been seen. Events that an "
+        "eligible sequence overlaps number 59, against 95th percentiles of 51.85 "
+        "and 10.05"
     ),
     "parameters": (
         "literature_methods.carey_2019 at ripple_detection 0eddae64 as packaged, "
-        "on CSC03a, with the file's 50 hand-labelled SWRs. Rate maps per side "
-        "on trajectory_environment (3 cm bins): compute_spatial_rates binned, "
-        "bandwidth 3 cm, min_speed 4 cm/s, on the matched trials (6 of each), "
-        "each from 1 s before its next centre photobeam, the track's first 20 "
-        "and last 15 cm left out, units with at least 25 such spikes (37 left, "
-        "44 right). Decoding: counts in 5 ms bins summed over 25 ms, rows 5 ms "
-        "apart, dt 0.025, the default prior (uniform over space), each candidate "
-        "plus 0.25 s on each side. Judged by CAREY_2019: at least 4 active units "
-        "in a window, MAP steps under 40 cm, at least 50 ms; a candidate counts "
-        "when such a sequence overlaps it, the paper's rule"
+        "on CSC03a, with the file's 50 hand-labelled SWRs. The route follows the "
+        "paper's code where it differs from the text. Rate maps per side on "
+        "trajectory_environment (111 bins over each drawn path, 2.76 and 2.86 cm "
+        "here): compute_spatial_rates binned, bandwidth one bin, min_speed 5 cm/s "
+        "(the text says about 4), on the matched trials (6 of each), each from 1 "
+        "s before its next centre photobeam, the track's first 20 and last 15 cm "
+        "left out on the pathlength scale, units with at least 25 such spikes "
+        "(37 left, 44 right). Decoding: the whole session in 5 ms bins from each "
+        "side's first spike, summed over 25 ms, rows 5 ms apart, exposure dt "
+        "0.005 as DecodeZ.m, the default prior (uniform over space), rows with "
+        "at least 4 active units. Sequences: replay_segments per contiguous run "
+        "of such rows, MAP steps of up to 13 bins (round(40 / (pathlength / "
+        "112)), 17 for R042), at least 10 rows. Then the order of "
+        "getEligibleSequences.m on each side: overlap with a candidate, at least "
+        "50 ms; last, each side loses what overlaps the other side's eligible "
+        "sequences"
     ),
     "unmatched": (
         "the paper's identity-shuffle filter (500 shuffles over the whole "
         "session) is not applied, and no claim is made about what it does",
-        "the paper counts sequences left or right but not both, 50 events here "
-        "(15 left only, 35 right only, against 34 in the first null's median), "
-        "and it scans the whole session; here only windows around candidates",
-        "spike density by a 2 ms Gaussian before the 25 ms boxcar is not applied",
-        "the code's run speed is 5 cm/s and its detection gate 10 pixels/s, 3.4 "
-        "to 4.2 cm/s by axis and rat; the paper's text says about 4 cm/s, used "
-        "here",
-        "the code's Poisson exposure is the 5 ms step for 25 ms counts "
-        "(DecodeZ.m); here dt 0.025",
-        "the detection differs: see the page's validation; on the paper's own "
-        "1,654 candidates the same analysis finds 64 events, above both nulls "
-        "(95th percentiles 61.8 and 12)",
+        "spike density by a 2 ms Gaussian before the 25 ms boxcar is not applied, "
+        "because decode_position takes whole counts",
+        "the code's speed is dxdt.m's; here the session's speed, smoothed over "
+        "0.1 s, against the same 5 cm/s",
+        "all sequences of exactly 50 ms, 11 rows, are kept; the code's comparison "
+        "of times keeps only some of them",
+        "the code also asks 4 active cells over a sequence, which the 4 per row "
+        "here imply",
+        "the detection differs, and its gates are those of the packaged method "
+        "(about 4 cm/s; the code's 10 pixels/s is 3.4 to 4.2 cm/s by axis and "
+        "rat): see the page's validation. On the paper's own 1,654 candidates "
+        "the same analysis gives 47 sequences (13 left, 34 right), against 95th "
+        "percentiles of 57.65 and 8.05",
     ),
     "attempted": None,
     "why": None,
     "planted_recall": {
-        "judged": 262,
+        "judged": 152,
         "planted": 2656,
         "reading": (
             "replay planted into the 1,328 candidates, once on each trajectory, "
             "keeping every spike's time and drawing its cell from these rate maps "
             "along a real running path played 15 times faster, is judged replay "
-            "9.9% of the time. Events with no content pass 3.3% and events that "
-            "stay in one place 10.5%. It depends on the event's length: 0.7% under "
-            "60 ms, and 46.6% at 90 ms or more, since the path stays inside the "
-            "candidate and the rule needs 50 ms of it. So this judge passes about "
-            "one known replay in ten here, 4.7% is not a rate of replay, and a low "
-            "share is not evidence of its absence. This is a limit of what the "
-            "number can say, not a measurement of the rats: planted events come "
-            "from the model the decoder assumes, and compression 15 is a choice"
+            "5.7% of the time, or 9.5% before the two sides are compared, since a "
+            "planted sequence that also decodes on the other side is removed. "
+            "Events with no content pass 3.2% and events that stay in one place "
+            "6.5%. It depends on the event's length: 0.2% under 60 ms and 23.7% at "
+            "90 ms or more, since the path stays inside the candidate and the rule "
+            "needs 50 ms of it. So this judge passes about one known replay in "
+            "twenty here, the real candidates' 3.2% is no more than events with no "
+            "content pass, it is not a rate of replay, and a low share is not "
+            "evidence of its absence. This is a limit of what the number can say, "
+            "not a measurement of the rats: planted events come from the model the "
+            "decoder assumes, and compression 15 is a choice"
         ),
     },
 }
 
 #: Exploratory, apart from ``WORKED_RESULT``: the same analysis on the paper's
 #: own candidates in its 19 sessions. Written down before those sessions ran; the
-#: label permutation and the null were fixed after the counts were seen. No
-#: criterion attaches. It does not reproduce the paper's shift: the left share
-#: differs by restriction just as much with shifted rate maps, and follows the
-#: share of units kept on each side (r = 0.83). This analysis cannot tell that
-#: shift from a bias. All of this is measured on this analysis; it does not
-#: assess the paper's own finding.
+#: label permutation and the null were fixed after the counts of an earlier route
+#: were seen. No criterion attaches. The left share is not a reproduction of the
+#: paper's shift: it differs by restriction as much with shifted rate maps, and
+#: follows the share of units kept on each side (r = 0.90). This analysis cannot
+#: tell that shift from a bias. All of this is measured on this analysis; it does
+#: not assess the paper's own finding.
 ACROSS_SESSIONS: dict[str, Any] = {
     "what": (
-        "events with a CAREY_2019 sequence on the left or right trajectory only, "
-        "in the paper's 19 sessions, its own candidates, its identity-shuffle "
-        "filter not applied; events, where the paper counts sequences"
+        "CAREY_2019 sequences left after the order of the paper's code, in its 19 "
+        "sessions, on its own candidates, with its identity-shuffle filter and "
+        "its spike density not applied"
     ),
-    "one_side_per_rat": {"R042": 1127, "R044": 70, "R050": 366, "R064": 1584},
+    "sequences_per_rat": {"R042": 1142, "R044": 86, "R050": 369, "R064": 1723},
     "paper_per_rat": {"R042": 1257, "R044": 95, "R050": 429, "R064": 1999},
-    "left_share_food": 0.294,
-    "left_share_water": 0.520,
+    "one_side_events_per_rat": {"R042": 1093, "R044": 85, "R050": 360, "R064": 1671},
+    "left_share_food": 0.372,
+    "left_share_water": 0.592,
     "paper_left_share": (0.35, 0.57),
-    "label_permutation": {"z": -2.65, "p": 0.0047, "n": 10000, "seed": 2026},
-    "r_with_left_trials": -0.69,
+    "label_permutation": {"z": -2.69, "p": 0.0029, "n": 10000, "seed": 2026},
+    "r_with_left_trials": -0.68,
     "paper_r_with_behavior": -0.54,
-    "left_share_follows_kept_units_r": 0.83,
+    "left_share_follows_kept_units_r": 0.90,
     "null_own_offsets": {
         "draws": 20,
         "seed": 2026,
-        "difference_observed": -0.227,
-        "difference_median": -0.223,
-        "difference_range": (-0.416, -0.091),
-        "one_side_total_observed": 3147,
-        "one_side_total_range": (2317, 2687),
-        "sessions_above_95th_percentile": 5,
+        "difference_observed": -0.220,
+        "difference_median": -0.251,
+        "difference_range": (-0.401, -0.109),
+        "draws_at_or_beyond_observed": 12,
+        "sequences_total_observed": 3320,
+        "sequences_total_range": (2554, 3081),
+        "sessions_above_95th_percentile": 3,
     },
 }
 
@@ -518,7 +537,11 @@ def track_graph(
 def trajectory_environment(
     path: NDArray[np.float64], *, track_width: float, name: str = ""
 ) -> Environment:
-    """One drawn trajectory as a linear track, as the paper decodes each side.
+    """One drawn trajectory as a linear track of 111 bins, as the paper's code decodes.
+
+    ``Generate_DecSeqShuf.m`` cuts each trajectory into 111 equal parts of its
+    length, about 3 cm on most paths and 2.3 cm on R042's shorter ones. Here
+    each part is a straight piece of the track with one bin.
 
     Parameters
     ----------
@@ -532,20 +555,27 @@ def trajectory_environment(
     Returns
     -------
     Environment
-        A track with ``BIN_SIZE`` bins, its first bin at the start of the stem.
+        A track of ``TRAJECTORY_BINS`` bins, its first bin at the start of the
+        stem.
     """
     import networkx as nx
+    import shapely
 
     from neurospatial import Environment
 
+    fractions = np.linspace(0.0, 1.0, TRAJECTORY_BINS + 1)
+    nodes = shapely.get_coordinates(
+        shapely.line_interpolate_point(
+            shapely.LineString(path), fractions, normalized=True
+        )
+    )
     graph = nx.Graph()
-    corners = _polyline_nodes(path)
-    names = list(range(len(corners)))
-    _add_chain(graph, names, corners)
+    names = list(range(len(nodes)))
+    _add_chain(graph, names, nodes)
     return Environment.from_graph(
         graph,
         list(pairwise(names)),
-        bin_size=BIN_SIZE,
+        bin_size=max(distance for *_, distance in graph.edges(data="distance")),
         units="cm",
         name=name,
         track_width=track_width,
@@ -1012,6 +1042,7 @@ def load_session(
             "session_type": keys["Session"],
             "layout": keys["Layout"],
             "in_paper": entry.session in PAPER_SESSIONS,
+            "pathlength": keys["pathlength"],
             "left_trajectory": left,
             "right_trajectory": right,
             "choice_point": choice,

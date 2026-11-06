@@ -4570,9 +4570,10 @@ CAREY_2019 = ReplayMethod(
         "curves over the session; Generate_DecSeqShuf.m instead permutes "
         "spike counts within each time bin. That session-level filter is not "
         "applied here, and no claim is made about what it does.",
-        "DecodeZ.m uses the 5 ms step as the exposure for the 25 ms counts, "
-        "and Generate_DecSeqShuf.m smooths spikes with a 2 ms Gaussian; here "
-        "whole counts and dt 0.025.",
+        "DecodeZ.m uses the 5 ms step as the exposure for the 25 ms counts: "
+        "pass dt=0.005 to follow it. Generate_DecSeqShuf.m smooths spikes with "
+        "a 2 ms Gaussian, which is not applied, since decode_position takes "
+        "whole counts.",
     ),
 )
 
