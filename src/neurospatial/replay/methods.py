@@ -4608,19 +4608,26 @@ IGATA_2021 = ReplayMethod(
         "cumulative distance of more than 20 cm.",
         "Tested against 1,000 surrogate events decoded with each cell's "
         "tuning curve shifted across all location bins: p is the share of "
-        "surrogates in which a trajectory event is also detected. The paper "
-        "shifted the unsmoothed rate maps and smoothed them again (5 cm); "
-        "here the given rate maps are shifted. The place-field shuffle needs "
-        "a 1-D environment or a track.",
+        "surrogates in which a trajectory event is also detected. The SI does "
+        "not say whether a cell's map shifts as a whole, and 'individual "
+        "firing rates' may mean each bin; here each cell's whole map shifts. "
+        "The paper shifted the unsmoothed rate maps and smoothed them again "
+        "(5 cm); here the given rate maps are shifted. The place-field "
+        "shuffle needs a 1-D environment or a track.",
         "The paper computed the MAP of each maze path separately and "
         "extended sequences into neighboring paths; here one MAP over the "
         "whole environment.",
         "The paper's p-value is the share of surrogates; here it is (k + 1) / (n + 1).",
-        "Shifted fields keep cells that fire in neighboring time bins "
-        "together, so surrogates often decode a short trajectory too. In "
-        "simulated sweeps, about half of the surrogates on a 2 m track and "
-        "2-6% on a 10 m track held one: the test has little power where "
-        "40 cm is a large share of the environment.",
+        "The score is 1 if an event holds a sequence and 0 if not, so p is "
+        "only the share of surrogates that hold one. That share depends on "
+        "spike count and event length, not on the event: it rises with "
+        "spikes, and a real event's score cannot. A simulated perfect 120 cm "
+        "sweep with 240 spikes passes the rule every time and has p = 0.56. "
+        "Pfeiffer & Foster's identical test works because at most 0.3% of "
+        "surrogates pass their stricter rule; 7 to 56% pass this one on the "
+        "same maps and events. The preset does what the SI says; do not read "
+        "its verdicts as evidence about replay. The authors' code is not "
+        "public, so why the paper's rates are far higher is not settled.",
     ),
 )
 

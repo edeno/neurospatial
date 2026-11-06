@@ -187,11 +187,16 @@ Rat 5 has too few units for the paper's own sequence analyses, and was not run.
 - The maps are not the problem: held-out running decodes 11.6 cm from the rat, in
   0.49 s bins, against 65.9 cm with shuffled positions.
 
-The likely cause is the preset's surrogate test on these inputs: surrogates often
-hold a short trajectory too, and more so in a longer event, so p rises with
-duration. `IGATA_2021`'s notes warn of this where 40 cm is a large share of the
-environment. Here one MAP runs over all the joined paths, where the paper took one
-per path. That cause is an explanation we have not tested.
+The cause is the test itself. The score is 1 if an event holds a sequence and 0 if
+not, so p is only the share of surrogates that hold one, and that share rises with
+spikes and event length whatever the event contains. A simulated perfect 120 cm
+sweep with 240 spikes passes the rule every time and has p = 0.56, and none of 200
+such sweeps is called. Pfeiffer & Foster's test is the same, and it works because
+at most 0.3% of surrogates pass their stricter rule; on these maps and events, 7 to
+56% pass this one. `IGATA_2021` does what the paper's supplement says, and its
+differences from the text (one MAP over the joined paths, where the paper took one
+per path) do not explain this. The authors' code is not public, so why the paper's
+rates are far higher is not settled, and our events are not the paper's either.
 
 **A low count here is not evidence of no replay.** We planted replay into 150
 survivors and 150 other immobile events. Every spike kept its time, and its cell was

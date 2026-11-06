@@ -103,8 +103,9 @@ WORKED_RESULT: dict[str, Any] = {
     "status": "not possible yet",
     "level": None,
     "finding": (
-        "trajectory events among the paper's synchronous events; no such share "
-        "is stated in the text, only a figure, so this was never a number to match"
+        "trajectory events among the paper's synchronous events; no share is "
+        "stated in the text. Fig. 4G's ratios read about 0.2 to 0.45 off the "
+        "plot, over 50 times ours, on events that are not the paper's"
     ),
     "quote": (
         '"Trajectory sequences covering more than 4 time bins (60 ms) and a '
