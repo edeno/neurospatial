@@ -98,9 +98,12 @@ and the files. `lfp.mat` is MATLAB 7.3 (HDF5); the others are MATLAB 5.0.
   the reward and 5 cm/s in the reward period. x and y share one scale, and nothing
   read says the pixels are square.
 - **One LFP channel, not two.** The paper averaged ripple power over one channel
-  each of two tetrodes. `lfp.mat` holds one channel per set, and the files do not
-  say which tetrode it is. The paper's theta power came from a tetrode above the
-  cell layer, so it may be that one.
+  each of two tetrodes, of the 15 implanted, and took theta power from a tetrode above
+  the cell layer. `lfp.mat` holds one channel per set, and nothing in the archive says
+  which tetrode it is, or whether it is the same one in every set. `MetaData.docx` says
+  only "a single tetrode", and `spikes.mat` has no tetrode labels, so the channel
+  cannot be matched to the units recorded on it. It may be the theta tetrode or one of
+  the two ripple tetrodes; the data do not settle this.
 - **The LFP is clipped in the file.** `lfp.mat` stores float64 values that stop at
   exactly +/-327.67, and 5% to 56% of a set's samples sit there (21.4% in the default
   set). Every set's length is a multiple of 512, a Neuralynx record, so the clipping

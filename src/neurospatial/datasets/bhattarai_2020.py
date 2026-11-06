@@ -376,8 +376,10 @@ _ONE_TETRODE = (
     "lfp.mat holds one channel per set. The paper's sharp-wave ripple detection "
     "averaged the power of one channel each from two tetrodes, and its theta "
     "power came from a tetrode above the cell layer; which of these this "
-    "channel is, the files do not say. A ripple analysis here has one channel, "
-    "not the paper's two."
+    "channel is, or whether it is the same one in every set, nothing in the "
+    "archive says. MetaData.docx says only 'a single tetrode', and spikes.mat "
+    "has no tetrode labels, so the channel cannot be matched to its units. A "
+    "ripple analysis here has one channel, not the paper's two."
 )
 _NO_REST = (
     "The files hold no rest or sleep: tracking, spikes and LFP start at most "
