@@ -537,6 +537,14 @@ def rayleigh_test(
     samples, where ``exp(-z)`` is anti-conservative. For n < 6 it is
     conservative (p too large) below p = 0.01.
 
+    **Independence.** The test assumes independent angles. Spike phases are
+    not independent when spikes come in bursts, because spikes in a burst
+    share nearly the same phase. With burst sizes measured on running CA1
+    spikes in two recordings (about 1.3 spikes per event, grouping
+    inter-spike intervals up to 10 ms), simulated uniform phases reached
+    ``p < 0.05`` in 13-17% of cells, not 5%. Testing one phase per burst gave
+    4-6%.
+
     **Weighted variant.** When ``weights`` are supplied this is the
     grouped-data Rayleigh test: weights are frequencies, the resultant
     length is the weighted mean resultant length

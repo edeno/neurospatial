@@ -763,6 +763,16 @@ def compute_phase_precession(
     smoothing is applied (Phipson & Smyth, 2010) so ``p_value`` is never
     exactly zero.
 
+    **Bursts.** The shuffle treats every spike as independent, as published
+    precession analyses generally do, but spikes in a burst share a position
+    and nearly share a phase, so the test sees more independent evidence than
+    there is. With burst sizes measured on running CA1 spikes in two recordings
+    (about 1.3 spikes per event, grouping inter-spike intervals up to 10 ms),
+    simulated cells with no phase-position relationship reached ``p < 0.05``
+    in 10-18% of cells, not 5%. Only the burst sizes were measured; the phases
+    were simulated. Strongly precessing cells stay significant, so the risk
+    is in the fraction of weak or low-count cells called significant.
+
     **Performance.** Observed and shuffled test statistics use the same
     slope grid, with spacing set by ``slope_bounds``. The reported fit
     additionally uses Brent refinement. Shuffles are evaluated in batches
@@ -1059,10 +1069,12 @@ def has_phase_precession(
 
     Notes
     -----
-    The shuffle p-value is calibrated: on spikes with no phase-position
-    relationship, ``p_value < 0.05`` occurred in 2.3-5.3% of 300 simulated
-    cells for each of 10, 20, 50 and 200 spikes. Because only negative
-    slopes count, the screen's false-positive rate is about ``alpha / 2``.
+    The shuffle p-value is calibrated for independent spikes: on spikes with
+    no phase-position relationship, ``p_value < 0.05`` occurred in 2.3-5.3%
+    of 300 simulated cells for each of 10, 20, 50 and 200 spikes. Because
+    only negative slopes count, the screen's false-positive rate is about
+    ``alpha / 2``. Spikes in bursts are not independent, and the p-value is
+    too small for them; see :func:`compute_phase_precession`.
     There is no ``rho`` cutoff: ``|rho|`` of untuned spikes shrinks with the
     spike count (it reached 0.2 in 59% of untuned 10-spike cells and 1% of
     200-spike cells), so a fixed cutoff means a different error rate at every

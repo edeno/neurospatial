@@ -968,9 +968,12 @@ little less than one theta cycle) across the 28 cm field, with p = 0.001,
 the smallest p-value 1000 shuffles can give. `slope` is in radians per cm;
 `normalized_slope` is the phase change across `position_range`. The
 p-value comes from shuffling which phase goes with which position and
-re-fitting the slope each time, and it is calibrated: on simulated spikes
-with no phase-position relationship it fell below 0.05 in 2-5% of cells
-for 10 to 200 spikes.
+re-fitting the slope each time, and it is calibrated for independent spikes:
+on simulated spikes with no phase-position relationship it fell below 0.05 in
+2-5% of cells for 10 to 200 spikes. Spikes in bursts are not independent. With
+burst sizes measured on running CA1 spikes in two recordings, simulated
+no-precession cells reached `p < 0.05` in 10-18% of cells, so read the fraction
+of significant weak or low-count cells with that in mind.
 
 Two numbers describe the fit, and neither has a cutoff.
 `result.mean_resultant_length` says how tightly the spikes follow the line,

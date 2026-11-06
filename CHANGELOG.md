@@ -14,6 +14,11 @@
   `rho` also changes with the slope, and it is noisy near one cycle: compare
   cells and conditions with `mean_resultant_length`, and compare with papers
   with `rho`. `circular_linear_correlation` is unchanged.
+- The docs for `compute_phase_precession`, `has_phase_precession` and
+  `rayleigh_test` now say their p-values assume independent spikes. With burst
+  sizes measured on running CA1 spikes, simulated null cells reached `p < 0.05`
+  in 10-18% (precession) and 13-17% (Rayleigh) of cells, not 5%. Testing one
+  phase per burst gave 4-6% for Rayleigh.
 
 ### Trials
 
