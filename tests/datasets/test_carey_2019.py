@@ -231,6 +231,8 @@ def test_trajectory_environment_runs_from_the_stem_to_the_arms_end():
         ("LRRRL", [2], [0, 4], [2, 3]),  # bad trial 2 is row 1
         ("RRLLLL", [], [2, 3], [0, 1]),  # the nearest left trials to rows 0 and 1
         ("LLLR", [], [2], [3]),
+        ("LRL", [], [2], [1]),  # rows 0 and 2 are as near row 1: the later one
+        ("RLRLR", [], [1, 3], [2, 4]),  # each tie takes the later trial
     ],
 )
 def test_matched_trials_take_the_nearest_of_the_commoner_side(arms, bad, left, right):

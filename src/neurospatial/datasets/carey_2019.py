@@ -538,8 +538,9 @@ def matched_trials(
 
     ``GetMatchedTrials.m``: bad trials are left out; each trial of the rarer
     side, in order, takes the nearest unused trial of the other by trial
-    number. The paper: "(1) the number of left and right trials was equal and
-    (2) the time difference between the left and right trials was minimized".
+    number, the later one when two are equally near (``nearest_idx3``). The
+    paper: "(1) the number of left and right trials was equal and (2) the
+    time difference between the left and right trials was minimized".
 
     Parameters
     ----------
@@ -569,7 +570,8 @@ def matched_trials(
     pool = many.tolist()
     chosen = []
     for trial in few:
-        nearest = int(np.argmin(np.abs(np.array(pool) - trial)))
+        distance = np.abs(np.array(pool) - trial)
+        nearest = int(np.flatnonzero(distance == distance.min())[-1])
         chosen.append(pool.pop(nearest))
     matched = np.sort(np.array(chosen, dtype=np.intp))
     return (few, matched) if left.size < right.size else (matched, few)
