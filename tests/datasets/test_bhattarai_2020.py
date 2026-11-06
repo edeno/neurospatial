@@ -505,28 +505,22 @@ def test_lfp_is_on_the_clock_of_the_spikes():
     assert counts.max() > 1.3 * np.r_[counts[:5], counts[-5:]].mean()
 
 
-def _replay_events(rec):
-    """Each block's candidates by the paper's recipe, and what decoding them needs.
+def _block_rates(rec):
+    """Each block's place cells and rate maps, by the paper's recipe.
 
     Complex-spike units; per block, rate maps from forced-choice and correct
     free-choice trials on the block's linear path (2 cm bins, 6 cm bandwidth,
     above 4 cm/s); place cells are those neurospatial finds a place field in.
-    One channel stands for the paper's two: ``bhattarai_2020_ripples`` needs two
-    columns, and the same one twice averages to the channel's own power.
 
     Returns
     -------
     list of dict
         One per block: ``track``, ``rates`` (n_place, n_bins), ``prior``,
-        ``trains``, and ``events`` (n_events, 2).
+        ``trains``, ``ids`` and ``reward`` (n_trials, 2).
     """
-    from ripple_detection.literature_methods import run_method
-
     from neurospatial import compute_spatial_rates
-    from neurospatial.datasets._ripple import ripple_recording
     from neurospatial.encoding import detect_place_fields
 
-    samples, times = rec.lfp.fetch()
     table = rec.trials.intervals_table()
     chosen = rec.units["label"].to_numpy() == "complex-spike"
     ids = rec.units.index.to_numpy()[chosen]
@@ -567,6 +561,26 @@ def _replay_events(rec):
                 "reward": reward[reward[:, 1] > reward[:, 0]],
             }
         )
+    return blocks
+
+
+def _replay_events(rec):
+    """Each block's candidates by the paper's recipe, and what decoding them needs.
+
+    One channel stands for the paper's two: ``bhattarai_2020_ripples`` needs two
+    columns, and the same one twice averages to the channel's own power.
+
+    Returns
+    -------
+    list of dict
+        As :func:`_block_rates`, with ``events`` (n_events, 2).
+    """
+    from ripple_detection.literature_methods import run_method
+
+    from neurospatial.datasets._ripple import ripple_recording
+
+    samples, times = rec.lfp.fetch()
+    blocks = _block_rates(rec)
     both = np.column_stack([samples[:, 0], samples[:, 0]])
     recording = ripple_recording(rec, both, times)
     for block in blocks:
@@ -750,3 +764,223 @@ def test_worked_result_record_is_complete():
     assert round(planted["judged"] / planted["planted"], 3) == 0.186
     assert "18.6%" in planted["reading"]
     assert "not evidence of its absence" in planted["reading"]
+
+
+#: The lags of the theta-locking check, s; the zero lag is the one in the middle.
+THETA_LAGS = (-30, -10, -5, -2, -1, -0.5, -0.2, -0.1, -0.05, -0.02, 0)
+THETA_LAGS += tuple(-lag for lag in reversed(THETA_LAGS[:-1]))
+#: Samples of the LFP near a rail are left out, and of 100 ms burst windows.
+NEAR_RAIL, BURST_WINDOW = 70, 200
+
+
+def _rest_mask(lfp, times, tracking):
+    """Samples below 4 cm/s and at least 35 ms from a rail."""
+    from scipy.ndimage import binary_dilation, gaussian_filter1d
+
+    tracked = ~np.all(tracking[:, 1:3] == 0, axis=1)
+    moments, cm = tracking[tracked, 0], tracking[tracked, 1:3] / 3.6
+    speed = np.r_[0, np.hypot(*np.diff(cm, axis=0).T) / np.diff(moments).clip(1e-3)]
+    speed = np.interp(times, moments, gaussian_filter1d(speed, 7))
+    rail = binary_dilation(np.abs(lfp) >= 327.67, iterations=NEAR_RAIL)
+    return (speed < 4.0) & ~rail
+
+
+def _rest_bursts(rate, rest):
+    """Sample numbers of population bursts wholly inside ``rest``, 200 ms apart."""
+    z = (rate - rate[rest].mean()) / rate[rest].std()
+    peaks = np.flatnonzero((z[1:-1] > 3) & (z[1:-1] >= z[:-2]) & (z[1:-1] > z[2:])) + 1
+    kept, last = [], -(10**9)
+    for peak in peaks:
+        clean = rest[max(peak - 200, 0) : peak + 200].mean() > 0.99
+        if peak - last >= 400 and clean:
+            kept.append(peak)
+            last = peak
+    kept = np.array(kept, dtype=int)
+    return kept[(kept > 1300) & (kept < rate.size - 1300)]
+
+
+def _spectrum(lfp, centres):
+    """Mean power spectrum of the 100 ms windows around ``centres``."""
+    half = BURST_WINDOW // 2
+    windows = np.stack([lfp[c - half : c + half] for c in centres])
+    windows = windows - windows.mean(axis=1, keepdims=True)
+    taper = np.hanning(BURST_WINDOW + 1)[:-1]
+    return (np.abs(np.fft.rfft(windows * taper, axis=1)) ** 2).mean(axis=0)
+
+
+@pytest.fixture(scope="module")
+def lfp_of_each_set():
+    """Per set: theta locking by lag, and ripple power around bursts at rest."""
+    from scipy.ndimage import gaussian_filter1d
+    from scipy.signal import butter, hilbert, sosfiltfilt
+
+    load("bhattarai_2020").lfp.fetch()
+    folder = _default_folder()
+    path = cache_root() / "bhattarai_2020" / "lfp.mat"
+    theta = butter(3, (6.0, 12.0), btype="band", fs=2000.0, output="sos")
+    ripple = butter(4, (130.0, 220.0), btype="band", fs=2000.0, output="sos")
+    frequencies = np.fft.rfftfreq(BURST_WINDOW, 1 / 2000.0)
+    rows = []
+    for index in range(25):
+        samples, times = bhattarai_2020.read_lfp((path,), ("tetrode",), index=index)
+        lfp = samples[:, 0]
+        raw = bhattarai_2020.read_session(folder, index)
+        spikes = np.concatenate(raw.trains)
+        spikes = spikes[spikes > 0]
+
+        phase = np.angle(hilbert(sosfiltfilt(theta, lfp)))
+        locking = []
+        for lag in THETA_LAGS:
+            sample = np.searchsorted(times, spikes + lag)
+            sample = sample[(sample > 0) & (sample < times.size)]
+            locking.append(np.abs(np.exp(1j * phase[sample]).mean()))
+
+        rest = _rest_mask(lfp, times, raw.tracking)
+        sample = np.searchsorted(times, spikes)
+        sample = sample[(sample > 0) & (sample < times.size)]
+        rate = gaussian_filter1d(
+            np.bincount(sample, minlength=times.size).astype(float), 20
+        )
+        bursts = _rest_bursts(rate, rest)
+        ratio = _spectrum(lfp, bursts) / np.mean(
+            [_spectrum(lfp, bursts + shift) for shift in (-1200, -1000, 1000, 1200)],
+            axis=0,
+        )
+        power = gaussian_filter1d(sosfiltfilt(ripple, lfp) ** 2, 8)
+        near = np.array([power[b - 100 : b + 100].max() for b in bursts])
+        away = np.array([power[b + 1000 : b + 1200].max() for b in bursts])
+
+        def band(low, high, ratio=ratio):
+            return ratio[(frequencies >= low) & (frequencies < high)]
+
+        rows.append(
+            {
+                "locking": np.array(locking),
+                "peak": band(160, 200).mean(),
+                "ripple": band(130, 220).mean(),
+                "below": band(60, 100).mean(),
+                "above": band(280, 400).mean(),
+                "far_above": band(300, 400).mean(),
+                "bursts_up": np.mean(near > np.quantile(away, 0.95)),
+            }
+        )
+    return rows
+
+
+@pytest.mark.realdata
+def test_each_sets_lfp_is_on_the_clock_of_its_own_spikes(lfp_of_each_set):
+    """Spikes lock to theta more at zero lag than 1 s or more away, in 24 of 25 sets.
+
+    ``rat3_set10`` shows almost no locking, so this says nothing for that set.
+    """
+    lags = np.array(THETA_LAGS)
+    beats_every_far_lag = [
+        row["locking"][lags == 0][0] > row["locking"][np.abs(lags) >= 1].max()
+        for row in lfp_of_each_set
+    ]
+    assert sum(beats_every_far_lag) == 24
+    assert not beats_every_far_lag[-1]
+
+
+@pytest.mark.realdata
+def test_the_channel_holds_a_weak_ripple_at_rest(lfp_of_each_set):
+    """The worked result's numbers: a small peak over the bursts' broadband rise."""
+    above_both = [
+        row["ripple"] > max(row["below"], row["above"]) for row in lfp_of_each_set
+    ]
+    assert sum(above_both) >= 20
+    assert np.median([row["peak"] for row in lfp_of_each_set]) == pytest.approx(
+        1.7, abs=0.05
+    )
+    assert np.median([row["far_above"] for row in lfp_of_each_set]) == pytest.approx(
+        1.3, abs=0.06
+    )
+    assert np.median([row["bursts_up"] for row in lfp_of_each_set]) == pytest.approx(
+        0.17, abs=0.01
+    )
+
+
+def _swr_starts(power, times, mean, sd):
+    """Start times of runs above 1 SD that pass 3 SD, over 20 ms, merged within 100 ms."""
+    above = np.diff(np.r_[0, (power > mean + sd).astype(np.int8), 0])
+    first, last = np.flatnonzero(above == 1), np.flatnonzero(above == -1)
+    passed = np.r_[0, np.cumsum(power > mean + 3 * sd)]
+    keep = (passed[last] > passed[first]) & ((last - first) / 2000.0 > 0.02 + 1 / 2000)
+    first, last = first[keep], last[keep]
+    apart = (first[1:] - last[:-1] + 1) / 2000.0 > 0.1 + 1e-9
+    return (
+        times[first[np.r_[True, apart]]],
+        times[np.minimum(last[np.r_[apart, True]], times.size - 1)],
+    )
+
+
+@pytest.mark.realdata
+def test_no_threshold_period_reaches_the_papers_swrs_per_trial():
+    """The paper leaves open which samples give the mean and SD; none gives its 0.61."""
+    import ripple_detection as rd
+    from scipy.ndimage import binary_dilation, uniform_filter1d
+
+    from neurospatial.datasets._catalog import sessions
+    from neurospatial.datasets._ripple import _speed_on_grid
+
+    periods = ("all", "clean", "still", "still clean", "reward", "reward clean")
+    per_trial = {period: [] for period in periods}
+    for entry in sessions("bhattarai_2020"):
+        rec = load("bhattarai_2020", entry.session, accept_failed_checks=("clock",))
+        samples, times = rec.lfp.fetch()
+        lfp = samples[:, 0]
+        filtered = rd.filter_ripple_band(
+            samples, 2000.0, band=(100.0, 250.0), time=times
+        )
+        power = uniform_filter1d(filtered[:, 0] ** 2, 101)
+        clean = ~binary_dilation(np.abs(lfp) >= 327.67, iterations=NEAR_RAIL)
+        still = _speed_on_grid(rec, times) < 4.0
+        trials = rec.trials.intervals_table()
+        free = trials[~trials["forced"] & trials["end_known"]]
+        spans = free[["reward_start", "stop_time"]].to_numpy()
+        reward = np.zeros(times.size, dtype=bool)
+        for start, stop in spans[spans[:, 1] > spans[:, 0]]:
+            reward[np.searchsorted(times, start) : np.searchsorted(times, stop)] = True
+        correct = free[free["rewarded"]][["reward_start", "stop_time"]].to_numpy()
+        correct = correct[correct[:, 1] > correct[:, 0]]
+
+        union = np.concatenate([block["ids"] for block in _block_rates(rec)])
+        placed = rec.units.index.isin(union)
+        chosen = [
+            t[t > 0] for t, keep in zip(rec.spike_times, placed, strict=True) if keep
+        ]
+        spike_times = np.concatenate(chosen)
+        spike_units = np.repeat(np.arange(len(chosen)), [t.size for t in chosen])
+        order = np.argsort(spike_times, kind="stable")
+        spike_times, spike_units = spike_times[order], spike_units[order]
+
+        masks = {
+            "all": np.ones_like(clean),
+            "clean": clean,
+            "still": still,
+            "still clean": still & clean,
+        }
+        masks |= {"reward": reward, "reward clean": reward & clean}
+        for period, mask in masks.items():
+            starts, stops = _swr_starts(
+                power, times, power[mask].mean(), power[mask].std()
+            )
+            row = np.searchsorted(correct[:, 0], starts, side="right") - 1
+            inside = (row >= 0) & (starts < correct[np.maximum(row, 0), 1])
+            first = np.searchsorted(spike_times, starts[inside])
+            last = np.searchsorted(spike_times, stops[inside], side="right")
+            cells = [
+                np.unique(spike_units[a:b]).size
+                for a, b in zip(first, last, strict=True)
+            ]
+            per_trial[period].append(sum(n >= 5 for n in cells) / len(correct))
+    means = {period: round(float(np.mean(v)), 2) for period, v in per_trial.items()}
+    assert means == {
+        "all": 0.12,
+        "clean": 0.23,
+        "still": 0.16,
+        "still clean": 0.24,
+        "reward": 0.20,
+        "reward clean": 0.24,
+    }
+    assert max(means.values()) < 0.61

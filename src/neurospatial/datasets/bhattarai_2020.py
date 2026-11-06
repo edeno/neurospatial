@@ -224,7 +224,7 @@ WORKED_RESULT: dict[str, Any] = {
         "is, and the files do not say. Its ripple is weak: population bursts in "
         "the reward period raise its 100-250 Hz power only 1.4 times, and at "
         "rest, away from any rail, 1.7 times at 160 to 190 Hz over 1.3 times at "
-        "300 to 400 Hz, a small peak in 20 of the 25 sets, with a median 17% of "
+        "300 to 400 Hz, a small peak in at least 20 of the 25 sets, with a median 17% of "
         "bursts above moments 0.5 s away (5% by chance). On it the paper's "
         "detector passes 187 candidates over the 25 sets, not 2,573, and 42 "
         "replays, not 1,342. Nothing was tuned to close this"
