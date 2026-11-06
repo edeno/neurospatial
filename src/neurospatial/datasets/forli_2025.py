@@ -84,6 +84,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from neurospatial.datasets._lfp import LFPSource
+from neurospatial.datasets._matio import load_mat
 from neurospatial.datasets._recording import Conversion, Recording, tracked_mask
 
 if TYPE_CHECKING:
@@ -533,9 +534,7 @@ def _unwrapped(value: Any) -> Any:
 
 def _good_units(path: Path) -> Any:
     """The ``out.good_units`` table of a Kilosort 4 single-unit file."""
-    import matio
-
-    return _unwrapped(matio.load_from_mat(str(path))["out"]["good_units"])
+    return _unwrapped(load_mat(path)["out"]["good_units"])
 
 
 class _RippleFile(NamedTuple):
@@ -548,9 +547,7 @@ class _RippleFile(NamedTuple):
 
 def _ripple_file(path: Path) -> _RippleFile:
     """The ripple table, the probe's channels and its best channel for SWRs."""
-    import matio
-
-    out = matio.load_from_mat(str(path))["RPL_out"]
+    out = load_mat(path)["RPL_out"]
     return _RippleFile(
         table=_unwrapped(out["table"]),
         probe_info=_unwrapped(out["probe_info"]),

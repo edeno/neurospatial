@@ -441,6 +441,8 @@
   Over the paper's 19 sessions the left share of sequences differs by restriction
   as in the paper, and just as much with shifted rate maps, so without the paper's
   identity-shuffle filter it is not a reproduction.
+- Loading `forli_2025` or `vollan_2025` no longer turns on pandas'
+  `future.infer_string` for the whole process, which `import matio` does.
 - Epochs a file lists past the end of its data are clipped to the recording
   (its first to last sample or spike) by one rule for every loader, when
   they overhang by more than the clock check allows; a row wholly outside is
