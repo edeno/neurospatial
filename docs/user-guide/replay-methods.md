@@ -1048,7 +1048,9 @@ visited get no mass), and decode the null events with the same prior.
   `session` column, and pass it as `groups=` to `detection_rates`,
   `method_agreement` and `matched_alpha`. `score_agreement(table,
   groups=["session"])` gives one correlation per session, which Tingley &
-  Peyrache averaged.
+  Peyrache averaged. `pd.concat` drops `attrs` that differ between tables, so
+  [collect each session's settings](interoperability.md#combining-sessions)
+  first.
 
 ## References
 
