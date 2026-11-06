@@ -426,6 +426,21 @@
   `e13_26m1_210913` is reproduced from every unit, not from pyramidal cells.
   `scripts/build_dataset_registry.py` lists a
   sibling `-raw_ecephys` file as the session's LFP, not as a session.
+- `carey_2019`: Carey et al. (2019) rat dorsal CA1 on a food-or-water T-maze, 24
+  sessions of DataLad `MotivationalT` (ODC-PDDL-1.0), read by new private
+  Neuralynx and MClust readers: every sorted unit with its `quality`, the T-maze
+  from the authors' drawn trajectories, trials with left and right matched as
+  the paper does, pedestal rests, photobeam and dispenser events, 50 hand-labelled
+  ripples, and the LFP on request with the paper's channel first. Our joint
+  ripple and multi-unit score matches the score stored in the paper's candidate
+  file (r = 0.9999997). `ripple_detection`'s `carey_2019` overlaps 73.5% of the
+  paper's 1,654 events and 91.6% of its own 1,328 are the paper's; with the paper's
+  speed and theta channel that becomes 98.6% and 97.2%. The worked result is a
+  sanity property: 65 of the candidates hold a `CAREY_2019` sequence, above both
+  fixed nulls (95th percentiles 52.65 and 10.2), by a thin margin over the first.
+  Over the paper's 19 sessions the left share of sequences differs by restriction
+  as in the paper, and just as much with shifted rate maps, so without the paper's
+  identity-shuffle filter it is not a reproduction.
 - Epochs a file lists past the end of its data are clipped to the recording
   (its first to last sample or spike) by one rule for every loader, when
   they overhang by more than the clock check allows; a row wholly outside is

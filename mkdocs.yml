@@ -204,6 +204,7 @@ nav:
       - "Igata 2021: learning a new route (rat)": datasets/igata_2021.md
       - "Bhattarai 2020: replay in a sequence task (rat)": datasets/bhattarai_2020.md
       - "Huszár 2022: figure-eight maze with sleep and ripples (mouse)": datasets/huszar_2022.md
+      - "Carey 2019: replay on a food-or-water T-maze (rat)": datasets/carey_2019.md
   - Visualization:
       - Field Animation: user-guide/animation.md
       - Animation Overlays: animation_overlays.md

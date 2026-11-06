@@ -4,7 +4,7 @@ You want to try an analysis on a real recording: place fields from a rat in a
 maze, head-direction tuning from a mouse's thalamus, decoding from a bat in
 flight. Finding the archive, reading its file layout, and working out the
 units, the clock and the apparatus can take longer than the analysis.
-`neurospatial.datasets` does that work once, for sixteen published datasets, and
+`neurospatial.datasets` does that work once, for seventeen published datasets, and
 hands you the arrays neurospatial's functions take.
 
 ```bash
@@ -34,6 +34,7 @@ Importing `neurospatial.datasets` needs no extra. `load` asks for the
 | [`igata_2021`](../datasets/igata_2021.md) | rat, dorsal CA1 | 1 m lattice field with a start, a goal and a return path; the rat learns a new route; LFP | Mendeley Data 4xk5w69yr5 (CC-BY-4.0) | not possible yet; nothing is presented as replay: on the default session the candidate events do not stand out from a shifted-spike baseline, and `IGATA_2021` judges none of the 596 events that pass it over four rats' sessions, which says little since it judges 0.7% of planted replay. Trials to the learning point match the paper (25.8 +/- 9.1 against 26 +/- 9) |
 | [`bhattarai_2020`](../datasets/bhattarai_2020.md) | rat, dorsal CA1 | loop with two rings, four sequences to one reward; one LFP channel | Figshare 10032866 (CC0) | not possible yet; the paper's replay recipe on the archive's one LFP channel passes 37 candidates against the paper's 278 on the default set, and 11 judged replay (29.7%) only just clears its sanity check (24.6% at the 95th percentile with permuted cells); planted replay is judged 18.6% of the time, so this is no rate of replay; the complex-spike rule gives the paper's 648 of 698 units |
 | [`huszar_2022`](../datasets/huszar_2022.md) | mouse, CA1 | figure-eight maze with sleep; LFP for 12 sessions | DANDI 000552 (CC-BY-4.0) | a sanity property of our own analysis, not the paper's: 5 of 20 awake ripple candidates are judged trajectories, none in 40 shifted-spike draws (20 candidates give no rate, a null of zeros cannot show calibration, and this judge passes 8.7% of planted replay) |
+| [`carey_2019`](../datasets/carey_2019.md) | rat, dorsal CA1 | T-maze with food and water arms, rest pedestals; LFP per channel | DataLad MotivationalT (ODC-PDDL-1.0) | sanity property: our score matches the paper's stored score (r = 0.9999997); 73.5% and 91.6% agreement with its 1,654 events, 98.6% and 97.2% with its speed and theta; 65 of 1,328 candidates hold a sequence (4.9%), above both nulls (52.65 and 10.2) |
 
 Each dataset has a page with what was recorded, the conversions the loader
 applied and the evidence for them, the pitfalls, the worked result and how to
@@ -290,9 +291,10 @@ detection, where it states them. `rec.lfp.unit_basis` and
 Ask for the channels you need: [`forli_2025`](../datasets/forli_2025.md) holds 384
 channels, one 53 MB in memory and all of them 405 GB, and
 [`huszar_2022`](../datasets/huszar_2022.md)'s LFP sits in raw files of up to
-184 GB, which `stream=True` reads by byte range. Four datasets have an LFP:
+184 GB, which `stream=True` reads by byte range. Five datasets have an LFP:
 `forli_2025`, `igata_2021` (every tetrode of the session, read from its own
-files), `bhattarai_2020` (one channel) and `huszar_2022` (12 sessions).
+files), `bhattarai_2020` (one channel), `carey_2019` (each channel from its own
+file) and `huszar_2022` (12 sessions).
 
 ## Move to pynapple or NWB
 
