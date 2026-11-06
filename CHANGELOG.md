@@ -439,8 +439,9 @@
   sanity property: 65 of the candidates hold a `CAREY_2019` sequence, above both
   fixed nulls (95th percentiles 52.65 and 10.2), by a thin margin over the first.
   Over the paper's 19 sessions the left share of sequences differs by restriction
-  as in the paper, and just as much with shifted rate maps, so without the paper's
-  identity-shuffle filter it is not a reproduction.
+  as in the paper, and just as much with shifted rate maps, and it follows the
+  units kept on each side, so on this analysis it is not a reproduction. The
+  page does not assess the paper's own finding.
 - Loading `forli_2025` or `vollan_2025` no longer turns on pandas'
   `future.infer_string` for the whole process, which `import matio` does.
 - Epochs a file lists past the end of its data are clipped to the recording

@@ -124,7 +124,7 @@ cm, within 30%, since the head and the pedestals reach past the maze.
 | `rec.params` | Value | Source |
 | --- | --- | --- |
 | `bin_size` | 3 cm | the paper: "approximately 3 cm per bin" |
-| `min_speed` | 4 cm/s | the paper's run threshold and detection limit (its code: 5 and 10 pixels/s) |
+| `min_speed` | 4 cm/s | the paper's text, for runs and detection. Its code differs: 5 cm/s for runs, and 10 pixels/s for detection, 3.4 to 4.2 cm/s by axis and rat |
 | `dt` | 0.25 s | our choice, for held-out decoding of running |
 | `analysis_epochs` | the trials | |
 | `train_epochs`, `test_epochs` | even and odd trials | held-out decoding |
@@ -182,12 +182,13 @@ the criterion were fixed in writing before any decode.
 The criterion is met. It is not a strong result: the first null keeps each event's
 burst, and its median is more than half the observed count, with one draw equal
 to it. That is what the recipe's fixed criteria let through: a 50 ms sequence
-is about two independent 25 ms windows. The paper removes these with an
-identity-shuffle filter over the whole session, which `CAREY_2019` does not apply.
+is about two independent 25 ms windows. `CAREY_2019` does not apply the paper's
+identity-shuffle filter over the whole session, and we make no claim about what
+that filter does.
 
 Against the paper: Supplementary Fig. 6 gives 429 sequences for R050's six
-sessions, about 71 a session, after that filter. Here 50 events hold a sequence on
-one side only, a number with no shuffle filter behind it, and the first null's
+sessions, with no figure per session. Here 50 events hold a sequence on one side
+only, with no shuffle filter applied, and the first null's
 median for the same count is 34. Those are 15 left and 35 right, a left share of
 0.30 on a food-restricted day, where the paper's mean over food-restricted sessions
 is 0.35. The nulls give a median of 0.36, so this one session says nothing about
@@ -210,16 +211,19 @@ maps, the same total is 2,317 to 2,687 over 20 draws, so it is above every draw,
 but most of it is what the recipe finds anyway. Five of the 19 sessions pass the
 95th percentile of their own null.
 
-The left share looks like the paper's main finding and is not. It is 0.29 on
+The left share looks like the paper's main finding and is not a reproduction of
+it. It is 0.29 on
 food-restricted days and 0.52 on water-restricted days (the paper: 0.35 and 0.57),
 z = -2.65 with the labels permuted, and it correlates -0.69 with the share of left
 trials (the paper: -0.54). But the shifted maps give the same difference, a median
 of -0.223 against the observed -0.227. The left share follows the share of kept
 units on the left (r = 0.83; 43% on food days, 53% on water days), and this analysis
 keeps units per side as the paper's code does. Why the kept units follow the
-restriction was not established. So this analysis, without the paper's
-identity-shuffle filter, cannot tell that shift from a bias of the decoder. It says
-nothing against the paper, which applies that filter.
+restriction was not established. So this analysis cannot tell that shift from a
+bias of the decoder.
+
+All of this is measured on our analysis, which counts events where the paper
+counts sequences. This page does not assess the paper's own finding.
 
 ## Cite
 

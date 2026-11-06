@@ -47,7 +47,8 @@ alone, as the paper decodes them.
 
 Analysis choices (``params``):
 
-- ``bin_size`` 3 cm and ``min_speed`` 4 cm/s, the paper's;
+- ``bin_size`` 3 cm and ``min_speed`` 4 cm/s, the paper's text; its code gates
+  runs at 5 cm/s and detection at 10 pixels/s, 3.4 to 4.2 cm/s by axis and rat;
 - ``analysis_epochs``: the trials; ``train_epochs`` / ``test_epochs``: their
   even and odd rows, for held-out decoding at ``dt`` 0.25 s;
 - ``restriction``, what was withheld, ``layout`` and ``session_type``, from
@@ -120,7 +121,7 @@ BIN_SIZE = 3.0
 TOLERANCE_QUANTILE = 0.99
 #: The rate of the sessions' ``.ncs`` files, Hz (each header's SamplingFrequency).
 LFP_RATE = 2000.0
-#: The paper's speed threshold for detection and for run epochs, cm/s.
+#: The speed threshold of the paper's text, for detection and run epochs, cm/s.
 MIN_SPEED = 4.0
 #: Above this speed, cm/s, the tracker's angle is compared with movement.
 HEADING_MIN_SPEED = 10.0
@@ -211,8 +212,8 @@ WORKED_RESULT: dict[str, Any] = {
         "Results, Methods and the Supplementary Fig. 6 legend"
     ),
     "paper": (
-        "no number for one session; 429 sequences over R050's 6 sessions, about "
-        "71 a session, after filters CAREY_2019 leaves out"
+        "no number for one session; 429 sequences over R050's 6 sessions, with "
+        "no figure per session, from a pipeline with filters CAREY_2019 leaves out"
     ),
     "ours": 0.049,
     "criterion": (
@@ -240,14 +241,16 @@ WORKED_RESULT: dict[str, Any] = {
     ),
     "unmatched": (
         "the paper's identity-shuffle filter (500 shuffles over the whole "
-        "session) is not applied, and it is what removes the sequences the "
-        "first null also finds",
+        "session) is not applied, and no claim is made about what it does",
         "the paper counts sequences left or right but not both, 50 events here "
         "(15 left only, 35 right only, against 34 in the first null's median), "
         "and it scans the whole session; here only windows around candidates",
         "spike density by a 2 ms Gaussian before the 25 ms boxcar is not applied",
-        "the code's run speed is 5 pixels/s, about 1.9 cm/s; the paper's text "
-        "says about 4 cm/s, used here",
+        "the code's run speed is 5 cm/s and its detection gate 10 pixels/s, 3.4 "
+        "to 4.2 cm/s by axis and rat; the paper's text says about 4 cm/s, used "
+        "here",
+        "the code's Poisson exposure is the 5 ms step for 25 ms counts "
+        "(DecodeZ.m); here dt 0.025",
         "the detection differs: see the page's validation; on the paper's own "
         "1,654 candidates the same analysis finds 64 events, above both nulls "
         "(95th percentiles 61.8 and 12)",
@@ -261,13 +264,14 @@ WORKED_RESULT: dict[str, Any] = {
 #: label permutation and the null were fixed after the counts were seen. No
 #: criterion attaches. It does not reproduce the paper's shift: the left share
 #: differs by restriction just as much with shifted rate maps, and follows the
-#: share of units kept on each side (r = 0.83). Without the paper's
-#: identity-shuffle filter, this analysis cannot tell that shift from a bias.
+#: share of units kept on each side (r = 0.83). This analysis cannot tell that
+#: shift from a bias. All of this is measured on this analysis; it does not
+#: assess the paper's own finding.
 ACROSS_SESSIONS: dict[str, Any] = {
     "what": (
         "events with a CAREY_2019 sequence on the left or right trajectory only, "
-        "in the paper's 19 sessions, its own candidates, without its "
-        "identity-shuffle filter; events, where the paper counts sequences"
+        "in the paper's 19 sessions, its own candidates, its identity-shuffle "
+        "filter not applied; events, where the paper counts sequences"
     ),
     "one_side_per_rat": {"R042": 1127, "R044": 70, "R050": 366, "R064": 1584},
     "paper_per_rat": {"R042": 1257, "R044": 95, "R050": 429, "R064": 1999},
@@ -872,8 +876,9 @@ def _watch_outs(
     if entry.session not in PAPER_SESSIONS:
         notes.append(
             "The paper did not analyse this session (getTmazeDataPath.m lists its "
-            "19 sessions): it kept sessions of at least 40 cells, and of R044 only "
-            "two."
+            "19 sessions). Its stated rule of at least 40 cells does not select "
+            "those 19 alone: R044-2013-12-20 (43 units) and R044-2013-12-23 (41) "
+            "reach it and are out, with no stated reason."
         )
     return tuple(notes)
 

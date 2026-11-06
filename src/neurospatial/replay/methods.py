@@ -4565,11 +4565,14 @@ CAREY_2019 = ReplayMethod(
         "sequences that overlap a sharp-wave ripple and match one arm, not "
         "both; those event-level rules are not applied here.",
         "Counts in 5 ms bins summed over a 25 ms boxcar.",
-        "The paper discards sequences whose time bins appear in more than "
-        "5% of sequences found in per-time-bin cell-identity shuffles of the "
-        "session. Generate_DecSeqShuf.m reads every shuffled time bin from "
-        "the first one, so its shuffles are not that null; the session-level "
-        "test is not applied.",
+        "The paper's text discards sequences whose time bins appear in more "
+        "than 5% of sequences found in 500 identity shuffles of the tuning "
+        "curves over the session; Generate_DecSeqShuf.m instead permutes "
+        "spike counts within each time bin. That session-level filter is not "
+        "applied here, and no claim is made about what it does.",
+        "DecodeZ.m uses the 5 ms step as the exposure for the 25 ms counts, "
+        "and Generate_DecSeqShuf.m smooths spikes with a 2 ms Gaussian; here "
+        "whole counts and dt 0.025.",
     ),
 )
 
