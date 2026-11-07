@@ -8,7 +8,7 @@ from neurospatial import Environment
 from neurospatial.ops.basis import (
     chebyshev_filter_basis,
     geodesic_rbf_basis,
-    heat_kernel_wavelet_basis,
+    heat_kernel_basis,
     plot_basis_functions,
     select_basis_centers,
     spatial_basis,
@@ -20,19 +20,20 @@ from neurospatial.ops.basis import (
 
 
 @pytest.mark.parametrize("spacing", [1.0, 2.0, 5.0])
-def test_heat_kernel_spread_is_bin_size_independent(uniform_grid, spacing):
+def test_heat_kernel_spread_is_the_bandwidth_at_any_bin_size(uniform_grid, spacing):
     env = uniform_grid(spacing, n=40)
     center = int(np.argmin(np.linalg.norm(env.bin_centers - 20 * spacing, axis=1)))
-    basis = heat_kernel_wavelet_basis(
-        env, centers=np.array([center]), scales=[1.0, 4.0], normalize="none"
+    bandwidths = [1.5 * spacing, 3.0 * spacing]
+    basis = heat_kernel_basis(
+        env, centers=np.array([center]), bandwidth=bandwidths, normalize="none"
     )
-    relative = (env.bin_centers - env.bin_centers[center]) / spacing
-    for kernel, scale in zip(basis, [1.0, 4.0], strict=True):
+    relative = env.bin_centers - env.bin_centers[center]
+    for kernel, bandwidth in zip(basis, bandwidths, strict=True):
         for direction in [np.array([1.0, 0.0]), np.array([1.0, 1.0]) / np.sqrt(2)]:
             projected = relative @ direction
             mean = np.sum(kernel * projected) / kernel.sum()
             sigma = np.sqrt(np.sum(kernel * (projected - mean) ** 2) / kernel.sum())
-            assert sigma == pytest.approx(np.sqrt(2 * scale), rel=1e-3)
+            assert sigma == pytest.approx(bandwidth, rel=1e-3)
 
 
 def test_heat_kernel_uses_smooth_generator(fv_env):
@@ -51,8 +52,12 @@ def test_heat_kernel_uses_smooth_generator(fv_env):
     center = fv_env.n_bins // 2
     delta = np.zeros(fv_env.n_bins)
     delta[center] = 1
-    basis = heat_kernel_wavelet_basis(
-        fv_env, centers=np.array([center]), scales=[1.0], normalize="none"
+    # A bandwidth of sqrt(2) spacings releases heat for exp(-spacing² L).
+    basis = heat_kernel_basis(
+        fv_env,
+        centers=np.array([center]),
+        bandwidth=np.sqrt(2.0) * spacing,
+        normalize="none",
     )
     assert_allclose(basis[0], expm_multiply(-generator, delta), rtol=1e-10, atol=1e-12)
 
@@ -62,18 +67,16 @@ def test_heat_kernel_uses_faces_after_nwb_round_trip(graph_environment_round_tri
     original, loaded = graph_environment_round_trip
     kwargs = {
         "centers": np.array([0, original.n_bins - 1]),
-        "scales": [0.5, 2.0],
+        "bandwidth": [1.0, 2.0],
         "normalize": "none",
     }
     np.testing.assert_array_equal(
-        heat_kernel_wavelet_basis(loaded, **kwargs),
-        heat_kernel_wavelet_basis(original, **kwargs),
+        heat_kernel_basis(loaded, **kwargs),
+        heat_kernel_basis(original, **kwargs),
     )
 
 
-@pytest.mark.parametrize(
-    "basis_function", [heat_kernel_wavelet_basis, chebyshev_filter_basis]
-)
+@pytest.mark.parametrize("basis_function", [heat_kernel_basis, chebyshev_filter_basis])
 def test_diffusion_bases_raise_without_finite_volume_geometry(
     missing_faces_env, basis_function
 ):
@@ -135,7 +138,7 @@ def disconnected_env():
 
 _BASIS_FUNCTIONS = [
     pytest.param(geodesic_rbf_basis, id="geodesic_rbf"),
-    pytest.param(heat_kernel_wavelet_basis, id="heat_kernel_wavelet"),
+    pytest.param(heat_kernel_basis, id="heat_kernel"),
     pytest.param(chebyshev_filter_basis, id="chebyshev_filter"),
 ]
 
@@ -359,29 +362,27 @@ class TestGeodesicRBFBasis:
 
 
 # =============================================================================
-# TestHeatKernelWaveletBasis - Tests to be added after the HeatKernelWaveletBasis implementation
+# TestHeatKernelBasis
 # =============================================================================
 
 
-class TestHeatKernelWaveletBasis:
-    """Tests for heat kernel wavelet basis."""
+class TestHeatKernelBasis:
+    """Tests for the heat-kernel basis."""
 
     def test_output_shape(self, simple_2d_env):
         """Should return correct shape."""
-        basis = heat_kernel_wavelet_basis(
-            simple_2d_env, n_centers=10, scales=[1.0, 2.0]
-        )
+        basis = heat_kernel_basis(simple_2d_env, n_centers=10, bandwidth=[1.0, 2.0])
         assert basis.shape == (20, simple_2d_env.n_bins)
 
-    def test_larger_scale_is_wider(self, simple_2d_env):
-        """Larger diffusion time should spread heat more uniformly."""
+    def test_larger_bandwidth_is_wider(self, simple_2d_env):
+        """A larger bandwidth should spread heat more uniformly."""
         center_idx = simple_2d_env.n_bins // 2
         center = np.array([center_idx])
-        small_scale = heat_kernel_wavelet_basis(
-            simple_2d_env, centers=center, scales=[0.1], normalize="none"
+        small_scale = heat_kernel_basis(
+            simple_2d_env, centers=center, bandwidth=0.45, normalize="none"
         )
-        large_scale = heat_kernel_wavelet_basis(
-            simple_2d_env, centers=center, scales=[4.0], normalize="none"
+        large_scale = heat_kernel_basis(
+            simple_2d_env, centers=center, bandwidth=2.8, normalize="none"
         )
 
         # Heat diffusion: small scale = sharp peak, large scale = spread out
@@ -399,20 +400,23 @@ class TestHeatKernelWaveletBasis:
     def test_respects_walls(self, walled_env):
         """Heat reaching a bin behind the wall is far below an open bin as near."""
         env, center, across, open_side = walled_env
-        basis = heat_kernel_wavelet_basis(
-            env, centers=np.array([center]), scales=[8.0], normalize="none"
+        basis = heat_kernel_basis(
+            env,
+            centers=np.array([center]),
+            bandwidth=4.0 * env.bin_spacing,
+            normalize="none",
         )
         assert basis[0, across] < 1e-2 * basis[0, open_side]
 
-    def test_raises_if_scales_non_positive(self, simple_2d_env):
-        """Should raise ValueError for non-positive scales."""
-        with pytest.raises(ValueError, match="scales values must be positive"):
-            heat_kernel_wavelet_basis(simple_2d_env, n_centers=10, scales=[-1.0])
+    def test_raises_if_bandwidth_non_positive(self, simple_2d_env):
+        """Should raise ValueError for non-positive bandwidths."""
+        with pytest.raises(ValueError, match="bandwidth values must be positive"):
+            heat_kernel_basis(simple_2d_env, n_centers=10, bandwidth=[-1.0])
 
     def test_raises_if_no_centers_specified(self, simple_2d_env):
         """Should raise ValueError if neither centers nor n_centers given."""
         with pytest.raises(ValueError, match="Must specify basis function locations"):
-            heat_kernel_wavelet_basis(simple_2d_env)
+            heat_kernel_basis(simple_2d_env)
 
 
 # =============================================================================

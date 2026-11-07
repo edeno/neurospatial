@@ -519,7 +519,7 @@ required.
 - `geodesic_rbf_basis`: Compute maze-aware RBF basis using geodesic distances.
 - `gradient`: Compute the directional derivative of a scalar field along every edge.
 - `graph_convolve`: Convolve a spatial field with a custom kernel on the graph.
-- `heat_kernel_wavelet_basis`: Compute heat kernel wavelet basis via graph diffusion.
+- `heat_kernel_basis`: Compute a multiscale heat-kernel basis via graph diffusion.
 - `identity`: Return the 2D identity transform.
 - `identity_nd`: Return the N-dimensional identity transform.
 - `map_probabilities`: Map probabilities on source_env onto target_env.

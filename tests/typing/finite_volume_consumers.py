@@ -30,9 +30,8 @@ if TYPE_CHECKING:
         GradientConsumer,
         WaveletBasisConsumer,
     )
-    from neurospatial.ops.basis import _diffusion_generator
     from neurospatial.ops.calculus import divergence, gradient
-    from neurospatial.ops.diffusion import diffusion_kernel
+    from neurospatial.ops.diffusion import _generator, diffusion_kernel
 
     def check_consumers(
         env: Environment[CartesianSystem] | Environment[EgocentricPolarSystem],
@@ -44,7 +43,10 @@ if TYPE_CHECKING:
         wavelets: WaveletBasisConsumer = env
         diffusion_kernel(geometry, 1.0)
         divergence(flux, gradient(scalar, np.ones(env.n_bins)))
-        _diffusion_generator(wavelets.get_diffusion_geometry(), wavelets.bin_spacing)
+        _generator(
+            wavelets.get_diffusion_geometry().W,
+            wavelets.get_diffusion_geometry().volumes,
+        )
         assert_type(env.get_diffusion_geometry(), DiffusionGeometry)
         assert_type(env.get_mrf_basis(np.ones(env.n_bins)), MRFBasis)
         assert_type(env.compute_gaussian_kernel(bandwidth=1.0), NDArray[np.float64])

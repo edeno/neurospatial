@@ -30,7 +30,7 @@ if TYPE_CHECKING:
         egocentric_distance,
         geodesic_rbf_basis,
         graph_convolve,
-        heat_kernel_wavelet_basis,
+        heat_kernel_basis,
         map_probabilities,
         plot_basis_functions,
         regions_to_mask,
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
         SpatialBasisConsumer,
         WaveletBasisConsumer,
     )
-    from neurospatial.ops.basis import _diffusion_generator
+    from neurospatial.ops.diffusion import _generator
     from neurospatial.ops.transforms import AffineND
     from neurospatial.ops.visibility import ViewshedResult, viewshed
 
@@ -77,7 +77,7 @@ if TYPE_CHECKING:
         regions_to_mask(env, "goal")
         select_basis_centers(env, n_centers=3, method="farthest_point")
         geodesic_rbf_basis(env, n_centers=3, center_method="farthest_point")
-        heat_kernel_wavelet_basis(env, center_method="farthest_point")
+        heat_kernel_basis(env, center_method="farthest_point")
         plot_basis_functions(env, np.ones((env.n_bins, 2)))
         egocentric_distance(values, values, values, metric="geodesic", env=env)
         sample_spatial_features(env, values, values, feature_ids=["height"])
@@ -116,6 +116,6 @@ if TYPE_CHECKING:
         analysis_interior(binning, arena)(centers)
         valid_observers(binning, arena, centers, "physical")
         line_of_sight_clear(binning, arena, centers[0], centers[1])
-        _diffusion_generator(env.get_diffusion_geometry(), env.bin_spacing)
+        _generator(env.get_diffusion_geometry().W, env.get_diffusion_geometry().volumes)
         boundary_geometry(env, "analysis")  # type: ignore[call-arg, arg-type]
         line_of_sight_clear(env, centers[0], centers[1])  # type: ignore[call-arg, arg-type]

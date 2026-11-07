@@ -14,8 +14,8 @@ from neurospatial.binning import DiffusionGeometry
 from neurospatial.encoding._smoothing import _get_gaussian_kernel
 from neurospatial.environment import CartesianSystem, EgocentricPolarSystem
 from neurospatial.ops import MRFBasis
-from neurospatial.ops.basis import _diffusion_generator
 from neurospatial.ops.diffusion import (
+    _generator,
     diffusion_kernel,
 )
 
@@ -235,6 +235,10 @@ def test_compatibility_functions_need_only_the_public_analysis_surface():
         _get_gaussian_kernel(host, 1.0), env.compute_gaussian_kernel(bandwidth=1.0)
     )
     np.testing.assert_array_equal(
-        _diffusion_generator(host.get_diffusion_geometry(), host.bin_spacing).toarray(),
-        _diffusion_generator(env.get_diffusion_geometry(), env.bin_spacing).toarray(),
+        _generator(
+            host.get_diffusion_geometry().W, host.get_diffusion_geometry().volumes
+        ).toarray(),
+        _generator(
+            env.get_diffusion_geometry().W, env.get_diffusion_geometry().volumes
+        ).toarray(),
     )

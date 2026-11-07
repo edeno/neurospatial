@@ -36,7 +36,7 @@ from neurospatial.geometry._locators import NearestBinLocator
 from neurospatial.io import from_dict, from_file, to_dict, to_file
 from neurospatial.layout import create_layout
 from neurospatial.layout.engines.masked_grid import MaskedGridLayout
-from neurospatial.ops.basis import heat_kernel_wavelet_basis
+from neurospatial.ops.basis import heat_kernel_basis
 from neurospatial.ops.calculus import divergence, gradient
 from neurospatial.ops.diffusion import _MRFEigenbasis
 from neurospatial.ops.smoothing import diffusion_kernels
@@ -108,8 +108,8 @@ def test_all_diffusion_consumers_share_provider_snapshot(face_env, monkeypatch):
             env.diffuse(field, bandwidth=1.0, mode=mode), expected @ field, atol=1e-12
         )
 
-    wavelets = heat_kernel_wavelet_basis(
-        env, centers=np.array([0]), scales=[0.5], normalize="none"
+    wavelets = heat_kernel_basis(
+        env, centers=np.array([0]), bandwidth=1.0, normalize="none"
     )
     np.testing.assert_allclose(wavelets[0], heat[:, 0], atol=1e-12)
 
@@ -651,8 +651,8 @@ def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env)
             "gradient/divergence",
         ),
         (
-            lambda env: heat_kernel_wavelet_basis(env, centers=np.array([0])),
-            "heat_kernel_wavelet_basis",
+            lambda env: heat_kernel_basis(env, centers=np.array([0])),
+            "heat_kernel_basis",
         ),
     ],
 )

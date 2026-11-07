@@ -15,7 +15,7 @@ from neurospatial.ops import (
     calibrate_from_scale_bar,
     distance_field,
     geodesic_rbf_basis,
-    heat_kernel_wavelet_basis,
+    heat_kernel_basis,
     neighbors_within,
     resample_field,
 )
@@ -44,10 +44,10 @@ def _path_graph():
             "bandwidth values must be positive and finite",
         ),
         (
-            lambda env, value: heat_kernel_wavelet_basis(
-                env, scales=[1.0, value], n_centers=4
+            lambda env, value: heat_kernel_basis(
+                env, bandwidth=[1.0, value], n_centers=4
             ),
-            "scales values must be positive and finite",
+            "bandwidth values must be positive and finite",
         ),
         (
             lambda env, value: resample_field(

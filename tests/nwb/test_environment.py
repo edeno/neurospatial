@@ -2260,7 +2260,7 @@ def hexagonal_env_from_nwb(empty_nwb):
 @pytest.mark.parametrize("operation", ["gradient", "divergence", "smooth", "basis"])
 def test_finite_volume_ops_survive_nwb_round_trip(hexagonal_env_from_nwb, operation):
     """Stored faces preserve calculus, smoothing and heat-kernel bases exactly."""
-    from neurospatial.ops.basis import heat_kernel_wavelet_basis
+    from neurospatial.ops.basis import heat_kernel_basis
     from neurospatial.ops.calculus import divergence, gradient
 
     original, loaded = hexagonal_env_from_nwb
@@ -2275,7 +2275,7 @@ def test_finite_volume_ops_survive_nwb_round_trip(hexagonal_env_from_nwb, operat
             )
         if operation == "smooth":
             return env.smooth(field, bandwidth=5.0, mode="average")
-        return heat_kernel_wavelet_basis(env, centers=np.array([0]))
+        return heat_kernel_basis(env, centers=np.array([0]))
 
     np.testing.assert_array_equal(evaluate(loaded), evaluate(original))
 

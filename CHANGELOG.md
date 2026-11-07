@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Spatial bases: heat-kernel basis in physical units
+
+- `heat_kernel_wavelet_basis` is renamed `heat_kernel_basis`. Its functions are
+  low-pass heat kernels, not wavelets. It takes `bandwidth=` in environment
+  units, as `geodesic_rbf_basis` and `env.smooth` do, in place of `scales=` in
+  bin-spacing² units. Each kernel's standard deviation is its bandwidth at any
+  bin size, and column c equals column c of `env.compute_kernel(bandwidth=b)`.
+  To keep an old basis, pass `bandwidth = sqrt(2 * scale) * env.bin_spacing`.
+  The default is now `bandwidth=5.0`; the old default was four scales.
+
 ### Replay scores follow the published method by default
 
 - `fit_linear_trajectory` takes `n_samples_per_time_bin=10000` in place of

@@ -154,7 +154,7 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # center_method= when absent.
     ("chebyshev_filter_basis", "centers"),
     ("geodesic_rbf_basis", "centers"),
-    ("heat_kernel_wavelet_basis", "centers"),
+    ("heat_kernel_basis", "centers"),
     # The components of the transform being built.
     ("from_rotation_matrix", "translation"),
     ("scale_2d", "sx"),
@@ -839,8 +839,8 @@ def _rng_calls():
         "neurospatial.ops.chebyshev_filter_basis": lambda rng: (
             ops.chebyshev_filter_basis(i.arena, n_centers=5, max_degree=2, rng=rng)
         ),
-        "neurospatial.ops.heat_kernel_wavelet_basis": lambda rng: (
-            ops.heat_kernel_wavelet_basis(i.arena, n_centers=5, scales=(1.0,), rng=rng)
+        "neurospatial.ops.heat_kernel_basis": lambda rng: (
+            ops.heat_kernel_basis(i.arena, n_centers=5, rng=rng)
         ),
         "neurospatial.ops.spatial_basis": lambda rng: ops.spatial_basis(
             i.arena, n_features=10, rng=rng

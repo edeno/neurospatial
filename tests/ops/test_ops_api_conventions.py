@@ -16,7 +16,7 @@ from neurospatial import Environment
 from neurospatial.ops.basis import (
     chebyshev_filter_basis,
     geodesic_rbf_basis,
-    heat_kernel_wavelet_basis,
+    heat_kernel_basis,
     select_basis_centers,
     spatial_basis,
 )
@@ -35,7 +35,7 @@ def test_basis_rng_keyword_deterministic(simple_2d_env):
     for fn in (
         select_basis_centers,
         geodesic_rbf_basis,
-        heat_kernel_wavelet_basis,
+        heat_kernel_basis,
         chebyshev_filter_basis,
         spatial_basis,
     ):

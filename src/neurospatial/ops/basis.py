@@ -11,11 +11,11 @@ Which Basis Should I Use?
     Easy to visualize and interpret.
     Good for: GLMs, simple decoding models, place field decomposition.
 
-**Multi-scale spatial structure** → `heat_kernel_wavelet_basis`
+**Multi-scale spatial structure** → `heat_kernel_basis`
     Captures both local bumps and compartment-level structure simultaneously.
     Smoother than RBF. Based on diffusion physics.
     Good for: Environments with rooms/corridors, hierarchical place cells.
-    Cost: one sparse matrix exponential per scale.
+    Cost: one sparse matrix exponential per bandwidth.
 
 **Very large environments (>10,000 bins)** → `chebyshev_filter_basis`
     Fastest computation (no distance matrix). Strict k-hop locality.
@@ -30,19 +30,20 @@ picks centers and bandwidths from the environment's size.
 
 Scale Parameters Across Bases
 ------------------------------
-The three basis types use different scale parameters:
+The geodesic and heat-kernel bases share a scale parameter; the Chebyshev
+basis counts bins:
 
 - geodesic_rbf_basis(bandwidth=...): RBF bandwidth in environment units (cm)
-- heat_kernel_wavelet_basis(scales=...): Diffusion time in bin-spacing² units;
-  standard deviation sqrt(2*scale) bins
+- heat_kernel_basis(bandwidth=...): kernel standard deviation in environment
+  units (cm)
 - chebyshev_filter_basis(max_degree=...): How many bins away from center the
   function extends (degree 5 = nonzero within 5 bins of center)
 
 Rough equivalence for spatial extent:
-    bandwidth ≈ sqrt(2*scale) * bin_size ≈ max_degree * bin_size
+    bandwidth ≈ max_degree * bin_size
 
 For example, with 2cm bins and 10cm desired spatial extent:
-    bandwidth=10.0  or  scales=[12.5]  or  max_degree=5
+    bandwidth=10.0  or  max_degree=5
 
 Quick Start
 -----------
@@ -119,11 +120,9 @@ from neurospatial.geometry import MissingFaces, require_cartesian
 if TYPE_CHECKING:
     import networkx as nx
     from matplotlib.axes import Axes
-    from scipy import sparse
     from scipy.spatial import cKDTree
 
     from neurospatial import Environment
-    from neurospatial.geometry import DiffusionGeometry
     from neurospatial.ops._protocols import (
         BasisCentersConsumer,
         FieldPlotConsumer,
@@ -135,7 +134,7 @@ __all__ = [
     "basis_at_positions",
     "chebyshev_filter_basis",
     "geodesic_rbf_basis",
-    "heat_kernel_wavelet_basis",
+    "heat_kernel_basis",
     "plot_basis_functions",
     "select_basis_centers",
     "spatial_basis",
@@ -165,7 +164,7 @@ def basis_at_positions(
     basis : ArrayLike, shape (n_basis, n_bins)
         Basis functions over ``env``'s bins, as returned by
         :func:`spatial_basis`, :func:`geodesic_rbf_basis`,
-        :func:`heat_kernel_wavelet_basis` or :func:`chebyshev_filter_basis`.
+        :func:`heat_kernel_basis` or :func:`chebyshev_filter_basis`.
     positions : ArrayLike, shape (n_samples, n_dims) or (n_samples,)
         Positions in the units of ``env``; NaN marks a missing sample.
 
@@ -718,7 +717,7 @@ def geodesic_rbf_basis(
 
     See Also
     --------
-    heat_kernel_wavelet_basis : Diffusion-based alternative
+    heat_kernel_basis : Diffusion-based alternative
     chebyshev_filter_basis : Strictly hop-local alternative
     select_basis_centers : Manual center selection
     """
@@ -802,65 +801,40 @@ def geodesic_rbf_basis(
     return _normalize_basis(basis, normalize)
 
 
-def _diffusion_generator(
-    geometry: DiffusionGeometry, spacing: float
-) -> sparse.csr_matrix:
-    """Finite-volume generator in bin-spacing² units, as used by env.smooth.
-
-    Parameters
-    ----------
-    geometry : DiffusionGeometry
-        Conductances ``W`` and cell volumes of the bins.
-    spacing : float
-        The bins' typical spacing, ``env.bin_spacing``.
-
-    Returns
-    -------
-    scipy.sparse.csr_matrix, shape (n_bins, n_bins)
-        ``spacing**2 * M**-1 (Deg - W)``.
-    """
-    from neurospatial.ops.diffusion import _generator
-
-    return spacing**2 * _generator(geometry.W, geometry.volumes)
-
-
-def heat_kernel_wavelet_basis(
+def heat_kernel_basis(
     env: WaveletBasisConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
-    scales: Sequence[float] = (0.5, 1.0, 2.0, 4.0),
+    bandwidth: float | Sequence[float] = 5.0,
     n_centers: int | None = None,
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
     rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.float64]:
-    """
-    Compute a multiscale heat-kernel basis via graph diffusion.
+    """Compute a multiscale heat-kernel basis via graph diffusion.
 
-    Despite the name, this is not a wavelet transform: each basis function is
-    a low-pass heat kernel, not a band-pass filter, and the functions are not
-    orthogonalized. It is neurospatial's own construction, a set of
-    heat-kernel bumps at several diffusion times.
+    Each basis function is the heat kernel of ``env.smooth`` released at
+    one center: heat spread from that bin for long enough that its standard
+    deviation is ``bandwidth``, with walls blocking the flow. For center c
+    and bandwidth b:
 
-    For each center c and diffusion time s, computes:
-        B(j) = [exp(-s * L)]_{j,c}
+        B(j) = [exp(-(b² / 2) * L)]_{j,c}
 
-    where L is the finite-volume diffusion generator in bin-spacing² units.
-    This represents heat diffusion from
-    center c for time s, respecting the graph topology.
+    where L is the finite-volume diffusion generator in environment units.
+    Column c of ``env.compute_kernel(bandwidth=b)`` is the same function.
 
     Parameters
     ----------
     env : Environment
         Environment with connectivity graph.
     centers : NDArray[np.int_] or None
-        Bin indices (0 to ``n_bins - 1``) for wavelet centers. If None, auto-select.
-    scales : sequence of float, default=(0.5, 1.0, 2.0, 4.0)
-        Diffusion time in units of bin spacing². The kernel's standard
-        deviation on a uniform Cartesian grid is ``sqrt(2 * scale)`` bins,
-        independent of ``bin_size``: 0.5 → 1, 1 → 1.41, 2 → 2, 4 → 2.83 bins.
-        Larger values give wider spread; walls and boundaries constrain it.
-        For a physical bandwidth, scale = bandwidth² / (2 * spacing²).
+        Bin indices (0 to ``n_bins - 1``) for the kernel centers. If None,
+        auto-select.
+    bandwidth : float or sequence of float, default=5.0
+        Standard deviation of each kernel in environment units (e.g. cm), as
+        in :func:`geodesic_rbf_basis` and ``env.smooth``. A sequence gives
+        one kernel per bandwidth at every center. Walls and boundaries
+        constrain the spread.
     n_centers : int or None
         Number of centers for auto-selection.
     center_method : {"kmeans", "farthest_point", "random"}
@@ -872,14 +846,14 @@ def heat_kernel_wavelet_basis(
 
     Returns
     -------
-    basis : NDArray[np.float64], shape (n_centers * n_scales, n_bins)
-        Wavelet basis matrix. Rows ordered by (center, scale):
-        all scales for center 0, then all scales for center 1, etc.
+    basis : NDArray[np.float64], shape (n_centers * n_bandwidths, n_bins)
+        Basis matrix. Rows ordered by (center, bandwidth): all bandwidths
+        for center 0, then all bandwidths for center 1, etc.
 
     Raises
     ------
     ValueError
-        If scales contains non-positive values.
+        If bandwidth contains non-positive values.
         If centers is None and n_centers is None.
         If centers holds an index that is not a bin, such as the outside
         marker -1.
@@ -890,22 +864,24 @@ def heat_kernel_wavelet_basis(
 
     Notes
     -----
+    This is neurospatial's own construction, a set of heat-kernel bumps at
+    several widths; the closest published methods are graph wavelets, which
+    use band-pass filters and differ in that each function here is a
+    low-pass kernel and the functions are not orthogonalized.
+
     **Physical interpretation**: Each basis function represents how heat
-    would spread from a point source at the center after diffusion time s.
-    Walls block heat flow; narrow corridors slow it down.
+    would spread from a point source at the center. Walls block heat flow;
+    narrow corridors slow it down. On a uniform Cartesian grid far from
+    walls the spread along any axis has standard deviation ``bandwidth``,
+    whatever the bin size.
 
-    **Multi-scale behavior**:
-
-    - Small s (e.g., 0.5): Highly localized bumps, captures local structure
-    - Large s (e.g., 4.0): Broad bumps, captures compartment-level structure
-
-    **Computational complexity**: O(n_scales * n_centers * n_bins) using
-    scipy's expm_multiply, which avoids forming the full matrix exponential.
+    **Computational complexity**: O(n_bandwidths * n_centers * n_bins)
+    using scipy's expm_multiply, which avoids forming the full matrix
+    exponential.
 
     **Laplacian weighting**: Uses the finite-volume generator of
     ``env.smooth`` (shared-face measure over center distance, divided by cell
-    volume), scaled by the squared bin spacing, ``env.bin_spacing``.
-    Spread is isotropic on a uniform Cartesian grid and expressed in bin units.
+    volume).
 
     **Comparison with geodesic RBF**:
 
@@ -918,46 +894,45 @@ def heat_kernel_wavelet_basis(
     --------
     >>> import numpy as np
     >>> from neurospatial import Environment
-    >>> from neurospatial.ops import heat_kernel_wavelet_basis
+    >>> from neurospatial.ops import heat_kernel_basis
     >>> positions = np.random.default_rng(0).uniform(0, 100, size=(2000, 2))
     >>> env = Environment.from_samples(positions, bin_size=5.0)
-    >>> basis = heat_kernel_wavelet_basis(
-    ...     env, n_centers=30, scales=[0.5, 1, 2, 4], rng=0
-    ... )
-    >>> basis.shape == (120, env.n_bins)  # 30 centers x 4 scales
+    >>> basis = heat_kernel_basis(env, n_centers=30, bandwidth=[5.0, 10.0, 20.0], rng=0)
+    >>> basis.shape == (90, env.n_bins)  # 30 centers x 3 bandwidths
     True
     """
     from scipy.sparse.linalg import expm_multiply
 
-    centers = _resolve_centers(env, centers, n_centers, center_method, rng, "wavelet")
+    from neurospatial.ops.diffusion import _generator
 
-    # Validate scales
-    scales_arr = np.asarray(scales, dtype=np.float64)
-    invalid_mask = ~(np.isfinite(scales_arr) & (scales_arr > 0))
+    centers = _resolve_centers(env, centers, n_centers, center_method, rng, "kernel")
+
+    bandwidths = np.atleast_1d(np.asarray(bandwidth, dtype=np.float64))
+    invalid_mask = ~(np.isfinite(bandwidths) & (bandwidths > 0))
     if np.any(invalid_mask):
-        invalid = scales_arr[invalid_mask]
+        invalid = bandwidths[invalid_mask]
         msg = (
-            f"scales values must be positive and finite, got: {invalid}.\n"
+            f"bandwidth values must be positive and finite, got: {invalid}.\n"
             "\n"
-            "scales controls diffusion time (spatial spread):\n"
-            "  - scale=0.5: standard deviation 1 bin\n"
-            "  - scale=2.0: standard deviation 2 bins\n"
-            "  - scale=4.0: standard deviation 2.83 bins\n"
+            "bandwidth is each kernel's standard deviation in environment "
+            "units (e.g. cm).\n"
             "\n"
-            "Fix: pass positive scales, e.g. scales=[0.5, 1.0, 2.0, 4.0]."
+            "Fix: pass positive bandwidths, e.g. bandwidth=[5.0, 10.0, 20.0]."
         )
         raise ValueError(msg)
 
-    _require_faces(env, "heat_kernel_wavelet_basis")
-    laplacian = _diffusion_generator(env.get_diffusion_geometry(), env.bin_spacing)
+    _require_faces(env, "heat_kernel_basis")
+    geometry = env.get_diffusion_geometry()
+    laplacian = _generator(geometry.W, geometry.volumes)
 
-    # exp(-s L) @ delta for each scale, without forming exp(-s L).
-    # Shape: (n_scales, n_bins, n_centers)
+    # exp(-(b² / 2) L) @ delta for each bandwidth, without forming the
+    # exponential. Shape: (n_bandwidths, n_bins, n_centers)
     delta = _center_deltas(env.n_bins, centers)
-    wavelets = np.stack(
-        [expm_multiply(-s * laplacian, delta) for s in scales_arr], axis=0
+    kernels = np.stack(
+        [expm_multiply(-(b**2 / 2.0) * laplacian, delta) for b in bandwidths],
+        axis=0,
     )
-    return _center_major(wavelets, normalize)
+    return _center_major(kernels, normalize)
 
 
 def chebyshev_filter_basis(
@@ -1033,7 +1008,7 @@ def chebyshev_filter_basis(
     Notes
     -----
     The operator is ``L = M**-1 (Deg - W)``, the generator ``env.smooth`` and
-    ``heat_kernel_wavelet_basis`` diffuse with: ``W = A / d`` is the shared-face
+    ``heat_kernel_basis`` diffuse with: ``W = A / d`` is the shared-face
     measure over the center distance and ``M`` the cell volume. It is rescaled
     by its largest eigenvalue, so the filters do not depend on ``bin_size``.
     Neighbors across a face of the same size are coupled equally, and bins
