@@ -453,8 +453,6 @@ plt.show()
 
 2. **Perraudin, N., Paratte, J., Shuman, D., Kalofolias, V., Vandergheynst, P., & Hammond, D. K. (2014).** GSPBOX: A toolbox for signal processing on graphs. *arXiv preprint arXiv:1408.5781*.
 
-3. **Pfeiffer, B. E., & Foster, D. J. (2013).** Hippocampal place-cell sequences depict future paths to remembered goals. *Nature*, 497(7447), 74-79. [Replay analysis applications]
-
 ## See Also
 
 - [Spike-Field Primitives](spike-field-primitives.md) - Converting spike trains to firing rate fields

@@ -150,6 +150,26 @@
 - `differential-operators.md` no longer cites Stachenfeld et al. 2017 for flow
   fields, which that paper does not discuss, or claims a successor
   representation that the example does not compute.
+- `FieldOfView.rat()` cites Wallace et al. 2013 with its correct title and
+  journal (Nature 498:65-69). The rat, mouse and primate presets now say their
+  angles are approximations: the paper reports a binocular region of about 40
+  to 110 degrees that changes with head pitch, not the preset's fixed values.
+- `field_shape_metrics`, `spatial_coverage_single_cell` and the metrics guide
+  no longer cite a Muller & Kubie paper under a title and volume that do not
+  match. The guide now credits the 0.2 place-field threshold to `MapStats` in
+  FMAToolbox and neurocode.
+- `heat_kernel_wavelet_basis` no longer cites diffusion wavelets or graph
+  wavelets. Its functions are low-pass heat kernels, not wavelets, and the
+  docstring now says so.
+- `grid_score` separates the steps it shares with opexebo `grid_score` from
+  its own two choices: the central-peak region rule and starting the annulus at
+  twice the central-peak radius.
+- `GridCellModel` says the rectification of the three-wave pattern is
+  neurospatial's choice, not part of Solstad et al. 2006.
+- References that no sentence relied on were removed from the decision,
+  navigation, trajectory, smoothing, graph and egocentric modules, and from the
+  differential-operators guide. `decode_position` names Davidson et al. 2009 as
+  the source of the flat prior over bins.
 
 ### The 5 cm default bandwidth warns on large bins
 

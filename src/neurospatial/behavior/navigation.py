@@ -103,13 +103,6 @@ Complete analysis pipeline for a spatial navigation task::
         env, times, positions, reached, goal=reached.end_region
     )
     print(goal_directed.summary_table()["goal_bias"].mean())
-
-References
-----------
-.. [1] Batschelet, E. (1981). Circular Statistics in Biology. Academic Press.
-.. [2] Johnson, A., & Redish, A. D. (2007). Neural ensembles in CA3 transiently
-       encode paths forward of the animal at a decision point. J Neurosci.
-       DOI: 10.1523/JNEUROSCI.3761-07.2007
 """
 
 from __future__ import annotations

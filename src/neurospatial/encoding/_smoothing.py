@@ -43,13 +43,6 @@ dense basis once there and reuses it for later calls.)
 per ``(environment, bandwidth)`` (see ``_get_gaussian_kernel``) and reused across
 neurons. For very large
 environments prefer ``diffusion_kde`` (matrix-free and boundary-aware).
-
-References
-----------
-.. [1] Skaggs, W. E., McNaughton, B. L., & Gothard, K. M. (1993).
-       An information-theoretic approach to deciphering the hippocampal code.
-.. [2] Barry, C., et al. (2006). The boundary vector cell model of
-       place cell firing and spatial memory. Reviews in the Neurosciences.
 """
 
 from __future__ import annotations

@@ -63,9 +63,9 @@ References
 ----------
 .. [1] Rolls, E. T., et al. (1997). Spatial view cells in the primate
        hippocampus. European Journal of Neuroscience, 9(8), 1789-1794.
-.. [2] Wallace, D. J., et al. (2013). Rats maintain an overhead binocular
-       field at the expense of constant visual coverage of the environment.
-       Vision Research, 78, 1-10.
+.. [2] Wallace, D. J., Greenberg, D. S., Sawinski, J., Rulla, S., Notaro,
+       G., & Kerr, J. N. D. (2013). Rats maintain an overhead binocular field
+       at the expense of constant fusion. Nature, 498(7452), 65-69.
 
 See Also
 --------
@@ -262,9 +262,14 @@ class FieldOfView:
     def rat(cls) -> FieldOfView:
         """Field of view for a rat.
 
-        Rats see about 320 degrees, with a 40-degree blind spot directly
-        behind (20 degrees each side) and a binocular region of about 50
-        degrees in front.
+        A 320-degree field with a 40-degree blind spot directly behind (20
+        degrees each side) and a 50-degree binocular region in front. These
+        angles are an approximation chosen for this preset, not measured
+        values from one study. Rat eyes face sideways and give a panoramic
+        field that extends in front of, above and behind the head, and the
+        binocular region in front of the nose ranges from about 40 to 110
+        degrees with head pitch (Wallace et al. 2013). Pass explicit angles
+        to model a measured field.
 
         Returns
         -------
@@ -273,7 +278,9 @@ class FieldOfView:
 
         References
         ----------
-        Wallace, D. J., et al. (2013). Vision Research, 78, 1-10.
+        Wallace, D. J., Greenberg, D. S., Sawinski, J., Rulla, S., Notaro, G.,
+        & Kerr, J. N. D. (2013). Rats maintain an overhead binocular field at
+        the expense of constant fusion. Nature, 498(7452), 65-69.
         """
         return cls(
             left_angle=np.pi * 160 / 180,
@@ -285,9 +292,10 @@ class FieldOfView:
     def mouse(cls) -> FieldOfView:
         """Field of view for a mouse.
 
-        Mice have a field of view similar to rats: about 310 degrees, with a
-        50-degree blind spot directly behind and a binocular region of about
-        40 degrees in front.
+        A 310-degree field with a 50-degree blind spot directly behind and a
+        40-degree binocular region in front. These angles are an
+        approximation chosen for this preset, with no cited measurement; pass
+        explicit angles to model a measured field.
 
         Returns
         -------
@@ -304,8 +312,10 @@ class FieldOfView:
     def primate(cls) -> FieldOfView:
         """Field of view for a primate.
 
-        Primates have forward-facing eyes with ~180 degree total field of
-        view and large binocular overlap.
+        A 180-degree field with a 120-degree binocular region, for
+        forward-facing eyes. These angles are an approximation chosen for
+        this preset, with no cited measurement; pass explicit angles to model
+        a measured field.
 
         Returns
         -------

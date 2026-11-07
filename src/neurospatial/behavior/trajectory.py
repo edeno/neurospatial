@@ -10,9 +10,6 @@ characterize movement patterns and spatial exploration.
 References
 ----------
 .. [1] Traja: https://traja.readthedocs.io/ - Trajectory analysis toolkit
-.. [2] Kays, R., Crofoot, M. C., Jetz, W., & Wikelski, M. (2015).
-       "Terrestrial animal tracking as an eye on life and planet."
-       Science, 348(6240), aaa2478.
 """
 
 from __future__ import annotations
@@ -1456,8 +1453,7 @@ def step_lengths(
 
         d_i = ||r_{i+1} - r_i||_2 = \\sqrt{\\sum_j (r_{i+1,j} - r_{i,j})^2}
 
-    This is the straight-line distance in physical space, matching ecology
-    literature standards (Kays et al. 2015, Traja).
+    This is the straight-line distance in physical space, as in Traja.
 
     **Geodesic distance** (shortest path inside the environment):
 
@@ -1511,9 +1507,7 @@ def step_lengths(
 
     References
     ----------
-    .. [1] Kays, R., et al. (2015). "Terrestrial animal tracking as an eye
-           on life and planet." Science, 348(6240), aaa2478.
-    .. [2] Traja documentation: https://traja.readthedocs.io/
+    .. [1] Traja documentation: https://traja.readthedocs.io/
     """
     # Coerce array-likes (e.g. Python lists) before any .ndim access.
     try:

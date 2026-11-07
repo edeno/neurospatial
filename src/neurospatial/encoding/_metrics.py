@@ -1615,11 +1615,6 @@ def spatial_coverage_single_cell(
     --------
     sparsity : Sparsity measure (inverse of coverage)
     selectivity : Peak / mean rate ratio
-
-    References
-    ----------
-    .. [1] Muller et al. (1987). The effects of changes in the environment on
-           the spatial firing of hippocampal complex-spike cells. J Neurosci 7(7).
     """
     firing_rate = np.asarray(firing_rate)
     if firing_rate.shape != (env.n_bins,):

@@ -57,11 +57,6 @@ Decision analysis:
 ... )  # doctest: +SKIP
 >>> if result.pre_decision.heading_circular_variance > 0.5:
 ...     print("High heading variability - possible deliberation")  # doctest: +SKIP
-
-References
-----------
-.. [1] Johnson, A., & Redish, A. D. (2007). Neural ensembles in CA3 transiently
-       encode paths forward of the animal at a decision point. J Neurosci.
 """
 
 from __future__ import annotations

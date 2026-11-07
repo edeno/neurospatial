@@ -99,9 +99,8 @@ True
 
 References
 ----------
-.. [1] Coifman, R.R. & Maggioni, M. (2006). Diffusion wavelets.
-.. [2] Hammond, D.K. et al. (2011). Wavelets on graphs via spectral graph theory.
-.. [3] Defferrard, M. et al. (2016). Convolutional neural networks on graphs.
+.. [1] Hammond, D.K. et al. (2011). Wavelets on graphs via spectral graph theory.
+.. [2] Defferrard, M. et al. (2016). Convolutional neural networks on graphs.
 """
 
 from __future__ import annotations
@@ -836,7 +835,12 @@ def heat_kernel_wavelet_basis(
     rng: int | np.random.Generator | None = None,
 ) -> NDArray[np.float64]:
     """
-    Compute heat kernel wavelet basis via graph diffusion.
+    Compute a multiscale heat-kernel basis via graph diffusion.
+
+    Despite the name, this is not a wavelet transform: each basis function is
+    a low-pass heat kernel, not a band-pass filter, and the functions are not
+    orthogonalized. It is neurospatial's own construction, a set of
+    heat-kernel bumps at several diffusion times.
 
     For each center c and diffusion time s, computes:
         B(j) = [exp(-s * L)]_{j,c}
@@ -922,13 +926,6 @@ def heat_kernel_wavelet_basis(
     ... )
     >>> basis.shape == (120, env.n_bins)  # 30 centers x 4 scales
     True
-
-    References
-    ----------
-    .. [1] Coifman, R.R. & Maggioni, M. (2006). Diffusion wavelets.
-           Applied and Computational Harmonic Analysis, 21(1), 53-94.
-    .. [2] Hammond, D.K. et al. (2011). Wavelets on graphs via spectral
-           graph theory. Applied and Computational Harmonic Analysis, 30(2), 129-150.
     """
     from scipy.sparse.linalg import expm_multiply
 

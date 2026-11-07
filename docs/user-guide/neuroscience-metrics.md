@@ -67,7 +67,8 @@ bandwidth=rates.bandwidth)`.
 
 **Key parameters:**
 
-- `threshold`: Fraction of peak rate (default 0.2 = 20%, following Muller & Kubie, 1989)
+- `threshold`: Fraction of peak rate (default 0.2 = 20%, the default of `MapStats`
+  in FMAToolbox and neurocode)
 - `bandwidth`: The smoothing bandwidth the map was estimated with
   (`rates.bandwidth`; 0 for an unsmoothed map). A field must be larger than
   what one noisy bin becomes after that smoothing: with a 5 cm bandwidth and
@@ -1085,7 +1086,6 @@ spike_phases[keep], result)` draws the spikes twice, at phase and phase +
 **Place Field Analysis:**
 - O'Keefe, J., & Recce, M. L. (1993). Phase relationship between hippocampal place units and the EEG theta rhythm. Hippocampus, 3(3), 317-330.
 - O'Keefe, J., & Dostrovsky, J. (1971). The hippocampus as a spatial map. Brain Research, 34(1), 171-175.
-- Muller, R. U., & Kubie, J. L. (1989). The effects of changes in the environment on the spatial firing of hippocampal complex-spike cells. Journal of Neuroscience, 9(1), 137-154.
 - Skaggs, W. E., McNaughton, B. L., Wilson, M. A., & Barnes, C. A. (1996). Theta phase precession in hippocampal neuronal populations and the compression of temporal sequences. Hippocampus, 6(2), 149-172.
 - Thompson, L. T., & Best, P. J. (1989). Place cells and silent cells in the hippocampus of freely-behaving rats. Journal of Neuroscience, 9(7), 2382-2390.
 

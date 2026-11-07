@@ -892,12 +892,6 @@ def field_shape_metrics(
     rate_map_centroid : Compute field center of mass
     field_size : Compute field area
 
-    References
-    ----------
-    .. [1] Muller & Kubie (1989). The effects of changes in the environment on
-           the spatial firing of hippocampal complex-spike cells. J Neurosci 9(1).
-    .. [2] Knierim et al. (1995). Place cells, head direction cells, and the
-           learning of landmark stability. J Neurosci 15(3).
     """
     require_cartesian(
         env.coordinate_system,

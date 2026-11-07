@@ -412,11 +412,6 @@ def graph_convolve(
     --------
     Environment.smooth : Boundary-aware finite-volume diffusion smoothing
     neighbor_reduce : Local aggregation over graph neighborhoods
-
-    References
-    ----------
-    .. [1] Shuman et al. (2013). The emerging field of signal processing
-           on graphs. IEEE Signal Processing Magazine, 30(3).
     """
     # Validate field shape
     if field.shape[0] != env.n_bins:

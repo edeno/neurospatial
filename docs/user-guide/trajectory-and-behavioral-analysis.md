@@ -532,7 +532,9 @@ print(f"Core area (50%): {env.bin_sizes[core_bins].sum():.1f} cm²")
 ```
 
 **Key Points**:
-- Uses occupancy-based selection (ecology standard)
+- Selects the most-occupied bins until they hold the requested share of time.
+  This is a binned estimate of the utilization distribution, not a kernel
+  density estimate
 - Returns sorted bin indices (most visited first)
 - `percentile=50` gives core area, `percentile=95` gives full range
 - `percentile=100` gives all visited bins

@@ -332,12 +332,6 @@ def apply_kernel(
     resample_field : Resample fields across environments (spatial resampling)
     regions_to_mask : Convert regions to bin masks (spatial discretization)
 
-    References
-    ----------
-    .. [1] Coifman, R. R., & Lafon, S. (2006). Diffusion maps.
-           Applied and Computational Harmonic Analysis, 21(1), 5-30.
-    .. [2] Grigor'yan, A. (2009). Heat Kernel and Analysis on Manifolds. AMS.
-
     """
     # Input validation
     if mode not in ("forward", "adjoint"):

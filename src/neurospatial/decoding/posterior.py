@@ -440,7 +440,9 @@ def decode_position(
         If None, the prior is uniform over space: each bin's mass is
         proportional to its length, area or volume (``env.bin_sizes``), so
         bins of unequal size do not bias the decode toward small bins. On
-        equal bins this is the flat prior. A prior that is uniform over space
+        equal bins this is the flat prior over bins of Davidson et al. (2009),
+        who assumed "a uniform prior probability over position and
+        direction". A prior that is uniform over space
         on a subset of bins is ``mask * env.bin_sizes``. An environment that
         mixes bins measured by length and by area has no uniform-over-space
         prior and raises ``ValueError``.

@@ -858,15 +858,17 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     Notes
     -----
     **Algorithm**, the expanding-annulus grid score of the Moser group's
-    analysis toolbox (BNT ``gridnessScore``) and opexebo:
+    analysis toolbox (BNT ``gridnessScore``) and opexebo ``grid_score``,
+    with two neurospatial choices marked below:
 
     1. Central peak: the lags reached from zero lag by steps to neighboring
        lags whose correlation does not rise and stays above 0.2 of the
        zero-lag value; a neighboring field rising out of the dip around it
-       is not included. 0.2 is the lowest threshold of the adaptive field
-       search BNT applies to the central peak. Its inner radius is that of
-       a disk of the same area, so it grows with the size of the firing
-       fields.
+       is not included. This region rule is neurospatial's: opexebo grows
+       the central field with its adaptive field search, lowering the
+       threshold from 0.95 of the zero-lag value to a floor of 0.2. Its
+       inner radius is that of a disk of the same area, as in opexebo, so
+       it grows with the size of the firing fields.
     2. Rotate the autocorrelogram by 30°, 60°, 90°, 120° and 150° about zero
        lag.
     3. For each outer radius from twice the central-peak radius to the
@@ -875,11 +877,14 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
        radius, and compute the Pearson correlation between the
        autocorrelogram and each rotation over the lags defined in the map
        and in all five rotations:
-       ``min(r60, r120) - max(r30, r90, r150)``. A neighboring field lies at
-       least one central-peak diameter from zero lag, so a narrower annulus
-       holds only the shoulder of the central peak; scaNpix likewise keeps
-       its first annulus wider than a multiple of the inner radius.
-    4. The score is the largest mean of three consecutive radii.
+       ``min(r60, r120) - max(r30, r90, r150)``. Starting at twice the
+       central-peak radius is neurospatial's choice; opexebo starts one
+       pixel outside the central peak. A neighboring field lies at least one
+       central-peak diameter from zero lag, so a narrower annulus holds only
+       the shoulder of the central peak; scaNpix likewise keeps its first
+       annulus wider than a multiple of the inner radius.
+    4. The score is the largest mean of three consecutive radii, as in
+       opexebo.
 
     :func:`spatial_autocorrelation` leaves the shifts at which fewer than a
     quarter of the visited bins overlap undefined, so the annulus stops where
@@ -938,6 +943,8 @@ def grid_score(autocorr_2d: NDArray[np.float64]) -> float:
     ----------
     Sargolini et al. (2006). Conjunctive representation of position, direction,
         and velocity in entorhinal cortex. Science, 312(5774), 758-762.
+    Kavli Institute (NTNU) opexebo, ``opexebo/analysis/grid_score.py``,
+        https://github.com/kavli-ntnu/opexebo
     """
     if autocorr_2d.ndim != 2:
         msg = f"autocorr_2d must be 2D array, got {autocorr_2d.ndim}D"

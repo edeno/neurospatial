@@ -59,12 +59,6 @@ Transform landmark positions to egocentric coordinates:
 >>> ego = allocentric_to_egocentric(positions, headings, landmarks)
 >>> ego.shape
 (1, 2, 2)
-
-References
-----------
-.. [1] Wang, C., et al. (2018). Egocentric coding of external items in the
-       lateral entorhinal cortex. Science, 362, 945-949.
-       https://doi.org/10.1126/science.aau4940
 """
 
 from __future__ import annotations
