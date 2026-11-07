@@ -163,3 +163,13 @@ change training support or recorded analysis choices.
 - `[]` selects by position on every unit container, `SpikeTrains` included, and
   `sel(unit_id=...)` selects by label. New population results get both from
   `UnitSelectionMixin` and call `self._unit_position(idx)` in `__getitem__`.
+
+## Method provenance
+
+- A method with no published source says so in its Notes and names the closest
+  published method: "This is neurospatial's own construction; the closest
+  published method is ...". This applies to options and defaults too: a
+  published method with an added option or a self-chosen default says which
+  part is ours.
+- Cite a paper or reference code only for a claim the text makes, and only if
+  its contents were read. A reference that no sentence relies on is removed.
