@@ -112,7 +112,7 @@ def test_a_sampled_score_without_shuffles_follows_the_seed(track, monkeypatch):
         name="sampled_fit",
         reference="test",
         score=fit_linear_trajectory,
-        score_options={"method": "sample", "n_samples": 200},
+        score_options={"method": "sample", "n_samples_per_time_bin": 20},
         criteria=(ReplayCriterion("score", ">", 0.5),),
     )
     scores = [

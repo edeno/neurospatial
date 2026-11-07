@@ -969,7 +969,7 @@ def _rng_calls():
         ),
         "neurospatial.replay.fit_linear_trajectory": lambda rng: (
             replay.fit_linear_trajectory(
-                i.track, i.sweep, i.sweep_times, n_samples=200, rng=rng
+                i.track, i.sweep, i.sweep_times, n_samples_per_time_bin=20, rng=rng
             )
         ),
         "neurospatial.replay.null_events": lambda rng: replay.null_events(

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Replay scores follow the published method by default
+
+- `fit_linear_trajectory` takes `n_samples_per_time_bin=10000` in place of
+  `n_samples`. The default now samples 10,000 positions from every decoded time
+  bin, as Karlsson & Frank 2009 did. Before, it drew 10,000 in total, which
+  matched neither Karlsson & Frank nor the Jadhav-lab code. The estimate is the
+  same; its Monte Carlo spread in R² is 4 to 7 times smaller on simulated sweeps
+  of 10 to 40 time bins, at the same run time. With `allocation="spikes"` the
+  count is the mean per time bin. Replay recipes pass it straight through.
+- `bias_similarity` and `bias_similarity_significance` compute the cosine as
+  Liu et al.'s lab code does (neuro_py `cosine_similarity_matrices`): an
+  undefined pair counts as 0 in each matrix and stays in that matrix's norm.
+  Before, the cosine ran over the pairs both matrices define. Template pairs
+  whose cells are silent in the event now lower the similarity. Cosines are
+  smaller in size than before when either matrix has undefined pairs.
+- `mean_pairwise_bias` keeps the paper's mean over theta cycles. Its Notes and
+  the `LIU_2023_BIAS` recipe now show the lab code's form, one matrix over all
+  task theta spikes, as `pairwise_bias_matrix` of the theta-restricted spikes.
+
 ### Datasets
 
 - Loading `forli_2025` or `vollan_2025` no longer changes pandas settings for the

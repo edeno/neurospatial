@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import pickle
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -879,25 +878,6 @@ class TestSegmentationRecipes:
         )
         assert result.segments.n_time_bins == 12
         assert result.segments.segments.tolist() == [[0, 4], [8, 12]]
-
-    def test_samples_per_time_bin_count_the_segment(self, place_code):
-        env, _ = place_code
-        seen = []
-
-        def score(env, posterior, times, n_samples):
-            seen.append((n_samples, len(posterior)))
-            return SimpleNamespace(score=0.0)
-
-        method = ReplayMethod(
-            name="sampled",
-            reference="test",
-            score=score,
-            score_options={"n_samples_per_time_bin": 10},
-            segmentation=ReplaySegmentation({"max_jump": 20.0}),
-        )
-        posterior = _one_hot(env, [40, 41, 0, 1, 2, 3, 4, 5, 6, 7, 8])
-        detect_replay(env, posterior, _steps(11), replay_method=method)
-        assert seen == [(90, 9)]
 
     def test_misaligned_spike_counts_are_refused(self, place_code):
         env, _ = place_code

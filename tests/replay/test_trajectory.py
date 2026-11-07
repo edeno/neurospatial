@@ -388,7 +388,7 @@ class TestFitLinearTrajectory:
         posterior[np.arange(n_time_bins), rng.integers(0, 50, n_time_bins)] = 1.0
 
         sampled = fit_linear_trajectory(
-            simple_env, posterior, times, n_samples=60, n_resamples=5, rng=0
+            simple_env, posterior, times, n_samples_per_time_bin=3, n_resamples=5, rng=0
         )
         map_fit = fit_linear_trajectory(simple_env, posterior, times, method="map")
 
@@ -425,7 +425,7 @@ class TestFitLinearTrajectory:
             env,
             posterior,
             times,
-            n_samples=per_bin * len(times),
+            n_samples_per_time_bin=per_bin,
             n_resamples=n_resamples,
             rng=11,
         )
@@ -1010,13 +1010,15 @@ class TestArgumentChecks:
         with pytest.raises(ValueError, match=r"times.*NaN or Inf"):
             getattr(trajectory, fit)(env, posterior, times)
 
-    @pytest.mark.parametrize("n_samples", [0, 1])
-    def test_sampling_needs_two_samples(self, sweep, n_samples):
+    @pytest.mark.parametrize("n_samples_per_time_bin", [0, -1])
+    def test_sampling_needs_a_sample_per_time_bin(self, sweep, n_samples_per_time_bin):
         from neurospatial.replay.trajectory import fit_linear_trajectory
 
         env, posterior, times = sweep
-        with pytest.raises(ValueError, match=r"n_samples.*at least 2"):
-            fit_linear_trajectory(env, posterior, times, n_samples=n_samples)
+        with pytest.raises(ValueError, match=r"n_samples_per_time_bin.*at least 1"):
+            fit_linear_trajectory(
+                env, posterior, times, n_samples_per_time_bin=n_samples_per_time_bin
+            )
 
 
 def _bumps(n_time_bins: int, n_bins: int, seed: int) -> np.ndarray:
@@ -1045,14 +1047,11 @@ class TestLinearFitFollowsThePapers:
         posterior = _bumps(8, 40, seed=1)
         env = _track_for(posterior)
         times = np.arange(8) * 0.015
-        n_samples = 8 * 37 + 5  # remainder of 5 goes to the earliest bins
-
         result = fit_linear_trajectory(
-            env, posterior, times, n_samples=n_samples, rng=3
+            env, posterior, times, n_samples_per_time_bin=37, rng=3
         )
 
-        shares = np.full(8, n_samples // 8)
-        shares[:5] += 1
+        shares = np.full(8, 37)
         rows = posterior / posterior.sum(axis=1, keepdims=True)
         counts = np.random.default_rng(3).multinomial(shares[None], rows)[0]
         time_bins, drawn = np.nonzero(counts)
@@ -1067,26 +1066,6 @@ class TestLinearFitFollowsThePapers:
         assert result.r_squared == pytest.approx(expected.rvalue**2, rel=1e-10)
         assert result.slope_std is None
 
-    def test_equal_split_gives_the_remainder_to_the_earliest_time_bins(self):
-        """One-hot rows: 7 samples over 5 time bins are points 2, 2, 1, 1, 1."""
-        from scipy.stats import linregress
-
-        from neurospatial.replay import fit_linear_trajectory
-
-        bins = np.array([3, 9, 4, 15, 12])
-        posterior = np.eye(20)[bins]
-        env = _track_for(posterior)
-        times = np.arange(5) * 0.02
-
-        result = fit_linear_trajectory(env, posterior, times, n_samples=7, rng=0)
-
-        repeats = [2, 2, 1, 1, 1]
-        expected = linregress(
-            np.repeat(times, repeats), np.repeat(env.bin_centers[bins, 0], repeats)
-        )
-        assert result.slope == pytest.approx(expected.slope)
-        assert result.r_squared == pytest.approx(expected.rvalue**2)
-
     def test_r_squared_slope_and_intercept_are_means_over_resamples(self):
         """Three resamples are three consecutive one-resample fits, averaged."""
         from neurospatial.replay import fit_linear_trajectory
@@ -1096,11 +1075,13 @@ class TestLinearFitFollowsThePapers:
         times = np.arange(10) * 0.02
 
         pooled = fit_linear_trajectory(
-            env, posterior, times, n_samples=500, n_resamples=3, rng=5
+            env, posterior, times, n_samples_per_time_bin=50, n_resamples=3, rng=5
         )
         shared = np.random.default_rng(5)
         single = [
-            fit_linear_trajectory(env, posterior, times, n_samples=500, rng=shared)
+            fit_linear_trajectory(
+                env, posterior, times, n_samples_per_time_bin=50, rng=shared
+            )
             for _ in range(3)
         ]
 
@@ -1116,7 +1097,7 @@ class TestLinearFitFollowsThePapers:
         assert len(set(slopes)) == 3  # the resamples differ
 
     def test_spike_counts_split_samples_in_proportion_to_spikes(self):
-        """Each resample splits n_samples multinomially by spike count."""
+        """Each resample splits per-bin count x spiking bins by spike count."""
         from neurospatial.replay.trajectory import _samples_per_time_bin
 
         spikes = np.array([0, 3, 1, 0, 6])
@@ -1125,23 +1106,21 @@ class TestLinearFitFollowsThePapers:
         )
 
         assert split.shape == (2000, 5)
-        np.testing.assert_array_equal(split.sum(axis=1), 1000)
+        np.testing.assert_array_equal(split.sum(axis=1), 3000)  # 3 spiking bins
         np.testing.assert_array_equal(split[:, [0, 3]], 0)
         assert len(np.unique(split[:, 1])) > 1  # random, not a fixed share
-        # Multinomial mean n p, standard error sqrt(n p (1 - p) / 2000) < 0.4.
-        np.testing.assert_allclose(split.mean(axis=0), 1000 * spikes / 10, atol=2.0)
+        # Multinomial mean n p, standard error sqrt(n p (1 - p) / 2000) < 0.6.
+        np.testing.assert_allclose(split.mean(axis=0), 3000 * spikes / 10, atol=3.0)
 
-    def test_equal_split_totals_are_exact(self):
+    def test_equal_split_gives_each_time_bin_the_count(self):
+        """Karlsson & Frank: the same number of samples from every time bin."""
         from neurospatial.replay.trajectory import _samples_per_time_bin
 
         split = _samples_per_time_bin(
-            10_005, 3, 7, None, "equal", np.random.default_rng(0)
+            1429, 3, 7, None, "equal", np.random.default_rng(0)
         )
 
-        np.testing.assert_array_equal(split.sum(axis=1), 10_005)
-        np.testing.assert_array_equal(
-            split[0], [1430, 1430, 1429, 1429, 1429, 1429, 1429]
-        )
+        np.testing.assert_array_equal(split, np.full((3, 7), 1429))
 
     @pytest.mark.parametrize("method", ["sample", "map"])
     def test_time_bins_without_spikes_are_left_out(self, method):
@@ -1159,7 +1138,7 @@ class TestLinearFitFollowsThePapers:
             posterior,
             times,
             method=method,
-            n_samples=1000,
+            n_samples_per_time_bin=200,
             n_resamples=4,
             spike_counts=spikes,
             rng=0,
@@ -1176,7 +1155,7 @@ class TestLinearFitFollowsThePapers:
         times = np.arange(6) * 0.02
         per_neuron = np.random.default_rng(1).poisson(1.0, size=(6, 4))
 
-        kwargs = {"n_samples": 300, "n_resamples": 3, "rng": 2}
+        kwargs = {"n_samples_per_time_bin": 50, "n_resamples": 3, "rng": 2}
         assert dataclasses.astuple(
             fit_linear_trajectory(
                 env, posterior, times, spike_counts=per_neuron, **kwargs
@@ -1267,12 +1246,12 @@ class TestLinearFitRefusals:
         env, posterior, times = sweep
         spikes = np.zeros(10, dtype=int)
         spikes[[2, 7]] = 1
-        with pytest.raises(ValueError, match=r"raise n_samples"):
+        with pytest.raises(ValueError, match=r"raise n_samples_per_time_bin"):
             fit_linear_trajectory(
                 env,
                 posterior,
                 times,
-                n_samples=2,
+                n_samples_per_time_bin=1,
                 n_resamples=50,
                 spike_counts=spikes,
                 allocation="spikes",
@@ -1286,12 +1265,14 @@ class TestLinearFitRefusals:
         with pytest.raises(ValueError, match=r"n_resamples of at least 1"):
             fit_linear_trajectory(env, posterior, times, n_resamples=0)
 
-    def test_n_samples_must_be_an_integer(self, sweep):
+    def test_n_samples_per_time_bin_must_be_an_integer(self, sweep):
         from neurospatial.replay import fit_linear_trajectory
 
         env, posterior, times = sweep
-        with pytest.raises(TypeError, match=r"n_samples must be an integer"):
-            fit_linear_trajectory(env, posterior, times, n_samples=1e4)
+        with pytest.raises(
+            TypeError, match=r"n_samples_per_time_bin must be an integer"
+        ):
+            fit_linear_trajectory(env, posterior, times, n_samples_per_time_bin=1e4)
 
 
 class TestIsotonicFitFollowsMichon:
@@ -1620,13 +1601,18 @@ class TestSampledFitAllocation:
         assert abs(equal - by_spikes) > 0.005  # the two estimands differ
 
         fit_equal = fit_linear_trajectory(
-            env, posterior, times, n_samples=400_000, spike_counts=spikes, rng=0
+            env,
+            posterior,
+            times,
+            n_samples_per_time_bin=44_445,
+            spike_counts=spikes,
+            rng=0,
         )
         fit_spikes = fit_linear_trajectory(
             env,
             posterior,
             times,
-            n_samples=400_000,
+            n_samples_per_time_bin=44_445,
             spike_counts=spikes,
             allocation="spikes",
             rng=0,
@@ -1639,7 +1625,7 @@ class TestSampledFitAllocation:
 
         _, _, _, spikes = mixed_event
         split = _samples_per_time_bin(
-            90, 1, len(spikes), spikes, "equal", np.random.default_rng(0)
+            10, 1, len(spikes), spikes, "equal", np.random.default_rng(0)
         )[0]
         assert np.all(split[spikes == 0] == 0)
         assert split.sum() == 90
@@ -1652,28 +1638,19 @@ class TestSampledFitAllocation:
         with pytest.raises(ValueError, match="needs spike_counts"):
             fit_linear_trajectory(env, posterior, times, allocation="spikes")
 
-    def test_fewer_samples_than_sampled_time_bins_is_refused(self, mixed_event):
-        from neurospatial.replay import fit_linear_trajectory
-
-        env, posterior, times, spikes = mixed_event
-        with pytest.raises(ValueError, match="fewer than the 9 time bins"):
-            fit_linear_trajectory(
-                env, posterior, times, n_samples=5, spike_counts=spikes
-            )
-
     def test_blocked_draws_match_one_block(self, mixed_event, monkeypatch):
         """Drawing and fitting in blocks gives the same result as one block."""
         import neurospatial.replay.trajectory as trajectory
 
         env, posterior, times, _ = mixed_event
         whole = trajectory.fit_linear_trajectory(
-            env, posterior, times, n_samples=1200, n_resamples=6, rng=3
+            env, posterior, times, n_samples_per_time_bin=100, n_resamples=6, rng=3
         )
         monkeypatch.setattr(
             trajectory, "_COUNT_BLOCK", 2 * posterior.size
         )  # 2 resamples a block
         blocked = trajectory.fit_linear_trajectory(
-            env, posterior, times, n_samples=1200, n_resamples=6, rng=3
+            env, posterior, times, n_samples_per_time_bin=100, n_resamples=6, rng=3
         )
         assert blocked.r_squared == whole.r_squared
         assert blocked.slope_std == whole.slope_std
