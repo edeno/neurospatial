@@ -339,7 +339,11 @@ class VTESessionResult(ResultMixin):
         Number of trials classified as VTE (``is_vte is True``).
     vte_fraction : float
         Fraction of classified trials (``is_vte`` not None) that are VTE.
-        NaN when no trial was classified.
+        NaN when no trial was classified. The verdicts come from z-scores
+        within this session, so the cutoff picks a similar share of trials
+        in every session: compare ``vte_fraction`` between trial types of
+        one session, and compare raw head sweeps (``mean_head_sweep``,
+        ``trials_table()``) between sessions, animals or conditions.
 
     Examples
     --------
@@ -452,7 +456,14 @@ class VTESessionResult(ResultMixin):
 
     @property
     def vte_fraction(self) -> float:
-        """``n_vte_trials / n_classified``; NaN when no trial was classified."""
+        """``n_vte_trials / n_classified``; NaN when no trial was classified.
+
+        Verdicts rank each trial's head sweep against the session's other
+        trials (zIdPhi is z-scored within session, as Papale et al. 2012
+        did), so a session where the animal hesitated often and one where it
+        rarely did can have similar fractions. Use it within a session; to
+        compare sessions, animals or conditions, compare the raw head sweeps.
+        """
         n_classified = self.n_classified
         return self.n_vte_trials / n_classified if n_classified else np.nan
 
