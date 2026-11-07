@@ -21,6 +21,19 @@
   error by up to about 8% and rounds it to bin-graph steps. Positions just
   outside the environment are measured from the center of their bin.
 
+### Documentation: what the distance functions measure
+
+- The bin-graph distance functions (`distance_field`, `pairwise_distances`,
+  `geodesic_distance_matrix`, `Environment.distance_between` and others) now
+  say that they walk the bin graph between bin centers, which can exceed the
+  straight line by up to about 1.082 times.
+- `Environment.compute_kernel` names the polar distance correctly: the
+  chord between the places, or `r1 + r2` across an open angular seam.
+- `heat_kernel_basis` says that it matches the columns of
+  `compute_kernel(..., mode="average")`.
+- `simulate_trajectory_ou` explains that its 8 cm/s default speed is
+  RatInABox's 1-D value; RatInABox's 2-D default has mean 10.0 cm/s.
+
 ### Statistics: one name for the time-bin shuffle
 
 - `shuffle_time_bins_coherent` is removed. It returned exactly what

@@ -707,6 +707,13 @@ def geodesic_rbf_basis(
 
     Notes
     -----
+    Distances run along the bin graph between bin centers. In an open arena
+    an oblique path on an 8-connected grid is a staircase of grid steps, up to
+    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+    the any-angle path between positions instead, which equals the straight line
+    when nothing is in the way.
+
     **Why geodesic instead of Euclidean?**
 
     In a maze, two points may be spatially close but far apart in terms
@@ -863,7 +870,8 @@ def heat_kernel_basis(
         B(j) = [exp(-(b² / 2) * L)]_{j,c}
 
     where L is the finite-volume diffusion generator in environment units.
-    Column c of ``env.compute_kernel(bandwidth=b)`` is the same function.
+    Column c of ``env.compute_kernel(bandwidth=b, mode="average")`` is the
+    same function.
 
     Parameters
     ----------

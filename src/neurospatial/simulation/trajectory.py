@@ -17,8 +17,9 @@ from neurospatial.simulation._lap_routes import LapRouter
 from neurospatial.simulation._walls import Walls
 from neurospatial.simulation.models.base import _check_positive
 
-#: Default exploration speed, in centimeters per second: the RatInABox
-#: default (0.08 m/s; George et al. 2024).
+#: Default exploration speed, in centimeters per second: RatInABox's
+#: ``speed_mean`` (0.08 m/s; George et al. 2024), the mean speed of its 1-D
+#: agent. Its 2-D agent draws Rayleigh speeds with that scale (mean 10 cm/s).
 _DEFAULT_OU_SPEED_CM_PER_S = 8.0
 
 # Relative rounding allowed in ``duration / dt`` before a sample is dropped.
@@ -152,9 +153,12 @@ def simulate_trajectory_ou(
         chosen from bin centers.
     speed_mean : float or None, optional
         Mean running speed in ``speed_units`` per second. None (default) uses
-        8 cm/s, the RatInABox default for a foraging rat, expressed in
-        ``env.units`` (0.08 for meters); environments without metric units
-        need an explicit value.
+        8 cm/s, RatInABox's ``speed_mean`` (the mean speed of its 1-D
+        agent), expressed in ``env.units`` (0.08 for meters); environments
+        without metric units need an explicit value. In 2-D RatInABox uses
+        0.08 m/s as the scale of a Rayleigh distribution, a mean of 10.0 cm/s
+        and a standard deviation of 5.2 cm/s; pass ``speed_mean=10.0`` and
+        ``speed_std=5.2`` (cm) for a similar 2-D speed.
     speed_std : float or None, optional
         Standard deviation of the running speed in ``speed_units`` per second.
         None (default) uses ``speed_mean / 2`` (4 cm/s with the default mean).
@@ -218,11 +222,12 @@ def simulate_trajectory_ou(
     ``speed_std**2 / speed_mean``. Its time course is a standard-normal OU
     process ``z`` with time constant ``coherence_time``, mapped through the
     gamma quantile function, ``speed = F⁻¹(Φ(z))`` (a Gaussian copula).
-    RatInABox uses the same construction with a Rayleigh distribution; the
-    gamma distribution lets the mean and spread be set separately and keeps
-    the speed non-negative. The default spread (``speed_std = speed_mean / 2``)
-    is close to the Rayleigh distribution's (standard deviation 0.52 times
-    the mean).
+    RatInABox uses the same construction with a Rayleigh distribution of
+    scale ``speed_mean``; the gamma distribution lets the mean and spread be
+    set separately and keeps the speed non-negative. The default spread
+    (``speed_std = speed_mean / 2``) has about the Rayleigh distribution's
+    shape (standard deviation 0.52 times the mean), but the default mean is
+    RatInABox's scale, not its 2-D mean (1.25 times the scale).
 
     **Heading.** In 2-D the turning rate ``ω`` is an OU process with
     standard deviation ``rotational_velocity_std`` and time constant
