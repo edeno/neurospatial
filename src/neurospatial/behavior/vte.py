@@ -1561,7 +1561,12 @@ def compute_vte_session(
 
     - Headings are undefined below ``min_speed``, so slow stretches add no
       head sweep; Papale et al. computed orientation from velocity at every
-      sample.
+      sample, with the adaptive-window velocity estimator of Janabi-Sharifi
+      et al. (2000), which fits longer windows when the animal moves slowly.
+      Here velocity comes from a fixed 0.1 s line fit, and without the gate
+      tracking jitter dominates the heading of a slow animal: with 0.3 cm
+      position jitter at 30 Hz, a still animal scored about 16 rad over
+      1.5 s against about 8 rad for a real 8 cm side-to-side scan.
     - IdPhi is the sum of per-sample heading changes, each wrapped to
       (-π, π].
     - The 0.5 cutoff (``vte_threshold``) and the optional blend with slowing

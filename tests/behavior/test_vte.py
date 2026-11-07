@@ -2045,3 +2045,32 @@ def test_vte_trial_measures_the_session_pass():
     assert alone.head_sweep_magnitude == pass_.head_sweep_magnitude
     assert alone.mean_speed == pass_.mean_speed
     assert alone.min_observed_speed == pass_.min_observed_speed
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_jittered_pause_does_not_score_as_head_sweeping(seed):
+    """Tracking jitter on a still or creeping animal is not VTE.
+
+    With a fixed-window velocity, jitter sets the heading of a slow animal, so
+    without the default speed gate a pause outscores a real scan. With it, a
+    still animal has no head sweep and a creep is far below a scan.
+    """
+    from neurospatial.behavior import compute_vte_trial
+
+    rng = np.random.default_rng(seed)
+    times = np.arange(45) / 30.0  # 1.5 s at 30 Hz
+    jitter = rng.normal(0.0, 0.3, (times.size, 2))  # cm
+    still = np.zeros((times.size, 2)) + jitter
+    creep = np.column_stack([2.0 * times, np.zeros_like(times)]) + jitter
+    scan = np.column_stack([10.0 * times, 8.0 * np.sin(2 * np.pi * times)]) + jitter
+
+    def sweep(xy):
+        return compute_vte_trial(
+            times, xy, 0.0, 1.5, min_speed=5.0
+        ).head_sweep_magnitude
+
+    scan_sweep = sweep(scan)
+    assert scan_sweep > 6.0
+    assert np.isnan(sweep(still))
+    creep_sweep = sweep(creep)
+    assert np.isnan(creep_sweep) or creep_sweep < 0.25 * scan_sweep
