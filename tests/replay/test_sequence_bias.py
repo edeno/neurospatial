@@ -50,6 +50,30 @@ def _random_trains(rng, n_units=7, rate=8, duration=1.0, decimals=3):
     ]
 
 
+def _neuro_py_skew_bias(spike_times, neuron_ids, total_neurons):
+    """neuro_py ``skew_bias_matrix``, rewritten as a plain loop.
+
+    neuro_py.ensemble.pairwise_bias_correlation: a tie counts the
+    lower-numbered unit first, and pairs with a silent unit are 0.
+    """
+    trains = [np.sort(spike_times[neuron_ids == n]) for n in range(total_neurons)]
+    bias = np.zeros((total_neurons, total_neurons))
+    for i in range(total_neurons):
+        for j in range(i + 1, total_neurons):
+            if trains[i].size and trains[j].size:
+                n_ij = np.searchsorted(trains[i], trains[j], side="right").sum()
+                bias[i, j] = 2 * n_ij / (trains[i].size * trains[j].size) - 1
+                bias[j, i] = -bias[i, j]
+    return bias
+
+
+def _neuro_py_cosine(matrix_a, matrix_b):
+    """neuro_py ``cosine_similarity_matrices``: flatten, NaN to 0, cosine."""
+    a = np.nan_to_num(np.ravel(matrix_a))
+    b = np.nan_to_num(np.ravel(matrix_b))
+    return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
 def _ordered_template(n_units):
     """Every unit fires before every later unit: S(i, j) = 1 for i < j."""
     return np.sign(np.subtract.outer(np.arange(n_units), np.arange(n_units))).T * 1.0
@@ -118,23 +142,57 @@ class TestMeanPairwiseBias:
             mean_pairwise_bias(trains, cycles), expected, atol=1e-12
         )
 
+    def test_pooled_form_is_one_matrix_over_theta_spikes(self):
+        # The lab code's template: one matrix of every theta spike of the
+        # task, pairs across cycles included. Distinct times, so neuro_py's
+        # tie rule does not enter.
+        rng = np.random.default_rng(3)
+        cycles = np.column_stack([np.arange(10) * 0.125, np.arange(10) * 0.125 + 0.1])
+        trains = []
+        for unit in range(5):
+            spikes = cycles[:, 0] + 0.015 * unit + rng.uniform(0, 0.01, 10)
+            trains.append(np.sort(spikes[rng.random(10) < 0.7]))
+        times = np.concatenate(trains)
+        ids = np.concatenate([np.full(t.size, u) for u, t in enumerate(trains)])
+        pooled = pairwise_bias_matrix(trains, (0.0, 1.25)).bias.copy()
+        np.fill_diagonal(pooled, 0.0)
+        np.testing.assert_allclose(
+            pooled, _neuro_py_skew_bias(times, ids, 5), atol=1e-12
+        )
+
     def test_refuses_bad_intervals(self):
         with pytest.raises(ValueError, match="intervals"):
             mean_pairwise_bias([np.array([0.1])], np.array([0.0, 1.0]))
 
 
 class TestBiasSimilarity:
-    def test_cosine_over_pairs_defined_in_both(self):
+    def test_undefined_pairs_count_as_zero(self):
         template = _ordered_template(4)
         event = np.full((4, 4), np.nan)
         event[0, 1], event[1, 0] = 0.5, -0.5
         event[2, 3], event[3, 2] = -1.0, 1.0
         event[0, 0] = event[1, 1] = event[2, 2] = event[3, 3] = 0.0
-        # Pairs (0, 1) and (2, 3): (1 * 0.5 + 1 * -1) / (sqrt(2) * sqrt(1.25))
-        expected = -0.5 / (np.sqrt(2.0) * np.sqrt(1.25))
+        # Dot over pairs (0, 1) and (2, 3) is 1 * 0.5 + 1 * -1; the template
+        # keeps all six of its pairs in its norm.
+        expected = -0.5 / (np.sqrt(6.0) * np.sqrt(1.25))
         assert bias_similarity(template, event) == pytest.approx(expected)
         assert bias_similarity(template, template) == 1.0
         assert bias_similarity(template, -template) == -1.0
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_matches_neuro_py_cosine(self, seed):
+        rng = np.random.default_rng(seed)
+        matrices = []
+        for _ in range(2):
+            upper = np.triu(rng.uniform(-1, 1, (6, 6)), 1)
+            upper[rng.random((6, 6)) < 0.3] = np.nan
+            upper = np.triu(upper, 1)
+            matrix = upper - upper.T
+            np.fill_diagonal(matrix, 0.0)
+            matrices.append(matrix)
+        assert bias_similarity(*matrices) == pytest.approx(
+            _neuro_py_cosine(*matrices), abs=1e-6
+        )
 
     def test_undefined_without_common_pairs(self):
         template = np.full((3, 3), np.nan)
@@ -166,6 +224,21 @@ class TestSignificance:
         assert result.n_active_cells == 10
         assert result.null_similarities.shape == (50,)
         assert np.all(np.abs(result.null_similarities) <= 1.0)
+
+    def test_silent_units_of_the_event_lower_the_similarity(self):
+        # Units 0-3 fire in the template's order; 4 and 5 stay silent, so
+        # their template pairs count in the template's norm only.
+        trains = [np.array([0.01 * (i + 1)]) for i in range(4)] + [
+            np.array([]),
+            np.array([]),
+        ]
+        template = _ordered_template(6)
+        result = bias_similarity_significance(
+            trains, (0.0, 0.2), template, n_shuffles=20, rng=0
+        )
+        event = pairwise_bias_matrix(trains, (0.0, 0.2)).bias
+        assert result.similarity == pytest.approx(_neuro_py_cosine(template, event))
+        assert result.similarity == pytest.approx(np.sqrt(6.0) / np.sqrt(15.0))
 
     def test_false_positive_rate_is_held_at_alpha(self):
         """Random firing order: the permutation test rejects at most alpha.

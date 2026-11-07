@@ -5836,9 +5836,9 @@ LIU_2023_BIAS = BiasSequenceMethod(
         "skew-bias matrix S(i, j) = 2 n(i before j) / (n_i n_j) - 1 is "
         "compared with the template's by the cosine between them, 'The "
         "activity of cells that are not common to the two sequences is "
-        "ignored': the cosine runs over the pairs defined in both. The lab's "
-        "code (neuro_py pairwise_bias_correlation) fills undefined pairs "
-        "with 0 and keeps them, which shrinks its cosines.",
+        "ignored'. The cosine follows the lab's code (neuro_py "
+        "pairwise_bias_correlation): undefined pairs are 0 in each matrix "
+        "and stay in its norm.",
         "The paper prints the unwrapped matrix as '2Bk - 2', which runs from "
         "-2 to 0; its stated range [-1, 1] and the lab's code give 2B - 1, "
         "used here.",
@@ -5846,8 +5846,10 @@ LIU_2023_BIAS = BiasSequenceMethod(
         "theta cycles during the task': pass mean_pairwise_bias(spike_times, "
         "theta_cycles) as template_bias, with the running theta cycles' "
         "intervals; each pair is averaged over the cycles in which both "
-        "cells fired (not stated; the code computes one matrix over all task "
-        "theta spikes). No theta-cycle detector is applied here.",
+        "cells fired (not stated). The lab's code instead computes one matrix "
+        "over all task theta spikes: pass pairwise_bias_matrix(theta_spikes, "
+        "(task_start, task_stop)).bias for that form. No theta-cycle detector "
+        "is applied here.",
         "Shuffles: 'shuffling the spikes sequence n = 100 times', read as "
         "permuting the cell labels of the event's spikes, as the code does "
         "(each cell keeps its spike count, the event its spike times). "
