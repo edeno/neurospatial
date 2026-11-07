@@ -125,9 +125,10 @@ class GridCellModel:
     **Range**: the mean of the three cosines lies in [-0.5, 1]: it is 1 at
     a field and -0.5 at the points farthest from the fields. After
     rectification, ``max(0, g(x))`` lies in [0, 1], so the rate lies
-    between ``baseline_rate`` and ``max_rate``. The rectification is
-    neurospatial's choice, so the rate is ``baseline_rate`` between fields;
-    only the three-wave pattern is taken from Solstad et al.
+    between ``baseline_rate`` and ``max_rate``, and the rate is
+    ``baseline_rate`` between fields. The three-wave pattern is cited to
+    Solstad et al.; whether their rate map uses the same rectification has
+    not been checked against the paper.
 
     References
     ----------

@@ -164,8 +164,8 @@
 - `grid_score` separates the steps it shares with opexebo `grid_score` from
   its own two choices: the central-peak region rule and starting the annulus at
   twice the central-peak radius.
-- `GridCellModel` says the rectification of the three-wave pattern is
-  neurospatial's choice, not part of Solstad et al. 2006.
+- `GridCellModel` cites Solstad et al. 2006 only for the three-wave pattern
+  and says its rectification has not been checked against the paper.
 - References that no sentence relied on were removed from the decision,
   navigation, trajectory, smoothing, graph and egocentric modules, and from the
   differential-operators guide. `decode_position` names Davidson et al. 2009 as
