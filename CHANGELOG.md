@@ -12,6 +12,15 @@
   Found by comparing with FMAToolbox `MapStats`; on noisy simulated maps a
   few more fields are reported, at the same run time.
 
+### Decoding: geodesic error follows the any-angle path
+
+- `decoding_error(..., metric="geodesic")` measures the shortest path inside
+  the environment between the decoded and actual positions, as the behavior
+  functions with `metric="geodesic"` do. Before, it walked the bin graph
+  between bin centers, which in an open arena overstates a straight-line
+  error by up to about 8% and rounds it to bin-graph steps. Positions just
+  outside the environment are measured from the center of their bin.
+
 ### Statistics: one name for the time-bin shuffle
 
 - `shuffle_time_bins_coherent` is removed. It returned exactly what

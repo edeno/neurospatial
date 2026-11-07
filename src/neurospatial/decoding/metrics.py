@@ -32,7 +32,6 @@ from neurospatial._validation import refuse_infinite, validate_choice
 from neurospatial.decoding.estimates import _egocentric_plane
 from neurospatial.geometry import require_cartesian
 from neurospatial.geometry._arena import _track_distances
-from neurospatial.ops.distance import _geodesic_pair_distances
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
@@ -51,9 +50,9 @@ def decoding_error(
     """Compute position error for each time bin.
 
     By default the error is the shortest path between the decoded and actual
-    positions along the environment's connectivity graph, so a decode in the
-    wrong arm of a maze, or across a wall, is as far off as the animal would
-    have to travel. ``metric="euclidean"`` gives the straight-line distance.
+    positions that stays inside the environment, so a decode in the wrong arm
+    of a maze, or across a wall, is as far off as the animal would have to
+    travel. ``metric="euclidean"`` gives the straight-line distance.
 
     Parameters
     ----------
@@ -67,19 +66,21 @@ def decoding_error(
     metric : {"geodesic", "euclidean"}, default="geodesic"
         Distance metric to use:
 
-        - "geodesic": Shortest-path distance between the positions' bins
-          along the environment's connectivity graph (along the track on a
-          linearized track), measured between bin centers: the error is
-          quantized to the bins, and two positions in one bin are 0 apart.
+        - "geodesic": Length of the shortest path between the two positions
+          that stays inside the environment: the straight line when nothing
+          is in the way, around walls otherwise, and along the track on a
+          linearized track. This is the any-angle path the behavior
+          functions measure with ``metric="geodesic"``; it measures between
+          the positions themselves, not their bins' centers, and in an open
+          arena it equals the straight-line distance. A path that turns
+          around a wall corner keeps about half a bin from the corner.
           A position outside every bin but within about one
           ``env.bin_spacing`` of the environment itself, such as tracking
           jitter at an edge, is measured from its nearest bin. A position
           farther out, such as a posterior mean between two arms of a maze,
           is not in the environment: its error is NaN, with a warning. Use
-          ``map_position`` for a decoded position that is always a bin. Bins in
-          disconnected components are ``inf`` apart. On an open grid the
-          graph path can exceed the straight line by up to about 8%
-          (8-connected neighbors).
+          ``map_position`` for a decoded position that is always a bin.
+          Positions in disconnected components are ``inf`` apart.
         - "euclidean": Straight-line distance between the positions. On an
           egocentric polar environment, the distance between the two
           places in the animal's plane (the chord
@@ -220,13 +221,35 @@ def _errors_and_misses(
     actual_off = valid & (actual_bins < 0)
     measured = valid & ~decoded_off & ~actual_off
     if np.any(measured):
-        errors[measured] = _geodesic_pair_distances(
-            env.connectivity,
-            decoded_bins[measured],
-            actual_bins[measured],
-            operation=call,
+        from neurospatial.behavior._environment_paths import environment_paths
+
+        decoded = _inside_or_bin_center(env, decoded_positions, decoded_bins)
+        actual = _inside_or_bin_center(env, actual_positions, actual_bins)
+        errors[measured] = environment_paths(env, call=call).between(
+            decoded[measured],
+            actual[measured],
+            start_bins=decoded_bins[measured],
+            end_bins=actual_bins[measured],
         )
     return errors, decoded_off, actual_off
+
+
+def _inside_or_bin_center(
+    env: Environment, positions: NDArray[np.float64], bins: NDArray[np.intp]
+) -> NDArray[np.float64]:
+    """Each position, or its bin's center when it lies just outside every bin.
+
+    A position within a bin spacing of the environment but outside every bin
+    (tracking jitter at an edge) is measured from its nearest bin's center,
+    so the path length is measured between points inside the environment.
+    """
+    located: NDArray[np.float64] = np.array(positions, dtype=np.float64)
+    rows = np.flatnonzero(bins >= 0)
+    if rows.size:
+        inside = np.asarray(env.bin_at(positions[rows]), dtype=np.intp) >= 0
+        snapped = rows[~inside]
+        located[snapped] = env.bin_centers[bins[snapped]]
+    return located
 
 
 def _paired_positions(
