@@ -545,6 +545,76 @@ class TestBoundaryVectorCellModel:
         rate = cell.firing_rate(np.zeros(1), np.array([[10.0, 50.0]]))[0]
         assert rate == pytest.approx(15.0, rel=1e-3)
 
+    @pytest.mark.parametrize(
+        ("distance", "direction", "tolerance"),
+        [(10.0, np.pi, 4.0), (17.5, 0.7, 17.5 / 12 + 8.0)],
+    )
+    def test_rate_is_the_integral_of_barry_tuning_over_the_box_walls(
+        self, walled_box, distance, direction, tolerance
+    ):
+        """Barry et al. (2006, eqs. 1-2) by adaptive quadrature: the drive at
+        p is the integral over directions θ of Gaussian(r(θ)) x von Mises(θ),
+        r(θ) the distance from p to the first wall of the 100 cm box along θ,
+        divided by the same integral for a straight wall at the preferred
+        distance square to the preferred direction (r = d / cos u)."""
+        from scipy import integrate
+
+        from neurospatial.simulation.models import BoundaryVectorCellModel
+
+        half_width = np.pi / 6
+        cell = BoundaryVectorCellModel(
+            walled_box,
+            preferred_distance=distance,
+            preferred_direction=direction,
+            distance_tolerance=tolerance,
+            direction_tolerance=half_width,
+            max_rate=15.0,
+            baseline_rate=0.0,
+        )
+        kappa = np.log(2.0) / (1.0 - np.cos(half_width))
+
+        def tuning(r, theta):
+            radial = np.exp(-0.5 * ((r - distance) / tolerance) ** 2)
+            return radial * np.exp(kappa * (np.cos(theta - direction) - 1.0))
+
+        def wall_distance(point, theta):
+            step = np.array([np.cos(theta), np.sin(theta)])
+            with np.errstate(divide="ignore"):
+                exits = np.where(step > 0, 100.0 - point, -point) / step
+            return float(np.min(exits[step != 0]))
+
+        straight, _ = integrate.quad(
+            lambda u: tuning(distance / np.cos(u), direction + u),
+            -np.pi / 2,
+            np.pi / 2,
+            epsabs=1e-13,
+            limit=500,
+        )
+        points = np.array(
+            [[10, 50], [20, 50], [6, 50], [10, 10], [30, 30], [13, 71], [85, 20]],
+            dtype=float,
+        )
+        expected = []
+        for point in points:
+            # r(θ) has a kink in the direction of each corner.
+            corners = np.arctan2(
+                [0, 0, 100, 100] - point[1], [0, 100, 0, 100] - point[0]
+            )
+            drive, _ = integrate.quad(
+                lambda theta, point=point: tuning(wall_distance(point, theta), theta),
+                -np.pi,
+                np.pi,
+                points=np.sort(corners),
+                epsabs=1e-13,
+                limit=500,
+            )
+            expected.append(15.0 * drive / straight)
+        rates = cell.firing_rate(np.zeros(len(points)), points)
+        # The model sums 180 rays 2 degrees apart. For a smooth periodic
+        # integrand that sum is exact to rounding; each kink at a corner
+        # direction adds an error of order (2 degrees)^2 ~ 1e-3 of the drive.
+        np.testing.assert_allclose(rates, expected, rtol=0, atol=1e-3 * 15.0)
+
     def test_field_lies_at_the_preferred_distance_from_that_wall(self, walled_box):
         cell = self._west_cell(walled_box)
         rates = cell.firing_rate(
@@ -886,80 +956,42 @@ class TestGridCellModel:
         # neighbors one spacing away at 0, 60, ..., 300 degrees are fields.
         np.testing.assert_allclose(hex_rates, center_rate, rtol=1e-9)
 
-    def test_grid_spacing_matches_parameter(self, simple_2d_env):
-        """Test that distance between grid peaks matches grid_spacing."""
+    @pytest.mark.parametrize("grid_spacing", [30.0, 41.0, 50.0])
+    @pytest.mark.parametrize("grid_orientation", [0.0, 0.3])
+    def test_grid_properties_measures_the_simulated_spacing(
+        self, grid_spacing, grid_orientation
+    ):
+        """The spacing measured from the noiseless rate map in a 150 cm box.
+
+        ``test_rate_at_fields_between_fields_and_farthest_from_them`` pins
+        the field positions, and so the orientation, exactly.
+        """
+        from neurospatial.encoding.grid import (
+            autocorrelation_pixel_size,
+            grid_properties,
+            spatial_autocorrelation,
+        )
         from neurospatial.simulation.models import GridCellModel
 
-        grid_spacing = 40.0
-        gc = GridCellModel(
-            simple_2d_env,
+        centers = np.arange(1.0, 150.0, 2.0)
+        xx, yy = np.meshgrid(centers, centers)
+        env = Environment.from_samples(
+            np.column_stack([xx.ravel(), yy.ravel()]), bin_size=2.0, units="cm"
+        )
+        model = GridCellModel(
+            env,
             grid_spacing=grid_spacing,
-            grid_orientation=0.0,
-            max_rate=20.0,
-            baseline_rate=0.0,
+            grid_orientation=grid_orientation,
+            phase_offset=np.array([17.0, 33.0]),
         )
-
-        # Create a grid of test points
-        x = np.linspace(0, 100, 101)
-        y = np.linspace(0, 100, 101)
-        xx, yy = np.meshgrid(x, y)
-        positions = np.column_stack([xx.ravel(), yy.ravel()])
-
-        # Compute rates
-        rates = gc.firing_rate(np.zeros(len(positions)), positions)
-        rate_map = rates.reshape(101, 101)
-
-        # Find local maxima (peaks)
-        from scipy import ndimage
-
-        local_max = ndimage.maximum_filter(rate_map, size=5) == rate_map
-        peaks = np.argwhere(local_max & (rate_map > 0.5 * gc.max_rate))
-
-        # A 100 cm square holds several fields of a 40 cm grid.
-        assert len(peaks) >= 4
-        from scipy.spatial.distance import pdist
-
-        # Neighboring peaks are one spacing apart; a peak cut by the edge of the
-        # sampled square sits off its field center, hence the 20% tolerance.
-        assert np.min(pdist(peaks)) == pytest.approx(grid_spacing, rel=0.2)
-
-    def test_orientation_rotation(self, simple_2d_env):
-        """Test that grid_orientation rotates the grid pattern."""
-        from neurospatial.simulation.models import GridCellModel
-
-        # Create two grid cells with different orientations
-        # Use 45° rotation which is NOT a symmetry of the hexagonal lattice (60° symmetry)
-        gc_0 = GridCellModel(
-            simple_2d_env,
-            grid_spacing=40.0,
-            grid_orientation=0.0,
-            max_rate=20.0,
-            baseline_rate=0.0,
-            phase_offset=np.array([0.0, 0.0]),  # Origin
-        )
-
-        gc_45 = GridCellModel(
-            simple_2d_env,
-            grid_spacing=40.0,
-            grid_orientation=np.pi / 4,  # 45 degrees
-            max_rate=20.0,
-            baseline_rate=0.0,
-            phase_offset=np.array([0.0, 0.0]),
-        )
-
-        # Test at many random points to find differences
-        # Use specific non-symmetric positions
-        rng = np.random.default_rng(42)
-        positions = rng.uniform(10, 90, size=(20, 2))
-
-        rates_0 = gc_0.firing_rate(np.zeros(len(positions)), positions)
-        rates_45 = gc_45.firing_rate(np.zeros(len(positions)), positions)
-
-        # Rates should be different due to rotation at most positions
-        # Check that a substantial number of positions have different rates
-        differences = np.abs(rates_0 - rates_45)
-        # Expect significant differences at multiple positions
-        assert np.sum(differences > 0.1) >= 10  # At least half should differ
+        rates = model.firing_rate(np.zeros(env.n_bins), env.bin_centers)
+        scale = grid_properties(
+            spatial_autocorrelation(env, rates),
+            pixel_size=autocorrelation_pixel_size(env),
+        ).scale
+        # Each ring peak of the autocorrelogram is located to its 2 cm pixel,
+        # so its distance from zero lag is off by at most sqrt(2) / 2 pixels.
+        assert scale == pytest.approx(grid_spacing, abs=np.sqrt(2) / 2 * 2.0)
 
     def test_firing_rate_output_shape(self, simple_2d_env):
         """Test that firing_rate returns correct shape."""
@@ -993,9 +1025,9 @@ class TestGridCellModel:
         )
         rates = gc.firing_rate(times, positions)
 
-        # All rates should be between baseline and max_rate
-        assert np.all(rates >= baseline - 0.1)  # Small tolerance for numerical error
-        assert np.all(rates <= max_rate + 0.1)
+        # (2/3) (g + 1/2) lies in [0, 1] up to rounding of the cosines.
+        assert np.all(rates >= baseline - 1e-12)
+        assert np.all(rates <= max_rate + 1e-12)
 
     def test_ground_truth_property(self, simple_2d_env):
         """Test ground_truth property returns correct parameters."""
@@ -1126,6 +1158,62 @@ class TestGridCellModel:
             ValueError, match=r"phase_offset must be 2 finite coordinates"
         ):
             GridCellModel(simple_2d_env, phase_offset=np.array([1.0, 2.0, 3.0]))
+
+    @pytest.mark.parametrize("grid_orientation", [0.0, 0.4, -1.1])
+    def test_rate_at_fields_between_fields_and_farthest_from_them(
+        self, simple_2d_env, grid_orientation
+    ):
+        """Solstad et al. (2006, eq. 2) from the lattice geometry alone.
+
+        Fields sit at phase_offset + i a1 + j a2, with a1 and a2 one spacing
+        long at grid_orientation and 60 degrees from it. At a field the mean
+        of the three cosines is 1, so the rate is max_rate. Halfway between
+        two neighbouring fields two cosines are -1 and one is 1, a mean of
+        -1/3: the rate is baseline + (max - baseline) / 9, where a
+        rectified form would give the baseline. At the centroid of three
+        mutually neighbouring fields, the points farthest from all fields,
+        the mean is -1/2 and the rate is the baseline.
+        """
+        from neurospatial.simulation.models import GridCellModel
+
+        spacing, baseline, max_rate = 23.0, 0.7, 18.0
+        phase = np.array([48.0, 51.0])
+        gc = GridCellModel(
+            simple_2d_env,
+            grid_spacing=spacing,
+            grid_orientation=grid_orientation,
+            phase_offset=phase,
+            max_rate=max_rate,
+            baseline_rate=baseline,
+        )
+        a1 = spacing * np.array([np.cos(grid_orientation), np.sin(grid_orientation)])
+        a2 = spacing * np.array(
+            [np.cos(grid_orientation + np.pi / 3), np.sin(grid_orientation + np.pi / 3)]
+        )
+        fields = np.array(
+            [phase + i * a1 + j * a2 for i in (-1, 0, 1) for j in (-1, 0, 1)]
+        )
+        # Halfway along the three neighbour directions a1, a2 and a2 - a1.
+        midpoints = np.concatenate(
+            [fields + a1 / 2, fields + a2 / 2, fields + (a2 - a1) / 2]
+        )
+        # Centroids of the two triangles of fields at each lattice point.
+        farthest = np.concatenate([fields + (a1 + a2) / 3, fields + (2 * a2 - a1) / 3])
+        # The centre field's triangles: their centroids are the circumradius,
+        # spacing / sqrt(3), from the nearest field.
+        centre = farthest[[4, 13]]
+        nearest = np.linalg.norm(centre[:, None] - fields[None], axis=2).min(axis=1)
+        np.testing.assert_allclose(nearest, spacing / np.sqrt(3), rtol=1e-12)
+
+        def rate(points):
+            return gc.firing_rate(np.zeros(len(points)), points)
+
+        # Rounding of cosines of phases up to ~20 rad: ~1e-14 Hz.
+        np.testing.assert_allclose(rate(fields), max_rate, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(
+            rate(midpoints), baseline + (max_rate - baseline) / 9, rtol=0, atol=1e-12
+        )
+        np.testing.assert_allclose(rate(farthest), baseline, rtol=0, atol=1e-12)
 
     def test_firing_rate_matches_reference_loop_implementation(self, simple_2d_env):
         """Vectorized grid pattern must match the explicit per-wave-vector loop.

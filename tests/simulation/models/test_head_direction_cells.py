@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from scipy import stats
 
 from neurospatial.simulation.models import HeadDirectionCellModel, NeuralModel
 
@@ -103,20 +104,16 @@ class TestHeadDirectionCellModel:
             baseline_rate=baseline_rate,
         )
 
-        # Test at various angles
         headings = np.linspace(-np.pi, np.pi, 100)
         rates = _rates(hd, headings)
 
-        # Peak should be at preferred direction (index ~50)
-        peak_idx = np.argmax(rates)
-        assert abs(headings[peak_idx] - preferred) < 0.1
-
-        # Rates should be symmetric around preferred direction
-        # Compare left and right sides
-        half = len(headings) // 2
-        left_rates = rates[:half]
-        right_rates = rates[half:][::-1]
-        np.testing.assert_allclose(left_rates, right_rates, rtol=0.1)
+        # scipy's von Mises density divided by its peak, independent of the
+        # model's exp(kappa (cos - 1)); equal to rounding.
+        density = stats.vonmises(concentration, loc=preferred)
+        shape = density.pdf(headings) / density.pdf(preferred)
+        np.testing.assert_allclose(
+            rates, baseline_rate + (max_rate - baseline_rate) * shape, rtol=1e-12
+        )
 
         # All rates should be between baseline and max
         assert np.all(rates >= baseline_rate)

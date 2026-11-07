@@ -411,42 +411,18 @@ def test_van_de_ven_activations_follow_the_events(reactivated) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_reactivation_gives_few_verdicts_and_small_effects() -> None:
-    """Rest after running without assembly events: the verdicts stay near
-    their level and the effect sizes near 0."""
-    calls = {"kudrimoti_1999": 0, "lansink_2009": 0}
+def test_no_reactivation_gives_small_assembly_effects() -> None:
+    """Rest after running without assembly events: the assembly effect sizes
+    stay near 0. The false-positive rates of the verdict recipes are
+    calibrated in ``test_reactivation_calibration.py``."""
     differences, shares = [], []
-    lansink = dataclasses.replace(LANSINK_2009, n_shuffles=200)
     peyrache = dataclasses.replace(PEYRACHE_2010, n_shuffles=200)
-    n_sessions = 12
-    for seed in range(n_sessions):
+    for seed in range(12):
         table = _compare(
-            session(100 + seed, reactivation=0.0, duration=600.0),
-            [
-                dataclasses.replace(
-                    KUDRIMOTI_1999, match_windows=ReactivationWindows(length=600.0)
-                ),
-                lansink.__class__(
-                    **{
-                        **dataclasses.asdict(lansink),
-                        "control_windows": ReactivationWindows(),
-                        "match_windows": ReactivationWindows(),
-                    }
-                ),
-                peyrache,
-            ],
+            session(100 + seed, reactivation=0.0, duration=600.0), [peyrache]
         )
-        verdicts = table.dropna(subset=["is_reactivated"])
-        for name in calls:
-            calls[name] += int(
-                verdicts.loc[verdicts["method"] == name, "is_reactivated"].sum()
-            )
-        assembly = table[table["method"] == "peyrache_2010"]
-        differences.extend(assembly["value"])
-        shares.extend(assembly["match_fraction_above_shuffle"])
-    # Binomial(12, 0.05) exceeds 3 with probability below 0.003.
-    assert calls["kudrimoti_1999"] <= 3
-    assert calls["lansink_2009"] <= 3
+        differences.extend(table["value"])
+        shares.extend(table["match_fraction_above_shuffle"])
     # Mean R(t) of a period without co-firing is 0 up to about sqrt(2 / n)
     # for n = 6000 bins; the difference of two periods within a few times that.
     assert np.max(np.abs(differences)) < 0.15
