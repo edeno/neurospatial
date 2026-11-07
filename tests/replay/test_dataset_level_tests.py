@@ -1157,7 +1157,9 @@ def test_silva_pooled_tests_run_on_absolute_correlations(track, session):
     """The rank-order recipe's documented pooled tests, on simulated events.
 
     The sweeps beat shuffled cell orders in |r|: the one-tailed rank-sum
-    and KS tests reject.
+    and KS tests reject. Levene's test has no side; its statistic is
+    checked against the formula of Levene (1960), deviations from each
+    group's mean.
     """
     rates, trains, intervals, _, _ = session
     recipe = SILVA_2015_RANK_ORDER
@@ -1183,6 +1185,19 @@ def test_silva_pooled_tests_run_on_absolute_correlations(track, session):
         )
         if test != "levene":
             assert result.p_value < 0.01, test
+            continue
+        groups = [table[column].to_numpy() for table in (real, null)]
+        deviations = [np.abs(g - g.mean()) for g in groups]
+        n_total = sum(g.size for g in groups)
+        grand = np.concatenate(deviations).mean()
+        between = sum(d.size * (d.mean() - grand) ** 2 for d in deviations)
+        within = sum(np.sum((d - d.mean()) ** 2) for d in deviations)
+        statistic = (n_total - 2) * between / within
+        assert result.statistic == pytest.approx(statistic, rel=1e-9)
+        assert result.p_value == pytest.approx(
+            stats.f.sf(statistic, 1, n_total - 2), rel=1e-9
+        )
+        assert (result.n_observed, result.n_null) == tuple(g.size for g in groups)
 
 
 @pytest.mark.parametrize("n_axes", [0, 1, 2])

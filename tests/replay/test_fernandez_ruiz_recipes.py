@@ -11,6 +11,7 @@ import dataclasses
 
 import numpy as np
 import pytest
+from replay_helpers import assert_null_verdicts_at_alpha
 
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_jointly, decode_position
@@ -74,9 +75,7 @@ def _events(env, rates, dt, decode):
 
 
 @pytest.mark.parametrize("method", [SOULA_2023, HARVEY_2023_LINE], ids=lambda m: m.name)
-def test_regression_line_recipes_find_sweeps_and_reject_random_events(
-    place_code, method
-):
+def test_regression_line_recipes_find_sweeps(place_code, method):
     env, rates = place_code
     dt = 0.02
     events, counts = _events(
@@ -97,7 +96,6 @@ def test_regression_line_recipes_find_sweeps_and_reject_random_events(
     kinds = np.array(KINDS)
     # Forward and reverse sweeps both hold their mass near one line.
     assert verdicts[kinds != "random"].all()
-    assert verdicts[kinds == "random"].sum() <= 1
     sweep = events[0]
     expected = regression_line_score(
         env,
@@ -107,6 +105,39 @@ def test_regression_line_recipes_find_sweeps_and_reject_random_events(
     ).score
     assert table.loc[0, "score"] == pytest.approx(expected)
     assert table.loc[0, "p_value"] == pytest.approx(1 / 200)
+
+
+@pytest.mark.parametrize("method", [SOULA_2023, HARVEY_2023_LINE], ids=lambda m: m.name)
+def test_regression_line_recipes_call_random_events_replay_at_alpha(place_code, method):
+    """150 random events with 99 shuffles: replay at P(p < 0.05) = 0.04.
+
+    The 99% binomial interval is 1 to 13 replay events; a recipe at 25%
+    false positives gives about 38.
+    """
+    env, rates = place_code
+    dt = 0.02
+    events, counts = [], []
+    for seed in range(150):
+        event_counts, times = _counts(env, rates, "random", seed=500 + seed, dt=dt)
+        events.append(decode_position(env, event_counts, rates, dt=dt, times=times))
+        counts.append(event_counts)
+    table = compare_replay_methods(
+        env,
+        events,
+        replay_methods=[dataclasses.replace(method, n_shuffles=99)],
+        spike_counts=counts,
+        rng=0,
+    )
+    assert (table["error"] == "").all()
+    criteria = table.filter(like="criteria[")
+    assert criteria.shape[1] == len(method.criteria)
+    assert_null_verdicts_at_alpha(
+        table["p_value"],
+        table["is_replay"],
+        criteria.all(axis=1),
+        alpha=method.alpha,
+        n_shuffles=99,
+    )
 
 
 def test_chang_tests_both_tails_and_keeps_the_trajectory_with_the_smallest_p(

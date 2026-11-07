@@ -172,12 +172,18 @@ class TestWithReplayMethods:
         )
         assert result.p_value < 0.01
 
-    def test_random_events_are_rarely_significant(self, place_code):
-        """Tirole et al.'s three nulls together keep alpha on random events."""
+    def test_random_events_are_significant_at_alpha(self, place_code):
+        """Tirole et al.'s three nulls together keep alpha on random events.
+
+        P(p <= 0.1) with 39 shuffles is 0.1; 600 events must fall in its 99%
+        binomial interval, 42 to 80, so an inflated 0.16 (about 96) fails,
+        and so does a test that never rejects.
+        """
         env, rates = place_code
         shuffle_rng = np.random.default_rng(3)
+        n_events = 600
         p_values = []
-        for seed in range(80):
+        for seed in range(n_events):
             event = simulate_replay_event(
                 env, rates, kind="random", rate_gain=4.0, rng=100 + seed
             )
@@ -203,8 +209,8 @@ class TestWithReplayMethods:
                     rng=shuffle_rng,
                 ).p_value
             )
-        # 8 of 80 expected at p <= 0.1 (sd 2.7).
-        assert np.sum(np.asarray(p_values) <= 0.1) <= 16
+        low, high = stats.binom.ppf([0.005, 0.995], n_events, 0.1)
+        assert low <= np.sum(np.asarray(p_values) <= 0.1) <= high
 
     def test_stationary_event_fools_the_line_fit_but_not_the_correlation(
         self, place_code

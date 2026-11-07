@@ -8,6 +8,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import pytest
+from replay_helpers import null_rejection_interval
 from scipy.stats import binomtest, pearsonr
 
 from neurospatial import Environment
@@ -29,8 +30,10 @@ from neurospatial.replay import (
     matched_alpha,
     method_agreement,
     null_events,
+    replay_significance,
     score_agreement,
     simulated_null_events,
+    weighted_correlation,
 )
 from neurospatial.replay.methods import (
     CHENANI_2019,
@@ -563,8 +566,15 @@ def test_signed_score_hides_agreement_on_forward_and_reverse_sweeps(track):
     assert signed[unsigned] > 0.5
 
 
-def test_false_positive_rates_on_simulated_events(track):
-    """Random events rarely pass; sweeps nearly always do; strata add up."""
+def test_detection_rates_by_kind_and_strata_on_simulated_events(track):
+    """Rates by event kind and by stratum add up to the table's verdicts.
+
+    Sweeps nearly always pass and random events mostly do not. Twelve
+    random events cannot measure a false-positive rate; the recipes'
+    rates on random events are tested in ``test_methods.py``,
+    ``test_more_published_recipes.py`` and
+    ``test_fernandez_ruiz_recipes.py``.
+    """
     x = track.bin_centers[:, 0]
     rates = 0.5 + 25.0 * np.exp(
         -0.5 * ((x - np.linspace(0.0, 100.0, 20)[:, None]) / 8.0) ** 2
@@ -873,13 +883,26 @@ class TestDecodeIntervals:
             )
 
 
+_MATCHING_SHUFFLE = {
+    "cell_identity": "unit_identity",
+    "spike_shift": "spike_train_circular",
+    "spike_time_uniform": "spike_time_uniform",
+}
+
+
 @pytest.mark.parametrize("kind", ["cell_identity", "spike_shift", "spike_time_uniform"])
 def test_false_positives_on_null_copies(track, kind):
     """Every null kind removes the replay of real sweeps.
 
-    The bound of 0.1 is calibrated: over seeds 0-9, these 100 null events
-    give rates of at most 0.07 for every kind, and 0.13 at seed 0 when one
-    spike shift is shared by every cell, which keeps the sweep's order.
+    Silva et al.'s criteria have no alpha. Their bound of 0.1 is
+    calibrated: over seeds 0-9, these 100 null events give rates of at
+    most 0.07 for every kind, and 0.13 at seed 0 when one spike shift is
+    shared by every cell, which keeps the sweep's order.
+
+    Each copy is itself a draw of the shuffle that does the same to the
+    spikes, so that shuffle tests it exactly, from both sides: given the
+    sweep, a copy and its shuffles are exchangeable, and P(p <= 0.1) with
+    39 shuffles is 0.1 for every copy.
     """
     x = track.bin_centers[:, 0]
     rates = 0.5 + 25.0 * np.exp(
@@ -917,6 +940,27 @@ def test_false_positives_on_null_copies(track, kind):
     )
     assert rates_by_data.loc["real", "rate"] >= 0.8
     assert rates_by_data.loc["null", "rate"] <= 0.1
+
+    shuffle_rng = np.random.default_rng(1)
+    p_values = np.array(
+        [
+            replay_significance(
+                track,
+                event.posterior,
+                event.times,
+                score=weighted_correlation,
+                nulls=_MATCHING_SHUFFLE[kind],
+                spike_counts=event_counts,
+                encoding_models=rates,
+                dt=DT,
+                n_shuffles=39,
+                rng=shuffle_rng,
+            ).p_value
+            for event, event_counts in zip(null_decoded, null_counts, strict=True)
+        ]
+    )
+    low, high = null_rejection_interval(len(p_values), 0.1)
+    assert low <= np.sum(p_values <= 0.1) <= high
 
 
 KF = KARLSSON_FRANK_2009
@@ -1261,21 +1305,39 @@ def test_apply_alpha_matches_a_rerun_on_the_longest_segment(two_segment_event):
 
 
 def test_matched_alpha_holds_the_false_positive_rate(track, sweeps_and_nulls):
-    """Workflow: match on cell-identity copies, then call the real events."""
-    rates, real, null = sweeps_and_nulls
+    """Workflow: match on cell-identity copies, then call the real events.
+
+    The rate at the matched alpha is checked on independent copies, not on
+    the copies it was matched on, where it holds by construction: 128
+    fresh copies must be replay at the target rate, 0.1, within the 99%
+    binomial interval.
+    """
+    rates, real, _ = sweeps_and_nulls
     methods = [
         dataclasses.replace(WU_2017, n_shuffles=200),
         dataclasses.replace(DIBA_BUZSAKI_2007, n_shuffles=200),
     ]
-    null_table = _compare(track, rates, *null, methods)
-    matched = matched_alpha(null_table, replay_methods=methods, target=0.1)
-    assert (matched["n_events"] == 32).all()
-    assert (matched["rate"] <= 0.1).all()
+
+    def copies(seed):
+        null = null_events(*real, kind="cell_identity", n_copies=16, rng=seed)
+        return _compare(track, rates, null.spike_times, null.intervals, methods)
+
+    fit_table = copies(seed=0)
+    matched = matched_alpha(fit_table, replay_methods=methods, target=0.1)
+    assert (matched["n_events"] == 128).all()
     alphas = matched.set_index("method")["alpha"]
-    on_null = detection_rates(
-        apply_alpha(null_table, alpha=alphas, replay_methods=methods)
+    # apply_alpha at the matched alpha reproduces the rate matched_alpha reports.
+    on_fit = detection_rates(
+        apply_alpha(fit_table, alpha=alphas, replay_methods=methods)
     )
-    np.testing.assert_allclose(on_null["rate"], matched["rate"])
+    np.testing.assert_allclose(on_fit["rate"], matched["rate"])
+
+    held_out = detection_rates(
+        apply_alpha(copies(seed=1), alpha=alphas, replay_methods=methods)
+    )
+    low, high = null_rejection_interval(128, 0.1)
+    assert held_out["n_events"].eq(128).all()
+    assert held_out["n_replay"].between(low, high).all(), held_out
     real_table = apply_alpha(
         _compare(track, rates, *real, methods), alpha=alphas, replay_methods=methods
     )

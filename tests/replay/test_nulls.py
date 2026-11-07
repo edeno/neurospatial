@@ -79,15 +79,32 @@ class TestShuffleCellIdentity:
             assert isinstance(shuffled_counts, np.ndarray)
             assert isinstance(models, np.ndarray)
 
-    def test_encoding_models_unchanged(
+    def test_cells_are_permuted_uniformly_against_fixed_fields(
         self, spike_counts: np.ndarray, encoding_models: np.ndarray
     ) -> None:
-        """Encoding models should be returned unchanged (same object)."""
+        """Each shuffle gives the spike trains a uniformly random cell order.
 
-        for _, models in shuffle_cell_identity(
-            spike_counts, encoding_models, n_shuffles=5, rng=42
+        The place fields stay as they are, and each of the 3! orders of
+        the three distinct spike trains is drawn about 600 / 6 times
+        (chi-square goodness of fit, 5 degrees of freedom).
+        """
+        import itertools
+
+        from scipy import stats
+
+        orders = list(itertools.permutations(range(3)))
+        drawn = np.zeros(len(orders), dtype=int)
+        for shuffled_counts, models in shuffle_cell_identity(
+            spike_counts, encoding_models, n_shuffles=600, rng=42
         ):
             assert models is encoding_models
+            (match,) = [
+                index
+                for index, order in enumerate(orders)
+                if np.array_equal(shuffled_counts, spike_counts[:, list(order)])
+            ]
+            drawn[match] += 1
+        assert stats.chisquare(drawn).pvalue > 0.001, drawn
 
     def test_shuffled_counts_shape(
         self, spike_counts: np.ndarray, encoding_models: np.ndarray

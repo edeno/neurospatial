@@ -7,6 +7,7 @@ import itertools
 
 import numpy as np
 import pytest
+from replay_helpers import monte_carlo_rejection_rate, null_rejection_interval
 
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_position
@@ -241,10 +242,11 @@ class TestSignificance:
         assert result.similarity == pytest.approx(np.sqrt(6.0) / np.sqrt(15.0))
 
     def test_false_positive_rate_is_held_at_alpha(self):
-        """Random firing order: the permutation test rejects at most alpha.
+        """Random firing order: the permutation test rejects at alpha.
 
-        With labels exchangeable given the spike times, P(p < alpha) <=
-        alpha; 400 events bound the rate within 3 binomial SDs.
+        With labels exchangeable given the spike times, P(p < 0.05) with 100
+        shuffles is 5 / 101; 400 events must fall in its 99% binomial
+        interval, so a test that never rejects fails too.
         """
         rng = np.random.default_rng(7)
         n_units, n_events = 10, 400
@@ -256,8 +258,10 @@ class TestSignificance:
                 trains, (0.0, 0.1), template, n_shuffles=100, rng=event
             ).p_value
             rejected += p < 0.05
-        bound = 0.05 * n_events + 3 * np.sqrt(n_events * 0.05 * 0.95)
-        assert rejected <= bound
+        low, high = null_rejection_interval(
+            n_events, monte_carlo_rejection_rate(100, 0.05)
+        )
+        assert low <= rejected <= high
 
     def test_absolute_test_needs_greater(self):
         with pytest.raises(ValueError, match="alternative='greater'"):
