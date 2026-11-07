@@ -1325,7 +1325,20 @@ class TestTuningPvalueDispersion:
         assert 0.01 <= np.mean(pvalues < 0.05) <= 0.10
 
     def test_slow_rate_drift_is_calibrated(self, wandering_heading_session) -> None:
-        """A rate that drifts over 30 s is not mistaken for heading tuning."""
+        """A rate that drifts over 30 s is not mistaken for heading tuning.
+
+        The dispersion-corrected test is documented as conservative for drift,
+        so only the upper side is bounded at alpha: the rejection count of 100
+        untuned cells must not exceed the 99.95th percentile of
+        Binomial(100, 0.05). To show this data can make the test reject, the
+        same cells under the uncorrected Poisson test (dispersion 1) must
+        reject above that bound: the correction, not a test that never
+        rejects, keeps the rate down.
+        """
+        from dataclasses import replace
+
+        from scipy.stats import binom
+
         from neurospatial.encoding import compute_directional_rates
 
         times, headings = wandering_heading_session
@@ -1342,8 +1355,15 @@ class TestTuningPvalueDispersion:
             trains.append(
                 _frame_poisson_spikes(times, 3.0 * np.exp(log_rate), seed=5000 + k)
             )
-        pvalues = compute_directional_rates(trains, times, headings).tuning_pvalues()
-        assert np.mean(pvalues < 0.05) <= 0.10
+        rates = compute_directional_rates(trains, times, headings)
+        pvalues = rates.tuning_pvalues()
+        poisson = replace(
+            rates, spike_count_dispersion=np.ones(len(trains)), dispersion_dof=None
+        ).tuning_pvalues()
+        high = binom.ppf(0.9995, len(trains), 0.05)
+        assert np.all(np.isfinite(pvalues))
+        assert np.sum(pvalues < 0.05) <= high
+        assert np.sum(poisson < 0.05) > high
 
     def test_bursting_hd_cells_are_detected(self, wandering_heading_session) -> None:
         """Broad tuning (κ = 0.5) is still detected in bursting cells."""
@@ -1460,22 +1480,30 @@ class TestDirectionalRateResultIsHdCell:
         bin_size: float,
         n_bins: int,
     ) -> None:
-        """is_head_direction_cell() returns False for uniform firing."""
+        """is_head_direction_cell() returns False for uniform firing.
+
+        With equal counts in every bin of uniform occupancy the score vector
+        ``S = Σ c_i u_i - λ Σ o_i u_i`` is exactly zero, so ``T = 0`` and
+        ``p = 1``, and the rate-weighted MVL is 0. The screen must refuse the
+        cell because of the test, not because the p-value is missing: it
+        refuses even with ``min_mvl=0``.
+        """
         from neurospatial.encoding.directional import DirectionalRateResult
 
-        # Uniform firing rate
         firing_rate = np.ones(n_bins) * 5.0
-
         result = DirectionalRateResult(
             firing_rate=firing_rate,
             occupancy=single_occupancy,
             bin_centers=bin_centers,
             bin_size=bin_size,
             bandwidth=None,
+            spike_count_dispersion=1.0,
         )
 
-        # Should NOT be classified as HD cell
+        assert result.tuning_pvalue == pytest.approx(1.0, abs=1e-12)
+        assert result.mean_vector_length == pytest.approx(0.0, abs=1e-12)
         assert result.is_head_direction_cell() is False
+        assert result.is_head_direction_cell(min_mvl=0.0) is False
 
     def test_is_hd_cell_uses_min_mvl_threshold(
         self,
@@ -1538,64 +1566,82 @@ class TestDirectionalRateResultIsHdCell:
         # With permissive alpha (above p-value), should be True
         assert result.is_head_direction_cell(alpha=0.1) is True
 
-    def test_is_hd_cell_default_thresholds(
-        self,
-        single_firing_rate: np.ndarray,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """is_head_direction_cell() uses default thresholds of min_mvl=0.4, alpha=0.05."""
+    @staticmethod
+    def _cosine_result(mvl: float, n_spikes: float, dispersion: float):
+        """A result with a closed-form MVL and tuning p-value.
+
+        Counts ``c_i = (N / n) (1 + 2 a cos θ_i)`` on n equally spaced bins of
+        equal occupancy have mean resultant length exactly ``a`` (the cosine
+        sums to zero and ``Σ cos² θ_i = n / 2``), so the rate-weighted MVL is
+        ``a`` (counts stay non-negative for a <= 0.5). With uniform occupancy
+        ``T = 2 N a²``, and with a known dispersion φ (``dispersion_dof=None``)
+        ``p = exp(-T / (2 φ))``.
+        """
         from neurospatial.encoding.directional import DirectionalRateResult
 
+        n = 60
+        centers = np.linspace(-np.pi, np.pi, n, endpoint=False) + np.pi / n
+        occupancy = np.full(n, 0.5)
+        counts = n_spikes / n * (1.0 + 2.0 * mvl * np.cos(centers - 0.7))
         result = DirectionalRateResult(
-            firing_rate=single_firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
+            firing_rate=counts / occupancy,
+            occupancy=occupancy,
+            bin_centers=centers,
+            bin_size=2 * np.pi / n,
             bandwidth=None,
+            spike_counts=counts,
+            spike_count_dispersion=dispersion,
         )
+        expected_p = np.exp(-n_spikes * mvl**2 / dispersion)
+        return result, expected_p
 
-        # Calling with no arguments should use defaults
-        is_hd_default = result.is_head_direction_cell()
-        is_hd_explicit = result.is_head_direction_cell(min_mvl=0.4, alpha=0.05)
-        assert is_hd_default == is_hd_explicit
+    @pytest.mark.parametrize(
+        ("mvl", "target_p", "passes"),
+        [
+            (0.41, None, True),  # MVL just above 0.4, p ~ e^-100
+            (0.39, None, False),  # MVL just below 0.4
+            (0.45, 0.045, True),  # p just below 0.05
+            (0.45, 0.055, False),  # p just above 0.05
+        ],
+    )
+    def test_is_hd_cell_default_thresholds(self, mvl, target_p, passes) -> None:
+        """is_head_direction_cell() uses default thresholds of min_mvl=0.4, alpha=0.05.
 
-    def test_is_hd_cell_requires_both_criteria(
-        self,
-        single_occupancy: np.ndarray,
-        bin_centers: np.ndarray,
-        bin_size: float,
-    ) -> None:
-        """is_head_direction_cell() requires BOTH MVL > threshold AND p-value < alpha."""
-        from neurospatial.encoding.directional import DirectionalRateResult
+        Each case sits just on one side of one default cutoff (MVL and p-value
+        from closed forms), so a different default flips its verdict.
+        """
+        n_spikes = 600.0
+        # φ that puts p at the target: p = exp(-N a² / φ).
+        dispersion = 1.0 if target_p is None else n_spikes * mvl**2 / -np.log(target_p)
+        result, expected_p = self._cosine_result(mvl, n_spikes, dispersion)
 
-        # Create tuned neuron
-        preferred_dir = np.pi / 2
-        firing_rate = 10.0 * np.exp(5.0 * (np.cos(bin_centers - preferred_dir) - 1))
+        assert result.mean_vector_length == pytest.approx(mvl, rel=1e-12)
+        assert result.tuning_pvalue == pytest.approx(expected_p, rel=1e-9)
+        assert result.is_head_direction_cell() is passes
+        assert result.is_head_direction_cell(min_mvl=0.4, alpha=0.05) is passes
 
-        result = DirectionalRateResult(
-            firing_rate=firing_rate,
-            occupancy=single_occupancy,
-            bin_centers=bin_centers,
-            bin_size=bin_size,
-            bandwidth=None,
+    def test_is_hd_cell_requires_both_criteria(self) -> None:
+        """is_head_direction_cell() requires BOTH MVL >= threshold AND p-value < alpha."""
+        n_spikes = 600.0
+        # MVL 0.5 passes; φ chosen so p = 0.2 fails.
+        mvl_only, p_mvl_only = self._cosine_result(
+            0.5, n_spikes, n_spikes * 0.25 / -np.log(0.2)
         )
+        # p ~ e^-54 passes; MVL 0.3 fails.
+        p_only, p_p_only = self._cosine_result(0.3, n_spikes, 1.0)
+        both, p_both = self._cosine_result(0.5, n_spikes, 1.0)
 
-        mvl = result.mean_vector_length
-        pval = result.tuning_pvalue
+        assert mvl_only.mean_vector_length == pytest.approx(0.5, rel=1e-12)
+        assert mvl_only.tuning_pvalue == pytest.approx(p_mvl_only, rel=1e-9)
+        assert p_mvl_only == pytest.approx(0.2)
+        assert p_only.mean_vector_length == pytest.approx(0.3, rel=1e-12)
+        assert p_only.tuning_pvalue == pytest.approx(p_p_only, rel=1e-9)
+        assert p_p_only < 1e-20
 
-        # Set thresholds so only MVL criterion is met
-        # (high alpha threshold that is below the p-value)
-        if pval > 0:
-            assert (
-                result.is_head_direction_cell(min_mvl=mvl - 0.1, alpha=pval / 10)
-                is False
-            )
-
-        # Set thresholds so only p-value criterion is met
-        # (high MVL threshold that is above the actual MVL)
-        assert result.is_head_direction_cell(min_mvl=mvl + 0.1, alpha=0.1) is False
+        assert mvl_only.is_head_direction_cell() is False
+        assert p_only.is_head_direction_cell() is False
+        assert both.tuning_pvalue == pytest.approx(p_both, rel=1e-9)
+        assert both.is_head_direction_cell() is True
 
 
 class TestDirectionalRateResultInterpretation:
@@ -2888,32 +2934,43 @@ class TestComputeDirectionalRateSmoothing:
         assert result.bandwidth == bandwidth
 
     def test_smoothing_produces_smoother_curve(self) -> None:
-        """compute_directional_rate with smoothing produces smoother curves."""
+        """Smoothing is a circular Gaussian on counts and occupancy, then a ratio.
+
+        By hand: each bin's smoothed counts and occupancy are sums over all
+        bins weighted by ``exp(-d² / 2σ²)``, ``d`` the circular distance
+        between bin centers summed over the wrapped images; the rate is
+        their ratio. ``gaussian_filter1d`` truncates the kernel at 4σ, which
+        drops a tail of mass 2(1 - Φ(4)) = 6e-5 and moves each ratio by at
+        most about twice that, hence rtol 2e-4. Unvisited bins stay NaN.
+        """
         from neurospatial.encoding.directional import compute_directional_rate
 
         rng = np.random.default_rng(42)
-        times = np.linspace(0, 10, 100)
-        headings = rng.uniform(0, 2 * np.pi, 100)
-        spike_times = np.array([1.0, 2.5, 4.0, 7.5])
+        times = np.arange(0, 120, 1 / 30)
+        headings = rng.uniform(-np.pi, np.pi, times.size)
+        # Leave a 30° arc unvisited, so missing bins sit next to visited ones.
+        headings = np.where(np.abs(headings - 2.0) < np.pi / 12, 0.5, headings)
+        spike_times = np.sort(rng.uniform(0, 120, 600))
+        bandwidth = np.pi / 6
 
-        result_raw = compute_directional_rate(spike_times, times, headings)
-        result_smooth = compute_directional_rate(
-            spike_times, times, headings, bandwidth=np.pi / 6
+        raw = compute_directional_rate(spike_times, times, headings)
+        smooth = compute_directional_rate(
+            spike_times, times, headings, bandwidth=bandwidth
         )
 
-        rates_raw = np.asarray(result_raw.firing_rate)
-        rates_smooth = np.asarray(result_smooth.firing_rate)
+        centers = np.asarray(raw.bin_centers)
+        counts = np.asarray(raw.spike_counts, dtype=np.float64)
+        occupancy = np.asarray(raw.occupancy)
+        gap = centers[:, None] - centers[None, :]
+        images = gap[..., None] + 2 * np.pi * np.arange(-3, 4)
+        weights = np.exp(-(images**2) / (2 * bandwidth**2)).sum(axis=-1)
+        expected = (weights @ counts) / (weights @ occupancy)
+        expected[occupancy == 0] = np.nan
 
-        # Replace NaN with 0 for variance calculation
-        rates_raw_filled = np.nan_to_num(rates_raw, nan=0.0)
-        rates_smooth_filled = np.nan_to_num(rates_smooth, nan=0.0)
-
-        # Smoothed curve should have lower bin-to-bin variance
-        var_raw = np.var(np.diff(rates_raw_filled))
-        var_smooth = np.var(np.diff(rates_smooth_filled))
-
-        # Smoothed curve has smaller local variance (more gradual changes)
-        assert var_smooth <= var_raw
+        rates = np.asarray(smooth.firing_rate)
+        assert np.isnan(rates).sum() >= 2  # the unvisited arc
+        np.testing.assert_array_equal(np.isnan(rates), occupancy == 0)
+        np.testing.assert_allclose(rates, expected, rtol=2e-4)
 
     def test_bandwidth_degrees(self) -> None:
         """compute_directional_rate bandwidth with angle_unit=deg."""

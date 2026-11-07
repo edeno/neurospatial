@@ -166,9 +166,13 @@ def test_egocentric_requires_nonnull_headings():
 
 @pytest.mark.parametrize("frame", ["allocentric", "egocentric"])
 @pytest.mark.parametrize("method", ["binned", "gaussian_kde"])
-def test_free_predicates_match_methods(
-    frame, method, ou_env, ou_2min, noise_trains, obj
-):
+def test_free_predicates_match_methods(frame, method, ou_env, ou_2min, obj):
+    """The free threshold screen gives the result methods' verdicts, both ways.
+
+    Each unit is screened at cutoffs just below and just above its own
+    bias-corrected information, so the shared verdicts include True and
+    False; a screen stuck at False, or reading a different statistic, fails.
+    """
     times, positions, headings = ou_2min
     extra = () if frame == "allocentric" else (headings,)
     family = "object_vector" if frame == "allocentric" else "egocentric"
@@ -176,7 +180,11 @@ def test_free_predicates_match_methods(
         encoding,
         f"is_{'' if frame == 'allocentric' else 'egocentric_'}object_vector_cell",
     )
-    trains = noise_trains(120)[:2]
+    # 5 Hz untuned trains: ~500 spikes in the 100 s epoch, more than the
+    # occupied polar bins, so the binned bias (and the corrected
+    # information) is defined.
+    rng = np.random.default_rng(17)
+    trains = [np.sort(rng.uniform(0, 120, rng.poisson(600))) for _ in range(2)]
     kwargs = {
         "method": method,
         # Binned polar maps are not smoothed and refuse a bandwidth.
@@ -192,7 +200,12 @@ def test_free_predicates_match_methods(
         single = getattr(encoding, f"compute_{family}_rate")(
             ou_env, train, times, positions, *extra, obj, **kwargs
         )
-        for threshold in (0.3, 1.0):
+        corrected = single.spatial_information() - single.spatial_information_bias()
+        assert np.isfinite(corrected)
+        for threshold, expected in (
+            (corrected - 0.01, True),
+            (corrected + 0.01, False),
+        ):
             verdict = predicate(
                 ou_env,
                 train,
@@ -200,11 +213,13 @@ def test_free_predicates_match_methods(
                 positions,
                 *extra,
                 obj,
+                criterion="threshold",
                 min_info=threshold,
                 **kwargs,
             )
-            assert verdict == single.is_object_vector_cell(min_info=threshold)
-            assert verdict == plural.classify(min_info=threshold)[i]
+            assert verdict is expected
+            assert single.is_object_vector_cell(min_info=threshold) is expected
+            assert plural.classify(min_info=threshold)[i] == expected
 
 
 def test_frame_predicate_signatures_are_truthful():

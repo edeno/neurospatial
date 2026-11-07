@@ -849,40 +849,6 @@ class TestObjectVectorRateResultPreferredDirection:
         expected_direction = float(sample_env.bin_centers[peak_idx, 1])
         assert direction == expected_direction
 
-    def test_preferred_direction_0_means_ahead(
-        self,
-        sample_env: Environment,
-        single_neuron_occupancy: np.ndarray,
-    ) -> None:
-        """Test convention: 0 radians means object is ahead of animal.
-
-        This verifies the egocentric coordinate convention documented in
-        CLAUDE.md and the module docstring.
-        """
-        from neurospatial.encoding.egocentric import ObjectVectorRateResult
-
-        # Find a bin with direction close to 0 (ahead)
-        bin_centers = sample_env.bin_centers
-        # Find the bin closest to direction=0
-        directions = bin_centers[:, 1]
-        ahead_bin = np.argmin(np.abs(directions))
-
-        # Create firing rate peaked at the "ahead" bin
-        n_bins = sample_env.n_bins
-        firing_rate = np.zeros(n_bins)
-        firing_rate[ahead_bin] = 30.0
-
-        result = ObjectVectorRateResult(
-            direction_frame="egocentric",
-            firing_rate=firing_rate,
-            occupancy=single_neuron_occupancy,
-            env=sample_env,
-        )
-
-        direction = result.preferred_direction
-        # Should be close to 0 (ahead)
-        assert abs(direction) < np.pi / 6  # Within 30 degrees of ahead
-
 
 class TestObjectVectorRateResultConvenienceMethodsWithNaN:
     """Test convenience methods handle NaN values correctly."""

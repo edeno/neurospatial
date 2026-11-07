@@ -423,49 +423,53 @@ class TestComputeRegionCoverage:
     """
 
     def test_region_coverage_basic(self) -> None:
-        """Test basic region coverage computation with wall regions."""
+        """Coverage is the field's share of each wall region's bins, by hand.
+
+        The field is the top three rows of bins (centers y = 32, 36, 40) and
+        five bins in the middle of the arena (y = 20, x = 12-28) that are in
+        no region, chosen from the coordinates, not from the regions. North
+        holds exactly the 33 top-row bins (coverage 1), south the bottom three
+        rows (0), and east and west three columns each, 9 of whose 33 bins are
+        in the field (3/11). Coverage divides by the region's bins, not the
+        field's 38.
+        """
         from shapely.geometry import box
 
-        # Inline environment required: adds wall regions (north, south, east, west)
         x = np.linspace(0, 40, 400)
         y = np.linspace(0, 40, 400)
         xx, yy = np.meshgrid(x, y)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
 
         env = Environment.from_samples(positions, bin_size=4.0)
+        # Bin centers sit on a 4 cm lattice from 0 to 40 (11 x 11, equal
+        # cells). Region edges fall between centers, so each region's bins are
+        # known by hand, whatever rule decides a center on an edge.
+        np.testing.assert_array_equal(
+            np.unique(env.bin_centers, axis=0),
+            np.stack(
+                np.meshgrid(*[np.arange(0.0, 41.0, 4.0)] * 2, indexing="ij"), -1
+            ).reshape(-1, 2),
+        )
 
-        # Add wall regions
         region_builder = Regions(env.regions.values())
-        region_builder.add("north", polygon=box(0, 30, 40, 40))
-        region_builder.add("south", polygon=box(0, 0, 40, 10))
-        region_builder.add("east", polygon=box(30, 0, 40, 40))
-        region_builder.add("west", polygon=box(0, 0, 10, 40))
+        region_builder.add("north", polygon=box(-2, 30, 42, 42))
+        region_builder.add("south", polygon=box(-2, -2, 42, 10))
+        region_builder.add("east", polygon=box(30, -2, 42, 42))
+        region_builder.add("west", polygon=box(-2, -2, 10, 42))
         env = env.with_regions(region_builder)
 
-        # Create field along north wall
-        firing_rate = np.zeros(env.n_bins)
-        north_bins = np.where(env.region_mask("north"))[0]
-        firing_rate[north_bins] = 5.0
-        field_bins = np.where(firing_rate > 0)[0]
+        x, y = env.bin_centers.T
+        field_bins = np.flatnonzero((y > 30) | ((y == 20) & (x > 10) & (x < 30)))
+        assert len(field_bins) == 38
 
         from neurospatial.encoding.border import region_coverage
 
         coverage = region_coverage(env, field_bins)
 
-        # North wall should have high coverage, others should be low
-        # Note: walls overlap at corners, so east/west have ~0.22 coverage from corner overlap
-        assert coverage["north"] > 0.8, (
-            f"Expected north coverage > 0.8, got {coverage['north']}"
-        )
-        assert coverage["south"] < 0.3, (
-            f"Expected south coverage < 0.3, got {coverage['south']}"
-        )
-        assert coverage["east"] < 0.3, (
-            f"Expected east coverage < 0.3, got {coverage['east']}"
-        )
-        assert coverage["west"] < 0.3, (
-            f"Expected west coverage < 0.3, got {coverage['west']}"
-        )
+        assert coverage["north"] == pytest.approx(1.0, rel=1e-12)
+        assert coverage["south"] == 0.0
+        assert coverage["east"] == pytest.approx(3 / 11, rel=1e-12)
+        assert coverage["west"] == pytest.approx(3 / 11, rel=1e-12)
 
     def test_region_coverage_specific_regions(self) -> None:
         """Test region coverage with specific regions parameter."""
@@ -562,10 +566,14 @@ class TestComputeRegionCoverage:
             region_coverage(env, field_bins, regions=["nonexistent"])
 
     def test_region_coverage_full_coverage(self) -> None:
-        """Test region coverage when field covers entire region."""
+        """A field holding every bin of a region covers it fully.
+
+        The region holds the 3 x 3 bins centered at 16, 20 and 24 cm. The
+        field, chosen from the coordinates, is those bins and a ring of bins
+        outside the region: coverage is over the region's bins, so it is 1.
+        """
         from shapely.geometry import box
 
-        # Create rectangular environment using vectorized meshgrid
         x = np.linspace(0, 40, 400)
         y = np.linspace(0, 40, 400)
         xx, yy = np.meshgrid(x, y)
@@ -573,27 +581,24 @@ class TestComputeRegionCoverage:
 
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        # Add region
         region_builder = Regions(env.regions.values())
-        region_builder.add("center", polygon=box(15, 15, 25, 25))
+        region_builder.add("center", polygon=box(14, 14, 26, 26))
         env = env.with_regions(region_builder)
 
-        # Create field that covers all of center region
-        center_bins = np.where(env.region_mask("center"))[0]
-        field_bins = center_bins
+        offset = np.abs(env.bin_centers - 20.0)
+        field_bins = np.flatnonzero(np.all(offset <= 8.0, axis=1))  # 5 x 5 bins
+        assert len(field_bins) == 25
 
         from neurospatial.encoding.border import region_coverage
 
         coverage = region_coverage(env, field_bins)
 
-        # Should have perfect coverage
         assert coverage["center"] == 1.0
 
     def test_region_coverage_no_coverage(self) -> None:
-        """Test region coverage when field doesn't overlap region."""
+        """A field outside a region does not cover it at all."""
         from shapely.geometry import box
 
-        # Create rectangular environment using vectorized meshgrid
         x = np.linspace(0, 40, 400)
         y = np.linspace(0, 40, 400)
         xx, yy = np.meshgrid(x, y)
@@ -601,20 +606,17 @@ class TestComputeRegionCoverage:
 
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        # Add two disjoint regions
         region_builder = Regions(env.regions.values())
-        region_builder.add("north", polygon=box(0, 30, 40, 40))
-        region_builder.add("south", polygon=box(0, 0, 40, 10))
+        region_builder.add("north", polygon=box(-2, 30, 42, 42))
+        region_builder.add("south", polygon=box(-2, -2, 42, 10))
         env = env.with_regions(region_builder)
 
-        # Create field only in north
-        north_bins = np.where(env.region_mask("north"))[0]
-        field_bins = north_bins
+        # The top three rows, chosen from the coordinates: north's bins.
+        field_bins = np.flatnonzero(env.bin_centers[:, 1] > 30)
 
         from neurospatial.encoding.border import region_coverage
 
         coverage = region_coverage(env, field_bins)
 
-        # North should have full coverage, south should have zero
         assert coverage["north"] == 1.0
         assert coverage["south"] == 0.0

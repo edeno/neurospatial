@@ -158,14 +158,27 @@ class TestEncodingGridFunctionality:
         assert len(distances) == 30
 
     def test_grid_score_runs(self) -> None:
-        """grid_score should run and return float."""
+        """grid_score is positive for a hexagonal and negative for a square lattice.
+
+        A hexagonal lattice maps onto itself under 60° and 120° rotations, so
+        ``min(r60, r120)`` is near 1 and exceeds ``max(r30, r90, r150)``. A
+        square lattice maps onto itself under 90°, so ``r90`` is near 1 and
+        the score ``min(r60, r120) - max(r30, r90, r150)`` is below 0.
+        """
         from neurospatial.encoding.grid import grid_score
 
-        autocorr = _create_hexagonal_autocorr()
-        score = grid_score(autocorr)
+        hexagonal = grid_score(_create_hexagonal_autocorr())
 
-        assert isinstance(score, float)
-        assert -2.0 <= score <= 2.0
+        size, center, radius = 101, 50, 20.0
+        x, y = np.ogrid[:size, :size]
+        square = np.exp(-((x - center) ** 2 + (y - center) ** 2) / (2 * 5**2))
+        for angle in np.radians([0, 90, 180, 270]):
+            px, py = center + radius * np.cos(angle), center + radius * np.sin(angle)
+            square = square + 0.8 * np.exp(-((x - px) ** 2 + (y - py) ** 2) / 50)
+
+        assert isinstance(hexagonal, float)
+        assert hexagonal > 0.0
+        assert grid_score(square / square.max()) < 0.0
 
     def test_grid_scale_runs(self) -> None:
         """grid_scale should run and return float."""
@@ -477,25 +490,26 @@ class TestFFTAutocorrelationLagsArePhysical:
 
         assert result.grid_score() > 0.4
 
-    def test_result_grid_scale_is_in_length_units(self) -> None:
+    @pytest.mark.parametrize("bin_size", [4.0, 2.5])
+    def test_result_grid_scale_is_in_length_units(self, bin_size) -> None:
+        """A 40 cm grid cell has a grid scale of 40 cm, not 40 / bin_size pixels.
+
+        The autocorrelogram's peaks sit on whole-pixel lags, so the measured
+        spacing can differ from the true one by up to half a pixel's diagonal,
+        ``bin_size * sqrt(2) / 2``.
+        """
         from neurospatial import compute_spatial_rate
-        from neurospatial.encoding.grid import (
-            autocorrelation_pixel_size,
-            grid_properties,
-            spatial_autocorrelation,
-        )
 
-        times = np.arange(6000) / 30.0
-        positions = np.random.default_rng(11).uniform(0, 80, (len(times), 2))
-        spike_times = np.sort(np.random.default_rng(12).uniform(0, times[-1], 400))
-        env = Environment.from_samples(positions, bin_size=4.0, units="cm")
+        env, spike_times, times, positions = self._grid_cell_session(
+            lambda positions: Environment.from_samples(
+                positions, bin_size=bin_size, units="cm"
+            ),
+            seed=11,
+        )
         result = compute_spatial_rate(env, spike_times, times, positions)
-        expected = grid_properties(
-            spatial_autocorrelation(env, np.asarray(result.firing_rate)),
-            pixel_size=autocorrelation_pixel_size(env),
-        )
 
-        np.testing.assert_equal(result.grid_properties().scale, expected.scale)
+        scale = result.grid_properties().scale
+        assert abs(scale - 40.0) <= bin_size * np.sqrt(2) / 2
 
 
 def _pixel_size_cases():

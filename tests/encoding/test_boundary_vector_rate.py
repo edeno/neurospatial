@@ -12,11 +12,6 @@ from neurospatial.encoding import (
     compute_boundary_vector_rate,
     compute_boundary_vector_rates,
 )
-from neurospatial.encoding._spatial_counts import (
-    count_spikes_by_frame,
-    start_allocated_occupancy,
-)
-from neurospatial.encoding.boundary_vector import _boundary_frame_bins
 from neurospatial.simulation import generate_poisson_spikes
 
 SIDE = 100.0  # cm
@@ -134,6 +129,16 @@ def test_every_ray_reaching_a_wall_adds_the_sample_time(env, session):
 
 
 def test_vectorized_counts_equal_the_ray_by_ray_counts(env, session):
+    """Counts and occupancy match a by-hand, ray-by-ray tally in the box.
+
+    By hand: 12 rays per sample at the direction-bin centers
+    ``-pi + (k + 1/2) 2pi/12`` from the heading; each ray's wall distance in
+    the square from ``_wall_distance``; distance bin ``floor(d / 5)`` when
+    ``d < 40``. Each interval between consecutive observed samples adds its
+    duration, and each spike in it one count, to the bin of every in-range
+    ray of the sample that starts it; intervals longer than ``max_gap`` (the
+    1 s tracking dropout) are dropped.
+    """
     times, positions, headings = session
     positions = positions.copy()
     positions[100:130] = np.nan  # a tracking dropout
@@ -147,37 +152,34 @@ def test_vectorized_counts_equal_the_ray_by_ray_counts(env, session):
         direction_frame="egocentric",
         distance_range=(0.0, 40.0),
     )
+    n_distance, n_direction = 8, 12
+    assert (result.n_distance_bins, result.n_direction_bins) == (8, 12)
 
-    frame_bins, observed = _boundary_frame_bins(
-        env,
-        positions,
-        headings,
-        direction_frame="egocentric",
-        boundary_source="physical",
-        distance_range=(0.0, 40.0),
-        n_distance_bins=8,
-        n_direction_bins=12,
+    observed = ~np.isnan(positions).any(axis=1)
+    times, positions, headings = (
+        times[observed],
+        positions[observed],
+        headings[observed],
     )
-    # The 1 s dropout is longer than max_gap: by hand, delete the missing rows
-    # and drop the long gap.
-    times, frame_bins = times[observed], frame_bins[observed]
-    mask = np.diff(times) <= 0.5
-    n_bins = result.env.n_bins
-    rays = range(frame_bins.shape[1])
-    occupancy = sum(
-        start_allocated_occupancy(
-            frame_bins[:, k], np.diff(times), mask & (frame_bins[:-1, k] >= 0), n_bins
-        )
-        for k in rays
-    )
-    counts = sum(
-        count_spikes_by_frame(spikes, times, frame_bins[:, k], mask, n_bins)
-        for k in rays
-    )
-    np.testing.assert_allclose(result.occupancy, occupancy)
+    offsets = -np.pi + (np.arange(n_direction) + 0.5) * 2 * np.pi / n_direction
+    occupancy = np.zeros((n_distance, n_direction))
+    counts = np.zeros((n_distance, n_direction))
+    dt = np.diff(times)
+    # The interval each spike falls in, named by its starting sample.
+    interval = np.searchsorted(times, spikes, side="right") - 1
+    interval = interval[(interval >= 0) & (interval < len(dt))]
+    for k, offset in enumerate(offsets):
+        distance = _wall_distance(positions, headings + offset)
+        ring = np.where(distance < 40.0, distance // 5.0, -1).astype(int)
+        counted = (dt <= 0.5) & (ring[:-1] >= 0)  # per interval
+        np.add.at(occupancy[:, k], ring[:-1][counted], dt[counted])
+        spiking = interval[counted[interval]]
+        np.add.at(counts[:, k], ring[spiking], 1.0)
+
+    np.testing.assert_allclose(result.occupancy, occupancy.ravel(), rtol=1e-9)
     with np.errstate(invalid="ignore", divide="ignore"):
-        expected = np.where(occupancy > 0, counts / occupancy, np.nan)
-    np.testing.assert_allclose(result.firing_rate, expected)
+        expected = np.where(occupancy > 0, counts / occupancy, np.nan).ravel()
+    np.testing.assert_allclose(result.firing_rate, expected, rtol=1e-9)
 
 
 def test_single_unit_equals_unit_zero_of_the_population(env, session):
@@ -349,8 +351,6 @@ def test_distance_information_is_skaggs_information_along_the_preferred_ray(
     env, session
 ):
     """Each ray partitions time by wall distance; the whole map does not."""
-    from neurospatial.encoding import spatial_information
-
     times, positions, _ = session
     east = _wall_distance(positions, np.zeros(len(positions)))
     result = compute_boundary_vector_rate(
@@ -368,8 +368,17 @@ def test_distance_information_is_skaggs_information_along_the_preferred_ray(
     centers = (edges[:-1] + edges[1:]) / 2
     column = int(np.argmin(np.abs(centers - result.preferred_direction)))
     assert abs(centers[column]) <= np.pi / 12 + 1e-12  # one of the two East rays
-    expected = spatial_information(rates[:, column], occupancy=occupancy[:, column])
-    assert result.distance_information() == pytest.approx(expected)
+    # Skaggs information on that ray, by hand: sum p_i (r_i / r) log2(r_i / r)
+    # over its visited bins, p_i the share of the ray's time.
+    ray_rates, ray_time = rates[:, column], occupancy[:, column]
+    visited = ray_time > 0
+    share = ray_time[visited] / ray_time[visited].sum()
+    ratio = ray_rates[visited] / np.sum(share * ray_rates[visited])
+    with np.errstate(divide="ignore", invalid="ignore"):
+        terms = np.where(ratio > 0, share * ratio * np.log2(ratio), 0.0)
+    expected = float(terms.sum())
+    assert expected > 0.1  # the tuned ray carries information
+    assert result.distance_information() == pytest.approx(expected, rel=1e-10)
     assert result.summary_table()["distance_information"].iloc[0] == pytest.approx(
         expected
     )

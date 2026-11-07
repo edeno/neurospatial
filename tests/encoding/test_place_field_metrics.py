@@ -468,13 +468,8 @@ class TestFieldMetrics:
 
         size = field_size(env, field_bins)
 
-        # Size should be positive
-        assert size > 0
-
-        # For 2D grid with 2cm bins, each bin is ~4 cm²
-        # 5 bins ≈ 20 cm² (approximate, depends on connectivity)
-        assert size > 10.0  # At least 10 cm²
-        assert size < 50.0  # Less than 50 cm²
+        # Five 2 cm x 2 cm cells: 5 * 4 = 20 cm², exactly.
+        assert size == pytest.approx(5 * 2.0**2, rel=1e-12)
 
     def test_field_size_single_bin(self):
         """Test field size with single bin."""
@@ -488,9 +483,8 @@ class TestFieldMetrics:
 
         size = field_size(env, field_bins)
 
-        # Single bin size should be approximately bin_size²
-        assert size > 0
-        assert size < 10.0  # Less than 10 cm² for 2cm bins
+        # One 2 cm x 2 cm cell: 4 cm², exactly.
+        assert size == pytest.approx(2.0**2, rel=1e-12)
 
     def test_rate_map_centroid(self):
         """Test weighted center of mass calculation."""
@@ -575,33 +569,23 @@ class TestFieldMetrics:
         assert np.min(distances_to_bins) < 1e-10, "Graph centroid should be at a bin"
 
     def test_rate_map_centroid_graph_vs_euclidean(self):
-        """Test that graph and euclidean methods give different results.
+        """On an L-shaped field the two centroids differ as their definitions say.
 
-        For irregular geometries, the weighted Euclidean mean can fall
-        outside the valid bins, while graph method always selects a bin.
+        A one-cell-wide L of 1 cm cells: 11 along x (y in [0, 1]) and 10 more
+        up x in [0, 1], all firing equally. The Euclidean centroid is the mean
+        cell center, (11 * 5.5 + 10 * 0.5) / 21 on both axes, which lies in
+        the empty corner of the L, off every cell. The geodesic centroid is
+        the medoid of a 21-cell path, its middle cell: the corner (0.5, 0.5).
         """
-        rng = np.random.default_rng(42)
-        positions = rng.standard_normal((5000, 2)) * 20
-        env = Environment.from_samples(positions, bin_size=2.0)
-
-        # Create L-shaped field where Euclidean centroid would be off-track
-        firing_rate = np.zeros(env.n_bins)
-        # Find bins forming an L-shape
-        center = np.array([0.0, 0.0])
-        for i in range(env.n_bins):
-            pos = env.bin_centers[i]
-            # Horizontal arm: y near 0, x in [-10, 10]
-            # Vertical arm: x near 0, y in [0, 10]
-            in_horizontal = abs(pos[1]) < 3 and -10 < pos[0] < 5
-            in_vertical = abs(pos[0]) < 3 and 0 < pos[1] < 10
-            if in_horizontal or in_vertical:
-                # Higher rate at the corner
-                dist_to_corner = np.linalg.norm(pos - center)
-                firing_rate[i] = 10.0 * np.exp(-(dist_to_corner**2) / 50)
-
-        field_bins = np.where(firing_rate > 0.5)[0]
-        if len(field_bins) < 3:
-            pytest.skip("Not enough field bins for L-shape test")
+        mask = np.zeros((11, 11), dtype=bool)
+        mask[:, 0] = True
+        mask[0, :] = True
+        env = Environment.from_grid_mask(
+            mask, grid_edges=(np.arange(12.0),) * 2, connect_diagonal_neighbors=False
+        )
+        assert env.n_bins == 21
+        firing_rate = np.full(env.n_bins, 5.0)
+        field_bins = np.arange(env.n_bins)
 
         from neurospatial.encoding._field_metrics import rate_map_centroid
 
@@ -612,15 +596,12 @@ class TestFieldMetrics:
             env, firing_rate, field_bins, method="geodesic"
         )
 
-        # Both should be 2D
-        assert centroid_euclidean.shape == (2,)
-        assert centroid_graph.shape == (2,)
-
-        # Graph centroid must be exactly at a bin center
-        distances_to_bins = np.linalg.norm(
-            env.bin_centers[field_bins] - centroid_graph, axis=1
-        )
-        assert np.min(distances_to_bins) < 1e-10
+        mean = (11 * 5.5 + 10 * 0.5) / 21
+        assert_allclose(centroid_euclidean, [mean, mean], rtol=1e-12)
+        assert_allclose(centroid_graph, [0.5, 0.5], rtol=1e-12)
+        # The Euclidean centroid is in no cell of the L.
+        offset = np.abs(env.bin_centers - centroid_euclidean)
+        assert np.all(np.max(offset, axis=1) > 0.5)
 
     def test_rate_map_centroid_single_bin(self):
         """Test graph centroid with single bin field."""
@@ -1032,25 +1013,43 @@ class TestRateMapCoherence:
         assert np.isnan(coherence), f"Expected NaN for zero firing, got {coherence}"
 
     def test_rate_map_coherence_with_nans(self):
-        """Test coherence handles NaN values correctly."""
+        """Coherence with unvisited bins equals a brute-force Muller-Kubie value.
+
+        By hand: each bin's rate paired with the mean of its graph neighbors,
+        keeping only bins with a rate whose every neighbor has a rate; the
+        Fisher z of the Pearson correlation of those pairs.
+        """
+        import networkx as nx
+
         rng = np.random.default_rng(42)
-        positions = (
-            rng.standard_normal((500, 2)) * 20
-        )  # Reduced from 2000 - sufficient for coherence test
+        positions = rng.standard_normal((2000, 2)) * 20
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        # Firing rate with some NaNs and varying values
-        firing_rate = rng.random(env.n_bins) * 5.0
-        firing_rate[::5] = np.nan  # 20% NaN
+        # A smooth field plus noise, with 1 bin in 7 unvisited.
+        distance = np.linalg.norm(env.bin_centers - [5.0, -5.0], axis=1)
+        firing_rate = 5.0 * np.exp(-(distance**2) / (2 * 10.0**2))
+        firing_rate += rng.random(env.n_bins)
+        firing_rate[::7] = np.nan
+
+        graph = nx.Graph(env.connectivity)
+        own, neighbor_mean = [], []
+        for node in range(env.n_bins):
+            neighbors = list(graph.neighbors(node))
+            values = firing_rate[neighbors]
+            if not np.isfinite(firing_rate[node]) or not neighbors:
+                continue
+            if not np.all(np.isfinite(values)):
+                continue
+            own.append(firing_rate[node])
+            neighbor_mean.append(values.mean())
+        assert len(own) >= 20
+        expected = np.arctanh(np.corrcoef(own, neighbor_mean)[0, 1])
 
         from neurospatial.encoding._field_metrics import rate_map_coherence
 
         coherence = rate_map_coherence(env, firing_rate)
 
-        # Should handle NaNs gracefully (compute coherence on valid bins only)
-        assert not np.isnan(coherence) or np.all(np.isnan(firing_rate)), (
-            "Coherence should handle NaNs unless all values are NaN"
-        )
+        assert coherence == pytest.approx(expected, rel=1e-10)
 
     def test_rate_map_coherence_return_type(self):
         """Test that coherence returns scalar float."""
@@ -1102,20 +1101,21 @@ class TestRateMapCoherence:
 class TestSelectivity:
     """Tests for selectivity metric.
 
-    Selectivity quantifies how concentrated firing is in space. It ranges
-    from 0 (uniform firing everywhere) to 1 (firing in single location).
+    Selectivity quantifies how concentrated firing is in space: the peak
+    rate over the occupancy-weighted mean rate. It is 1 for uniform firing
+    and grows without bound as firing concentrates in less of the time.
 
-    Formula: selectivity = (max_rate - mean_rate) / max_rate
+    Formula: selectivity = max_rate / mean_rate, mean_rate = Σ p_i r_i
 
     Interpretation:
-    - selectivity ≈ 0: Uniform, non-selective firing
-    - selectivity ≈ 0.5: Moderate spatial selectivity
-    - selectivity ≈ 1: Highly selective (place cell-like)
+    - selectivity = 1: Uniform, non-selective firing
+    - selectivity of 2-5: Moderately selective
+    - selectivity > 10: Highly selective (place cell-like)
 
     Tests cover:
     - Formula validation
-    - Uniform firing (selectivity = 0)
-    - Highly selective firing (selectivity → 1)
+    - Uniform firing (selectivity = 1)
+    - Highly selective firing (selectivity >> 1)
     - Edge cases (NaN handling, zero mean, occupancy effects)
     """
 
@@ -1185,18 +1185,16 @@ class TestSelectivity:
         assert select < 6.0
 
     def test_selectivity_zero_mean(self):
-        """Test selectivity returns infinity when mean rate is zero."""
-        # All zeros except one bin with NaN
+        """Selectivity is NaN when the cell never fires: 0 / 0."""
         firing_rate = np.zeros(100)
-        firing_rate[50] = 0.0
         occupancy = np.ones(100) / 100
 
         from neurospatial.encoding._metrics import selectivity
 
         select = selectivity(firing_rate, occupancy=occupancy)
 
-        # Mean rate is zero → selectivity undefined
-        assert np.isnan(select) or np.isinf(select)
+        # Peak 0 over mean 0 is undefined (inf is kept for a positive peak).
+        assert np.isnan(select)
 
     def test_selectivity_all_nan(self):
         """Test selectivity handles all NaN values."""
@@ -1573,8 +1571,8 @@ class TestFieldShiftDistance:
             field_bins_2,
         )
 
-        # Should be ~0 (no shift)
-        assert_allclose(shift, 0.0, atol=2.0)
+        # Identical environments and maps: the same centroid, exactly.
+        assert shift == 0.0
 
     def test_field_shift_distance_euclidean(self):
         """Test Euclidean shift distance."""
@@ -1612,40 +1610,41 @@ class TestFieldShiftDistance:
         assert_allclose(shift, 10.0, atol=2.0)
 
     def test_field_shift_distance_geodesic_follows_the_maze(self):
-        """Geodesic shift is the path around an L-shaped arena's corner."""
-        from neurospatial.encoding._field_metrics import (
-            field_shift_distance,
-            rate_map_centroid,
+        """Geodesic shift is the path around an L-shaped corridor's corner.
+
+        A one-cell-wide L of 2 cm cells, 4-connected: ten cells along x and
+        ten up y, sharing the corner cell. Field 1 is the top cell of the
+        vertical arm (center (1, 19)), field 2 the far cell of the horizontal
+        arm (center (19, 1)). By hand the path is 9 steps down and 9 across,
+        18 * 2 = 36 cm; the straight line is sqrt(18² + 18²) = 25.46 cm.
+        """
+        from neurospatial.encoding._field_metrics import field_shift_distance
+
+        mask = np.zeros((10, 10), dtype=bool)
+        mask[:, 0] = True
+        mask[0, :] = True
+        env = Environment.from_grid_mask(
+            mask,
+            grid_edges=(np.arange(0.0, 21.0, 2.0),) * 2,
+            connect_diagonal_neighbors=False,
         )
 
-        rng = np.random.default_rng(42)
-        horizontal = rng.uniform([0, 0], [20, 5], size=(2000, 2))
-        vertical = rng.uniform([0, 5], [5, 20], size=(2000, 2))
-        env = Environment.from_samples(np.vstack([horizontal, vertical]), bin_size=2.0)
-
         def field(center):
-            bins = np.flatnonzero(np.linalg.norm(env.bin_centers - center, axis=1) < 3)
+            bins = np.flatnonzero(np.all(env.bin_centers == center, axis=1))
+            assert len(bins) == 1
             rate = np.zeros(env.n_bins)
             rate[bins] = 10.0
             return rate, bins
 
-        rate_1, bins_1 = field([2.5, 17.5])
-        rate_2, bins_2 = field([17.5, 2.5])
+        rate_1, bins_1 = field([1.0, 19.0])
+        rate_2, bins_2 = field([19.0, 1.0])
         geodesic = field_shift_distance(
             env, rate_1, bins_1, env, rate_2, bins_2, metric="geodesic"
         )
         euclidean = field_shift_distance(env, rate_1, bins_1, env, rate_2, bins_2)
 
-        centroids = np.array(
-            [
-                rate_map_centroid(env, rate_1, bins_1),
-                rate_map_centroid(env, rate_2, bins_2),
-            ]
-        )
-        expected = env.distance_between(bins=env.bin_at(centroids))
-        assert geodesic == pytest.approx(expected)
-        assert euclidean == pytest.approx(np.linalg.norm(centroids[0] - centroids[1]))
-        assert geodesic > euclidean + 5.0
+        assert geodesic == pytest.approx(36.0, rel=1e-12)
+        assert euclidean == pytest.approx(np.hypot(18.0, 18.0), rel=1e-12)
 
 
 # =============================================================================
@@ -2306,18 +2305,19 @@ class TestSelectivityEdgeCases:
         """Test selectivity returns inf when mean_rate is 0 but peak_rate > 0."""
         from neurospatial.encoding._metrics import selectivity
 
-        # Create firing rate with one positive value, rest zeros
+        # The only firing bin was never occupied, so the occupancy-weighted
+        # mean rate is exactly 0 while the peak is 5 Hz.
         firing_rate = np.zeros(100)
         firing_rate[50] = 5.0
-
-        # Create uniform occupancy so mean_rate will be low
-        # With one non-zero firing rate and uniform occupancy, mean should be close to zero
         occupancy = np.ones(100)
+        occupancy[50] = 0.0
 
-        result = selectivity(firing_rate, occupancy=occupancy)
+        assert selectivity(firing_rate, occupancy=occupancy) == np.inf
 
-        # When mean is effectively zero but peak > 0, should return very high selectivity
-        assert result >= 100  # Very high selectivity (exactly 100 in this case)
+        # With that bin occupied like the rest: 5 / (5 / 100) = 100, exactly.
+        assert selectivity(firing_rate, occupancy=np.ones(100)) == pytest.approx(
+            100.0, rel=1e-12
+        )
 
 
 class TestInOutFieldRatioEdgeCases:

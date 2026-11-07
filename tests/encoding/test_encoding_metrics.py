@@ -657,21 +657,39 @@ class TestBatchGridScores:
             batch_grid_scores(env, firing_rates_wrong)
 
     def test_batch_grid_scores_handles_nan(self, env_2d_grid):
-        """Should handle NaN values in firing rates."""
+        """Unvisited (NaN) bins are left out of one unit's score, not spread.
+
+        Both rows are the same ideal 30 cm hexagonal lattice (three plane
+        waves 60° apart); row 0 has a 5 x 5 patch of unvisited bins. Its score
+        stays finite and a grid score; it equals the single-unit computation;
+        and row 1 scores as it would alone, so the gap does not leak across
+        units. 25 of 2601 bins (1%) missing can move the autocorrelogram's
+        correlations by about that fraction, hence the 0.05 bound between the
+        two rows.
+        """
         from neurospatial.encoding._metrics import batch_grid_scores
+        from neurospatial.encoding.grid import grid_score, spatial_autocorrelation
 
         env = env_2d_grid
-        rng = np.random.default_rng(42)
-        firing_rates = rng.random((2, env.n_bins)) * 5.0
+        wave_number = 4 * np.pi / (np.sqrt(3) * 30.0)
+        angles = np.radians([0.0, 60.0, 120.0])
+        waves = wave_number * np.c_[np.cos(angles), np.sin(angles)]
+        lattice = 2.0 + np.cos(env.bin_centers @ waves.T).sum(axis=1) / 1.5
+        firing_rates = np.stack([lattice, lattice])
+        patch = np.all(np.abs(env.bin_centers - [10.0, 10.0]) < 5.0, axis=1)
+        assert patch.sum() == 25
+        firing_rates[0, patch] = np.nan
 
-        # Add some NaN values
-        firing_rates[0, 10:15] = np.nan
+        result = batch_grid_scores(env, firing_rates)
 
-        # Should not raise (NaN handling may result in NaN output)
-        scores = batch_grid_scores(env, firing_rates)
-
-        assert scores.shape == (2,)
-        # Note: score may or may not be NaN depending on implementation
+        assert np.all(np.isfinite(result.scores))
+        assert not result.failures.any()
+        single = grid_score(spatial_autocorrelation(env, firing_rates[0]))
+        assert_allclose(result.scores[0], single, rtol=1e-12)
+        alone = batch_grid_scores(env, firing_rates[1:]).scores[0]
+        assert_allclose(result.scores[1], alone, rtol=1e-12)
+        assert result.scores[1] > 0.4
+        assert abs(result.scores[0] - result.scores[1]) < 0.05
 
     def test_batch_grid_scores_with_constant_firing(self, env_2d_grid):
         """Constant firing rate is a legitimate NaN, not a computation failure.
