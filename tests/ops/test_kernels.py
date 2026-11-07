@@ -296,13 +296,22 @@ class TestEnvironmentComputeKernel:
 class TestKernelMemoryDocumentation:
     """The O(n^2) memory cost is documented; large kernels build without a warning."""
 
-    def test_docstring_mentions_memory_and_performance(self):
-        from neurospatial.ops.smoothing import diffusion_kernels
+    def test_kernel_is_dense_float64_of_the_documented_size(self):
+        """The kernel is a dense float64 matrix of ``n_bins**2 * 8`` bytes.
 
-        doc = diffusion_kernels.__doc__.lower()
-        assert "memory" in doc
-        assert "gb" in doc
-        assert "performance" in doc
+        Every entry is positive (heat reaches every connected bin), so no
+        sparse form would save memory, and it is built without a warning
+        (the test configuration turns warnings into errors).
+        """
+        edges = np.arange(21.0)
+        env = Environment.from_grid_mask(np.ones((20, 20), bool), (edges, edges))
+        # Far corners are 27 bins apart: the smallest weight is 2e-11, far from underflow.
+        kernel = env.compute_kernel(bandwidth=4.0, mode="transition", cache=False)
+        assert isinstance(kernel, np.ndarray)
+        assert kernel.dtype == np.float64
+        assert kernel.shape == (env.n_bins, env.n_bins)
+        assert kernel.nbytes == env.n_bins**2 * 8
+        assert np.all(kernel > 0)
 
 
 class TestApplyKernel:

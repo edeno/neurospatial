@@ -96,18 +96,32 @@ class TestDistanceToBasic:
 class TestDistanceToMetrics:
     """Test different distance metrics."""
 
-    def test_geodesic_vs_euclidean(self, sample_2d_grid):
-        """Geodesic distance >= Euclidean distance."""
+    def test_geodesic_is_the_octile_distance_on_an_open_grid(self, sample_2d_grid):
+        """On an 8-connected grid the geodesic is the octile staircase.
+
+        Steps along an axis cost one bin and diagonal steps √2 bins, so the
+        shortest path between bins ``(Δx, Δy)`` apart is
+        ``max + (√2 - 1) min`` bins, at least the straight line and at most
+        √(4 - 2√2) ≈ 1.0824 times it (at 22.5°), and equal to it along an
+        axis or a diagonal.
+        """
         env = sample_2d_grid
-        target = [0]
+        target = 0
+        dist_geo = env.distance_to(bins=[target], metric="geodesic")
+        dist_euc = env.distance_to(bins=[target], metric="euclidean")
 
-        dist_geo = env.distance_to(bins=target, metric="geodesic")
-        dist_euc = env.distance_to(bins=target, metric="euclidean")
+        offsets = np.abs(env.bin_centers - env.bin_centers[target])  # 1 cm bins
+        long, short = offsets.max(axis=1), offsets.min(axis=1)
+        octile = long + (np.sqrt(2.0) - 1.0) * short
+        # A sum of at most 18 unit and √2 steps: rounding is ~1e-15.
+        assert_allclose(dist_geo, octile, rtol=1e-12, atol=1e-12)
 
-        assert dist_geo.shape == dist_euc.shape
-        # Geodesic distance should be >= Euclidean (shortest path on graph)
-        # Allow small numerical tolerance
-        assert np.all(dist_geo >= dist_euc - 1e-10)
+        moved = dist_euc > 0
+        ratio = dist_geo[moved] / dist_euc[moved]
+        assert np.all(ratio >= 1.0 - 1e-12)
+        assert np.all(ratio <= np.sqrt(4.0 - 2.0 * np.sqrt(2.0)) + 1e-12)
+        on_axis_or_diagonal = (short == 0) | (short == long)
+        assert_allclose(dist_geo[on_axis_or_diagonal], dist_euc[on_axis_or_diagonal])
 
     def test_euclidean_matches_direct_distance(self, sample_2d_grid):
         """Euclidean metric matches direct distance calculation."""
@@ -457,6 +471,58 @@ class TestDistanceUtilitiesIntegration:
         dist_direct = distance_field(env.connectivity, sources=targets)
 
         assert_allclose(dist_wrapper, dist_direct, rtol=1e-10)
+
+
+OCTILE_BOUND = np.sqrt(4.0 - 2.0 * np.sqrt(2.0))  # ≈ 1.0824, the 22.5° staircase
+
+
+def test_every_bin_graph_distance_overestimates_by_at_most_the_octile_bound():
+    """All bin-graph distances on an open 8-connected grid share one known bias.
+
+    Between bin centers ``(Δx, Δy)`` bins apart the shortest path is
+    ``h (max + (√2 - 1) min)``: the straight line along an axis or a
+    diagonal and up to √(4 - 2√2) ≈ 8.2 % longer at 22.5°. Every entry point
+    (``distance_to``, ``distance_between`` by bins or by points, which maps
+    the points to their bins, and ``ops`` matrix and field) returns it.
+    """
+    from neurospatial.ops.distance import distance_field, geodesic_distance_matrix
+
+    h, n = 2.0, 26
+    env = Environment.from_grid_mask(
+        np.ones((n, n), dtype=bool), grid_edges=(np.arange(n + 1) * h,) * 2
+    )
+    source = int(np.flatnonzero(np.all(env.bin_centers == h / 2, axis=1))[0])
+    steps = np.abs(env.bin_centers - env.bin_centers[source]) / h
+    long, short = steps.max(axis=1), steps.min(axis=1)
+    octile = h * (long + (np.sqrt(2.0) - 1.0) * short)
+    euclid = h * np.hypot(long, short)
+
+    # Sums of at most 50 steps of h and √2 h: rounding is ~1e-14.
+    tolerance = {"rtol": 1e-12, "atol": 1e-12}
+    assert_allclose(env.distance_to(bins=[source]), octile, **tolerance)
+    assert_allclose(
+        geodesic_distance_matrix(env.connectivity)[source], octile, **tolerance
+    )
+    assert_allclose(distance_field(env.connectivity, [source]), octile, **tolerance)
+    for target in (1, 57, 333, env.n_bins - 1):
+        assert env.distance_between(bins=[source, target]) == pytest.approx(
+            octile[target], rel=1e-12
+        )
+    # Points anywhere inside two bins 10 and 4 bins apart get their centers'
+    # distance, 2 (10 + 4 (√2 - 1)) = 23.31 cm, not the straight 21.54 cm.
+    points = [[0.3, 1.7], [20.0 + 1.9, 8.0 + 0.2]]
+    assert env.distance_between(points=points) == pytest.approx(
+        h * (10 + 4 * (np.sqrt(2.0) - 1.0)), rel=1e-12
+    )
+
+    moved = euclid > 0
+    ratio = octile[moved] / euclid[moved]
+    assert np.all(ratio >= 1.0 - 1e-12)
+    assert np.all(ratio <= OCTILE_BOUND + 1e-12)
+    straight = (short == 0) | (short == long)
+    assert_allclose(ratio[straight[moved]], 1.0, rtol=1e-12)
+    # (12, 5) bins lies 0.1° from 22.5°, so the bound is all but reached.
+    assert ratio.max() == pytest.approx(OCTILE_BOUND, rel=1e-5)
 
 
 # ============================================================================

@@ -136,6 +136,61 @@ def test_gaussian_exports_reuse_builds_and_protect_headers(monkeypatch):
     np.testing.assert_array_equal(rebuilt, expected)
 
 
+@pytest.mark.parametrize("bandwidth", [0.7, 2.5])
+def test_gaussian_kernel_is_the_gaussian_of_euclidean_distance(bandwidth):
+    """Weights are ``exp(-d² / 2b²)`` of the straight-line distance, walls ignored.
+
+    The reference squares coordinate differences directly, so it does not
+    share the ``|a|² + |b|² - 2a·b`` expansion the kernel may use.
+    """
+    from shapely.geometry import box
+
+    floor = box(0, 0, 9, 6).difference(box(4.0, 0.0, 4.5, 5.0))
+    env = Environment.from_polygon(floor, bin_size=1.0)
+    centers = env.bin_centers
+    squared = np.sum((centers[:, None, :] - centers[None, :, :]) ** 2, axis=-1)
+    expected = np.exp(-squared / (2 * bandwidth**2))
+    # Rounding of the squared distances only: |Δ(d²)| ~ 1e-14 on 10 cm.
+    np.testing.assert_allclose(
+        env.compute_gaussian_kernel(bandwidth=bandwidth), expected, rtol=0, atol=1e-12
+    )
+
+
+@pytest.mark.parametrize(
+    ("angle_range", "circular"),
+    [((-np.pi, np.pi), True), ((-0.9 * np.pi, 0.9 * np.pi), False)],
+    ids=["full-circle", "open-seam"],
+)
+def test_polar_gaussian_kernel_uses_the_physical_distance(angle_range, circular):
+    """Polar weights use the straight line between the two places.
+
+    Each ``(distance, angle)`` center is placed in the animal's plane at
+    ``(r cos θ, r sin θ)``; the distance is the chord between the places.
+    An open angular range is a cut the kernel must not cross: where the
+    in-range separation exceeds π the path goes round the cut's end at the
+    animal, ``r1 + r2``.
+    """
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 30.0),
+        angle_range=angle_range,
+        distance_bin_size=5.0,
+        angle_bin_size=0.18 * np.pi,
+        circular_angle=circular,
+    )
+    r, theta = env.bin_centers[:, 0], env.bin_centers[:, 1]
+    plane = np.column_stack([r * np.cos(theta), r * np.sin(theta)])
+    distance = np.linalg.norm(plane[:, None, :] - plane[None, :, :], axis=-1)
+    if not circular:
+        across_cut = np.abs(theta[:, None] - theta[None, :]) > np.pi
+        assert across_cut.any()
+        distance = np.where(across_cut, r[:, None] + r[None, :], distance)
+    bandwidth = 6.0
+    expected = np.exp(-(distance**2) / (2 * bandwidth**2))
+    np.testing.assert_allclose(
+        env.compute_gaussian_kernel(bandwidth=bandwidth), expected, rtol=0, atol=1e-12
+    )
+
+
 @pytest.mark.parametrize("bandwidth", [0.0, -1.0, np.nan, np.inf])
 def test_gaussian_rejects_nonpositive_or_nonfinite_bandwidth(bandwidth):
     with pytest.raises(ValueError, match="finite and positive"):

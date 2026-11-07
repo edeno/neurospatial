@@ -366,14 +366,24 @@ def test_a_wall_thinner_than_a_bin_is_not_crossed(bin_size, offset, hole):
     center on its side (offset 0.5). The geodesic distance between bins on
     either side must follow the shortest path around the wall's end,
     computed in the floor polygon itself, up to the corners the steps
-    between bin centers can cut (two bins). The corridor beside the wall and
-    the gap above it keep their straight distances.
+    between bin centers can cut (two bins). It must also not be longer than
+    that path drawn through bin centers: the path bends at the wall's two
+    end corners, each bin center nearest a corner lies within half a bin
+    diagonal (h/√2) of it, so moving both bends to bin centers adds at most
+    2 · 2 · h/√2 = 2√2 h (triangle inequality), and each straight leg
+    between bin centers costs at most the 8-connected staircase factor
+    √(4 - 2√2). The measured distances reach at most 0.90 of this bound.
+    The corridor beside the wall and the gap above it keep their straight
+    distances.
     """
     floor, left = _thin_wall_floor(bin_size, offset, hole=hole)
     env = Environment.from_polygon(floor, bin_size=bin_size)
     a, b = _across(env, left, bin_size, 10.0)
     around = _geodesic(floor, env.bin_centers[a], env.bin_centers[b])
-    assert env.distance_between(bins=[a, b]) >= around - 2 * bin_size
+    distance = env.distance_between(bins=[a, b])
+    assert distance >= around - 2 * bin_size
+    staircase = np.sqrt(4.0 - 2.0 * np.sqrt(2.0))
+    assert distance <= staircase * (around + 2 * np.sqrt(2.0) * bin_size)
     c, d = _across(env, left, bin_size, 35.0)
     assert env.distance_between(bins=[c, d]) == pytest.approx(
         np.linalg.norm(env.bin_centers[c] - env.bin_centers[d])

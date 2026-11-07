@@ -270,32 +270,28 @@ class TestComputeEgocentricDistance:
         assert_allclose(distances, [[10.0, 10.0]], atol=1e-10)
 
     def test_geodesic_distance_with_environment(self):
-        """Geodesic distance uses environment's distance_field."""
+        """Geodesic distance is the bin-graph path between the two bins' centers.
+
+        On an open 8-connected grid of 5 cm bins, bins ``(Δx, Δy)`` bins apart
+        are ``5 (max + (√2 - 1) min)`` cm apart: the straight line along a
+        diagonal, longer than it in other directions.
+        """
         from neurospatial import Environment
         from neurospatial.ops.egocentric import egocentric_distance
 
-        # Create a simple 2D grid environment
-        rng = np.random.default_rng(42)
-        positions = rng.uniform(0, 100, size=(500, 2))
-        env = Environment.from_samples(positions, bin_size=5.0)
+        edges = np.arange(21) * 5.0  # 100 x 100 cm, bin centers at 2.5 + 5 k
+        env = Environment.from_grid_mask(np.ones((20, 20), bool), (edges, edges))
 
-        # Targets and position within the environment
-        targets = np.array([[50.0, 50.0], [80.0, 80.0]])
-        position = np.array([[10.0, 10.0]])
-
+        # (11, 9) is in the bin centered at (12.5, 7.5); (51, 52) at (52.5,
+        # 52.5): 8 x 9 bins apart. (81, 79) is at (82.5, 77.5): 14 x 14 bins.
+        position = np.array([[11.0, 9.0]])
+        targets = np.array([[51.0, 52.0], [81.0, 79.0]])
         distances = egocentric_distance(
             position, None, targets, metric="geodesic", env=env
         )
 
-        assert distances.shape == (1, 2)
-        # Geodesic distances should be finite and positive
-        assert np.all(np.isfinite(distances))
-        assert np.all(distances > 0)
-        # Geodesic distances should be within reasonable range of Euclidean
-        # (can be slightly different due to graph discretization)
-        eucl = np.linalg.norm(targets - position, axis=1)
-        # Allow for discretization differences (within 20% or 10 units)
-        assert np.all(np.abs(distances[0] - eucl) < np.maximum(0.2 * eucl, 10))
+        octile = 5.0 * np.array([9 + (np.sqrt(2) - 1) * 8, np.sqrt(2) * 14])
+        assert_allclose(distances, [octile], rtol=1e-12)
 
     def test_invalid_metric_raises(self):
         """Invalid metric raises ValueError."""

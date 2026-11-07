@@ -298,14 +298,9 @@ class TestBinSizes:
         assert sizes1 is not sizes2
         np.testing.assert_array_equal(sizes1, sizes2)
 
-    def test_bin_sizes_reasonable_magnitude(self, small_2d_env):
-        """Test that bin sizes have reasonable values."""
-        # For a 2D environment with bin_size=2.0, areas should be ~4.0
-        sizes = small_2d_env.bin_sizes
-
-        # Check that sizes are in a reasonable range (not too extreme)
-        assert np.all(sizes < 100)  # Not huge
-        assert np.all(sizes > 0.1)  # Not tiny
+    def test_bin_sizes_are_the_square_areas(self, small_2d_env):
+        """Every bin of this open 2 cm grid is a 2 x 2 = 4 cm² square."""
+        np.testing.assert_array_equal(small_2d_env.bin_sizes, 4.0)
 
 
 class TestDistanceBetween:
@@ -331,22 +326,17 @@ class TestDistanceBetween:
         np.testing.assert_allclose(dist_ab, dist_ba)
 
     def test_distance_between_neighbors(self, small_2d_env):
-        """Test distance between neighboring bins."""
-        # Get first bin and a neighbor
+        """Face neighbors of the corner bin are one 2 cm step away."""
         bin_id = 0
         neighbors = small_2d_env.neighbors(bins=bin_id)
+        # The corner of a 4-connected grid has two face neighbors.
+        assert len(neighbors) == 2
 
-        if len(neighbors) > 0:
-            neighbor_id = neighbors[0]
-
-            point_a = small_2d_env.bin_centers[bin_id]
-            point_b = small_2d_env.bin_centers[neighbor_id]
-
-            dist = small_2d_env.distance_between(points=[point_a, point_b])
-
-            # Distance should be positive and reasonable
-            assert dist > 0
-            assert dist < 100  # Sanity check
+        for neighbor_id in neighbors:
+            points = small_2d_env.bin_centers[[bin_id, neighbor_id]]
+            assert small_2d_env.distance_between(points=points) == pytest.approx(
+                2.0, rel=1e-12
+            )
 
     @pytest.mark.parametrize("n_outside", [1, 2])
     def test_distance_between_points_outside_raise(self, small_2d_env, n_outside):
@@ -481,14 +471,14 @@ class TestDistanceTo:
 
         distances = small_2d_env.distance_to(bins=target, metric="euclidean")
 
-        # Target should have distance zero
-        assert distances[0] == 0.0
-
-        # All distances should be non-negative
-        assert np.all(distances >= 0)
+        # The straight line from the target's center to every bin center.
+        offsets = small_2d_env.bin_centers - small_2d_env.bin_centers[0]
+        np.testing.assert_allclose(
+            distances, np.hypot(*offsets.T), rtol=1e-12, atol=1e-12
+        )
 
     def test_distance_to_geodesic_vs_euclidean(self, small_2d_env):
-        """Test that geodesic and euclidean give different results."""
+        """On a 4-connected grid the geodesic is the Manhattan distance."""
         target = [0]
 
         dist_geodesic = small_2d_env.distance_to(bins=target, metric="geodesic")
@@ -497,9 +487,14 @@ class TestDistanceTo:
         # Should have same shape
         assert dist_geodesic.shape == dist_euclidean.shape
 
-        # Geodesic distance is typically >= euclidean distance
-        # (equal for straight-line paths, greater when following graph)
-        assert np.all(dist_geodesic >= dist_euclidean - 1e-6)
+        # This grid is 4-connected (orthogonal steps only), so the geodesic is
+        # the Manhattan distance; it equals the straight line only on an axis.
+        offsets = np.abs(small_2d_env.bin_centers - small_2d_env.bin_centers[0])
+        np.testing.assert_allclose(
+            dist_geodesic, offsets.sum(axis=1), rtol=1e-12, atol=1e-12
+        )
+        on_axis = offsets.min(axis=1) == 0
+        np.testing.assert_allclose(dist_geodesic[on_axis], dist_euclidean[on_axis])
 
     def test_distance_to_invalid_metric_raises(self, small_2d_env):
         """Test that invalid metric raises ValueError."""
