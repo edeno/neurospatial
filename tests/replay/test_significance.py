@@ -295,7 +295,7 @@ class TestReplaySignificanceAnyScore:
                 posterior,
                 times,
                 score=fit_linear_trajectory,
-                score_options={"n_samples": 50},
+                score_options={"n_samples_per_time_bin": 5},
                 n_shuffles=10,
                 rng=4,
             )

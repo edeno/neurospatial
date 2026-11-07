@@ -168,7 +168,7 @@ class TestEntropy:
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         assert result.shape == (n_time_bins,)
         assert result.dtype == np.float64
@@ -183,7 +183,7 @@ class TestEntropy:
         for t in range(n_time_bins):
             posterior[t, t % n_bins] = 1.0
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         np.testing.assert_array_almost_equal(result, np.zeros(n_time_bins))
 
@@ -195,7 +195,7 @@ class TestEntropy:
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         max_entropy = np.log2(n_bins)
         np.testing.assert_array_almost_equal(result, np.full(n_time_bins, max_entropy))
@@ -212,7 +212,7 @@ class TestEntropy:
         posterior = rng.random((n_time_bins, n_bins))
         posterior = posterior / posterior.sum(axis=1, keepdims=True)
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         assert np.all(result >= 0)
         assert np.all(result <= np.log2(n_bins) + 1e-10)
@@ -228,7 +228,7 @@ class TestEntropy:
         posterior[:, 0] = 0.5
         posterior[:, 1] = 0.5
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         # Should not be NaN
         assert np.all(np.isfinite(result))
@@ -304,31 +304,24 @@ class TestCredibleRegion:
                 mass = posterior[t, region].sum()
                 assert mass >= level - 1e-10, f"Level {level} not met at time {t}"
 
-    def test_credible_region_is_hpd(self, small_2d_env):
-        """credible_region should be HPD (highest posterior density)."""
+    @pytest.mark.parametrize("level", [0.5, 0.9, 0.95])
+    def test_credible_region_is_mass_ranked_hpd_on_equal_bins(
+        self, small_2d_env, level
+    ):
+        """On equal bins, density ranking is the classic mass-ranked HPD set."""
         from neurospatial.decoding.estimates import credible_region
 
-        n_time_bins = 1
-        n_bins = small_2d_env.n_bins
+        assert np.allclose(small_2d_env.bin_sizes, small_2d_env.bin_sizes[0])
+        rng = np.random.default_rng(4)
+        posterior = rng.dirichlet(np.full(small_2d_env.n_bins, 0.3), size=6)
 
-        # Create posterior with clear probability ordering
-        posterior = np.zeros((n_time_bins, n_bins))
-        posterior[0, :5] = 0.15  # 5 bins at 0.15 each = 0.75
-        posterior[0, 5:10] = 0.04  # 5 bins at 0.04 each = 0.20
-        posterior[0, 10:15] = 0.01  # 5 bins at 0.01 each = 0.05
-        posterior = posterior / posterior.sum()  # Normalize
+        regions = credible_region(small_2d_env, posterior, level=level)
 
-        # At level=0.7, should include highest probability bins first
-        result = credible_region(small_2d_env, posterior, level=0.7)
-
-        # The first 5 bins have highest probability (0.15 each)
-        # These should be included before lower probability bins
-        high_prob_bins = set(range(5))
-        included_bins = set(result[0])
-
-        # Check that high probability bins are included
-        # (HPD should select these first)
-        assert high_prob_bins.issubset(included_bins) or len(result[0]) >= 5
+        for row, region in zip(posterior, regions, strict=True):
+            # Independent HPD: the fewest highest-mass bins reaching level.
+            order = np.argsort(row)[::-1]
+            n_needed = int(np.searchsorted(np.cumsum(row[order]), level) + 1)
+            assert set(region.tolist()) == set(order[:n_needed].tolist())
 
     def test_credible_region_level_bounds(self, small_2d_env):
         """credible_region should raise for invalid levels."""
@@ -374,7 +367,7 @@ class TestEdgeCases:
         assert map_bin(small_2d_env, posterior).shape == (1,)
         assert map_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
         assert mean_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
-        assert posterior_entropy(posterior).shape == (1,)
+        assert posterior_entropy(small_2d_env, posterior).shape == (1,)
         assert len(credible_region(small_2d_env, posterior)) == 1
 
     def test_single_bin_environment(self):
@@ -403,7 +396,7 @@ class TestEdgeCases:
             mean_position(env, posterior), np.full((n_time_bins, 1), 5.0)
         )
         # Entropy of single bin is 0 (log2(1) = 0)
-        np.testing.assert_array_equal(posterior_entropy(posterior), 0.0)
+        np.testing.assert_array_equal(posterior_entropy(env, posterior), 0.0)
         regions = credible_region(env, posterior, level=0.5)
         assert [r.tolist() for r in regions] == [[0]] * n_time_bins
 
@@ -529,11 +522,14 @@ def test_credible_region_never_includes_zero_mass_bins(small_2d_env):
 
 
 def test_posterior_entropy_float64_and_nan_for_undecodable_rows():
+    from neurospatial import Environment
     from neurospatial.decoding.estimates import posterior_entropy
 
+    env = Environment.from_samples(np.linspace(0.5, 7.5, 8)[:, None], bin_size=1.0)
+    assert env.n_bins == 8
     posterior = np.full((2, 8), 1 / 8, dtype=np.float32)
     posterior[1] = np.nan
-    entropy = posterior_entropy(posterior)
+    entropy = posterior_entropy(env, posterior)
     assert entropy.dtype == np.float64
     assert entropy[0] == pytest.approx(3.0, abs=1e-6)
     assert np.isnan(entropy[1])

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+import shapely
 
 from neurospatial import Environment, InputError, Intervals, Regions
 from neurospatial._intervals import observed_interval_mask
@@ -355,7 +356,7 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
     assert metrics.min_observed_speed == expected_min
     assert metrics.heading_mean_resultant_length == expected_heading[2]
     trial = compute_vte_trial(
-        times, positions, entry, window_duration=duration, max_gap=None, min_speed=5.0
+        times, positions, entry - duration, entry, max_gap=None, min_speed=5.0
     )
     assert trial.mean_speed == expected_mean
     expected_sweep = head_sweep_from_positions(
@@ -372,14 +373,17 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     r = continuous_recording
     positions, times = r.positions[:601:50], r.times[:601:50]
     env = r.env
-    bins = env.bin_at(positions)
+    # A zone around the path of the last seven 1 s samples: the pass runs
+    # from its entry at 6 s to the end of the recording.
+    zone = shapely.LineString(positions[6:]).buffer(4.0)
     region_builder = Regions(env.regions.values())
-    region_builder.add("decision", point=tuple(env.bin_centers[bins[-1]]))
+    region_builder.add("decision", polygon=zone)
     env = env.with_regions(region_builder)
     entry = decision_region_entry_time(env, times, positions, region="decision")
-    duration = 6.0
-    selected = (times >= entry - duration) & (times < entry)
-    assert np.sum(selected) >= 3
+    assert entry == times[6]
+    selected = times >= entry
+    in_zone = np.isin(env.bin_at(positions), env.bins_in_region("decision"))
+    np.testing.assert_array_equal(in_zone, selected)
     expected_speed = pre_decision_speed_stats(
         times[selected], positions[selected], max_gap=None
     )[0]
@@ -395,11 +399,10 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
         times,
         positions,
         region="decision",
-        # The decision entry is the last sample, so the trial must contain it.
+        # The pass lasts to the last sample, so the trial must contain it.
         trials=Intervals(
             [Trial(times[0], times[-1] + 1.0, "source", "target", "reached")]
         ),
-        window_duration=duration,
         max_gap=None,
     )
     assert len(result.trial_results) == 1

@@ -1307,7 +1307,6 @@ def test_decision_functions_one_dimensional_positions_raise(
 def _window_calls():
     from neurospatial.behavior import (
         compute_pre_decision_metrics,
-        compute_vte_trial,
         extract_pre_decision_window,
     )
 
@@ -1320,16 +1319,12 @@ def _window_calls():
                 t, p, entry, window_duration=duration, min_speed=1.0
             )
         ),
-        "compute_vte_trial": lambda t, p, entry, duration: compute_vte_trial(
-            t, p, entry, window_duration=duration, min_speed=1.0
-        ),
     }
 
 
 _WINDOW_CALL_NAMES = [
     "extract_pre_decision_window",
     "compute_pre_decision_metrics",
-    "compute_vte_trial",
 ]
 
 
@@ -1401,7 +1396,7 @@ def _min_speed_calls(env):
             times, positions, 2.8, window_duration=1.0, min_speed=v
         ),
         "compute_vte_trial": lambda v: compute_vte_trial(
-            times, positions, 2.8, window_duration=1.0, min_speed=v
+            times, positions, 1.8, 2.8, min_speed=v
         ),
         "compute_decision_analysis": lambda v: compute_decision_analysis(
             env,

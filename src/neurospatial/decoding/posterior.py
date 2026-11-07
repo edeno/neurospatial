@@ -1074,9 +1074,9 @@ def _decode_summary(
     from neurospatial.decoding._support import relative_bin_measures
     from neurospatial.decoding.estimates import (
         _density_mode,
+        _entropy,
         _finish_posterior_mean,
         _posterior_mean_basis,
-        posterior_entropy,
     )
 
     mean_basis = _posterior_mean_basis(env)
@@ -1100,7 +1100,7 @@ def _decode_summary(
         # The reductions accumulate in float64 whatever the block dtype.
         map_bin[start:stop] = _density_mode(block, measures)
         weighted[start:stop] = block @ mean_basis
-        entropy[start:stop] = posterior_entropy(block)
+        entropy[start:stop] = _entropy(block, measures)
         peak[start:stop] = block.max(axis=1)
     return DecodingSummary._from_owned(
         times=times,

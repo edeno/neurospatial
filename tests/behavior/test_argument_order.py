@@ -73,12 +73,10 @@ def test_old_order_raises(name, recording):
     }:
         args = (env, positions, times)
         kwargs["goal"] = np.array([95.0, 50.0])
-    if name in {
-        "compute_pre_decision_metrics",
-        "compute_vte_trial",
-        "extract_pre_decision_window",
-    }:
+    if name in {"compute_pre_decision_metrics", "extract_pre_decision_window"}:
         kwargs.update(entry_time=5.0, window_duration=2.0)
+    if name == "compute_vte_trial":
+        kwargs.update(start_time=3.0, stop_time=5.0)
     if name in {
         "segment_by_velocity",
         "compute_pre_decision_metrics",

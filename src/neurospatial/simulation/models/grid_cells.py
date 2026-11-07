@@ -104,11 +104,12 @@ class GridCellModel:
         k_3 = k_{magnitude} * [\\cos(\\alpha + 120°), \\sin(\\alpha + 120°)]
 
     with ``α = grid_orientation - 30°``, which points the field lattice
-    along ``grid_orientation`` (see ``firing_rate``). The final firing rate
-    is:
+    along ``grid_orientation`` (see ``firing_rate``). As in Solstad et al.
+    (2006, eq. 2), the pattern is mapped onto [0, 1] by ``(2/3) (g + 1/2)``,
+    and the final firing rate is:
 
     .. math::
-        rate(x) = baseline + (max\\_rate - baseline) * \\max(0, g(x))
+        rate(x) = baseline + (max\\_rate - baseline) * (2/3) (g(x) + 1/2)
 
     This produces hexagonal symmetry with peaks at grid vertices.
 
@@ -123,12 +124,12 @@ class GridCellModel:
     spacing ratios of approximately √2 between scales.
 
     **Range**: the mean of the three cosines lies in [-0.5, 1]: it is 1 at
-    a field and -0.5 at the points farthest from the fields. After
-    rectification, ``max(0, g(x))`` lies in [0, 1], so the rate lies
-    between ``baseline_rate`` and ``max_rate``, and the rate is
-    ``baseline_rate`` between fields. The three-wave pattern is cited to
-    Solstad et al.; whether their rate map uses the same rectification has
-    not been checked against the paper.
+    a field and -0.5 at the points farthest from the fields. ``(2/3) (g +
+    1/2)`` therefore lies in [0, 1], so the rate is ``max_rate`` at a field
+    center and ``baseline_rate`` only at the points farthest from the
+    fields; the rate between neighboring fields stays above baseline, as in
+    Solstad et al., whose grid functions take "firing-rate values between
+    0 and g_max".
 
     References
     ----------
@@ -290,8 +291,8 @@ class GridCellModel:
         3. Compute grid pattern:
            g(x) = (1/3) * Σ cos(k_i · (x - phase_offset))
 
-        4. Apply rectification and scaling:
-           rate(x) = baseline + (max - baseline) * max(0, g(x))
+        4. Map onto [0, 1] and scale (Solstad et al. 2006, eq. 2):
+           rate(x) = baseline + (max - baseline) * (2/3) (g(x) + 1/2)
 
         Examples
         --------
@@ -319,9 +320,8 @@ class GridCellModel:
         rel_pos = positions - self._phase_offset
         grid_pattern = np.cos(rel_pos @ self._wave_vectors.T).mean(axis=1)
 
-        # Rectify: only positive parts contribute to firing
-        grid_pattern = np.maximum(0.0, grid_pattern)
-        return _tuned_rate(self, grid_pattern)
+        # Solstad et al. (2006, eq. 2): map [-1/2, 1] onto [0, 1].
+        return _tuned_rate(self, (2.0 / 3.0) * (grid_pattern + 0.5))
 
     @property
     def ground_truth(self) -> dict[str, Any]:

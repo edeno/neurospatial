@@ -93,7 +93,6 @@ def _vte_session(env, times, positions, **kwargs):
     options = {
         "region": "mid_area",
         "trials": trials,
-        "window_duration": 10.0,
         "min_speed": 1.0,
     }
     if kwargs.get("max_gap", DEFAULT_MAX_GAP) is None:
@@ -158,7 +157,7 @@ CALLS = {
         t, p, min_speed=1.0, **kw
     ),
     "compute_vte_trial": lambda env, t, p, **kw: compute_vte_trial(
-        t, p, 50.0, window_duration=10.0, min_speed=1.0, **kw
+        t, p, 40.0, 50.0, min_speed=1.0, **kw
     ),
     "compute_vte_session": lambda env, t, p, **kw: _vte_session(env, t, p, **kw),
     "add_positions": lambda env, t, p, **kw: add_positions(

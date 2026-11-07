@@ -7,7 +7,7 @@ VTE is characterized by:
 Key metrics:
 - IdPhi (head_sweep_magnitude): Sum of absolute heading changes
 - zIdPhi: Z-scored IdPhi relative to session baseline
-- VTE index: Combined head sweep + slowness measure
+- VTE index: zIdPhi by default, optionally blended with slowness
 """
 
 import itertools
@@ -725,8 +725,8 @@ class TestComputeVTETrial:
         result = compute_vte_trial(
             positions=positions,
             times=times,
-            entry_time=2.0,
-            window_duration=1.0,
+            start_time=1.0,
+            stop_time=2.0,
             min_speed=1.0,
         )
 
@@ -739,8 +739,8 @@ class TestComputeVTETrial:
         # But raw metrics should be computed
         assert result.head_sweep_magnitude >= 0
         assert result.mean_speed >= 0
-        assert result.window_start == 1.0  # entry_time - window_duration
-        assert result.window_end == 2.0  # entry_time
+        assert result.window_start == 1.0  # start_time
+        assert result.window_end == 2.0  # stop_time
 
     def test_basic_metrics_computed(self):
         """Test that basic metrics are computed correctly."""
@@ -761,8 +761,8 @@ class TestComputeVTETrial:
         result = compute_vte_trial(
             positions=positions,
             times=times,
-            entry_time=3.0,
-            window_duration=1.0,
+            start_time=2.0,
+            stop_time=3.0,
             min_speed=1.0,
         )
 
@@ -777,9 +777,7 @@ class TestComputeVTETrial:
         from neurospatial.behavior.vte import compute_vte_trial
 
         times, positions = _zigzag(30)
-        result = compute_vte_trial(
-            times, positions, entry_time=1.05, window_duration=0.1, min_speed=0.1
-        )
+        result = compute_vte_trial(times, positions, 0.95, 1.05, min_speed=0.1)
         assert np.isnan(result.mean_speed)
         assert np.isnan(result.min_observed_speed)
         assert np.isnan(result.head_sweep_magnitude)
@@ -792,25 +790,23 @@ class TestComputeVTETrial:
         positions = np.full((30, 2), 50.0)
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            result = compute_vte_trial(
-                times, positions, entry_time=2.0, window_duration=1.0, min_speed=1.0
-            )
+            result = compute_vte_trial(times, positions, 1.0, 2.0, min_speed=1.0)
         assert result.mean_speed == 0.0
         assert result.min_observed_speed == 0.0
         assert np.isnan(result.head_sweep_magnitude)
 
     def test_break_before_equals_separate_recording(self):
-        """The window never reaches back across a declared recording break."""
+        """The window never reaches across a declared recording break."""
         from neurospatial.behavior.vte import compute_vte_trial
 
         times, positions = _zigzag(41)
         positions[20:] += np.array([-60.0, 30.0])
         break_before = np.arange(41) == 20
-        kwargs = {"entry_time": 3.5, "window_duration": 3.0, "min_speed": 0.1}
+        kwargs = {"start_time": 0.5, "stop_time": 3.5, "min_speed": 0.1}
         declared = compute_vte_trial(
             times, positions, break_before=break_before, **kwargs
         )
-        alone = compute_vte_trial(times[20:], positions[20:], **kwargs)
+        alone = compute_vte_trial(times[:20], positions[:20], **kwargs)
         assert declared == alone
         assert compute_vte_trial(times, positions, **kwargs) != alone
 
@@ -823,9 +819,7 @@ class TestComputeVTETrial:
 
         times, positions = _zigzag(41)
         positions[25] = np.nan
-        result = compute_vte_trial(
-            times, positions, entry_time=3.5, window_duration=2.0, min_speed=0.1
-        )
+        result = compute_vte_trial(times, positions, 1.5, 3.5, min_speed=0.1)
         window = slice(15, 35)
         assert result.head_sweep_magnitude == head_sweep_from_positions(
             times[window], positions[window], min_speed=0.1
@@ -901,9 +895,8 @@ class TestComputeVTESession:
             positions=positions,
             times=times,
             trials=trials,
-            region="center",
+            region="choice",
             env=env,
-            window_duration=0.5,
             min_speed=1.0,
             head_sweep_weight=0.5,
             vte_threshold=0.0,  # Low threshold to ensure some VTE classification
@@ -932,7 +925,7 @@ class TestComputeVTESession:
         positions = np.column_stack(
             [
                 np.ones(60) * 50,
-                np.linspace(0, 20, 60),  # Never reaches center at y=55
+                np.linspace(0, 20, 60),  # Never reaches the zone at y=32.5
             ]
         )
 
@@ -954,9 +947,8 @@ class TestComputeVTESession:
             positions=positions,
             times=times,
             trials=trials,
-            region="center",
+            region="choice",
             env=env,
-            window_duration=0.5,
             min_speed=1.0,
         )
 
@@ -1000,8 +992,8 @@ class TestComputeVTESession:
 
             # Vary head sweep: even trials have more scanning
             if i % 2 == 0:
-                # High head sweep (zigzag)
-                x = 50 + 8 * np.sin(np.linspace(0, 10 * np.pi, n_per_trial))
+                # High head sweep (zigzag), inside the 15 cm wide stem
+                x = 50 + 7 * np.sin(np.linspace(0, 10 * np.pi, n_per_trial))
             else:
                 # Low head sweep (straight)
                 x = np.ones(n_per_trial) * 50
@@ -1031,13 +1023,9 @@ class TestComputeVTESession:
             positions=positions,
             times=times,
             trials=Intervals(trials),
-            region="center",
+            region="choice",
             env=env,
-            window_duration=0.5,
             min_speed=0.5,
-            # At head_sweep_weight = 0.5 the faster zig-zags' head-sweep and speed
-            # z-scores cancel exactly, putting every index on the threshold.
-            head_sweep_weight=0.7,
             vte_threshold=0.0,
         )
 
@@ -1072,12 +1060,12 @@ def test_compute_vte_session_env_first(t_maze_environment):
     assert params[1] == "times"
     assert params[2] == "positions"
 
-    # Build a slow head-scanning trajectory approaching the center region.
+    # Build a slow head-scanning trajectory up through the choice-point zone.
     n = 60
     dt = 1.0 / 30.0
     times = np.arange(n) * dt
     x = 50.0 + 5.0 * np.sin(np.linspace(0, 8 * np.pi, n))
-    y = np.linspace(30.0, 56.0, n)  # into the center bin (y >= 52.5)
+    y = np.linspace(30.0, 56.0, n)  # into the zone at y >= 32.5
     positions = np.column_stack([x, y])
 
     trials = Intervals(
@@ -1098,9 +1086,8 @@ def test_compute_vte_session_env_first(t_maze_environment):
         env,
         times,
         positions,
-        region="center",
+        region="choice",
         trials=trials,
-        window_duration=0.5,
         min_speed=1.0,
     )
     assert len(result.trial_results) == 1
@@ -1128,39 +1115,41 @@ def zig_zag_then_run(simple_2d_environment):
     return env, times, positions
 
 
-def test_session_window_clamped_to_trial_start(zig_zag_then_run):
-    """The pre-decision window never reaches back before the trial start.
+def test_session_window_starts_at_the_entry(zig_zag_then_run):
+    """The window is the pass through the region, from the 5.267 s entry.
 
-    A 1 s window before the 5.267 s entry would otherwise cover the zig-zag
-    that precedes the trial.
+    The zig-zag before the trial and the straight run before the entry are
+    not part of it, and it ends at the first sample past the region.
     """
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavior.vte import compute_vte_session
 
     env, times, positions = zig_zag_then_run
+    result = compute_vte_session(
+        env,
+        times,
+        positions,
+        region="decision",
+        trials=Intervals([Trial(4.0, 9.9, "start", "decision", "reached")]),
+        min_speed=5.0,
+    )
 
-    with warnings.catch_warnings():
-        # One trial: z-scores are undefined and warn; not under test here.
-        warnings.simplefilter("ignore", UserWarning)
-        result = compute_vte_session(
-            env,
-            times,
-            positions,
-            region="decision",
-            trials=Intervals([Trial(5.0, 9.9, "start", "decision", "reached")]),
-            window_duration=1.0,
-            min_speed=5.0,
-        )
-
+    in_region = np.isin(env.bin_at(positions), env.bins_in_region("decision"))
+    entry = 158  # 5.0 s + 8 / 30 s, the first sample at x >= 46 cm
+    exit_ = entry + int(np.flatnonzero(~in_region[entry:])[0])
+    assert in_region[entry]
+    assert not in_region[entry - 1]
     (trial,) = result.trial_results
-    assert trial.window_start == 5.0
-    assert_allclose(trial.window_end, 5.0 + 8 / 30, rtol=1e-12)
+    assert trial.status == "ok"
+    assert trial.window_start == times[entry]
+    assert trial.window_end == times[exit_]
     assert abs(trial.head_sweep_magnitude) < 1e-12
+    assert_allclose(trial.mean_speed, 30.0, rtol=1e-9)
 
 
 def test_session_marks_trial_window_too_short(zig_zag_then_run):
-    """A trial that enters the region within 2 samples of its start is skipped
-    with status "too_few_samples", not silently.
+    """A trial that stops two samples after its entry is skipped with status
+    "too_few_samples", not silently; its window ends at the trial stop.
     """
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavior.vte import compute_vte_session
@@ -1172,26 +1161,27 @@ def test_session_marks_trial_window_too_short(zig_zag_then_run):
         times,
         positions,
         region="decision",
-        trials=Intervals([Trial(5.2, 9.9, "start", "decision", "reached")]),
-        window_duration=1.0,
+        trials=Intervals([Trial(5.0, times[160], "start", "decision", "reached")]),
         min_speed=5.0,
     )
 
     (trial,) = result.trial_results
     assert trial.status == "too_few_samples"
-    assert trial.window_start == 5.2
-    assert_allclose(trial.window_end, 5.0 + 8 / 30, rtol=1e-12)
+    assert trial.window_start == times[158]
+    assert trial.window_end == times[160]
     assert np.isnan(trial.mean_speed)
     assert trial.is_vte is None
 
 
 def _t_maze_session(amplitudes, *, creep=None):
-    """Approaches up the T-maze stem into "center", one trial per entry.
+    """Approaches up the T-maze stem through the "choice" zone, one per trial.
 
     Each trial lasts 2 s at 30 Hz, starts 3 s after the previous one and
     rises from y = 30 to 56 cm (13 cm/s) with an east-west zig-zag of the
-    given amplitude. With ``creep=i``, trial ``i`` instead creeps up from
-    y = 50 cm at 1.5 cm/s, too slow for a movement heading at 5 cm/s.
+    given amplitude (at most 7.5 cm, the half-width of the stem). It enters
+    the zone at y = 32.5 cm and stays in it to the trial's stop. With
+    ``creep=i``, trial ``i`` instead creeps up from y = 50 cm at 1.5 cm/s,
+    too slow for a movement heading at 5 cm/s.
     """
     from neurospatial.behavior.segmentation import Trial
 
@@ -1213,14 +1203,13 @@ def _t_maze_session(amplitudes, *, creep=None):
     return np.concatenate(times), positions, Intervals(trials)
 
 
-def _first_center_sample(env, times, positions, *, after):
-    in_center = np.isin(env.bin_at(positions), env.bins_in_region("center"))
-    return int(np.flatnonzero(in_center & (times >= after))[0])
+def _first_choice_sample(env, times, positions, *, after):
+    in_zone = np.isin(env.bin_at(positions), env.bins_in_region("choice"))
+    return int(np.flatnonzero(in_zone & (times >= after))[0])
 
 
 _SESSION_KWARGS = {
-    "region": "center",
-    "window_duration": 0.5,
+    "region": "choice",
     "min_speed": 5.0,
     "vte_threshold": 0.0,
 }
@@ -1230,7 +1219,7 @@ def test_trials_table_rows_join_their_input_intervals(t_maze_environment):
     """With a subset of trials, each row joins the interval it describes."""
     from neurospatial.behavior.vte import compute_vte_session
 
-    times, positions, trials = _t_maze_session([2.0, 4.0, 0.0, 8.0])
+    times, positions, trials = _t_maze_session([2.0, 4.0, 0.0, 7.0])
     subset = trials[[1, 3]]
     result = compute_vte_session(
         t_maze_environment, times, positions, trials=subset, **_SESSION_KWARGS
@@ -1242,7 +1231,7 @@ def test_trials_table_rows_join_their_input_intervals(t_maze_environment):
     joined = trials.intervals_table().join(table, how="inner")
     assert joined.index.tolist() == [1, 3]
     # Each trial lasts 2 s and starts 3 s after the previous one, so its
-    # pre-decision window lies inside its own interval only.
+    # pass window lies inside its own interval only.
     starts = 3.0 * np.array([1, 3])
     np.testing.assert_array_equal(joined["start_time"], starts)
     assert np.all(joined["window_start"] >= starts)
@@ -1277,7 +1266,7 @@ def test_session_trial_without_heading_is_unclassified(t_maze_environment):
     from neurospatial.behavior.vte import compute_vte_session
 
     env = t_maze_environment
-    times, positions, trials = _t_maze_session([2.0, 4.0, 0.0, 8.0], creep=2)
+    times, positions, trials = _t_maze_session([2.0, 4.0, 0.0, 7.0], creep=2)
     result = compute_vte_session(
         env, times, positions, trials=trials, **_SESSION_KWARGS
     )
@@ -1311,34 +1300,39 @@ def test_session_trial_without_heading_is_unclassified(t_maze_environment):
 
 
 def test_session_skips_trial_with_too_few_observed_samples(t_maze_environment):
-    """Missing rows in the window do not count toward the 3-sample minimum."""
+    """Missing rows in the window do not count toward the 3-sample minimum.
+
+    With every gap bridged, the missing rows do not end the pass, so trial 1's
+    window runs to its stop but holds only two observed samples.
+    """
     from neurospatial.behavior.vte import compute_vte_session
 
     env = t_maze_environment
-    times, positions, trials = _t_maze_session([0.0, 4.0, 8.0])
-    entry = _first_center_sample(env, times, positions, after=3.0)
-    positions[entry - 15 : entry - 2] = np.nan  # keep 2 of the 15 window rows
+    times, positions, trials = _t_maze_session([0.0, 4.0, 7.0])
+    entry = _first_choice_sample(env, times, positions, after=3.0)
+    positions[entry + 2 : 120] = np.nan  # trial 1 holds samples 60-118
 
     result = compute_vte_session(
-        env, times, positions, trials=trials, **_SESSION_KWARGS
+        env, times, positions, trials=trials, max_gap=None, **_SESSION_KWARGS
     )
     statuses = [t.status for t in result.trial_results]
     assert statuses == ["ok", "too_few_samples", "ok"]
-    assert result.trial_results[1].is_vte is None
+    skipped = result.trial_results[1]
+    assert skipped.is_vte is None
+    assert skipped.window_start == times[entry]
+    assert skipped.window_end == trials[1].stop_time
 
 
 def test_session_break_before_ends_the_window(t_maze_environment):
-    """A declared break in a window acts like the trial starting there."""
-    from dataclasses import replace
-
+    """A declared break in a pass ends the window, like the trial stopping there."""
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavior.vte import compute_vte_session
 
     env = t_maze_environment
-    times, positions, trials = _t_maze_session([0.0, 4.0, 8.0])
-    entry = _first_center_sample(env, times, positions, after=3.0)
-    first = entry - 6  # break 6 samples (0.2 s) before entry in trial 1
-    break_before = np.arange(times.size) == first
+    times, positions, trials = _t_maze_session([0.0, 4.0, 7.0])
+    entry = _first_choice_sample(env, times, positions, after=3.0)
+    cut = entry + 20  # break 20 samples (0.67 s) into the pass of trial 1
+    break_before = np.arange(times.size) == cut
     declared = compute_vte_session(
         env,
         times,
@@ -1347,23 +1341,22 @@ def test_session_break_before_ends_the_window(t_maze_environment):
         break_before=break_before,
         **_SESSION_KWARGS,
     )
-    keep = (times < trials[1].start_time) | (times >= times[first])
     shortened = Intervals(
         [
             trials[0],
-            Trial(times[first], trials[1].stop_time, "start", "center", "reached"),
+            Trial(trials[1].start_time, times[cut], "start", "choice", "reached"),
             trials[2],
         ]
     )
-    alone = compute_vte_session(
-        env, times[keep], positions[keep], trials=shortened, **_SESSION_KWARGS
+    stopped = compute_vte_session(
+        env, times, positions, trials=shortened, **_SESSION_KWARGS
     )
     undeclared = compute_vte_session(
         env, times, positions, trials=trials, **_SESSION_KWARGS
     )
 
-    for a, b in zip(declared.trial_results, alone.trial_results, strict=True):
-        assert a == replace(b, window_start=a.window_start)
+    assert declared.trial_results == stopped.trial_results
+    assert declared.trial_results[1].window_end == times[cut]
     assert declared.trial_results[1] != undeclared.trial_results[1]
 
 
@@ -1381,7 +1374,7 @@ def test_one_dimensional_positions_raise(t_maze_environment, name, n_samples):
             times, p, min_speed=1.0
         ),
         "compute_vte_trial": lambda p: vte.compute_vte_trial(
-            times, p, entry_time=2.0, window_duration=1.0, min_speed=1.0
+            times, p, 0.0, 2.0, min_speed=1.0
         ),
         "compute_vte_session": lambda p: vte.compute_vte_session(
             t_maze_environment,
@@ -1400,7 +1393,7 @@ def test_session_summary_counts_classified_trials(t_maze_environment):
     """The text and the summary say which trials the VTE fraction is over."""
     from neurospatial.behavior.vte import compute_vte_session
 
-    times, positions, trials = _t_maze_session([2.0, 4.0, 0.0, 8.0], creep=2)
+    times, positions, trials = _t_maze_session([2.0, 4.0, 0.0, 7.0], creep=2)
     result = compute_vte_session(
         t_maze_environment, times, positions, trials=trials, **_SESSION_KWARGS
     )
@@ -1464,7 +1457,7 @@ def test_session_entry_is_searched_inside_epochs(t_maze_environment):
             )
         ]
     )
-    kwargs = {"region": "center", "window_duration": 1.0, "min_speed": 5.0}
+    kwargs = {"region": "center", "min_speed": 5.0}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # one trial: no z-score spread
         whole = compute_vte_session(
@@ -1478,8 +1471,8 @@ def test_session_entry_is_searched_inside_epochs(t_maze_environment):
             epochs=(4.0, 10.0),
             **kwargs,
         )
-    assert_allclose(whole.trial_results[0].window_end, 2.8, rtol=1e-12)
-    assert_allclose(late.trial_results[0].window_end, 7.9, rtol=1e-12)
+    assert_allclose(whole.trial_results[0].window_start, 2.8, rtol=1e-12)
+    assert_allclose(late.trial_results[0].window_start, 7.9, rtol=1e-12)
     assert_allclose(late.trial_results[0].mean_speed, 20.0, rtol=1e-9)
 
 
@@ -1488,7 +1481,7 @@ def test_session_keeps_one_result_per_trial_in_input_order(t_maze_environment):
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavior.vte import compute_vte_session
 
-    times, positions, trials = _t_maze_session([2.0, 4.0, 8.0])
+    times, positions, trials = _t_maze_session([2.0, 4.0, 7.0])
     # Trial 1 never reaches the center: it stays low on the stem.
     in_trial_1 = (times >= trials[1].start_time) & (times <= trials[1].stop_time)
     positions[in_trial_1, 1] = np.linspace(10.0, 30.0, in_trial_1.sum())
@@ -1573,14 +1566,14 @@ def _stem_scan(t0, n_reversals, speed):
     """Up the stem at x = 50 cm, reversing direction ``n_reversals`` times.
 
     ``n_reversals`` is even: the animal goes 6 cm up and back down
-    ``n_reversals / 2`` times, starting at y = 20 cm, then runs up into the
-    center bin at y = 56 cm, at a
+    ``n_reversals / 2`` times, starting at y = 35 cm inside the "choice"
+    zone, then runs up to the junction at y = 56 cm, at a
     constant ``speed`` (cm/s) between reversals, sampled at 30 Hz. Each
     reversal turns the direction of movement by exactly pi, and the animal
     is slower than any positive ``min_speed`` at the turning point, so IdPhi
     is ``n_reversals * pi``.
     """
-    turns = [20.0]
+    turns = [35.0]
     for k in range(n_reversals):
         turns.append(turns[-1] + (6.0 if k % 2 == 0 else -6.0))
     turns.append(56.0)
@@ -1594,8 +1587,8 @@ def _stem_scan(t0, n_reversals, speed):
 
 
 def _stem_run(t0, speed):
-    """Straight up the stem from y = 20 to 56 cm at a constant speed (cm/s)."""
-    y = np.arange(20.0, 56.0 + 1e-9, speed / _FS)
+    """Straight up the stem from y = 35 to 56 cm at a constant speed (cm/s)."""
+    y = np.arange(35.0, 56.0 + 1e-9, speed / _FS)
     times = t0 + np.arange(y.size) / _FS
     return times, np.column_stack([np.full(y.size, 50.0), y])
 
@@ -1675,9 +1668,7 @@ def test_vte_trial_straight_constant_speed():
 
     times = np.arange(90) / _FS
     positions = np.column_stack([20.0 * times, np.full(90, 50.0)])
-    result = compute_vte_trial(
-        times, positions, entry_time=2.0, window_duration=1.0, min_speed=5.0
-    )
+    result = compute_vte_trial(times, positions, 1.0, 2.0, min_speed=5.0)
     assert result.head_sweep_magnitude == 0.0
     assert_allclose(result.mean_speed, 20.0, rtol=1e-12)
     assert_allclose(result.min_observed_speed, 20.0, rtol=1e-12)
@@ -1689,7 +1680,9 @@ def test_vte_trial_straight_constant_speed():
 def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
     """Two slow scanning trials and two fast straight controls.
 
-    The scanning trials reverse 2 and 4 times (IdPhi 2 pi and 4 pi); the
+    Every trial runs inside the "choice" zone from its start, so its pass is
+    the whole trial. The scanning trials reverse 2 and 4 times (IdPhi 2 pi
+    and 4 pi); the
     controls run straight (IdPhi 0) at 20 and 30 cm/s. Head-sweep z-scores
     over [2, 4, 0, 0] pi are [1, 5, -3, -3] / sqrt(11) (population std).
     """
@@ -1721,9 +1714,8 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
         t_maze_environment,
         times,
         positions,
-        region="center",
+        region="choice",
         trials=trials,
-        window_duration=30.0,  # clipped at each trial start
         min_speed=2.0,
         head_sweep_weight=alpha,
         vte_threshold=threshold,
@@ -1740,15 +1732,15 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
     assert_allclose(speeds[2:], [20.0, 30.0], rtol=1e-12)
     for i in (0, 1):  # the scanning speeds are those of the windows alone
         trial = result.trial_results[i]
+        assert trial.window_start == trials[i].start_time
+        assert trial.window_end == trials[i].stop_time
         alone = compute_vte_trial(
-            times,
-            positions,
-            trial.window_end,
-            window_duration=trial.window_end - trial.window_start,
-            min_speed=2.0,
-            break_before=times == trial.window_start,
+            times, positions, trial.window_start, trial.window_end, min_speed=2.0
         )
         assert_allclose(speeds[i], alone.mean_speed, rtol=1e-12)
+        assert_allclose(
+            trial.head_sweep_magnitude, alone.head_sweep_magnitude, rtol=1e-12
+        )
         assert speeds[i] < 8.0  # slowed by the reversals
     z_speed = -(speeds - speeds.mean()) / speeds.std()
     assert_allclose(table["z_speed_inverse"], z_speed, rtol=1e-12)
@@ -1821,7 +1813,6 @@ def _straight_runs():
     kwargs = {
         "region": "center",
         "trials": Intervals(trials),
-        "window_duration": 0.5,
         "min_speed": 5.0,
     }
     return args, kwargs, [t.size for t in times]
@@ -1875,3 +1866,182 @@ def test_speed_only_index_needs_no_headings():
     assert [t.is_vte for t in result.trial_results] == list(
         _STRAIGHT_RUN_SPEED_Z >= 0.5
     )
+
+
+# =============================================================================
+# The pass window (Papale et al. 2012)
+# =============================================================================
+
+
+def _enter_sweep_exit_reenter():
+    """East through a 40-60 cm zone, out, back in, at 1 cm per 30 Hz sample.
+
+    Samples 0-9 approach (x = 30.5-39.5 cm), 10-29 cross the zone
+    (x = 40.5-59.5) while zig-zagging in y, 30-34 leave it (x = 60.5-64.5),
+    and 35-44 re-enter it heading west (x = 59.5-50.5), zig-zagging again.
+    Returns ``(env, times, positions, headings)``; the headings are seeded
+    random directions, so IdPhi over any span is known without the
+    package's velocity code.
+    """
+    from shapely.geometry import box
+
+    from neurospatial import Environment
+
+    env = Environment.from_polygon(box(0, 0, 100, 20), bin_size=2.0, units="cm")
+    regions = Regions()
+    regions.add("choice", polygon=box(40, 0, 60, 20))
+    env = env.with_regions(regions)
+    x = np.r_[
+        np.arange(30.5, 40.0),
+        np.arange(40.5, 60.0),
+        np.arange(60.5, 65.0),
+        np.arange(59.5, 50.0, -1.0),
+    ]
+    zig = np.where(np.arange(x.size) % 2 == 0, 7.0, 13.0)
+    y = np.where((x > 40) & (x < 60), zig, 10.0)
+    times = np.arange(x.size) / 30
+    headings = np.random.default_rng(0).uniform(-np.pi, np.pi, x.size)
+    return env, times, np.column_stack([x, y]), headings
+
+
+def _idphi(headings):
+    """Sum of |wrapped heading change|, computed with complex exponentials."""
+    steps = np.angle(np.exp(1j * np.diff(headings)))
+    return float(np.sum(np.abs(steps)))
+
+
+def test_session_window_is_the_first_contiguous_pass():
+    """IdPhi is integrated over the first pass only; the re-entry is not used."""
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session
+
+    env, times, positions, headings = _enter_sweep_exit_reenter()
+    in_zone = np.isin(env.bin_at(positions), env.bins_in_region("choice"))
+    np.testing.assert_array_equal(
+        np.flatnonzero(in_zone), np.r_[np.arange(10, 30), np.arange(35, 45)]
+    )
+    trials = Intervals([Trial(0.0, times[-1] + 0.01, "start", "choice", "reached")])
+    result = compute_vte_session(
+        env,
+        times,
+        positions,
+        region="choice",
+        trials=trials,
+        headings=headings,
+        min_speed=1.0,
+    )
+
+    (trial,) = result.trial_results
+    assert trial.status == "ok"
+    assert trial.window_start == times[10]
+    assert trial.window_end == times[30]  # the first sample past the zone
+    assert_allclose(trial.head_sweep_magnitude, _idphi(headings[10:30]), rtol=1e-12)
+    # Every in-zone sample, re-entry included, would give another IdPhi.
+    in_zone_idphi = _idphi(headings[10:30]) + _idphi(headings[35:45])
+    assert not np.isclose(trial.head_sweep_magnitude, in_zone_idphi)
+
+
+def test_gap_longer_than_max_gap_ends_the_pass():
+    """A tracking loss inside the pass ends the window at its last sample."""
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session
+
+    env, times, positions, headings = _enter_sweep_exit_reenter()
+    times = times.copy()
+    times[21:] += 2.0  # a 2 s loss between samples 20 and 21, inside the pass
+    trials = Intervals([Trial(0.0, times[-1] + 0.01, "start", "choice", "reached")])
+    kwargs = {
+        "region": "choice",
+        "trials": trials,
+        "headings": headings,
+        "min_speed": 1.0,
+    }
+    (cut,) = compute_vte_session(env, times, positions, **kwargs).trial_results
+    (bridged,) = compute_vte_session(
+        env, times, positions, max_gap=None, **kwargs
+    ).trial_results
+
+    assert (cut.window_start, cut.window_end) == (times[10], times[21])
+    assert_allclose(cut.head_sweep_magnitude, _idphi(headings[10:21]), rtol=1e-12)
+    assert (bridged.window_start, bridged.window_end) == (times[10], times[30])
+    assert_allclose(bridged.head_sweep_magnitude, _idphi(headings[10:30]), rtol=1e-12)
+
+
+def test_default_vte_index_is_z_idphi(t_maze_environment):
+    """By default the VTE index is the head-sweep z-score alone (zIdPhi)."""
+    import inspect
+
+    from neurospatial.behavior.vte import compute_vte_session, vte_index
+
+    assert (
+        inspect.signature(compute_vte_session).parameters["head_sweep_weight"].default
+        == 1.0
+    )
+    assert inspect.signature(vte_index).parameters["head_sweep_weight"].default == 1.0
+    times, positions, trials = _t_maze_session([2.0, 4.0, 0.5, 7.0])
+    result = compute_vte_session(
+        t_maze_environment,
+        times,
+        positions,
+        region="choice",
+        trials=trials,
+        min_speed=5.0,
+    )
+    table = result.trials_table()
+    sweeps = table["head_sweep_magnitude"].to_numpy()
+    z_idphi = (sweeps - sweeps.mean()) / sweeps.std()
+    assert_allclose(table["z_head_sweep"], z_idphi, rtol=1e-12)
+    np.testing.assert_array_equal(table["vte_index"], table["z_head_sweep"])
+    assert table["is_vte"].tolist() == list(z_idphi >= 0.5)
+    # The speed term is still computed, but it does not enter the index.
+    assert table["z_speed_inverse"].notna().all()
+
+
+@pytest.mark.parametrize(
+    ("start_time", "stop_time", "match"),
+    [
+        (np.nan, 2.0, "finite start_time < stop_time"),
+        (1.0, np.inf, "finite start_time < stop_time"),
+        (2.0, 2.0, "finite start_time < stop_time"),
+        (2.0, 1.0, "finite start_time < stop_time"),
+        (-1.0, 1.0, "outside the recording"),
+        (2000.0, 3000.0, "outside the recording"),
+    ],
+)
+def test_vte_trial_window_bounds_are_validated(start_time, stop_time, match):
+    """A NaN, empty or reversed span, or a start the recording misses, raises."""
+    from neurospatial.behavior.vte import compute_vte_trial
+
+    times, positions = _zigzag(30)
+    with pytest.raises(ValueError, match=match):
+        compute_vte_trial(times, positions, start_time, stop_time, min_speed=1.0)
+
+
+def test_vte_trial_measures_the_session_pass():
+    """The session's window bounds, passed to compute_vte_trial, measure the
+    same samples: the same head sweep and speed."""
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
+
+    env, times, positions, headings = _enter_sweep_exit_reenter()
+    trials = Intervals([Trial(0.0, times[-1] + 0.01, "start", "choice", "reached")])
+    (pass_,) = compute_vte_session(
+        env,
+        times,
+        positions,
+        region="choice",
+        trials=trials,
+        headings=headings,
+        min_speed=1.0,
+    ).trial_results
+    alone = compute_vte_trial(
+        times,
+        positions,
+        pass_.window_start,
+        pass_.window_end,
+        headings=headings,
+        min_speed=1.0,
+    )
+    assert alone.head_sweep_magnitude == pass_.head_sweep_magnitude
+    assert alone.mean_speed == pass_.mean_speed
+    assert alone.min_observed_speed == pass_.min_observed_speed

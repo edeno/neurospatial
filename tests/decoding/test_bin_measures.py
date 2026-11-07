@@ -30,6 +30,7 @@ from neurospatial.decoding import (
     log_poisson_likelihood,
     map_position,
     normalize_to_posterior,
+    posterior_entropy,
 )
 
 DT = 0.25
@@ -177,6 +178,39 @@ def test_streamed_summary_reports_the_density_mode():
     np.testing.assert_allclose(summary.map_position, full.map_position)
 
 
+def test_entropy_peaks_for_a_posterior_flat_over_space():
+    """Uniform over space, not uniform over bins, is the most uncertain."""
+    sizes = COARSE.bin_sizes
+    flat_over_space = (sizes / sizes.sum())[None]
+    flat_over_bins = np.full((1, COARSE.n_bins), 1.0 / COARSE.n_bins)
+    peak = posterior_entropy(COARSE, flat_over_space)[0]
+    assert peak == pytest.approx(math.log2(COARSE.n_bins), abs=1e-12)
+    assert posterior_entropy(COARSE, flat_over_bins)[0] < peak
+
+
+@pytest.mark.parametrize("seed", range(3))
+def test_entropy_is_log_n_minus_divergence_from_uniform_over_space(seed):
+    posterior = np.random.default_rng(seed).dirichlet(np.ones(COARSE.n_bins), 4)
+    uniform = COARSE.bin_sizes / COARSE.bin_sizes.sum()
+    divergence = np.sum(posterior * np.log2(posterior / uniform), axis=1)
+    np.testing.assert_allclose(
+        posterior_entropy(COARSE, posterior),
+        math.log2(COARSE.n_bins) - divergence,
+        atol=1e-12,
+    )
+
+
+def test_streamed_summary_entropy_matches_the_full_posterior():
+    counts = np.array([[1], [0], [2], [5]])
+    rates = field(COARSE, center=35.0)
+    full = decode_position(COARSE, counts, rates, dt=DT)
+    summary = decode_position_summary(COARSE, counts, rates, dt=DT, time_chunk=2)
+    np.testing.assert_allclose(summary.posterior_entropy, full.posterior_entropy)
+    np.testing.assert_allclose(
+        full.posterior_entropy, posterior_entropy(COARSE, full.posterior)
+    )
+
+
 def test_mixed_measure_environment_needs_one_measure():
     """Lengths and areas have no common density, so the default prior refuses."""
     corridor = Environment.linear_track(
@@ -192,15 +226,18 @@ def test_mixed_measure_environment_needs_one_measure():
     with pytest.raises(ValueError, match=r"(?s)mixes bins.*env\.subset"):
         decode_position(env, np.array([[1]]), rates, dt=DT)
 
-    # An explicit prior decodes; density-free summaries still work.
+    # An explicit prior decodes; the summary still works, but entropy over
+    # space, like the density MAP, has no common unit.
     result = decode_position(
         env, np.array([[1]]), rates, dt=DT, prior=np.ones(env.n_bins)
     )
     summary = result.summary()
     assert summary["n_undecodable"] == 0
-    assert summary["mean_entropy"] == pytest.approx(np.log2(env.n_bins))
+    assert np.isnan(summary["mean_entropy"])
     with pytest.raises(ValueError, match="mixes bins"):
         _ = result.map_bin
+    with pytest.raises(ValueError, match="mixes bins"):
+        _ = result.posterior_entropy
 
 
 def test_impossible_spikes_fall_back_to_the_prior_over_space():

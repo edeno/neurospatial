@@ -200,6 +200,9 @@ class BasisCentersConsumer(
 ):
     """Centers, their KD-tree, graph and coordinate meaning for basis centers."""
 
+    @property
+    def units(self) -> str | None: ...
+
 
 class SpatialBasisConsumer(CartesianConsumer, BasisCentersConsumer, Protocol):
     """Cartesian bins with extents for sizing a default spatial basis."""

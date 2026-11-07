@@ -235,11 +235,15 @@ def test_entry_after_the_recording_raises(pause_track):
 def test_window_callers_forward_epochs(pause_track, function):
     r = pause_track
     speed_gate = {} if function is extract_pre_decision_window else {"min_speed": 5.0}
+    window = (
+        {"start_time": 1100.5, "stop_time": 1105.0}
+        if function is compute_vte_trial
+        else {"entry_time": 1100.5, "window_duration": 1001}
+    )
     result = function(
         r.times,
         r.positions,
-        entry_time=1100.5,
-        window_duration=1001,
+        **window,
         epochs=(0, 100),
         **speed_gate,
     )
@@ -248,33 +252,35 @@ def test_window_callers_forward_epochs(pause_track, function):
     elif function is compute_pre_decision_metrics:
         assert result.n_samples == 0
     else:
-        # Entry lies outside the epochs: the window is empty, nothing measured.
+        # The start lies outside the epochs: the window is empty, nothing measured.
         assert np.isnan(result.mean_speed)
         assert np.isnan(result.head_sweep_magnitude)
 
 
-def test_vte_trial_uses_only_entry_run(pause_track):
+def test_vte_trial_uses_only_the_start_run(pause_track):
+    """The window stops at the pause: it holds the start's recording only."""
     r = pause_track
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        result = compute_vte_trial(
-            r.times,
-            r.positions,
-            entry_time=1100.5,
-            window_duration=1001,
-            min_speed=5.0,
+        across = compute_vte_trial(r.times, r.positions, 99.5, 1105.0, min_speed=5.0)
+        first = compute_vte_trial(
+            r.times[:1000], r.positions[:1000], 99.5, 1105.0, min_speed=5.0
         )
-    # The entry run is stationary: an observed zero speed and no heading.
-    assert result.mean_speed == 0
-    assert result.min_observed_speed == 0
-    assert np.isnan(result.head_sweep_magnitude)
+        resumed = compute_vte_trial(r.times, r.positions, 1100.0, 1105.0, min_speed=5.0)
+    # The first recording ends running east at 12.5 cm/s.
+    assert across == first
+    assert np.isclose(across.mean_speed, 12.5, rtol=1e-12)
+    # The resumed run is stationary: an observed zero speed and no heading.
+    assert resumed.mean_speed == 0
+    assert resumed.min_observed_speed == 0
+    assert np.isnan(resumed.head_sweep_magnitude)
 
 
-def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
+def test_vte_session_pass_starts_at_the_entry_after_the_pause(pause_track):
     from neurospatial.behavior import Trial
 
     r = pause_track
-    # Decision-region entry is 1100.5; the five preceding samples are stationary.
+    # Decision-region entry is 1100.5; the five preceding samples are outside.
     positions = r.positions.copy()
     positions[1000:1005, 0] = 80
     trial = Trial(99.5, 1109.9, "source", "target", "reached")
@@ -284,12 +290,12 @@ def test_vte_session_keeps_trial_clamp_and_observed_window(pause_track):
         positions,
         region="target",
         trials=Intervals([trial]),
-        window_duration=1001,
     )
     assert len(result.trial_results) == 1
     (trial_result,) = result.trial_results
+    assert trial_result.window_start == r.times[1005]
+    assert trial_result.window_end == trial.stop_time
     assert trial_result.mean_speed == 0
-    assert trial_result.window_start >= trial.start_time
     # A stationary window has no heading, so the trial is unclassified.
     assert np.isnan(trial_result.head_sweep_magnitude)
     assert trial_result.is_vte is None

@@ -85,8 +85,8 @@ def capture_segmentation_outputs(pause, laps):
         "compute_vte_trial": compute_vte_trial(
             p.times,
             p.positions,
-            entry_time=100.5,
-            window_duration=2.0,
+            start_time=98.5,
+            stop_time=100.5,
             min_speed=5.0,
         ),
         "compute_vte_session": compute_vte_session(
@@ -95,7 +95,6 @@ def capture_segmentation_outputs(pause, laps):
             p.positions,
             region="target",
             trials=trials,
-            window_duration=2.0,
         ),
         "bin_sequence": p.env.bin_sequence(p.times, p.positions),
         "bin_sequence_per_sample": p.env.bin_sequence(

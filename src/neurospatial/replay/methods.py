@@ -534,10 +534,7 @@ class ReplayMethod:
         al. 2021).
     score_options : Mapping[str, Any]
         Options for ``score``, checked against its signature when the
-        method is made. ``"n_samples_per_time_bin"`` is converted to
-        ``n_samples`` for each event, for samplers like
-        :func:`~neurospatial.replay.fit_linear_trajectory` whose papers
-        give a count per time bin.
+        method is made.
     nulls : tuple of str
         Shuffles the score is tested against (see
         :func:`~neurospatial.replay.replay_significance`), each named once;
@@ -1077,8 +1074,6 @@ class ReplayMethod:
             "such as weighted_correlation, or None",
         )
         options = dict(self.score_options)
-        if "n_samples_per_time_bin" in options:
-            options["n_samples"] = options.pop("n_samples_per_time_bin")
         try:
             signature = inspect.signature(self.score)
         except (TypeError, ValueError) as error:
@@ -2308,7 +2303,7 @@ def _measure_event(
     posterior, times = event.posterior[rows], event.times[rows]
     counts = None if event.counts is None else event.counts[rows]
 
-    options = _score_options(replay_method, len(posterior), score_seed)
+    options = _score_options(replay_method, score_seed)
     # A template's share of a joint decode is scored as the posterior given
     # the template, unless the score is built for joint weights.
     condition = _conditions_share(replay_method, event, options)
@@ -2592,21 +2587,16 @@ def _criteria_track_length(replay_method: ReplayMethod, env: Environment) -> flo
     return np.nan
 
 
-def _score_options(
-    replay_method: ReplayMethod, n_time_bins: int, seed: int | None
-) -> dict[str, Any]:
-    """The score's options for ``n_time_bins`` tested rows.
+def _score_options(replay_method: ReplayMethod, seed: int | None) -> dict[str, Any]:
+    """The score's options, with ``seed`` given to a sampled score.
 
-    ``n_samples_per_time_bin`` becomes ``n_samples``. A sampled score is
-    given ``seed``, when there is one, so its test does not draw the seed
-    from the shuffles' stream and draws the same shuffles as the tested
-    quantities'.
+    A sampled score is given ``seed``, when there is one, so its test does
+    not draw the seed from the shuffles' stream and draws the same shuffles
+    as the tested quantities'.
     """
     from neurospatial.replay.significance import _takes_rng
 
     options = dict(replay_method.score_options)
-    if "n_samples_per_time_bin" in options:
-        options["n_samples"] = int(options.pop("n_samples_per_time_bin")) * n_time_bins
     if (
         seed is not None
         and replay_method.score is not None
@@ -5836,9 +5826,9 @@ LIU_2023_BIAS = BiasSequenceMethod(
         "skew-bias matrix S(i, j) = 2 n(i before j) / (n_i n_j) - 1 is "
         "compared with the template's by the cosine between them, 'The "
         "activity of cells that are not common to the two sequences is "
-        "ignored': the cosine runs over the pairs defined in both. The lab's "
-        "code (neuro_py pairwise_bias_correlation) fills undefined pairs "
-        "with 0 and keeps them, which shrinks its cosines.",
+        "ignored'. The cosine follows the lab's code (neuro_py "
+        "pairwise_bias_correlation): undefined pairs are 0 in each matrix "
+        "and stay in its norm.",
         "The paper prints the unwrapped matrix as '2Bk - 2', which runs from "
         "-2 to 0; its stated range [-1, 1] and the lab's code give 2B - 1, "
         "used here.",
@@ -5846,8 +5836,10 @@ LIU_2023_BIAS = BiasSequenceMethod(
         "theta cycles during the task': pass mean_pairwise_bias(spike_times, "
         "theta_cycles) as template_bias, with the running theta cycles' "
         "intervals; each pair is averaged over the cycles in which both "
-        "cells fired (not stated; the code computes one matrix over all task "
-        "theta spikes). No theta-cycle detector is applied here.",
+        "cells fired (not stated). The lab's code instead computes one matrix "
+        "over all task theta spikes: pass pairwise_bias_matrix(theta_spikes, "
+        "(task_start, task_stop)).bias for that form. No theta-cycle detector "
+        "is applied here.",
         "Shuffles: 'shuffling the spikes sequence n = 100 times', read as "
         "permuting the cell labels of the event's spikes, as the code does "
         "(each cell keeps its spike count, the event its spike times). "

@@ -261,4 +261,7 @@ def t_maze_environment():
     region_builder.add("center", point=(50.0, 55.0))
     region_builder.add("left", point=(10.0, 55.0))
     region_builder.add("right", point=(90.0, 55.0))
+    # The choice-point zone a VTE pass runs through: from partway up the stem
+    # (y = 32.5 cm) through the junction to the entrances of both arms.
+    region_builder.add("choice", polygon=box(37.5, 32.5, 62.5, 62.5))
     return env.with_regions(region_builder)

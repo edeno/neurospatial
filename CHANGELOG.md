@@ -2,6 +2,90 @@
 
 ## [Unreleased]
 
+### Behavior: VTE follows Papale et al. 2012
+
+- `compute_vte_session` measures each trial over its first pass through the
+  choice-point zone `region`, as Papale et al. 2012 did. The window starts at
+  the trial's first sample in the region and ends before the first later
+  sample outside the region, outside `epochs`, or past a `max_gap` gap or a
+  declared break. A later re-entry in the same trial is not used. Before, the
+  window was a fixed time before the first entry.
+- `window_duration` is removed from `compute_vte_session`. `window_start` is
+  now the entry time. `window_end` is the time of the first sample after the
+  pass, or the trial's `stop_time` when the pass lasts to the trial's end.
+- Define `region` as the zone the animal passes through while it deliberates,
+  for a T-maze from partway up the stem to the entrances of the arms. A small
+  point at the junction holds too few samples, and such trials are marked
+  `"too_few_samples"`.
+- `compute_vte_trial(times, positions, start_time, stop_time, ...)` replaces
+  `compute_vte_trial(times, positions, entry_time, window_duration=...)`. It
+  measures the samples in `[start_time, stop_time)` within the time segment
+  that holds `start_time`. Passing a session trial's `window_start` and
+  `window_end` measures the same samples.
+- `head_sweep_weight` defaults to 1.0 in `compute_vte_session` and
+  `vte_index`, so the VTE index is zIdPhi alone, as in Papale et al. 2012.
+  Before, it was 0.5, an equal blend of head sweep and slowing. Pass
+  `head_sweep_weight=0.5` for the old blend. With the default, a session whose
+  speeds do not vary no longer warns, since speed does not enter the index.
+- The `vte_threshold=0.5` cutoff is unchanged. It is neurospatial's choice:
+  Papale et al. state no cutoff.
+
+### Spatial bases: heat-kernel basis in physical units
+
+- `heat_kernel_wavelet_basis` is renamed `heat_kernel_basis`. Its functions are
+  low-pass heat kernels, not wavelets. It takes `bandwidth=` in environment
+  units, as `geodesic_rbf_basis` and `env.smooth` do, in place of `scales=` in
+  bin-spacing² units. Each kernel's standard deviation is its bandwidth at any
+  bin size, and column c equals column c of `env.compute_kernel(bandwidth=b)`.
+  To keep an old basis, pass `bandwidth = sqrt(2 * scale) * env.bin_spacing`.
+- `heat_kernel_basis` and `geodesic_rbf_basis` default to `bandwidth=None`:
+  5 cm, the rate-map smoothing default, converted to `env.units` (0.05 for
+  meters). Without metric units they refuse and ask for `bandwidth=`. Before,
+  `geodesic_rbf_basis` used 5.0 in whatever units the environment had, so an
+  arena in meters got 5 m kernels that covered it whole.
+
+### Simulation: grid cells follow Solstad et al. 2006
+
+- `GridCellModel` maps the three-cosine pattern onto [0, 1] by
+  `(2/3) (g + 1/2)`, Solstad, Moser & Einevoll 2006 eq. 2. It used to
+  rectify, `max(0, g)`, which set the rate to `baseline_rate` over the whole
+  space between fields and narrowed every field. The rate is now `max_rate` at
+  field centers and `baseline_rate` only at the points farthest from them.
+  Simulated grid maps and the rate maps fit to them change; the grid-score,
+  simulation and validation tests pass unchanged.
+
+### Decoding: posterior entropy is measured over space
+
+- `posterior_entropy(env, posterior)` takes the environment, like `map_bin`
+  and `credible_region`, and weights each bin by its size:
+  `H = -sum(p * log2(p / w))` with `w` the bin size over the mean bin size.
+  That is `log2(n_bins)` minus the divergence from the uniform-over-space
+  prior. On equal bins it is the Shannon entropy over bins as before. On
+  unequal bins a posterior flat over space now has the maximum,
+  `log2(n_bins)`; before, entropy counted bins and called it less certain.
+- `DecodingResult.posterior_entropy` and the streamed summary use the same
+  rule. On an environment that mixes lengths and areas, `posterior_entropy`
+  refuses, as `map_bin` does, and `summary()["mean_entropy"]` is NaN.
+
+### Replay scores follow the published method by default
+
+- `fit_linear_trajectory` takes `n_samples_per_time_bin=10000` in place of
+  `n_samples`. The default now samples 10,000 positions from every decoded time
+  bin, as Karlsson & Frank 2009 did. Before, it drew 10,000 in total, which
+  matched neither Karlsson & Frank nor the Jadhav-lab code. The estimate is the
+  same; its Monte Carlo spread in R² is 4 to 7 times smaller on simulated sweeps
+  of 10 to 40 time bins, at the same run time. With `allocation="spikes"` the
+  count is the mean per time bin. Replay recipes pass it straight through.
+- `bias_similarity` and `bias_similarity_significance` compute the cosine as
+  Liu et al.'s lab code does (neuro_py `cosine_similarity_matrices`): an
+  undefined pair counts as 0 in each matrix and stays in that matrix's norm.
+  Before, the cosine ran over the pairs both matrices define. Template pairs
+  whose cells are silent in the event now lower the similarity. Cosines are
+  smaller in size than before when either matrix has undefined pairs.
+- `mean_pairwise_bias` keeps the paper's mean over theta cycles. Its Notes and
+  the `LIU_2023_BIAS` recipe now show the lab code's form, one matrix over all
+  task theta spikes, as `pairwise_bias_matrix` of the theta-restricted spikes.
+
 ### Datasets
 
 - Loading `forli_2025` or `vollan_2025` no longer changes pandas settings for the

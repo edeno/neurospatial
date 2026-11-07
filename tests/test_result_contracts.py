@@ -456,15 +456,13 @@ def test_tables_carry_units(open_field, tmaze, tmaze_trials):
 
     s = open_field
     decoded = decode_session(s.env, s.spike_times, s.times, s.positions)
-    # The simulated runs are straight, so no trial has a head sweep to rank.
-    with pytest.warns(UserWarning, match="No variation in head sweep magnitude"):
-        vte = compute_vte_session(
-            tmaze.env,
-            tmaze.times,
-            tmaze.positions,
-            trials=tmaze_trials,
-            region="junction",
-        )
+    vte = compute_vte_session(
+        tmaze.env,
+        tmaze.times,
+        tmaze.positions,
+        trials=tmaze_trials,
+        region="junction",
+    )
     psth = peri_event_histogram(s.spike_times[0], np.arange(5.0, 55.0, 5.0), (-1, 1))
     tables = {
         "decode": decoded.to_dataframe(),
@@ -524,16 +522,26 @@ def test_path_efficiency_not_above_one(tmaze, tmaze_trials):
 
 
 def test_vte_zero_sweep_is_na(tmaze, tmaze_trials):
-    """Straight runs have no head sweep: no trial is called VTE on speed alone."""
+    """Straight runs have no head sweep: no trial is called VTE on speed alone.
+
+    The simulated runs go straight along the central stem, so a zone on the
+    stem below the junction holds passes without any turn.
+    """
+    from shapely.geometry import box
+
+    from neurospatial import Regions
     from neurospatial.behavior import compute_vte_session
 
+    regions = Regions(tmaze.env.regions.values())
+    regions.add("stem", polygon=box(-2.0, -20.0, 2.0, 20.0))
+    env = tmaze.env.with_regions(regions)
     with pytest.warns(UserWarning, match="is_vte is <NA>"):
         result = compute_vte_session(
-            tmaze.env,
+            env,
             tmaze.times,
             tmaze.positions,
             trials=tmaze_trials,
-            region="junction",
+            region="stem",
         )
     table = result.trials_table()
     measured = table["status"] == "ok"

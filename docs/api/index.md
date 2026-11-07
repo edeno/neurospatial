@@ -441,7 +441,7 @@ Spatial basis functions for regression / kernel methods.
 **Key Functions:**
 
 - `select_basis_centers()`: K-means / random / farthest-point placement
-- `geodesic_rbf_basis()`, `heat_kernel_wavelet_basis()`,
+- `geodesic_rbf_basis()`, `heat_kernel_basis()`,
   `chebyshev_filter_basis()`: Graph-aware kernels
 - `spatial_basis()`, `plot_basis_functions()`: Unified spatial-basis API
 

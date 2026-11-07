@@ -219,11 +219,11 @@ def test_nearest_bin_alone_would_put_the_outside_row_in_an_edge_bin():
 
 
 def test_wavelet_basis_works_on_a_polar_environment():
-    from neurospatial.ops import heat_kernel_wavelet_basis
+    from neurospatial.ops import heat_kernel_basis
 
     env = _surround()
-    basis = heat_kernel_wavelet_basis(
-        env, centers=np.array([0, 5]), scales=(1.0,), center_method="farthest_point"
+    basis = heat_kernel_basis(
+        env, centers=np.array([0, 5]), center_method="farthest_point"
     )
     assert basis.shape[1] == env.n_bins
     assert np.all(np.isfinite(basis))

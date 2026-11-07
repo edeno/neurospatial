@@ -181,7 +181,7 @@ required.
 - `compute_pre_decision_metrics`: Compute all pre-decision window metrics.
 - `compute_speed`: Running speed at each tracking sample, robust to tracking jitter.
 - `compute_vte_session`: Compute VTE metrics for all trials in a session.
-- `compute_vte_trial`: Compute VTE metrics for a single trial.
+- `compute_vte_trial`: Compute VTE metrics for one pass through the choice point.
 - `decision_region_entry_time`: Find time of first entry to a decision region.
 - `detect_boundary_crossings`: Detect when trajectory crosses decision boundaries.
 - `detect_goal_directed_runs`: Detect goal-directed runs: approaches to a goal that are efficient.
@@ -228,7 +228,7 @@ required.
 - `trajectory_similarity`: Compute similarity between two trajectories.
 - `traveled_path_length`: Compute the distance traveled over observed intervals.
 - `trials_between_visits`: Trials between consecutive visits you already have.
-- `vte_index`: Compute combined VTE index.
+- `vte_index`: Compute the VTE index: zIdPhi, optionally blended with slowing.
 
 ### neurospatial.binning
 
@@ -292,7 +292,7 @@ required.
 - `mean_position`: Posterior mean position (expected value).
 - `median_decoding_error`: Compute the median decoding error over the decoded time bins.
 - `normalize_to_posterior`: Convert log-likelihood to posterior using Bayes' rule.
-- `posterior_entropy`: Posterior entropy in bits (entropy measure).
+- `posterior_entropy`: Posterior entropy in bits, measured over space.
 
 ### neurospatial.encoding
 
@@ -519,7 +519,7 @@ required.
 - `geodesic_rbf_basis`: Compute maze-aware RBF basis using geodesic distances.
 - `gradient`: Compute the directional derivative of a scalar field along every edge.
 - `graph_convolve`: Convolve a spatial field with a custom kernel on the graph.
-- `heat_kernel_wavelet_basis`: Compute heat kernel wavelet basis via graph diffusion.
+- `heat_kernel_basis`: Compute a multiscale heat-kernel basis via graph diffusion.
 - `identity`: Return the 2D identity transform.
 - `identity_nd`: Return the N-dimensional identity transform.
 - `map_probabilities`: Map probabilities on source_env onto target_env.
@@ -653,7 +653,7 @@ required.
 - `WeightedCorrelationResult` (class): Weighted correlation between time and decoded position in one event.
 - `apply_alpha`: A comparison table's verdicts at other alphas, such as matched ones.
 - `best_sequence_match`: Best match of an event's letters to the field order (Lee & Wilson 2002).
-- `bias_similarity`: Cosine between two skew-bias matrices over the pairs both define.
+- `bias_similarity`: Cosine between two skew-bias matrices, with undefined pairs as 0.
 - `bias_similarity_significance`: Test an event's bias similarity to a template against label shuffles.
 - `burst_onset_times`: The first spike of each burst, one train per cell.
 - `compare_replay_methods`: Apply several published replay methods to several decoded events.

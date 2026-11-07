@@ -16,7 +16,7 @@ from neurospatial import Environment
 from neurospatial.ops.basis import (
     chebyshev_filter_basis,
     geodesic_rbf_basis,
-    heat_kernel_wavelet_basis,
+    heat_kernel_basis,
     select_basis_centers,
     spatial_basis,
 )
@@ -35,7 +35,7 @@ def test_basis_rng_keyword_deterministic(simple_2d_env):
     for fn in (
         select_basis_centers,
         geodesic_rbf_basis,
-        heat_kernel_wavelet_basis,
+        heat_kernel_basis,
         chebyshev_filter_basis,
         spatial_basis,
     ):
@@ -55,8 +55,8 @@ def test_basis_rng_keyword_deterministic(simple_2d_env):
     c2 = select_basis_centers(simple_2d_env, n_centers=8, rng=0)
     np.testing.assert_array_equal(c1, c2)
 
-    b1 = geodesic_rbf_basis(simple_2d_env, n_centers=8, rng=0)
-    b2 = geodesic_rbf_basis(simple_2d_env, n_centers=8, rng=0)
+    b1 = geodesic_rbf_basis(simple_2d_env, n_centers=8, bandwidth=5.0, rng=0)
+    b2 = geodesic_rbf_basis(simple_2d_env, n_centers=8, bandwidth=5.0, rng=0)
     np.testing.assert_array_equal(b1, b2)
 
     # `n_centers`/`method`/`rng` cannot be passed positionally any more.

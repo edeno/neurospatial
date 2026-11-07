@@ -253,7 +253,7 @@ def _calls_with(times, positions, goal):
             times, positions, min_speed=1.0
         ),
         "compute_vte_trial": lambda: compute_vte_trial(
-            times, positions, 0.5, window_duration=0.5, min_speed=1.0
+            times, positions, 0.0, 0.5, min_speed=1.0
         ),
         "compute_decision_analysis": lambda: compute_decision_analysis(
             env,

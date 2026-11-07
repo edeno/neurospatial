@@ -93,6 +93,32 @@ class TestFit:
             (result.decoded_angles >= 0) & (result.decoded_angles < 2 * np.pi)
         )
 
+    @pytest.mark.parametrize("seed", range(3))
+    def test_off_the_seam_it_is_the_linear_map_fit(self, loop, seed):
+        """Away from the seam the circular fit reduces to a line on linear position.
+
+        With one-hot rows the circular mean is the MAP bin, and each wrapped
+        step is the step in linear position times 2π over the loop length, so
+        the R² and the slope of the two fits agree.
+        """
+        rng = np.random.default_rng(seed)
+        centers_along = _bin_centers_along(loop)
+        n_time_bins = 14
+        start = int(rng.integers(5, 15))
+        steps = rng.integers(0, 3, size=n_time_bins - 1)  # a noisy forward sweep
+        bins = start + np.concatenate([[0], np.cumsum(steps)])
+        assert bins.max() < loop.n_bins - 5  # never reaches the seam
+        posterior = np.eye(loop.n_bins)[bins]
+        times = np.arange(n_time_bins) * 0.01 + rng.uniform(0, 0.002, n_time_bins)
+        assert np.all(np.diff(times) > 0)
+        assert np.all(np.diff(centers_along[bins]) >= 0)
+
+        circular = fit_circular_sequence(loop, posterior, times)
+        linear = fit_linear_trajectory(loop, posterior, times, method="map")
+
+        assert circular.r_squared == pytest.approx(linear.r_squared, abs=1e-9)
+        assert circular.slope == pytest.approx(linear.slope, rel=1e-9)
+
     def test_unwrapped_fits_break_at_the_seam(self, loop):
         """Without the wrap, the same sweep fits poorly: the wrap is the point.
 

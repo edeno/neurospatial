@@ -573,7 +573,7 @@ def test_analyses_reuse_the_environment_kdtree(env, monkeypatch):
 
     from neurospatial.environment import _lookup
     from neurospatial.ops import (
-        heat_kernel_wavelet_basis,
+        heat_kernel_basis,
         map_probabilities,
         select_basis_centers,
     )
@@ -588,7 +588,7 @@ def test_analyses_reuse_the_environment_kdtree(env, monkeypatch):
         mapped = map_probabilities(env, env, probs, mode=mode, n_neighbors=3)
         assert np.isclose(mapped.sum(), 1.0)
     select_basis_centers(env, n_centers=4, method="kmeans", rng=0)
-    heat_kernel_wavelet_basis(env, centers=np.array([0, 5]))
+    heat_kernel_basis(env, centers=np.array([0, 5]), bandwidth=5.0)
     env.nearest_bin(env.bin_centers)
 
     assert len(calls) == 1

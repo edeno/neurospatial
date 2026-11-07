@@ -154,7 +154,7 @@ FREE_FUNCTION_OPTIONAL_DATA = {
     # center_method= when absent.
     ("chebyshev_filter_basis", "centers"),
     ("geodesic_rbf_basis", "centers"),
-    ("heat_kernel_wavelet_basis", "centers"),
+    ("heat_kernel_basis", "centers"),
     # The components of the transform being built.
     ("from_rotation_matrix", "translation"),
     ("scale_2d", "sx"),
@@ -323,6 +323,9 @@ REQUIRED_DATA_ARGUMENTS = {
     # The public dataset loaded or fetched.
     ("load", "dataset"),
     ("fetch_all", "dataset"),
+    # The pass through the choice point measured, like an event's window.
+    ("compute_vte_trial", "start_time"),
+    ("compute_vte_trial", "stop_time"),
 }
 
 
@@ -839,8 +842,8 @@ def _rng_calls():
         "neurospatial.ops.chebyshev_filter_basis": lambda rng: (
             ops.chebyshev_filter_basis(i.arena, n_centers=5, max_degree=2, rng=rng)
         ),
-        "neurospatial.ops.heat_kernel_wavelet_basis": lambda rng: (
-            ops.heat_kernel_wavelet_basis(i.arena, n_centers=5, scales=(1.0,), rng=rng)
+        "neurospatial.ops.heat_kernel_basis": lambda rng: (
+            ops.heat_kernel_basis(i.arena, n_centers=5, rng=rng)
         ),
         "neurospatial.ops.spatial_basis": lambda rng: ops.spatial_basis(
             i.arena, n_features=10, rng=rng
@@ -969,7 +972,7 @@ def _rng_calls():
         ),
         "neurospatial.replay.fit_linear_trajectory": lambda rng: (
             replay.fit_linear_trajectory(
-                i.track, i.sweep, i.sweep_times, n_samples=200, rng=rng
+                i.track, i.sweep, i.sweep_times, n_samples_per_time_bin=20, rng=rng
             )
         ),
         "neurospatial.replay.null_events": lambda rng: replay.null_events(

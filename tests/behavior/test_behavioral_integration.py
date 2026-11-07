@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from shapely.geometry import box
 
 from neurospatial import Environment, Intervals, Regions
 
@@ -121,15 +122,14 @@ class TestVTEDecisionAnalysisIntegration:
             trajectory,
             region="decision",
             trials=trials,
-            window_duration=0.5,
             min_speed=1.0,
         )
 
         # Should have found the trial
         assert len(result.trial_results) == 1
 
-        # The window_end should match entry_time from decision_analysis
-        assert abs(result.trial_results[0].window_end - entry_from_analysis) < 0.1
+        # The pass window starts at the entry_time from decision_analysis
+        assert result.trial_results[0].window_start == entry_from_analysis
 
 
 # =============================================================================
@@ -150,10 +150,9 @@ class TestVTERoundTrip:
         positions = rng.random((200, 2)) * 100
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        # Create decision region
-        center = np.array([50.0, 50.0])
+        # Create the choice-point zone the approaches pass through
         region_builder = Regions(env.regions.values())
-        region_builder.add("decision", point=center)
+        region_builder.add("decision", polygon=box(30.0, 35.0, 60.0, 65.0))
         env = env.with_regions(region_builder)
 
         # Create multiple trials
@@ -209,7 +208,6 @@ class TestVTERoundTrip:
             positions_array,
             region="decision",
             trials=trials,
-            window_duration=0.8,
             min_speed=1.0,
             head_sweep_weight=0.5,
             vte_threshold=0.0,  # Lower threshold for testing

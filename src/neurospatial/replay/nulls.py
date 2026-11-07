@@ -388,7 +388,12 @@ def shuffle_place_fields_circular_2d(
     """Circularly shift 2D place fields in both dimensions.
 
     For 2D environments, shifts place fields in both x and y dimensions.
-    This is the 2D analog of ``shuffle_place_fields_circular``.
+    This is the 2D analog of ``shuffle_place_fields_circular``, and the
+    second null of Pfeiffer & Foster (2013), who tested trajectory events
+    by "randomly shuffling each cell's place field in both the x and y
+    dimensions" (5,000 shuffles). It is not a named null of
+    :func:`~neurospatial.replay.replay_significance`: rate maps hold NaN in
+    unvisited bins, and a roll would move them into visited ones.
 
     Each neuron's place field is reshaped to a 2D grid, shifted by random
     amounts in both dimensions, and flattened back to 1D.
@@ -445,6 +450,11 @@ def shuffle_place_fields_circular_2d(
     shuffle_place_fields_circular : Circular shift along a 1-D track
     shuffle_spike_times_circular : Spike-time shift, for any arena
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping
+
+    References
+    ----------
+    Pfeiffer, B. E., & Foster, D. J. (2013). Hippocampal place-cell sequences
+    depict future paths to remembered goals. Nature, 497(7447), 74-79.
     """
     validate_draw_count(
         n_shuffles, name="n_shuffles", owner="shuffle_place_fields_circular_2d()"

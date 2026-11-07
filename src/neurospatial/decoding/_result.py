@@ -739,31 +739,28 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
 
     @cached_property
     def posterior_entropy(self) -> NDArray[np.float64]:
-        """Posterior entropy in bits.
+        """Posterior entropy in bits, measured over space.
 
-        Measures the entropy in the position estimate. Higher values
+        Measures the spread of the position estimate. Higher values
         indicate more spread-out (uncertain) posteriors.
 
         Returns
         -------
         NDArray[np.float64]
             Entropy values of shape (n_time_bins,), float64 for any posterior
-            dtype; NaN for an undecodable row.
-            Range: [0, log2(n_bins)].
+            dtype; NaN for an undecodable row. The maximum, ``log2(n_bins)``,
+            is reached by a posterior that is uniform over space.
 
         Notes
         -----
         .. math::
 
-            H = -\\sum_{i: p_i > 0} p_i \\log_2(p_i)
+            H = -\\sum_{i: p_i > 0} p_i \\log_2(p_i / w_i)
 
-        Maximum entropy (uniform distribution over bins) is ``log2(n_bins)``.
-        Minimum entropy (delta distribution) is 0.
-
-        This is the entropy of the discrete distribution over bins: it counts
-        bins, not length or area. On an environment with unequal bins, a
-        posterior that is flat over space puts more mass in larger bins, so
-        its entropy is below ``log2(n_bins)``.
+        with ``w_i`` each bin's size over the mean bin size. On equal bins
+        this is the Shannon entropy over bins, from 0 (a delta) to
+        ``log2(n_bins)``. See
+        :func:`~neurospatial.decoding.estimates.posterior_entropy`.
 
         See Also
         --------
@@ -774,7 +771,7 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         """
         from neurospatial.decoding.estimates import posterior_entropy
 
-        return marked_read_only(posterior_entropy(self.posterior))
+        return marked_read_only(posterior_entropy(self.env, self.posterior))
 
     @reads_pynapple_samples
     def plot(
@@ -1200,7 +1197,14 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
 
     @property
     def mean_entropy(self) -> float:
-        """Mean posterior entropy over decoded time bins (bits); NaN without any."""
+        """Mean posterior entropy over decoded time bins (bits).
+
+        NaN without a decoded time bin, and on an environment whose bins mix
+        lengths and areas, where entropy over space has no common unit.
+        """
+        bins = self.env.binning.bins
+        if bins.measure_dim is None and bins.n_bins:
+            return float("nan")
         return _mean_over(self.posterior_entropy, self._decoded_rows)
 
     def summary(self) -> dict[str, Any]:
@@ -1212,9 +1216,9 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
             Mapping with keys ``n_time_bins`` (int), ``n_undecodable`` (int,
             time bins with an all-NaN posterior), ``n_bins`` (int, spatial
             bins), ``mean_entropy`` (float, bits, over the decoded time bins;
-            NaN when none was decoded), and ``max_entropy`` (float, bits) --
-            the latter being ``log2(n_bins)``, the entropy of a uniform
-            posterior on equal bins.
+            NaN when none was decoded or when the bins mix lengths and
+            areas), and ``max_entropy`` (float, bits) -- the latter being
+            ``log2(n_bins)``, the entropy of a posterior uniform over space.
             Also includes ``spike_window_assumed`` (bool), ``spike_window``
             (a list of interval pairs, or ``None``) and ``decoded_duration``
             (float, seconds inside ``time_support``; NaN when unknown).

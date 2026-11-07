@@ -199,7 +199,7 @@ class LinearFitResult(ResultMixin):
     slope_std : float | None
         Standard deviation of the slope over resamples, in environment units
         per second: the Monte Carlo spread of the sampled fit, which shrinks
-        as ``n_samples`` grows. It is not an uncertainty of the replay speed
+        as ``n_samples_per_time_bin`` grows. It is not an uncertainty of the replay speed
         given the posterior. None for ``method="map"`` and for a single
         resample.
 
@@ -720,7 +720,7 @@ def fit_linear_trajectory(
     times: NDArray[np.float64],
     *,
     method: Literal["sample", "map"] = "sample",
-    n_samples: int = 10_000,
+    n_samples_per_time_bin: int = 10_000,
     n_resamples: int = 1,
     spike_counts: NDArray[np.int64] | None = None,
     allocation: Literal["equal", "spikes"] = "equal",
@@ -760,13 +760,15 @@ def fit_linear_trajectory(
         Frank 2009); ``"map"`` fits the center of each time bin's MAP bin,
         the bin of highest posterior density (mass per unit length along the
         track; Wu et al. 2017).
-    n_samples : int, default=10000
-        Total number of positions sampled from the posterior in each
-        resample (``method="sample"`` only), at least 2 and at least the
-        number of time bins sampled. Karlsson & Frank drew 10,000 per decoded
-        time bin: pass ``n_samples=10000 * n_decoded_time_bins`` with
-        ``allocation="equal"`` to match them. The Jadhav-lab code draws
-        10,000 in total, as the default does, with ``allocation="spikes"``.
+    n_samples_per_time_bin : int, default=10000
+        Positions sampled from the posterior per sampled time bin in each
+        resample (``method="sample"`` only), at least 1. The default is
+        Karlsson & Frank's 10,000 per decoded time bin. With
+        ``allocation="spikes"`` this is the mean per time bin: the resample
+        draws ``n_samples_per_time_bin`` times the number of sampled time
+        bins in total. The Jadhav-lab code draws 10,000 in total; pass
+        ``n_samples_per_time_bin=10_000 // n_sampled`` to come within
+        ``n_sampled`` samples of it.
     n_resamples : int, default=1
         Number of independent resamples (``method="sample"`` only), at least
         1. The slope, intercept and R² are means over resamples and
@@ -779,7 +781,7 @@ def fit_linear_trajectory(
         Karlsson & Frank and Wu et al. do, since they cannot be decoded. None
         fits every row.
     allocation : {"equal", "spikes"}, default="equal"
-        How ``method="sample"`` splits ``n_samples`` among the time bins it
+        How ``method="sample"`` splits its samples among the time bins it
         samples. ``"equal"``: the same number for each (Karlsson & Frank
         2009). ``"spikes"``: at random in each resample, multinomially in
         proportion to each time bin's spike count, as the Jadhav-lab code
@@ -804,7 +806,7 @@ def fit_linear_trajectory(
         per bin, if a posterior row is not a probability mass (NaN or Inf,
         negative, or not summing to 1), if ``times`` does not have one
         finite entry per row or holds a single distinct time, if
-        ``n_samples`` is less than 2 or ``n_resamples`` less than 1, if
+        ``n_samples_per_time_bin`` or ``n_resamples`` is less than 1, if
         ``spike_counts`` does not have one row of non-negative whole numbers
         per time bin, or if the fit would have points at fewer than two
         distinct times.
@@ -835,10 +837,10 @@ def fit_linear_trajectory(
 
     **How many samples each time bin gets.** The time bins sampled are all
     of them, or with ``spike_counts`` those with spikes. With
-    ``allocation="equal"`` each gets ``n_samples // n_sampled`` and the
-    earliest ``n_samples % n_sampled`` one more. With
-    ``allocation="spikes"`` the split is random and proportional to spike
-    count, as in the Jadhav-lab code (``jds_replay_decoding_CA1_M.m`` in
+    ``allocation="equal"`` each gets ``n_samples_per_time_bin``, as in
+    Karlsson & Frank. With ``allocation="spikes"`` the
+    ``n_samples_per_time_bin * n_sampled`` samples are split at random in
+    proportion to spike count, as in the Jadhav-lab code (``jds_replay_decoding_CA1_M.m`` in
     JadhavLab/PrefrontalRipples: 10,000 samples per resample, 500
     resamples, and the mean R², slope and intercept over resamples). As the
     number of samples grows, the R² approaches the square of
@@ -852,7 +854,7 @@ def fit_linear_trajectory(
 
     **Monte Carlo spread.** ``slope_std`` is the standard deviation of the
     slope over resamples. It measures how much the fit changes between
-    random draws and shrinks as ``n_samples`` grows; it is not the
+    random draws and shrinks as ``n_samples_per_time_bin`` grows; it is not the
     uncertainty of the replay speed given the posterior. The R² of a
     sampled fit is below that of the MAP fit when time bins' posteriors are
     wide, because the spread of positions within a time bin is variance the
@@ -909,9 +911,7 @@ def fit_linear_trajectory(
     >>> # Karlsson & Frank (2009): 10,000 samples per time bin. The 0.2 of
     >>> # each row spread along the track lowers the R² and pulls the line
     >>> # toward the middle of the track, flattening its slope.
-    >>> sampled = fit_linear_trajectory(
-    ...     env, posterior, times, n_samples=10_000 * n_time_bins, rng=0
-    ... )
+    >>> sampled = fit_linear_trajectory(env, posterior, times, rng=0)
     >>> print(f"{sampled.slope:.0f} cm/s, R² = {sampled.r_squared:.2f}")
     317 cm/s, R² = 0.55
     >>>
@@ -921,13 +921,14 @@ def fit_linear_trajectory(
     ...     env,
     ...     posterior,
     ...     times,
+    ...     n_samples_per_time_bin=10_000 // np.count_nonzero(spikes),
     ...     n_resamples=500,
     ...     spike_counts=spikes,
     ...     allocation="spikes",
     ...     rng=0,
     ... )
     >>> print(f"R² = {jadhav.r_squared:.2f}, slope_std = {jadhav.slope_std:.1f} cm/s")
-    R² = 0.55, slope_std = 3.3 cm/s
+    R² = 0.55, slope_std = 3.4 cm/s
     """
     if method not in ("sample", "map"):
         msg = f"method must be 'sample' or 'map', got {method!r}"
@@ -955,11 +956,16 @@ def fit_linear_trajectory(
             slope_std=None,
         )
 
-    _check_sampling(n_samples, n_resamples, allocation, spikes, len(posterior))
+    _check_sampling(n_samples_per_time_bin, n_resamples, allocation, spikes)
 
     generator = np.random.default_rng(rng)
     samples_per_bin = _samples_per_time_bin(
-        int(n_samples), int(n_resamples), len(posterior), spikes, allocation, generator
+        int(n_samples_per_time_bin),
+        int(n_resamples),
+        len(posterior),
+        spikes,
+        allocation,
+        generator,
     )
     sampled = samples_per_bin > 0
     latest = np.where(sampled, times, -np.inf).max(axis=1)
@@ -968,12 +974,12 @@ def fit_linear_trajectory(
         raise ValueError(
             _format_error(
                 f"{operation}: in {int(np.sum(latest == earliest))} of "
-                f"{n_resamples} resamples, all {n_samples} samples fall in "
-                "time bins with one time.",
+                f"{n_resamples} resamples, all samples fall in time bins "
+                "with one time.",
                 why="a line along time needs sampled positions at two or "
-                "more times; n_samples is the total over all time bins, and "
-                "with allocation='spikes' each time bin's share is random",
-                fix="raise n_samples (the default is 10000)",
+                "more times, and with allocation='spikes' each time bin's "
+                "share is random",
+                fix="raise n_samples_per_time_bin (the default is 10000)",
             )
         )
     slopes, intercepts, r_squared = _sampled_lines(
@@ -988,16 +994,15 @@ def fit_linear_trajectory(
 
 
 def _check_sampling(
-    n_samples: int,
+    n_samples_per_time_bin: int,
     n_resamples: int,
     allocation: str,
     spikes: NDArray[np.int64] | None,
-    n_time_bins: int,
 ) -> None:
     """Refuse sample counts or an allocation that a sampled fit cannot use."""
     operation = "fit_linear_trajectory()"
     for name, value, least in (
-        ("n_samples", n_samples, 2),
+        ("n_samples_per_time_bin", n_samples_per_time_bin, 1),
         ("n_resamples", n_resamples, 1),
     ):
         if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
@@ -1010,11 +1015,12 @@ def _check_sampling(
             raise ValueError(
                 _format_error(
                     f"{operation} needs {name} of at least {least}, got {value}.",
-                    why="n_samples is the total number of positions sampled "
-                    "from the posterior in each resample, and a line needs two "
-                    "points; n_resamples is the number of independent resamples",
-                    fix="keep the defaults (n_samples=10000, n_resamples=1), "
-                    "or use method='map' for a fit without sampling",
+                    why="n_samples_per_time_bin is the number of positions "
+                    "sampled from each time bin's posterior in each resample; "
+                    "n_resamples is the number of independent resamples",
+                    fix="keep the defaults (n_samples_per_time_bin=10000, "
+                    "n_resamples=1), or use method='map' for a fit without "
+                    "sampling",
                 )
             )
 
@@ -1030,18 +1036,6 @@ def _check_sampling(
                 why="it splits the samples among time bins in proportion to "
                 "their spike counts",
                 fix="pass spike_counts, or use allocation='equal'",
-            )
-        )
-    n_sampled = n_time_bins if spikes is None else int(np.sum(spikes > 0))
-    if allocation == "equal" and n_samples < n_sampled:
-        raise ValueError(
-            _format_error(
-                f"{operation}: n_samples={n_samples} is fewer than the "
-                f"{n_sampled} time bins it samples.",
-                why="an equal split gives every sampled time bin at least one "
-                "position; fewer samples would leave the event's last time "
-                "bins out",
-                fix=f"pass n_samples of at least {n_sampled}",
             )
         )
 
@@ -1404,7 +1398,7 @@ def _spikes_per_time_bin(
 
 
 def _samples_per_time_bin(
-    n_samples: int,
+    n_samples_per_time_bin: int,
     n_resamples: int,
     n_time_bins: int,
     spikes: NDArray[np.int64] | None,
@@ -1415,8 +1409,8 @@ def _samples_per_time_bin(
 
     Parameters
     ----------
-    n_samples : int
-        Total samples per resample.
+    n_samples_per_time_bin : int
+        Samples per sampled time bin, or their mean with ``"spikes"``.
     n_resamples : int
         Number of resamples.
     n_time_bins : int
@@ -1425,23 +1419,22 @@ def _samples_per_time_bin(
         Spikes per time bin; time bins without spikes get no samples. None
         samples every time bin.
     allocation : {"equal", "spikes"}
-        ``"equal"`` splits ``n_samples`` equally among the sampled time bins,
-        the earliest taking the remainder; ``"spikes"`` splits it in each
-        resample multinomially in proportion to spike count.
+        ``"equal"`` gives each sampled time bin ``n_samples_per_time_bin``;
+        ``"spikes"`` splits ``n_samples_per_time_bin`` times the number of
+        sampled time bins in each resample multinomially in proportion to
+        spike count.
     generator : np.random.Generator
         Source of the multinomial split.
 
     Returns
     -------
     NDArray[np.int64], shape (n_resamples, n_time_bins)
-        Samples per time bin; each row sums to ``n_samples``.
+        Samples per time bin.
     """
     sampled = np.arange(n_time_bins) if spikes is None else np.flatnonzero(spikes)
     if allocation == "equal":
-        base, extra = divmod(n_samples, len(sampled))
         counts = np.zeros(n_time_bins, dtype=np.int64)
-        counts[sampled] = base
-        counts[sampled[:extra]] += 1
+        counts[sampled] = n_samples_per_time_bin
         return np.broadcast_to(counts, (n_resamples, n_time_bins))
     assert spikes is not None  # allocation="spikes" needs spike_counts
     # Only time bins with spikes are categories, so a spike-free time bin
@@ -1449,7 +1442,9 @@ def _samples_per_time_bin(
     active = np.flatnonzero(spikes)
     split = np.zeros((n_resamples, n_time_bins), dtype=np.int64)
     split[:, active] = generator.multinomial(
-        n_samples, spikes[active] / spikes[active].sum(), size=n_resamples
+        n_samples_per_time_bin * active.size,
+        spikes[active] / spikes[active].sum(),
+        size=n_resamples,
     )
     return split
 

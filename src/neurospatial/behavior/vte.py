@@ -1,7 +1,8 @@
 """Vicarious Trial and Error (VTE) detection and analysis.
 
 This module provides tools for detecting and analyzing VTE behavior at choice
-points, including head sweeping (IdPhi), pausing, and combined VTE indices.
+points: head sweeping over the pass through the choice point (IdPhi), its
+session z-score (zIdPhi), pausing, and an optional blend of the two.
 
 Imports
 -------
@@ -27,7 +28,9 @@ VTE (Vicarious Trial and Error)
 - **Pausing**: Slowing down or stopping at the choice point (low speed)
 - **IdPhi**: Integrated absolute head rotation - sum of absolute heading changes
 - **zIdPhi**: Z-scored IdPhi relative to session baseline
-- **VTE index**: Combined measure of head sweeping and slowing
+- **VTE index**: zIdPhi by default; optionally blended with slowing
+- **Pass**: the samples from the animal's first entry into the choice-point
+  zone until it leaves, the window IdPhi is integrated over
 
 When to Use
 -----------
@@ -47,7 +50,6 @@ VTE analysis:
 ...     positions,
 ...     region="center",
 ...     trials=trials,
-...     window_duration=1.0,
 ... )  # doctest: +SKIP
 >>> print(
 ...     f"VTE trials: {result.n_vte_trials}/{len(result.trial_results)}"
@@ -59,7 +61,8 @@ References
        encode paths forward of the animal at a decision point. J Neurosci.
 .. [2] Papale, A. E., Stott, J. J., Powell, N. J., Regier, P. S., & Redish,
        A. D. (2012). Interactions between deliberation and delay-discounting
-       in rats. Cogn Affect Behav Neurosci 12(3), 513-526. IdPhi and zIdPhi.
+       in rats. Cogn Affect Behav Neurosci 12(3), 513-526. IdPhi over the
+       pass through the choice point, z-scored within session (zIdPhi).
        DOI: 10.3758/s13415-012-0097-7
 .. [3] Redish, A. D. (2016). Vicarious trial and error. Nat Rev Neurosci.
        DOI: 10.1038/nrn.2015.30
@@ -137,7 +140,8 @@ class VTETrialResult(ResultMixin):
     Attributes
     ----------
     head_sweep_magnitude : float
-        Sum of |delta_theta| in pre-decision window (radians).
+        Sum of |delta_theta| over the pass through the choice point
+        (radians).
         Also known as IdPhi (Integrated absolute Phi).
         High values indicate looking back and forth between options.
         NaN when no movement heading was observed in the window (the animal
@@ -147,11 +151,11 @@ class VTETrialResult(ResultMixin):
         None if session statistics not computed (single trial analysis);
         NaN when ``head_sweep_magnitude`` is NaN.
     mean_speed : float
-        Mean speed in pre-decision window (environment units/s).
+        Mean speed over the pass (environment units/s).
         NaN when the window has no observed interval (fewer than two
         consecutive observed samples); 0.0 is a measured stop.
     min_observed_speed : float
-        Minimum observed speed in pre-decision window (units/s).
+        Minimum observed speed over the pass (units/s).
         Near-zero indicates a pause. NaN like ``mean_speed``. Not to be
         confused with the ``min_speed`` heading gate passed to the analysis.
     z_speed_inverse : float or None
@@ -159,20 +163,25 @@ class VTETrialResult(ResultMixin):
         (higher = slower, more VTE-like). None if session statistics not
         computed; NaN when ``mean_speed`` is NaN.
     vte_index : float or None
-        Combined VTE index: ``head_sweep_weight * z_head_sweep +
+        VTE index: ``z_head_sweep`` with the default
+        ``head_sweep_weight=1.0``, else ``head_sweep_weight * z_head_sweep +
         (1 - head_sweep_weight) * z_speed_inverse``.
-        None if session statistics not computed; NaN when either z-score is
-        NaN.
+        None if session statistics not computed; NaN when a z-score it
+        weights is NaN.
     is_vte : bool or None
         True if ``vte_index >= threshold``. None if not classified: single
         trial analysis, or a NaN ``vte_index`` (nothing to classify).
     window_start : float
-        Requested window start (seconds), clipped at the trial start in
-        session analysis. Available samples may start later after a pause.
+        Start of the pass window, in seconds: the decision-region entry in
+        session analysis, ``start_time`` for :func:`compute_vte_trial`.
         NaN when the trial has no decision-region entry.
     window_end : float
-        End time of window (decision region entry time, seconds). NaN when
-        the trial has no decision-region entry.
+        Exclusive end of the pass window, in seconds, so the window is the
+        half-open ``[window_start, window_end)``. In session analysis it is
+        the time of the first sample after the pass, or the trial's
+        ``stop_time`` when the pass lasts to the end of the trial;
+        ``stop_time`` for :func:`compute_vte_trial`. NaN when the trial has
+        no decision-region entry.
     status : {"ok", "no_samples", "no_entry", "too_few_samples"}
         Why the trial was or was not measured. ``"ok"``: the window was
         analyzed (its metrics can still be NaN, for example a slow animal
@@ -194,10 +203,10 @@ class VTETrialResult(ResultMixin):
     >>> result = compute_vte_trial(
     ...     times,
     ...     positions,
-    ...     entry_time=2.0,
-    ...     window_duration=1.0,
+    ...     1.0,
+    ...     2.0,
     ...     min_speed=5.0,
-    ...     break_before=times == times[59],
+    ...     break_before=times == times[31],
     ... )
     >>> result.head_sweep_magnitude, result.mean_speed, result.is_vte
     (nan, nan, None)
@@ -321,10 +330,10 @@ class VTESessionResult(ResultMixin):
         Session (population) std of head sweep magnitude, over the same
         trials.
     mean_speed : float
-        Session mean of pre-decision mean speed, over trials with an
+        Session mean of the per-pass mean speed, over trials with an
         observed speed. NaN when no trial has one.
     std_speed : float
-        Session (population) std of pre-decision mean speed, over the same
+        Session (population) std of the per-pass mean speed, over the same
         trials.
     n_vte_trials : int
         Number of trials classified as VTE (``is_vte is True``).
@@ -428,12 +437,12 @@ class VTESessionResult(ResultMixin):
 
     @property
     def mean_speed(self) -> float:
-        """Session mean of pre-decision mean speed; NaN without any."""
+        """Session mean of the per-pass mean speed; NaN without any."""
         return _mean_or_nan(self._observed("mean_speed"))
 
     @property
     def std_speed(self) -> float:
-        """Session std of pre-decision mean speed; NaN without any."""
+        """Session std of the per-pass mean speed; NaN without any."""
         return _std_or_nan(self._observed("mean_speed"))
 
     @property
@@ -614,7 +623,8 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
     -----
     This is the IdPhi measure of head sweeping at a choice point (integrated
     absolute dphi/dt * dt), as used by Papale et al. (2012) and reviewed by
-    Redish (2016).
+    Redish (2016). Papale et al. integrated |dPhi| at each 60 Hz sample;
+    here the per-sample changes are wrapped to (-π, π] before summing.
 
     NaN entries are skipped, so the change from the last heading before
     them to the first heading after them counts once. Pass one continuous
@@ -920,16 +930,24 @@ def normalize_vte_scores(
 
 _ZERO_Z_NOTE = (
     "Z-scores will be 0, and VTE classification may not be meaningful. "
-    "Consider adjusting window_duration or min_speed parameters."
+    "Check that the region covers the choice-point zone the animal passes "
+    "through, or adjust min_speed."
 )
 
 
-def _speed_z_scores(speeds: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Negated session z-scores of speed, so slower is a higher score."""
+def _speed_z_scores(
+    speeds: NDArray[np.float64], *, warn: bool = True
+) -> NDArray[np.float64]:
+    """Negated session z-scores of speed, so slower is a higher score.
+
+    ``warn`` warns when two or more speeds do not vary.
+    """
     return _observed_z_scores(
         speeds,
         no_variation="No variation in speed across trials (std=0). "
-        "All trials have identical speed behavior. " + _ZERO_Z_NOTE,
+        "All trials have identical speed behavior. " + _ZERO_Z_NOTE
+        if warn
+        else None,
         invert=True,
     )
 
@@ -985,9 +1003,9 @@ def vte_index(
     z_head_sweep: float,
     z_speed_inv: float,
     *,
-    head_sweep_weight: float = 0.5,
+    head_sweep_weight: float = 1.0,
 ) -> float:
-    """Compute combined VTE index.
+    """Compute the VTE index: zIdPhi, optionally blended with slowing.
 
     Parameters
     ----------
@@ -995,14 +1013,15 @@ def vte_index(
         Z-scored head sweep magnitude.
     z_speed_inv : float
         Negated z-scored speed (higher = slower).
-    head_sweep_weight : float, default=0.5
+    head_sweep_weight : float, default=1.0
         Weight for head sweep (1-head_sweep_weight for speed), in [0, 1].
-        Default 0.5 weights both equally.
+        Default 1.0 is the head-sweep z-score alone (zIdPhi), the score of
+        Papale et al. (2012); 0.5 weights head sweep and slowing equally.
 
     Returns
     -------
     float
-        Combined VTE index; NaN when a z-score it weights is NaN. A z-score
+        VTE index; NaN when a z-score it weights is NaN. A z-score
         with weight 0 does not enter: with ``head_sweep_weight=0`` the index
         is the speed z-score alone, even for a trial with no head-sweep
         measure (no headings), and with ``head_sweep_weight=1`` it is the
@@ -1015,18 +1034,18 @@ def vte_index(
 
     Notes
     -----
-    This combined index is neurospatial's own construction; the closest
-    published method is the zIdPhi score, which later studies describe as
-    scoring head sweeps alone, without slowing (not yet checked against
-    Papale et al. 2012). ``head_sweep_weight=1.0`` gives a head-sweep-only
-    score.
+    Papale et al. (2012) scored VTE by zIdPhi alone: "VTE was quantified by
+    the z-scored integrated absolute change in angular velocity of the head",
+    with no speed term. The default ``head_sweep_weight=1.0`` is that score.
+    A blend with the slowing z-score (``head_sweep_weight < 1``) is
+    neurospatial's own option.
 
     Examples
     --------
     >>> from neurospatial.behavior.vte import vte_index
-    >>> vte_index(1.0, 1.0, head_sweep_weight=0.5)
-    1.0
-    >>> vte_index(2.0, 0.0, head_sweep_weight=1.0)  # Head sweep only
+    >>> vte_index(2.0, 0.0)  # zIdPhi alone
+    2.0
+    >>> vte_index(1.0, 3.0, head_sweep_weight=0.5)  # Blend with slowing
     2.0
     >>> vte_index(float("nan"), 0.5, head_sweep_weight=0.0)  # No headings
     0.5
@@ -1051,8 +1070,8 @@ def _validated_head_sweep_weight(head_sweep_weight: float, *, call: str) -> floa
             "Why: head_sweep_weight weights the head-sweep z-score and "
             "1 - head_sweep_weight the slowness z-score, so outside [0, 1] one of them counts against "
             "VTE.\n"
-            "Fix: pass head_sweep_weight=0.5 to weight both equally, 1.0 for head sweep "
-            "only or 0.0 for slowness only."
+            "Fix: pass head_sweep_weight=1.0 for head sweep only (zIdPhi), 0.5 to "
+            "weight both equally or 0.0 for slowness only."
         )
         raise ValueError(msg)
     return value
@@ -1071,7 +1090,7 @@ def classify_vte(
     Parameters
     ----------
     vte_index : float
-        Combined VTE index.
+        VTE index (see :func:`vte_index`).
     threshold : float, default=0.5
         Classification threshold (finite). Trial is VTE if
         ``vte_index >= threshold``.
@@ -1090,9 +1109,8 @@ def classify_vte(
 
     Notes
     -----
-    The 0.5 cutoff on the combined index is neurospatial's choice;
-    published VTE studies threshold zIdPhi alone, at cutoffs that differ
-    between studies.
+    The 0.5 cutoff is neurospatial's choice. Papale et al. (2012) state no
+    cutoff: they analyze zIdPhi as a continuous score.
 
     Examples
     --------
@@ -1126,9 +1144,9 @@ def classify_vte(
 def compute_vte_trial(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
-    entry_time: float,
+    start_time: float,
+    stop_time: float,
     *,
-    window_duration: float,
     min_speed: float,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
@@ -1136,7 +1154,7 @@ def compute_vte_trial(
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> VTETrialResult:
-    """Compute VTE metrics for a single trial.
+    """Compute VTE metrics for one pass through the choice point.
 
     Parameters
     ----------
@@ -1147,11 +1165,14 @@ def compute_vte_trial(
         Position coordinates for entire trajectory, ``n_dims >= 2``. A row
         with a non-finite coordinate (NaN, for a lost frame) is a missing
         sample.
-    entry_time : float
-        Time of decision region entry, in seconds on the clock of ``times``;
+    start_time : float
+        Time the pass through the choice point starts (the animal enters the
+        choice-point zone), in seconds on the clock of ``times``; finite and
         within ``[times[0], times[-1]]``.
-    window_duration : float
-        Duration of pre-decision window (seconds); finite and positive.
+    stop_time : float
+        Time the pass ends (the animal leaves the zone), in seconds; finite
+        and after ``start_time``. The window is the half-open
+        ``[start_time, stop_time)``, so a sample at ``stop_time`` is outside.
     min_speed : float
         Required, in position units per second (e.g. ``5.0`` for 5 cm/s with positions
         in cm, the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
@@ -1190,13 +1211,14 @@ def compute_vte_trial(
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
-        time. Entry 0 is ignored. The window never reaches back across a
-        declared break.
+        time. Entry 0 is ignored. The window never reaches across a declared
+        break.
 
     Returns
     -------
     VTETrialResult
-        VTE metrics for the trial.
+        VTE metrics for the pass, with ``window_start=start_time`` and
+        ``window_end=stop_time``.
         Note: z-scores and classification are None for single trial analysis.
         Use compute_vte_session() for session-level analysis with z-scoring.
         ``mean_speed`` and ``min_observed_speed`` are NaN when the window has no
@@ -1209,8 +1231,8 @@ def compute_vte_trial(
         If there are no samples, if ``times`` is not finite and strictly
         increasing, if ``break_before`` is not a Boolean array with one entry
         per sample, if positions has fewer than two coordinates (x and y), if
-        ``window_duration`` is not finite and positive, or if ``entry_time``
-        is outside the recording.
+        ``start_time`` or ``stop_time`` is not finite, if ``stop_time`` is not
+        after ``start_time``, or if ``start_time`` is outside the recording.
 
     Notes
     -----
@@ -1220,15 +1242,18 @@ def compute_vte_trial(
     a ``break_before`` splits the recording into separately analyzed runs,
     and no velocity or heading spans such a split.
 
-    The pre-decision window is the one :func:`extract_pre_decision_window`
-    returns: it lies in the time segment containing ``entry_time``. Result
-    window bounds describe the requested window; fewer samples may be
-    available within that window.
+    The window holds the samples in ``[start_time, stop_time)`` within the
+    time segment (between ``max_gap`` gaps, ``epochs`` edges and declared
+    breaks) that contains ``start_time``; it stops at the end of that
+    segment. When ``start_time`` falls in a gap, the window is empty and
+    every metric is NaN. Speed and heading are computed from the window's
+    samples alone.
 
-    Measuring head sweep and speed in a time window before region entry is
-    neurospatial's choice. Later studies describe IdPhi as integrated over
-    the whole pass through the choice point; this has not yet been checked
-    against Papale et al. (2012).
+    Papale et al. (2012) integrated |dPhi| "across the entire pass" through
+    the choice point. Pass the times the animal entered and left the
+    choice-point zone, for a T-maze from partway up the stem to the
+    entrances of the reward arms. :func:`compute_vte_session` finds the pass
+    from a region for each trial.
 
     Examples
     --------
@@ -1236,42 +1261,40 @@ def compute_vte_trial(
     >>> from neurospatial.behavior.vte import compute_vte_trial
     >>> times = np.linspace(0, 3, 90)
     >>> positions = np.column_stack([np.linspace(0, 50, 90), np.ones(90) * 50])
-    >>> result = compute_vte_trial(
-    ...     times, positions, entry_time=2.0, window_duration=1.0, min_speed=5.0
-    ... )
-    >>> result.window_start
-    1.0
-    >>> result.window_end
-    2.0
+    >>> result = compute_vte_trial(times, positions, 1.0, 2.0, min_speed=5.0)
+    >>> result.window_start, result.window_end
+    (1.0, 2.0)
 
-    An animal that waits still before the entry moves at a measured 0 cm/s
-    but has no direction of movement, so its head sweep is NaN:
+    A straight run has no head sweep:
+
+    >>> round(result.head_sweep_magnitude, 6)
+    0.0
+
+    An animal that waits still in the zone moves at a measured 0 cm/s but
+    has no direction of movement, so its head sweep is NaN:
 
     >>> still = np.full((90, 2), 50.0)  # cm
-    >>> result = compute_vte_trial(
-    ...     times, still, entry_time=2.0, window_duration=1.0, min_speed=5.0
-    ... )
+    >>> result = compute_vte_trial(times, still, 1.0, 2.0, min_speed=5.0)
     >>> float(result.mean_speed), result.head_sweep_magnitude
     (0.0, nan)
 
-    A new recording that starts one sample before the entry leaves one
-    sample in the window, so no speed was observed either:
+    A recording break one sample after the start leaves one sample in the
+    window, so no speed was observed either:
 
     >>> result = compute_vte_trial(
     ...     times,
     ...     positions,
-    ...     entry_time=2.0,
-    ...     window_duration=1.0,
+    ...     1.0,
+    ...     2.0,
     ...     min_speed=5.0,
-    ...     break_before=times == times[59],
+    ...     break_before=times == times[31],
     ... )
     >>> result.mean_speed, result.head_sweep_magnitude
     (nan, nan)
     """
     from neurospatial.behavior._decision_windows import (
-        pre_decision_window,
-        validated_entry_time,
-        validated_window_duration,
+        span_window,
+        validated_pass_bounds,
     )
     from neurospatial.behavior._kinematics import validated_min_speed, validated_motion
 
@@ -1285,10 +1308,9 @@ def compute_vte_trial(
         result="no VTE metric was observed",
         columns="xy",
     )
-    window_duration = validated_window_duration(
-        window_duration, name="window_duration", call="compute_vte_trial"
+    start_time, stop_time = validated_pass_bounds(
+        times, start_time, stop_time, call="compute_vte_trial"
     )
-    entry_time = validated_entry_time(times, entry_time, call="compute_vte_trial")
     min_speed = validated_min_speed(min_speed, call="compute_vte_trial")
     motion = _Motion(
         min_speed=min_speed,
@@ -1299,9 +1321,7 @@ def compute_vte_trial(
             headings, name="headings", n_samples=len(times), call="compute_vte_trial"
         ),
     )
-    window = pre_decision_window(
-        times, support.interval_gates, entry_time, window_duration
-    )
+    window = span_window(times, support.interval_gates, start_time, stop_time)
     head_sweep, mean_spd, min_spd = _window_metrics(
         times, positions, support, window, motion
     )
@@ -1311,8 +1331,8 @@ def compute_vte_trial(
         head_sweep=head_sweep,
         mean_speed=mean_spd,
         min_observed_speed=min_spd,
-        window_start=entry_time - window_duration,
-        window_end=entry_time,
+        window_start=start_time,
+        window_end=stop_time,
     )
 
 
@@ -1332,7 +1352,7 @@ def _window_metrics(
     window: slice,
     motion: _Motion,
 ) -> tuple[float, float, float]:
-    """Head sweep, mean speed and minimum speed of one pre-decision window.
+    """Head sweep, mean speed and minimum speed of one pass window.
 
     Speed and heading are computed from the window's samples alone (a
     caller's ``speed`` and ``headings`` are taken at them). The window lies
@@ -1363,17 +1383,20 @@ def compute_vte_session(
     *,
     region: str,
     trials: Intervals[Any],
-    window_duration: float = 1.0,
     min_speed: float | None = None,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
-    head_sweep_weight: float = 0.5,
+    head_sweep_weight: float = 1.0,
     vte_threshold: float = 0.5,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
 ) -> VTESessionResult:
     """Compute VTE metrics for all trials in a session.
+
+    Each trial is scored over its first pass through the choice-point zone
+    ``region``, and its head sweep (IdPhi) is z-scored within the session
+    (zIdPhi), as in Papale et al. (2012).
 
     Parameters
     ----------
@@ -1386,7 +1409,11 @@ def compute_vte_session(
         Position coordinates for entire session, ``n_dims >= 2``. A row with
         a non-finite coordinate (NaN, for a lost frame) is a missing sample.
     region : str
-        Name of decision region in env.regions.
+        Name of the choice-point zone in env.regions: the zone the animal
+        passes through while it deliberates, not a small point at the
+        junction. For a T-maze, from partway up the central stem to the
+        entrances of the reward arms. A region too small to hold samples of
+        the pass leaves trials ``"too_few_samples"``.
     trials : Intervals or IntervalSet
         Trials from detect_trials(), read_trials() or a task log. Each
         trial's samples are those in ``[start_time, stop_time)``; the sample
@@ -1394,23 +1421,22 @@ def compute_vte_session(
         ``IntervalSet`` is read as :func:`~neurospatial.io.from_pynapple`
         reads it: metadata as fields, its inclusive ``end`` as the half-open
         stop.
-    window_duration : float, default=1.0
-        Duration of pre-decision window in seconds; finite and positive.
-        Typical values: 0.5-2.0s depending on maze size and task.
-        The window is clipped at the trial start; samples before
-        ``trial.start_time`` are never used.
     min_speed : float or None, default=None
         Minimum speed for valid heading, in position units per second (finite and
         non-negative); None is 5 cm/s expressed in ``env.units`` (``0.05`` for meters,
         ``50.0`` for millimeters), the speed below which Davidson, Kloosterman & Wilson
         (2009, Neuron 63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat
         as stopped. With units that are not a metric length, pass it explicitly.
-    head_sweep_weight : float, default=0.5
+    head_sweep_weight : float, default=1.0
         Weight for head sweep in VTE index (1-head_sweep_weight for speed), in [0, 1].
-        Default 0.5 weights both equally; 0 gives a speed-only index.
+        Default 1.0 scores zIdPhi alone, as Papale et al. (2012) did; 0.5
+        weights head sweep and slowing equally and 0 gives a speed-only
+        index. The blend with slowing is neurospatial's own option.
     vte_threshold : float, default=0.5
         Threshold for VTE classification (finite).
-        Trial is VTE if ``vte_index >= vte_threshold``.
+        Trial is VTE if ``vte_index >= vte_threshold``. The 0.5 cutoff is
+        neurospatial's choice: Papale et al. (2012) state no cutoff and
+        analyze zIdPhi as a continuous score.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -1443,8 +1469,7 @@ def compute_vte_session(
     break_before : ArrayLike of bool, shape (n_samples,), optional
         ``True`` at sample ``k`` declares a break between samples ``k - 1`` and
         ``k`` (for example where a new recording starts), whatever the elapsed
-        time. Entry 0 is ignored. No pre-decision window reaches back across
-        a declared break.
+        time. Entry 0 is ignored. A declared break ends the pass window.
 
     Returns
     -------
@@ -1454,11 +1479,12 @@ def compute_vte_session(
         ``result.trials_table()`` tabulates them). A trial that could not be
         measured keeps its place with NaN metrics, ``is_vte=None`` and a
         ``status`` saying why; a measured trial without an observed head
-        sweep or speed has status ``"ok"``, NaN metrics and ``is_vte=None``.
-        When two or more trials have head sweeps that do not differ (session
-        std below 1e-10 rad, as on straight runs), every trial has
-        ``is_vte=None``: ranking such trials would classify on speed alone.
-        With ``head_sweep_weight=0`` the index is speed alone, so they are
+        sweep (or, with ``head_sweep_weight < 1``, speed) has status
+        ``"ok"``, NaN metrics and ``is_vte=None``. When two or more trials
+        have head sweeps that do not differ (session std below 1e-10 rad, as
+        on straight runs), every trial has ``is_vte=None``: no trial sweeps
+        more than the others, so no verdict is given. With
+        ``head_sweep_weight=0`` the index is speed alone, so they are
         classified, with no warning. Without any measured trial the session statistics and
         ``vte_fraction`` are NaN.
 
@@ -1469,22 +1495,22 @@ def compute_vte_session(
         samples, if ``times`` is not finite and strictly increasing, if
         ``break_before`` is not a Boolean array with one entry per sample, if
         positions has fewer than two coordinates (x and y), if
-        ``window_duration`` is not finite and positive, if ``head_sweep_weight`` is not
-        in [0, 1], or if ``vte_threshold`` is not finite.
+        ``head_sweep_weight`` is not in [0, 1], or if ``vte_threshold`` is
+        not finite.
 
     Warns
     -----
     UserWarning
         For each trial with duration but no sample in its
         ``[start_time, stop_time)`` (often trial times on another clock). Also when two or more trials
-        all have the same head sweep (no trial is classified) or the same
-        speed (speed z-scores of 0).
+        all have the same head sweep (no trial is classified) or, with
+        ``head_sweep_weight < 1``, the same speed (speed z-scores of 0).
 
     Notes
     -----
     A trial that never enters ``region`` inside ``epochs`` (for
-    example an error trial) or has fewer than three observed samples before
-    the entry is expected data, not an error: it has NaN metrics and
+    example an error trial) or has fewer than three observed samples in its
+    pass is expected data, not an error: it has NaN metrics and
     ``status`` ``"no_entry"`` or ``"too_few_samples"``, with no warning.
 
     A missing row is skipped as if it were deleted: when the observed
@@ -1493,11 +1519,19 @@ def compute_vte_session(
     a ``break_before`` splits the recording into separately analyzed runs,
     and no velocity or heading spans such a split.
 
-    A trial's decision-region entry is its first sample inside both the
-    region and ``epochs``. Each pre-decision window uses only its trial
-    samples and the time segment containing that entry. Result window bounds
-    describe the requested window clipped at the trial start; fewer samples
-    may be available within that window.
+    Each trial's window is its first pass through ``region``. The pass
+    starts at the entry, the trial's first sample inside both the region and
+    ``epochs``, and holds every sample up to, not including, the first later
+    sample that is observed outside the region, outside ``epochs``, or past
+    the end of the time segment (``max_gap``, ``epochs``, ``break_before``)
+    holding the entry. Region membership is by bin, so an observed position
+    outside the environment is outside the region and ends the pass. A
+    missing sample inside the pass does not end it when the gap is bridged. The window never extends past the trial's own
+    samples, and later re-entries in the same trial are not used. The
+    result's ``[window_start, window_end)`` is the entry time and the time
+    of the first sample after the pass, or the trial's ``stop_time`` when
+    the pass lasts to the end of the trial; passing these bounds to
+    :func:`compute_vte_trial` measures the same samples.
 
     Z-scores use the session mean and std of the trials where the quantity
     was observed (see :func:`normalize_vte_scores`). A trial whose window has
@@ -1507,11 +1541,21 @@ def compute_vte_session(
     ``head_sweep_weight=0`` the index is speed alone, so such a trial is
     still scored and classified by its speed.
 
-    The pre-entry time window with its 1 s default, and the combined
-    :func:`vte_index` with its 0.5 cutoff, are neurospatial's choices.
-    Later studies describe IdPhi as integrated over the whole pass through
-    the choice point and VTE as scored by zIdPhi alone; this has not yet
-    been checked against Papale et al. (2012).
+    Papale et al. (2012) defined the choice-point window as the "position
+    samples starting halfway up the central stem of the T-maze and ending
+    before entry into a reward site", excluded samples where the rat
+    "turned back into the choice point", integrated |dPhi| "across the
+    entire pass", and z-scored this IdPhi within session (zIdPhi). This
+    function follows that, with three departures:
+
+    - Headings are undefined below ``min_speed``, so slow stretches add no
+      head sweep; Papale et al. computed orientation from velocity at every
+      sample.
+    - IdPhi is the sum of per-sample heading changes, each wrapped to
+      (-π, π].
+    - The 0.5 cutoff (``vte_threshold``) and the optional blend with slowing
+      (``head_sweep_weight < 1``) are neurospatial's; Papale et al. state
+      no cutoff and no speed term.
 
     Examples
     --------
@@ -1519,13 +1563,16 @@ def compute_vte_session(
     >>> from neurospatial import Environment, Intervals, Regions
     >>> from neurospatial.behavior import Trial, compute_vte_session
 
-    A T-maze stem rising to a crossbar, with the choice point at its center:
+    A T-maze stem rising to a crossbar. The choice-point zone, a disc
+    around the junction, runs from partway up the stem to the entrances of
+    the two arms:
 
-    >>> stem = np.column_stack([np.full(30, 50.0), np.linspace(0, 50, 30)])
+    >>> y = np.linspace(0, 50, 30)
+    >>> stem = np.column_stack([np.repeat([45.0, 50.0, 55.0], 30), np.tile(y, 3)])
     >>> bar = np.column_stack([np.linspace(0, 100, 60), np.full(60, 55.0)])
     >>> env = Environment.from_samples(np.vstack([stem, bar]), bin_size=5.0)
     >>> regions = Regions()
-    >>> _ = regions.add("center", point=(50.0, 55.0))
+    >>> _ = regions.add("center", point=(50.0, 52.0), radius=15.0)
     >>> env = env.with_regions(regions)
 
     Three 2 s approaches up the stem at 13 cm/s, scanning left and right
@@ -1548,9 +1595,7 @@ def compute_vte_session(
     ...     np.vstack(positions),
     ...     region="center",
     ...     trials=Intervals(trials),
-    ...     window_duration=0.5,
     ...     min_speed=5.0,
-    ...     vte_threshold=0.0,
     ... )
 
     The creeping trial has no observed heading, so it is unclassified, and
@@ -1562,6 +1607,13 @@ def compute_vte_session(
     nan
     >>> result.n_vte_trials, round(result.vte_fraction, 3)
     (1, 0.333)
+
+    Each window is the trial's pass through the zone, from the entry partway
+    up the stem to the trial's stop, here at the junction:
+
+    >>> first = result.trial_results[0]
+    >>> round(first.window_start, 2), round(first.window_end, 2)
+    (0.6, 1.97)
 
     One row per trial, in row order:
 
@@ -1594,12 +1646,8 @@ def compute_vte_session(
         operation="compute_vte_session()",
         argument="region",
     )
-    from neurospatial.behavior._decision_windows import validated_window_duration
     from neurospatial.behavior._kinematics import resolve_min_speed, validated_motion
 
-    window_duration = validated_window_duration(
-        window_duration, name="window_duration", call="compute_vte_session"
-    )
     head_sweep_weight = _validated_head_sweep_weight(
         head_sweep_weight, call="compute_vte_session"
     )
@@ -1637,7 +1685,6 @@ def compute_vte_session(
                 env=env,
                 region_bins=region_bins,
                 in_epochs=in_epochs,
-                window_duration=window_duration,
                 motion=motion,
             )
         )
@@ -1659,14 +1706,17 @@ def compute_vte_session(
         else "No variation in head sweep magnitude across trials "
         f"(std below {_NO_VARIATION_TOLERANCE:g} rad): every trial has the same "
         "head sweep, as on straight runs, so is_vte is <NA> (unclassified) for "
-        "every trial instead of a verdict on speed alone.\n"
+        "every trial: no trial sweeps more than the others.\n"
         "Why: VTE is a trial with more head sweeping than the session's other "
         "trials, and these trials do not differ in sweeping.\n"
-        "Fix: check that headings vary in the decision window (pass headings= "
-        "or a smaller min_speed), or widen window_duration.",
+        "Fix: check that headings vary over the pass (pass headings= or a "
+        "smaller min_speed), and that region is the choice-point zone the "
+        "animal passes through rather than a small point at the junction.",
         invert=False,
     )
-    z_speed_inv = _speed_z_scores(speeds)
+    # Speed enters the index only with head_sweep_weight < 1; with the
+    # zIdPhi-only default a speed without variation changes nothing.
+    z_speed_inv = _speed_z_scores(speeds, warn=head_sweep_weight < 1.0)
 
     trial_results = []
     for m, z_head_sweep, z_speed in zip(
@@ -1703,7 +1753,7 @@ def _unscored_trial(
     window_start: float = np.nan,
     window_end: float = np.nan,
 ) -> VTETrialResult:
-    """Raw pre-decision metrics of one trial, before session z-scoring."""
+    """Raw pass metrics of one trial, before session z-scoring."""
     return VTETrialResult(
         head_sweep_magnitude=head_sweep,
         z_head_sweep=None,
@@ -1728,11 +1778,10 @@ def _measure_trial(
     env: Environment,
     region_bins: NDArray[np.int_],
     in_epochs: NDArray[np.bool_],
-    window_duration: float,
     motion: _Motion,
 ) -> VTETrialResult:
     """Unscored metrics of one trial, or the status saying why it has none."""
-    from neurospatial.behavior._decision_windows import first_entry, pre_decision_window
+    from neurospatial.behavior._decision_windows import first_entry, first_pass_stop
 
     span = f"Trial {index} spanning [{trial.start_time:.3f}, {trial.stop_time:.3f}] s"
     # The trial's samples, start_time <= t < stop_time, are contiguous.
@@ -1752,29 +1801,32 @@ def _measure_trial(
         )
         return _unscored_trial(status="no_samples")
     trial_times = times[first:stop]
+    trial_bins = env.bin_at(positions[first:stop])
+    trial_in_epochs = in_epochs[first:stop]
     # The entry is the trial's first decision-region sample inside epochs.
-    entry = first_entry(
-        env.bin_at(positions[first:stop]), region_bins, in_epochs[first:stop]
-    )
+    entry = first_entry(trial_bins, region_bins, trial_in_epochs)
     if entry is None:
         return _unscored_trial(status="no_entry")
-    entry_time = float(trial_times[entry])
-    window_start = max(entry_time - window_duration, float(trial.start_time))
-
-    # The pre-decision window comes from this trial's samples only, so it
-    # stops at the trial start; the trial's interval gates are the session's
-    # gates between its first and last sample.
-    in_trial = pre_decision_window(
-        trial_times,
-        support.interval_gates[first : stop - 1],
-        entry_time,
-        window_duration,
+    # The pass ends at the first observed sample outside the region, the
+    # first sample outside epochs, or the end of the entry's gate segment;
+    # the trial's interval gates are the session's between its samples.
+    leaves = ~trial_in_epochs | (
+        support.sample_valid[first:stop] & ~np.isin(trial_bins, region_bins)
     )
-    window = slice(first + in_trial.start, first + in_trial.stop)
+    pass_stop = first_pass_stop(entry, leaves, support.interval_gates[first : stop - 1])
+    window_start = float(trial_times[entry])
+    window_end = (
+        float(trial_times[pass_stop])
+        if pass_stop < trial_times.size
+        else float(trial.stop_time)
+    )
+    window = slice(first + entry, first + pass_stop)
     n_observed = int(np.count_nonzero(support.sample_valid[window]))
     if n_observed < 3:
         return _unscored_trial(
-            status="too_few_samples", window_start=window_start, window_end=entry_time
+            status="too_few_samples",
+            window_start=window_start,
+            window_end=window_end,
         )
     head_sweep, mean_speed, min_observed_speed = _window_metrics(
         times, positions, support, window, motion
@@ -1785,5 +1837,5 @@ def _measure_trial(
         mean_speed=mean_speed,
         min_observed_speed=min_observed_speed,
         window_start=window_start,
-        window_end=entry_time,
+        window_end=window_end,
     )

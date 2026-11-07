@@ -41,7 +41,11 @@ instead of a Gaussian mean of centered secants: headings more than 20 samples
 from the ends of the recording moved by less than 3e-6 rad, those at the ends
 by up to 0.014 rad. The ``compute_vte_session`` entry was captured again
 when the session result began to keep the input trials' ``interval_ids``;
-its trial results are unchanged.
+its trial results are unchanged. It was captured again when the VTE window
+became the first pass through the decision region instead of the 1 s before
+the entry: the first trial's window moved from [78.78, 79.78) s to
+[79.78, 80.28) s, its IdPhi from 0.0877 to 0.0423 rad and its mean speed
+from 14.01 to 12.98 cm/s.
 """
 
 import json

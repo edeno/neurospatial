@@ -129,10 +129,10 @@ class BiasSimilarityResult(ReadOnlyArraysMixin, ResultMixin):
     Attributes
     ----------
     similarity : float
-        Cosine between the event's and the template's skew-bias matrices
-        over the pairs both define, in [-1, 1]: 1 for the template's order,
-        -1 for its reverse. NaN when no pair is defined in both, or when
-        either matrix is zero on those pairs.
+        Cosine between the event's and the template's skew-bias matrices,
+        with undefined pairs counted as 0 in each, in [-1, 1]: 1 for the
+        template's order, -1 for its reverse. NaN when either matrix is zero
+        everywhere.
     p_value : float
         Monte Carlo p-value ``(k + 1) / (n + 1)`` over the ``n`` shuffles
         with a defined similarity, ``k`` of them at least as extreme as the
@@ -417,7 +417,13 @@ def mean_pairwise_bias(spike_times: Any, intervals: Any) -> NDArray[np.float64]:
     cells that are not common to the two sequences is ignored" is read here
     as averaging each pair over the cycles where both cells fired. The lab's
     code (neuro_py ``shuffled_significance``) instead computes one matrix
-    over all the task's theta spikes, with silent pairs set to 0.
+    over all the task's theta spikes, so a spike in one cycle and a spike
+    many laps later count as an ordered pair. That pooled matrix is
+    :func:`pairwise_bias_matrix` of the spike trains restricted to the
+    task's theta epochs, over the whole task:
+    ``pairwise_bias_matrix(theta_spikes, (task_start, task_stop)).bias``.
+    It counts tied spikes half to each order, where neuro_py counts the
+    lower-numbered unit first.
 
     Examples
     --------
@@ -470,7 +476,7 @@ def mean_pairwise_bias(spike_times: Any, intervals: Any) -> NDArray[np.float64]:
 def bias_similarity(
     template_bias: NDArray[np.float64], event_bias: NDArray[np.float64]
 ) -> float:
-    """Cosine between two skew-bias matrices over the pairs both define.
+    """Cosine between two skew-bias matrices, with undefined pairs as 0.
 
     Parameters
     ----------
@@ -486,8 +492,8 @@ def bias_similarity(
     -------
     float
         The cosine, in [-1, 1]: 1 for the same order, -1 for the reverse,
-        near 0 for unrelated orders. NaN when no pair is defined in both,
-        or either matrix is zero on those pairs.
+        near 0 for unrelated orders. NaN when either matrix is zero
+        everywhere.
 
     Raises
     ------
@@ -504,12 +510,13 @@ def bias_similarity(
     Liu et al. (2023) estimated "the correlation between two sequences ...
     as the cosine between their skew-bias matrices as each bias matrix is
     unwrapped into a vector", ignoring "the activity of cells that are not
-    common to the two sequences". The cosine here runs over the pairs
-    defined in both matrices (the pairs above the diagonal: the matrices
-    are skew-symmetric, so the whole matrices give the same cosine). The
-    lab's code (neuro_py ``cosine_similarity_matrices``) sets undefined
-    pairs to 0 and keeps them in the vectors, which leaves the dot product
-    unchanged but enlarges the norms, so its cosines are smaller in size.
+    common to the two sequences". As in the lab's code (neuro_py
+    ``cosine_similarity_matrices``), undefined pairs are set to 0 in each
+    matrix and kept in the vectors. They add nothing to the dot product
+    but count in each matrix's norm, so a template pair whose cells are
+    silent in the event lowers the cosine. The matrices are skew-symmetric,
+    so the pairs above the diagonal give the same cosine as the whole
+    matrices.
 
     Examples
     --------
@@ -844,22 +851,33 @@ def _validated_bias(matrix: Any, name: str, operation: str) -> NDArray[np.float6
     return values
 
 
-def _cosines(
-    template: NDArray[np.float64], events: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Cosine of each event matrix with the template over the pairs both define.
+def _upper_norm(matrix: NDArray[np.float64]) -> float:
+    """Norm of a skew-bias matrix's upper triangle, undefined pairs as 0."""
+    upper = np.triu(np.nan_to_num(matrix, nan=0.0), 1)
+    return float(np.sqrt((upper * upper).sum()))
 
-    ``events`` has shape (n_events, n_units, n_units). Rounded so that
+
+def _cosines(
+    template: NDArray[np.float64],
+    events: NDArray[np.float64],
+    *,
+    template_norm: float | None = None,
+) -> NDArray[np.float64]:
+    """Cosine of each event matrix with the template, undefined pairs as 0.
+
+    ``events`` has shape (n_events, n_units, n_units). ``template_norm``
+    replaces the norm of ``template`` when the template was cut to the
+    event's active units but its other pairs still count. Rounded so that
     equal cosines summed in different orders compare equal.
     """
     from neurospatial.replay.trajectory import _SCORE_DECIMALS
 
     upper = np.triu(np.ones(template.shape, dtype=bool), 1)
-    pairs = upper & np.isfinite(template) & np.isfinite(events)
-    a = np.where(pairs, template, 0.0)
-    b = np.where(pairs, events, 0.0)
+    a = np.where(upper, np.nan_to_num(template, nan=0.0), 0.0)
+    b = np.where(upper, np.nan_to_num(events, nan=0.0), 0.0)
     dot = (a * b).sum(axis=(1, 2))
-    norms = np.sqrt((a * a).sum(axis=(1, 2)) * (b * b).sum(axis=(1, 2)))
+    a_norm = np.sqrt((a * a).sum()) if template_norm is None else template_norm
+    norms = a_norm * np.sqrt((b * b).sum(axis=(1, 2)))
     with np.errstate(invalid="ignore", divide="ignore"):
         cosine = dot / norms
     rounded = np.clip(np.round(cosine, _SCORE_DECIMALS), -1.0, 1.0)
@@ -886,8 +904,14 @@ def _significance(
     active = np.flatnonzero(counts > 0)
     active_labels = np.searchsorted(active, labels)
     active_template = template[np.ix_(active, active)]
+    # Template pairs of silent units still count in the template's norm.
+    template_norm = _upper_norm(template)
     observed = float(
-        _cosines(active_template, bias[np.ix_(active, active)][np.newaxis])[0]
+        _cosines(
+            active_template,
+            bias[np.ix_(active, active)][np.newaxis],
+            template_norm=template_norm,
+        )[0]
     )
     generator = np.random.default_rng(rng)
     null = np.empty(n_shuffles)
@@ -900,7 +924,9 @@ def _significance(
                 for _ in range(start, min(start + block, n_shuffles))
             ]
         )
-        null[start : start + block] = _cosines(active_template, shuffled)
+        null[start : start + block] = _cosines(
+            active_template, shuffled, template_norm=template_norm
+        )
     defined = null[np.isfinite(null)]
     if np.isfinite(observed) and defined.size:
         statistic = np.abs if use_absolute else np.asarray

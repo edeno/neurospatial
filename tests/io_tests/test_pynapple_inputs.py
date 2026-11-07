@@ -797,11 +797,12 @@ def test_compute_vte_session_reads_an_intervalset(nap):
     from neurospatial.behavior import compute_vte_session
     from neurospatial.io import from_pynapple
 
-    stem = np.column_stack([np.full(30, 50.0), np.linspace(0, 50, 30)])
+    y = np.linspace(0, 50, 30)
+    stem = np.column_stack([np.repeat([45.0, 50.0, 55.0], 30), np.tile(y, 3)])
     bar = np.column_stack([np.linspace(0, 100, 60), np.full(60, 55.0)])
     env = Environment.from_samples(np.vstack([stem, bar]), bin_size=5.0)
     regions = Regions()
-    regions.add("center", point=(50.0, 55.0))
+    regions.add("choice", point=(50.0, 52.0), radius=15.0)
     env = env.with_regions(regions)
     times, positions = [], []
     for i, scan in enumerate([1.0, 2.0, 3.0]):
@@ -820,9 +821,8 @@ def test_compute_vte_session_reads_an_intervalset(nap):
             env,
             np.concatenate(times),
             np.vstack(positions),
-            region="center",
+            region="choice",
             trials=trials,
-            window_duration=0.5,
             min_speed=5.0,
             vte_threshold=0.0,
         )
