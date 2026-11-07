@@ -168,7 +168,7 @@ class TestEntropy:
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         assert result.shape == (n_time_bins,)
         assert result.dtype == np.float64
@@ -183,7 +183,7 @@ class TestEntropy:
         for t in range(n_time_bins):
             posterior[t, t % n_bins] = 1.0
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         np.testing.assert_array_almost_equal(result, np.zeros(n_time_bins))
 
@@ -195,7 +195,7 @@ class TestEntropy:
         n_bins = small_2d_env.n_bins
         posterior = np.ones((n_time_bins, n_bins)) / n_bins
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         max_entropy = np.log2(n_bins)
         np.testing.assert_array_almost_equal(result, np.full(n_time_bins, max_entropy))
@@ -212,7 +212,7 @@ class TestEntropy:
         posterior = rng.random((n_time_bins, n_bins))
         posterior = posterior / posterior.sum(axis=1, keepdims=True)
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         assert np.all(result >= 0)
         assert np.all(result <= np.log2(n_bins) + 1e-10)
@@ -228,7 +228,7 @@ class TestEntropy:
         posterior[:, 0] = 0.5
         posterior[:, 1] = 0.5
 
-        result = posterior_entropy(posterior)
+        result = posterior_entropy(small_2d_env, posterior)
 
         # Should not be NaN
         assert np.all(np.isfinite(result))
@@ -367,7 +367,7 @@ class TestEdgeCases:
         assert map_bin(small_2d_env, posterior).shape == (1,)
         assert map_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
         assert mean_position(small_2d_env, posterior).shape == (1, small_2d_env.n_dims)
-        assert posterior_entropy(posterior).shape == (1,)
+        assert posterior_entropy(small_2d_env, posterior).shape == (1,)
         assert len(credible_region(small_2d_env, posterior)) == 1
 
     def test_single_bin_environment(self):
@@ -396,7 +396,7 @@ class TestEdgeCases:
             mean_position(env, posterior), np.full((n_time_bins, 1), 5.0)
         )
         # Entropy of single bin is 0 (log2(1) = 0)
-        np.testing.assert_array_equal(posterior_entropy(posterior), 0.0)
+        np.testing.assert_array_equal(posterior_entropy(env, posterior), 0.0)
         regions = credible_region(env, posterior, level=0.5)
         assert [r.tolist() for r in regions] == [[0]] * n_time_bins
 
@@ -522,11 +522,14 @@ def test_credible_region_never_includes_zero_mass_bins(small_2d_env):
 
 
 def test_posterior_entropy_float64_and_nan_for_undecodable_rows():
+    from neurospatial import Environment
     from neurospatial.decoding.estimates import posterior_entropy
 
+    env = Environment.from_samples(np.linspace(0.5, 7.5, 8)[:, None], bin_size=1.0)
+    assert env.n_bins == 8
     posterior = np.full((2, 8), 1 / 8, dtype=np.float32)
     posterior[1] = np.nan
-    entropy = posterior_entropy(posterior)
+    entropy = posterior_entropy(env, posterior)
     assert entropy.dtype == np.float64
     assert entropy[0] == pytest.approx(3.0, abs=1e-6)
     assert np.isnan(entropy[1])

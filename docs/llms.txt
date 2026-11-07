@@ -292,7 +292,7 @@ required.
 - `mean_position`: Posterior mean position (expected value).
 - `median_decoding_error`: Compute the median decoding error over the decoded time bins.
 - `normalize_to_posterior`: Convert log-likelihood to posterior using Bayes' rule.
-- `posterior_entropy`: Posterior entropy in bits (entropy measure).
+- `posterior_entropy`: Posterior entropy in bits, measured over space.
 
 ### neurospatial.encoding
 

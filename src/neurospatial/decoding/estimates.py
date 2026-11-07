@@ -24,12 +24,14 @@ mean_position and posterior_entropy are NaN for a row that contains NaN.
 
 Examples
 --------
+>>> from neurospatial import Environment
 >>> from neurospatial.decoding.estimates import posterior_entropy
 >>> import numpy as np
 >>>
 >>> # Uniform posterior (maximum entropy)
->>> posterior = np.ones((10, 100)) / 100
->>> ent = posterior_entropy(posterior)
+>>> env = Environment.from_samples(np.linspace(0, 99, 100)[:, None], bin_size=1.0)
+>>> posterior = np.ones((10, env.n_bins)) / env.n_bins
+>>> ent = posterior_entropy(env, posterior)
 >>> print(f"Entropy: {ent[0]:.2f} bits")  # log2(100) = 6.64 bits
 Entropy: 6.64 bits
 """
@@ -348,15 +350,19 @@ def mean_position(
 
 
 def posterior_entropy(
+    env: Environment,
     posterior: NDArray[np.float64],
 ) -> NDArray[np.float64]:
-    """Posterior entropy in bits (entropy measure).
+    """Posterior entropy in bits, measured over space.
 
-    Measures the entropy in the position estimate. Higher values
-    indicate more spread-out (uncertain) posteriors.
+    Measures the spread of the position estimate. Higher values indicate
+    more spread-out (uncertain) posteriors.
 
     Parameters
     ----------
+    env : Environment
+        The environment the posterior was decoded on; its bin sizes weight
+        the entropy.
     posterior : NDArray[np.float64], shape (n_time_bins, n_bins)
         Posterior probability distribution over positions.
         Each row should sum to 1.0.
@@ -364,26 +370,36 @@ def posterior_entropy(
     Returns
     -------
     NDArray[np.float64], shape (n_time_bins,)
-        Entropy values in bits. Range: [0, log2(n_bins)].
+        Entropy values in bits. The maximum, ``log2(n_bins)``, is reached by
+        a posterior that is uniform over space.
+
+    Raises
+    ------
+    ValueError
+        If the environment mixes bins measured by length and by area.
 
     Notes
     -----
-    Bins with zero probability contribute nothing:
+    With each bin's size ``v_i`` relative to the mean bin size,
+    ``w_i = v_i / mean(v)``:
 
     .. math::
 
-        H = -\\sum_{i: p_i > 0} p_i \\log_2(p_i)
+        H = -\\sum_{i: p_i > 0} p_i \\log_2(p_i / w_i)
+
+    This is ``log2(n_bins)`` minus the Kullback-Leibler divergence of the
+    posterior from the uniform-over-space prior, so, like the MAP bin and
+    the credible region, it reads the posterior as a density over space.
+    On equal bins every ``w_i`` is 1 and it is the Shannon entropy over
+    bins, ``-sum(p log2 p)``, which runs from 0 (a delta) to
+    ``log2(n_bins)``. On unequal bins a delta in a small bin is below 0 and
+    one in a large bin above it, because a larger bin locates the animal
+    less precisely. The weighting by bin size is neurospatial's own
+    construction; the closest published measure is the Shannon entropy over
+    bins, which it equals on equal bins.
 
     The sum accumulates in float64 for any posterior dtype. An undecodable
     (entirely NaN) row has NaN entropy.
-
-    Maximum entropy (uniform distribution over bins) is ``log2(n_bins)``.
-    Minimum entropy (delta distribution) is 0.
-
-    This is the entropy of the discrete distribution over bins: it counts
-    bins, not length or area. On an environment with unequal bins, a
-    posterior that is flat over space puts more mass in larger bins, so its
-    entropy is below ``log2(n_bins)``.
 
     This function mirrors ``DecodingResult.posterior_entropy``.
 
@@ -394,22 +410,32 @@ def posterior_entropy(
     Examples
     --------
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.decoding.estimates import posterior_entropy
+    >>> env = Environment.from_samples(np.linspace(0, 40, 9)[:, None], bin_size=5.0)
     >>>
     >>> # Uniform posterior (maximum entropy)
-    >>> posterior = np.ones((1, 8)) / 8
-    >>> ent = posterior_entropy(posterior)
-    >>> print(f"{ent[0]:.2f}")  # log2(8) = 3.0
-    3.00
+    >>> posterior = np.ones((1, env.n_bins)) / env.n_bins
+    >>> print(f"{posterior_entropy(env, posterior)[0]:.2f}")  # log2(9) = 3.17
+    3.17
     >>>
     >>> # Delta posterior (minimum entropy)
-    >>> posterior = np.zeros((1, 8))
+    >>> posterior = np.zeros((1, env.n_bins))
     >>> posterior[0, 0] = 1.0
-    >>> ent = posterior_entropy(posterior)
-    >>> bool(abs(ent[0]) < 0.01)  # Should be 0 bits (within numerical precision)
+    >>> bool(abs(posterior_entropy(env, posterior)[0]) < 0.01)
     True
     """
-    posterior = np.asarray(posterior)
+    from neurospatial.decoding._support import relative_bin_measures
+
+    measures = relative_bin_measures(env, context="posterior_entropy")
+    return _entropy(np.asarray(posterior), measures)
+
+
+def _entropy(
+    posterior: NDArray[Any], measures: NDArray[np.float64] | None
+) -> NDArray[np.float64]:
+    """Entropy over space of each row; ``measures`` None means equal bins."""
+    log_weights = None if measures is None else np.log2(measures / measures.mean())
     result = np.empty(posterior.shape[0], dtype=np.float64)
     for rows in _row_blocks(*posterior.shape):
         # Accumulate in float64 whatever the posterior dtype.
@@ -418,7 +444,10 @@ def posterior_entropy(
         with np.errstate(divide="ignore", invalid="ignore"):
             terms = np.where(p > 0, p * np.log2(p), p)
         # 0.0 - sum keeps a zero entropy +0.0 rather than -0.0.
-        result[rows] = 0.0 - np.sum(terms, axis=1)
+        entropy = 0.0 - np.sum(terms, axis=1)
+        if log_weights is not None:
+            entropy = entropy + p @ log_weights
+        result[rows] = entropy
     return result
 
 

@@ -54,6 +54,19 @@
   Simulated grid maps and the rate maps fit to them change; the grid-score,
   simulation and validation tests pass unchanged.
 
+### Decoding: posterior entropy is measured over space
+
+- `posterior_entropy(env, posterior)` takes the environment, like `map_bin`
+  and `credible_region`, and weights each bin by its size:
+  `H = -sum(p * log2(p / w))` with `w` the bin size over the mean bin size.
+  That is `log2(n_bins)` minus the divergence from the uniform-over-space
+  prior. On equal bins it is the Shannon entropy over bins as before. On
+  unequal bins a posterior flat over space now has the maximum,
+  `log2(n_bins)`; before, entropy counted bins and called it less certain.
+- `DecodingResult.posterior_entropy` and the streamed summary use the same
+  rule. On an environment that mixes lengths and areas, `posterior_entropy`
+  refuses, as `map_bin` does, and `summary()["mean_entropy"]` is NaN.
+
 ### Replay scores follow the published method by default
 
 - `fit_linear_trajectory` takes `n_samples_per_time_bin=10000` in place of

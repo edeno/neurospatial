@@ -131,9 +131,9 @@ neurospatial.Environment : Spatial discretization
 Notes
 -----
 Functions that need the environment's bins take it first, for example
-``decode_session(env, spike_times, times, positions)`` and ``map_bin(env,
-posterior)``. Functions that do not, such as :func:`posterior_entropy` and
-:func:`normalize_to_posterior`, take no environment. :class:`BayesianDecoder` is an immutable estimator: ``fit`` returns a
+``decode_session(env, spike_times, times, positions)``, ``map_bin(env,
+posterior)`` and ``posterior_entropy(env, posterior)``. Functions that do
+not, such as :func:`normalize_to_posterior`, take no environment. :class:`BayesianDecoder` is an immutable estimator: ``fit`` returns a
 new fitted decoder. Result containers are frozen and their arrays read-only.
 
 A posterior holds a probability mass per bin. The MAP bin and credible
