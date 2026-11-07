@@ -112,7 +112,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from neurospatial._exceptions import _format_error
+from neurospatial._exceptions import InputError, _format_error
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._validation import validate_choice
 from neurospatial.geometry import MissingFaces, require_cartesian
@@ -577,11 +577,49 @@ def _normalize_basis(
     return result_max
 
 
+_DEFAULT_BASIS_BANDWIDTH_CM = 5.0
+"""Default basis bandwidth, 5 cm: the rate-map smoothing default, converted
+to ``env.units`` when they are metric."""
+
+
+def _basis_bandwidths(
+    env: BasisCentersConsumer,
+    bandwidth: float | Sequence[float] | None,
+    operation: str,
+) -> NDArray[np.float64]:
+    """The bandwidths to build, with ``None`` resolved to 5 cm in ``env.units``.
+
+    Raises
+    ------
+    InputError
+        If ``bandwidth`` is None and ``env.units`` is not a metric length,
+        so 5 cm cannot be converted.
+    """
+    from neurospatial._units import units_per_centimeter
+
+    if bandwidth is not None:
+        return np.atleast_1d(np.asarray(bandwidth, dtype=np.float64))
+    per_cm = units_per_centimeter(env.units)
+    if per_cm is None:
+        unit_text = "unset" if env.units is None else f"{env.units!r}"
+        raise InputError(
+            _format_error(
+                f"{operation}: bandwidth=None needs metric env.units to give the "
+                f"5 cm default, but env.units is {unit_text}.",
+                why="a basis bandwidth is a physical length, and no default "
+                "length can be chosen in pixels or unknown units",
+                fix="pass bandwidth= in env.units, or declare the units the "
+                'positions are in when building the environment (units="cm")',
+            )
+        )
+    return np.array([_DEFAULT_BASIS_BANDWIDTH_CM * per_cm])
+
+
 def geodesic_rbf_basis(
     env: BasisCentersConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
-    bandwidth: float | Sequence[float] = 5.0,
+    bandwidth: float | Sequence[float] | None = None,
     n_centers: int | None = None,
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
@@ -602,9 +640,11 @@ def geodesic_rbf_basis(
     centers : NDArray[np.int_] or None
         Bin indices (0 to ``n_bins - 1``) for basis centers. If None, auto-select using
         n_centers and center_method.
-    bandwidth : float or sequence of float
+    bandwidth : float, sequence of float, or None, default=None
         RBF bandwidth in environment units (typically cm).
-        Controls spatial spread of each basis function.
+        Controls spatial spread of each basis function. None is 5 cm, the
+        rate-map smoothing default, converted to ``env.units``; it needs
+        metric units and raises otherwise.
 
         **Rule of thumb**: bandwidth ≈ (desired coverage diameter) / 2
 
@@ -654,6 +694,8 @@ def geodesic_rbf_basis(
 
     Raises
     ------
+    InputError
+        If bandwidth is None and env.units is not a metric length.
     ValueError
         If bandwidth contains non-positive values.
         If centers is None and n_centers is None.
@@ -728,7 +770,7 @@ def geodesic_rbf_basis(
     centers = _resolve_centers(env, centers, n_centers, center_method, rng, "basis")
 
     # Handle bandwidth and validate
-    bandwidths = np.atleast_1d(bandwidth).astype(np.float64)
+    bandwidths = _basis_bandwidths(env, bandwidth, "geodesic_rbf_basis()")
     invalid_mask = ~(np.isfinite(bandwidths) & (bandwidths > 0))
     if np.any(invalid_mask):
         invalid = bandwidths[invalid_mask]
@@ -805,7 +847,7 @@ def heat_kernel_basis(
     env: WaveletBasisConsumer,
     centers: NDArray[np.int_] | None = None,
     *,
-    bandwidth: float | Sequence[float] = 5.0,
+    bandwidth: float | Sequence[float] | None = None,
     n_centers: int | None = None,
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
@@ -830,11 +872,13 @@ def heat_kernel_basis(
     centers : NDArray[np.int_] or None
         Bin indices (0 to ``n_bins - 1``) for the kernel centers. If None,
         auto-select.
-    bandwidth : float or sequence of float, default=5.0
+    bandwidth : float, sequence of float, or None, default=None
         Standard deviation of each kernel in environment units (e.g. cm), as
         in :func:`geodesic_rbf_basis` and ``env.smooth``. A sequence gives
         one kernel per bandwidth at every center. Walls and boundaries
-        constrain the spread.
+        constrain the spread. None is 5 cm, the rate-map smoothing default,
+        converted to ``env.units``; it needs metric units and raises
+        otherwise.
     n_centers : int or None
         Number of centers for auto-selection.
     center_method : {"kmeans", "farthest_point", "random"}
@@ -852,6 +896,8 @@ def heat_kernel_basis(
 
     Raises
     ------
+    InputError
+        If bandwidth is None and env.units is not a metric length.
     ValueError
         If bandwidth contains non-positive values.
         If centers is None and n_centers is None.
@@ -907,7 +953,7 @@ def heat_kernel_basis(
 
     centers = _resolve_centers(env, centers, n_centers, center_method, rng, "kernel")
 
-    bandwidths = np.atleast_1d(np.asarray(bandwidth, dtype=np.float64))
+    bandwidths = _basis_bandwidths(env, bandwidth, "heat_kernel_basis()")
     invalid_mask = ~(np.isfinite(bandwidths) & (bandwidths > 0))
     if np.any(invalid_mask):
         invalid = bandwidths[invalid_mask]

@@ -2275,7 +2275,7 @@ def test_finite_volume_ops_survive_nwb_round_trip(hexagonal_env_from_nwb, operat
             )
         if operation == "smooth":
             return env.smooth(field, bandwidth=5.0, mode="average")
-        return heat_kernel_basis(env, centers=np.array([0]))
+        return heat_kernel_basis(env, centers=np.array([0]), bandwidth=5.0)
 
     np.testing.assert_array_equal(evaluate(loaded), evaluate(original))
 

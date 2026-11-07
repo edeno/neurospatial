@@ -5,6 +5,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from neurospatial import Environment
+from neurospatial._exceptions import InputError
 from neurospatial.ops.basis import (
     chebyshev_filter_basis,
     geodesic_rbf_basis,
@@ -109,8 +110,9 @@ def test_heat_kernel_uses_faces_after_nwb_round_trip(graph_environment_round_tri
 def test_diffusion_bases_raise_without_finite_volume_geometry(
     missing_faces_env, basis_function
 ):
+    extra = {"bandwidth": 5.0} if basis_function is heat_kernel_basis else {}
     with pytest.raises(NotImplementedError, match=basis_function.__name__) as exc:
-        basis_function(missing_faces_env, centers=np.array([0]))
+        basis_function(missing_faces_env, centers=np.array([0]), **extra)
     assert "\nFix:" in str(exc.value)
 
 
@@ -192,8 +194,9 @@ class TestExplicitCenters:
             basis_function(simple_2d_env, centers=np.array([2.7]))
 
     def test_integer_list_is_accepted(self, basis_function, simple_2d_env):
-        from_list = basis_function(simple_2d_env, centers=[0, 5])
-        from_array = basis_function(simple_2d_env, centers=np.array([0, 5]))
+        extra = {} if basis_function is chebyshev_filter_basis else {"bandwidth": 5.0}
+        from_list = basis_function(simple_2d_env, centers=[0, 5], **extra)
+        from_array = basis_function(simple_2d_env, centers=np.array([0, 5]), **extra)
         assert_allclose(from_list, from_array)
 
 
@@ -352,13 +355,17 @@ class TestGeodesicRBFBasis:
 
     def test_unit_normalization(self, simple_2d_env):
         """Unit normalization should give L2 norm = 1."""
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, normalize="unit")
+        basis = geodesic_rbf_basis(
+            simple_2d_env, n_centers=10, bandwidth=5.0, normalize="unit"
+        )
         norms = np.linalg.norm(basis, axis=1)
         assert_allclose(norms, 1.0, rtol=1e-10)
 
     def test_max_normalization(self, simple_2d_env):
         """Max normalization should give max = 1."""
-        basis = geodesic_rbf_basis(simple_2d_env, n_centers=10, normalize="max")
+        basis = geodesic_rbf_basis(
+            simple_2d_env, n_centers=10, bandwidth=5.0, normalize="max"
+        )
         maxes = np.max(basis, axis=1)
         assert_allclose(maxes, 1.0, rtol=1e-10)
 
@@ -393,6 +400,32 @@ class TestGeodesicRBFBasis:
 # =============================================================================
 # TestHeatKernelBasis
 # =============================================================================
+
+
+@pytest.mark.parametrize("basis_function", [geodesic_rbf_basis, heat_kernel_basis])
+@pytest.mark.parametrize(("units", "per_cm"), [("cm", 1.0), ("m", 0.01), ("mm", 10.0)])
+def test_default_bandwidth_is_5_cm_in_env_units(basis_function, units, per_cm):
+    """The default is the same physical length whatever the declared metric unit."""
+    x, y = np.meshgrid(np.arange(0.5, 50.0), np.arange(0.5, 50.0))
+    positions = np.column_stack([x.ravel(), y.ravel()]) * per_cm
+    env = Environment.from_samples(positions, bin_size=2.5 * per_cm, units=units)
+    center = np.array([env.n_bins // 2])
+    default = basis_function(env, centers=center, normalize="none")
+    explicit = basis_function(
+        env, centers=center, bandwidth=5.0 * per_cm, normalize="none"
+    )
+    np.testing.assert_array_equal(default, explicit)
+
+
+@pytest.mark.parametrize("basis_function", [geodesic_rbf_basis, heat_kernel_basis])
+@pytest.mark.parametrize("units", [None, "px"])
+def test_default_bandwidth_needs_metric_units(basis_function, units):
+    x, y = np.meshgrid(np.arange(0.5, 20.0), np.arange(0.5, 20.0))
+    env = Environment.from_samples(
+        np.column_stack([x.ravel(), y.ravel()]), bin_size=2.0, units=units
+    )
+    with pytest.raises(InputError, match=r"bandwidth=None needs metric env\.units"):
+        basis_function(env, centers=np.array([0]))
 
 
 class TestHeatKernelBasis:

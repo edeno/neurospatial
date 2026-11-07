@@ -10,7 +10,11 @@
   bin-spacing² units. Each kernel's standard deviation is its bandwidth at any
   bin size, and column c equals column c of `env.compute_kernel(bandwidth=b)`.
   To keep an old basis, pass `bandwidth = sqrt(2 * scale) * env.bin_spacing`.
-  The default is now `bandwidth=5.0`; the old default was four scales.
+- `heat_kernel_basis` and `geodesic_rbf_basis` default to `bandwidth=None`:
+  5 cm, the rate-map smoothing default, converted to `env.units` (0.05 for
+  meters). Without metric units they refuse and ask for `bandwidth=`. Before,
+  `geodesic_rbf_basis` used 5.0 in whatever units the environment had, so an
+  arena in meters got 5 m kernels that covered it whole.
 
 ### Replay scores follow the published method by default
 

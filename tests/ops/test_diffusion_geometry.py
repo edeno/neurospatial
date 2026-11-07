@@ -651,7 +651,7 @@ def test_capability_protocol_reports_what_layouts_can_supply(reloaded_graph_env)
             "gradient/divergence",
         ),
         (
-            lambda env: heat_kernel_basis(env, centers=np.array([0])),
+            lambda env: heat_kernel_basis(env, centers=np.array([0]), bandwidth=5.0),
             "heat_kernel_basis",
         ),
     ],

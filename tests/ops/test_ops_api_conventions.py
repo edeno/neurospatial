@@ -55,8 +55,8 @@ def test_basis_rng_keyword_deterministic(simple_2d_env):
     c2 = select_basis_centers(simple_2d_env, n_centers=8, rng=0)
     np.testing.assert_array_equal(c1, c2)
 
-    b1 = geodesic_rbf_basis(simple_2d_env, n_centers=8, rng=0)
-    b2 = geodesic_rbf_basis(simple_2d_env, n_centers=8, rng=0)
+    b1 = geodesic_rbf_basis(simple_2d_env, n_centers=8, bandwidth=5.0, rng=0)
+    b2 = geodesic_rbf_basis(simple_2d_env, n_centers=8, bandwidth=5.0, rng=0)
     np.testing.assert_array_equal(b1, b2)
 
     # `n_centers`/`method`/`rng` cannot be passed positionally any more.
