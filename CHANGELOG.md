@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Place fields: a field next to a split field is no longer lost
+
+- `detect_place_fields` set aside the whole region of a candidate it then
+  discarded as the flank of an earlier field. After the subfield rule split
+  two touching fields, that region could include the second field, which was
+  then never reported. A flank candidate now sets aside only its own bin, so
+  the neighbouring field is found from its own peak, as the Notes describe.
+  Found by comparing with FMAToolbox `MapStats`; on noisy simulated maps a
+  few more fields are reported, at the same run time.
+
 ### Behavior: VTE follows Papale et al. 2012
 
 - `compute_vte_session` measures each trial over its first pass through the

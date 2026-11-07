@@ -6280,6 +6280,12 @@ def _search_place_fields(
         peak_rate = float(remaining[peak_idx])
         if peak_rate <= 0 or peak_rate < min_peak:
             break
+        if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
+            # A flank of a field already cut, not a peak. Only this bin is
+            # set aside: the region above its own floor can run into a
+            # neighbouring field, which must still be found from its own peak.
+            remaining[peak_idx] = np.nan
+            continue
 
         # NaN compares False, so assigned and missing bins are excluded.
         floor = peak_rate * threshold
@@ -6291,8 +6297,6 @@ def _search_place_fields(
             if measures[core].sum() < measures[field_bins].sum() / 2:
                 field_bins = core
         remaining[field_bins] = np.nan
-        if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
-            continue
         peaks.append(peak_idx)
         candidates.append(field_bins)
     return _FieldSearch(peaks, candidates, finite, firing_rate)
