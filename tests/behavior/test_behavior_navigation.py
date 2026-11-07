@@ -126,7 +126,7 @@ class TestNavigationFunctionality:
         assert "-8.5" in summary
 
     def test_heading_direction_labels_from_positions(self):
-        """Test heading_direction_labels generates labels from positions."""
+        """A 10 cm/s run East is labeled "0°" at every sample; North "90°"."""
         from neurospatial.behavior.navigation import heading_direction_labels
 
         # Create a simple trajectory moving east
@@ -139,9 +139,13 @@ class TestNavigationFunctionality:
             positions=positions, times=times, min_speed=0.1
         )
 
-        assert len(labels) == 100
-        # Most labels should be in the 0-degree range (moving east)
-        assert "stationary" in labels or any("0" in str(label) for label in labels[1:])
+        # Constant velocity: the line fit's slope is (10, 0) cm/s at every
+        # sample, far above min_speed, so every sample is in the East sector.
+        assert labels.tolist() == ["0°"] * 100
+        north = heading_direction_labels(
+            positions=positions[:, ::-1], times=times, min_speed=0.1
+        )
+        assert north.tolist() == ["90°"] * 100
 
     def test_path_efficiency_with_env(self, simple_env):
         """Test compute_path_efficiency.efficiency works with environment."""
@@ -158,8 +162,11 @@ class TestNavigationFunctionality:
             simple_env, times, positions, goal=goal, metric="euclidean"
         )
 
-        # Efficiency should be between 0 and 1
-        assert 0.0 < result.efficiency <= 1.0
+        # Every step is (10, 5) cm toward the goal: the path is the straight
+        # line, traveled = shortest = 4 * sqrt(125) cm, efficiency 1.
+        assert result.traveled_length == pytest.approx(4 * np.sqrt(125), rel=1e-12)
+        assert result.shortest_length == pytest.approx(4 * np.sqrt(125), rel=1e-12)
+        assert result.efficiency == pytest.approx(1.0, rel=1e-12)
 
     def test_compute_goal_directed_metrics_basic(self, simple_env):
         """Test compute_goal_directed_metrics returns valid metrics."""
@@ -175,10 +182,13 @@ class TestNavigationFunctionality:
             simple_env, times, positions, goal=goal, min_speed=0.1, metric="euclidean"
         )
 
-        assert hasattr(result, "goal_bias")
-        assert hasattr(result, "mean_approach_rate")
-        assert hasattr(result, "min_distance_to_goal")
-        assert -1.0 <= result.goal_bias <= 1.0
+        # Straight at the goal at (5, 5) cm/s: every heading points at it
+        # (goal bias 1) and the distance falls at 5 * sqrt(2) cm/s until the
+        # last sample, on the goal.
+        assert result.goal_bias == pytest.approx(1.0, abs=1e-12)
+        assert result.mean_approach_rate == pytest.approx(-5 * np.sqrt(2), rel=1e-12)
+        assert result.min_distance_to_goal == pytest.approx(0.0, abs=1e-12)
+        assert result.goal_distance_at_end == pytest.approx(0.0, abs=1e-12)
 
 
 class TestPathEfficiencyFunctions:

@@ -363,7 +363,12 @@ class TestApproachRate:
         assert np.nanmean(result) > 0
 
     def test_approach_rate_magnitude(self):
-        """Test that approach rate magnitude matches speed for direct approach."""
+        """Walking straight at the goal at 10 cm/s: the rate is -10 cm/s.
+
+        The distance falls by 10 cm in each 1 s step, so every rate is
+        exactly -10 (negative: approaching); the first sample has no
+        previous one and is NaN.
+        """
         from neurospatial.behavior.navigation import approach_rate
 
         # Moving 10 units/s directly toward goal
@@ -378,9 +383,8 @@ class TestApproachRate:
             _arena(), times, positions, goal=goal, metric="euclidean", max_gap=None
         )
 
-        # Approach rate magnitude should be ~10 units/s
-        valid_rates = result[~np.isnan(result)]
-        assert_allclose(np.mean(np.abs(valid_rates)), 10.0, rtol=0.2)
+        assert np.isnan(result[0])
+        assert_allclose(result[1:], -10.0, rtol=1e-12)
 
     def test_approach_rate_geodesic_branch(self):
         """metric='geodesic' returns negative rates when approaching, NaN first."""

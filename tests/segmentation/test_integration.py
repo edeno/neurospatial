@@ -68,8 +68,8 @@ class TestFullTrajectoryAnalysisWorkflow:
             direction="both",
         )
 
-        # Should detect ~3 laps
-        assert len(laps) >= 2, "Should detect at least 2 complete laps"
+        # The run starts in the start region and re-enters it after each lap
+        assert len(laps) == 3, "three circuits out of and back into the start region"
         assert all(isinstance(lap, Lap) for lap in laps)
         assert all(lap.start_time < lap.stop_time for lap in laps)
 
@@ -108,13 +108,18 @@ class TestFullTrajectoryAnalysisWorkflow:
         home_range = compute_home_range(env, times, traj_positions, percentile=95.0)
         assert len(home_range) > 10, "Home range should include multiple bins"
 
-        # Step 5: Compute MSD (should show ballistic movement within laps)
+        # Step 5: Compute MSD. Circling at angular speed omega, every pair
+        # tau apart is a chord of the circle: MSD(tau) = 2 R^2 (1 - cos(omega
+        # tau)) exactly, rising to the diameter squared at half a lap (5 s).
         _msd = mean_square_displacement(times, traj_positions, max_tau=5.0)
         tau_values, msd_values = _msd.lags, _msd.msd
-        assert len(tau_values) > 0
-        assert len(msd_values) == len(tau_values)
-        # MSD should increase with tau (movement, not stationary)
-        assert msd_values[-1] > msd_values[0]
+        omega = 3 * 2 * np.pi / 30.0  # rad/s
+        dt = times[1] - times[0]
+        np.testing.assert_allclose(tau_values, dt * np.arange(1, len(tau_values) + 1))
+        assert tau_values[-1] > 5.0 - dt
+        np.testing.assert_allclose(
+            msd_values, 2 * radius**2 * (1 - np.cos(omega * tau_values)), rtol=1e-10
+        )
 
     def test_tmaze_task_complete_workflow(self) -> None:
         """Test full T-maze workflow: trials → runs → goal-directed analysis."""

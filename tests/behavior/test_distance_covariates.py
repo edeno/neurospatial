@@ -13,6 +13,29 @@ from neurospatial import Regions
 # =============================================================================
 
 
+def _u_shape():
+    """A U of 1 cm corridors around a wall, and its two inner wall corners.
+
+    The left arm is x in [0, 1], the right arm x in [4, 5] (y in [0, 10]),
+    joined by the top row y in [9, 10]; the wall x in [1, 4], y in [0, 9]
+    has its top corners at (1, 9) and (4, 9). The shortest path from the
+    left arm to the right arm runs taut over both corners. Its route through
+    bin centers rounds each corner at most one bin (1 cm) wider.
+    """
+    from neurospatial import Environment
+
+    cells = np.array([(x + 0.5, y + 0.5) for x in range(5) for y in range(10)])
+    u_shape = cells[(cells[:, 0] < 1) | (cells[:, 0] > 4) | (cells[:, 1] > 9)]
+    return Environment.from_samples(u_shape, bin_size=1.0)
+
+
+def _around_the_wall(start, stop):
+    """Taut path length from the left arm over (1, 9) and (4, 9) to the right."""
+    return (
+        np.hypot(1 - start[0], 9 - start[1]) + 3.0 + np.hypot(stop[0] - 4, 9 - stop[1])
+    )
+
+
 @pytest.fixture
 def simple_grid_env():
     """Create a simple 10x10 grid environment for testing."""
@@ -311,40 +334,39 @@ class TestDistanceToReward:
                 env, times, positions, reward_times, reward_positions=reward_positions
             )
 
-    def test_geodesic_respects_graph(self, simple_grid_env):
-        """Test geodesic metric uses graph distances."""
+    def test_geodesic_is_the_shortest_path_inside(self, simple_grid_env):
+        """Geodesic distance is the straight line in the open, around a wall.
+
+        In the open grid the shortest path inside is the straight line:
+        sqrt(5) from (0, 0) to (2, 1), not the 1 + sqrt(2) of a walk along
+        grid neighbors. Across the wall of a U it is the taut path over the
+        wall's corners, within a bin per corner, while the Euclidean
+        distance is still the straight line through the wall.
+        """
         from neurospatial.behavior.navigation import distance_to_reward
 
-        env = simple_grid_env
+        def distance(env, position, reward, metric):
+            (value,) = distance_to_reward(
+                env,
+                np.array([0.0]),
+                np.array([position]),
+                np.array([0.0]),
+                reward_positions=np.array([reward]),
+                metric=metric,
+            )
+            return value
 
-        # Position at (0, 0), reward at (1, 1)
-        positions = np.array([[0.0, 0.0]])
-        times = np.array([0.0])
-        reward_times = np.array([0.0])
-        reward_positions = np.array([[1.0, 1.0]])
+        for reward in ([1.0, 1.0], [2.0, 1.0]):
+            straight = np.hypot(*reward)
+            for metric in ("geodesic", "euclidean"):
+                value = distance(simple_grid_env, [0.0, 0.0], reward, metric)
+                assert value == pytest.approx(straight, rel=1e-12)
 
-        # Geodesic distance (Manhattan-like on grid)
-        result_geodesic = distance_to_reward(
-            env,
-            times,
-            positions,
-            reward_times,
-            reward_positions=reward_positions,
-            metric="geodesic",
-        )
-
-        # Euclidean distance (sqrt(2) ~= 1.41)
-        result_euclidean = distance_to_reward(
-            env,
-            times,
-            positions,
-            reward_times,
-            reward_positions=reward_positions,
-            metric="euclidean",
-        )
-
-        # Geodesic should be >= Euclidean (diagonal not directly connected)
-        assert result_geodesic[0] >= result_euclidean[0]
+        u_shape = _u_shape()
+        start, reward = [0.5, 0.5], [4.5, 0.5]
+        assert distance(u_shape, start, reward, "euclidean") == pytest.approx(4.0)
+        taut = _around_the_wall(start, reward)
+        assert taut <= distance(u_shape, start, reward, "geodesic") <= taut + 2.0
 
 
 class TestDistanceToRewardValidation:
@@ -921,24 +943,63 @@ class TestDistanceToBoundary:
         assert len(result) == 0
 
     def test_geodesic_vs_euclidean(self, simple_grid_env):
-        """Test geodesic and euclidean metrics give different results."""
+        """Geodesic and Euclidean agree in the open and differ across a wall.
+
+        In the open grid the nearest boundary bin is in plain sight, so both
+        are the straight-line distance to the nearest boundary bin center,
+        found here by brute force. In a U with a goal region at the bottom of
+        the right arm, from the left arm the Euclidean distance runs through
+        the wall to the region's boundary bin (the region bin next to a
+        non-region bin), while the geodesic one runs over the wall's corners.
+        """
+        from shapely.geometry import box
+
         from neurospatial.behavior.navigation import distance_to_boundary
 
         env = simple_grid_env
-
-        positions = np.array([[5.0, 5.0]])
-
-        result_geodesic = distance_to_boundary(
-            env, positions, boundary_type="edge", metric="geodesic"
+        positions = np.array([[5.0, 5.0], [2.0, 3.0], [7.3, 8.1]])
+        rim = env.bin_centers[env.boundary_bins]
+        nearest = np.min(
+            np.linalg.norm(positions[:, None, :] - rim[None], axis=2), axis=1
         )
+        for metric in ("geodesic", "euclidean"):
+            result = distance_to_boundary(
+                env, positions, boundary_type="edge", metric=metric
+            )
+            np.testing.assert_allclose(result, nearest, rtol=1e-12)
 
-        result_euclidean = distance_to_boundary(
-            env, positions, boundary_type="edge", metric="euclidean"
+        u_shape = _u_shape()
+        regions = Regions(u_shape.regions.values())
+        regions.add("goal", polygon=box(4, 0, 5, 2))
+        u_shape = u_shape.with_regions(regions)
+        centers = u_shape.bin_centers
+        in_goal = (centers[:, 0] > 4) & (centers[:, 1] < 2)
+        edge = [
+            b
+            for b in np.flatnonzero(in_goal)
+            if any(not in_goal[n] for n in u_shape.connectivity.neighbors(b))
+        ]
+        positions = np.array([[0.5, 0.5], [0.5, 3.2]])
+        euclidean = distance_to_boundary(
+            u_shape,
+            positions,
+            boundary_type="region",
+            region="goal",
+            metric="euclidean",
         )
-
-        # Both should return valid distances
-        assert not np.isnan(result_geodesic[0])
-        assert not np.isnan(result_euclidean[0])
+        geodesic = distance_to_boundary(
+            u_shape, positions, boundary_type="region", region="goal", metric="geodesic"
+        )
+        through_wall = np.min(
+            np.linalg.norm(positions[:, None, :] - centers[edge][None], axis=2), axis=1
+        )
+        taut = np.array(
+            [min(_around_the_wall(p, centers[b]) for b in edge) for p in positions]
+        )
+        np.testing.assert_allclose(euclidean, through_wall, rtol=1e-12)
+        assert np.all(taut <= geodesic)
+        assert np.all(geodesic <= taut + 2.0)
+        assert np.all(geodesic > 3 * euclidean)  # over the wall, not through it
 
     def test_invalid_boundary_type_raises(self, simple_grid_env):
         """Test invalid boundary_type raises ValueError."""

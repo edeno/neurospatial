@@ -7,6 +7,8 @@ from numpy.testing import assert_allclose
 from neurospatial import Environment, Intervals, Regions
 from neurospatial.behavior.segmentation import Trial
 
+from ._reference_velocity import reference_speed, reference_velocity
+
 # =============================================================================
 # Test PreDecisionMetrics Dataclass
 # =============================================================================
@@ -306,7 +308,7 @@ class TestPreDecisionHeadingStats:
     """Test pre_decision_heading_stats function."""
 
     def test_consistent_heading(self):
-        """Test low variance for consistent heading."""
+        """An eastward straight run: every heading is 0, so R = 1, variance 0."""
         from neurospatial.behavior.decisions import pre_decision_heading_stats
 
         # Straight line trajectory (consistent heading)
@@ -320,30 +322,52 @@ class TestPreDecisionHeadingStats:
             times, positions, min_speed=0.0
         )
 
-        # Low variance for consistent heading
-        assert circ_var < 0.2
-        # High mean resultant length
-        assert mrl > 0.8
-        # Mean direction should be around 0 (East)
-        assert abs(mean_dir) < 0.3
+        # Constant y: the fitted y-velocity is 0 up to round-off, so the
+        # statistics are exact to well below 1e-12.
+        assert mean_dir == pytest.approx(0.0, abs=1e-12)
+        assert circ_var == pytest.approx(0.0, abs=1e-12)
+        assert mrl == pytest.approx(1.0, abs=1e-12)
 
     def test_variable_heading(self):
-        """Test high variance for variable heading."""
+        """Circular statistics of a weaving run and of headings alternating +-theta.
+
+        Headings alternating +theta and -theta, an equal number of each, have
+        mean resultant length cos(theta), so circular variance 1 - cos(theta)
+        and mean direction 0. For a sinusoidal weave the expected statistics
+        are those of the headings of the independent reference velocity
+        (the 0.1 s Gaussian line fit).
+        """
         from neurospatial.behavior.decisions import pre_decision_heading_stats
 
-        # Zigzag trajectory (variable heading)
+        times = np.arange(50) / 10.0
+        positions = np.column_stack([10.0 * times, np.zeros(50)])  # 10 cm/s
+        theta = 0.6
+        alternating = np.where(np.arange(50) % 2 == 0, theta, -theta)
+        mean_dir, circ_var, mrl = pre_decision_heading_stats(
+            times, positions, min_speed=5.0, headings=alternating
+        )
+        assert mean_dir == pytest.approx(0.0, abs=1e-12)
+        assert circ_var == pytest.approx(1 - np.cos(theta), rel=1e-12)
+        assert mrl == pytest.approx(np.cos(theta), rel=1e-12)
+
+        # Weaving: x = 10 t, y = 10 sin(2 t) cm.
         n_samples = 100
         x = np.linspace(0, 50, n_samples)
-        y = 10 * np.sin(x / 5)  # Zigzag pattern
+        y = 10 * np.sin(x / 5)
         positions = np.column_stack([x, y])
         times = np.linspace(0, 5, n_samples)
 
-        _mean_dir, circ_var, _mrl = pre_decision_heading_stats(
+        mean_dir, circ_var, mrl = pre_decision_heading_stats(
             times, positions, min_speed=0.0
         )
 
-        # Higher variance for zigzag heading
-        assert circ_var > 0.3
+        velocity = reference_velocity(times, positions, 0.1)
+        heading = np.arctan2(velocity[:, 1], velocity[:, 0])
+        resultant = np.mean(np.exp(1j * heading))
+        assert circ_var > 0.3  # a weave, not a straight run
+        assert mrl == pytest.approx(np.abs(resultant), rel=1e-10)
+        assert circ_var == pytest.approx(1 - np.abs(resultant), rel=1e-10)
+        assert mean_dir == pytest.approx(np.angle(resultant), abs=1e-10)
 
     def test_stationary_returns_missing_heading_statistics(self):
         """Stationary tracking supplies no heading evidence."""
@@ -383,11 +407,21 @@ class TestPreDecisionSpeedStats:
 
         mean_speed, min_speed = pre_decision_speed_stats(times, positions)
 
-        assert_allclose(mean_speed, 10.0, rtol=0.1)
-        assert_allclose(min_speed, 10.0, rtol=0.1)
+        # A line fit to positions on a straight line at constant speed has
+        # that speed as its slope, also one-sided at the ends: exact to
+        # round-off.
+        assert_allclose(mean_speed, 10.0, rtol=1e-12)
+        assert_allclose(min_speed, 10.0, rtol=1e-12)
 
     def test_variable_speed(self):
-        """Test min is less than mean for variable speed."""
+        """x = t**2: the speed is 2 t away from the ends of the recording.
+
+        A symmetric Gaussian line fit to a parabola has the parabola's slope
+        at its center, so samples at least 4 sigma (0.4 s) from either end
+        have speed exactly 2 t. The mean and minimum over all samples are
+        those of the independent reference speed, whose one-sided fits at
+        the ends include the start's positive speed.
+        """
         from neurospatial.behavior.decisions import pre_decision_speed_stats
 
         # Accelerating trajectory
@@ -399,8 +433,12 @@ class TestPreDecisionSpeedStats:
 
         mean_speed, min_speed = pre_decision_speed_stats(times, positions)
 
-        # Min should be less than mean for accelerating trajectory
-        assert min_speed < mean_speed
+        expected = reference_speed(times, positions, 0.1)
+        interior = (t >= 0.4) & (t <= 9.6)
+        assert_allclose(expected[interior], 2 * t[interior], rtol=1e-12)
+        assert_allclose(mean_speed, expected.mean(), rtol=1e-12)
+        assert_allclose(min_speed, expected.min(), rtol=1e-12)
+        assert 0 < min_speed < 2 * t[4]  # the start is slow, not still
 
 
 # =============================================================================
@@ -601,9 +639,14 @@ class TestComputePreDecisionMetrics:
             times, positions, entry_time=1.0, window_duration=5.0, min_speed=0.0
         )
 
-        # Should return metrics for available window
-        assert result.window_duration < 5.0
-        assert result.n_samples > 0
+        # The window is [max(0, 1 - 5), 1) = [0, 1): samples t_k = 2k/19
+        # with k = 0..9, so ten samples spanning 18/19 s. They move at
+        # exactly (20/19) / (2/19) = 10 cm/s due East.
+        assert result.n_samples == 10
+        assert result.window_duration == pytest.approx(18 / 19, rel=1e-12)
+        assert result.mean_speed == pytest.approx(10.0, rel=1e-12)
+        assert result.min_observed_speed == pytest.approx(10.0, rel=1e-12)
+        assert result.heading_circular_variance == pytest.approx(0.0, abs=1e-12)
 
 
 # =============================================================================
