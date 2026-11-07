@@ -304,31 +304,24 @@ class TestCredibleRegion:
                 mass = posterior[t, region].sum()
                 assert mass >= level - 1e-10, f"Level {level} not met at time {t}"
 
-    def test_credible_region_is_hpd(self, small_2d_env):
-        """credible_region should be HPD (highest posterior density)."""
+    @pytest.mark.parametrize("level", [0.5, 0.9, 0.95])
+    def test_credible_region_is_mass_ranked_hpd_on_equal_bins(
+        self, small_2d_env, level
+    ):
+        """On equal bins, density ranking is the classic mass-ranked HPD set."""
         from neurospatial.decoding.estimates import credible_region
 
-        n_time_bins = 1
-        n_bins = small_2d_env.n_bins
+        assert np.allclose(small_2d_env.bin_sizes, small_2d_env.bin_sizes[0])
+        rng = np.random.default_rng(4)
+        posterior = rng.dirichlet(np.full(small_2d_env.n_bins, 0.3), size=6)
 
-        # Create posterior with clear probability ordering
-        posterior = np.zeros((n_time_bins, n_bins))
-        posterior[0, :5] = 0.15  # 5 bins at 0.15 each = 0.75
-        posterior[0, 5:10] = 0.04  # 5 bins at 0.04 each = 0.20
-        posterior[0, 10:15] = 0.01  # 5 bins at 0.01 each = 0.05
-        posterior = posterior / posterior.sum()  # Normalize
+        regions = credible_region(small_2d_env, posterior, level=level)
 
-        # At level=0.7, should include highest probability bins first
-        result = credible_region(small_2d_env, posterior, level=0.7)
-
-        # The first 5 bins have highest probability (0.15 each)
-        # These should be included before lower probability bins
-        high_prob_bins = set(range(5))
-        included_bins = set(result[0])
-
-        # Check that high probability bins are included
-        # (HPD should select these first)
-        assert high_prob_bins.issubset(included_bins) or len(result[0]) >= 5
+        for row, region in zip(posterior, regions, strict=True):
+            # Independent HPD: the fewest highest-mass bins reaching level.
+            order = np.argsort(row)[::-1]
+            n_needed = int(np.searchsorted(np.cumsum(row[order]), level) + 1)
+            assert set(region.tolist()) == set(order[:n_needed].tolist())
 
     def test_credible_region_level_bounds(self, small_2d_env):
         """credible_region should raise for invalid levels."""

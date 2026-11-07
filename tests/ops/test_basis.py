@@ -36,6 +36,35 @@ def test_heat_kernel_spread_is_the_bandwidth_at_any_bin_size(uniform_grid, spaci
             assert sigma == pytest.approx(bandwidth, rel=1e-3)
 
 
+def test_heat_kernel_converges_to_a_sampled_gaussian():
+    """Far from walls the lattice heat kernel tends to the Gaussian as bins shrink.
+
+    Measured gap (max |kernel - Gaussian| over the Gaussian's peak) at a
+    10 cm bandwidth: 0.077, 0.016 and 0.004 at 5, 2.5 and 1.25 cm bins, a
+    fourfold drop per halving (second order).
+    """
+    gaps = []
+    for spacing in (5.0, 2.5, 1.25):
+        n = round(100 / spacing)
+        x, y = np.meshgrid(
+            (np.arange(n) + 0.5) * spacing, (np.arange(n) + 0.5) * spacing
+        )
+        env = Environment.from_samples(
+            np.column_stack([x.ravel(), y.ravel()]), bin_size=spacing
+        )
+        center = int(np.argmin(np.linalg.norm(env.bin_centers - 50.0, axis=1)))
+        kernel = heat_kernel_basis(
+            env, centers=np.array([center]), bandwidth=10.0, normalize="none"
+        )[0]
+        squared = np.sum((env.bin_centers - env.bin_centers[center]) ** 2, axis=1)
+        gaussian = np.exp(-squared / (2 * 10.0**2))
+        kernel, gaussian = kernel / kernel.sum(), gaussian / gaussian.sum()
+        gaps.append(np.max(np.abs(kernel - gaussian)) / gaussian.max())
+    ratios = np.array(gaps[:-1]) / np.array(gaps[1:])
+    assert np.all((ratios > 3.5) & (ratios < 5.0))  # error ~ spacing²
+    assert gaps[-1] < 0.005
+
+
 def test_heat_kernel_uses_smooth_generator(fv_env):
     from scipy import sparse
     from scipy.sparse.linalg import expm_multiply

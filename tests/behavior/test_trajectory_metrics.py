@@ -328,6 +328,24 @@ class TestComputeHomeRange:
 class TestMeanSquareDisplacement:
     """Test mean_square_displacement function."""
 
+    @pytest.mark.parametrize("missing_share", [0.0, 0.1])
+    def test_msd_fft_path_equals_the_pair_average(self, missing_share):
+        """Uniform sampling takes the FFT path; it must equal every-pair averaging."""
+        rng = np.random.default_rng(11)
+        n_samples, dt = 600, 0.02
+        times = np.arange(n_samples) * dt
+        positions = np.cumsum(rng.normal(0, 1.0, (n_samples, 2)), axis=0)
+        positions[rng.random(n_samples) < missing_share] = np.nan
+
+        result = mean_square_displacement(times, positions, max_tau=1.0)
+
+        for lag, msd in zip(result.lags, result.msd, strict=True):
+            k = round(lag / dt)
+            squared = np.sum((positions[k:] - positions[:-k]) ** 2, axis=1)
+            assert lag == pytest.approx(k * dt)
+            assert msd == pytest.approx(np.nanmean(squared), rel=1e-10)
+        assert len(result.lags) == round(1.0 / dt)
+
     def test_msd_shape(self):
         """Test that MSD returns two arrays (tau, msd)."""
         # Create simple trajectory (continuous positions)
