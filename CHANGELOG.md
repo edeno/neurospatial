@@ -2,17 +2,6 @@
 
 ## [Unreleased]
 
-### Behavior: VTE takes the heading at every moving sample
-
-- `compute_vte_session` and `compute_vte_trial` default to `min_speed=0.0`:
-  the direction of movement counts at every moving sample, as Papale et al.
-  2012 computed it. Before, headings below 5 cm/s were left out, so a slow
-  scan while creeping forward added no head sweep. A sample with zero speed
-  still has no heading. A positive `min_speed` keeps the gate as an option.
-- On 24 Carey et al. 2019 T-maze sessions (484 trials, 30 Hz), the 5 cm/s
-  gate changed the VTE verdict of 2 to 3% of trials, and zIdPhi ranks
-  correlated 0.95 to 0.97 with and without it.
-
 ### Behavior: VTE follows Papale et al. 2012
 
 - `compute_vte_session` measures each trial over its first pass through the

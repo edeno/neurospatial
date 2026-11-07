@@ -1158,7 +1158,7 @@ def compute_vte_trial(
     start_time: float,
     stop_time: float,
     *,
-    min_speed: float = 0.0,
+    min_speed: float,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -1184,13 +1184,12 @@ def compute_vte_trial(
         Time the pass ends (the animal leaves the zone), in seconds; finite
         and after ``start_time``. The window is the half-open
         ``[start_time, stop_time)``, so a sample at ``stop_time`` is outside.
-    min_speed : float, default=0.0
-        Minimum speed for a heading, in position units per second; finite and
-        non-negative. The default, 0, takes the direction of movement at every
-        moving sample, as Papale et al. (2012) did; a sample with zero speed
-        still has no heading. A positive value (for example ``5.0`` for
-        5 cm/s with positions in cm) leaves slower samples out of the head
-        sweep; that gate is neurospatial's option.
+    min_speed : float
+        Required, in position units per second (e.g. ``5.0`` for 5 cm/s with positions
+        in cm, the speed below which Davidson, Kloosterman & Wilson (2009, Neuron
+        63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped):
+        this function sees no environment, so it cannot know the positions' unit.
+        Minimum speed for valid heading (units/s); finite and non-negative.
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -1395,7 +1394,7 @@ def compute_vte_session(
     *,
     region: str,
     trials: Intervals[Any],
-    min_speed: float = 0.0,
+    min_speed: float | None = None,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
     head_sweep_weight: float = 1.0,
@@ -1433,14 +1432,12 @@ def compute_vte_session(
         ``IntervalSet`` is read as :func:`~neurospatial.io.from_pynapple`
         reads it: metadata as fields, its inclusive ``end`` as the half-open
         stop.
-    min_speed : float, default=0.0
-        Minimum speed for a heading, in position units per second; finite and
-        non-negative. The default, 0, takes the direction of movement at every
-        moving sample, as Papale et al. (2012) did; a sample with zero speed
-        still has no heading. A positive value (for example 5 cm/s in
-        ``env.units``) leaves slower samples out of the head sweep; that gate
-        is neurospatial's option. On 24 Carey et al. (2019) T-maze sessions at
-        30 Hz, a 5 cm/s gate changed the VTE verdict of 2 to 3% of trials.
+    min_speed : float or None, default=None
+        Minimum speed for valid heading, in position units per second (finite and
+        non-negative); None is 5 cm/s expressed in ``env.units`` (``0.05`` for meters,
+        ``50.0`` for millimeters), the speed below which Davidson, Kloosterman & Wilson
+        (2009, Neuron 63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat
+        as stopped. With units that are not a metric length, pass it explicitly.
     head_sweep_weight : float, default=1.0
         Weight for head sweep in VTE index (1-head_sweep_weight for speed), in [0, 1].
         Default 1.0 scores zIdPhi alone, as Papale et al. (2012) did; 0.5
@@ -1560,8 +1557,11 @@ def compute_vte_session(
     before entry into a reward site", excluded samples where the rat
     "turned back into the choice point", integrated |dPhi| "across the
     entire pass", and z-scored this IdPhi within session (zIdPhi). This
-    function follows that, with two departures:
+    function follows that, with three departures:
 
+    - Headings are undefined below ``min_speed``, so slow stretches add no
+      head sweep; Papale et al. computed orientation from velocity at every
+      sample.
     - IdPhi is the sum of per-sample heading changes, each wrapped to
       (-π, π].
     - The 0.5 cutoff (``vte_threshold``) and the optional blend with slowing
