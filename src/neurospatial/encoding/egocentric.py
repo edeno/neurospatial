@@ -3536,10 +3536,8 @@ def object_vector_score(rate_map: ObjectVectorRateResult | ArrayLike) -> float:
     maps correlated across object positions, Høydal et al., 2019) tells
     them apart.
 
-    This is neurospatial's own construction; the closest published method
-    is the vector-map correlation across object positions of Høydal et al.
-    (2019), which needs the object moved between sessions while this score
-    reads one map.
+    This is neurospatial's own construction, read from one map. It has not
+    been compared with a published object-vector score.
 
     Examples
     --------

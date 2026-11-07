@@ -1860,9 +1860,9 @@ def compute_view_rate(
     place in view maps computed from separate halves of the arena.
 
     The ``ray_cast`` and ``fixed_distance`` gaze models are neurospatial's
-    choice; the primate studies [1]_ measured where the monkey looked with
-    eye tracking. Without ``gaze_offsets`` both models assume the animal
-    looks where its head points.
+    choice, a geometric stand-in for measured gaze. Without
+    ``gaze_offsets`` both models assume the animal looks where its head
+    points.
 
     Examples
     --------
