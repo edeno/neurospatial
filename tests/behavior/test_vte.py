@@ -2047,24 +2047,30 @@ def test_vte_trial_measures_the_session_pass():
     assert alone.min_observed_speed == pass_.min_observed_speed
 
 
-def test_default_takes_heading_at_every_moving_sample():
-    """Papale et al. (2012) took orientation at every sample; so does the default.
+@pytest.mark.parametrize("seed", range(5))
+def test_jittered_pause_does_not_score_as_head_sweeping(seed):
+    """Tracking jitter on a still or creeping animal is not VTE.
 
-    An animal creeping forward at under 5 cm/s while scanning side to side has
-    a head sweep by default. A 5 cm/s gate leaves every sample out, so the
-    trial has no heading and no head sweep. A still animal has no heading
-    either way.
+    With a fixed-window velocity, jitter sets the heading of a slow animal, so
+    without the default speed gate a pause outscores a real scan. With it, a
+    still animal has no head sweep and a creep is far below a scan.
     """
     from neurospatial.behavior import compute_vte_trial
 
-    times = np.arange(90) / 30.0  # 30 Hz, 3 s
-    scan = 0.3 * np.sin(2 * np.pi * 1.0 * times)  # cm, side to side
-    positions = np.column_stack([50.0 + 1.0 * times, 50.0 + scan])  # 1 cm/s forward
-    still = np.full((90, 2), 50.0)
+    rng = np.random.default_rng(seed)
+    times = np.arange(45) / 30.0  # 1.5 s at 30 Hz
+    jitter = rng.normal(0.0, 0.3, (times.size, 2))  # cm
+    still = np.zeros((times.size, 2)) + jitter
+    creep = np.column_stack([2.0 * times, np.zeros_like(times)]) + jitter
+    scan = np.column_stack([10.0 * times, 8.0 * np.sin(2 * np.pi * times)]) + jitter
 
-    default = compute_vte_trial(times, positions, 0.0, 3.0)
-    gated = compute_vte_trial(times, positions, 0.0, 3.0, min_speed=5.0)
-    assert default.mean_speed < 5.0
-    assert default.head_sweep_magnitude > 1.0  # radians of scanning
-    assert np.isnan(gated.head_sweep_magnitude)
-    assert np.isnan(compute_vte_trial(times, still, 0.0, 3.0).head_sweep_magnitude)
+    def sweep(xy):
+        return compute_vte_trial(
+            times, xy, 0.0, 1.5, min_speed=5.0
+        ).head_sweep_magnitude
+
+    scan_sweep = sweep(scan)
+    assert scan_sweep > 6.0
+    assert np.isnan(sweep(still))
+    creep_sweep = sweep(creep)
+    assert np.isnan(creep_sweep) or creep_sweep < 0.25 * scan_sweep
