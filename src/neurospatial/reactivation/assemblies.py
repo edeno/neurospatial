@@ -1054,9 +1054,8 @@ def detect_assemblies(
     - **NMF**: Use when assemblies should have non-negative membership
       (no participation by firing less). It factorizes raw counts, so
       high-rate neurons weigh more than in the z-scored PCA and ICA. The
-      NMF option is neurospatial's own construction; the closest published
-      methods are the PCA (Peyrache et al., 2010) and ICA
-      (Lopes-dos-Santos et al., 2013) detectors, which factorize z-scored
+      NMF option is neurospatial's own construction; the closest methods
+      are the ``"pca"`` and ``"ica"`` options here, which factorize z-scored
       counts and allow negative weights.
 
     **Preprocessing**:

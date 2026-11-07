@@ -1707,8 +1707,9 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         rank minus one.
 
         The extension beyond the unsmoothed map, to kernel smoothing and the
-        GAM, is neurospatial's own derivation; the Miller (1955) and Treves &
-        Panzeri (1995) correction covers only the unsmoothed histogram.
+        GAM, is neurospatial's own derivation. On an unsmoothed map it gives
+        the ``(K - 1) / (2 ln 2 N)`` form, which a test checks; the smoothed
+        and GAM cases rest on simulation.
 
         **Range.** The expansion is a series in the relative variance of a
         bin's rate, ``K / N`` on average, and fails once it reaches 1. With
