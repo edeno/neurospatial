@@ -1161,8 +1161,9 @@ class TestGridCellModel:
         for k_vec in wave_vectors:
             grid_pattern += np.cos(np.dot(rel_pos, k_vec))
         grid_pattern /= 3.0
-        grid_pattern = np.maximum(0.0, grid_pattern)
-        expected = gc.baseline_rate + (gc.max_rate - gc.baseline_rate) * grid_pattern
+        # Solstad et al. (2006, eq. 2): (2/3) * ((1/3) * sum + 1/2).
+        tuning = (2.0 / 3.0) * (grid_pattern + 0.5)
+        expected = gc.baseline_rate + (gc.max_rate - gc.baseline_rate) * tuning
 
         actual = gc.firing_rate(np.zeros(len(positions)), positions)
 

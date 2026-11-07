@@ -16,6 +16,16 @@
   `geodesic_rbf_basis` used 5.0 in whatever units the environment had, so an
   arena in meters got 5 m kernels that covered it whole.
 
+### Simulation: grid cells follow Solstad et al. 2006
+
+- `GridCellModel` maps the three-cosine pattern onto [0, 1] by
+  `(2/3) (g + 1/2)`, Solstad, Moser & Einevoll 2006 eq. 2. It used to
+  rectify, `max(0, g)`, which set the rate to `baseline_rate` over the whole
+  space between fields and narrowed every field. The rate is now `max_rate` at
+  field centers and `baseline_rate` only at the points farthest from them.
+  Simulated grid maps and the rate maps fit to them change; the grid-score,
+  simulation and validation tests pass unchanged.
+
 ### Replay scores follow the published method by default
 
 - `fit_linear_trajectory` takes `n_samples_per_time_bin=10000` in place of
