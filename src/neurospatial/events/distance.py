@@ -441,6 +441,11 @@ or None
     closer together than the window, a spike can count for two events, as
     in a peri-event time histogram.
 
+    This is neurospatial's own construction; the closest published methods
+    are the peri-event time histogram, which bins spikes by time from the
+    event, and the occupancy-normalized rate map of a linearized track,
+    which measures distance from a fixed place instead of from each event.
+
     Examples
     --------
     >>> import numpy as np

@@ -521,6 +521,13 @@ def spatial_autocorrelation_radial(
     See Also
     --------
     spatial_autocorrelation : 2D autocorrelogram for regular grids.
+
+    Notes
+    -----
+    This is neurospatial's own construction; the closest published method
+    is a radial average of the 2-D spatial autocorrelogram, which correlates
+    the map with shifted copies of itself instead of grouping bin pairs by
+    geodesic distance.
     """
     _validate_autocorr_input(env, firing_rate)
 

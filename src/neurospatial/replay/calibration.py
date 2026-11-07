@@ -1627,6 +1627,11 @@ def null_events(
     an event covers part of the track, because which cells spike more then
     still follows their fields; report several kinds side by side.
 
+    The ``spike_shift`` kind is neurospatial's own construction; the closest
+    published method is the circular shift of each cell's spikes that
+    ``TIROLE_2022`` uses as a shuffle inside its significance test, used
+    here to make whole null events instead.
+
     Reassigning spike trains is the same as Takigawa et al.'s
     reassignment of rate maps for one set of rate maps. For a joint decode
     over several templates (tracks or directions) it differs: they
@@ -1865,6 +1870,13 @@ def simulated_null_events(
     --------
     null_events : Null events made from real events.
     decode_intervals : Decode the null events.
+
+    Notes
+    -----
+    This is neurospatial's own construction; the closest published nulls
+    are the Poisson surrogate events of ``null_events(kind="rate_poisson")``,
+    which fire at each cell's mean rate instead of its rate at a simulated
+    position.
 
     Examples
     --------

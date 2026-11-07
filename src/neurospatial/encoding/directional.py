@@ -1286,6 +1286,11 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         test. For independent (Poisson) spikes, ``T`` is χ² with 2 degrees
         of freedom under the null.
 
+        This test is neurospatial's own construction; the closest published
+        method is the Rayleigh test, which it equals under uniform occupancy
+        and Poisson spiking, but which corrects neither for uneven occupancy
+        nor for bursts.
+
         **Bursts and drift.** Real cells fire in bursts and drift in rate,
         so their counts vary more than Poisson counts and ``T`` alone rejects
         far too often (in simulation, about half of untuned cells firing

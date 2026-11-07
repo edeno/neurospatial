@@ -1354,6 +1354,12 @@ def path_progress(
     ``progress[s.start : s.stop + 1]`` for each ``s`` in
     ``trials.sample_slices(times)``.
 
+    As a behavioral measure this is neurospatial's own construction: it is
+    the hitting probability (committor) of a random walk on the bin graph.
+    The closest published measure is the fraction of the route covered on a
+    linearized track, which it equals on tree-shaped tracks but not on loops
+    or in open space.
+
     Examples
     --------
     Progress from the start of a T-maze to its left well, on the linearized
@@ -3706,6 +3712,12 @@ def time_efficiency(
         If ``reference_speed`` is not a finite speed greater than zero, or
         the inputs are malformed.
 
+    Notes
+    -----
+    This is neurospatial's own construction; the closest published measure
+    is the latency to reach the goal, which this compares with the time the
+    shortest path would take at ``reference_speed``.
+
     Examples
     --------
     >>> eff = time_efficiency(
@@ -3923,6 +3935,12 @@ def angular_efficiency(
     ``2 * arctan2(|u - v|, |u + v|)`` with unit vectors ``u = s / |s|`` and
     ``v = g / |g|``. In 2-D it equals ``|wrap(step_heading - goal_bearing)|``,
     and it is defined the same way for 1-D and 3-D positions.
+
+    This is neurospatial's own construction; the closest published measure
+    is the heading error, the angle between the direction of travel and the
+    direction to the goal, which this averages over the path weighted by
+    step length and scales from 1 (straight at the goal) to 0 (straight
+    away).
 
     Examples
     --------
@@ -4163,6 +4181,11 @@ def subgoal_efficiency(
     not fully observed. The closest approach is searched among measured
     samples only: finite coordinates, inside ``epochs`` and (geodesic) inside
     the environment.
+
+    Cutting the path at the closest approach to each subgoal is
+    neurospatial's own construction; the closest published measure is path
+    efficiency over the whole trip, the shortest distance over the distance
+    travelled.
 
     Examples
     --------
@@ -4888,6 +4911,11 @@ def instantaneous_goal_alignment(
     The direction of movement exists only where the animal moves, the rule of
     :func:`heading_from_velocity`.
 
+    The geodesic goal direction, the direction in which the shortest path
+    to the goal leaves the position, is neurospatial's choice; the published
+    heading error is measured to the straight-line direction to the goal,
+    which ``metric="euclidean"`` gives.
+
     Examples
     --------
     >>> import numpy as np
@@ -5202,6 +5230,13 @@ def goal_bias(
     ValueError
         If ``min_speed`` is not finite and non-negative, or is None and
         ``env.units`` is not a metric length.
+
+    Notes
+    -----
+    This is neurospatial's own construction; the closest published measure
+    is the mean heading error toward the goal, which averages the angle
+    instead of its cosine. The interpretation bands above are
+    neurospatial's choice.
 
     Examples
     --------

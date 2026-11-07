@@ -241,6 +241,9 @@ def rate_map_centroid(
     for mazes and complex geometries where Euclidean distances can cross
     walls.
 
+    The geodesic medoid is neurospatial's choice; the usual field centroid
+    is the rate-weighted mean position, which ``method="euclidean"`` gives.
+
     Examples
     --------
     >>> import numpy as np

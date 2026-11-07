@@ -360,6 +360,12 @@ class BoundaryVectorRateResult(_PolarRateMixin, SingleUnitRateMixin):
             is biased upward for few spikes, and choosing the direction by
             its peak adds to that bias, so compare it with shuffled spike
             trains before calling a cell boundary-tuned.
+
+        Notes
+        -----
+        This is neurospatial's own construction; the closest published method
+        is Skaggs spatial information of a place map, computed here over the
+        distance bins of one direction instead of over the whole map.
         """
         return float(_distance_information(self)[0])
 

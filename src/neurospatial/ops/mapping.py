@@ -470,6 +470,10 @@ def resample_field(
     truncation-noise floor of ``target_env.smooth(..., mode="average")``, as for a
     bin many ``bandwidth`` away from every valid bin.
 
+    This split-bandwidth scheme is neurospatial's own construction; the
+    closest published method is Nadaraya-Watson kernel regression, applied
+    here once on each environment instead of once on a single grid.
+
     **Dimension requirements**: Both environments must have the same number
     of dimensions (e.g., both 2D).
 

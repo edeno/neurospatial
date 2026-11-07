@@ -315,6 +315,10 @@ own candidate events in four ways:
   rates separately for each behavioral epoch and running direction: call
   `null_events` once per group of events.
 
+`spike_shift` and `simulated_null_events` (events simulated from the
+rate maps) are neurospatial's own nulls; the other three kinds follow
+the papers named.
+
 The last two kinds also measure a confound that Tingley & Peyrache (2020,
 p. 7) raise: in a population burst after silence, cells that fire faster
 are more likely to fire first. When a cell's k spikes are placed uniformly

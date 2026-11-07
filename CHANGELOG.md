@@ -166,6 +166,11 @@
   twice the central-peak radius.
 - `GridCellModel` cites Solstad et al. 2006 only for the three-wave pattern
   and says its rectification has not been checked against the paper.
+- About 35 methods and options that are neurospatial's own construction now
+  say so in their Notes and name the closest published method. Among them are
+  `vte_index`, `detect_laps`, `path_progress`, `object_vector_score`,
+  `tuning_pvalue`, `simulated_null_events`, `null_events(kind="spike_shift")`,
+  NMF assemblies and the border, object-vector and spatial-view cell models.
 - References that no sentence relied on were removed from the decision,
   navigation, trajectory, smoothing, graph and egocentric modules, and from the
   differential-operators guide. `decode_position` names Davidson et al. 2009 as

@@ -1013,6 +1013,14 @@ def vte_index(
     ValueError
         If ``head_sweep_weight`` is not in [0, 1].
 
+    Notes
+    -----
+    This combined index is neurospatial's own construction; the closest
+    published method is the zIdPhi score, which later studies describe as
+    scoring head sweeps alone, without slowing (not yet checked against
+    Papale et al. 2012). ``head_sweep_weight=1.0`` gives a head-sweep-only
+    score.
+
     Examples
     --------
     >>> from neurospatial.behavior.vte import vte_index
@@ -1079,6 +1087,12 @@ def classify_vte(
     ------
     ValueError
         If ``threshold`` is not finite.
+
+    Notes
+    -----
+    The 0.5 cutoff on the combined index is neurospatial's choice;
+    published VTE studies threshold zIdPhi alone, at cutoffs that differ
+    between studies.
 
     Examples
     --------
@@ -1210,6 +1224,11 @@ def compute_vte_trial(
     returns: it lies in the time segment containing ``entry_time``. Result
     window bounds describe the requested window; fewer samples may be
     available within that window.
+
+    Measuring head sweep and speed in a time window before region entry is
+    neurospatial's choice. Later studies describe IdPhi as integrated over
+    the whole pass through the choice point; this has not yet been checked
+    against Papale et al. (2012).
 
     Examples
     --------
@@ -1487,6 +1506,12 @@ def compute_vte_session(
     not classified rather than scored as "no head sweep". With
     ``head_sweep_weight=0`` the index is speed alone, so such a trial is
     still scored and classified by its speed.
+
+    The pre-entry time window with its 1 s default, and the combined
+    :func:`vte_index` with its 0.5 cutoff, are neurospatial's choices.
+    Later studies describe IdPhi as integrated over the whole pass through
+    the choice point and VTE as scored by zIdPhi alone; this has not yet
+    been checked against Papale et al. (2012).
 
     Examples
     --------

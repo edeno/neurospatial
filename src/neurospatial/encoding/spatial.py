@@ -1706,6 +1706,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         ``H = lam B^T T B + penalty * diag(d)``; unpenalized, ``K`` is the basis
         rank minus one.
 
+        The extension beyond the unsmoothed map, to kernel smoothing and the
+        GAM, is neurospatial's own derivation; the Miller (1955) and Treves &
+        Panzeri (1995) correction covers only the unsmoothed histogram.
+
         **Range.** The expansion is a series in the relative variance of a
         bin's rate, ``K / N`` on average, and fails once it reaches 1. With
         fewer spikes than ``K`` the bias is NaN, so screens refuse the unit.
@@ -6023,7 +6027,10 @@ def detect_place_fields(
     measures (``env.binning.bins.sizes``). Walls, track ends and arena edges
     shrink it as they shrink a field there. For an unsmoothed map
     (``bandwidth=0``) it is the peak bin. Field and region are compared by
-    measure, so the rule does not depend on bin size.
+    measure, so the rule does not depend on bin size. This rule is
+    neurospatial's choice; ``MapStats`` in FMAToolbox [2]_ and neurocode [1]_
+    instead drops fields smaller than a fixed number of bins (100 in 2-D,
+    10 in 1-D).
 
     **Segmentation is not a test.** The detector finds regions of elevated
     rate; it does not ask whether they differ from chance. Every untuned

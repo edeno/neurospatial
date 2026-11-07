@@ -1392,6 +1392,10 @@ def distance_to_decision_boundary(
     centerline. Distances are measured from the position itself, as in
     :func:`~neurospatial.behavior.distance_to_goal`.
 
+    This is neurospatial's own construction; the closest published measure
+    is the distance to the choice point of a linearized maze, which measures
+    to a fixed place instead of to the points equidistant from two goals.
+
     Examples
     --------
     A 100 cm linear track with a goal at each end. The position at 30 cm is
@@ -1526,6 +1530,10 @@ def detect_boundary_crossings(
     boundary from goal 0's side to goal 1's side is one crossing, and
     leaving the boundary toward a goal (up the stem of a symmetric T-maze
     and into either arm) is none.
+
+    This is neurospatial's own construction; the closest published method
+    detects entries into the chosen arm or goal region, which marks
+    reaching a region instead of a change of nearest goal.
 
     Examples
     --------
@@ -1740,6 +1748,10 @@ def compute_decision_analysis(
     and ``epochs``, and the chosen goal is the first goal region occupied by
     a sample inside ``epochs`` from then on; samples outside ``epochs`` are
     never used.
+
+    No published method computes this set of measures; it is
+    neurospatial's own construction, and the 1 s ``window_duration`` default
+    is neurospatial's choice.
 
     Examples
     --------

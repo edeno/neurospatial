@@ -176,6 +176,12 @@ class BorderCellModel:
     to ``σ √(2 ln 5)``, so its center lies at ``σ √(2 ln 5) / 2`` and the
     mean gives ``σ = 2 · 8.8 / √(2 ln 5) = 9.8 cm``.
 
+    The cited papers describe recorded border cells, not this model: it is
+    neurospatial's own construction. The closest published model is the
+    boundary vector cell of Hartley et al. (2000), which sums the drive of
+    every visible wall by distance and direction instead of reading only
+    the nearest wall.
+
     See Also
     --------
     BoundaryVectorCellModel : Firing from walls at a distance and direction.

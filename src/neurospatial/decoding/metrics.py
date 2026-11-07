@@ -336,6 +336,12 @@ def median_decoding_error(
         When a decoded or actual position lies outside the environment,
         giving how many of each.
 
+    Notes
+    -----
+    Counting an off-environment decode as ``inf`` is neurospatial's choice;
+    the usual median decoding error is the plain median of the distances
+    between decoded and actual positions.
+
     Examples
     --------
     >>> import numpy as np

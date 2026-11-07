@@ -253,6 +253,11 @@ class SpatialViewCellModel:
     walls, nothing defines what it sees and the rate is NaN, as for the
     other models.
 
+    The cited recordings (Rolls et al., 1997; Georges-François et al., 1999)
+    describe spatial view cells, not this model: it is neurospatial's own
+    construction. The closest published model is a Gaussian place field,
+    placed here on the viewed location instead of the animal's position.
+
     See Also
     --------
     PlaceCellModel : Position-based place fields

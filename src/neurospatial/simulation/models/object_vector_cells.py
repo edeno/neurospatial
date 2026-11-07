@@ -269,6 +269,12 @@ class ObjectVectorCellModel:
 
         r(x) = r_{base} + (r_{max} - r_{base}) \\cdot r_d(d) \\cdot r_\\theta(\\theta)
 
+    The cited papers describe recorded cells, not this model: it is
+    neurospatial's own construction. The closest published model is
+    RatInABox's ObjectVectorCells, also a Gaussian in distance times a von
+    Mises in direction, which sums over objects where this model takes the
+    maximum, the nearest or one object.
+
     See Also
     --------
     PlaceCellModel : Gaussian place fields

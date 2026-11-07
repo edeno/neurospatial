@@ -1261,6 +1261,10 @@ def spatial_basis(
 
     The function creates a multi-scale basis with 3 octave-spaced bandwidth
     values centered around the coverage-determined scale.
+
+    The scale rule (bandwidths at 5%, 10% or 20% of the environment size,
+    each with its octave neighbours) is neurospatial's choice, not taken
+    from a published method.
     """
     require_cartesian(
         env.coordinate_system,

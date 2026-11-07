@@ -2067,6 +2067,10 @@ class Environment(Generic[_C]):
           Observation validity is independent of whether the starting point
           is in a bin.
 
+          The 'linear' rule is neurospatial's choice: the traversal is
+          standard ray-grid geometry, but published occupancy maps give each
+          interval to the bin of one sample, as 'start' does.
+
         **Mass conservation**: The sum of the returned occupancy array equals
         the total valid time:
 

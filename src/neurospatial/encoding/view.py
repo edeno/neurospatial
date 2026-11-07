@@ -1859,6 +1859,11 @@ def compute_view_rate(
     whose heading fixes the wall in view. A spatial view cell's field stays in
     place in view maps computed from separate halves of the arena.
 
+    The ``ray_cast`` and ``fixed_distance`` gaze models are neurospatial's
+    choice; the primate studies [1]_ measured where the monkey looked with
+    eye tracking. Without ``gaze_offsets`` both models assume the animal
+    looks where its head points.
+
     Examples
     --------
     >>> import numpy as np

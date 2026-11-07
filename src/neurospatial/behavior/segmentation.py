@@ -695,6 +695,10 @@ def segment_by_velocity(
       the epoch's ``stop`` is that first slower sample
     - This creates a "buffer zone" for stable state transitions
 
+    The hysteresis rule and its defaults (``hysteresis=2.0``,
+    ``min_duration=0.5``) are neurospatial's choice; place-field studies
+    usually keep the samples above a single speed threshold instead.
+
     Common use cases:
     - Preprocessing for place field analysis (exclude stationary periods)
     - Identifying exploration vs. exploitation epochs
@@ -1370,6 +1374,11 @@ def detect_laps(
     end, so the direction names the branch order, not a heading in the room.
     A 2-D environment without a loop that is not a track has no linear
     coordinate; its laps get the enclosed-area direction above.
+
+    The template-overlap rule is neurospatial's own construction; the
+    closest published method counts a lap at each crossing of a start line,
+    or at each full turn of the animal's angle around the track centre, and
+    does not compare the route with a template.
 
     **Applications:**
 
@@ -2487,6 +2496,11 @@ def detect_goal_directed_runs(
     A straight path toward the goal has :math:`D = 1`; a detour lowers it.
     Distances are path distances between bin centers on the environment's
     connectivity graph.
+
+    This is neurospatial's own construction; the closest published method
+    is the straightness index, net displacement over path length, which
+    measures progress toward the path's end instead of toward a goal and
+    does not split the trajectory into approaches.
 
     Examples
     --------

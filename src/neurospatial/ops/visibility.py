@@ -1528,6 +1528,10 @@ def visibility_occupancy(
     recordings is therefore not counted as viewing time. Viewsheds are
     computed only for samples that start such a gap.
 
+    This is neurospatial's own construction; the closest published method
+    is the occupancy map of a place-field analysis, which counts the time
+    the animal spent in each bin instead of the time each bin was in view.
+
     Examples
     --------
     >>> import numpy as np
