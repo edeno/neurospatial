@@ -180,7 +180,7 @@ def _polar_regions_env(env: Environment) -> Environment:
             "select_basis_centers(method='kmeans')",
         ),
         (
-            lambda env: geodesic_rbf_basis(env, n_centers=3, rng=0),
+            lambda env: geodesic_rbf_basis(env, n_centers=3, bandwidth=5.0, rng=0),
             "select_basis_centers(method='kmeans')",
         ),
         (
@@ -450,7 +450,7 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
             env, n_centers=3, method="farthest_point", rng=0
         ),
         lambda env: geodesic_rbf_basis(
-            env, n_centers=3, center_method="farthest_point", rng=0
+            env, n_centers=3, bandwidth=5.0, center_method="farthest_point", rng=0
         ),
         lambda env: trajectory_similarity(
             env,

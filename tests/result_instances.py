@@ -206,11 +206,13 @@ def _vte_inputs() -> tuple[Any, np.ndarray, np.ndarray, Any]:
     from neurospatial import Environment, Intervals, Regions
     from neurospatial.behavior import Trial
 
-    stem = np.column_stack([np.full(30, 50.0), np.linspace(0, 50, 30)])
+    y = np.linspace(0, 50, 30)
+    stem = np.column_stack([np.repeat([45.0, 50.0, 55.0], 30), np.tile(y, 3)])
     bar = np.column_stack([np.linspace(0, 100, 60), np.full(60, 55.0)])
     env = Environment.from_samples(np.vstack([stem, bar]), bin_size=5.0, units="cm")
     regions = Regions()
     regions.add("center", point=(50.0, 55.0))
+    regions.add("choice", point=(50.0, 52.0), radius=15.0)
     regions.add("left", point=(5.0, 55.0))
     regions.add("right", point=(95.0, 55.0))
     env = env.with_regions(regions)
@@ -479,9 +481,8 @@ def _vte_session() -> Any:
         env,
         times,
         positions,
-        region="center",
+        region="choice",
         trials=trials,
-        window_duration=0.5,
         min_speed=5.0,
     )
 
@@ -491,9 +492,7 @@ def _vte_trial() -> Any:
 
     times = np.linspace(0, 3, 90)
     positions = np.column_stack([np.linspace(0, 50, 90), np.ones(90) * 50])
-    return compute_vte_trial(
-        times, positions, entry_time=2.0, window_duration=1.0, min_speed=5.0
-    )
+    return compute_vte_trial(times, positions, 1.0, 2.0, min_speed=5.0)
 
 
 def _joint_decoding() -> Any:

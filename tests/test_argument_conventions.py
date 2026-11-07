@@ -323,6 +323,9 @@ REQUIRED_DATA_ARGUMENTS = {
     # The public dataset loaded or fetched.
     ("load", "dataset"),
     ("fetch_all", "dataset"),
+    # The pass through the choice point measured, like an event's window.
+    ("compute_vte_trial", "start_time"),
+    ("compute_vte_trial", "stop_time"),
 }
 
 

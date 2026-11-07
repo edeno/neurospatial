@@ -106,6 +106,8 @@ VALUES = {
     "min_speed": 2.0,
     "entry_time": 25.0,
     "window_duration": 1.0,
+    "start_time": 24.0,
+    "stop_time": 26.0,
     "decision_region": "center",
     "region": "center",
     "regions": ["start", "goal"],

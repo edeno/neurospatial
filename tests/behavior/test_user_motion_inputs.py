@@ -142,8 +142,8 @@ def test_window_metrics_take_your_motion_at_the_window_samples(session):
     trial = compute_vte_trial(
         r.times,
         positions,
+        entry - duration,
         entry,
-        window_duration=duration,
         min_speed=MIN_SPEED,
         speed=speed,
         headings=headings,

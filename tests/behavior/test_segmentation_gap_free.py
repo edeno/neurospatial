@@ -34,8 +34,13 @@ speed moved to 42.219 cm/s, and the minimum speed, during a true pause, from
 0.063 to exactly 0 cm/s because movement before and after the pause no longer
 leaks into it. ``compute_vte_session`` was captured again when the session
 result began to keep the input trials' ``interval_ids``; its trial results
-are unchanged. ``compute_decision_analysis``'s ``distance_to_decision_boundary``
-is no longer read from the stored capture: each goal region is measured to
+are unchanged. It was captured again when the VTE window became the
+first pass through the decision region instead of the 2 s before the entry:
+the window moved from [98.0, 100.0) s to [100.0, 109.9) s, the stationary
+stretch in the target after the entry, so the mean speed moved from 12.5
+to 0 cm/s, the head sweep from 0 rad to NaN (no movement heading) and
+``is_vte`` from False to None. ``compute_decision_analysis``'s
+``distance_to_decision_boundary`` is no longer read from the stored capture: each goal region is measured to
 its edge from the position itself, so it is computed here independently. The
 track is a fully binned rectangle, so a shortest path inside it is a straight
 line, and the distance is half the difference of the straight-line distances

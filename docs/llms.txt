@@ -181,7 +181,7 @@ required.
 - `compute_pre_decision_metrics`: Compute all pre-decision window metrics.
 - `compute_speed`: Running speed at each tracking sample, robust to tracking jitter.
 - `compute_vte_session`: Compute VTE metrics for all trials in a session.
-- `compute_vte_trial`: Compute VTE metrics for a single trial.
+- `compute_vte_trial`: Compute VTE metrics for one pass through the choice point.
 - `decision_region_entry_time`: Find time of first entry to a decision region.
 - `detect_boundary_crossings`: Detect when trajectory crosses decision boundaries.
 - `detect_goal_directed_runs`: Detect goal-directed runs: approaches to a goal that are efficient.
@@ -228,7 +228,7 @@ required.
 - `trajectory_similarity`: Compute similarity between two trajectories.
 - `traveled_path_length`: Compute the distance traveled over observed intervals.
 - `trials_between_visits`: Trials between consecutive visits you already have.
-- `vte_index`: Compute combined VTE index.
+- `vte_index`: Compute the VTE index: zIdPhi, optionally blended with slowing.
 
 ### neurospatial.binning
 

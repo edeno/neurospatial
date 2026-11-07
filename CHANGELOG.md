@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Behavior: VTE follows Papale et al. 2012
+
+- `compute_vte_session` measures each trial over its first pass through the
+  choice-point zone `region`, as Papale et al. 2012 did. The window starts at
+  the trial's first sample in the region and ends before the first later
+  sample outside the region, outside `epochs`, or past a `max_gap` gap or a
+  declared break. A later re-entry in the same trial is not used. Before, the
+  window was a fixed time before the first entry.
+- `window_duration` is removed from `compute_vte_session`. `window_start` is
+  now the entry time. `window_end` is the time of the first sample after the
+  pass, or the trial's `stop_time` when the pass lasts to the trial's end.
+- Define `region` as the zone the animal passes through while it deliberates,
+  for a T-maze from partway up the stem to the entrances of the arms. A small
+  point at the junction holds too few samples, and such trials are marked
+  `"too_few_samples"`.
+- `compute_vte_trial(times, positions, start_time, stop_time, ...)` replaces
+  `compute_vte_trial(times, positions, entry_time, window_duration=...)`. It
+  measures the samples in `[start_time, stop_time)` within the time segment
+  that holds `start_time`. Passing a session trial's `window_start` and
+  `window_end` measures the same samples.
+- `head_sweep_weight` defaults to 1.0 in `compute_vte_session` and
+  `vte_index`, so the VTE index is zIdPhi alone, as in Papale et al. 2012.
+  Before, it was 0.5, an equal blend of head sweep and slowing. Pass
+  `head_sweep_weight=0.5` for the old blend. With the default, a session whose
+  speeds do not vary no longer warns, since speed does not enter the index.
+- The `vte_threshold=0.5` cutoff is unchanged. It is neurospatial's choice:
+  Papale et al. state no cutoff.
+
 ### Spatial bases: heat-kernel basis in physical units
 
 - `heat_kernel_wavelet_basis` is renamed `heat_kernel_basis`. Its functions are

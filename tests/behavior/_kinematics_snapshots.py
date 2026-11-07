@@ -140,8 +140,8 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         "compute_vte_trial": compute_vte_trial(
             r.times,
             r.positions,
-            entry_time=100.0,
-            window_duration=2.0,
+            start_time=98.0,
+            stop_time=100.0,
             min_speed=5.0,
         ),
         "compute_vte_session": session,

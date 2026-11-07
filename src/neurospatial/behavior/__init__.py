@@ -34,8 +34,10 @@ distance_to_goal, path_progress, goal_bias, compute_path_efficiency : How well d
 compute_decision_analysis, compute_vte_session : What happened at a choice point?
     ``compute_decision_analysis`` takes a ``decision_region`` and
     ``goal_regions``; ``compute_vte_session`` takes the decision ``region=``
-    and the ``trials=`` to score. Both report pre-decision speed, heading and
-    head sweeps (vicarious trial and error).
+    and the ``trials=`` to score. ``compute_decision_analysis`` reports
+    speed and heading before the decision; ``compute_vte_session`` scores head
+    sweeps over each trial's pass through the choice point (vicarious trial
+    and error).
 
 region_reward_field, goal_reward_field : Reward fields over the environment
 
