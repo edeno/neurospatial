@@ -12,6 +12,12 @@
   Found by comparing with FMAToolbox `MapStats`; on noisy simulated maps a
   few more fields are reported, at the same run time.
 
+### Statistics: one name for the time-bin shuffle
+
+- `shuffle_time_bins_coherent` is removed. It returned exactly what
+  `shuffle_time_bins` returns, which already permutes the time bins of all
+  neurons together. Use `shuffle_time_bins`.
+
 ### Behavior: VTE follows Papale et al. 2012
 
 - `compute_vte_session` measures each trial over its first pass through the

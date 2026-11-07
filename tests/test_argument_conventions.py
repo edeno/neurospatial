@@ -1142,9 +1142,6 @@ def _rng_calls():
         "neurospatial.stats.shuffle_time_bins": lambda rng: list(
             stats.shuffle_time_bins(counts, n_shuffles=3, rng=rng)
         ),
-        "neurospatial.stats.shuffle_time_bins_coherent": lambda rng: list(
-            stats.shuffle_time_bins_coherent(counts, n_shuffles=3, rng=rng)
-        ),
         "neurospatial.stats.shuffle_trials": lambda rng: list(
             stats.shuffle_trials(np.repeat(np.arange(4), 5), n_shuffles=3, rng=rng)
         ),

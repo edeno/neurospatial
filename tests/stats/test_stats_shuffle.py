@@ -15,7 +15,6 @@ from neurospatial.stats.shuffle import (
     shuffle_pvalue,
     shuffle_spikes_isi,
     shuffle_time_bins,
-    shuffle_time_bins_coherent,
     shuffle_trials,
     shuffle_zscore,
 )
@@ -258,7 +257,6 @@ def test_zscore_is_nan_with_infinite_null():
     "make",
     [
         lambda n: shuffle_time_bins(np.ones((3, 2)), n_shuffles=n),
-        lambda n: shuffle_time_bins_coherent(np.ones((3, 2)), n_shuffles=n),
         lambda n: shuffle_trials(np.array([0, 0, 1]), n_shuffles=n),
         lambda n: shuffle_spikes_isi(np.array([0.1, 0.2, 0.4]), n_shuffles=n),
     ],

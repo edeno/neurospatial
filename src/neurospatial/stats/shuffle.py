@@ -313,11 +313,6 @@ def shuffle_time_bins(
     Shuffle 0: shape=(3, 2), sum=5
     Shuffle 1: shape=(3, 2), sum=5
     Shuffle 2: shape=(3, 2), sum=5
-
-    See Also
-    --------
-    shuffle_time_bins_coherent : The same shuffle under a name that stresses
-        that all neurons share one permutation.
     """
     validate_draw_count(n_shuffles, name="n_shuffles", owner="shuffle_time_bins()")
     return _row_permutations(
@@ -331,75 +326,6 @@ def _row_permutations(
     """Yield ``values`` with its rows (first axis) randomly permuted."""
     for _ in range(n_shuffles):
         yield values[generator.permutation(len(values))]
-
-
-def shuffle_time_bins_coherent(
-    spike_counts: NDArray[np.int64],
-    *,
-    n_shuffles: int = 1000,
-    rng: np.random.Generator | int | None = None,
-) -> Generator[NDArray[np.int64], None, None]:
-    """Shuffle time bins coherently across all neurons (time-swap shuffle).
-
-    Preserves population co-activation structure while disrupting temporal
-    order. This is the same as ``shuffle_time_bins`` in implementation, but
-    is named differently to emphasize that the permutation is coherent
-    across all neurons (preserving instantaneous population vectors).
-
-    Parameters
-    ----------
-    spike_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Spike counts for a single candidate event.
-    n_shuffles : int, default=1000
-        Number of shuffled versions to generate.
-    rng : np.random.Generator | int | None, default=None
-        Random number generator for reproducibility.
-
-        - If Generator: Use directly
-        - If int: Seed for ``np.random.default_rng()``
-        - If None: Use default RNG (not reproducible)
-
-    Yields
-    ------
-    shuffled_counts : NDArray[np.int64], shape (n_time_bins, n_neurons)
-        Spike counts with rows (time bins) permuted coherently.
-
-    Raises
-    ------
-    ValueError
-        If ``n_shuffles`` is not a positive integer.
-
-    Notes
-    -----
-    - All neurons see the same temporal permutation
-    - Preserves instantaneous population vectors
-    - Destroys temporal progression but keeps co-firing structure
-    - Mathematically equivalent to ``shuffle_time_bins``, but the function
-      name clarifies the intent (testing temporal structure while preserving
-      population co-activation)
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial.stats.shuffle import shuffle_time_bins_coherent
-
-    >>> spike_counts = np.array([[0, 1, 2], [2, 0, 1], [1, 2, 0]], dtype=np.int64)
-    >>> for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=2, rng=42):
-    ...     # Each row is preserved exactly (coherent permutation)
-    ...     original_rows = {tuple(row) for row in spike_counts}
-    ...     shuffled_rows = {tuple(row) for row in shuffled}
-    ...     print(f"Row sets match: {original_rows == shuffled_rows}")
-    Row sets match: True
-    Row sets match: True
-
-    See Also
-    --------
-    shuffle_time_bins : Primary temporal shuffle (same implementation)
-    neurospatial.replay.shuffle_cell_identity : Shuffle neuron-to-place-field mapping
-    """
-    # Permuting whole rows already applies one permutation to all neurons;
-    # the separate public name documents that intent.
-    return shuffle_time_bins(spike_counts, n_shuffles=n_shuffles, rng=rng)
 
 
 # =============================================================================

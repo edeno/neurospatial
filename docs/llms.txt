@@ -872,7 +872,6 @@ required.
 - `shuffle_spike_times_circular`: Circularly shift spikes on the joined analyzed-time axis.
 - `shuffle_spikes_isi`: Shuffle inter-spike intervals to test ISI ordering significance.
 - `shuffle_time_bins`: Shuffle temporal order of time bins within an event.
-- `shuffle_time_bins_coherent`: Shuffle time bins coherently across all neurons (time-swap shuffle).
 - `shuffle_trials`: Shuffle labels across trials to test trial identity significance.
 - `shuffle_zscore`: Compute z-score of observed value relative to null distribution.
 - `wrap_angle`: Wrap angle to (-π, π].
