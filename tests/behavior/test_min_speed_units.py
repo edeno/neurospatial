@@ -19,8 +19,9 @@ ENV_LESS = [
     "compute_pre_decision_metrics",
     "heading_direction_labels",
     "head_sweep_from_positions",
-    "compute_vte_trial",
 ]
+# compute_vte_trial defaults to min_speed=0 (no gate, as Papale et al. 2012),
+# which means the same in every unit, so it needs no environment.
 
 
 @pytest.mark.parametrize("name", ENV_LESS)

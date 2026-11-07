@@ -1549,7 +1549,6 @@ _UNITLESS_MIN_SPEED = {
     "neurospatial.behavior.navigation.heading_direction_labels",
     "neurospatial.behavior.navigation.headings_to_direction_labels",
     "neurospatial.behavior.segmentation.segment_by_velocity",
-    "neurospatial.behavior.vte.compute_vte_trial",
     "neurospatial.behavior.vte.head_sweep_from_positions",
 }
 
