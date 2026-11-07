@@ -14,7 +14,16 @@ class TestDetectLaps:
     """Test detect_laps function."""
 
     def test_detect_laps_circular_track_auto(self):
-        """Test lap detection on circular track with auto template."""
+        """Four counter-clockwise circuits are four laps that tile the run.
+
+        The start line is the bin of the first sample, at angle 0. Each lap
+        boundary is the sample of a pass nearest that bin's center, which is
+        off angle 0 by at most half a bin diagonal, ``1.5 * sqrt(2) / 30``
+        rad; the animal turns ``8 pi / 100`` rad/s, and the nearest sample is
+        within half a frame more. So the boundaries are within that time of
+        25, 50 and 75 s. Every lap sweeps the whole ring, so its widened bins
+        are the template's: overlap 1.
+        """
         # Create circular track trajectory
         n_samples = 500
         theta = np.linspace(0, 8 * np.pi, n_samples)  # 4 complete laps
@@ -39,21 +48,17 @@ class TestDetectLaps:
             direction="both",
         )
 
-        # Trajectory is exactly 4 laps. The auto template consumes the first
-        # ~10% of the trajectory, so one boundary lap can be dropped; observed
-        # count is 3. Pin to {3, 4} to catch both over- and under-detection.
-        assert len(laps) in {3, 4}, (
-            f"4-lap circular track should yield 3-4 detected laps, got {len(laps)}"
-        )
-
-        # Verify lap structure
-        for lap in laps:
-            assert hasattr(lap, "start_time")
-            assert hasattr(lap, "stop_time")
-            assert hasattr(lap, "direction")
-            assert hasattr(lap, "overlap_score")
-            assert lap.stop_time > lap.start_time
-            assert 0.0 <= lap.overlap_score <= 1.0
+        assert len(laps) == 4
+        # Laps tile the recording: no turn back, so each starts where the
+        # previous one stopped.
+        assert laps.start[0] == times[0]
+        assert laps.stop[-1] == times[-1]
+        np.testing.assert_array_equal(laps.start[1:], laps.stop[:-1])
+        omega = 8 * np.pi / 100  # rad/s
+        tolerance = 1.5 * np.sqrt(2) / radius / omega + (times[1] - times[0]) / 2
+        np.testing.assert_allclose(laps.start[1:], [25.0, 50.0, 75.0], atol=tolerance)
+        assert np.all(laps.direction == "counter-clockwise")
+        np.testing.assert_array_equal(laps.overlap_score, 1.0)
 
     def test_detect_laps_direction_clockwise(self):
         """Test detection of clockwise laps only."""
@@ -168,25 +173,58 @@ class TestDetectLaps:
             assert lap.stop_time > lap.start_time
 
     def test_detect_laps_overlap_threshold(self):
-        """Test that min_overlap filters low-quality laps."""
-        n_samples = 200
-        theta = np.linspace(0, 4 * np.pi, n_samples)
-        radius = 30.0
-        x = 50 + radius * np.cos(theta)
-        y = 50 + radius * np.sin(theta)
-        positions = np.column_stack([x, y])
+        """min_overlap keeps a lap whose overlap reaches it and drops one below.
 
-        env = Environment.from_samples(positions, bin_size=3.0)
-        times = np.linspace(0, 40, n_samples)
+        On an annulus, the first circuit runs at radius 32 cm (the template)
+        and the second bulges out to 38 cm over half its length. The second
+        lap's overlap is the Jaccard index of the two laps' visited bins,
+        each widened by one ring of neighbors, computed here from the bins
+        and the connectivity graph. A threshold just below it keeps both
+        laps; just above it, only the template.
+        """
+        import shapely
+
+        theta = np.r_[
+            np.linspace(0, 2 * np.pi, 300, endpoint=False),
+            np.linspace(2 * np.pi, 4 * np.pi, 301),
+        ]
+        radius = np.full(theta.size, 32.0)
+        bulge = (theta >= 2 * np.pi) & (theta <= 3 * np.pi)
+        radius[bulge] += 6.0 * np.sin(theta[bulge] - 2 * np.pi)
+        positions = np.column_stack(
+            [50 + radius * np.cos(theta), 50 + radius * np.sin(theta)]
+        )
+        times = np.arange(theta.size) / 30.0
+        annulus = (
+            shapely.Point(50, 50)
+            .buffer(40)
+            .difference(shapely.Point(50, 50).buffer(25))
+        )
+        env = Environment.from_polygon(annulus, bin_size=3.0)
 
         from neurospatial.behavior.segmentation import detect_laps
 
-        # Low threshold should accept more laps
-        laps_low = detect_laps(env, times, positions, method="auto", min_overlap=0.5)
-        # High threshold should accept fewer laps
-        laps_high = detect_laps(env, times, positions, method="auto", min_overlap=0.9)
+        both = detect_laps(env, times, positions, method="auto", min_overlap=0.5)
+        assert len(both) == 2
 
-        assert len(laps_low) >= len(laps_high)
+        def widened(lap):
+            inside = (times >= lap.start_time) & (times <= lap.stop_time)
+            bins = set(env.bin_at(positions[inside]).tolist())
+            return bins | {n for b in bins for n in env.connectivity.neighbors(b)}
+
+        template, second = widened(both[0]), widened(both[1])
+        jaccard = len(template & second) / len(template | second)
+        assert 0.5 < jaccard < 0.9  # the bulge is a real, partial detour
+        np.testing.assert_allclose(both.overlap_score, [1.0, jaccard], rtol=1e-12)
+
+        kept = detect_laps(
+            env, times, positions, method="auto", min_overlap=jaccard - 0.01
+        )
+        dropped = detect_laps(
+            env, times, positions, method="auto", min_overlap=jaccard + 0.01
+        )
+        np.testing.assert_array_equal(kept.windows, both.windows)
+        np.testing.assert_array_equal(dropped.windows, both.windows[:1])
 
     def test_detect_laps_empty_trajectory(self):
         """Test lap detection on empty trajectory."""

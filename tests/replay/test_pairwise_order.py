@@ -10,7 +10,11 @@ import zlib
 
 import numpy as np
 import pytest
-from replay_helpers import template_stream
+from replay_helpers import (
+    monte_carlo_rejection_rate,
+    null_rejection_interval,
+    template_stream,
+)
 
 from neurospatial import Environment
 from neurospatial.decoding import DecodingResult
@@ -651,17 +655,32 @@ class TestDetection:
             assert result.z_scores[null] == pytest.approx(expected)
             assert result.z_scores[null] == -test.z_score
 
-    def test_random_events_are_rarely_replay(self):
-        """Per test about alpha; over two directions at most about 2 alpha."""
+    def test_random_events_are_replay_at_alpha(self):
+        """Each null alone is exact on random events; the verdicts stay bounded.
+
+        Every cell fires uniformly in the event, so spike times and cell
+        labels are both exchangeable: each null's own forward p-value is
+        below 0.05 at the exact rate 0.04 of 99 shuffles. A direction's
+        p-value is the larger of the two nulls', which can only lower the
+        rate, and the two directions add up to 1 - 0.96 ** 2 = 0.078 when
+        independent. 200 events.
+        """
         env, rates = _place_code()
+        gupta = dataclasses.replace(GUPTA_2010, n_shuffles=99)
         forward_only = dataclasses.replace(
-            GUPTA_2010, name="forward_only", directions=("forward",)
+            gupta, name="forward_only", directions=("forward",)
         )
         rng = np.random.default_rng(7)
-        n_events = 100
+        n_events = 200
+        per_null = dict.fromkeys(gupta.nulls, 0)
         forward = both = 0
         for seed in range(n_events):
             trains = _random_event(30, rng)
+            tested = pairwise_order_significance(
+                env, trains, (1.0, 1.15), rates, n_shuffles=99, rng=seed
+            )
+            for null, test in tested.shuffles.items():
+                per_null[null] += test.p_value < gupta.alpha
             forward += detect_pairwise_order_replay(
                 env,
                 trains,
@@ -675,12 +694,15 @@ class TestDetection:
                 trains,
                 (1.0, 1.15),
                 rates,
-                pairwise_order_method=GUPTA_2010,
+                pairwise_order_method=gupta,
                 rng=seed,
             ).is_replay
-        # Binomial(100, 0.05) exceeds 12 with probability below 0.1%.
-        assert forward / n_events <= 0.12
-        assert both / n_events <= 0.2
+        rate = monte_carlo_rejection_rate(99, gupta.alpha)
+        low, high = null_rejection_interval(n_events, rate)
+        for null, count in per_null.items():
+            assert low <= count <= high, (null, count)
+        assert forward <= high
+        assert both <= null_rejection_interval(n_events, 1 - (1 - rate) ** 2)[1]
 
     def test_the_test_with_the_smallest_p_is_reported(self):
         """A sweep in the order of template "right" only."""

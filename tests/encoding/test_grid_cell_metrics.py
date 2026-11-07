@@ -310,27 +310,30 @@ class TestGridScore:
         # autocorrelogram scores about 1.63.
         assert 1.55 < score < 1.7, score
 
-    def test_grid_score_anchor_isotropic_noise(self):
-        """Anchor test: Isotropic random noise should have score near 0.
+    def test_grid_score_anchor_isotropic_pattern(self):
+        """Anchor test: a rotation-invariant autocorrelogram scores 0.
 
         Mathematical reasoning:
-        - Random noise has no systematic angular structure
-        - Correlations at all rotation angles are approximately equal
-        - Grid score = min(r60, r120) - max(r30, r90, r150) ≈ 0
+        - A radially symmetric autocorrelogram (central peak plus a ring)
+          equals itself rotated by any angle, so every rotation correlation
+          is 1
+        - Grid score = min(r60, r120) - max(r30, r90, r150) = 1 - 1 = 0
+        - Rotating a pixel grid interpolates; this pattern varies over 5
+          pixels, so interpolation moves the correlations only at the 1e-5
+          level (the tolerance below leaves two orders of magnitude)
         """
         from neurospatial.encoding.grid import grid_score
 
-        # Create random autocorrelogram (seeded for reproducibility)
-        rng = np.random.default_rng(12345)
-        size = 50
-        autocorr = rng.random((size, size)) * 0.5 + 0.5
+        size, center = 101, 50
+        x, y = np.ogrid[:size, :size]
+        r = np.hypot(x - center, y - center)
+        autocorr = np.exp(-(r**2) / (2 * 5**2)) + 0.8 * np.exp(
+            -((r - 20.0) ** 2) / (2 * 5**2)
+        )
 
-        score = grid_score(autocorr)
+        score = grid_score(autocorr / autocorr.max())
 
-        # Random noise should have score near 0 (observed ~-0.008). Use an
-        # explicit two-sided bound rather than abs() so a regression returning a
-        # spurious positive grid score for noise (e.g. +0.4) still fails.
-        assert -0.3 < score < 0.3, f"Expected grid score near 0 for noise, got {score}"
+        assert abs(score) < 1e-3, f"Expected grid score 0 for isotropy, got {score}"
 
     def test_hexagonal_pattern_high_score(self):
         """Test hexagonal grid pattern produces high grid score."""
@@ -436,19 +439,6 @@ class TestGridScore:
         assert np.isfinite(score)
         assert score < 0.3
 
-    def test_random_noise_near_zero_score(self):
-        """Test random noise produces near-zero grid score."""
-        from neurospatial.encoding.grid import grid_score
-
-        # Random autocorrelogram with local RNG
-        rng = np.random.default_rng(42)
-        autocorr = rng.standard_normal((50, 50)) * 0.1
-
-        score = grid_score(autocorr)
-
-        # Random noise should produce score near 0 (no structure)
-        assert -0.5 < score < 0.5
-
     def test_raises_on_1d_input(self):
         """Test raises ValueError on 1D input."""
         from neurospatial.encoding.grid import grid_score
@@ -469,41 +459,44 @@ class TestGridScore:
 
         assert np.isnan(score)
 
-    def test_score_in_valid_range(self):
-        """Test grid score is in expected range [-2, 2]."""
-        from neurospatial.encoding.grid import grid_score
 
-        # Random autocorrelogram with local RNG
-        rng = np.random.default_rng(42)
-        autocorr = rng.standard_normal((50, 50))
+def _create_hexagonal_autocorr(
+    size: int = 100, radius: float = 20.0, orientation_deg: float = 0.0
+) -> np.ndarray:
+    """Synthetic hexagonal autocorrelogram, axis 0 along x and axis 1 along y.
 
-        score = grid_score(autocorr)
-
-        # Score should be in valid range
-        assert -2.0 <= score <= 2.0
-
-
-def _create_hexagonal_autocorr(size: int = 100, radius: float = 20.0) -> np.ndarray:
-    """Create synthetic hexagonal autocorrelogram for testing."""
-    autocorr = np.zeros((size, size))
+    Six peaks at ``radius`` pixels from the center, the first at
+    ``orientation_deg`` from +x (the layout ``spatial_autocorrelation``
+    returns). Peak centers are exact (not rounded to pixels).
+    """
     center = size // 2
-
-    # Coordinate grids
-    y_grid, x_grid = np.ogrid[:size, :size]
+    x_grid, y_grid = np.ogrid[:size, :size]
 
     # Central peak
-    dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
+    dist_from_center = np.sqrt((x_grid - center) ** 2 + (y_grid - center) ** 2)
     autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))
 
-    # Add 6 peaks at 60° intervals (hexagonal pattern)
-    for angle_deg in [0, 60, 120, 180, 240, 300]:
+    # Six peaks at 60° intervals (hexagonal pattern)
+    for angle_deg in orientation_deg + np.arange(0, 360, 60):
         angle_rad = np.radians(angle_deg)
-        peak_y = center + int(radius * np.sin(angle_rad))
-        peak_x = center + int(radius * np.cos(angle_rad))
-        peak_dist = np.sqrt((y_grid - peak_y) ** 2 + (x_grid - peak_x) ** 2)
+        peak_x = center + radius * np.cos(angle_rad)
+        peak_y = center + radius * np.sin(angle_rad)
+        peak_dist = np.sqrt((x_grid - peak_x) ** 2 + (y_grid - peak_y) ** 2)
         autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
 
     return autocorr / autocorr.max()
+
+
+def _orientation_error(measured: float, expected_deg: float) -> float:
+    """Angular difference in degrees modulo the 60° lattice period."""
+    diff = (np.degrees(measured) - expected_deg) % 60.0
+    return float(min(diff, 60.0 - diff))
+
+
+# Peaks are read at whole pixels: each is at most half a pixel diagonal from
+# its true center, sqrt(2) / 2 pixels at 20 pixels' radius, so its angle and
+# the mean orientation are off by at most arctan(sqrt(2) / 2 / 20) ~ 2.0°.
+_ORIENTATION_TOLERANCE_DEG = float(np.degrees(np.arctan(np.sqrt(2) / 2 / 20.0)))
 
 
 class TestGridScale:
@@ -573,44 +566,26 @@ class TestGridOrientationViaGridProperties:
     """
 
     def test_orientation_anchor_horizontal_grid(self):
-        """A grid aligned with an axis has orientation in [0, pi / 3)."""
+        """A lattice with a peak on +x has orientation 0."""
         from neurospatial.encoding.grid import grid_properties
 
-        autocorr = _create_hexagonal_autocorr()
+        autocorr = _create_hexagonal_autocorr(size=101, orientation_deg=0.0)
         props = grid_properties(autocorr, pixel_size=1.0)
 
-        assert props.orientation >= 0.0
-        assert props.orientation < np.pi / 3
-        assert props.orientation_std < np.radians(15.0)
+        assert 0.0 <= props.orientation < np.pi / 3
+        assert _orientation_error(props.orientation, 0.0) <= _ORIENTATION_TOLERANCE_DEG
+        assert props.orientation_std <= np.radians(_ORIENTATION_TOLERANCE_DEG)
 
     def test_orientation_anchor_rotated_grid(self):
-        """A lattice at 30 degrees from +x has orientation ~pi / 6."""
+        """A lattice at 30 degrees from +x has orientation pi / 6."""
         from neurospatial.encoding.grid import grid_properties
 
-        size = 100
-        autocorr = np.zeros((size, size))
-        center = size // 2
-        radius = 20.0
-        # Axis 0 runs along x and axis 1 along y, as spatial_autocorrelation
-        # lays the map out.
-        x_grid, y_grid = np.ogrid[:size, :size]
-
-        dist_from_center = np.sqrt((y_grid - center) ** 2 + (x_grid - center) ** 2)
-        autocorr = np.exp(-(dist_from_center**2) / (2 * 5**2))
-
-        for angle_deg in [30, 90, 150, 210, 270, 330]:
-            angle_rad = np.radians(angle_deg)
-            peak_y = center + int(radius * np.sin(angle_rad))
-            peak_x = center + int(radius * np.cos(angle_rad))
-            peak_dist = np.sqrt((y_grid - peak_y) ** 2 + (x_grid - peak_x) ** 2)
-            autocorr += 0.8 * np.exp(-(peak_dist**2) / (2 * 5**2))
-
-        autocorr = autocorr / autocorr.max()
+        autocorr = _create_hexagonal_autocorr(size=101, orientation_deg=30.0)
         props = grid_properties(autocorr, pixel_size=1.0)
 
-        assert np.radians(20.0) < props.orientation < np.radians(40.0), (
-            f"Expected orientation ~pi / 6, got {props.orientation}"
-        )
+        assert _orientation_error(props.orientation, 30.0) <= (
+            _ORIENTATION_TOLERANCE_DEG
+        ), f"Expected orientation ~pi / 6, got {props.orientation}"
 
     def test_orientation_returns_nan_on_flat_input(self):
         """No detectable peaks -> orientation NaN."""
@@ -622,14 +597,18 @@ class TestGridOrientationViaGridProperties:
         assert np.isnan(props.orientation)
         assert np.isnan(props.orientation_std)
 
-    def test_orientation_in_valid_range(self):
-        """Orientation is in [0, 60)."""
+    @pytest.mark.parametrize("orientation_deg", [5.0, 17.0, 42.0, 55.0, 73.0, -20.0])
+    def test_orientation_in_valid_range(self, orientation_deg):
+        """Orientation is the lattice angle modulo 60°, reported in [0, 60)."""
         from neurospatial.encoding.grid import grid_properties
 
-        autocorr = _create_hexagonal_autocorr()
+        autocorr = _create_hexagonal_autocorr(size=101, orientation_deg=orientation_deg)
         props = grid_properties(autocorr, pixel_size=1.0)
 
         assert 0.0 <= props.orientation < np.pi / 3
+        assert _orientation_error(props.orientation, orientation_deg) <= (
+            _ORIENTATION_TOLERANCE_DEG
+        )
 
 
 class TestGridProperties:

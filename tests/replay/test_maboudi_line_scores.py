@@ -17,6 +17,7 @@ import networkx as nx
 import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
+from replay_helpers import assert_null_verdicts_at_alpha
 
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_position
@@ -418,7 +419,7 @@ class TestRecipe:
         )
         return env, rates
 
-    def _detect(self, env, rates, kind, seed, empty=(), **kwargs):
+    def _detect(self, env, rates, kind, seed, empty=(), rng=0, **kwargs):
         event = simulate_replay_event(
             env, rates, kind=kind, rate_gain=4.0, rng=seed, **kwargs
         )
@@ -437,7 +438,7 @@ class TestRecipe:
             spike_counts=counts,
             encoding_models=rates,
             dt=DT,
-            rng=0,
+            rng=rng,
         )
         return result, decoded, counts
 
@@ -455,10 +456,22 @@ class TestRecipe:
         )
         assert result.score == line.score
 
-    def test_rejects_random_events(self, place_code):
+    @pytest.mark.slow
+    def test_calls_random_events_replay_at_alpha(self, place_code):
+        """100 random events with 199 shuffles at alpha = 0.01.
+
+        P(p < 0.01) is 1 / 200 for an exact test, so 0 to 3 events are
+        replay; P(p < 0.5) keeps the check two-sided.
+        """
         env, rates = place_code
-        verdicts = [
-            self._detect(env, rates, "random", seed=300 + seed)[0].is_replay
-            for seed in range(4)
+        results = [
+            self._detect(env, rates, "random", seed=300 + seed, rng=seed)[0]
+            for seed in range(100)
         ]
-        assert not any(verdicts)
+        assert_null_verdicts_at_alpha(
+            [r.p_value for r in results],
+            [r.is_replay for r in results],
+            [all(r.criteria.values()) for r in results],
+            alpha=MABOUDI_2018.alpha,
+            n_shuffles=199,
+        )

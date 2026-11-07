@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from replay_helpers import monte_carlo_rejection_rate, null_rejection_interval
 
 from neurospatial import Environment
 from neurospatial.decoding import decode_position
@@ -116,13 +117,15 @@ class TestSpikeTimeUniform:
         """Each cell fires at a constant rate through each event.
 
         Its spikes are then uniform over the event given its count, which is
-        exactly this null, so p-values are uniform: about a tenth fall at or
-        below 0.1 and half at or below 0.5.
+        exactly this null, so p-values are uniform: with 39 shuffles exactly
+        a tenth fall at or below 0.1 and half at or below 0.5. 1000 events
+        put an inflated 0.16 (about 160) past the 99% interval's end of 125.
         """
         env, rates = place_code
         rng = np.random.default_rng(11)
+        n_events = 1000
         p_values = []
-        for _ in range(80):
+        for _ in range(n_events):
             event_rates = rng.gamma(2.0, 4.0, size=len(rates))  # Hz
             counts = rng.poisson(event_rates * DT, size=(10, len(rates)))
             posterior = decode_position(env, counts, rates, dt=DT).posterior
@@ -140,9 +143,11 @@ class TestSpikeTimeUniform:
             )
             p_values.append(result.p_value)
         p_values = np.asarray(p_values)
-        # Loose bounds: 80 events give a binomial standard error of 0.03-0.06.
-        assert 0.0 < np.mean(p_values <= 0.1) <= 0.2
-        assert 0.35 <= np.mean(p_values <= 0.5) <= 0.65
+        for level in (0.1, 0.5):
+            low, high = null_rejection_interval(
+                n_events, monte_carlo_rejection_rate(39, level, strict=False)
+            )
+            assert low <= np.sum(p_values <= level) <= high, level
 
     def test_a_sequence_is_rejected(self, place_code, sweep):
         env, rates = place_code

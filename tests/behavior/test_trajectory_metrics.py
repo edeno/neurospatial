@@ -1,5 +1,6 @@
 """Tests for trajectory metrics module."""
 
+import networkx as nx
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
@@ -55,10 +56,8 @@ class TestComputeStepLengths:
         # Should have n-1 step lengths
         assert steps.shape == (20,)
 
-        # All steps should be positive and roughly equal
-        assert np.all(steps >= 0)
-        # For uniform spacing, expect uniform step lengths
-        assert_allclose(steps, steps[0], rtol=0.01)
+        # 21 evenly spaced samples over 100 cm: every step is 5 cm.
+        assert_allclose(steps, 5.0, rtol=1e-12)
 
     def test_step_lengths_with_duplicates(self):
         """Test that consecutive duplicates have zero step length."""
@@ -363,25 +362,34 @@ class TestMeanSquareDisplacement:
         assert msd_values.ndim == 1
         assert len(tau_values) == len(msd_values)
 
-    def test_msd_monotonic_increase(self):
-        """Test that MSD generally increases with tau (for diffusive motion)."""
-        # Create 2D random walk trajectory with local RNG
+    def test_msd_of_a_random_walk_grows_linearly(self):
+        """A 2-D random walk's MSD grows linearly: E[MSD(k steps)] = 8 k cm^2.
+
+        Each step is Gaussian with standard deviation 2 cm per axis, so a
+        displacement over k steps has expected squared length 2 * 4 * k, and
+        so does every pair's in the time average. Averaged over 200 seeded
+        walks, the MSD at each of the 50 lags lies within 4 standard errors
+        (the spread across walks over sqrt(200)) of 8 k; a 4 SE miss has
+        probability 6e-5 per lag.
+        """
         rng = np.random.default_rng(42)
-        n_steps = 100
-        steps = rng.standard_normal((n_steps, 2)) * 2  # 2D random steps
-        positions = np.cumsum(steps, axis=0)
+        n_walks, n_steps = 200, 100
         times = np.arange(n_steps) * 0.1
-
-        # Continuous API with Euclidean distance
-        _msd = mean_square_displacement(
-            times, positions, metric="euclidean", max_tau=5.0
+        msd = np.array(
+            [
+                mean_square_displacement(
+                    times,
+                    np.cumsum(rng.standard_normal((n_steps, 2)) * 2, axis=0),
+                    metric="euclidean",
+                    max_tau=5.0,
+                ).msd
+                for _ in range(n_walks)
+            ]
         )
-        _tau_values, msd_values = _msd.lags, _msd.msd
-
-        # MSD should generally increase with tau (monotonic for diffusion)
-        # Due to sampling noise, allow for small decreases
-        # Check that MSD at end is significantly larger than at start
-        assert msd_values[-1] > msd_values[0]
+        k = np.arange(1, 51)
+        mean = msd.mean(axis=0)
+        standard_error = msd.std(axis=0, ddof=1) / np.sqrt(n_walks)
+        assert np.all(np.abs(mean - 8.0 * k) < 4 * standard_error)
 
     def test_msd_stationary_is_zero(self):
         """Test that MSD is near zero for stationary trajectory."""
@@ -645,16 +653,16 @@ class TestGeodesicStepLengths:
         )
         env = Environment.from_samples(positions, bin_size=2.0)
 
-        # If we have disconnected components, test the behavior
-        # Note: This test may pass trivially if all bins connect
-        # The key is that the code handles inf distances gracefully
+        # 2 cm bins: the first three samples fall in bins centered at
+        # (-0.5, 0) and (1.5, 0), the last two at (99.5, 100) and (101.5, 100).
         position_bins = env.bin_at(positions)
         bin_positions = env.bin_centers[position_bins]
+        assert not nx.has_path(env.connectivity, position_bins[0], position_bins[3])
 
         steps = step_lengths(bin_positions, metric="geodesic", env=env)
 
-        # Step lengths should be finite for connected steps, inf for disconnected
-        assert np.all(steps >= 0), "All step lengths should be non-negative"
+        # Within a component the path is straight; across them there is none.
+        np.testing.assert_array_equal(steps, [2.0, 0.0, np.inf, 2.0])
 
 
 class TestArrayLikeNormalization:
@@ -822,10 +830,14 @@ class TestMeanSquareDisplacementBreaks:
             max_tau=3.0,
             break_before=break_before,
         )
-        # Pairs across the join are ~100 units apart; within a recording the
-        # displacement is at most 3 bin-widths.
-        assert np.all(joined.msd > 100.0)
-        np.testing.assert_allclose(split.msd, [1.0, 4.0, 9.0], atol=1.5)
+        # Along the straight line the geodesic distance is the straight one,
+        # so the MSD is that of the x coordinates: within a recording a lag
+        # of k seconds moves exactly k cm; joined, the pairs across the join
+        # add their ~100 cm jumps.
+        x = positions[:, 0]
+        brute_force = [np.mean((x[k:] - x[:-k]) ** 2) for k in (1, 2, 3)]
+        np.testing.assert_allclose(joined.msd, brute_force, rtol=1e-12)
+        np.testing.assert_allclose(split.msd, [1.0, 4.0, 9.0], rtol=1e-12)
 
 
 class TestMeanSquareDisplacementUniformSampling:

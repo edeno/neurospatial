@@ -99,7 +99,14 @@ class TestRegionRewardField:
         assert np.all(reward[goal_mask] == reward_value)
 
     def test_region_reward_field_linear(self):
-        """Test linear decay from boundary."""
+        """Linear decay: 1 - d / d_max outside the region, 1 inside.
+
+        The samples lie on the diagonal, so the bins form one diagonal row
+        centred at (10 k, 10 k). The shortest path between two of them runs
+        along the diagonal, so the distance from a bin to the region is the
+        straight-line distance to the nearest region bin centre, and the
+        decay length is the largest of those (the default max_distance).
+        """
         positions = np.column_stack(
             [
                 np.linspace(0, 100, 1000),
@@ -130,12 +137,16 @@ class TestRegionRewardField:
         # Bins inside region should have maximum reward (1.0)
         assert np.all(reward[goal_mask] == 1.0)
 
-        # Bins outside region should have decreasing reward with distance
-        outside_bins = np.where(~goal_mask)[0]
-        if len(outside_bins) > 0:
-            # Reward should be between 0 and 1 for outside bins
-            assert np.all(reward[outside_bins] >= 0.0)
-            assert np.all(reward[outside_bins] <= 1.0)
+        centers = env.bin_centers
+        np.testing.assert_allclose(centers[:, 0], centers[:, 1])  # one diagonal
+        outside = ~goal_mask
+        assert outside.sum() >= 2  # bins on both sides of the region
+        distances = np.min(
+            np.linalg.norm(centers[:, None] - centers[goal_mask][None], axis=2), axis=1
+        )
+        expected = 1.0 - distances[outside] / distances[outside].max()
+        np.testing.assert_allclose(reward[outside], expected, rtol=1e-9, atol=1e-12)
+        assert reward[outside].min() == 0.0  # the farthest bin
 
     def test_linear_decay_with_unreachable_component(self, two_islands_env):
         """Unreachable bins get 0; the reachable part decays to its farthest bin.
@@ -389,13 +400,15 @@ class TestGoalRewardField:
         # All rewards should be non-negative
         assert np.all(reward >= 0.0)
 
-        # Bins beyond max_distance should have zero reward
-        from neurospatial.ops.distance import distance_field
-
-        distances = distance_field(env.connectivity, sources=[center_bin])
+        # The bins form one diagonal row, so the shortest path from the goal
+        # bin is the straight line between bin centres. The ends of the row
+        # are 5 * 10 * sqrt(2) = 70.7 cm away, beyond max_distance.
+        distances = np.linalg.norm(
+            env.bin_centers - env.bin_centers[center_bin], axis=1
+        )
         far_bins = distances > max_distance
-        if far_bins.any():
-            assert np.all(reward[far_bins] == 0.0)
+        assert far_bins.sum() >= 2
+        assert np.all(reward[far_bins] == 0.0)
 
         # Bins within range should have reward = scale * (1 - d/max_d)
         close_bins = distances <= max_distance

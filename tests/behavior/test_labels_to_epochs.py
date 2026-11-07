@@ -1,12 +1,16 @@
 """Per-sample labels become supported, half-open epochs, one row per epoch.
 
-Every expected row below was captured from the mapping result that
-``labels_to_epochs`` returned before it returned ``Intervals``; selecting a
-label (``epochs[epochs.label == x]``) gives exactly that label's old windows.
+The expected rows follow from the rule: the interval from sample k to k + 1
+carries ``labels[k]``; it is supported when the observed samples around it
+are no more than ``max_gap`` apart with no declared break or ``epochs`` edge
+between them; each run of supported intervals with one label is a row
+``[times[first], times[last + 1])``. With integer times they can be read off
+by hand; the random case is checked against a brute-force walk of the rule.
 """
 
 from __future__ import annotations
 
+import itertools
 import pickle
 
 import numpy as np
@@ -264,12 +268,20 @@ def test_epochs_match_the_shared_resolver():
     after_last = np.searchsorted(times, r.stop)
     np.testing.assert_array_equal(times[first], r.start)
     np.testing.assert_array_equal(times[after_last], r.stop)
-    expected_spans = [
-        [0, 18], [20, 32], [36, 37], [39, 53], [55, 55], [57, 86], [88, 96],
-        [99, 103], [106, 113], [116, 126], [129, 130], [132, 154], [157, 158],
-        [161, 170], [172, 198],
-    ]  # fmt: skip
-    assert np.column_stack([first, after_last - 1]).tolist() == expected_spans
+    # Brute force: consecutive observed samples are joined when no more than
+    # max_gap apart with no declared break after the first of them; every
+    # interval between joined samples is supported.
+    observed = np.flatnonzero(valid)
+    supported = np.zeros(n - 1, dtype=bool)
+    for a, b in itertools.pairwise(observed):
+        if times[b] - times[a] <= 0.5 and not breaks[a + 1 : b + 1].any():
+            supported[a:b] = True
+    edges = np.diff(np.r_[0, supported.astype(int), 0])
+    expected_spans = np.column_stack(
+        [np.flatnonzero(edges == 1), np.flatnonzero(edges == -1) - 1]
+    )
+    assert len(expected_spans) > 10  # gaps, losses and breaks split the run
+    assert np.column_stack([first, after_last - 1]).tolist() == expected_spans.tolist()
     kept = np.concatenate(
         [np.arange(a, b) for a, b in zip(first, after_last, strict=True)]
     )

@@ -863,48 +863,60 @@ class TestViewOccupancyNonUniformSampling:
 
 
 class TestGazeModelGeometry:
-    """Geometric correctness of the gaze models used by the view-binning layer.
+    """Geometric correctness of the gaze models in the view-binning layer.
 
-    The view binning maps a viewed location (computed by
-    ``viewed_location`` with the chosen ``gaze_model``) into a spatial
-    bin. These tests pin the geometry the audit found only smoke-tested:
-    ``ray_cast`` clips the gaze ray at the environment wall (valid
-    bins), while ``fixed_distance`` projects a fixed distance ahead and can land
-    outside the environment (bin index -1).
+    The view binning maps each sample's viewed location into a bin and gives
+    that bin the sample's interval. Through the binning layer itself:
+    ``ray_cast`` stops at the first wall, whose point belongs to the bin on
+    the observer's side; ``fixed_distance`` lands ``view_distance`` ahead,
+    unless a nearer wall cuts the gaze short (a gaze never passes through a
+    wall).
     """
 
     @pytest.fixture(scope="class")
-    def rectangular_env(self) -> Environment:
-        rng = np.random.default_rng(0)
-        return Environment.from_samples(rng.uniform(0, 100, (8000, 2)), bin_size=5.0)
+    def box_env(self) -> Environment:
+        from shapely.geometry import box
 
-    def test_boundary_clips_at_wall_fixed_distance_overshoots(self, rectangular_env):
-        from neurospatial.ops.visibility import viewed_location
+        return Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
 
-        # Poses hugging the left wall, all facing -x toward the x=0 boundary.
-        positions = np.column_stack([np.linspace(3.0, 8.0, 12), np.full(12, 50.0)])
-        headings = np.full(12, np.pi)  # facing -x (West)
+    @staticmethod
+    def _poses():
+        """13 one-second samples facing West (-x) at y = 52.5, x = 3.25 ... 15.25."""
+        x = 3.25 + np.arange(13.0)
+        positions = np.column_stack([x, np.full(13, 52.5)])
+        return np.arange(13.0), positions, np.full(13, np.pi)
 
-        viewed_boundary = viewed_location(
+    def test_ray_cast_stops_at_wall_fixed_distance_lands_ahead(self, box_env):
+        times, positions, headings = self._poses()
+        wall_cell = box_env.bin_at(np.array([[2.5, 52.5]]))[0]
+
+        ray_cast = _occupancy(
+            box_env, times, positions, headings, gaze_model="ray_cast", max_gap=None
+        )
+        fixed = _occupancy(
+            box_env,
+            times,
             positions,
             headings,
-            method="ray_cast",
-            env=rectangular_env,
-            max_distance=150.0,
-            boundary_source="analysis",
-        )
-        viewed_fixed = viewed_location(
-            positions,
-            headings,
-            method="fixed_distance",
-            view_distance=10.0,
-            boundary_source="analysis",
+            gaze_model="fixed_distance",
+            view_distance=4.0,
+            max_gap=None,
         )
 
-        bins_boundary = rectangular_env.bin_at(viewed_boundary)
-        bins_fixed = rectangular_env.bin_at(viewed_fixed)
+        # Every gaze West stops at the wall x = 0, in the wall cell: all 12
+        # one-second intervals (the last sample starts none).
+        expected = np.zeros(box_env.n_bins)
+        expected[wall_cell] = 12.0
+        np.testing.assert_allclose(ray_cast, expected)
 
-        # boundary clips at the wall -> every viewed location is a valid bin.
-        assert np.all(bins_boundary >= 0)
-        # fixed_distance projects 10 cm past the wall -> mostly outside the env.
-        assert np.mean(bins_fixed < 0) >= 0.5
+        # 4 cm ahead by hand: x - 4 for the 12 interval-starting samples. The
+        # first, 3.25 cm from the wall, is cut short at the wall cell.
+        viewed = np.column_stack([positions[:-1, 0] - 4.0, positions[:-1, 1]])
+        ahead = viewed[:, 0] > 0
+        assert ahead.sum() == 11
+        expected = np.zeros(box_env.n_bins)
+        np.add.at(expected, box_env.bin_at(viewed[ahead]), 1.0)
+        expected[wall_cell] += 1.0
+        np.testing.assert_allclose(fixed, expected)
+        # Three cells: x in [0, 5), [5, 10) and [10, 15).
+        assert np.count_nonzero(fixed) == 3

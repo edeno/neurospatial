@@ -391,18 +391,13 @@ class TestConvolve:
         # Convolve (without normalization to preserve Mexican hat properties)
         result = graph_convolve(env, field, mexican_hat, normalize=False)
 
-        # Mexican hat kernel is 0 at distance 0, so center gets 0
-        assert result[center_idx] == 0.0
-
-        # Nearby bins should have positive values (narrow Gaussian dominates)
-        # Get immediate neighbors
-        neighbors = list(env.connectivity.neighbors(center_idx))
-        assert len(neighbors) > 0
-        # Immediate neighbors get positive contribution from center spike
-        # (their kernel evaluates center with small positive distance)
-        # Actually, this depends on the specific distances - let's just check
-        # that result is not all zeros
-        assert not np.all(result == 0), "Mexican hat should produce non-zero output"
+        # Without normalization a unit impulse returns the kernel of each
+        # bin's path length to it. On this 8-connected unit grid the path to
+        # a bin (Δx, Δy) away is the octile staircase max + (√2 - 1) min,
+        # so the bins at (2, 1) get the kernel of 2.414, not of √5 = 2.236.
+        offsets = np.abs(env.bin_centers - env.bin_centers[center_idx])
+        path = offsets.max(axis=1) + (np.sqrt(2.0) - 1.0) * offsets.min(axis=1)
+        np.testing.assert_allclose(result, mexican_hat(path), rtol=0, atol=1e-12)
 
     def test_convolve_precomputed_kernel(self) -> None:
         """Test convolution with precomputed kernel matrix."""

@@ -7,7 +7,7 @@ import dataclasses
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.stats import binomtest
+from scipy.stats import binom, binomtest
 
 from neurospatial.reactivation import (
     KUDRIMOTI_1999,
@@ -251,7 +251,11 @@ def test_rate_change_alone_is_called_reactivation() -> None:
     assert rates.loc["peyrache_2010", "mean_value"] > 0.1
 
 
-def test_without_reactivation_or_rate_change_few_sessions_are_called() -> None:
+def test_without_reactivation_or_rate_change_the_assembly_difference_is_near_0() -> (
+    None
+):
+    """The verdicts' false-positive rates are calibrated in
+    ``test_null_false_positive_rate_is_nominal``."""
     tables = [
         _table(
             simulated_reactivation_session(duration=600.0, reactivation=0.0, rng=seed),
@@ -260,10 +264,83 @@ def test_without_reactivation_or_rate_change_few_sessions_are_called() -> None:
         for seed in range(8)
     ]
     rates = reactivation_detection_rates(pd.concat(tables)).set_index("method")
-    # Binomial(8, 0.05) exceeds 2 with probability below 0.006.
-    assert rates.loc["kudrimoti_1999", "n_reactivated"] <= 2
-    assert rates.loc["lansink_2009", "n_reactivated"] <= 2
     assert abs(rates.loc["peyrache_2010", "mean_value"]) < 0.05
+
+
+def _null_false_calls(method, n_sessions: int) -> int:
+    """Sessions without reactivation or a rate change that ``method`` calls
+    reactivated, one verdict per session."""
+    calls = 0
+    for seed in range(n_sessions):
+        session = simulated_reactivation_session(
+            duration=600.0, reactivation=0.0, rng=seed
+        )
+        table = compare_reactivation_methods(
+            session.spike_times,
+            session.template_epochs,
+            session.match_epochs,
+            session.control_epochs,
+            reactivation_methods=[method],
+            unit_groups=GROUPS,
+            rng=seed,
+        )
+        verdicts = table["is_reactivated"]
+        assert len(verdicts) == 1
+        assert verdicts.notna().all()
+        calls += int(verdicts.sum())
+    return calls
+
+
+# Both verdicts are one-sided at alpha / 2 = 0.025: Kudrimoti's needs the
+# two-sided p < 0.05 and a positive partial correlation; Lansink's needs the
+# bootstrap's 2.5th percentile of EV - REV above 0. Rest before and rest
+# after are the same process here, so a calibrated verdict calls 2.5% of
+# sessions. The count is checked against the central 99% binomial interval,
+# so a calibrated method fails 1% of seed sets. The session counts make a
+# rate of twice the nominal (Kudrimoti, 2000 sessions: interval 33-69 against
+# an expected 100) or a tenth of it (Lansink, 1000 sessions: 13-39 against
+# 2.5) fall outside the interval.
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("method", "n_sessions"),
+    [
+        pytest.param(
+            KUDRIMOTI_ONE_WINDOW,
+            2000,
+            id="kudrimoti_1999",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason=(
+                    "anticonservative: 93 of 2000 null sessions (4.65%) are called "
+                    "reactivated against a nominal 2.5% (99% interval 33-69). The "
+                    "partial-correlation t test treats pairs as independent, but "
+                    "pairs share units, as the recipe's notes say."
+                ),
+            ),
+        ),
+        pytest.param(
+            LANSINK_ONE_WINDOW,
+            1000,
+            id="lansink_2009",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason=(
+                    "conservative: 1 of 1000 null sessions (0.1%) is called "
+                    "reactivated against a nominal 2.5% (99% interval 13-39). "
+                    "Not yet explained; a likely cause is that EV and REV are "
+                    "both squared partial correlations near 0 under this null, "
+                    "where a percentile bootstrap of their difference is too "
+                    "wide."
+                ),
+            ),
+        ),
+    ],
+)
+def test_null_false_positive_rate_is_nominal(method, n_sessions: int) -> None:
+    nominal = method.alpha / 2
+    low, high = binom.ppf([0.005, 0.995], n_sessions, nominal)
+    calls = _null_false_calls(method, n_sessions)
+    assert low <= calls <= high, f"{calls} of {n_sessions} sessions called"
 
 
 # ---------------------------------------------------------------------------

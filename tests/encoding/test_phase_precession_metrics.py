@@ -554,24 +554,33 @@ class TestHasPhasePrecession:
 
     @pytest.mark.filterwarnings("ignore:The best-fitting phase-position slope")
     def test_false_positive_rate_without_phase_coupling(self) -> None:
-        """Untuned spikes screen positive at most at rate alpha.
+        """Untuned spikes screen positive at rate alpha / 2.
 
-        The shuffle p-value is calibrated even at min_spikes=10, and only
-        negative slopes count, so the expected rate is about alpha / 2.
+        The shuffle p-value is calibrated even at min_spikes=10: with 99
+        shuffles p = (k + 1) / 100, so p < 0.05 has probability 4/100 under
+        the null. Only negative slopes count, half of them by symmetry, so a
+        screen hits with probability 0.02. Over 600 independent cells the hit
+        count must lie in the central 99.9% of Binomial(600, 0.02), [3, 25]:
+        a screen that flags too many or none fails.
         """
+        from scipy.stats import binom
+
         from neurospatial.encoding.phase_precession import has_phase_precession
 
+        n_cells, n_shuffles = 600, 99
         stimulus = np.random.default_rng(5)
         hits = [
             has_phase_precession(
                 stimulus.uniform(0, 30, 10),
                 stimulus.uniform(0, 2 * np.pi, 10),
-                n_shuffles=99,
+                n_shuffles=n_shuffles,
                 rng=rep,
             )
-            for rep in range(300)
+            for rep in range(n_cells)
         ]
-        assert np.mean(hits) <= 0.05
+        p_reject = (np.ceil(0.05 * (n_shuffles + 1)) - 1) / (n_shuffles + 1)
+        low, high = binom.ppf([0.0005, 0.9995], n_cells, p_reject / 2)
+        assert low <= np.sum(hits) <= high
 
     def test_alpha_sets_the_screen(self) -> None:
         """The screen is p_value < alpha with a negative slope."""

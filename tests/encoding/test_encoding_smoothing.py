@@ -345,11 +345,15 @@ class TestSmoothRateMapGaussianKDE:
             bandwidth=2.0,
         )
 
-        center_idx = simple_env.n_bins // 2
+        # By hand: weights exp(-d² / 2σ²) on the Euclidean distances between
+        # bin centers, applied to counts and occupancy apart, then divided.
+        # Graph (octile) distances differ from these off the axes.
+        from scipy.spatial.distance import cdist
 
-        # Verify peak is at center and neighbors have values
-        # (This is a weak test but verifies Euclidean property)
-        assert result[center_idx] > 0
+        centers = simple_env.bin_centers
+        weights = np.exp(-cdist(centers, centers, "sqeuclidean") / (2 * 2.0**2))
+        expected = (weights @ spike_counts_center) / (weights @ uniform_occupancy)
+        assert_allclose(result, expected, rtol=1e-12)
 
 
 class TestSmoothRateMapBinned:

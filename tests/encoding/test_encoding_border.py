@@ -120,35 +120,34 @@ class TestBorderFunctionality:
     """Test that re-exported functions work correctly."""
 
     def test_region_coverage_basic(self) -> None:
-        """Test region_coverage with wall regions."""
+        """region_coverage gives the field's share of each region's bins.
+
+        Bin centers lie on a 4 cm lattice from 0 to 40 cm; region edges fall
+        between centers. The field, chosen from the coordinates, is the top
+        three rows and five bins in no region: all of north (1) and none of
+        south (0).
+        """
         from shapely.geometry import box
 
         from neurospatial.encoding.border import region_coverage
 
-        # Create environment
         x = np.linspace(0, 40, 400)
         y = np.linspace(0, 40, 400)
         xx, yy = np.meshgrid(x, y)
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=4.0)
 
-        # Add wall regions
         region_builder = Regions(env.regions.values())
-        region_builder.add("north", polygon=box(0, 30, 40, 40))
-        region_builder.add("south", polygon=box(0, 0, 40, 10))
+        region_builder.add("north", polygon=box(-2, 30, 42, 42))
+        region_builder.add("south", polygon=box(-2, -2, 42, 10))
         env = env.with_regions(region_builder)
 
-        # Create field along north wall
-        firing_rate = np.zeros(env.n_bins)
-        north_bins = np.where(env.region_mask("north"))[0]
-        firing_rate[north_bins] = 5.0
-        field_bins = np.where(firing_rate > 0)[0]
+        x, y = env.bin_centers.T
+        field_bins = np.flatnonzero((y > 30) | ((y == 20) & (x > 10) & (x < 30)))
 
         coverage = region_coverage(env, field_bins)
 
-        # North should have high coverage, south should be low
-        assert coverage["north"] > 0.8
-        assert coverage["south"] < 0.1
+        assert coverage == {"north": 1.0, "south": 0.0}
 
     def test_region_coverage_returns_dict(self) -> None:
         """Test that region_coverage returns a dict."""

@@ -5,7 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
-from replay_helpers import wrapped_bump
+from replay_helpers import (
+    monte_carlo_rejection_rate,
+    null_rejection_interval,
+    wrapped_bump,
+)
 
 from neurospatial import Environment
 from neurospatial.replay import (
@@ -355,10 +359,17 @@ class TestReplaySignificanceAnyScore:
             )
 
     def test_weighted_correlation_p_values_are_uniform_without_replay(self):
-        """Independent wrapped bumps: P(p <= 0.1) is about 0.1."""
+        """Independent wrapped bumps: P(p <= 0.1) is 0.1.
+
+        A circular shift of a wrapped bump is as likely as the bump, so the
+        column-cycle null is exact. 1000 events tell a calibrated 0.1 from
+        the 0.16 of an inflated null: the 99% interval ends at 125, and a
+        rate of 0.16 gives about 160.
+        """
         env = _track()
         rng = np.random.default_rng(12)
         times = np.arange(8) * 0.02
+        n_events = 1000
         p_values = np.array(
             [
                 replay_significance(
@@ -370,12 +381,15 @@ class TestReplaySignificanceAnyScore:
                     n_shuffles=39,
                     rng=rng,
                 ).p_value
-                for _ in range(200)
+                for _ in range(n_events)
             ]
         )
-        # Under the null, P(p <= 0.1) = 0.1: 20 of 200 expected (sd 4.2).
-        assert 8 <= np.sum(p_values <= 0.1) <= 32
-        assert 0.4 < np.mean(p_values) < 0.6
+        alpha = monte_carlo_rejection_rate(39, 0.1, strict=False)
+        low, high = null_rejection_interval(n_events, alpha)
+        assert low <= np.sum(p_values <= 0.1) <= high
+        # The mean of (k + 1) / 40 for k uniform on 0..39 is 0.5125; its
+        # standard error over 1000 events is 0.0091.
+        assert np.mean(p_values) == pytest.approx(0.5125, abs=4 * 0.0091)
 
 
 class TestNullSelection:
@@ -505,11 +519,13 @@ class TestReplaySignificance:
         )
         assert set(result.shuffles) == {"column_cycle", "unit_identity"}
 
-    def test_tirole_nulls_together_are_calibrated_without_replay(self, place_code):
-        """Spikes from random positions: all three nulls together keep alpha.
+    TIROLE_NULLS = ("spike_train_circular", "place_field_circular", "column_cycle")
 
-        One decoding null alone rejects such events too often (about 0.16 at
-        a nominal 0.1), which is why Tirole et al. require all three.
+    @pytest.fixture(scope="class")
+    def random_position_p_values(self, place_code):
+        """P-values of 1000 events of spikes from random positions.
+
+        The combined p-value of the three Tirole nulls, and each null's own.
         """
         from neurospatial.decoding import decode_position
 
@@ -519,37 +535,68 @@ class TestReplaySignificance:
         position_rng = np.random.default_rng(13)
         spike_rng = np.random.default_rng(14)
         shuffle_rng = np.random.default_rng(15)
-        p_values = []
-        for _ in range(300):
+        p_values = {"combined": [], **{null: [] for null in self.TIROLE_NULLS}}
+        for _ in range(1000):
             bins = position_rng.integers(0, env.n_bins, len(times))
             counts = spike_rng.poisson(rates[:, bins].T * dt * 2)
             posterior = decode_position(env, counts, rates, dt=dt).posterior
-            p_values.append(
-                replay_significance(
-                    env,
-                    posterior,
-                    times,
-                    score=weighted_correlation,
-                    nulls=[
-                        "spike_train_circular",
-                        "place_field_circular",
-                        "column_cycle",
-                    ],
-                    spike_counts=counts,
-                    encoding_models=rates,
-                    dt=dt,
-                    n_shuffles=39,
-                    rng=shuffle_rng,
-                ).p_value
+            result = replay_significance(
+                env,
+                posterior,
+                times,
+                score=weighted_correlation,
+                nulls=list(self.TIROLE_NULLS),
+                spike_counts=counts,
+                encoding_models=rates,
+                dt=dt,
+                n_shuffles=39,
+                rng=shuffle_rng,
             )
-        # 30 of 300 expected (sd 5.2); one null alone gives about 47.
-        assert 16 <= np.sum(np.asarray(p_values) <= 0.1) <= 42
+            p_values["combined"].append(result.p_value)
+            for null in self.TIROLE_NULLS:
+                p_values[null].append(result.shuffles[null].p_value)
+        return {name: np.asarray(values) for name, values in p_values.items()}
+
+    def test_tirole_nulls_together_are_calibrated_without_replay(
+        self, random_position_p_values
+    ):
+        """Spikes from random positions: all three nulls together keep alpha.
+
+        P(p <= 0.1) with 39 shuffles is 0.1; 1000 events put an inflated
+        rate of 0.16 (about 160) well past the 99% interval's end of 125.
+        """
+        p_values = random_position_p_values["combined"]
+        alpha = monte_carlo_rejection_rate(39, 0.1, strict=False)
+        low, high = null_rejection_interval(len(p_values), alpha)
+        assert low <= np.sum(p_values <= 0.1) <= high
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "Each Tirole null alone is not calibrated on events of spikes from "
+            "random positions: of these 1000 events, 149 (spike-train shift), "
+            "197 (place-field shift) and 132 (column cycle) have p <= 0.1, "
+            "against 76 to 125 for a calibrated test; all three together give "
+            "98, which is why Tirole et al. require all three."
+        ),
+    )
+    def test_each_tirole_null_alone_is_calibrated_without_replay(
+        self, random_position_p_values
+    ):
+        alpha = monte_carlo_rejection_rate(39, 0.1, strict=False)
+        counts = {
+            null: int(np.sum(random_position_p_values[null] <= 0.1))
+            for null in self.TIROLE_NULLS
+        }
+        low, high = null_rejection_interval(1000, alpha)
+        assert all(low <= count <= high for count in counts.values()), counts
 
     def test_time_bin_permutation_is_calibrated_without_replay(self, place_code):
         """Independent time bins are exchangeable, so this null is exact."""
         env, _ = place_code
         rng = np.random.default_rng(16)
         times = np.arange(10) * 0.02
+        n_events = 1000
         p_values = np.array(
             [
                 replay_significance(
@@ -561,10 +608,12 @@ class TestReplaySignificance:
                     n_shuffles=39,
                     rng=rng,
                 ).p_value
-                for _ in range(300)
+                for _ in range(n_events)
             ]
         )
-        assert 16 <= np.sum(p_values <= 0.1) <= 44
+        alpha = monte_carlo_rejection_rate(39, 0.1, strict=False)
+        low, high = null_rejection_interval(n_events, alpha)
+        assert low <= np.sum(p_values <= 0.1) <= high
 
     def test_permuting_posterior_rows_equals_decoding_permuted_counts(self, place_code):
         from neurospatial.decoding import decode_position
@@ -724,6 +773,7 @@ class TestReplaySignificance:
             == result.shuffles["unit_identity"].p_value
         )
 
+    @pytest.mark.slow
     def test_column_cycle_p_values_are_uniform_without_replay(self):
         """Events of independent random positions are significant at about alpha.
 
@@ -737,6 +787,7 @@ class TestReplaySignificance:
         )
         rng = np.random.default_rng(11)
         times = np.arange(8) * 0.02
+        n_events = 600
         p_values = np.array(
             [
                 replay_significance(
@@ -746,13 +797,18 @@ class TestReplaySignificance:
                     n_shuffles=39,
                     rng=rng,
                 ).p_value
-                for _ in range(200)
+                for _ in range(n_events)
             ]
         )
 
-        # Under the null, P(p <= 0.1) = 0.1: 20 of 200 expected (sd 4.2).
-        assert 8 <= np.sum(p_values <= 0.1) <= 32
-        assert 0.4 < np.mean(p_values) < 0.6
+        # Under the null, P(p <= 0.1) = 0.1. 600 events tell it from the 0.16
+        # of an inflated null: the 99% interval ends at 80; 0.16 gives 96.
+        alpha = monte_carlo_rejection_rate(39, 0.1, strict=False)
+        low, high = null_rejection_interval(n_events, alpha)
+        assert low <= np.sum(p_values <= 0.1) <= high
+        # The mean of (k + 1) / 40 for k uniform on 0..39 is 0.5125; its
+        # standard error over 600 events is 0.0118.
+        assert np.mean(p_values) == pytest.approx(0.5125, abs=4 * 0.0118)
 
     def test_shuffles_tied_with_the_observed_score_count_as_ties(self):
         """Scores equal up to rounding compare equal, so ties raise the p-value.

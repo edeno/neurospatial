@@ -9,6 +9,7 @@ import pickle
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from replay_helpers import null_rejection_interval
 from scipy import stats
 
 from neurospatial import Environment
@@ -310,20 +311,38 @@ class TestAnalyticPValue:
         assert 0.0 <= result.analytic_p_value < 1e-10
 
     def test_calibrated_for_median_spike_times(self, track):
-        """Random firing order: P(p < 0.05) is at most about 0.05 (discrete)."""
+        """Random firing order: P(p < 0.05) is the exact Spearman rate.
+
+        The exact p-value of 5 cells takes 120 values, so the rate is the
+        share of the 120 orderings whose own p-value is below 0.05,
+        enumerated here: only the two perfect orders, 2 / 120.
+        """
+        import itertools
+
         env, rates, _ = track
+        orders = np.array(list(itertools.permutations(range(5))))
+        rho = np.array([stats.spearmanr(np.arange(5), order)[0] for order in orders])
+        exact_p = np.array([np.mean(np.abs(rho) >= abs(r) - 1e-12) for r in rho])
+        expected_rate = np.mean(exact_p < 0.05)
+        assert expected_rate == pytest.approx(2 / 120)
+
         rng = np.random.default_rng(11)
-        p_values = [
-            rank_order_correlation(
-                env,
-                [np.sort(rng.uniform(*INTERVAL, 3)) for _ in range(5)],
-                INTERVAL,
-                rates[:5],
-            ).analytic_p_value
-            for _ in range(600)
-        ]
-        # 30 of 600 expected at most (sd 5.3).
-        assert np.sum(np.asarray(p_values) < 0.05) <= 46
+        n_events = 600
+        p_values = np.array(
+            [
+                rank_order_correlation(
+                    env,
+                    [np.sort(rng.uniform(*INTERVAL, 3)) for _ in range(5)],
+                    INTERVAL,
+                    rates[:5],
+                ).analytic_p_value
+                for _ in range(n_events)
+            ]
+        )
+        # Every p-value is one of the exact ones, and the rate is two-sided.
+        assert np.all(np.isin(np.round(p_values, 12), np.round(exact_p, 12)))
+        low, high = null_rejection_interval(n_events, expected_rate)
+        assert low <= np.sum(p_values < 0.05) <= high
 
 
 class TestSignificance:

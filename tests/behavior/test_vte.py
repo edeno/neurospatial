@@ -20,6 +20,8 @@ from numpy.testing import assert_allclose
 from neurospatial import Intervals, Regions
 from neurospatial.behavior.segmentation import Trial
 
+from ._reference_velocity import reference_velocity
+
 # =============================================================================
 # Test helpers
 # =============================================================================
@@ -31,6 +33,20 @@ def _zigzag(n_samples):
     x = 5.0 * np.arange(n_samples)
     y = np.where(np.arange(n_samples) % 2 == 0, 50.0, 55.0)
     return times, np.column_stack([x, y])
+
+
+def _reference_head_sweep(times, positions, min_speed, sigma=0.1):
+    """IdPhi of one run, from the independent reference velocity.
+
+    The heading is the direction of the Gaussian-weighted line-fit velocity
+    (``sigma`` seconds) at each sample at least ``min_speed`` fast; IdPhi
+    sums the absolute wrapped changes between consecutive such headings.
+    """
+    velocity = reference_velocity(times, positions, sigma)
+    speed = np.hypot(velocity[:, 0], velocity[:, 1])
+    heading = np.arctan2(velocity[:, 1], velocity[:, 0])
+    heading = heading[(speed > 0) & (speed >= min_speed)]
+    return float(np.sum(np.abs((np.diff(heading) + np.pi) % (2 * np.pi) - np.pi)))
 
 
 # =============================================================================
@@ -197,31 +213,34 @@ class TestHeadSweepFromPositions:
 
         result = head_sweep_from_positions(times, positions, min_speed=5.0)
 
-        # Straight line -> constant heading -> head sweep ≈ 0
-        assert result < 0.1  # Allow small numerical error
+        # Constant y: the fitted y-velocity is 0 up to round-off, so every
+        # heading is East and IdPhi is 0 to well below 1e-12 rad.
+        assert result == pytest.approx(0.0, abs=1e-12)
 
     def test_zigzag_trajectory(self):
-        """Test that zigzag trajectory has high head sweep."""
+        """A zig-zag of 1 s legs turns by 2 atan(1/2) at each of its corners.
+
+        Four 1 s legs at 30 Hz, each moving 20 cm/s East and 10 cm/s North
+        or South in turn: headings of +-atan(1/2) with three corners. Away
+        from a corner by more than the smoothing reach (4 sigma = 0.4 s) the
+        line fit sees one straight leg, so the heading is exactly
+        +-atan(1/2), also at the two ends of the recording; through a corner
+        it turns monotonically from one to the other. IdPhi is therefore
+        exactly ``3 * 2 * atan(1/2)``, to round-off.
+        """
         from neurospatial.behavior.vte import head_sweep_from_positions
 
-        # Zigzag: alternating East and Northeast
-        n_samples = 21
-        times = np.linspace(0, 2, n_samples)
+        times = np.arange(4 * _FS + 1) / _FS
+        leg = (np.arange(times.size - 1) // _FS) % 2  # 0 North, 1 South
+        y = np.r_[0.0, np.cumsum(np.where(leg == 0, 10.0, -10.0) / _FS)]
+        positions = np.column_stack([20.0 * times, y])
 
-        # Create zigzag positions
-        x = np.linspace(0, 100, n_samples)
-        y = np.zeros(n_samples)
-        for i in range(n_samples):
-            if i % 2 == 0:
-                y[i] = 50
-            else:
-                y[i] = 55
-        positions = np.column_stack([x, y])
+        result = head_sweep_from_positions(times, positions, min_speed=1.0)
 
-        result = head_sweep_from_positions(times, positions, min_speed=0.1)
-
-        # Zigzag should have significant head sweep
-        assert result > 0.5  # At least some rotation
+        assert_allclose(result, 6 * np.arctan(0.5), rtol=1e-12)
+        assert_allclose(
+            result, _reference_head_sweep(times, positions, 1.0), rtol=1e-12
+        )
 
     def test_stationary_trajectory(self):
         """A still animal has no movement heading: NaN, without a warning."""
@@ -906,7 +925,12 @@ class TestComputeVTESession:
         assert len(result.trial_results) == 2
         scanning, straight = result.trial_results
         assert straight.head_sweep_magnitude == 0.0
-        assert scanning.head_sweep_magnitude > 0.0
+        # The scan's IdPhi is that of the reference velocity over the samples
+        # of its pass, [window_start, window_end), computed from them alone.
+        window = (times >= scanning.window_start) & (times < scanning.window_end)
+        expected = _reference_head_sweep(times[window], positions[window], 1.0)
+        assert expected > np.pi  # the zig-zag turns back and forth
+        assert_allclose(scanning.head_sweep_magnitude, expected, rtol=1e-10)
         assert_allclose(straight.mean_speed, 26 * 30 / 59, rtol=1e-12)
         assert scanning.mean_speed > straight.mean_speed
         assert_allclose(
@@ -2069,8 +2093,16 @@ def test_jittered_pause_does_not_score_as_head_sweeping(seed):
             times, xy, 0.0, 1.5, min_speed=5.0
         ).head_sweep_magnitude
 
+    # Without jitter, the scan's IdPhi is that of the reference velocity.
+    clean = scan - jitter
+    clean_sweep = sweep(clean)
+    assert_allclose(clean_sweep, _reference_head_sweep(times, clean, 5.0), rtol=1e-10)
     scan_sweep = sweep(scan)
-    assert scan_sweep > 6.0
+    # The clean scan sweeps 7.9 rad. The jitter's velocity error, about 0.6 cm/s
+    # (0.3 cm white noise through the 0.1 s line fit at 30 Hz), is small
+    # against the scan's speed of at least 10 cm/s; 3/4 of the clean value
+    # leaves room for it while still being a strong sweep.
+    assert scan_sweep > 0.75 * clean_sweep
     assert np.isnan(sweep(still))
     creep_sweep = sweep(creep)
     assert np.isnan(creep_sweep) or creep_sweep < 0.25 * scan_sweep

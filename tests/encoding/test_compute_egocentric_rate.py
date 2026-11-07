@@ -1485,10 +1485,16 @@ class TestEgocentricRateNaNHandling:
 
 
 @pytest.mark.parametrize(
-    ("side", "bearing"), [("left", np.pi / 2), ("right", -np.pi / 2)]
+    ("side", "bearing"),
+    [
+        ("ahead", 0.0),
+        ("left", np.pi / 2),
+        ("right", -np.pi / 2),
+        ("behind", np.pi),
+    ],
 )
 def test_an_object_on_the_left_is_at_plus_pi_over_2(side, bearing):
-    """Egocentric bearing: 0 ahead, +pi/2 left, -pi/2 right.
+    """Egocentric bearing: 0 ahead, +pi/2 left, -pi/2 right, ±pi behind.
 
     The expected bearing is computed here from first principles, the
     direction to the object minus the heading, independently of

@@ -10,7 +10,11 @@ import dataclasses
 import numpy as np
 import pytest
 from environment_helpers import renumbered, strips_1d
-from replay_helpers import wrapped_bump
+from replay_helpers import (
+    monte_carlo_rejection_rate,
+    null_rejection_interval,
+    wrapped_bump,
+)
 
 from neurospatial import Environment
 
@@ -314,8 +318,12 @@ class TestFitLinearTrajectory:
         assert result1.slope == result2.slope
         assert result1.intercept == result2.intercept
 
-    def test_fit_linear_trajectory_r_squared_range(self, simple_env):
-        """R² should be in [0, 1]."""
+    @pytest.mark.parametrize("method", ["sample", "map"])
+    def test_fit_linear_trajectory_r_squared_of_one_hot_rows(self, simple_env, method):
+        """One-hot rows: every sample is the MAP bin, so R² is that of the
+        least-squares line through the bin centers over time."""
+        from scipy import stats
+
         from neurospatial.replay.trajectory import fit_linear_trajectory
 
         n_time_bins = 20
@@ -329,9 +337,14 @@ class TestFitLinearTrajectory:
         for t, pos in enumerate(map_positions):
             posterior[t, pos] = 1.0
 
-        result = fit_linear_trajectory(simple_env, posterior, times, rng=42)
+        result = fit_linear_trajectory(
+            simple_env, posterior, times, method=method, rng=42
+        )
 
-        assert 0.0 <= result.r_squared <= 1.0
+        positions = simple_env.bin_centers[map_positions, 0]
+        expected = stats.linregress(times, positions)
+        assert result.r_squared == pytest.approx(expected.rvalue**2, rel=1e-9)
+        assert result.r_squared < 1.0  # the integer bins step off the line
 
     def test_fit_linear_trajectory_perfect_linear_high_r_squared(self, simple_env):
         """Perfect linear data should have R² ≈ 1."""
@@ -1374,12 +1387,14 @@ class TestIsotonicFitFollowsMichon:
 
 
 class TestReplayShuffleCalibration:
-    """A replay screen against a circular-shift null keeps its error rate.
+    """The MAP line's R² against the column-cycle null keeps its error rate.
 
     Events are decoded from Poisson spikes of 40 place cells (8 cm fields,
     20 Hz peak, 1 Hz baseline) on a 100 cm track, ten 20 ms time bins each.
-    The score is the R² of the MAP line fit, and the null circularly shifts
-    each time bin's posterior along the track.
+    ``replay_significance`` scores the R² of the MAP line fit against the
+    ``"column_cycle"`` null, which circularly shifts each time bin's
+    posterior along the track. No published recipe pairs this score with
+    this null; the recipes are tested in ``test_methods.py``.
     """
 
     DT = 0.02
@@ -1405,22 +1420,19 @@ class TestReplayShuffleCalibration:
         return decode_position(env, counts, models, dt=self.DT).posterior
 
     def _p_value(self, env, posterior, *, n_shuffles, seed):
-        from neurospatial.replay.nulls import shuffle_posterior_circular
+        from neurospatial.replay import replay_significance
         from neurospatial.replay.trajectory import fit_linear_trajectory
-        from neurospatial.stats import shuffle_pvalue
 
-        times = np.arange(self.N_TIME_BINS) * self.DT
-
-        def score(rows):
-            return fit_linear_trajectory(env, rows, times, method="map").r_squared
-
-        null = [
-            score(shuffled)
-            for shuffled in shuffle_posterior_circular(
-                env, posterior, n_shuffles=n_shuffles, rng=seed
-            )
-        ]
-        return shuffle_pvalue(score(posterior), np.array(null))
+        return replay_significance(
+            env,
+            posterior,
+            np.arange(self.N_TIME_BINS) * self.DT,
+            score=fit_linear_trajectory,
+            score_options={"method": "map"},
+            nulls="column_cycle",
+            n_shuffles=n_shuffles,
+            rng=seed,
+        ).p_value
 
     def test_events_without_sequences_are_rarely_significant(self, track):
         stimulus_rng = np.random.default_rng(1)
@@ -1437,16 +1449,21 @@ class TestReplayShuffleCalibration:
             for seed in range(200)
         ]
 
-        # Near the nominal 5% (binomial SD 1.5% for 200 events), from both
-        # sides: a null that never moves the posterior would give none.
-        assert 0.02 <= np.mean(np.array(p_values) <= 0.05) <= 0.08
+        # P(p <= 0.05) with 99 shuffles is 5 / 100, from both sides of its
+        # 99% binomial interval: a null that never moves the posterior would
+        # give none.
+        low, high = null_rejection_interval(
+            len(p_values), monte_carlo_rejection_rate(99, 0.05, strict=False)
+        )
+        assert low <= np.sum(np.array(p_values) <= 0.05) <= high
 
     def test_planted_sweep_is_significant(self, track):
         posterior = self._decode(
             track, np.linspace(10.0, 90.0, self.N_TIME_BINS), np.random.default_rng(2)
         )
 
-        assert self._p_value(track, posterior, n_shuffles=199, seed=999) < 0.01
+        # Significant at 0.05; over seeds its p-value is 0.005 to 0.02.
+        assert self._p_value(track, posterior, n_shuffles=199, seed=999) < 0.05
 
 
 # =============================================================================

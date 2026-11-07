@@ -57,3 +57,71 @@ def template_stream(seed, name):
     return np.random.default_rng(
         np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
     )
+
+
+def null_rejection_interval(n_events, rate, coverage=0.99):
+    """Central binomial interval for how many of ``n_events`` null events reject.
+
+    A test that rejects each null event with probability ``rate`` rejects
+    ``Binomial(n_events, rate)`` of them; the count falls outside the
+    returned ``(low, high)`` with probability at most ``1 - coverage``.
+    Asserting both ends fails a test that rejects too often and one that
+    never rejects.
+    """
+    from scipy import stats
+
+    tail = (1.0 - coverage) / 2.0
+    return (
+        int(stats.binom.ppf(tail, n_events, rate)),
+        int(stats.binom.ppf(1.0 - tail, n_events, rate)),
+    )
+
+
+def monte_carlo_rejection_rate(n_shuffles, alpha, strict=True):
+    """Exact rejection rate of ``p = (k + 1) / (n_shuffles + 1)`` under the null.
+
+    With exchangeable shuffles ``k`` is uniform on ``0..n_shuffles``, so the
+    rate is the share of those values whose p-value is below (``strict``) or
+    at most ``alpha``: 0.045, not 0.05, for ``p < 0.05`` with 199 shuffles.
+    """
+    p_values = np.arange(1, n_shuffles + 2) / (n_shuffles + 1)
+    rejected = p_values < alpha if strict else p_values <= alpha + 1e-12
+    return float(np.mean(rejected))
+
+
+def assert_null_verdicts_at_alpha(
+    p_values, is_replay, eligible, *, alpha, n_shuffles, conservative=False
+):
+    """Check a recipe's verdicts on null events against its alpha.
+
+    ``eligible`` marks the events that pass every criterion; only those can
+    be replay, and each is replay with probability
+    ``monte_carlo_rejection_rate(n_shuffles, alpha)`` if the shuffle test is
+    exact. The count of replay verdicts must fall inside the central 99%
+    binomial interval. ``P(p < 0.5)`` over all null events must match too,
+    so a null that never rejects fails even when a small alpha puts the
+    interval's low end at 0.
+    A ``conservative`` test, such as the largest of several p-values, is
+    checked against the high end only.
+    """
+    p_values = np.asarray(p_values, dtype=float)
+    is_replay = np.asarray(is_replay, dtype=bool)
+    eligible = np.asarray(eligible, dtype=bool)
+    assert not np.any(is_replay & ~eligible), "replay verdict failing a criterion"
+    rate = monte_carlo_rejection_rate(n_shuffles, alpha)
+    low, high = null_rejection_interval(int(eligible.sum()), rate)
+    n_replay = int(is_replay.sum())
+    message = f"{n_replay} of {int(eligible.sum())} null events are replay"
+    assert n_replay <= high, f"{message}; at most {high} expected at rate {rate}"
+    if conservative:
+        return
+    assert n_replay >= low, f"{message}; at least {low} expected at rate {rate}"
+    defined = p_values[np.isfinite(p_values)]
+    half_low, half_high = null_rejection_interval(
+        defined.size, monte_carlo_rejection_rate(n_shuffles, 0.5)
+    )
+    n_half = int(np.sum(defined < 0.5))
+    assert half_low <= n_half <= half_high, (
+        f"{n_half} of {defined.size} null p-values below 0.5; "
+        f"{half_low} to {half_high} expected"
+    )

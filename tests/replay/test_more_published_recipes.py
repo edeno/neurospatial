@@ -12,6 +12,7 @@ import dataclasses
 import networkx as nx
 import numpy as np
 import pytest
+from replay_helpers import assert_null_verdicts_at_alpha
 
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_jointly, decode_position
@@ -116,18 +117,66 @@ def _one_hot(env, bins):
     [OLAFSDOTTIR_2015, YAMAMOTO_TONEGAWA_2017, LIU_2023, BUSH_2022],
     ids=lambda m: m.name,
 )
-def test_line_searches_detect_a_sweep_and_reject_random_events(place_code, method):
+def test_line_searches_detect_a_sweep(place_code, method):
     env, rates = place_code
     method = dataclasses.replace(method, n_shuffles=99)
     sweep, counts = _sweep(env, rates)
     result = _detect(env, sweep, counts, method, rates)
     assert result.is_replay, result.summary()
     assert result.p_value == pytest.approx(1 / 100)
-    verdicts = [
+
+
+_UNIT_IDENTITY_INFLATED = pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "The cell-identity shuffle is anti-conservative on random events: "
+        "18 (Olafsdottir 2015) and 14 (Bush 2022) of these 150 are replay, "
+        "12% and 9.3% against 4% for an exact test with 99 shuffles (at most "
+        "13 in the 99% interval); 11.5% and 9.0% on 200 other events."
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        pytest.param(
+            OLAFSDOTTIR_2015,
+            marks=[pytest.mark.slow, _UNIT_IDENTITY_INFLATED],
+            id=OLAFSDOTTIR_2015.name,
+        ),
+        pytest.param(
+            YAMAMOTO_TONEGAWA_2017,
+            marks=pytest.mark.slow,
+            id=YAMAMOTO_TONEGAWA_2017.name,
+        ),
+        pytest.param(LIU_2023, id=LIU_2023.name),
+        pytest.param(
+            BUSH_2022,
+            marks=[pytest.mark.slow, _UNIT_IDENTITY_INFLATED],
+            id=BUSH_2022.name,
+        ),
+    ],
+)
+def test_line_searches_call_random_events_replay_at_alpha(place_code, method):
+    """150 random events with 99 shuffles: replay at P(p < 0.05) = 0.04.
+
+    The 99% binomial interval is 1 to 13 replay events; a recipe at 25%
+    false positives gives about 38.
+    """
+    env, rates = place_code
+    method = dataclasses.replace(method, n_shuffles=99)
+    results = [
         _detect(env, *_random(env, rates, seed=300 + seed), method, rates, rng=seed)
-        for seed in range(4)
+        for seed in range(150)
     ]
-    assert sum(v.is_replay for v in verdicts) <= 1
+    assert_null_verdicts_at_alpha(
+        [r.p_value for r in results],
+        [r.is_replay for r in results],
+        [all(r.criteria.values()) for r in results],
+        alpha=method.alpha,
+        n_shuffles=method.n_shuffles,
+    )
 
 
 @pytest.mark.parametrize(
@@ -392,16 +441,28 @@ class TestWikenheiserRedish:
         assert result.is_replay, result.summary()
         assert result.p_value == pytest.approx(1 / 200)
 
-    def test_random_events_are_not_replay(self, circular_track):
+    def test_random_events_are_replay_at_alpha(self, circular_track):
+        """Each time bin's cell is drawn independently, so time bins are
+        exchangeable and the time-bin permutation is exact: 150 events with
+        99 shuffles are replay at P(p < 0.05) = 0.04, 1 to 13 of them.
+        """
         env, rates = circular_track
-        verdicts = []
-        for seed in range(4):
+        results = []
+        for seed in range(150):
             generator = np.random.default_rng(100 + seed)
             counts = np.zeros((14, 32), dtype=np.int64)
             counts[np.arange(14), generator.integers(0, 32, size=14)] = 2
             times = self.DT * (np.arange(14) + 0.5)
-            verdicts.append(self._detect(env, rates, counts, times, rng=seed))
-        assert sum(v.is_replay for v in verdicts) <= 1
+            results.append(
+                self._detect(env, rates, counts, times, n_shuffles=99, rng=seed)
+            )
+        assert_null_verdicts_at_alpha(
+            [r.p_value for r in results],
+            [r.is_replay for r in results],
+            [all(r.criteria.values()) for r in results],
+            alpha=WIKENHEISER_REDISH_2013.alpha,
+            n_shuffles=99,
+        )
 
     def test_needs_5_spikes_from_3_cells(self, circular_track):
         env, rates = circular_track

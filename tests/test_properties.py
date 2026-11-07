@@ -12,7 +12,7 @@ Categories of properties tested:
 4. Circular statistics (wrap_angle, circular_mean, mean_resultant_length)
 5. Egocentric transforms (allocentric<->egocentric roundtrips, bearing properties)
 6. Smoothing operations (non-negativity, mass preservation)
-7. Place field detection (valid indices, uniform rate behavior)
+7. Place field detection (field validity, uniform-map segmentation)
 
 Performance Notes:
 - Tests use Hypothesis profiles defined in conftest.py for consistent settings
@@ -187,18 +187,15 @@ class TestEnvironmentProperties:
         # Create random 2D grid environment
         data = rng.uniform(-50, 50, size=(n_nodes * 5, 2))
 
-        try:
-            env = Environment.from_samples(
-                data,
-                bin_size=10.0,
-                bin_count_threshold=1,
-                connect_diagonal_neighbors=True,
-            )
-        except (ValueError, RuntimeError):
-            pytest.skip("Could not create valid environment")
-
-        if env.n_bins < 5:
-            pytest.skip("Not enough bins for meaningful triangle inequality test")
+        # At least 25 samples over a 100 x 100 area of 10-unit bins always
+        # build: a failure here is a regression, not a skip.
+        env = Environment.from_samples(
+            data,
+            bin_size=10.0,
+            bin_count_threshold=1,
+            connect_diagonal_neighbors=True,
+        )
+        assert env.n_bins >= 5
 
         distances = geodesic_distance_matrix(env.connectivity)
 
@@ -1084,43 +1081,48 @@ class TestPlaceFieldDetectionProperties:
         deadline=30000
     )  # Use profile's max_examples, extend deadline for detection
     def test_detected_fields_have_valid_indices(self, n_positions: int, seed: int):
-        """Property: Detected field bin indices are valid."""
+        """Property: fields are disjoint, connected, valid bins above threshold.
+
+        Every field is a connected set of valid bin indices whose rates are at
+        least ``threshold`` times the field's own peak, no bin is in two
+        fields, and the map's global maximum starts the first field unless its
+        bin is isolated.
+        """
         from neurospatial.encoding.spatial import detect_place_fields
 
         rng = np.random.default_rng(seed)
-
-        # Create environment
         positions = rng.standard_normal((n_positions, 2)) * 30
-
-        try:
-            env = Environment.from_samples(
-                positions, bin_size=3.0, connect_diagonal_neighbors=True
-            )
-        except (ValueError, RuntimeError):
-            pytest.skip("Could not create valid environment")
-
+        env = Environment.from_samples(
+            positions, bin_size=3.0, connect_diagonal_neighbors=True
+        )
         if env.n_bins < 20:
             pytest.skip("Not enough bins")
 
-        # Create firing rate with Gaussian peak
-        firing_rate = np.zeros(env.n_bins, dtype=np.float64)
         peak_idx = env.n_bins // 2
-        for i in range(env.n_bins):
-            dist = np.linalg.norm(env.bin_centers[i] - env.bin_centers[peak_idx])
-            firing_rate[i] = 10.0 * np.exp(-(dist**2) / (2 * 10.0**2))
+        dist = np.linalg.norm(env.bin_centers - env.bin_centers[peak_idx], axis=1)
+        firing_rate = 10.0 * np.exp(-(dist**2) / (2 * 10.0**2))
 
-        # Detect fields
-        try:
-            fields = detect_place_fields(env, firing_rate, bandwidth=0.0)
+        threshold = 0.2
+        fields = detect_place_fields(
+            env, firing_rate, bandwidth=0.0, threshold=threshold
+        )
 
-            # Property: all field bin indices should be valid
-            for field in fields:
-                for bin_idx in field:
-                    assert 0 <= bin_idx < env.n_bins, (
-                        f"Invalid bin index {bin_idx} in detected field"
-                    )
-        except (ValueError, RuntimeError):
-            pass  # Some configurations may not detect fields
+        graph = nx.Graph(env.connectivity)
+        # A one-bin component is no larger than the smallest field of an
+        # unsmoothed map (its peak bin), so it cannot hold a field.
+        if len(nx.node_connected_component(graph, peak_idx)) > 1:
+            assert peak_idx in fields[0]
+        else:
+            assert all(peak_idx not in field for field in fields)
+        seen: set[int] = set()
+        for field in fields:
+            bins = [int(b) for b in field]
+            assert all(0 <= b < env.n_bins for b in bins)
+            assert seen.isdisjoint(bins)
+            seen.update(bins)
+            peak = firing_rate[bins].max()
+            assert np.all(firing_rate[bins] >= threshold * peak)
+            assert nx.is_connected(graph.subgraph(bins))
 
     @given(
         st.integers(min_value=100, max_value=300),
@@ -1129,45 +1131,42 @@ class TestPlaceFieldDetectionProperties:
     @settings(
         deadline=30000
     )  # Use profile's max_examples, extend deadline for detection
-    def test_uniform_rate_produces_no_fields(self, n_positions: int, seed: int):
-        """Property: Uniform firing rate should produce no detected fields."""
+    def test_uniform_rate_is_one_field_per_component(self, n_positions: int, seed: int):
+        """Property: a flat map above the peak floor is one field per component.
+
+        Every bin of a uniform map is at its peak, so the region around the
+        first peak is its whole connected component, the subfield core equals
+        that region, and the bins are a local maximum. Each component larger
+        than one bin (the smallest field of an unsmoothed map) is therefore
+        exactly one field; segmentation does not test selectivity. Below
+        ``min_peak_rate`` no peak can start a field.
+        """
         from neurospatial.encoding.spatial import detect_place_fields
 
         rng = np.random.default_rng(seed)
-
-        # Create environment
         positions = rng.standard_normal((n_positions, 2)) * 30
-
-        try:
-            env = Environment.from_samples(
-                positions, bin_size=3.0, connect_diagonal_neighbors=True
-            )
-        except (ValueError, RuntimeError):
-            pytest.skip("Could not create valid environment")
-
+        env = Environment.from_samples(
+            positions, bin_size=3.0, connect_diagonal_neighbors=True
+        )
         if env.n_bins < 20:
             pytest.skip("Not enough bins")
 
-        # Create uniform firing rate
-        firing_rate = np.ones(env.n_bins, dtype=np.float64) * 5.0
+        fields = detect_place_fields(
+            env, np.full(env.n_bins, 5.0), bandwidth=0.0, threshold=0.5
+        )
+        expected = {
+            frozenset(component)
+            for component in nx.connected_components(nx.Graph(env.connectivity))
+            if len(component) > 1
+        }
+        found = [frozenset(int(b) for b in field) for field in fields]
+        assert len(found) == len(set(found))
+        assert set(found) == expected
 
-        # Detect fields
-        try:
-            fields = detect_place_fields(
-                env,
-                firing_rate,
-                bandwidth=0.0,
-                threshold=0.5,  # Threshold for field detection
-            )
-
-            # Property: uniform rate should produce either no fields or one big field
-            # (depending on threshold relative to the uniform level)
-            # Most importantly, it shouldn't crash or produce invalid results
-            for field in fields:
-                for bin_idx in field:
-                    assert 0 <= bin_idx < env.n_bins
-        except (ValueError, RuntimeError):
-            pass
+        below_floor = detect_place_fields(
+            env, np.full(env.n_bins, 0.5), bandwidth=0.0, min_peak_rate=1.0
+        )
+        assert len(below_floor) == 0
 
 
 # =============================================================================

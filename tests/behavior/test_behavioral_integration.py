@@ -276,8 +276,13 @@ class TestPathEfficiencyPathProgressConsistency:
         np.testing.assert_allclose(progress[24], 0.5, atol=1e-12)
         assert np.all(np.diff(progress) >= 0.0)
 
-    def test_efficiency_and_progress_both_handle_detours(self) -> None:
-        """Both metrics should handle detours reasonably."""
+    def test_efficiency_of_an_overshooting_detour(self) -> None:
+        """Overshooting the goal and coming back: efficiency is a third.
+
+        The run starts at x = 10 cm, goes past the goal at x = 50 cm to
+        x = 90 cm and back to the goal: 80 + 40 = 120 cm traveled for a
+        40 cm straight line.
+        """
         from neurospatial.behavior.navigation import compute_path_efficiency
 
         # Create dense environment to ensure trajectory bins exist
@@ -288,29 +293,17 @@ class TestPathEfficiencyPathProgressConsistency:
         positions = np.column_stack([xx.ravel(), yy.ravel()])
         env = Environment.from_samples(positions, bin_size=5.0)
 
-        # U-shaped trajectory (detour)
-        n_points = 100
-        x_traj = np.concatenate(
-            [
-                np.linspace(10, 90, n_points // 2),  # Go right
-                np.linspace(90, 10, n_points // 2),  # Go back left
-            ]
-        )
-        y_traj = np.concatenate(
-            [
-                np.full(n_points // 2, 50.0),
-                np.full(n_points // 2, 50.0),
-            ]
-        )
-        trajectory = np.column_stack([x_traj, y_traj])
+        x_traj = np.concatenate([np.linspace(10, 90, 50), np.linspace(90, 50, 50)])
+        trajectory = np.column_stack([x_traj, np.full(100, 50.0)])
         times = np.linspace(0.0, 1.0, len(trajectory))
-        goal = np.array([10.0, 50.0])  # Back at start
+        goal = np.array([50.0, 50.0])
 
-        # Path efficiency should be low (traveled much more than needed)
-        efficiency = compute_path_efficiency(
+        result = compute_path_efficiency(
             env, times, trajectory, goal=goal, metric="euclidean"
-        ).efficiency
-        assert efficiency < 0.1  # Should be very inefficient
+        )
+        assert result.traveled_length == pytest.approx(120.0, rel=1e-12)
+        assert result.shortest_length == pytest.approx(40.0, rel=1e-12)
+        assert result.efficiency == pytest.approx(1 / 3, rel=1e-12)
 
 
 # =============================================================================

@@ -65,27 +65,44 @@ class TestGeneratePoissonSurrogates:
         # Average across surrogates
         avg_surrogate_mean = np.mean(surrogate_means, axis=0)
 
-        # Should be close to original (within ~20% for statistical test)
-        assert np.allclose(avg_surrogate_mean, original_mean_per_neuron, rtol=0.2), (
-            f"Mean rates not preserved: original={original_mean_per_neuron}, "
-            f"surrogate avg={avg_surrogate_mean}"
+        # Each neuron's average pools 500 surrogates x 10 bins of independent
+        # Poisson(m) draws, m its original mean count, so its SE is
+        # sqrt(m / 5000): about 2% of m at m = 2. Four SEs per neuron.
+        n_draws = 500 * spike_counts.shape[0]
+        np.testing.assert_array_less(
+            np.abs(avg_surrogate_mean - original_mean_per_neuron),
+            4.0 * np.sqrt(original_mean_per_neuron / n_draws),
         )
 
-    def test_destroys_temporal_structure(self, spike_counts: np.ndarray) -> None:
+    def test_destroys_temporal_structure(self) -> None:
         """Surrogates should have destroyed temporal autocorrelation.
 
-        Each time bin is independently sampled, so temporal patterns are lost.
+        Each time bin is independently sampled, so temporal patterns are lost:
+        a slow rate ramp in the original leaves no lag-1 autocorrelation and
+        no correlation with the original time course in the surrogates.
         """
         from neurospatial.stats.surrogates import generate_poisson_surrogates
 
-        # This is a statistical property test - surrogates should not replicate
-        # the exact temporal pattern of the original
+        rng = np.random.default_rng(0)
+        n_time = 200
+        ramp = 1.0 + 9.0 * np.sin(np.linspace(0, np.pi, n_time)) ** 2
+        original = rng.poisson(ramp)[:, None].astype(np.int64)
+        assert np.corrcoef(original[:-1, 0], original[1:, 0])[0, 1] > 0.5
+
+        n_surrogates = 200
+        lag1, with_original = [], []
         for surrogate in generate_poisson_surrogates(
-            spike_counts, n_surrogates=5, rng=42
+            original, n_surrogates=n_surrogates, rng=42
         ):
-            # Surrogates should be different from original in most cases
-            # (exact match is extremely unlikely)
-            assert not np.array_equal(surrogate, spike_counts)
+            counts = surrogate[:, 0]
+            lag1.append(np.corrcoef(counts[:-1], counts[1:])[0, 1])
+            with_original.append(np.corrcoef(counts, original[:, 0])[0, 1])
+        # For independent draws each Pearson r has SD about 1/sqrt(n_time);
+        # the mean over surrogates has SD 1/sqrt(n_time * n_surrogates), and
+        # lag-1 r has a -1/n_time bias. Four SDs plus the bias.
+        bound = 4.0 / np.sqrt(n_time * n_surrogates) + 1.0 / n_time
+        assert abs(np.mean(lag1)) < bound
+        assert abs(np.mean(with_original)) < bound
 
     def test_zero_spike_counts(self) -> None:
         """Should handle all-zero spike counts (silent neurons)."""

@@ -480,13 +480,15 @@ class TestPeriEventHistogram:
 
         result = peri_event_histogram(spike_times, event_times, window, dt=dt)
 
-        # SEM should be non-zero for first bin (variable counts)
-        assert result.sem[0] > 0
-
-        # SEM = std / sqrt(n_events) for first bin
-        # Counts: [2, 4, 3], mean=3, std=1, sem=1/sqrt(3)≈0.577
-        expected_sem = np.std([2, 4, 3], ddof=1) / np.sqrt(3)
-        assert result.sem[0] == pytest.approx(expected_sem, rel=0.1)
+        # First bin: counts [2, 4, 3] -> mean 3, sample SD (ddof=1) 1, so
+        # SEM = 1 / sqrt(3). Every other bin has 0 spikes at every event, so
+        # its mean and SEM are exactly 0. Exact up to float rounding.
+        expected_mean = np.zeros(10)
+        expected_mean[0] = 3.0
+        expected_sem = np.zeros(10)
+        expected_sem[0] = 1.0 / np.sqrt(3.0)
+        np.testing.assert_allclose(result.histogram, expected_mean, rtol=1e-12)
+        np.testing.assert_allclose(result.sem, expected_sem, rtol=1e-12, atol=0)
 
     def test_sem_single_event_is_nan(self):
         """SEM is NaN for single event (undefined)."""

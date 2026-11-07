@@ -232,12 +232,20 @@ class TestShuffleTimeBins:
             shuffled_row_sums = sorted(shuffled.sum(axis=1).tolist())
             assert shuffled_row_sums == original_row_sums
 
-    def test_rows_are_permuted(self, spike_counts: np.ndarray) -> None:
-        """Rows should be permutations of original rows."""
-        original_rows = {tuple(row) for row in spike_counts}
-        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=10, rng=42):
-            shuffled_rows = {tuple(row) for row in shuffled}
-            assert shuffled_rows == original_rows
+    def test_rows_are_permuted(self) -> None:
+        """Rows should be permutations of original rows.
+
+        A permutation keeps each row as many times as it occurs. The input
+        repeats rows (silent bins are common), so compare the sorted lists of
+        rows (multisets): a set comparison would accept drawing rows with
+        replacement.
+        """
+        spike_counts = np.array(
+            [[0, 0, 0], [0, 0, 0], [0, 0, 0], [1, 0, 2], [1, 0, 2], [3, 1, 0]]
+        )
+        original_rows = sorted(tuple(row) for row in spike_counts)
+        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=50, rng=42):
+            assert sorted(tuple(row) for row in shuffled) == original_rows
 
 
 # =============================================================================
