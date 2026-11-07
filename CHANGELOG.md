@@ -31,6 +31,9 @@
   chord between the places, or `r1 + r2` across an open angular seam.
 - `heat_kernel_basis` says that it matches the columns of
   `compute_kernel(..., mode="average")`.
+- `rayleigh_test` says its p-value is 0.0 when it is below the smallest
+  float, as in CircStat, and that `exp(-z)` is conservative for small
+  samples, not anti-conservative.
 - `simulate_trajectory_ou` explains that its 8 cm/s default speed is
   RatInABox's 1-D value; RatInABox's 2-D default has mean 10.0 cm/s.
 

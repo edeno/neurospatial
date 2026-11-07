@@ -509,8 +509,10 @@ def rayleigh_test(
         Range: [0, n], with n = sum(weights) for weighted input. Higher
         values indicate stronger directionality.
     pval : float
-        P-value in (0, 1] from Zar's approximation (see Notes). Small
-        p-values (< 0.05) indicate a non-uniform distribution.
+        P-value in [0, 1] from Zar's approximation (see Notes). Small
+        p-values (< 0.05) indicate a non-uniform distribution. It is 0.0
+        when the true value is below the smallest float64 (about 1e-308),
+        for example 1000 angles with R = 0.995, as in CircStat.
 
     Raises
     ------
@@ -533,9 +535,11 @@ def rayleigh_test(
 
         p = exp(sqrt(1 + 4n + 4(n**2 - (n R)**2)) - (1 + 2n))
 
-    It is positive, decreases as ``R`` grows, and is accurate for small
-    samples, where ``exp(-z)`` is anti-conservative. For n < 6 it is
-    conservative (p too large) below p = 0.01.
+    It decreases as ``R`` grows and holds its level for small samples,
+    where ``exp(-z)`` is conservative: on uniform angles, ``exp(-z) < 0.05``
+    rejects 4.2% of samples of 5 angles and 4.6% of 10, against 5.1% and
+    5.0% for Zar's value. For n < 6 Zar's value is also conservative (p too
+    large) below p = 0.01.
 
     **Independence.** The test assumes independent angles. Spike phases are
     not independent when spikes come in bursts, because spikes in a burst

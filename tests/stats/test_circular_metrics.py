@@ -1958,19 +1958,19 @@ class TestFuzzEdgeCases:
         assert z_high == pytest.approx(0.0, abs=1e-12)
         assert pvalue_high == pytest.approx(1.0, abs=1e-12)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="rayleigh_test returns p = 0.0 when Zar's exp() underflows "
-        "(log p < -745, e.g. n = 1000 and R = 0.995), although its docstring "
-        "promises a p-value in (0, 1].",
-    )
-    def test_rayleigh_pvalue_positive_for_large_concentrated_sample(self) -> None:
-        """The documented range (0, 1] holds when Zar's exponent underflows."""
+    def test_rayleigh_pvalue_underflows_to_zero(self) -> None:
+        """Zar's p-value is 0.0, not NaN, when its exponent underflows."""
         from neurospatial.stats.circular import rayleigh_test
 
         concentrated = np.random.default_rng(42).vonmises(0.0, 100.0, size=1000)
-        _z, pvalue = rayleigh_test(concentrated)
-        assert pvalue > 0
+        n = concentrated.size
+        r_n = np.abs(np.exp(1j * concentrated).sum())
+        log_p = np.sqrt(1 + 4 * n + 4 * (n**2 - r_n**2)) - (1 + 2 * n)
+        assert log_p < np.log(np.finfo(np.float64).tiny)
+
+        z, pvalue = rayleigh_test(concentrated)
+        assert pvalue == 0.0
+        assert z == pytest.approx(r_n**2 / n, rel=1e-12)
 
     def test_z_statistic_range(self) -> None:
         """Rayleigh z-statistic stays in valid range [0, n] for all inputs."""
