@@ -572,10 +572,6 @@ class TestMedianDecodingErrorNaNHandling:
         assert np.isnan(result)
 
 
-class TestSuccessCriteria:
-    """Test success criteria."""
-
-
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
@@ -933,10 +929,6 @@ class TestConfusionMatrix:
             np.testing.assert_array_almost_equal(result[i], np.zeros(n_bins))
 
 
-class TestConfusionMatrixSuccessCriteria:
-    """Test success criteria for confusion_matrix."""
-
-
 class TestDecodingCorrelation:
     """Test decoding_correlation function."""
 
@@ -964,22 +956,27 @@ class TestDecodingCorrelation:
         assert result == pytest.approx(-1.0)
 
     def test_decoding_correlation_no_correlation(self):
-        """Uncorrelated data should return ~0.0."""
+        """Independent decoded and actual positions give r near 0.
+
+        In 2-D the result is the mean of the per-dimension Pearson r.
+        """
         from neurospatial.decoding.metrics import decoding_correlation
 
-        # Construct orthogonal data: decoded[i] = actual[n-1-i]
-        # For special case where mean-centered versions are orthogonal
         rng = np.random.default_rng(42)
-
-        # Generate random data that should be approximately uncorrelated
         n = 1000
         actual = rng.uniform(0, 100, (n, 2))
         decoded = rng.uniform(0, 100, (n, 2))
 
         result = decoding_correlation(_space_for(decoded), decoded, actual)
 
-        # With random data, correlation should be near zero (not exact)
-        assert -0.2 < result < 0.2
+        expected = np.mean(
+            [np.corrcoef(decoded[:, d], actual[:, d])[0, 1] for d in range(2)]
+        )
+        assert result == pytest.approx(expected, rel=1e-10)
+        # Under independence each per-dimension r has SD 1/sqrt(n - 1), so the
+        # mean of two independent ones has SD 1/sqrt(2(n - 1)) = 0.022. Four
+        # SDs: a false failure has probability about 6e-5.
+        assert abs(result) < 4.0 / np.sqrt(2 * (n - 1))
 
     def test_decoding_correlation_range(self):
         """Correlation should always be in [-1, 1]."""
@@ -1300,10 +1297,6 @@ class TestDecodingCorrelationOnTracksAndPolar:
         positions = surround.bin_centers[:5]
         with pytest.raises(CartesianOnlyError, match="circular_circular_correlation"):
             decoding_correlation(surround, positions, positions)
-
-
-class TestDecodingCorrelationSuccessCriteria:
-    """Test success criteria for decoding correlation."""
 
 
 class TestConfusionMatrixNaNRows:

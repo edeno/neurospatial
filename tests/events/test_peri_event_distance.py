@@ -39,38 +39,56 @@ def test_rate_is_spikes_over_time_spent_at_each_distance():
     np.testing.assert_allclose(result.firing_rate, [1.0, 0.0, 2 / 1.5, 2.0])
 
 
-def test_rate_does_not_depend_on_running_speed():
-    """A cell firing 20 Hz within 10 cm after a cue, 2 Hz elsewhere.
+def _cue_laps(speed: float, n_laps: int, rng: np.random.Generator):
+    """Laps of 100 cm at a constant ``speed`` (cm/s), sampled at 120 Hz.
 
-    Laps run at 10 or 40 cm/s cover the distance in different times; the
-    rate per distance bin is the same.
+    The cue is passed at 50 cm. The cell fires 20 Hz in [50, 60) cm and 2 Hz
+    elsewhere; there is a 5 s break between laps.
     """
-    rng = np.random.default_rng(0)
     lap_times, lap_positions, cues, spikes = [], [], [], []
     clock = 0.0
-    for lap in range(80):
-        speed = 10.0 if lap % 2 else 40.0
+    for _ in range(n_laps):
         t = clock + np.arange(0.0, 100.0 / speed, 1 / 120)
         x = (t - clock) * speed
-        cue_time = clock + 50.0 / speed  # the cue is passed at 50 cm
         rate = np.where((x >= 50.0) & (x < 60.0), 20.0, 2.0)
         dt = np.diff(t, append=t[-1] + 1 / 120)
         n = rng.poisson(rate * dt)
         spikes.append(np.repeat(t, n) + rng.uniform(0, 1 / 120, n.sum()))
         lap_times.append(t)
         lap_positions.append(x)
-        cues.append(cue_time)
-        clock = t[-1] + 5.0  # a break between laps
-    result = peri_event_distance_histogram(
+        cues.append(clock + 50.0 / speed)
+        clock = t[-1] + 5.0
+    return (
         np.sort(np.concatenate(spikes)),
         np.array(cues),
         np.concatenate(lap_times),
         np.concatenate(lap_positions)[:, None],
+    )
+
+
+@pytest.mark.parametrize("speed", [10.0, 40.0])
+def test_rate_does_not_depend_on_running_speed(speed):
+    """A cell firing 20 Hz within 10 cm after a cue, 2 Hz elsewhere.
+
+    Laps run at 10 or 40 cm/s cover each distance bin in a different time;
+    at either speed the rate per distance bin is the generating rate.
+    """
+    n_laps = 120
+    result = peri_event_distance_histogram(
+        *_cue_laps(speed, n_laps, np.random.default_rng(0)),
         (-30.0, 30.0),
         bin_size=10.0,
     )
-    np.testing.assert_allclose(
-        result.firing_rate, [2.0, 2.0, 2.0, 20.0, 2.0, 2.0], rtol=0.15
+    # Each lap spends bin_size / speed seconds in every 10 cm bin.
+    occupancy = n_laps * 10.0 / speed
+    np.testing.assert_allclose(result.occupancy.sum(axis=0), occupancy, rtol=1e-9)
+    true_rate = np.array([2.0, 2.0, 2.0, 20.0, 2.0, 2.0])
+    # The pooled rate is a Poisson count over `occupancy` seconds, so its
+    # standard error is sqrt(rate / occupancy): 13% at 2 Hz and 4% at 20 Hz
+    # for the fast laps. Four standard errors per bin; over 40 seeds and both
+    # speeds the largest |z| was 3.0.
+    np.testing.assert_array_less(
+        np.abs(result.firing_rate - true_rate), 4.0 * np.sqrt(true_rate / occupancy)
     )
 
 
