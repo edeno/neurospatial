@@ -3122,6 +3122,17 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         - Border score: a uniform (untuned) map scores 0.50 in convex arenas
           and 0.58-0.79 on corridor mazes, so untuned cells pass the 0.5
           cutoff often; on a radial-arm maze, 6 of 12 arm place cells did.
+        - Untuned cells: of 2000 Poisson cells firing 0.5-3 Hz (20
+          ten-minute trajectories of 100, default 5 cm diffusion kernel),
+          none was labeled place; 1.7% were labeled grid in a 1 m square
+          box and 1.8% in a 1 m circle; 20% were labeled border in the
+          square and 12% in the circle. The border rate is not a per-cell
+          chance: it ranged from 0% to 63% between sessions. An untuned
+          cell's border score sits within 0.015 of the session's
+          ``untuned_border_score(env, support=result.spatial_support)``,
+          which was 0.39-0.51 depending on which bins along the walls the
+          animal visited, so the untuned cells of a session pass or fail
+          together. Compare border scores with that baseline.
 
         Pass precomputed scores via ``grid_scores=``/``border_scores=`` to avoid
         recomputation when you've already computed them.
@@ -6912,7 +6923,20 @@ def is_place_cell(
     0.04 against 99 shifts) with only 0.04 bits/spike beyond their bias; the
     cutoff refuses them. A significant unit with fewer spikes than the map
     has independent bins has an unknown bias and is not a place cell, with a
-    warning. Circular shifting costs about n_shuffles recomputes of the
+    warning.
+
+    **Calibration (simulation).** Untuned Poisson cells firing 0.5-3 Hz in
+    10-minute explorations of a 1 m box (5 cm bins, the default 5 cm
+    diffusion kernel): the p-values of :func:`place_cell_significance` were
+    uniform, and 61 of 1400 (4.4%) fell below 0.05 with 199 shifts, where
+    an exact test rejects 4.5%. No untuned cell passed the verdict (0 of
+    200), because none reached ``min_info`` beyond its bias: the verdict's
+    false-positive rate is well below ``alpha``. The cutoff costs power. In
+    the same sessions, of 20 place cells with a Gaussian field (standard deviation 10 cm,
+    0.1 Hz baseline), the verdict found 2 at a 1 Hz peak (about 100
+    spikes), 15 at 2 Hz (about 140) and 20 at 5 Hz (199 shifts throughout).
+
+    Circular shifting costs about n_shuffles recomputes of the
     plural map. Its null assumes stable firing statistics on the joined
     analyzed clock; recording gaps and excluded epochs are never shift
     destinations. Results keep no raw arrays or recompute closures.
