@@ -213,9 +213,7 @@ class TestDetectPlaceFields:
         firing_rate = bump(30, 20, 10.0, 5.0) + bump(50, 20, 10.0, 5.0)
         from neurospatial.encoding.spatial import detect_place_fields
 
-        fields = detect_place_fields(
-            env, firing_rate, bandwidth=0.0, detect_subfields=True
-        )
+        fields = detect_place_fields(env, firing_rate, bandwidth=0.0, subfields="core")
         assert len(fields) == 2
         centroids = sorted(
             [
@@ -228,9 +226,7 @@ class TestDetectPlaceFields:
         assert_allclose(centroids[0], [30.0, 20.0], atol=bin_size)
         assert_allclose(centroids[1], [50.0, 20.0], atol=bin_size)
 
-        merged = detect_place_fields(
-            env, firing_rate, bandwidth=0.0, detect_subfields=False
-        )
+        merged = detect_place_fields(env, firing_rate, bandwidth=0.0, subfields=None)
         assert len(merged) == 1
 
     def test_track_fields_36_cm_apart_are_two_fields(self):
@@ -283,7 +279,7 @@ class TestDetectPlaceFields:
             core = 0.8 * len(single) * bin_size
             assert all(len(f) * bin_size >= core - bin_size for f in fields)
             merged = detect_place_fields(
-                env, pair_map, bandwidth=rates.bandwidth, detect_subfields=False
+                env, pair_map, bandwidth=rates.bandwidth, subfields=None
             )
             assert len(merged) == 1
 
@@ -2653,11 +2649,9 @@ class TestPlaceFieldsResult:
         from neurospatial.encoding import detect_place_fields
 
         env, rates = self._build_env_and_rates()
-        original = detect_place_fields(
-            env, rates, bandwidth=0.0, detect_subfields=False
-        )
+        original = detect_place_fields(env, rates, bandwidth=0.0, subfields=None)
         high_rate = detect_place_fields(
-            env, rates * 1000, bandwidth=0.0, detect_subfields=False
+            env, rates * 1000, bandwidth=0.0, subfields=None
         )
         assert len(original) > 0
         assert len(high_rate) == len(original)

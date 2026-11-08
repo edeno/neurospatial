@@ -59,6 +59,26 @@ give the measured rates:
 - `decode_jointly`'s template probability is calibrated on simulated
   spikes, including a template trained on part of its track.
 
+### Place fields: a watershed way to split touching fields
+
+- **Breaking:** `detect_place_fields`, `has_place_field`,
+  `SpatialRateResult.has_place_field` and `population_coverage` take
+  `subfields="core" | None` in place of `detect_subfields=True | False`.
+  `"core"` (the default) is the FMAToolbox `MapStats` subfield rule, as
+  before; `None` does not separate merged fields. The old name is gone.
+- New `subfields="watershed"` keeps the fields that `"core"` finds, but each
+  bin goes to the field whose peak it is reached from by flooding down the
+  map (through `env.connectivity`, so on every layout), and each field ends
+  at `threshold` times its own peak. With `"core"`, a weak field next to a
+  strong one grows through the strong field's edge and around it: for a
+  10 Hz and a 3.3 Hz field 24 cm apart (8 cm wide) the weak field has 184 bins
+  and a centroid 12 cm off; with `"watershed"` it has 82 bins and a centroid
+  1.4 cm off, and the strong field 122 bins (112 alone). It never reports
+  more fields than `"core"`: on seeded noise maps and simulated untuned
+  Poisson units it reported the same count or up to 3 fewer per map (a basin
+  too small to be a field). This is neurospatial's own construction; the closest published
+  method is the `MapStats` subfield rule.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then
