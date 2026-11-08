@@ -28,9 +28,8 @@ mean of ``(x[i-k] - x[i] - slope * (t[i] - t[i-k]))**2`` over the window.
 That is the squared distance of each earlier sample from the line through
 ``x[i]`` with slope ``-slope`` rather than ``slope``; on a moving signal it
 grows with the window length, so the score picks short windows when the
-signal changes and longer ones when it is flat. Janabi-Sharifi et al.
-instead take the longest window whose line stays within a noise bound of
-every sample; the lab's code has no noise bound.
+signal changes and longer ones when it is flat. The lab's code has no
+noise-bound parameter.
 
 Four details are neurospatial's. The lab ran ``dxdt`` once over a whole
 session, so its edges hardly mattered: here a sample with fewer than 3
