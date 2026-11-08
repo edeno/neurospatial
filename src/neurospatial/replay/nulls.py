@@ -110,6 +110,15 @@ def shuffle_cell_identity(
         Instead of shuffling spike_counts columns, shuffle encoding_models
         rows. This yields the same decoded posteriors.
 
+    Used alone, this null calls too many events without a sequence replay.
+    On 150 simulated events of spikes from random positions, tested with 99
+    shuffles at a nominal 4%, the line search of ``OLAFSDOTTIR_2015``
+    called 12% replay and that of ``BUSH_2022`` (which permutes only the
+    active cells) 9.3%
+    (``test_line_searches_call_random_events_replay_at_alpha`` in
+    ``tests/replay/test_more_published_recipes.py``). The recipes keep it
+    because their papers used it alone.
+
     Examples
     --------
     >>> import numpy as np
@@ -261,6 +270,15 @@ def shuffle_place_fields_circular(
     - More conservative than cell identity shuffle
     - A 2-D arena has no single axis to shift along: shift spike times with
       ``shuffle_spike_times_circular`` instead
+
+    Used alone, this null calls too many events without a sequence replay.
+    On 1,000 simulated events of spikes from random positions (weighted
+    correlation, 39 shuffles), 197 had ``p <= 0.1`` where a calibrated test
+    gives 76 to 125; with the spike-train and column-cycle nulls of Tirole
+    et al. (2022) also required, 98 did
+    (``tests/replay/test_significance.py``). With the line search of
+    ``OLAFSDOTTIR_2017``, 93 of 150 such events had ``p < 0.5`` where 59 to
+    90 are expected (``tests/replay/test_methods.py``).
 
     A shift moves values by a whole number of bins in track order: bins are
     ordered by their position along the track (linear position on a

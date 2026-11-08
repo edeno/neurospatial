@@ -3061,6 +3061,11 @@ def explained_variance_reactivation(
     partial-correlation t test is inferred, not stated. The test treats
     every pair as an independent observation, but pairs share cells (``n``
     cells give ``n (n - 1) / 2`` pairs), so the p-value is anticonservative.
+    On 2,000 simulated sessions without reactivation, the verdict of
+    ``KUDRIMOTI_1999`` (``p < 0.05`` and a positive partial correlation)
+    was reached in 80 (4.0%) against a nominal 2.5%
+    (``test_null_false_positive_rate_is_nominal`` in
+    ``tests/reactivation/test_reactivation_calibration.py``).
     Compare EV with REV across sessions (Pennartz et al. 2004 used a
     Wilcoxon signed-rank test) or build a null for your recording before
     claiming reactivation.

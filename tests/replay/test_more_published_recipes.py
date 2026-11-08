@@ -132,7 +132,8 @@ _UNIT_IDENTITY_INFLATED = pytest.mark.xfail(
         "The cell-identity shuffle is anti-conservative on random events: "
         "18 (Olafsdottir 2015) and 14 (Bush 2022) of these 150 are replay, "
         "12% and 9.3% against 4% for an exact test with 99 shuffles (at most "
-        "13 in the 99% interval); 11.5% and 9.0% on 200 other events."
+        "13 in the 99% interval). On 200 further events (seeds 450 to 649) "
+        "they give 9.0% and 5.0%."
     ),
 )
 

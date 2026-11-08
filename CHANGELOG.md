@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Documentation: measured false-positive rates of published nulls
+
+- The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,
+  `OLAFSDOTTIR_2017`, `KUDRIMOTI_1999` and `LANSINK_2009` now give the rate
+  at which each recipe calls simulated events or sessions without replay or
+  reactivation significant, against its nominal rate, and name the test that
+  pins the number. Each of Tirole's three nulls alone calls 1.3 to 2 times
+  α (all three together hold α); the cell-identity shuffle calls 12%
+  (`OLAFSDOTTIR_2015`) and 9.3% (`BUSH_2022`) at a nominal 4%;
+  `OLAFSDOTTIR_2017` holds its α but gives too many p-values below 0.5;
+  Kudrimoti's t test calls 4.0% at a nominal 2.5% (pairs share cells), and
+  Lansink's bootstrap 0.1%. The recipes keep their papers' methods, so
+  results still compare with the papers. `replay_significance`,
+  `shuffle_cell_identity`, `shuffle_place_fields_circular`,
+  `explained_variance_reactivation` and `ReactivationMethod(test=...)` say
+  the same, and the replay and reactivation guides add a one-line caution.
+
 ### Replay: the uncited 2-D place-field shuffle is removed
 
 - **Breaking:** `neurospatial.replay.shuffle_place_fields_circular_2d` is
