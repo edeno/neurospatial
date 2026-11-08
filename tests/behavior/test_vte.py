@@ -11,6 +11,7 @@ Key metrics:
 - VTE index: zIdPhi by default, optionally blended with slowness
 """
 
+import functools
 import itertools
 import warnings
 
@@ -21,7 +22,11 @@ from numpy.testing import assert_allclose
 from neurospatial import Intervals, Regions
 from neurospatial.behavior.segmentation import Trial
 
-from ._reference_turning import lab_rate, reference_head_sweep, reference_turns
+from ._reference_turning import lab_rate, reference_head_sweep
+from ._reference_velocity import reference_velocity
+
+#: The two heading estimators: the Redish lab's (default) and neurospatial's.
+METHODS = ("adaptive_window", "line_fit")
 
 # =============================================================================
 # Test helpers
@@ -34,6 +39,26 @@ def _zigzag(n_samples):
     x = 5.0 * np.arange(n_samples)
     y = np.where(np.arange(n_samples) % 2 == 0, 50.0, 55.0)
     return times, np.column_stack([x, y])
+
+
+def _line_fit_head_sweep(times, positions, min_speed, sigma=0.1):
+    """Line-fit IdPhi of one run, from the independent reference velocity.
+
+    The heading is the direction of the Gaussian-weighted line-fit velocity
+    (``sigma`` seconds) at each sample at least ``min_speed`` fast; IdPhi
+    sums the absolute wrapped changes between consecutive such headings.
+    """
+    velocity = reference_velocity(times, positions, sigma)
+    speed = np.hypot(velocity[:, 0], velocity[:, 1])
+    heading = np.arctan2(velocity[:, 1], velocity[:, 0])
+    heading = heading[(speed > 0) & (speed >= min_speed)]
+    return float(np.sum(np.abs((np.diff(heading) + np.pi) % (2 * np.pi) - np.pi)))
+
+
+def _idphi(headings):
+    """Sum of |wrapped heading change|, computed with complex exponentials."""
+    steps = np.angle(np.exp(1j * np.diff(headings)))
+    return float(np.sum(np.abs(steps)))
 
 
 def _sine_scan(n_samples):
@@ -190,9 +215,12 @@ class TestHeadSweepMagnitude:
 class TestHeadSweepFromPositions:
     """Test head_sweep_from_positions() function."""
 
-    def test_straight_line_trajectory(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_straight_line_trajectory(self, method):
         """Test that straight trajectory has low head sweep."""
         from neurospatial.behavior.vte import head_sweep_from_positions
+
+        sweep = functools.partial(head_sweep_from_positions, method=method)
 
         # Straight line moving East (x increases, y constant)
         n_samples = 20
@@ -204,7 +232,7 @@ class TestHeadSweepFromPositions:
             ]
         )
 
-        result = head_sweep_from_positions(times, positions, min_speed=5.0)
+        result = sweep(times, positions, min_speed=5.0)
 
         # Constant y: the fitted y-velocity is 0 up to round-off, so every
         # heading is East and IdPhi is 0 to well below 1e-12 rad.
@@ -231,9 +259,12 @@ class TestHeadSweepFromPositions:
         assert_allclose(result, reference_head_sweep(times, positions, 1.0), rtol=1e-12)
         assert 0.5 * 6 * np.arctan(0.5) < result < 6 * np.arctan(0.5)
 
-    def test_stationary_trajectory(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_stationary_trajectory(self, method):
         """A still animal has no movement heading: NaN, without a warning."""
         from neurospatial.behavior.vte import head_sweep_from_positions
+
+        sweep = functools.partial(head_sweep_from_positions, method=method)
 
         n_samples = 20
         times = np.linspace(0, 2, n_samples)
@@ -241,7 +272,7 @@ class TestHeadSweepFromPositions:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            result = head_sweep_from_positions(times, positions, min_speed=5.0)
+            result = sweep(times, positions, min_speed=5.0)
 
         assert np.isnan(result)
 
@@ -253,62 +284,68 @@ class TestHeadSweepFromPositions:
         )
         assert np.isnan(result)
 
-    def test_nan_row_is_bridged_like_a_deleted_row(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_nan_row_is_bridged_like_a_deleted_row(self, method):
         """A lost frame inside max_gap is skipped as if its row were deleted."""
         from neurospatial.behavior.vte import head_sweep_from_positions
+
+        sweep = functools.partial(head_sweep_from_positions, method=method)
 
         times, positions = _sine_scan(90)
         positions[45] = np.nan
         kept = np.delete(np.arange(90), 45)
-        expected = head_sweep_from_positions(
-            times[kept], positions[kept], min_speed=1.0
-        )
-        actual = head_sweep_from_positions(times, positions, min_speed=1.0)
+        expected = sweep(times[kept], positions[kept], min_speed=1.0)
+        actual = sweep(times, positions, min_speed=1.0)
         assert expected > 0
         assert_allclose(actual, expected, rtol=1e-12)
 
-    def test_nan_row_beyond_max_gap_splits_runs(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_nan_row_beyond_max_gap_splits_runs(self, method):
         """A lost frame longer than max_gap: no heading change spans it."""
         from neurospatial.behavior.vte import head_sweep_from_positions
 
+        sweep = functools.partial(head_sweep_from_positions, method=method)
+
         times, positions = _sine_scan(90)
         positions[45] = np.nan
-        expected = head_sweep_from_positions(
-            times[:45], positions[:45], min_speed=1.0
-        ) + head_sweep_from_positions(times[46:], positions[46:], min_speed=1.0)
-        actual = head_sweep_from_positions(
-            times, positions, min_speed=1.0, max_gap=0.05
+        expected = sweep(times[:45], positions[:45], min_speed=1.0) + sweep(
+            times[46:], positions[46:], min_speed=1.0
         )
+        actual = sweep(times, positions, min_speed=1.0, max_gap=0.05)
         assert expected > 0
         assert_allclose(actual, expected, rtol=1e-12)
 
-    def test_break_before_equals_separate_recordings(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_break_before_equals_separate_recordings(self, method):
         """Two recordings joined on one clock are analyzed separately."""
         from neurospatial.behavior.vte import head_sweep_from_positions
+
+        sweep = functools.partial(head_sweep_from_positions, method=method)
 
         times, positions = _sine_scan(90)
         positions[45:] += np.array([-60.0, 30.0])  # put back elsewhere
         break_before = np.arange(90) == 45
-        expected = head_sweep_from_positions(
-            times[:45], positions[:45], min_speed=1.0
-        ) + head_sweep_from_positions(times[45:], positions[45:], min_speed=1.0)
-        actual = head_sweep_from_positions(
-            times, positions, min_speed=1.0, break_before=break_before
+        expected = sweep(times[:45], positions[:45], min_speed=1.0) + sweep(
+            times[45:], positions[45:], min_speed=1.0
         )
-        undeclared = head_sweep_from_positions(times, positions, min_speed=1.0)
+        actual = sweep(times, positions, min_speed=1.0, break_before=break_before)
+        undeclared = sweep(times, positions, min_speed=1.0)
         assert_allclose(actual, expected, rtol=1e-12)
         assert not np.isclose(undeclared, expected)
 
-    def test_slow_run_adds_nothing(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_slow_run_adds_nothing(self, method):
         """A run with no observed heading contributes nothing, not zero turns."""
         from neurospatial.behavior.vte import head_sweep_from_positions
+
+        sweep = functools.partial(head_sweep_from_positions, method=method)
 
         times, positions = _sine_scan(90)
         positions[45:] = positions[45]  # still after a 2 s break
         times = times.copy()
         times[45:] += 2.0
-        moving = head_sweep_from_positions(times[:45], positions[:45], min_speed=1.0)
-        both = head_sweep_from_positions(times, positions, min_speed=1.0)
+        moving = sweep(times[:45], positions[:45], min_speed=1.0)
+        both = sweep(times, positions, min_speed=1.0)
         assert both == moving
 
     def test_repeated_timestamp_raises(self):
@@ -780,27 +817,31 @@ class TestComputeVTETrial:
         # Mean speed should be > 0 (we're moving)
         assert result.mean_speed > 0
 
-    def test_one_sample_window_has_no_speed_but_its_turn(self):
-        """A one-sample window has no speed, and the head turn of its sample.
+    @pytest.mark.parametrize("method", METHODS)
+    def test_one_sample_window_is_nan(self, method):
+        """A window with one sample has no speed, so no gated turn: NaN, not 0.
 
-        Speed comes from the window's samples alone, so one sample has none.
-        dPhi is estimated over the whole recording and summed over the
-        window, as the lab's zIdPhi code restricts it to the pass, so the
-        one sample keeps its turn.
+        The speed gate uses the window's own speed, which one sample does not
+        have, so even the adaptive window, whose dPhi exists there, measured
+        no heading change.
         """
         from neurospatial.behavior.vte import compute_vte_trial
 
         times, positions = _sine_scan(90)
         # One sample, t = 1.5 s, where the path swings fastest.
-        result = compute_vte_trial(times, positions, 1.49, 1.52, min_speed=1.0)
+        result = compute_vte_trial(
+            times, positions, 1.49, 1.52, min_speed=1.0, method=method
+        )
         assert np.isnan(result.mean_speed)
         assert np.isnan(result.min_observed_speed)
-        turn = reference_turns(times, positions, 1.0)[45]
-        assert turn > 0
-        assert_allclose(result.head_sweep_magnitude, turn, rtol=1e-12)
+        assert np.isnan(result.head_sweep_magnitude)
 
     def test_head_sweep_adds_over_adjacent_windows(self):
-        """Splitting a window splits its IdPhi: each sample's turn counts once."""
+        """Adaptive window: splitting a window splits IdPhi; each turn counts once.
+
+        Its dPhi is estimated over the whole recording, so only the gate, by
+        each window's own speed, could differ; the scan stays far above it.
+        """
         from neurospatial.behavior.vte import compute_vte_trial
 
         times, positions = _sine_scan(90)
@@ -813,45 +854,50 @@ class TestComputeVTETrial:
         assert sweep(0.5, 2.5) > 0
         assert_allclose(sweep(0.5, 2.5), sweep(0.5, 1.4) + sweep(1.4, 2.5))
 
-    def test_still_window_has_zero_speed_and_no_head_sweep(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_still_window_has_zero_speed_and_no_head_sweep(self, method):
         """A still animal moves at an observed 0 cm/s but faces no heading."""
         from neurospatial.behavior.vte import compute_vte_trial
+
+        trial = functools.partial(compute_vte_trial, method=method)
 
         times = np.arange(30) / 10
         positions = np.full((30, 2), 50.0)
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            result = compute_vte_trial(times, positions, 1.0, 2.0, min_speed=1.0)
+            result = trial(times, positions, 1.0, 2.0, min_speed=1.0)
         assert result.mean_speed == 0.0
         assert result.min_observed_speed == 0.0
         assert np.isnan(result.head_sweep_magnitude)
 
-    def test_break_before_equals_separate_recording(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_break_before_equals_separate_recording(self, method):
         """The window never reaches across a declared recording break."""
         from neurospatial.behavior.vte import compute_vte_trial
+
+        trial = functools.partial(compute_vte_trial, method=method)
 
         times, positions = _sine_scan(90)
         positions[45:] += np.array([-60.0, 30.0])
         break_before = np.arange(90) == 45
         kwargs = {"start_time": 0.5, "stop_time": 2.5, "min_speed": 1.0}
-        declared = compute_vte_trial(
-            times, positions, break_before=break_before, **kwargs
-        )
-        alone = compute_vte_trial(times[:45], positions[:45], **kwargs)
+        declared = trial(times, positions, break_before=break_before, **kwargs)
+        alone = trial(times[:45], positions[:45], **kwargs)
         assert declared == alone
-        assert compute_vte_trial(times, positions, **kwargs) != alone
+        assert trial(times, positions, **kwargs) != alone
 
-    def test_nan_row_in_window_is_skipped_like_a_deleted_row(self):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_nan_row_in_window_is_skipped_like_a_deleted_row(self, method):
         """A lost frame inside the window is bridged as if its row were deleted."""
         from neurospatial.behavior.vte import compute_vte_trial
 
+        trial = functools.partial(compute_vte_trial, method=method)
+
         times, positions = _sine_scan(90)
         positions[45] = np.nan
-        result = compute_vte_trial(times, positions, 1.0, 2.0, min_speed=1.0)
+        result = trial(times, positions, 1.0, 2.0, min_speed=1.0)
         kept = np.delete(np.arange(90), 45)
-        deleted = compute_vte_trial(
-            times[kept], positions[kept], 1.0, 2.0, min_speed=1.0
-        )
+        deleted = trial(times[kept], positions[kept], 1.0, 2.0, min_speed=1.0)
         assert result.head_sweep_magnitude > 0
         assert result.head_sweep_magnitude == deleted.head_sweep_magnitude
         assert np.isfinite(result.mean_speed)
@@ -865,7 +911,8 @@ class TestComputeVTETrial:
 class TestComputeVTESession:
     """Test compute_vte_session() function."""
 
-    def test_scanning_trial_has_the_larger_head_sweep(self, t_maze_environment):
+    @pytest.mark.parametrize("method", METHODS)
+    def test_scanning_trial_has_the_larger_head_sweep(self, t_maze_environment, method):
         """A zig-zag approach sweeps its heading; a straight one does not.
 
         Both rise 26 cm in 59 frames at 30 Hz, 5 s apart (a tracking gap
@@ -932,18 +979,25 @@ class TestComputeVTESession:
             min_speed=1.0,
             head_sweep_weight=0.5,
             vte_threshold=0.0,  # Low threshold to ensure some VTE classification
+            method=method,
         )
 
         # Both trials reach the center
         assert len(result.trial_results) == 2
         scanning, straight = result.trial_results
         assert straight.head_sweep_magnitude == 0.0
-        # The scan's IdPhi sums the reference turns of its pass samples,
-        # [window_start, window_end), estimated over the scan's whole run.
         window = (t1_times >= scanning.window_start) & (t1_times < scanning.window_end)
-        expected = reference_head_sweep(
-            t1_times, positions[:n_per_trial], 1.0, samples=window
-        )
+        if method == "adaptive_window":
+            # The reference turns of the pass samples, [window_start,
+            # window_end), estimated over the scan's whole run.
+            expected = reference_head_sweep(
+                t1_times, positions[:n_per_trial], 1.0, samples=window
+            )
+        else:
+            # The reference line-fit IdPhi of the pass samples alone.
+            expected = _line_fit_head_sweep(
+                t1_times[window], positions[:n_per_trial][window], 1.0
+            )
         assert expected > np.pi  # the zig-zag turns back and forth
         assert_allclose(scanning.head_sweep_magnitude, expected, rtol=1e-10)
         assert_allclose(straight.mean_speed, 26 * 30 / 59, rtol=1e-12)
@@ -1760,14 +1814,17 @@ def test_passing_the_estimated_heading_reproduces_the_default():
     )
 
 
-def test_head_sweep_is_invariant_to_translation_clock_units_and_axis_swaps():
+@pytest.mark.parametrize("method", METHODS)
+def test_head_sweep_is_invariant_to_translation_clock_units_and_axis_swaps(method):
     """IdPhi is unchanged by moving, re-clocking or rescaling the path.
 
-    The lab's estimator fits x and y separately, so it is unchanged by
-    swapping or mirroring the axes, but not by an oblique rotation of the
-    camera frame (see the Notes of ``head_sweep_from_positions``).
+    Either estimator is unchanged by swapping or mirroring the axes; the
+    line fit also by any rotation (see
+    ``test_only_the_line_fit_is_rotation_invariant``).
     """
-    from neurospatial.behavior.vte import head_sweep_from_positions
+    from neurospatial.behavior.vte import head_sweep_from_positions as sweep
+
+    head_sweep_from_positions = functools.partial(sweep, method=method)
 
     for t, p, min_speed in [
         (*_circle(1), 1.0),
@@ -1796,6 +1853,201 @@ def test_head_sweep_is_invariant_to_translation_clock_units_and_axis_swaps():
             )
 
 
+def test_only_the_line_fit_is_rotation_invariant():
+    """An oblique rotation of the camera changes the adaptive window's IdPhi.
+
+    The lab's estimator fits x and y separately; the line fit's heading is
+    the direction of one 2-D velocity, so it turns with the path.
+    """
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    times, positions = _sine_scan(120)
+    angle = np.pi / 4  # the adaptive window's IdPhi moves 21% here
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    rotated = positions @ rotation.T
+
+    def sweep(p, method):
+        return head_sweep_from_positions(times, p, min_speed=1.0, method=method)
+
+    assert_allclose(sweep(rotated, "line_fit"), sweep(positions, "line_fit"), rtol=1e-9)
+    adaptive, turned = (
+        sweep(positions, "adaptive_window"),
+        sweep(rotated, "adaptive_window"),
+    )
+    assert abs(turned / adaptive - 1) > 0.1
+
+
+# =============================================================================
+# method="line_fit": neurospatial's rotation-invariant heading
+# =============================================================================
+
+
+def test_line_fit_zigzag_turns_by_its_corners():
+    """A zig-zag of 1 s legs turns by 2 atan(1/2) at each of its corners.
+
+    Four 1 s legs at 30 Hz, each moving 20 cm/s East and 10 cm/s North
+    or South in turn: headings of +-atan(1/2) with three corners. Away
+    from a corner by more than the smoothing reach (4 sigma = 0.4 s) the
+    line fit sees one straight leg, so the heading is exactly
+    +-atan(1/2), also at the two ends of the recording; through a corner
+    it turns monotonically from one to the other. IdPhi is therefore
+    exactly ``3 * 2 * atan(1/2)``, to round-off.
+    """
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    times = np.arange(4 * _FS + 1) / _FS
+    leg = (np.arange(times.size - 1) // _FS) % 2  # 0 North, 1 South
+    y = np.r_[0.0, np.cumsum(np.where(leg == 0, 10.0, -10.0) / _FS)]
+    positions = np.column_stack([20.0 * times, y])
+
+    result = head_sweep_from_positions(
+        times, positions, min_speed=1.0, method="line_fit"
+    )
+
+    assert_allclose(result, 6 * np.arctan(0.5), rtol=1e-12)
+    assert_allclose(result, _line_fit_head_sweep(times, positions, 1.0), rtol=1e-12)
+
+
+def test_line_fit_counts_each_reversal_as_pi():
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    for n_reversals in (0, 2, 4, 6):
+        times, positions = _stem_scan(0.0, n_reversals, speed=8.0)
+        assert_allclose(
+            head_sweep_from_positions(
+                times, positions, min_speed=2.0, method="line_fit"
+            ),
+            n_reversals * np.pi,
+            rtol=1e-12,
+            atol=1e-12,
+        )
+
+
+def test_line_fit_full_circle_is_two_pi():
+    """Each extra revolution adds exactly 2 pi.
+
+    The first revolution falls short of 2 pi only by its edges: the last
+    sample is one frame short of a full turn, and the velocity, the slope of
+    a Gaussian-weighted line fit (sigma 0.1 s), cannot see past the ends of
+    the recording. At each end the fit holds one half of the window, and on a
+    path turning at a constant rate its slope points along the path as it was
+    cov(tau, tau**2) / (2 var(tau)) seconds earlier, with tau half-normal:
+    sigma * sqrt(2 / pi) / (2 * (1 - 2 / pi)), about 1.1 sigma. Each end
+    costs at most the angle turned in that time.
+    """
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    for fs in (30, 120):
+        one, two = (
+            head_sweep_from_positions(
+                *_circle(n, fs=fs), min_speed=1.0, method="line_fit"
+            )
+            for n in (1, 2)
+        )
+        assert_allclose(two - one, 2 * np.pi, rtol=1e-9)
+        omega = 2 * np.pi / 4.0  # rad/s
+        one_sided_lag = 0.1 * np.sqrt(2 / np.pi) / (2 * (1 - 2 / np.pi))
+        assert 0 < 2 * np.pi - one < omega * (1 / fs + 2 * one_sided_lag)
+
+
+def test_line_fit_window_is_measured_from_its_own_samples():
+    """The line fit's pass IdPhi is that of the pass's samples alone."""
+    from neurospatial.behavior.vte import compute_vte_trial, head_sweep_from_positions
+
+    times, positions = _sine_scan(90)
+    result = compute_vte_trial(
+        times, positions, 0.5, 2.5, min_speed=1.0, method="line_fit"
+    )
+    window = (times >= 0.5) & (times < 2.5)
+    alone = head_sweep_from_positions(
+        times[window], positions[window], min_speed=1.0, method="line_fit"
+    )
+    assert alone > 0
+    assert result.head_sweep_magnitude == alone
+
+
+def test_line_fit_break_in_a_pass_equals_the_trial_stopping_there(t_maze_environment):
+    """With the line fit, a declared break is exactly a trial stopping there."""
+    from neurospatial.behavior.segmentation import Trial
+    from neurospatial.behavior.vte import compute_vte_session
+
+    env = t_maze_environment
+    times, positions, trials = _t_maze_session([0.0, 4.0, 7.0])
+    cut = _first_choice_sample(env, times, positions, after=3.0) + 20
+    kwargs = {**_SESSION_KWARGS, "method": "line_fit"}
+    declared = compute_vte_session(
+        env,
+        times,
+        positions,
+        trials=trials,
+        break_before=np.arange(times.size) == cut,
+        **kwargs,
+    )
+    shortened = Intervals(
+        [
+            trials[0],
+            Trial(trials[1].start_time, times[cut], "start", "choice", "reached"),
+            trials[2],
+        ]
+    )
+    stopped = compute_vte_session(env, times, positions, trials=shortened, **kwargs)
+    assert declared.trial_results == stopped.trial_results
+
+
+def test_method_defaults_to_the_adaptive_window():
+    import inspect
+
+    from neurospatial.behavior.vte import (
+        compute_vte_session,
+        compute_vte_trial,
+        head_sweep_from_positions,
+    )
+
+    for function in (head_sweep_from_positions, compute_vte_trial, compute_vte_session):
+        parameter = inspect.signature(function).parameters["method"]
+        assert parameter.default == "adaptive_window"
+    times, positions = _sine_scan(90)
+    assert head_sweep_from_positions(
+        times, positions, min_speed=1.0
+    ) == head_sweep_from_positions(
+        times, positions, min_speed=1.0, method="adaptive_window"
+    )
+
+
+@pytest.mark.parametrize("method", ["line", "adaptive", "gaussian", None])
+def test_unknown_method_raises(method, t_maze_environment):
+    from neurospatial.behavior.vte import (
+        compute_vte_session,
+        compute_vte_trial,
+        head_sweep_from_positions,
+    )
+
+    times, positions = _sine_scan(90)
+    trials = Intervals([Trial(0.0, 2.9, "start", "center", "reached")])
+    calls = [
+        lambda: head_sweep_from_positions(
+            times, positions, min_speed=1.0, method=method
+        ),
+        lambda: compute_vte_trial(
+            times, positions, 0.5, 2.5, min_speed=1.0, method=method
+        ),
+        lambda: compute_vte_session(
+            t_maze_environment,
+            times,
+            positions,
+            region="choice",
+            trials=trials,
+            min_speed=1.0,
+            method=method,
+        ),
+    ]
+    for call in calls:
+        with pytest.raises(ValueError, match="method"):
+            call()
+
+
 def test_vte_trial_straight_constant_speed():
     """A straight 20 cm/s run: no head sweep and a measured 20 cm/s."""
     from neurospatial.behavior.vte import compute_vte_trial
@@ -1811,16 +2063,21 @@ def test_vte_trial_straight_constant_speed():
     assert result.is_vte is None
 
 
-def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
+@pytest.mark.parametrize(
+    ("method", "r"),
+    [("adaptive_window", np.pi * (2 / 3 + 1 / 15)), ("line_fit", np.pi)],
+)
+def test_session_z_scores_vte_index_and_verdicts(t_maze_environment, method, r):
     """Two slow scanning trials and two fast straight controls.
 
     Every trial runs inside the "choice" zone from its start, so its pass is
     the whole trial. The scanning trials reverse 2 and 4 times, each reversal
-    adding ``r = pi * (2/3 + 1/15)`` at 30 Hz (derived in
-    ``test_head_sweep_counts_each_reversal_as_its_three_estimated_turns``);
-    the controls run straight (IdPhi 0) at 20 and 30 cm/s. Head-sweep
-    z-scores over [2, 4, 0, 0] r are [1, 5, -3, -3] / sqrt(11) (population
-    std), whatever r is.
+    adding ``r``: ``pi * (2/3 + 1/15)`` at 30 Hz with the adaptive window
+    (derived in
+    ``test_head_sweep_counts_each_reversal_as_its_three_estimated_turns``),
+    ``pi`` with the line fit. The controls run straight (IdPhi 0) at 20 and
+    30 cm/s. Head-sweep z-scores over [2, 4, 0, 0] r are [1, 5, -3, -3] /
+    sqrt(11) (population std), whatever r is.
     """
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavior.vte import compute_vte_session, compute_vte_trial
@@ -1855,10 +2112,10 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
         min_speed=2.0,
         head_sweep_weight=alpha,
         vte_threshold=threshold,
+        method=method,
     )
     table = result.trials_table()
 
-    r = np.pi * (2 / 3 + 1 / 15)
     assert_allclose(table["head_sweep_magnitude"], [2 * r, 4 * r, 0, 0], atol=1e-12)
     assert_allclose(
         table["z_head_sweep"], np.array([1, 5, -3, -3]) / np.sqrt(11), rtol=1e-12
@@ -1870,7 +2127,12 @@ def test_session_z_scores_vte_index_and_verdicts(t_maze_environment):
         assert trial.window_start == trials[i].start_time
         assert trial.window_end == trials[i].stop_time
         alone = compute_vte_trial(
-            times, positions, trial.window_start, trial.window_end, min_speed=2.0
+            times,
+            positions,
+            trial.window_start,
+            trial.window_end,
+            min_speed=2.0,
+            method=method,
         )
         assert_allclose(speeds[i], alone.mean_speed, rtol=1e-12)
         assert_allclose(
@@ -2039,8 +2301,13 @@ def _enter_sweep_exit_reenter():
     return env, times, np.column_stack([x, y]), headings
 
 
-def test_session_window_is_the_first_contiguous_pass():
-    """IdPhi is integrated over the first pass only; the re-entry is not used."""
+@pytest.mark.parametrize("method", METHODS)
+def test_session_window_is_the_first_contiguous_pass(method):
+    """IdPhi is integrated over the first pass only; the re-entry is not used.
+
+    The adaptive window estimates dPhi from the headings over the whole
+    recording; the line fit sums the changes of the pass's headings alone.
+    """
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavior.vte import compute_vte_session
 
@@ -2058,6 +2325,7 @@ def test_session_window_is_the_first_contiguous_pass():
         trials=trials,
         headings=headings,
         min_speed=1.0,
+        method=method,
     )
 
     (trial,) = result.trial_results
@@ -2066,6 +2334,8 @@ def test_session_window_is_the_first_contiguous_pass():
     assert trial.window_end == times[30]  # the first sample past the zone
 
     def idphi(samples):
+        if method == "line_fit":
+            return _idphi(headings[samples])
         return reference_head_sweep(
             times, positions, 1.0, headings=headings, samples=samples
         )
@@ -2076,7 +2346,8 @@ def test_session_window_is_the_first_contiguous_pass():
     assert not np.isclose(trial.head_sweep_magnitude, in_zone)
 
 
-def test_gap_longer_than_max_gap_ends_the_pass():
+@pytest.mark.parametrize("method", METHODS)
+def test_gap_longer_than_max_gap_ends_the_pass(method):
     """A tracking loss inside the pass ends the window at its last sample."""
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.behavior.vte import compute_vte_session
@@ -2090,6 +2361,7 @@ def test_gap_longer_than_max_gap_ends_the_pass():
         "trials": trials,
         "headings": headings,
         "min_speed": 1.0,
+        "method": method,
     }
     (cut,) = compute_vte_session(env, times, positions, **kwargs).trial_results
     (bridged,) = compute_vte_session(
@@ -2097,6 +2369,14 @@ def test_gap_longer_than_max_gap_ends_the_pass():
     ).trial_results
 
     assert (cut.window_start, cut.window_end) == (times[10], times[21])
+    if method == "line_fit":
+        # The pass's own headings, before and across the gap.
+        assert_allclose(cut.head_sweep_magnitude, _idphi(headings[10:21]), rtol=1e-12)
+        assert (bridged.window_start, bridged.window_end) == (times[10], times[30])
+        assert_allclose(
+            bridged.head_sweep_magnitude, _idphi(headings[10:30]), rtol=1e-12
+        )
+        return
     # Cut: the pass is measured within the run that ends at sample 20.
     before = reference_head_sweep(
         times[:21], positions[:21], 1.0, headings=headings[:21], samples=slice(10, 21)
@@ -2160,7 +2440,8 @@ def test_vte_trial_window_bounds_are_validated(start_time, stop_time, match):
         compute_vte_trial(times, positions, start_time, stop_time, min_speed=1.0)
 
 
-def test_vte_trial_measures_the_session_pass():
+@pytest.mark.parametrize("method", METHODS)
+def test_vte_trial_measures_the_session_pass(method):
     """The session's window bounds, passed to compute_vte_trial, measure the
     same samples: the same head sweep and speed."""
     from neurospatial.behavior.segmentation import Trial
@@ -2176,6 +2457,7 @@ def test_vte_trial_measures_the_session_pass():
         trials=trials,
         headings=headings,
         min_speed=1.0,
+        method=method,
     ).trial_results
     alone = compute_vte_trial(
         times,
@@ -2184,21 +2466,24 @@ def test_vte_trial_measures_the_session_pass():
         pass_.window_end,
         headings=headings,
         min_speed=1.0,
+        method=method,
     )
     assert alone.head_sweep_magnitude == pass_.head_sweep_magnitude
     assert alone.mean_speed == pass_.mean_speed
     assert alone.min_observed_speed == pass_.min_observed_speed
 
 
+@pytest.mark.parametrize("method", METHODS)
 @pytest.mark.parametrize("seed", range(5))
-def test_jittered_pause_does_not_score_as_head_sweeping(seed):
+def test_jittered_pause_does_not_score_as_head_sweeping(seed, method):
     """Tracking jitter on a still or creeping animal is not VTE.
 
-    Jitter sets the heading of a slow animal. The lab's adaptive window does
-    not prevent this: without the speed gate, over seeds 0-9, a still animal
-    scores 5-17 rad and a 2 cm/s creep 5-12 rad against 3.5-4.9 rad for the
-    scan. With the default gate a still animal has no head sweep and a creep
-    is far below a scan.
+    Jitter sets the heading of a slow animal, with either estimator: without
+    the speed gate, over seeds 0-9, a still animal scores 5-17 rad and a
+    2 cm/s creep 5-12 rad against 3.5-4.9 rad for the scan with the adaptive
+    window, and a still animal about 16 rad against 8 rad with the line fit.
+    With the default gate a still animal has no head sweep and a creep is
+    far below a scan.
     """
     from neurospatial.behavior import compute_vte_trial
 
@@ -2211,18 +2496,25 @@ def test_jittered_pause_does_not_score_as_head_sweeping(seed):
 
     def sweep(xy):
         return compute_vte_trial(
-            times, xy, 0.0, 1.5, min_speed=5.0
+            times, xy, 0.0, 1.5, min_speed=5.0, method=method
         ).head_sweep_magnitude
 
-    # Without jitter, the scan's IdPhi is that of the reference velocity.
+    # Without jitter, the scan's IdPhi is that of the reference estimator.
     clean = scan - jitter
     clean_sweep = sweep(clean)
-    assert_allclose(clean_sweep, reference_head_sweep(times, clean, 5.0), rtol=1e-10)
+    reference = (
+        reference_head_sweep(times, clean, 5.0)
+        if method == "adaptive_window"
+        else _line_fit_head_sweep(times, clean, 5.0)
+    )
+    assert_allclose(clean_sweep, reference, rtol=1e-10)
     scan_sweep = sweep(scan)
-    # The clean scan sweeps 3.8 rad (the estimator averages away about half
-    # of a 1 Hz scan's turn). Over seeds 0-9 the jitter moves it to 3.5-4.9
-    # rad; the scan's speed of at least 10 cm/s keeps every sample above the
-    # gate, and 3/4 of the clean value is still a strong sweep.
+    # The clean scan sweeps 3.8 rad with the adaptive window (which averages
+    # away about half of a 1 Hz scan's turn; jitter moves it to 3.5-4.9 rad
+    # over seeds 0-9) and 7.9 rad with the line fit (whose velocity error
+    # from the jitter, about 0.6 cm/s, is small against the scan's 10 cm/s or
+    # more). Every scan sample stays above the gate, and 3/4 of the clean
+    # value is still a strong sweep.
     assert scan_sweep > 0.75 * clean_sweep
     assert np.isnan(sweep(still))
     creep_sweep = sweep(creep)

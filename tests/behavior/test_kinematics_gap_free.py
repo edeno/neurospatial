@@ -52,7 +52,9 @@ estimator over the whole recording, as in the lab's zIdPhi code, instead of
 summing changes of the Gaussian line-fit heading over the window alone:
 the whole-recording IdPhi moved from 57.05 to 39.11 rad, the trial's from
 0.0286 to 0.0332 rad and the session's first trial's from 0.0423 to 0.0757
-rad; speeds are unchanged.
+rad; speeds are unchanged. That estimator became the default of a new
+``method=``, and the pre-change captures were stored unchanged as the
+``[line_fit]`` entries, which ``method="line_fit"`` reproduces.
 """
 
 import json
@@ -104,6 +106,7 @@ def kinematic_goldens():
     # The VTE session result later gained ``units`` (the environment's, "cm");
     # its trial results are unchanged.
     goldens["compute_vte_session"]["fields"]["units"] = "cm"
+    goldens["compute_vte_session[line_fit]"]["fields"]["units"] = "cm"
     return goldens
 
 
@@ -115,6 +118,7 @@ def kinematic_goldens():
         "pre_decision_heading_stats",
         "pre_decision_speed_stats",
         "head_sweep_from_positions",
+        "head_sweep_from_positions[line_fit]",
         "heading_direction_labels",
         "heading_direction_precomputed",
         "compute_path_efficiency",
@@ -128,7 +132,9 @@ def kinematic_goldens():
         "add_positions",
         "compute_pre_decision_metrics",
         "compute_vte_trial",
+        "compute_vte_trial[line_fit]",
         "compute_vte_session",
+        "compute_vte_session[line_fit]",
     ],
 )
 def test_gap_free_outputs_unchanged(name, kinematic_outputs, kinematic_goldens):

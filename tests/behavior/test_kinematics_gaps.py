@@ -363,6 +363,25 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
         )
     assert trial.mean_speed == expected_mean
     assert np.isnan(trial.head_sweep_magnitude)
+    # The line fit has headings at 1 Hz; the window's are forwarded too.
+    line_fit = compute_vte_trial(
+        times,
+        positions,
+        entry - duration,
+        entry,
+        max_gap=None,
+        min_speed=5.0,
+        method="line_fit",
+    )
+    expected_sweep = head_sweep_from_positions(
+        times[selected],
+        positions[selected],
+        max_gap=None,
+        min_speed=5.0,
+        method="line_fit",
+    )
+    assert expected_sweep > 0
+    assert line_fit.head_sweep_magnitude == expected_sweep
 
 
 def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
@@ -398,6 +417,26 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     assert len(result.trial_results) == 1
     assert result.trial_results[0].mean_speed == expected_speed
     assert np.isnan(result.trial_results[0].head_sweep_magnitude)
+    (line_fit,) = compute_vte_session(
+        env,
+        times,
+        positions,
+        region="decision",
+        trials=Intervals(
+            [Trial(times[0], times[-1] + 1.0, "source", "target", "reached")]
+        ),
+        max_gap=None,
+        method="line_fit",
+    ).trial_results
+    expected_sweep = head_sweep_from_positions(
+        times[selected],
+        positions[selected],
+        max_gap=None,
+        min_speed=5.0,
+        method="line_fit",
+    )
+    assert expected_sweep > 0
+    assert line_fit.head_sweep_magnitude == expected_sweep
 
 
 def test_repeated_timestamps_are_refused_before_any_velocity():

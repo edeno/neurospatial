@@ -82,10 +82,15 @@ DEFAULT_CALLS = {
     "pre_decision_heading_stats": lambda r, p, **kw: pre_decision_heading_stats(
         r.times, p, min_speed=MIN_SPEED, **kw
     ),
+    "head_sweep_from_positions[line_fit]": lambda r, p, **kw: (
+        head_sweep_from_positions(
+            r.times, p, min_speed=MIN_SPEED, method="line_fit", **kw
+        )
+    ),
 }
 SPEED_ONLY_CALLS = {
-    # Its default headings are the adaptive-window velocity's direction, not
-    # heading_from_velocity's (see test_vte.py for passing those).
+    # Its default adaptive-window headings are not heading_from_velocity's
+    # (see test_vte.py for passing those); the line fit's are, above.
     "head_sweep_from_positions": lambda r, p, **kw: head_sweep_from_positions(
         r.times, p, min_speed=MIN_SPEED, **kw
     ),
@@ -167,6 +172,27 @@ def test_window_metrics_take_your_motion_at_the_window_samples(session):
     )
     assert_allclose(trial.head_sweep_magnitude, expected, rtol=1e-12)
     assert trial.mean_speed == mean_speed
+    # The line fit takes your headings and speed at the window's samples alone.
+    line_fit = compute_vte_trial(
+        r.times,
+        positions,
+        entry - duration,
+        entry,
+        min_speed=MIN_SPEED,
+        speed=speed,
+        headings=headings,
+        method="line_fit",
+        **support,
+    )
+    assert line_fit.head_sweep_magnitude == head_sweep_from_positions(
+        window_times,
+        window_positions,
+        min_speed=MIN_SPEED,
+        max_gap=1.0,
+        method="line_fit",
+        **mine,
+    )
+    assert line_fit.mean_speed == mean_speed
     # Random headings, not the tracked path's, set the window's statistics.
     default = compute_pre_decision_metrics(
         r.times,

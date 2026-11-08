@@ -27,7 +27,9 @@ VTE (Vicarious Trial and Error)
 - **Head sweeping**: Looking back and forth between options (high IdPhi)
 - **Pausing**: Slowing down or stopping at the choice point (low speed)
 - **IdPhi**: Integrated absolute change in the orientation of motion (dPhi)
-  over the pass, estimated as in the Redish lab's zIdPhi code
+  over the pass; by default estimated as in the Redish lab's zIdPhi code
+  (``method="adaptive_window"``), or by neurospatial's rotation-invariant
+  line fit (``method="line_fit"``)
 - **zIdPhi**: Z-scored IdPhi relative to session baseline
 - **VTE index**: zIdPhi by default; optionally blended with slowing
 - **Pass**: the samples from the animal's first entry into the choice-point
@@ -86,12 +88,13 @@ if TYPE_CHECKING:
     from neurospatial.behavior.segmentation import Trial
     from neurospatial.environment import Environment
 
-from neurospatial._intervals import DEFAULT_MAX_GAP
+from neurospatial._intervals import DEFAULT_MAX_GAP, run_sample_bounds
 from neurospatial._observation import ObservationSupport, validated_observations
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ResultMixin
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._validation import validate_instance
+from neurospatial._validation import validate_choice, validate_instance
+from neurospatial._velocity import DEFAULT_SPEED_SMOOTHING
 from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 from neurospatial.stats.circular import wrap_angle
@@ -115,6 +118,10 @@ __all__ = [
 # VTE Data Structures
 # =============================================================================
 
+
+#: How the orientation of motion and its change are estimated (``method=``).
+HeadingMethod = Literal["adaptive_window", "line_fit"]
+_HEADING_METHODS: tuple[HeadingMethod, ...] = get_args(HeadingMethod)
 
 VTETrialStatus = Literal["ok", "no_samples", "no_entry", "too_few_samples"]
 _VTE_TRIAL_STATUSES: tuple[str, ...] = get_args(VTETrialStatus)
@@ -141,8 +148,8 @@ class VTETrialResult(ResultMixin):
     ----------
     head_sweep_magnitude : float
         Integrated absolute change in the orientation of motion over the
-        pass through the choice point (radians), with dPhi estimated as in
-        Papale et al. (2012); see :func:`head_sweep_from_positions`.
+        pass through the choice point (radians), estimated by the
+        analysis's ``method`` (see :func:`head_sweep_from_positions`).
         Also known as IdPhi (Integrated absolute dPhi).
         High values indicate looking back and forth between options.
         NaN when no sample of the window has a turn: the animal was slower
@@ -194,15 +201,21 @@ class VTETrialResult(ResultMixin):
 
     Examples
     --------
-    A trial whose window falls in a tracking loss holds no sample, so its
-    metrics are NaN and it is not classified:
+    A trial whose window holds a single observed sample has no speed and no
+    heading, so its metrics are NaN and it is not classified:
 
     >>> import numpy as np
     >>> from neurospatial.behavior.vte import compute_vte_trial
     >>> times = np.linspace(0, 3, 90)
     >>> positions = np.column_stack([np.linspace(0, 50, 90), np.ones(90) * 50])
-    >>> positions[30:61] = np.nan  # 1.07 s lost, longer than max_gap
-    >>> result = compute_vte_trial(times, positions, 1.0, 2.0, min_speed=5.0)
+    >>> result = compute_vte_trial(
+    ...     times,
+    ...     positions,
+    ...     1.0,
+    ...     2.0,
+    ...     min_speed=5.0,
+    ...     break_before=times == times[31],
+    ... )
     >>> result.head_sweep_magnitude, result.mean_speed, result.is_vte
     (nan, nan, None)
     """
@@ -631,10 +644,11 @@ def head_sweep_magnitude(headings: NDArray[np.float64]) -> float:
     al. (2012) reviewed by Redish (2016): each change between consecutive
     headings, wrapped to (-π, π], counts in full. Papale et al. instead
     estimated dPhi with their lab's adaptive-window estimator, which
-    spreads fast turns over its windows and averages part of them away;
+    spreads fast turns over its windows and averages part of them away.
     :func:`head_sweep_from_positions` and the VTE session functions follow
-    them, so on the same path their IdPhi is smaller than this sum (about
-    half for a scan swinging once a second).
+    them by default (``method="adaptive_window"``), so on the same path
+    their IdPhi is smaller than this sum (about half for a scan swinging
+    once a second); with ``method="line_fit"`` they use this sum.
 
     NaN entries are skipped, so the change from the last heading before
     them to the first heading after them counts once. Pass one continuous
@@ -682,6 +696,7 @@ def head_sweep_from_positions(
     min_speed: float,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
+    method: HeadingMethod = "adaptive_window",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -719,10 +734,18 @@ def head_sweep_from_positions(
         +π/2 = North; NaN where not observed), used instead of the direction
         of movement computed from ``positions``: for example the direction of
         your own smoothed velocity, or head direction from a head-mounted LED
-        or sensor. dPhi is estimated from it the same way, and samples slower
+        or sensor. It is used as Phi by either ``method``, and samples slower
         than ``min_speed`` still add no turn. Default: the direction of the
-        adaptive-window velocity (see Notes of
-        :func:`head_sweep_from_positions`).
+        velocity that ``method`` estimates.
+    method : {"adaptive_window", "line_fit"}, default="adaptive_window"
+        How the orientation of motion and its change are estimated (see
+        Notes of :func:`head_sweep_from_positions`). ``"adaptive_window"``
+        follows Papale et al. (2012) and the Redish lab's code and reproduces
+        published IdPhi, but its IdPhi depends on the camera's axes: compare
+        raw values only within one camera setup. ``"line_fit"`` is
+        neurospatial's own, rotation-invariant: the direction of a 0.1 s
+        Gaussian line-fit velocity, with IdPhi the sum of its changes; use it
+        to compare raw IdPhi across setups.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -765,46 +788,79 @@ def head_sweep_from_positions(
     a ``break_before`` splits the recording into separately analyzed runs,
     and no velocity or heading spans such a split.
 
-    IdPhi follows Papale et al. (2012) and their lab's zIdPhi code. The
-    velocity's x and y come from the Redish lab's adaptive-window estimator
-    (``dxdt.m``, "based on Janabi-Sharifi/Hayward/Chen" 2000 "but modified
-    extensively"), as the lab's code calls it: at each sample, of the
-    backward windows of 3 samples up to 0.5 s, the one with the smallest
-    score gives the end-to-end slope, and a 0.1 s boxcar averages the
-    slopes. The orientation of motion, Phi, is the arctangent of that
-    velocity, unwrapped over each run; dPhi is the same estimator applied
-    to Phi; and IdPhi sums ``|dPhi|`` over the samples. The lab sums
-    ``|dPhi|`` in rad/s; here each sample's ``|dPhi|`` is multiplied by
-    the sample interval, so IdPhi is in radians (the constant factor cancels
-    in zIdPhi). On evenly sampled positions away from the ends of a run the
-    result equals the lab's code run in GNU Octave to 1e-12, except where a
-    velocity component is exactly 0 (pixel-quantized tracking): there
-    rounding picks the side of the arctangent's ±π branch, as it does in
-    the lab's code.
+    ``method`` chooses how the orientation of motion, Phi, and its change,
+    dPhi, are estimated.
 
-    Properties of the lab's estimator that carry over:
+    ``method="adaptive_window"`` (default) follows Papale et al. (2012) and
+    the Redish lab's zIdPhi code, so it reproduces published IdPhi. Code
+    read for it: ``dxdt.m`` and ``zIdPhi.m`` of andrewpapale/odorTrails @
+    91954210ec, ``compute_IdPhi_AvgdPhi.m`` of GWDiehl/mPFC-RRow-Recordings
+    @ a0d1083214, and ``dxdt.m`` of vandermeerlab/vandermeerlab @
+    82ba3fe29c. The velocity's x and y come from the lab's ``dxdt``: at each
+    sample, of the backward windows of 3 samples up to 0.5 s, the one with
+    the smallest score gives the end-to-end slope, and a 0.1 s boxcar
+    averages the slopes. Phi is the arctangent of that velocity, unwrapped
+    over each run; dPhi is ``dxdt`` applied to Phi; dPhi is estimated over
+    every sample given and summed over the samples counted. The lab sums
+    ``|dPhi|`` in rad/s; here each sample's ``|dPhi|`` is multiplied by the
+    sample interval, so IdPhi is in radians (zIdPhi is unchanged). On evenly
+    sampled positions away from the ends of a run the result equals the
+    lab's code run in GNU Octave to 1e-12, except where a velocity component
+    is exactly 0 (pixel-quantized tracking): there rounding picks the side
+    of the arctangent's ±π branch, as it does in the lab's code.
 
-    - It averages part of a fast turn away: on a path swinging 8 cm once a
-      second at 10 cm/s, IdPhi is about half the turn of the path; a
-      sharp reversal of direction counts about 0.7 π rather than π.
-    - It fits x and y separately, so IdPhi depends on the orientation of
-      the camera's axes: rotating the same trajectories by 0.3 rad changed
-      IdPhi by -25% to +68% (5-95% of 46 passes, Carey et al. 2019 T-maze).
-      Compare IdPhi only between recordings made in the same frame, as
-      zIdPhi within a session does.
+    The lab's window score is the mean squared distance of the window's
+    earlier samples from the line through the current sample with the
+    opposite of the window's slope. It grows with the window length while
+    the signal changes, so the code picks short windows when the animal
+    moves and long ones where the signal is flat. Scoring against the
+    window's own line instead recovers the turn of a smooth scan but raises
+    the score of tracking jitter on a still animal 2.6 to 3 times (10 s at
+    30 and 60 Hz, 0.3 cm jitter); the code's score is used here.
 
-    neurospatial adds a speed gate the lab's code does not have: samples
-    slower than ``min_speed`` add no turn, though dPhi is estimated over
-    every sample. Without it tracking jitter dominates: with 0.3 cm jitter
-    at 30 Hz, a still animal scored 5 to 17 rad over 1.5 s against 3.5 to
-    4.9 rad for a real 8 cm scan (10 seeds). The edge rules are also
-    neurospatial's, since the lab ran the estimator over whole sessions: a
-    sample with fewer than 3 earlier samples in its run has no velocity,
-    the boxcars average the values present at the ends of a run, and slopes
-    use the actual sample times, so uneven sampling and bridged gaps are
-    timed correctly (equal to the lab's arithmetic on even sampling).
-    Tracking at 4 Hz or slower has no head turn, since the 0.5 s window then
-    holds fewer than 3 samples; such runs warn.
+    The adaptive-window estimate has costs:
+
+    - It depends on the orientation of the camera's axes, because x and y
+      are fitted separately: rotating the same trajectories by 0.3 rad
+      changed IdPhi by -25% to +68% (5-95% of 46 passes, Carey et al. 2019
+      T-maze). Swapping or mirroring the axes changes nothing. Compare raw
+      IdPhi only within one camera setup.
+    - It captures about half the turn of a scan swinging 8 cm once a second
+      at 10 cm/s, and counts a sharp reversal of direction as
+      ``pi * (2/3 + 1/n)`` with ``n = ceil(0.5 s * rate)``, 11π/15 at 30 Hz.
+    - Within a session its zIdPhi ranks trials much as the line fit's does:
+      over 24 Carey et al. (2019) sessions the two methods gave the same VTE
+      verdict for 96-97% of the trials.
+
+    Its run edges are neurospatial's, since the lab ran ``dxdt`` over whole
+    sessions: a sample with fewer than 3 earlier samples in its run has no
+    velocity, and the boxcars average the values present at the ends of a
+    run. Slopes use the actual sample times, so uneven sampling and bridged
+    gaps are timed correctly (equal to the lab's arithmetic on even
+    sampling). Tracking at 4 Hz or slower has no head turn, since the 0.5 s
+    window then holds fewer than 3 samples; such runs warn.
+
+    ``method="line_fit"`` is neurospatial's own construction; the closest
+    published method is the adaptive-window IdPhi above. The heading is the
+    direction of the smoothed velocity (as in
+    :func:`neurospatial.behavior.heading_from_velocity`, a 0.1 s Gaussian
+    line fit), and IdPhi sums :func:`head_sweep_magnitude` over runs, the
+    wrapped changes between consecutive headings, without connecting the
+    last heading of one run to the first of the next. A slow stretch is
+    skipped like a missing heading: the change from the last heading before
+    it to the first after it is counted once. It is rotation-invariant and
+    counts a sharp reversal as π, so it is the choice for comparing raw
+    IdPhi across setups.
+
+    With either method the speed gate is neurospatial's (the lab's code has
+    none): samples slower than ``min_speed`` add no turn. Without it
+    tracking jitter dominates: with 0.3 cm jitter at 30 Hz, a still animal
+    scored 5 to 17 rad over 1.5 s against 3.5 to 4.9 rad for a real 8 cm
+    scan with the adaptive window (10 seeds), and about 16 against 8 rad
+    with the line fit. The gate's speed is :func:`compute_speed`'s (the
+    0.1 s Gaussian line-fit velocity) of the samples given, or your
+    ``speed``. When no sample is at least ``min_speed`` fast, no heading
+    change was measured and the result is NaN, not 0.
 
     Examples
     --------
@@ -844,36 +900,114 @@ def head_sweep_from_positions(
         headings=validated_motion(
             headings, name="headings", n_samples=len(times), call=call
         ),
+        method=_validated_method(method, call=call),
     )
-    return _summed_turning(
-        _gated_turning(times, positions, support.interval_mask, motion)
+    head_sweep, _ = _measured_motion(
+        times,
+        positions,
+        support.interval_mask,
+        motion,
+        _turns(times, positions, support.interval_mask, motion),
     )
+    return head_sweep
 
 
-def _gated_turning(
+def _validated_method(method: object, *, call: str) -> HeadingMethod:
+    return validate_choice(method, _HEADING_METHODS, name="method", owner=f"{call}()")
+
+
+def _turns(
     times: NDArray[np.float64],
     positions: NDArray[np.float64],
     interval_mask: NDArray[np.bool_],
     motion: _Motion,
-) -> NDArray[np.float64]:
-    """Turn of each moving sample, ``abs(dPhi) * dt`` in radians; NaN elsewhere.
+) -> NDArray[np.float64] | None:
+    """``abs(dPhi) * dt`` of every sample, before the speed gate.
 
-    dPhi is estimated over every observed sample (:func:`turn_rates`); the
-    speed gate then drops the samples slower than ``min_speed``.
+    Only the adaptive-window method has per-sample turns, estimated over the
+    whole recording as the lab's zIdPhi code does (:func:`turn_rates`);
+    ``None`` for the line fit.
     """
     from neurospatial.behavior._adaptive_window import turn_rates
+
+    if motion.method == "line_fit":
+        return None
+    dphi, dt = turn_rates(times, positions, interval_mask, headings=motion.headings)
+    return np.abs(dphi) * dt
+
+
+def _measured_motion(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+    motion: _Motion,
+    turns: NDArray[np.float64] | None,
+) -> tuple[float, NDArray[np.float64]]:
+    """IdPhi of the samples given and the speed that gates it.
+
+    ``turns`` are the adaptive-window turns of these samples; the line fit
+    computes its headings from these samples alone. Either way the gate is
+    ``compute_speed``'s speed of these samples (or the caller's), the speed
+    the VTE results report.
+    """
     from neurospatial.behavior._kinematics import run_speed
 
-    dphi, dt = turn_rates(times, positions, interval_mask, headings=motion.headings)
+    if turns is None:
+        heading, speed = _window_motion(
+            times,
+            positions,
+            interval_mask,
+            min_speed=motion.min_speed,
+            speed=motion.speed,
+            headings=motion.headings,
+        )
+        return _head_sweep(heading, interval_mask), speed
     speed = run_speed(times, positions, interval_mask, speed=motion.speed)
-    moving = (speed > 0) & (speed >= motion.min_speed)
-    return np.where(moving, np.abs(dphi) * dt, np.nan)
+    moving = (speed > 0) & (speed >= motion.min_speed) & np.isfinite(turns)
+    head_sweep = float(np.sum(turns[moving])) if moving.any() else np.nan
+    return head_sweep, speed
 
 
-def _summed_turning(turning: NDArray[np.float64]) -> float:
-    """IdPhi of the samples given; NaN when no sample has a turn."""
-    observed = turning[np.isfinite(turning)]
-    return float(np.sum(observed)) if observed.size else np.nan
+def _window_motion(
+    times: NDArray[np.float64],
+    positions: NDArray[np.float64],
+    interval_mask: NDArray[np.bool_],
+    *,
+    min_speed: float,
+    speed: NDArray[np.float64] | None,
+    headings: NDArray[np.float64] | None,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Gated direction of movement and speed of the samples given."""
+    from neurospatial.behavior._kinematics import (
+        _movement_heading_and_speed,
+        run_speed,
+    )
+
+    # NaN where the animal is not moving: no direction of movement.
+    heading, _ = _movement_heading_and_speed(
+        times,
+        positions,
+        interval_mask,
+        smooth_window=DEFAULT_SPEED_SMOOTHING,
+        min_speed=min_speed,
+        speed=speed,
+        headings=headings,
+    )
+    return heading, run_speed(times, positions, interval_mask, speed=speed)
+
+
+def _head_sweep(
+    heading: NDArray[np.float64], interval_mask: NDArray[np.bool_]
+) -> float:
+    """IdPhi summed over runs of usable intervals; NaN when no run has one."""
+    if not interval_mask.any():
+        return np.nan
+    sweeps = [
+        head_sweep_magnitude(heading[first : last + 1])
+        for first, last in run_sample_bounds(interval_mask)
+    ]
+    observed = [sweep for sweep in sweeps if not np.isnan(sweep)]
+    return float(sum(observed)) if observed else np.nan
 
 
 # =============================================================================
@@ -1177,6 +1311,7 @@ def compute_vte_trial(
     min_speed: float,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
+    method: HeadingMethod = "adaptive_window",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -1220,10 +1355,18 @@ def compute_vte_trial(
         +π/2 = North; NaN where not observed), used instead of the direction
         of movement computed from ``positions``: for example the direction of
         your own smoothed velocity, or head direction from a head-mounted LED
-        or sensor. dPhi is estimated from it the same way, and samples slower
+        or sensor. It is used as Phi by either ``method``, and samples slower
         than ``min_speed`` still add no turn. Default: the direction of the
-        adaptive-window velocity (see Notes of
-        :func:`head_sweep_from_positions`).
+        velocity that ``method`` estimates.
+    method : {"adaptive_window", "line_fit"}, default="adaptive_window"
+        How the orientation of motion and its change are estimated (see
+        Notes of :func:`head_sweep_from_positions`). ``"adaptive_window"``
+        follows Papale et al. (2012) and the Redish lab's code and reproduces
+        published IdPhi, but its IdPhi depends on the camera's axes: compare
+        raw values only within one camera setup. ``"line_fit"`` is
+        neurospatial's own, rotation-invariant: the direction of a 0.1 s
+        Gaussian line-fit velocity, with IdPhi the sum of its changes; use it
+        to compare raw IdPhi across setups.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1276,11 +1419,15 @@ def compute_vte_trial(
     time segment (between ``max_gap`` gaps, ``epochs`` edges and declared
     breaks) that contains ``start_time``; it stops at the end of that
     segment. When ``start_time`` falls in a gap, the window is empty and
-    every metric is NaN. dPhi is estimated over the whole recording given
-    and summed over the window's samples, as the lab's zIdPhi code
-    restricts it to the pass (see :func:`head_sweep_from_positions`), so
-    pass the recording around the pass, not the pass alone. Speed is
-    computed from the window's samples alone.
+    every metric is NaN. With ``method="adaptive_window"`` dPhi is
+    estimated over the whole recording given and summed over the window's
+    samples, as the lab's zIdPhi code restricts it to the pass (see
+    :func:`head_sweep_from_positions`), so pass the recording around the
+    pass, not the pass alone; with ``method="line_fit"`` headings come from
+    the window's samples alone. With either, speed is computed from the
+    window's samples alone, and the same speed gates the head sweep, so a
+    window with no sample at least ``min_speed`` fast (or with one sample,
+    which has no speed) has a NaN head sweep.
 
     Papale et al. (2012) integrated |dPhi| "across the entire pass" through
     the choice point. Pass the times the animal entered and left the
@@ -1312,9 +1459,7 @@ def compute_vte_trial(
     (0.0, nan)
 
     A recording break one sample after the start leaves one sample in the
-    window. Speed comes from the window's samples, so none was observed;
-    dPhi is estimated over the recording before the break, so the sample
-    keeps its turn, 0 on a straight run:
+    window, so no speed was observed either:
 
     >>> result = compute_vte_trial(
     ...     times,
@@ -1324,8 +1469,18 @@ def compute_vte_trial(
     ...     min_speed=5.0,
     ...     break_before=times == times[31],
     ... )
-    >>> result.mean_speed, float(result.head_sweep_magnitude)
-    (nan, 0.0)
+    >>> result.mean_speed, result.head_sweep_magnitude
+    (nan, nan)
+
+    The line fit, rotation-invariant, for comparing raw IdPhi across setups:
+
+    >>> zigzag = np.column_stack([times * 20, 5 * (np.arange(90) // 15 % 2)])
+    >>> adaptive = compute_vte_trial(times, zigzag, 1.0, 2.0, min_speed=5.0)
+    >>> line_fit = compute_vte_trial(
+    ...     times, zigzag, 1.0, 2.0, min_speed=5.0, method="line_fit"
+    ... )
+    >>> bool(adaptive.head_sweep_magnitude < line_fit.head_sweep_magnitude)
+    True
     """
     from neurospatial.behavior._decision_windows import (
         span_window,
@@ -1355,11 +1510,12 @@ def compute_vte_trial(
         headings=validated_motion(
             headings, name="headings", n_samples=len(times), call="compute_vte_trial"
         ),
+        method=_validated_method(method, call="compute_vte_trial"),
     )
     window = span_window(times, support.interval_gates, start_time, stop_time)
-    turning = _gated_turning(times, positions, support.interval_mask, motion)
+    turns = _turns(times, positions, support.interval_mask, motion)
     head_sweep, mean_spd, min_spd = _window_metrics(
-        times, positions, support, window, motion, turning
+        times, positions, support, window, motion, turns
     )
     # A single trial has no session baseline, so it is not z-scored.
     return _unscored_trial(
@@ -1374,11 +1530,12 @@ def compute_vte_trial(
 
 @dataclass(frozen=True)
 class _Motion:
-    """The speed gate and the caller's speed and headings, if any."""
+    """The speed gate, the caller's speed and headings, if any, and the method."""
 
     min_speed: float
     speed: NDArray[np.float64] | None
     headings: NDArray[np.float64] | None
+    method: HeadingMethod
 
 
 def _window_metrics(
@@ -1387,29 +1544,33 @@ def _window_metrics(
     support: ObservationSupport,
     window: slice,
     motion: _Motion,
-    turning: NDArray[np.float64],
+    turns: NDArray[np.float64] | None,
 ) -> tuple[float, float, float]:
     """Head sweep, mean speed and minimum speed of one pass window.
 
-    The head sweep sums the window's share of ``turning``, which
-    :func:`_gated_turning` estimated over the whole recording, as the lab's
-    zIdPhi code restricts dPhi to the pass. Speed is computed from the
-    window's samples alone (a caller's ``speed`` is taken at them). The
-    window lies inside one gate segment, so its usable intervals are the
-    support's usable intervals between its first and last sample.
+    Speed, and the line fit's headings, are computed from the window's
+    samples alone (a caller's ``speed`` and ``headings`` are taken at them);
+    the adaptive-window ``turns`` were estimated over the whole recording,
+    as the lab's zIdPhi code restricts dPhi to the pass. The window lies
+    inside one gate segment, so its usable intervals are the support's
+    usable intervals between its first and last sample.
     """
     from neurospatial.behavior._decision_windows import speed_stats
-    from neurospatial.behavior._kinematics import run_speed
 
     window_mask = support.interval_mask[window.start : max(window.stop - 1, 0)]
-    speed = run_speed(
+    head_sweep, speed = _measured_motion(
         times[window],
         positions[window],
         window_mask,
-        speed=None if motion.speed is None else motion.speed[window],
+        replace(
+            motion,
+            speed=None if motion.speed is None else motion.speed[window],
+            headings=None if motion.headings is None else motion.headings[window],
+        ),
+        None if turns is None else turns[window],
     )
     mean_speed, min_speed_value = speed_stats(speed)
-    return _summed_turning(turning[window]), mean_speed, min_speed_value
+    return head_sweep, mean_speed, min_speed_value
 
 
 @reads_pynapple_samples
@@ -1423,6 +1584,7 @@ def compute_vte_session(
     min_speed: float | None = None,
     speed: ArrayLike | None = None,
     headings: ArrayLike | None = None,
+    method: HeadingMethod = "adaptive_window",
     head_sweep_weight: float = 1.0,
     vte_threshold: float = 0.5,
     max_gap: float | None = DEFAULT_MAX_GAP,
@@ -1487,10 +1649,18 @@ def compute_vte_session(
         +π/2 = North; NaN where not observed), used instead of the direction
         of movement computed from ``positions``: for example the direction of
         your own smoothed velocity, or head direction from a head-mounted LED
-        or sensor. dPhi is estimated from it the same way, and samples slower
+        or sensor. It is used as Phi by either ``method``, and samples slower
         than ``min_speed`` still add no turn. Default: the direction of the
-        adaptive-window velocity (see Notes of
-        :func:`head_sweep_from_positions`).
+        velocity that ``method`` estimates.
+    method : {"adaptive_window", "line_fit"}, default="adaptive_window"
+        How the orientation of motion and its change are estimated (see
+        Notes of :func:`head_sweep_from_positions`). ``"adaptive_window"``
+        follows Papale et al. (2012) and the Redish lab's code and reproduces
+        published IdPhi, but its IdPhi depends on the camera's axes: compare
+        raw values only within one camera setup. ``"line_fit"`` is
+        neurospatial's own, rotation-invariant: the direction of a 0.1 s
+        Gaussian line-fit velocity, with IdPhi the sum of its changes; use it
+        to compare raw IdPhi across setups.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -1586,15 +1756,19 @@ def compute_vte_session(
     "turned back into the choice point", integrated |dPhi| "across the
     entire pass", and z-scored this IdPhi within session (zIdPhi). Their
     dPhi came from the lab's adaptive-window estimator, run over the whole
-    session and restricted to the pass; this function does the same (the
-    estimator and its properties, including the dependence on the camera's
-    axes, are in the Notes of :func:`head_sweep_from_positions`). Its
-    departures:
+    session and restricted to the pass; the default
+    ``method="adaptive_window"`` does the same, and ``method="line_fit"``
+    is neurospatial's rotation-invariant alternative (both, their sources
+    and their costs, including the adaptive window's dependence on the
+    camera's axes, are in the Notes of :func:`head_sweep_from_positions`).
+    Its departures:
 
     - Samples slower than ``min_speed`` add no turn; the lab's code had no
       speed gate. Without it tracking jitter at a pause scores as head
       sweeping: with 0.3 cm position jitter at 30 Hz, a still animal scored
       5 to 17 rad over 1.5 s against 3.5 to 4.9 rad for a real 8 cm scan.
+      The gate and ``mean_speed`` use the same speed, :func:`compute_speed`'s
+      over the pass's samples (or your ``speed``), with either method.
     - Each sample's ``|dPhi|`` is multiplied by the sample interval, so
       IdPhi is in radians; the lab summed rad/s. zIdPhi is unchanged.
     - The 0.5 cutoff (``vte_threshold``) and the optional blend with slowing
@@ -1714,10 +1888,11 @@ def compute_vte_session(
         headings=validated_motion(
             headings, name="headings", n_samples=len(times), call="compute_vte_session"
         ),
+        method=_validated_method(method, call="compute_vte_session"),
     )
     region_bins = env.bins_in_region(region)
     in_epochs = support.sample_in_epochs
-    turning = _gated_turning(times, positions, support.interval_mask, motion)
+    turns = _turns(times, positions, support.interval_mask, motion)
     measured: list[VTETrialResult] = []
     for index, trial in enumerate(trials):
         measured.append(
@@ -1731,7 +1906,7 @@ def compute_vte_session(
                 region_bins=region_bins,
                 in_epochs=in_epochs,
                 motion=motion,
-                turning=turning,
+                turns=turns,
             )
         )
 
@@ -1825,7 +2000,7 @@ def _measure_trial(
     region_bins: NDArray[np.int_],
     in_epochs: NDArray[np.bool_],
     motion: _Motion,
-    turning: NDArray[np.float64],
+    turns: NDArray[np.float64] | None,
 ) -> VTETrialResult:
     """Unscored metrics of one trial, or the status saying why it has none."""
     from neurospatial.behavior._decision_windows import first_entry, first_pass_stop
@@ -1876,7 +2051,7 @@ def _measure_trial(
             window_end=window_end,
         )
     head_sweep, mean_speed, min_observed_speed = _window_metrics(
-        times, positions, support, window, motion, turning
+        times, positions, support, window, motion, turns
     )
     return _unscored_trial(
         status="ok",

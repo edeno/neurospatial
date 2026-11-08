@@ -96,6 +96,22 @@ def capture_segmentation_outputs(pause, laps):
             region="target",
             trials=trials,
         ),
+        "compute_vte_trial[line_fit]": compute_vte_trial(
+            p.times,
+            p.positions,
+            start_time=98.5,
+            stop_time=100.5,
+            min_speed=5.0,
+            method="line_fit",
+        ),
+        "compute_vte_session[line_fit]": compute_vte_session(
+            p.env,
+            p.times,
+            p.positions,
+            region="target",
+            trials=trials,
+            method="line_fit",
+        ),
         "bin_sequence": p.env.bin_sequence(p.times, p.positions),
         "bin_sequence_per_sample": p.env.bin_sequence(
             p.times, p.positions, dedup=False
