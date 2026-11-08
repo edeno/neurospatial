@@ -9,7 +9,7 @@
   `object_vector_cell_significance` and
   `egocentric_object_vector_cell_significance` reject untuned cells at the
   rate of an exact test and are uniform (600-1400 simulated untuned cells
-  each). The place-cell rate of 7.25% seen once on 400 cells sharing one
+  each; head direction slightly above it, see below). The place-cell rate of 7.25% seen once on 400 cells sharing one
   trajectory was chance: 1400 cells on seven trajectories rejected 4.4%
   against 4.5% expected. No code changed.
 - `is_place_cell`, `is_spatial_view_cell`, `is_object_vector_cell` and
@@ -17,6 +17,11 @@
   information to reach `min_info`, which no untuned cell did: their
   false-positive rate is well below `alpha`. Their Notes now give the
   measured rates and how detection grows with peak rate.
+- `is_head_direction_cell` Notes: the shuffle verdict rejects slightly
+  more untuned cells than an exact test (5.2% of 10000 at 199 shifts, where
+  4.5% is exact). Excluding shifts shorter than `min_shift` causes part of
+  it; with `min_shift=0` the same cells rejected 4.8%. The default stays at
+  20 s.
 - `is_spatial_view_cell` Notes: with `gaze_model="fixed_distance"` a place
   cell passes as a spatial view cell (all 50 simulated place cells at a
   10 cm view distance); with the ray-cast gaze none did.

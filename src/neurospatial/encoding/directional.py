@@ -3186,6 +3186,24 @@ def is_head_direction_cell(
     only to the shuffle. Passing a keyword for the other mode with a value
     other than its default raises.
 
+    **Calibration (simulation).** Untuned Poisson cells firing 0.5-3 Hz in
+    10-minute explorations of a 1 m box, with movement heading as the
+    heading: of 10000 cells, 5.2% had ``p < 0.05`` with 199 shifts, where an
+    exact test rejects 4.5%, and the p-values were uniform to a KS test; the
+    verdict at its default 1000 shifts rejected 41 of 600 (6.8%, 5.0%
+    exact). Part of the excess comes from ``min_shift``: excluding the
+    shifts near zero leaves out the null values most like the observed one,
+    so the observed statistic looks a little more extreme, and the excess
+    grows with how long the heading stays correlated. With ``min_shift=0``
+    every shift of a constant-rate train is exchangeable with the observed
+    one, and the same 10000 cells rejected 4.8%. With a heading that
+    dwells near one direction (von Mises occupancy, κ = 1.5) and stays
+    correlated for about a second, 3.5-4.4% of 1000 Poisson, bursting or
+    slowly drifting untuned cells were rejected (199 shifts). The threshold
+    screen flagged none of 600 untuned cells. Of 20 cells with von Mises
+    tuning (κ = 1) on a 1 Hz baseline, the verdict found 2, 19 and 20 at
+    1.25, 1.6 and 2.5 Hz peaks (about 670-1000 spikes in 10 minutes).
+
     See Also
     --------
     head_direction_cell_significance : Population significance on raw arrays.
