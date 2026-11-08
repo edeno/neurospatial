@@ -431,7 +431,7 @@ a = rates_a.firing_rates[:, bins]
 b = rates_b.firing_rates[:, bins]
 across = np.corrcoef(a.T, b.T)[: bins.size, bins.size :]  # location in a by location in b
 
-distance = pairwise_distances(session.env.connectivity, bins)
+distance = pairwise_distances(session.env, bins)
 far = np.isfinite(distance) & (distance >= 30.0)  # beyond one field width, in cm
 
 same = np.nanmedian(np.diag(across))

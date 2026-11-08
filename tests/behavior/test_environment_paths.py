@@ -5,6 +5,8 @@ positions that stays inside the environment. Expected values come from the
 geometry of each environment, not from the code under test.
 """
 
+import itertools
+
 import networkx as nx
 import numpy as np
 import pytest
@@ -903,7 +905,7 @@ class TestBinGraphMetric:
         positions = np.array([[12.0, 13.0], [31.0, 44.0], [33.0, 46.0], [80.0, 90.0]])
         bins = divider_arena.bin_at(positions)
         expected = sum(
-            self._graph(divider_arena, a, b) for a, b in zip(bins[:-1], bins[1:])
+            self._graph(divider_arena, a, b) for a, b in itertools.pairwise(bins)
         )
         length = traveled_path_length(
             np.arange(4.0), positions, metric="bin_graph", env=divider_arena
@@ -918,7 +920,7 @@ class TestBinGraphMetric:
         actual = rng.uniform(1, 99, (50, 2))
         errors = decoding_error(divider_arena, decoded, actual, metric="bin_graph")
         a, b = divider_arena.bin_at(decoded), divider_arena.bin_at(actual)
-        expected = [self._graph(divider_arena, i, j) for i, j in zip(a, b)]
+        expected = [self._graph(divider_arena, i, j) for i, j in zip(a, b, strict=True)]
         np.testing.assert_allclose(errors, expected, rtol=1e-12)
 
     def test_region_goal_is_the_graph_distance_to_its_nearest_bin(self):

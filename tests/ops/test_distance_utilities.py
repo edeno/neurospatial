@@ -96,8 +96,8 @@ class TestDistanceToBasic:
 class TestDistanceToMetrics:
     """Test different distance metrics."""
 
-    def test_geodesic_is_the_octile_distance_on_an_open_grid(self, sample_2d_grid):
-        """On an 8-connected grid the geodesic is the octile staircase.
+    def test_bin_graph_is_the_octile_distance_on_an_open_grid(self, sample_2d_grid):
+        """On an 8-connected grid the bin graph is the octile staircase.
 
         Steps along an axis cost one bin and diagonal steps √2 bins, so the
         shortest path between bins ``(Δx, Δy)`` apart is
@@ -107,8 +107,12 @@ class TestDistanceToMetrics:
         """
         env = sample_2d_grid
         target = 0
-        dist_geo = env.distance_to(bins=[target], metric="geodesic")
+        dist_geo = env.distance_to(bins=[target], metric="bin_graph")
         dist_euc = env.distance_to(bins=[target], metric="euclidean")
+        # The any-angle geodesic of an open grid is the straight line.
+        assert_allclose(
+            env.distance_to(bins=[target], metric="geodesic"), dist_euc, rtol=1e-12
+        )
 
         offsets = np.abs(env.bin_centers - env.bin_centers[target])  # 1 cm bins
         long, short = offsets.max(axis=1), offsets.min(axis=1)
@@ -468,7 +472,7 @@ class TestDistanceUtilitiesIntegration:
         dist_wrapper = env.distance_to(bins=targets, metric="geodesic")
 
         # Using direct distance_field
-        dist_direct = distance_field(env.connectivity, sources=targets)
+        dist_direct = distance_field(env, sources=targets)
 
         assert_allclose(dist_wrapper, dist_direct, rtol=1e-10)
 
@@ -499,20 +503,26 @@ def test_every_bin_graph_distance_overestimates_by_at_most_the_octile_bound():
 
     # Sums of at most 50 steps of h and √2 h: rounding is ~1e-14.
     tolerance = {"rtol": 1e-12, "atol": 1e-12}
-    assert_allclose(env.distance_to(bins=[source]), octile, **tolerance)
-    assert_allclose(
-        geodesic_distance_matrix(env.connectivity)[source], octile, **tolerance
-    )
-    assert_allclose(distance_field(env.connectivity, [source]), octile, **tolerance)
+    graph = {"metric": "bin_graph"}
+    assert_allclose(env.distance_to(bins=[source], **graph), octile, **tolerance)
+    assert_allclose(geodesic_distance_matrix(env, **graph)[source], octile, **tolerance)
+    assert_allclose(distance_field(env, [source], **graph), octile, **tolerance)
     for target in (1, 57, 333, env.n_bins - 1):
-        assert env.distance_between(bins=[source, target]) == pytest.approx(
+        assert env.distance_between(bins=[source, target], **graph) == pytest.approx(
             octile[target], rel=1e-12
         )
     # Points anywhere inside two bins 10 and 4 bins apart get their centers'
     # distance, 2 (10 + 4 (√2 - 1)) = 23.31 cm, not the straight 21.54 cm.
     points = [[0.3, 1.7], [20.0 + 1.9, 8.0 + 0.2]]
-    assert env.distance_between(points=points) == pytest.approx(
+    assert env.distance_between(points=points, **graph) == pytest.approx(
         h * (10 + 4 * (np.sqrt(2.0) - 1.0)), rel=1e-12
+    )
+    # The any-angle geodesic has none of that bias: in this open room it is
+    # the straight line, between bin centers and between the points.
+    assert_allclose(env.distance_to(bins=[source]), euclid, **tolerance)
+    assert_allclose(geodesic_distance_matrix(env)[source], euclid, **tolerance)
+    assert env.distance_between(points=points) == pytest.approx(
+        np.hypot(21.9 - 0.3, 8.2 - 1.7), rel=1e-12
     )
 
     moved = euclid > 0

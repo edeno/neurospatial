@@ -413,10 +413,7 @@ class ObjectVectorCellModel:
         if self.metric == "geodesic":
             object_bins = geodesic_lookup_bins(env, objects)
             fields = np.stack(
-                [
-                    distance_field(env.connectivity, sources=[int(b)])
-                    for b in object_bins
-                ],
+                [distance_field(env, sources=[int(b)]) for b in object_bins],
                 axis=1,
             )
             fields.setflags(write=False)

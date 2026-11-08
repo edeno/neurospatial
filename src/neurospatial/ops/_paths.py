@@ -126,6 +126,11 @@ _GROW_EDGE_ENTRIES = 4_000_000
 # Coordinates of center differences held at once while building pair
 # tables, bounding that (targets, n_bins, n_dims) temporary.
 _PAIR_TABLE_VALUES = 4_000_000
+# Pairs per distinct end bin above which a pair query grows and keeps whole
+# fields instead of partial ones from both ends. At about two pairs per bin
+# the two cost the same (10,000 decoded pairs in a 2,500-bin room with
+# walls: 9.9 s and 11.3 s); four leaves a margin.
+_KEEP_FIELDS_PAIRS_PER_BIN = 4
 # Pairs whose segments are traced at once, bounding the probe arrays.
 _PAIR_CHUNK = 20_000
 # Multi-bin source sets whose fields are kept.
@@ -462,6 +467,31 @@ class _EnvironmentPaths(ABC):
     ) -> NDArray[np.float64]:
         """:meth:`from_bins` as a new array, exact at least up to ``limit``."""
 
+    def to_bins(
+        self, bins: NDArray[np.intp], *, limit: float = np.inf
+    ) -> NDArray[np.float64]:
+        """Distance from every bin center to each of ``bins``, one row each.
+
+        Row ``k`` is :meth:`from_bins` of ``[bins[k]]``: the length of each
+        bin's path toward ``bins[k]``, as grown from it.
+
+        Parameters
+        ----------
+        bins : ndarray of int, shape (n_targets,)
+            Valid bin indices.
+        limit : float, default=inf
+            Lengths above it are ``inf``.
+
+        Returns
+        -------
+        ndarray, shape (n_targets, n_bins)
+        """
+        bins = np.asarray(bins, dtype=np.intp)
+        out = np.empty((bins.size, self._n_bins))
+        for k, b in enumerate(bins):
+            out[k] = self.from_bins(np.array([b]), limit=limit)
+        return out
+
     def from_bins_at(
         self, source_bins: NDArray[np.intp], points: NDArray[np.float64]
     ) -> NDArray[np.float64]:
@@ -687,8 +717,9 @@ class _OpenPaths(_EnvironmentPaths):
         """
         from scipy.spatial import cKDTree
 
+        # The bound excludes distances equal to it; the limit includes them.
         reach, _ = cKDTree(self._centers[source_bins]).query(
-            self._centers, distance_upper_bound=limit
+            self._centers, distance_upper_bound=np.nextafter(limit, np.inf)
         )
         within = np.flatnonzero(reach <= limit)
         length, _, _ = self._grow(
@@ -696,6 +727,42 @@ class _OpenPaths(_EnvironmentPaths):
         )
         field: NDArray[np.float64] = length[0]
         return field
+
+    @override
+    def to_bins(
+        self, bins: NDArray[np.intp], *, limit: float = np.inf
+    ) -> NDArray[np.float64]:
+        bins = np.asarray(bins, dtype=np.intp)
+        out = np.empty((bins.size, self._n_bins))
+        fields = self._fields
+        if not np.isfinite(limit) and fields.n_kept + bins.size <= fields.limit:
+            # Every field fits in the cache: keep them for later queries.
+            fields.ensure(self, np.unique(bins))
+            out[:] = fields.length[fields.row_of_root[bins]]
+            return out
+        kept = np.flatnonzero(fields.row_of_root[bins] >= 0)
+        out[kept] = fields.length[fields.row_of_root[bins[kept]]]
+        grow = np.flatnonzero(fields.row_of_root[bins] < 0)
+        if np.isfinite(limit) and grow.size:
+            from scipy.spatial import cKDTree
+
+            # As :meth:`_limited_field`: only bins whose centers lie within
+            # the limit can be within it.
+            near = cKDTree(self._centers).query_ball_point(
+                self._centers[bins[grow]], r=limit
+            )
+        for lo in range(0, grow.size, self._batch):
+            rows = grow[lo : lo + self._batch]
+            stops = (
+                [np.asarray(near[k], dtype=np.intp) for k in range(lo, lo + rows.size)]
+                if np.isfinite(limit)
+                else None
+            )
+            out[rows] = self._grow(
+                list(bins[rows, None]), single_roots=True, stop_bins=stops
+            )[0]
+        out[out > limit] = np.inf
+        return out
 
     def costs_from_bins(
         self, source_bins: NDArray[np.intp], rate: NDArray[np.float64]
@@ -751,6 +818,19 @@ class _OpenPaths(_EnvironmentPaths):
             # differ near walls (each is the best Theta* finds, not always
             # the shortest), so the shorter one is the length either way.
             s, e, a, b = starts[rest], ends[rest], start_bins[rest], end_bins[rest]
+            # Both directions read the field of every bin at either end. When
+            # there are many more pairs than such bins (a long session) and
+            # their fields fit in the cache, grow each once in full and keep
+            # it, rather than growing partial fields from both ends; a bin's
+            # value does not depend on how far its field grew.
+            ends_of_pairs = np.unique(np.concatenate([a, b]))
+            fields = self._fields
+            missing = int(np.count_nonzero(fields.row_of_root[ends_of_pairs] < 0))
+            if (
+                rest.size >= _KEEP_FIELDS_PAIRS_PER_BIN * ends_of_pairs.size
+                and fields.n_kept + missing <= fields.limit
+            ):
+                fields.ensure(self, ends_of_pairs)
             out[rest] = np.minimum(self._toward(s, e, a, b), self._toward(e, s, b, a))
         return out
 
@@ -3666,6 +3746,18 @@ class _BinGraphPaths(_EnvironmentPaths):
         return self._nearest(source_bins, limit)[0]
 
     @override
+    def to_bins(
+        self, bins: NDArray[np.intp], *, limit: float = np.inf
+    ) -> NDArray[np.float64]:
+        from neurospatial.ops.distance import _dijkstra_blocks
+
+        bins = np.asarray(bins, dtype=np.intp)
+        out = np.empty((bins.size, self._n_bins))
+        for lo, lengths in _dijkstra_blocks(self._adjacency, bins, limit=limit):
+            out[lo : lo + len(lengths)] = lengths
+        return out
+
+    @override
     def costs_from_bins(
         self, source_bins: NDArray[np.intp], rate: NDArray[np.float64]
     ) -> NDArray[np.float64]:
@@ -3700,6 +3792,10 @@ class _BinGraphPaths(_EnvironmentPaths):
     ) -> NDArray[np.float64]:
         from neurospatial.ops.distance import _dijkstra_blocks
 
+        # The graph is undirected: search from whichever end has fewer
+        # distinct bins.
+        if np.unique(start_bins).size < np.unique(end_bins).size:
+            start_bins, end_bins = end_bins, start_bins
         roots, row = np.unique(end_bins, return_inverse=True)
         row = row.ravel()
         out = np.empty(start_bins.size)

@@ -421,7 +421,7 @@ class TestGeodesicDistanceTimeVarying:
                     continue
                 if target_bin not in cache:
                     cache[target_bin] = compute_distance_field(
-                        env.connectivity, sources=[target_bin]
+                        env, sources=[target_bin], metric="bin_graph"
                     )
                 distances[t, i] = cache[target_bin][pos_bin]
         return distances

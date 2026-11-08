@@ -2121,7 +2121,7 @@ def _largest_object_distance(
         object_bins = env.bin_at(np.asarray(object_positions).reshape(-1, 2))
         sources = [int(b) for b in object_bins if b >= 0]
         if sources:
-            field_ = distance_field(env.connectivity, sources=sources)
+            field_ = distance_field(env, sources=sources)
             reachable = field_[np.isfinite(field_)]
             if reachable.size:
                 return float(reachable.max())

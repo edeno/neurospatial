@@ -23,6 +23,38 @@
   bin centers on a track, and it works on egocentric polar environments.
 - `metric="geodesic"` on an egocentric polar environment still raises
   `CartesianOnlyError`; the message now suggests `metric="bin_graph"`.
+- `distance_field`, `pairwise_distances`, `geodesic_distance_matrix` and
+  `neighbors_within` take the environment as their first argument instead
+  of its graph, and `metric="geodesic"` (the default) now measures the
+  shortest path inside the environment at any angle, as the behavior
+  functions do: the straight line between bin centers when nothing is in the
+  way. Before, they walked the bin graph, which reads an oblique distance up
+  to 8.2% long on a square grid (15.5% on a hexagonal grid). The bin-graph
+  walk is `metric="bin_graph"` and gives exactly the old values. `weight=`
+  and `bin_centers=` are gone: lengths come from the environment, and edge
+  counts are `Environment.reachable_from(..., metric="hops")`. Geodesic
+  matrices are symmetric (the shorter of the paths grown from either bin)
+  and cost one any-angle field per bin, about 3.5 s for 2,500 open bins and
+  24 s with walls; `metric="bin_graph"` takes 0.6 s.
+- `geodesic_distance_between_points` is removed; use
+  `Environment.distance_between`.
+- `Environment.distance_between`, `Environment.distance_to` and
+  `Environment.reachable_from(metric="geodesic")` measure the any-angle path
+  too, and take `metric="bin_graph"` for the old walk. `distance_between`
+  with `points=` now measures between the points themselves rather than
+  their bins' centers. Its `edge_weight=` argument is replaced by `metric=`.
+- `graph_convolve` applies a callable kernel to the any-angle distance, so a
+  kernel of distance is round in an open arena; `metric="bin_graph"` gives
+  the old octagonal kernel.
+- `spatial_autocorrelation` on layouts without a regular grid (hexagonal
+  bins, meshes, tracks) groups bin pairs by the any-angle distance. Before,
+  the bin graph read distances on a hexagonal layout a median of 11.5% and
+  up to 15.5% long, so the radial profile's peak, and a grid spacing read
+  from it, sat that much too far out.
+- Distances that build on these functions follow them: the geodesic
+  `rate_map_centroid` and `field_shift_distance`, the geodesic place-cell and
+  object-vector-cell simulations, and the object distances behind
+  geodesic object-vector maps.
 
 ### Place fields: a field next to a split field is no longer lost
 

@@ -988,7 +988,8 @@ def test_held_out_laps_decode_to_the_animal(replay_analysis):
     guess, truth = np.concatenate(decoded_bins), np.concatenate(true_bins)
     on_track = truth >= 0
     guess, truth = guess[on_track], truth[on_track]
-    matrix = pairwise_distances(rec.env.connectivity, np.arange(rec.env.n_bins))
+    # The recorded errors were measured along the bin graph of the track.
+    matrix = pairwise_distances(rec.env, np.arange(rec.env.n_bins), metric="bin_graph")
     error = float(np.median(matrix[guess, truth]))
     rng = np.random.default_rng(2022)
     shuffled = float(np.median(matrix[guess, rng.permutation(truth)]))

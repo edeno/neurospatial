@@ -308,7 +308,7 @@ def rate_map_centroid(
 
         # distances[i, j]: graph distance from field bin i to candidate j,
         # 0 on the diagonal and inf between disconnected bins.
-        distances = pairwise_distances(env.connectivity, field_bins)
+        distances = pairwise_distances(env, field_bins)
         with np.errstate(invalid="ignore"):
             # A zero-rate bin with no path adds 0 * inf = NaN; a NaN cost, like
             # an infinite one, never wins.

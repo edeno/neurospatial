@@ -774,8 +774,10 @@ class TestPolarRaisesOnCartesianAssumingMethods:
     test_polar_lookup.py.
 
     Methods that operate purely on the connectivity graph (path_between,
-    reachable_from, neighbors, distance_between, distance_to(metric='geodesic'))
-    are safe on polar envs and must keep working.
+    reachable_from, neighbors, distance_between and distance_to with
+    metric='bin_graph') are safe on polar envs and must keep working. The
+    any-angle metric='geodesic' measures paths through allocentric space and
+    is refused.
     """
 
     @pytest.fixture
@@ -793,9 +795,15 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         expected = nx.shortest_path_length(
             polar_env.connectivity, start, end, weight="distance"
         )
-        assert polar_env.distance_between(bins=[start, end]) == pytest.approx(expected)
+        assert polar_env.distance_between(
+            bins=[start, end], metric="bin_graph"
+        ) == pytest.approx(expected)
         points = polar_env.bin_centers[[start, end]] + 0.01
-        assert polar_env.distance_between(points=points) == pytest.approx(expected)
+        assert polar_env.distance_between(
+            points=points, metric="bin_graph"
+        ) == pytest.approx(expected)
+        with pytest.raises(CartesianOnlyError, match="metric='bin_graph'"):
+            polar_env.distance_between(bins=[start, end])
 
     def test_distance_to_euclidean_raises_on_polar_env(self, polar_env):
         with pytest.raises(
@@ -804,9 +812,11 @@ class TestPolarRaisesOnCartesianAssumingMethods:
         ):
             polar_env.distance_to(bins=[0], metric="euclidean")
 
-    def test_distance_to_geodesic_works_on_polar_env(self, polar_env):
-        """Geodesic distance respects connectivity, so it's well-defined on polar."""
-        distances = polar_env.distance_to(bins=[0], metric="geodesic")
+    def test_distance_to_bin_graph_works_on_polar_env(self, polar_env):
+        """The bin graph runs between bin centers, so it's well-defined on polar."""
+        with pytest.raises(CartesianOnlyError, match="metric='bin_graph'"):
+            polar_env.distance_to(bins=[0], metric="geodesic")
+        distances = polar_env.distance_to(bins=[0], metric="bin_graph")
         assert distances.shape == (polar_env.n_bins,)
         # Distance from a bin to itself is zero; everything else is positive.
         assert distances[0] == 0.0
@@ -967,7 +977,8 @@ class TestPolarRaisesOnCartesianAssumingMethods:
             bins=covered
         )
         np.testing.assert_array_equal(
-            polar_env.distance_to(region="p"), polar_env.distance_to(bins=covered)
+            polar_env.distance_to(region="p", metric="bin_graph"),
+            polar_env.distance_to(bins=covered, metric="bin_graph"),
         )
 
     def test_polygon_regions_compare_angles_modulo_a_turn(self):
@@ -1198,12 +1209,8 @@ class TestPolarEgocentricAngularSeam:
 
     @staticmethod
     def _hop_distance_field(env, source_bin):
-        from neurospatial.ops.distance import distance_field
-
-        graph = env.connectivity.copy()
-        for u, v in graph.edges():
-            graph[u][v]["hop"] = 1.0
-        return distance_field(graph, sources=[int(source_bin)], weight="hop")
+        hops = nx.single_source_shortest_path_length(env.connectivity, int(source_bin))
+        return np.array([hops.get(b, np.inf) for b in range(env.n_bins)])
 
     @staticmethod
     def _ring_bins(env):
@@ -1299,7 +1306,7 @@ class TestPolarTypeAndGeometry:
         edges of length Delta_r = 10 each, so the geodesic distance is 40.
         """
         # Same angle (idx 0), distance idx 0 -> distance idx 4: nodes 0 and 32.
-        dist = polar_env.distance_to(bins=[0], metric="geodesic")
+        dist = polar_env.distance_to(bins=[0], metric="bin_graph")
         # Node 32 is r=45 at the same angle as node 0 (r=5).
         assert dist[32] == pytest.approx(40.0, rel=1e-9)
         # A pure angular hop from node 0 to node 1 equals the inner arc length.

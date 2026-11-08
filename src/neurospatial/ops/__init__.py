@@ -105,7 +105,6 @@ from neurospatial.ops.diffusion import _validate_occupancy as _validate_occupanc
 from neurospatial.ops.distance import (
     distance_field,
     euclidean_distance_matrix,
-    geodesic_distance_between_points,
     geodesic_distance_matrix,
     neighbors_within,
     pairwise_distances,
@@ -207,7 +206,6 @@ __all__ = [
     # Distance
     "distance_field",
     "euclidean_distance_matrix",
-    "geodesic_distance_between_points",
     "geodesic_distance_matrix",
     "neighbors_within",
     "pairwise_distances",

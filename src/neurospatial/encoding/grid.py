@@ -762,7 +762,7 @@ def _spatial_autocorrelation_graph(
     if spread > 0:
         valid_rates = (valid_rates - valid_rates.mean()) / spread
 
-    dist_matrix = pairwise_distances(env.connectivity, valid_bins)  # (n_valid, n_valid)
+    dist_matrix = pairwise_distances(env, valid_bins)  # (n_valid, n_valid)
 
     # Vectorized extraction of upper triangle (avoid nested loops)
     triu_indices = np.triu_indices(n_valid, k=1)

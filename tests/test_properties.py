@@ -197,7 +197,9 @@ class TestEnvironmentProperties:
         )
         assert env.n_bins >= 5
 
-        distances = geodesic_distance_matrix(env.connectivity)
+        # The bin graph is a metric; the any-angle search (Theta*) is not always
+        # the shortest path, so it need not satisfy the triangle inequality.
+        distances = geodesic_distance_matrix(env, metric="bin_graph")
 
         # Every triple at once: via[i, j, k] = d(i, j) + d(j, k).
         via = distances[:, :, None] + distances[None, :, :]
@@ -208,7 +210,9 @@ class TestEnvironmentProperties:
 
         source, target = (int(b) for b in rng.choice(env.n_bins, 2, replace=False))
         np.testing.assert_allclose(
-            distance_field(env.connectivity, [source]), distances[source], rtol=1e-12
+            distance_field(env, [source], metric="bin_graph"),
+            distances[source],
+            rtol=1e-12,
         )
         if nx.has_path(env.connectivity, source, target):
             reference = nx.shortest_path_length(

@@ -137,7 +137,7 @@ compute_spatial_rate(env, spike_times, times, positions, ...)
 env.occupancy(times, positions)
 env.smooth(field, bandwidth=bandwidth, mode="average")
 env.nearest_bin(positions)
-distance_field(env.connectivity, sources)
+distance_field(env, sources)
 ```
 
 This design decision ensures:

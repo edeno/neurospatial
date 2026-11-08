@@ -148,7 +148,9 @@ def test_polygon_region_matches_an_independent_shapely_oracle(env_with_regions):
 @pytest.mark.parametrize("name", ["reward", "zone"])
 def test_distance_to_region_is_zero_exactly_on_its_bins(env_with_regions, name):
     env = env_with_regions
-    distances = env.distance_to(region=name, metric="geodesic")
+    # Polar bins have no any-angle path; their bin graph is the path metric.
+    metric = "bin_graph" if env.coordinate_kind == "polar" else "geodesic"
+    distances = env.distance_to(region=name, metric=metric)
     np.testing.assert_array_equal(
         np.flatnonzero(distances == 0.0), env.bins_in_region(name)
     )

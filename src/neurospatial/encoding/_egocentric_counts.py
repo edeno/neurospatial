@@ -363,7 +363,7 @@ def _compute_object_coords(
                 continue
 
             # Get distance field from this object
-            dist_field = compute_distance_field(env.connectivity, sources=[obj_bin])
+            dist_field = compute_distance_field(env, sources=[obj_bin])
 
             # Vectorized lookup
             valid_bins = pos_bins[valid_pos_mask]

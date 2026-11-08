@@ -150,7 +150,6 @@ from neurospatial.ops import (
     _diffusion_apply_rtol,
     _regions_mask,
 )
-from neurospatial.ops.distance import geodesic_distance_between_points
 from neurospatial.ops.mapping import TieBreakStrategy
 from neurospatial.regions import Region, Regions
 
@@ -171,7 +170,7 @@ if TYPE_CHECKING:
     from neurospatial.layout import ScaleBarConfig
     from neurospatial.layout.base import LayoutEngine
     from neurospatial.ops import KernelMode
-    from neurospatial.ops._types import DistanceMetric, ResolvedBackend
+    from neurospatial.ops._types import DistanceMetric, PathMetric, ResolvedBackend
     from neurospatial.ops.diffusion import MRFBasis
     from neurospatial.ops.transforms import AffineND
 
@@ -1741,14 +1740,13 @@ class Environment(Generic[_C]):
         *,
         bins: Sequence[int] | NDArray[np.integer] | None = None,
         points: ArrayLike | None = None,
-        edge_weight: str | None = "distance",
+        metric: PathMetric = "geodesic",
     ) -> float:
-        """Geodesic distance between two bins or two points.
+        """Distance between two bins or two points, along a path inside the environment.
 
-        The distance is the length of the shortest path through the
-        connectivity graph, so it goes around walls and between maze arms the
-        way the animal can. Give the two ends either as bin indices or as
-        coordinates; points are first mapped to the bins that contain them.
+        The path goes around walls and between maze arms the way the animal
+        can. Give the two ends either as bin indices (measured between their
+        centers) or as coordinates.
 
         Parameters
         ----------
@@ -1758,15 +1756,18 @@ class Environment(Generic[_C]):
             Start and end coordinates, one row each, in the same coordinates
             and units as ``bin_centers``: (distance, angle) on an egocentric
             polar environment.
-        edge_weight : str or None, default="distance"
-            Edge attribute summed along the path. ``"distance"`` gives the
-            path length in the environment's units; None counts edges (hops).
+        metric : {"geodesic", "bin_graph"}, default="geodesic"
+            ``"geodesic"`` is the shortest path that stays inside the
+            environment, at any angle, between the two points themselves (or
+            the two bin centers): the straight line when nothing is in the
+            way. ``"bin_graph"`` walks the connections from the center of
+            the start's bin to the center of the end's bin; see Notes.
 
         Returns
         -------
         float
-            The path length, or ``np.inf`` when the two bins are in
-            disconnected parts of the graph.
+            The path length in the environment's units, or ``np.inf`` when
+            the two ends are in disconnected parts of the environment.
 
         Raises
         ------
@@ -1774,19 +1775,31 @@ class Environment(Generic[_C]):
             If neither or both of ``bins`` and ``points`` are given, or
             ``bins`` holds non-integers.
         ValueError
-            If there are not exactly two targets, or a point is outside the
-            environment or has NaN coordinates.
+            If there are not exactly two targets, a point is outside the
+            environment or has NaN coordinates, or ``metric`` is not
+            ``"geodesic"`` or ``"bin_graph"``.
         BinIndexOutOfRangeError
             If a bin index is outside ``[0, n_bins)``.
+        CartesianOnlyError
+            For ``metric="geodesic"`` on an egocentric polar environment,
+            whose bins are (distance, angle) in the animal's frame; use
+            ``metric="bin_graph"`` there.
 
         Notes
         -----
-        Distances run along the bin graph between bin centers. In an open arena
-        an oblique path on an 8-connected grid is a staircase of grid steps, up to
-        ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-        behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-        the any-angle path between positions instead, which equals the straight line
-        when nothing is in the way.
+        The geodesic length is the one the behavior functions measure with
+        ``metric="geodesic"``. It does not depend on the order of the two
+        ends: near a wall the any-angle search grows a path from each end and
+        keeps the shorter.
+
+        ``metric="bin_graph"`` is faster when many distances are needed, but
+        every point in a bin gets its bin center's distance, and an oblique
+        distance reads up to ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the
+        straight line on an 8-connected square grid, ``2 / sqrt(3)`` (about
+        1.155) on a hexagonal grid and about 1.128 on a 26-connected 3-D
+        grid. Between bin centers on a track it is exact. It works on
+        egocentric polar environments. Its length is the length of
+        :meth:`path_between`'s route.
 
         Examples
         --------
@@ -1794,17 +1807,46 @@ class Environment(Generic[_C]):
         >>> from neurospatial import Environment
         >>> x, y = np.meshgrid(np.arange(0.0, 10.0), np.arange(0.0, 10.0))
         >>> env = Environment.from_samples(np.c_[x.ravel(), y.ravel()], bin_size=2.0)
-        >>> path_cm = env.distance_between(points=[[1.0, 1.0], [9.0, 1.0]])
-        >>> bool(path_cm > 0)
+        >>> # Nothing in the way: the straight line between the two points.
+        >>> bool(
+        ...     env.distance_between(points=[[1.0, 1.0], [8.0, 5.0]]) == np.hypot(7, 4)
+        ... )
         True
         >>> start, end = env.bin_at(np.array([[1.0, 1.0], [9.0, 1.0]]))
-        >>> env.distance_between(bins=[start, end]) == path_cm
-        True
+        >>> env.distance_between(bins=[start, end])
+        8.0
 
         """
+        from neurospatial._validation import validate_choice
+
+        validate_choice(
+            metric,
+            ("geodesic", "bin_graph"),
+            name="metric",
+            owner="Environment.distance_between()",
+        )
         start, end = self._target_bins("distance_between()", bins, points, count=2)
-        return geodesic_distance_between_points(
-            self.connectivity, int(start), int(end), weight=edge_weight
+        if metric == "bin_graph":
+            try:
+                return float(
+                    nx.shortest_path_length(
+                        self.connectivity,
+                        source=int(start),
+                        target=int(end),
+                        weight="distance",
+                    )
+                )
+            except nx.NetworkXNoPath:
+                return float(np.inf)
+        from neurospatial.ops import _environment_paths
+
+        paths = _environment_paths(self, call="Environment.distance_between")
+        ends = np.array([start, end], dtype=np.intp)
+        if points is None:
+            return float(paths.between_bins(ends[:1], ends[1:])[0])
+        xy = np.asarray(points, dtype=np.float64).reshape(2, -1)
+        return float(
+            paths.between(xy[:1], xy[1:], start_bins=ends[:1], end_bins=ends[1:])[0]
         )
 
     @reads_pynapple_samples
@@ -4868,12 +4910,14 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Distances run along the bin graph between bin centers. In an open arena
-        an oblique path on an 8-connected grid is a staircase of grid steps, up to
-        ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-        behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-        the any-angle path between positions instead, which equals the straight line
-        when nothing is in the way.
+        The route is a chain of connected bins, so it is the bin-graph path,
+        not the any-angle path that :meth:`distance_between` measures. In an
+        open arena an oblique route is a staircase of grid steps whose length
+        (``distance_between(..., metric="bin_graph")``) is up to
+        ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line on an
+        8-connected square grid, ``2 / sqrt(3)`` (about 1.155) on a hexagonal
+        grid and about 1.128 on a 26-connected 3-D grid; on a track it runs
+        along the centerline and is exact.
 
         Examples
         --------
@@ -4920,10 +4964,15 @@ class Environment(Generic[_C]):
             covers, by the rule of :meth:`bins_in_region`: the bin that
             contains a point region, or the bins whose centers lie inside a
             polygon region or on its edge.
-        metric : {'euclidean', 'geodesic'}, default='geodesic'
-            ``'geodesic'`` follows the connectivity graph, so it goes around
-            walls; ``'euclidean'`` is the straight-line distance between bin
-            centers. Both are in the units of ``bin_centers``.
+        metric : {'geodesic', 'bin_graph', 'euclidean'}, default='geodesic'
+            ``'geodesic'`` is the shortest path from each bin center to the
+            nearest target center that stays inside the environment, at any
+            angle: it goes around walls, and in an open arena it is the
+            straight line. ``'bin_graph'`` walks the connections between bin
+            centers; it is faster but reads oblique distances long (see
+            Notes), and it works on polar environments. ``'euclidean'`` is
+            the straight-line distance between bin centers. All are in the
+            units of ``bin_centers``.
 
         Returns
         -------
@@ -4946,7 +4995,8 @@ class Environment(Generic[_C]):
         RegionNotFoundError
             If ``region`` is not in ``self.regions`` (a ``KeyError``).
         CartesianOnlyError
-            For ``metric="euclidean"`` on a polar environment.
+            For ``metric="euclidean"`` or ``metric="geodesic"`` on a polar
+            environment; use ``metric="bin_graph"`` there.
 
         See Also
         --------
@@ -4956,16 +5006,18 @@ class Environment(Generic[_C]):
 
         Notes
         -----
-        Distances run along the bin graph between bin centers. In an open arena
-        an oblique path on an 8-connected grid is a staircase of grid steps, up to
-        ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-        behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-        the any-angle path between positions instead, which equals the straight line
-        when nothing is in the way.
+        The geodesic field grows the any-angle path (Theta*) from the
+        targets, as the behavior functions do; each bin's value is the length
+        of its path toward the nearest target. It is kept, so asking again
+        is fast.
 
-        The geodesic metric runs Dijkstra's algorithm on the connectivity
+        ``metric='bin_graph'`` runs Dijkstra's algorithm on the connectivity
         graph, with each edge's ``"distance"`` (the physical distance between
-        bin centers) as its length.
+        bin centers) as its length. An oblique distance then reads up to
+        ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line on
+        an 8-connected square grid, ``2 / sqrt(3)`` (about 1.155) on a
+        hexagonal grid and about 1.128 on a 26-connected 3-D grid; on a
+        track it is exact between bin centers.
 
         A point target is the bin that contains it, so the distance to a point
         equals the distance to its bin.
@@ -4992,13 +5044,7 @@ class Environment(Generic[_C]):
         targets = self._target_bins(
             "distance_to()", bins, points, region=region, takes_region=True
         )
-        return _distance_to(
-            targets,
-            metric=metric,
-            bin_centers=self.bin_centers,
-            graph=self.connectivity,
-            coordinates=self._geometry.coordinates,
-        )
+        return _distance_to(self, targets, metric=metric)
 
     @keyword_hint()
     def reachable_from(
@@ -5007,7 +5053,7 @@ class Environment(Generic[_C]):
         bins: int | Sequence[int] | NDArray[np.integer] | None = None,
         points: ArrayLike | None = None,
         radius: int | float | None = None,
-        metric: Literal["hops", "geodesic"] = "hops",
+        metric: Literal["hops", "geodesic", "bin_graph"] = "hops",
     ) -> NDArray[np.bool_]:
         """Find all bins reachable from source within optional radius.
 
@@ -5029,12 +5075,19 @@ class Environment(Generic[_C]):
             Maximum distance/hops. If None, find all reachable bins in the
             same connected component.
             - For metric='hops': radius is maximum number of edges.
-            - For metric='geodesic': radius is maximum graph distance in
-              physical units.
-        metric : {'hops', 'geodesic'}, default='hops'
+            - For metric='geodesic' or 'bin_graph': radius is a maximum
+              path length in physical units.
+        metric : {'hops', 'geodesic', 'bin_graph'}, default='hops'
             Distance metric to use:
             - 'hops': Count graph edges (breadth-first search).
-            - 'geodesic': Sum edge distances in physical units (Dijkstra).
+            - 'geodesic': The shortest path from the start bin's center
+              that stays inside the environment, at any angle, as the
+              behavior functions measure it (a round neighborhood in an open
+              arena).
+            - 'bin_graph': Sum edge distances along the connections between
+              bin centers (Dijkstra). An oblique distance reads up to about
+              1.082 times the straight line on a square grid (1.155
+              hexagonal, 1.128 in 3-D), so the neighborhood is an octagon.
 
         Returns
         -------
@@ -5052,7 +5105,10 @@ class Environment(Generic[_C]):
         ValueError
             If more than one bin or point is given, the point is outside the
             environment or has NaN coordinates, ``radius`` is negative, or
-            ``metric`` is not ``'hops'`` or ``'geodesic'``.
+            ``metric`` is not ``'hops'``, ``'geodesic'`` or ``'bin_graph'``.
+        CartesianOnlyError
+            For ``metric='geodesic'`` with a radius on an egocentric polar
+            environment.
 
         See Also
         --------
@@ -5063,13 +5119,15 @@ class Environment(Generic[_C]):
         -----
         **Algorithm details**:
         - metric='hops': Uses breadth-first search (BFS) to specified depth.
-        - metric='geodesic': Uses Dijkstra's algorithm with distance cutoff.
+        - metric='geodesic': Grows the any-angle field only through the bins
+          whose centers lie within the radius.
+        - metric='bin_graph': Uses Dijkstra's algorithm with distance cutoff.
 
         **Performance**:
         - With radius=None: O(V + E) where V=bins, E=edges
         - With radius: Depends on local graph density, typically much faster
 
-        The geodesic metric uses the 'distance' attribute on graph edges,
+        The bin-graph metric uses the 'distance' attribute on graph edges,
         which represents the Euclidean distance between bin centers.
 
         Examples
@@ -5089,9 +5147,7 @@ class Environment(Generic[_C]):
 
         """
         (start,) = self._target_bins("reachable_from()", bins, points, count=1)
-        return _reachable_from(
-            self.connectivity, int(start), radius=radius, metric=metric
-        )
+        return _reachable_from(self, int(start), radius=radius, metric=metric)
 
     def components(
         self,

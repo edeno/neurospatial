@@ -47,15 +47,16 @@ def test_points_queries_wrap_whole_turns(build, turns):
     for index, center in enumerate(env.bin_centers):
         wrapped = center + np.array([0.0, turns * TURN])
         np.testing.assert_array_equal(
-            env.distance_to(points=[wrapped]), env.distance_to(bins=[index])
+            env.distance_to(points=[wrapped], metric="bin_graph"),
+            env.distance_to(bins=[index], metric="bin_graph"),
         )
 
 
 def test_the_seam_angle_is_one_direction_on_a_full_circle():
     env = _circle()
     np.testing.assert_array_equal(
-        env.distance_to(points=[[15.0, np.pi]]),
-        env.distance_to(points=[[15.0, -np.pi]]),
+        env.distance_to(points=[[15.0, np.pi]], metric="bin_graph"),
+        env.distance_to(points=[[15.0, -np.pi]], metric="bin_graph"),
     )
 
 
@@ -72,7 +73,7 @@ def test_an_excluded_sector_stays_outside_a_partial_window():
     env = _frontal()
     for angle in (np.pi, -3 * np.pi / 4, np.pi + TURN):
         with pytest.raises(ValueError, match="outside the environment"):
-            env.distance_to(points=[[15.0, angle]])
+            env.distance_to(points=[[15.0, angle]], metric="bin_graph")
 
 
 def _containing_bin(env: Environment, distance: float, angle: float) -> int:

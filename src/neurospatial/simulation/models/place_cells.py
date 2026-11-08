@@ -352,7 +352,7 @@ class PlaceCellModel:
                 fix="simulate on the allocentric environment the animal moves in",
             )
             center_bin = int(geodesic_lookup_bins(env, center[None, :])[0])
-            distances = distance_field(env.connectivity, sources=[center_bin])
+            distances = distance_field(env, sources=[center_bin])
             distances.setflags(write=False)
         object.__setattr__(self, "_distance_field", distances)
 

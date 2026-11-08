@@ -113,7 +113,7 @@ env = Environment.from_samples(trajectory_data, bin_size=2.5)
 goal_bin = 42
 
 # Compute distance field (geodesic distances from goal)
-distances = distance_field(env.connectivity, sources=[goal_bin])
+distances = distance_field(env, sources=[goal_bin])
 
 # Compute gradient (edge field pointing toward/away from goal)
 grad_distances = gradient(env, distances)
@@ -234,7 +234,9 @@ print(np.mean(laplacian_field[interior]))  # 4.0: ∇²(x² + y²)
 
 ### Use `distance_field()` When:
 
-- You need **geodesic distances** from goal locations or boundaries
+- You need **geodesic distances** (the shortest path inside the environment)
+  from goal locations or boundaries; `metric="bin_graph"` gives the faster
+  walk between bin centers
 - You're computing reward fields or navigation metrics
 - You don't need flow or gradient information
 
@@ -256,7 +258,7 @@ env = env.with_metadata(units="cm")
 goal_bin = env.bin_at(np.array([[50.0, 50.0]]))[0]
 
 # Step 1: Compute distance field from goal
-distances = distance_field(env.connectivity, sources=[goal_bin])
+distances = distance_field(env, sources=[goal_bin])
 
 # Step 2: Compute gradient (direction to goal)
 grad_distances = gradient(env, distances)
@@ -425,7 +427,7 @@ def plot_edge_field(edge_field, env, ax=None, cmap='RdBu_r', vmin=None, vmax=Non
     return ax
 
 # Example: visualize gradient field
-distances = distance_field(env.connectivity, sources=[goal_bin])
+distances = distance_field(env, sources=[goal_bin])
 grad_distances = gradient(env, distances)
 
 plot_edge_field(grad_distances, env)
@@ -466,5 +468,5 @@ plt.show()
 - `neurospatial.ops.divergence(env, edge_field)` - Compute divergence (edge → scalar field)
 - `env.get_differential_operator()` - Cached differential operator method
 - `env.get_divergence_operator()` - Cached divergence operator that `divergence` applies
-- `neurospatial.ops.distance_field(graph, sources)` - Multi-source geodesic distances
+- `neurospatial.ops.distance_field(env, sources)` - Multi-source geodesic distances
 - `env.smooth(field, bandwidth=..., mode=...)` - Diffusion smoothing on the graph

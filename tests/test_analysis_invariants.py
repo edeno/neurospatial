@@ -113,11 +113,13 @@ def test_chained_coordinate_changes_preserve_queries_and_occupancy(
     )
     moved = translate(3.0, 2.0)(transform(points))
     np.testing.assert_array_equal(shifted.bin_at(moved), original_bins)
-    np.testing.assert_allclose(
-        distance_field(shifted.connectivity, [0]),
-        distance_field(env.connectivity, [0]) * scale,
-        atol=1e-12,
-    )
+    for metric in ("geodesic", "bin_graph"):
+        np.testing.assert_allclose(
+            distance_field(shifted, [0], metric=metric),
+            distance_field(env, [0], metric=metric) * scale,
+            atol=1e-12,
+            err_msg=metric,
+        )
     times = np.arange(len(points), dtype=float) * 0.1
     np.testing.assert_allclose(
         shifted.occupancy(times, moved), env.occupancy(times, points)
