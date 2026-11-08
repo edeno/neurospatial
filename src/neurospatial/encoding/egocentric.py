@@ -3825,6 +3825,15 @@ def is_object_vector_cell(
     belong only to the shuffle; passing one with a value other than its
     default with ``criterion="threshold"`` raises.
 
+    **Calibration (simulation).** Untuned Poisson cells firing 0.5-3 Hz in
+    10-minute explorations of a 1 m box with the object at its center: the
+    p-values of :func:`object_vector_cell_significance` were uniform, and 23 of 600 (3.8%)
+    fell below 0.05 with 199 shifts, where an exact test rejects 4.5%. No
+    untuned cell passed the verdict (0 of 200). Of 20 allocentric
+    object-vector cells (field 20 ± 5 cm from the object, 0.1 Hz
+    baseline), the verdict found 0, 18 and 20 at 2.5, 5 and 10 Hz peaks (about
+    110, 170 and 290 spikes).
+
     See Also
     --------
     object_vector_cell_significance : Population significance on raw arrays.
@@ -4113,6 +4122,15 @@ def is_egocentric_object_vector_cell(
     Results keep no raw arrays or recompute closures. Shuffle keywords
     belong only to the shuffle; passing one with a value other than its
     default with ``criterion="threshold"`` raises.
+
+    **Calibration (simulation).** Untuned Poisson cells firing 0.5-3 Hz in
+    10-minute explorations of a 1 m box with the object at its center: the
+    p-values of :func:`egocentric_object_vector_cell_significance` were uniform, and 30 of 600 (5.0%)
+    fell below 0.05 with 199 shifts, where an exact test rejects 4.5%. No
+    untuned cell passed the verdict (0 of 200). Of 20 egocentric
+    object-vector cells (field 20 ± 5 cm from the object, 0.1 Hz
+    baseline), the verdict found 0, 20 and 20 at 2.5, 5 and 10 Hz peaks (about
+    110, 170 and 290 spikes).
 
     See Also
     --------

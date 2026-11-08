@@ -1312,13 +1312,27 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         compares ``T / φ`` with χ² on 2 degrees of freedom.
 
         In simulated 10-minute open-field and 50-lap linear-track sessions,
-        untuned cells were rejected at α = 0.05 in 4-5% of Poisson cells,
-        4-6% of cells firing geometric bursts of mean 1.5-4 spikes (13-69%
-        without the correction) and 0-1% of cells whose rate drifts on a
-        30-120 s time scale (6-25% without, so the correction is conservative
-        for drift). Detection of tuned cells (κ = 0.5-2, bursting or not)
-        was unchanged. Below 50 spikes a few bursts are too few independent
-        events to estimate ``φ``, so the p-value is NaN.
+        untuned cells were rejected at α = 0.05 in 4-5% of Poisson cells
+        and 4-6% of cells firing geometric bursts of mean 1.5-4 spikes
+        (13-69% without the correction). Detection of tuned cells
+        (κ = 0.5-2, bursting or not) was unchanged. Below 50 spikes a few
+        bursts are too few independent events to estimate ``φ``, so the
+        p-value is NaN.
+
+        With a heading that diffuses and returns toward one direction (von
+        Mises occupancy, κ = 1.5, correlated for about a second), 1600
+        untuned cells of each kind on 16 ten-minute paths were rejected at
+        α = 0.05 in 3.7% of Poisson cells (``φ`` is floored at 1, so the
+        test is slightly conservative for them), 5.3% of cells firing bursts
+        of 2.5 spikes (48% without the correction) and 4.8-5.9% of cells
+        whose rate drifts over 30-120 s (22-25% without), with uniform
+        p-values. Drift is corrected well while the heading's
+        autocorrelation stays positive. When it turns negative, as for
+        movement heading in a walled box, where reflections off the walls
+        reverse the heading, the window counts only the positive part and
+        the correction overshoots: of 600 cells drifting over 60 s, 0.5%
+        were rejected (17% without), so the test is conservative for drift
+        there.
 
         **Remaining assumptions.** The test targets one preferred direction
         and has little power for bimodal tuning. With many spikes even weak
@@ -3171,6 +3185,24 @@ def is_head_direction_cell(
     Threshold keywords belong only to the screen; shuffle keywords belong
     only to the shuffle. Passing a keyword for the other mode with a value
     other than its default raises.
+
+    **Calibration (simulation).** Untuned Poisson cells firing 0.5-3 Hz in
+    10-minute explorations of a 1 m box, with movement heading as the
+    heading: of 10000 cells, 5.2% had ``p < 0.05`` with 199 shifts, where an
+    exact test rejects 4.5%, and the p-values were uniform to a KS test; the
+    verdict at its default 1000 shifts rejected 41 of 600 (6.8%, 5.0%
+    exact). Part of the excess comes from ``min_shift``: excluding the
+    shifts near zero leaves out the null values most like the observed one,
+    so the observed statistic looks a little more extreme, and the excess
+    grows with how long the heading stays correlated. With ``min_shift=0``
+    every shift of a constant-rate train is exchangeable with the observed
+    one, and the same 10000 cells rejected 4.8%. With a heading that
+    dwells near one direction (von Mises occupancy, κ = 1.5) and stays
+    correlated for about a second, 3.5-4.4% of 1000 Poisson, bursting or
+    slowly drifting untuned cells were rejected (199 shifts). The threshold
+    screen flagged none of 600 untuned cells. Of 20 cells with von Mises
+    tuning (κ = 1) on a 1 Hz baseline, the verdict found 2, 19 and 20 at
+    1.25, 1.6 and 2.5 Hz peaks (about 670-1000 spikes in 10 minutes).
 
     See Also
     --------

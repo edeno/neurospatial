@@ -79,6 +79,43 @@ give the measured rates:
   too small to be a field). This is neurospatial's own construction; the closest published
   method is the `MapStats` subfield rule.
 
+### Cell-type verdicts: measured false-positive rates and power
+
+- The circular-shift p-values of `place_cell_significance`,
+  `head_direction_cell_significance`, `spatial_view_cell_significance`,
+  `object_vector_cell_significance` and
+  `egocentric_object_vector_cell_significance` reject untuned cells at the
+  rate of an exact test and are uniform (600-1400 simulated untuned cells
+  each; head direction slightly above it, see below). The place-cell rate of 7.25% seen once on 400 cells sharing one
+  trajectory was chance: 1400 cells on seven trajectories rejected 4.4%
+  against 4.5% expected. No code changed.
+- `is_place_cell`, `is_spatial_view_cell`, `is_object_vector_cell` and
+  `is_egocentric_object_vector_cell` also need the bias-corrected
+  information to reach `min_info`, which no untuned cell did: their
+  false-positive rate is well below `alpha`. Their Notes now give the
+  measured rates and how detection grows with peak rate.
+- `is_head_direction_cell` Notes: the shuffle verdict rejects slightly
+  more untuned cells than an exact test (5.2% of 10000 at 199 shifts, where
+  4.5% is exact). Excluding shifts shorter than `min_shift` causes part of
+  it; with `min_shift=0` the same cells rejected 4.8%. The default stays at
+  20 s.
+- `is_spatial_view_cell` Notes: with `gaze_model="fixed_distance"` a place
+  cell passes as a spatial view cell (all 50 simulated place cells at a
+  10 cm view distance); with the ray-cast gaze none did.
+- `DirectionalRateResult.tuning_pvalue` Notes: the false-positive rate for
+  cells whose rate drifts slowly was given as 0-1%. It is about 5% when the
+  heading diffuses smoothly, and 0.5% (conservative) for movement heading
+  in a walled box, where wall reflections make the heading autocorrelation
+  turn negative.
+- `SpatialRatesResult.label_cell_types` Notes: untuned cells are labeled
+  grid in about 2% of cases and border in 12-20%, but 0-63% from one
+  session to the next, because an untuned cell's border score sits at the
+  session's `untuned_border_score`.
+- `spatial_information_bias` Notes record its agreement with the
+  information of simulated untuned cells: within 1 standard error at 1000
+  spikes for both kernel estimators and a fixed-penalty GAM, and within 4%
+  at 100 spikes.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then
