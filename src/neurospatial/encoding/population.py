@@ -342,7 +342,7 @@ def population_coverage(
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
-    subfields: Literal["core"] | None = "core",
+    subfields: Literal["core", "watershed"] | None = "core",
     n_jobs: int = 1,
 ) -> PopulationCoverageResult:
     r"""Compute spatial coverage of a place cell population.
@@ -376,10 +376,11 @@ def population_coverage(
         Optional cutoff on the unweighted mean of non-NaN spatial-bin rates
         (Hz), passed to ``detect_place_fields``. The default disables exclusion.
         This is not a recording-time mean and does not identify cell type.
-    subfields : {"core"} or None, default="core"
+    subfields : {"core", "watershed"} or None, default="core"
         How to separate two fields that merge at ``threshold``: ``"core"``
-        is the FMAToolbox ``MapStats`` rule, ``None`` does not separate
-        them. Passed to `detect_place_fields()`.
+        is the FMAToolbox ``MapStats`` rule, ``"watershed"`` divides them at
+        the valley between them, ``None`` does not separate them. Passed to
+        `detect_place_fields()`.
     n_jobs : int, default=1
         Number of parallel jobs for per-neuron place-field detection. Use
         ``-1`` for all CPUs. ``1`` means sequential processing (no joblib

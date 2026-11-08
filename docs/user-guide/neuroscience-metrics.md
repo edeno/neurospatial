@@ -82,9 +82,14 @@ bandwidth=rates.bandwidth)`.
 - `max_mean_rate`: Optional upper bound on the unweighted mean of non-NaN spatial-bin rates
   (default `np.inf`, disabled). This is not spike count divided by recording time,
   and does not identify interneurons or another cell type.
-- `subfields`: How to separate two fields that merge at the threshold
-  (default `"core"`, the subfield rule of FMAToolbox and neurocode `MapStats`;
-  `None` does not separate them)
+- `subfields`: How to separate two fields that merge at the threshold.
+  `"core"` (default) is the subfield rule of FMAToolbox and neurocode
+  `MapStats`. It finds both fields, but the weaker one can grow through the
+  stronger one's edge and around it: for a 10 Hz and a 3.3 Hz field 24 cm
+  apart, the weaker field gets 184 bins and a centroid 12 cm toward the
+  stronger one. `"watershed"` keeps the same fields and divides them at the
+  valley between them, each ending at 20% of its own peak (82 bins, centroid
+  within 1.5 cm of the true center). `None` does not separate them.
 - `min_peak_rate`: The smallest peak that starts a field (default 1 Hz, the
   `minPeak` of FMAToolbox and neurocode `MapStats` and opexebo; neurocode's
   1-D `findPlaceFieldsAvg1D` uses 2 Hz)
