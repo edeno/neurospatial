@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Place fields: a watershed way to split touching fields
+
+- **Breaking:** `detect_place_fields`, `has_place_field`,
+  `SpatialRateResult.has_place_field` and `population_coverage` take
+  `subfields="core" | None` in place of `detect_subfields=True | False`.
+  `"core"` (the default) is the FMAToolbox `MapStats` subfield rule, as
+  before; `None` does not separate merged fields. The old name is gone.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then

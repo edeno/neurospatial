@@ -24,7 +24,7 @@ def _grid(*, diagonal: bool, shape: tuple[int, ...] = (2, 2), arena=None):
 
 def _assert_fields(env: Environment, rates: np.ndarray, expected: list[list[int]]):
     """Fields of an unsmoothed map; a lone bin is too small to be a field."""
-    result = detect_place_fields(env, rates, bandwidth=0.0, detect_subfields=False)
+    result = detect_place_fields(env, rates, bandwidth=0.0, subfields=None)
     assert len(result) == len(expected)
     for field, bins in zip(result, expected, strict=True):
         assert_array_equal(field, bins)
@@ -123,6 +123,6 @@ def test_subfield_discrimination_uses_graph_connections():
     """Diagonal peaks stay connected when applying higher thresholds."""
     env = _grid(diagonal=True)
     rates = np.array([10.0, 3.0, 3.0, 9.0])
-    result = detect_place_fields(env, rates, bandwidth=0.0, detect_subfields=True)
+    result = detect_place_fields(env, rates, bandwidth=0.0, subfields="core")
     assert len(result) == 1
     assert_array_equal(result[0], [0, 1, 2, 3])

@@ -37,7 +37,7 @@ rates = compute_spatial_rate(env, spike_times, times, positions)
 fields = detect_place_fields(env, rates,
     threshold=0.2,              # 20% of each field's peak rate
     max_mean_rate=np.inf,       # Default: no rate-based exclusion
-    detect_subfields=True       # Discriminate coalescent fields
+    subfields="core"            # Separate fields that merge (MapStats rule)
 )
 
 # Result: iterable PlaceFieldsResult with bin arrays and optional exclusion metadata
@@ -82,8 +82,9 @@ bandwidth=rates.bandwidth)`.
 - `max_mean_rate`: Optional upper bound on the unweighted mean of non-NaN spatial-bin rates
   (default `np.inf`, disabled). This is not spike count divided by recording time,
   and does not identify interneurons or another cell type.
-- `detect_subfields`: Enable subfield discrimination (default True, following
-  FMAToolbox and neurocode `MapStats`)
+- `subfields`: How to separate two fields that merge at the threshold
+  (default `"core"`, the subfield rule of FMAToolbox and neurocode `MapStats`;
+  `None` does not separate them)
 - `min_peak_rate`: The smallest peak that starts a field (default 1 Hz, the
   `minPeak` of FMAToolbox and neurocode `MapStats` and opexebo; neurocode's
   1-D `findPlaceFieldsAvg1D` uses 2 Hz)
@@ -1299,7 +1300,7 @@ rates = compute_spatial_rate(env, spike_times, times, positions, min_occupancy=0
 firing_rate = rates.firing_rate
 
 # 2. Detect place fields
-fields = detect_place_fields(env, rates, detect_subfields=True)
+fields = detect_place_fields(env, rates, subfields="core")
 print(f"Detected {len(fields)} place fields")
 
 # 3. One row per field: its area (cm^2), peak rate (Hz) and rate-weighted

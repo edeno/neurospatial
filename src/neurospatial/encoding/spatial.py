@@ -68,7 +68,7 @@ from neurospatial._results import (
 )
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._validation import refuse_none_thresholds
+from neurospatial._validation import refuse_none_thresholds, validate_choice
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
     BandwidthRule,
@@ -132,9 +132,11 @@ PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
         "min_peak_rate": 1.0,
         "min_secondary_peak_fraction": 0.0,
         "max_mean_rate": np.inf,
-        "detect_subfields": True,
+        "subfields": "core",
     }
 )
+# The ways detect_place_fields separates fields that merge at the threshold.
+_SUBFIELD_RULES = ("core", None)
 # Statistics recomputed from every shifted spike train, in result column order.
 _CELL_TYPE_STATISTICS = ("spatial_information", "grid_score", "border_score")
 _CELL_TYPE_STATISTIC_UNITS = MappingProxyType(
@@ -443,8 +445,8 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             ``firing_rate`` (Hz; NaN where the map is unsupported). One
             ``field`` column suffices because fields are disjoint: detection
             assigns each bin to at most one field, and a coalescent field
-            (``detect_subfields``) replaces the region it was found in rather
-            than nesting inside it. Select ``df[df["field"] == k]`` for the
+            (``subfields``) replaces the region it was found in rather than
+            nesting inside it. Select ``df[df["field"] == k]`` for the
             bins of field ``k``. ``df.attrs`` holds ``units`` (per column),
             ``bandwidth`` and ``excluded_reason``. :meth:`fields_table` has
             one row per field.
@@ -2148,7 +2150,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         min_peak_rate: float = 1.0,
         min_secondary_peak_fraction: float = 0.0,
         max_mean_rate: float = np.inf,
-        detect_subfields: bool = True,
+        subfields: Literal["core"] | None = "core",
     ) -> bool:
         """Detect whether the rate map has a place field; this is not a cell-type verdict.
 
@@ -2179,9 +2181,10 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             Optional upper bound on the unweighted mean of non-NaN spatial-bin
             rates (Hz). The default disables exclusion. This is not the
             recording-time mean firing rate and does not identify cell type.
-        detect_subfields : bool, default=True
-            If True, separate two fields that merge at ``threshold`` (the
-            FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
+        subfields : {"core"} or None, default="core"
+            How to separate two fields that merge at ``threshold``:
+            ``"core"`` is the FMAToolbox ``MapStats`` rule, ``None`` does
+            not separate them (see :func:`detect_place_fields`).
 
         Returns
         -------
@@ -2218,7 +2221,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             min_peak_rate=min_peak_rate,
             min_secondary_peak_fraction=min_secondary_peak_fraction,
             max_mean_rate=max_mean_rate,
-            detect_subfields=detect_subfields,
+            subfields=subfields,
         )
         return len(fields) > 0
 
@@ -5896,7 +5899,7 @@ def detect_place_fields(
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
-    detect_subfields: bool = True,
+    subfields: Literal["core"] | None = "core",
 ) -> PlaceFieldsResult:
     """Segment a rate map into place fields around successive peaks.
 
@@ -5952,11 +5955,15 @@ def detect_place_fields(
         returns no fields and no warning; ``excluded_reason`` is
         ``"mean_rate_above_threshold"``. This is not the recording-time mean
         firing rate and does not identify cell type.
-    detect_subfields : bool, default=True
-        If True, separate two fields that merge at the ``threshold`` level,
-        with the rule of FMAToolbox ``MapStats`` [2]_: when the field's core
-        is less than half the field, the core is the field and the rest is
-        searched again from its own peak (see Notes, step 4).
+    subfields : {"core"} or None, default="core"
+        How to separate two fields that merge at the ``threshold`` level
+        (see Notes, step 4).
+
+        - ``"core"``: the rule of FMAToolbox ``MapStats`` [2]_. When the
+          field's core is less than half the field, the core is the field
+          and the rest is searched again from its own peak.
+        - ``None``: no separation. A field is the whole connected region at
+          ``threshold`` times its peak.
 
     Returns
     -------
@@ -5990,7 +5997,7 @@ def detect_place_fields(
        also fail.
     3. **Field**: the bins connected to the peak through ``env.connectivity``
        whose rate is at least ``threshold`` times this peak.
-    4. **Coalescent fields**: with ``detect_subfields``, repeat step 3 on the
+    4. **Coalescent fields**: with ``subfields="core"``, repeat step 3 on the
        map minus the field's floor ``m = threshold * peak``, at ``threshold``
        of the remaining height: the core is the connected region above
        ``m + threshold * (peak - m)`` (0.36 of the peak at the default 0.2).
@@ -6171,6 +6178,7 @@ def detect_place_fields(
         min_peak_rate=min_peak_rate,
         min_secondary_peak_fraction=min_secondary_peak_fraction,
         bandwidth=bandwidth,
+        subfields=subfields,
     )
     searches = [
         _search_place_fields(
@@ -6180,7 +6188,7 @@ def detect_place_fields(
             min_peak_rate=min_peak_rate,
             min_secondary_peak_fraction=min_secondary_peak_fraction,
             max_mean_rate=max_mean_rate,
-            detect_subfields=detect_subfields,
+            subfields=subfields,
         )
         for rate in rates
     ]
@@ -6193,8 +6201,12 @@ def _check_place_field_arguments(
     min_peak_rate: float,
     min_secondary_peak_fraction: float,
     bandwidth: float,
+    subfields: object,
 ) -> None:
     """Refuse invalid :func:`detect_place_fields` arguments."""
+    validate_choice(
+        subfields, _SUBFIELD_RULES, name="subfields", owner="detect_place_fields()"
+    )
     if not 0 < threshold < 1:
         msg = f"threshold must be in (0, 1), got {threshold}"
         raise ValueError(msg)
@@ -6251,7 +6263,7 @@ def _search_place_fields(
     min_peak_rate: float,
     min_secondary_peak_fraction: float,
     max_mean_rate: float,
-    detect_subfields: bool,
+    subfields: Literal["core"] | None,
 ) -> _FieldSearch:
     """Segment one validated rate map into candidate fields around its peaks."""
 
@@ -6290,7 +6302,7 @@ def _search_place_fields(
         # NaN compares False, so assigned and missing bins are excluded.
         floor = peak_rate * threshold
         field_bins = _seed_component(peak_idx, remaining >= floor, env)
-        if detect_subfields:
+        if subfields == "core":
             # FMAToolbox MapStats: the same search on the map minus the floor.
             core_level = floor + (peak_rate - floor) * threshold
             core = _seed_component(peak_idx, remaining >= core_level, env)
@@ -6368,7 +6380,7 @@ def has_place_field(
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
-    detect_subfields: bool = True,
+    subfields: Literal["core"] | None = "core",
     min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
@@ -6452,9 +6464,10 @@ def has_place_field(
         returns no fields and no warning; ``excluded_reason`` is
         ``"mean_rate_above_threshold"``. This is not the recording-time mean
         firing rate and does not identify cell type.
-    detect_subfields : bool, default=True
-        If True, separate two fields that merge at ``threshold`` (the
-        FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
+    subfields : {"core"} or None, default="core"
+        How to separate two fields that merge at ``threshold``: ``"core"``
+        is the FMAToolbox ``MapStats`` rule, ``None`` does not separate
+        them (see :func:`detect_place_fields`).
 
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; bins below the
@@ -6615,7 +6628,7 @@ def has_place_field(
         min_peak_rate=min_peak_rate,
         min_secondary_peak_fraction=min_secondary_peak_fraction,
         max_mean_rate=max_mean_rate,
-        detect_subfields=detect_subfields,
+        subfields=subfields,
     )
 
 

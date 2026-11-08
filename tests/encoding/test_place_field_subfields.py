@@ -60,3 +60,10 @@ def test_neighbouring_field_is_found_after_a_subfield_split(
     np.testing.assert_allclose(peaks[1], second, atol=5.0)
     # The two fields share no bin.
     assert not set(result.fields[0].tolist()) & set(result.fields[1].tolist())
+
+
+@pytest.mark.parametrize("subfields", [True, False, "Core", "basin"])
+def test_unknown_subfield_rule_is_refused(box, subfields):
+    rate, _, _ = _two_fields(box, 3.3, 24.0)
+    with pytest.raises(ValueError, match="subfields must be one of"):
+        detect_place_fields(box, rate, bandwidth=0.0, subfields=subfields)
