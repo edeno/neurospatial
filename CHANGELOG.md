@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Replay: the uncited 2-D place-field shuffle is removed
+
+- **Breaking:** `neurospatial.replay.shuffle_place_fields_circular_2d` is
+  removed. No named null used it, and it did not follow a published method.
+  Pfeiffer & Foster (2013) tested trajectory events by "randomly shuffling
+  each cell's place field in both the x and y dimensions", but neither the
+  paper nor its Supplementary Information says how a field was moved, what
+  happened at the arena walls, or what a moved field held in unvisited bins,
+  and no code was published. A circular roll was our own choice, and it moved
+  the NaN of unvisited bins into visited ones. In a 2-D arena, shift spike
+  times with `shuffle_spike_times_circular` or permute cell identity with
+  `shuffle_cell_identity`. The `PFEIFFER_FOSTER_2013` Notes now say this.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then

@@ -1017,14 +1017,6 @@ def _rng_calls():
                 i.track, i.rates, n_shuffles=3, rng=rng
             )
         ),
-        "neurospatial.replay.shuffle_place_fields_circular_2d": lambda rng: list(
-            replay.shuffle_place_fields_circular_2d(
-                i.arena,
-                np.ones((2, i.arena.n_bins)).cumsum(1),
-                n_shuffles=3,
-                rng=rng,
-            )
-        ),
         "neurospatial.replay.shuffle_posterior_circular": lambda rng: list(
             replay.shuffle_posterior_circular(i.track, i.sweep, n_shuffles=3, rng=rng)
         ),

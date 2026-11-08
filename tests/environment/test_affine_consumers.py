@@ -222,18 +222,6 @@ def test_nested_subset_3d_fractions_preserve_native_outside_stop_normalization(o
         )
 
 
-def test_raster_shuffle_refuses_source_axes_as_world_axes():
-    from neurospatial.replay.nulls import shuffle_place_fields_circular_2d
-
-    env = grid().apply_transform(transform(MAPS[0]))
-    with pytest.raises(ValueError, match="world-aligned 2-D grid"):
-        next(
-            shuffle_place_fields_circular_2d(
-                env, np.ones((2, env.n_bins)), n_shuffles=1, rng=417
-            )
-        )
-
-
 @pytest.mark.parametrize("offset", [0.0, 17.0, 100.0, 1e9])
 def test_inverse_roundoff_preserves_interpolation_center_planes_without_filling_holes(
     offset,

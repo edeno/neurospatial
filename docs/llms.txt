@@ -695,7 +695,6 @@ required.
 - `shuffle_cell_identity`: Shuffle mapping between spike trains and place fields.
 - `shuffle_events`: Null data sets as decoded events, for a control analysed like real data.
 - `shuffle_place_fields_circular`: Circularly shift each place field by a random amount.
-- `shuffle_place_fields_circular_2d`: Circularly shift 2D place fields in both dimensions.
 - `shuffle_posterior_circular`: Circularly shift posterior at each time bin independently.
 - `shuffle_posterior_weighted_circular`: Shift each time bin's posterior so its peak lands at a weighted position.
 - `shuffle_spike_counts_circular`: Circularly shift each cell's spike counts in time, within one event.

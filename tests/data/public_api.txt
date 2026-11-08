@@ -643,7 +643,6 @@ neurospatial.replay.sequence_matching_index(env, spike_times, interval, encoding
 neurospatial.replay.shuffle_cell_identity(spike_counts, encoding_models, *, active_only=False, n_shuffles=1000, rng=None)
 neurospatial.replay.shuffle_events(env, events, *, null, n_datasets=1, null_options=None, spike_counts=None, encoding_models=None, dt=None, prior=None, pseudo_event_pool=None, rng=None)
 neurospatial.replay.shuffle_place_fields_circular(env, encoding_models, *, n_shuffles=1000, rng=None)
-neurospatial.replay.shuffle_place_fields_circular_2d(env, encoding_models, *, n_shuffles=1000, rng=None)
 neurospatial.replay.shuffle_posterior_circular(env, posterior, *, n_shuffles=1000, rng=None, exclude_zero_shift=False)
 neurospatial.replay.shuffle_posterior_weighted_circular(env, posterior, peak_weights, *, edge_exclusion=0.0, n_shuffles=1000, rng=None)
 neurospatial.replay.shuffle_spike_counts_circular(spike_counts, *, n_shuffles=1000, rng=None)

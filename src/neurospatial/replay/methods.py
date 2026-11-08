@@ -4493,12 +4493,19 @@ PFEIFFER_FOSTER_2013 = ReplayMethod(
         "40 cm are for rats in a 2 x 2 m arena, where path lengths ran 40.0 to "
         "199.1 cm, and they are not scaled here.",
         "Each trajectory event was also tested against 5,000 cell-identity "
-        "and 5,000 2-D place-field shuffles, p = (n + 1) / (r + 1) over the "
+        "shuffles and 5,000 shuffles of 'each cell's place field in both the "
+        "x and y dimensions' (Methods), p = (n + 1) / (r + 1) over the "
         "shuffles classified as trajectory events. Every trajectory event had "
         "p < 0.02 for both, so the test did not change which events counted "
-        "and is not applied. To add it, use dataclasses.replace(..., "
-        "nulls=('unit_identity',), n_shuffles=5000, alpha=0.02); the 2-D "
-        "place-field shuffle is not available as a named null.",
+        "and is not applied. To add the cell-identity test, use "
+        "dataclasses.replace(..., nulls=('unit_identity',), n_shuffles=5000, "
+        "alpha=0.02).",
+        "The place-field shuffle is not provided. The paper and its "
+        "Supplementary Information do not say how a field was moved (a "
+        "random offset or a reordering of rows and columns), what happened "
+        "at the arena walls, or what a moved field held in bins the rat "
+        "never visited, and no code was published. Any choice here would be "
+        "our own null, not theirs.",
     ),
 )
 
