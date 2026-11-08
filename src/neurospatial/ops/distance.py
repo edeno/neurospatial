@@ -600,9 +600,13 @@ def distance_field(
     -----
     **Geodesic.** One any-angle field (Theta*, as the behavior functions
     use) grown from the sources; each bin's value is the length of its path
-    toward the nearest source. A field costs about 10 ms for 2,500 open bins
-    (50 ms with walls) and 33 ms for 10,000, and it is kept, so asking again
-    is a lookup.
+    toward the nearest source. The field is one direction only: near walls the
+    length of a bin's path toward a source, as grown from the source, can differ
+    from the path grown the other way by up to 4.2% (measured in a 100 cm box
+    with two walls, 2 cm bins), while the pair distances
+    (:func:`pairwise_distances`, ``Environment.distance_between``) are
+    symmetric. A field costs about 10 ms for 2,500 open bins (50 ms with walls)
+    and 33 ms for 10,000, and it is kept, so asking again is a lookup.
 
     **Bin graph.** One Dijkstra search from all sources together,
     ``O((V + E) log V)``, a few milliseconds.

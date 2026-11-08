@@ -735,10 +735,14 @@ def geodesic_rbf_basis(
     -----
     The geodesic distance of each bin to a center is the length of its path
     toward the center, as the any-angle search (Theta*) grows it from the
-    center; the behavior functions measure the same paths. It costs one
-    field per center: about 0.24 s for 200 centers in a 2,500-bin open box
-    and 1.5 s with walls, against 0.04 s for ``metric="bin_graph"``; the
-    fields are kept, so building another basis on the same centers is fast.
+    center; the behavior functions measure the same paths. It is one direction
+    only: near walls the length of a bin's path toward a center, as grown from
+    the center, can differ from the path grown the other way by up to 4.2%
+    (measured in a 100 cm box with two walls, 2 cm bins), while pair distances
+    (``pairwise_distances``) are symmetric. It costs one field per center: about
+    0.24 s for 200 centers in a 2,500-bin open box and 1.5 s with walls, against
+    0.04 s for ``metric="bin_graph"``; the fields are kept, so building another
+    basis on the same centers is fast.
 
     **Why geodesic instead of Euclidean?**
 

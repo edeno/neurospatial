@@ -56,6 +56,20 @@ space instead:
    source bins at once, a position leaves for the anchor of its own bin or
    of a neighboring bin, whichever it sees, or else through its bin's
    center.
+4. **Pairs** (:meth:`_EnvironmentPaths.between`, :meth:`between_bins`,
+   :meth:`pairwise`) are symmetric. Two positions whose straight segment
+   stays inside the environment are the straight line apart, the true
+   geodesic. Otherwise a path is grown from each end and the shorter is the
+   length. A grown path is not always the shortest (Theta* is not
+   optimal): near walls the path grown from one end exceeded the one grown
+   from the other, a valid path, by up to 4.2% (a 100 cm box with two walls,
+   2 cm bins), and before the straight segment was checked first, grown
+   paths exceeded a visible straight segment by up to 0.54 cm. Against exact
+   shortest paths around an obstacle, paths through bin centers were at most
+   0.85 of a bin longer. **Fields** (:meth:`from_bins`, :meth:`to_point`,
+   :meth:`to_bins`) are one direction only: each bin's length is that of
+   its path toward the source as grown from the source, so a field and the
+   reverse direction can differ by the same 4.2%.
 
 **Track environments** (``Environment.from_graph``, ``linear_track``,
 ``maze``) are one-dimensional: the distance is measured along the track graph
