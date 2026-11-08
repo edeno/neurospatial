@@ -1106,6 +1106,46 @@ def _bursting_spikes(
     return np.sort(spikes[spikes < times[-1]])
 
 
+def _returning_heading(seed: int) -> tuple[np.ndarray, np.ndarray]:
+    """Ten minutes at 30 Hz of a heading that diffuses and returns toward 0.5 rad.
+
+    ``dθ = -(D κ / 2) sin(θ - 0.5) dt + √D dW`` with D = 2 rad²/s: the
+    stationary heading occupancy is von Mises(0.5, κ = 1.5), and the
+    heading stays correlated for about a second.
+    """
+    kappa, dt = 1.5, 1 / 30
+    times = np.arange(0.0, 600.0, dt)
+    rng = np.random.default_rng(seed)
+    noise = rng.normal(0.0, np.sqrt(_HEADING_DIFFUSION * dt), times.size)
+    theta = np.empty(times.size)
+    theta[0] = rng.vonmises(0.5, kappa)
+    pull = _HEADING_DIFFUSION * kappa / 2 * dt
+    for i in range(1, times.size):
+        theta[i] = theta[i - 1] - pull * np.sin(theta[i - 1] - 0.5) + noise[i]
+    return times, np.angle(np.exp(1j * theta))
+
+
+def _flat_spikes(kind: str, times: np.ndarray, seed: int) -> np.ndarray:
+    """An untuned cell: Poisson at 2 Hz, 2.5-spike bursts, or a drifting rate.
+
+    ``"drift_<τ>s"`` is Poisson at ``3 exp(x(t))`` Hz, where ``x`` is an
+    AR(1) process with standard deviation 0.5 and time constant τ seconds.
+    """
+    from scipy.signal import lfilter
+
+    if kind == "poisson":
+        return _frame_poisson_spikes(times, np.full(times.size, 2.0), seed=seed)
+    if kind == "bursting":
+        return _bursting_spikes(times, np.full(times.size, 3.0), 2.5, seed=seed)
+    tau = float(kind.removeprefix("drift_").removesuffix("s"))
+    decay = np.exp(-(times[1] - times[0]) / tau)
+    rng = np.random.default_rng(seed)
+    shocks = rng.normal(0.0, 0.5 * np.sqrt(1 - decay**2), times.size)
+    shocks[0] = rng.normal(0.0, 0.5)
+    log_rate = lfilter([1.0], [1.0, -decay], shocks)
+    return _frame_poisson_spikes(times, 3.0 * np.exp(log_rate), seed=seed + 1)
+
+
 class TestTuningPvalueDispersion:
     """The tuning test stays calibrated for bursting and drifting cells."""
 
@@ -1324,45 +1364,94 @@ class TestTuningPvalueDispersion:
         assert np.all(np.isfinite(pvalues))
         assert 0.01 <= np.mean(pvalues < 0.05) <= 0.10
 
-    def test_slow_rate_drift_is_calibrated(self, wandering_heading_session) -> None:
-        """A rate that drifts over 30 s is not mistaken for heading tuning.
+    @pytest.mark.parametrize("kind", ["poisson", "bursting", "drift_30s", "drift_120s"])
+    def test_flat_cells_facing_one_way_are_calibrated(self, kind) -> None:
+        """Untuned cells while the heading diffuses and returns toward 0.5 rad.
 
-        The dispersion-corrected test is documented as conservative for drift,
-        so only the upper side is bounded at alpha: the rejection count of 100
-        untuned cells must not exceed the 99.95th percentile of
-        Binomial(100, 0.05). To show this data can make the test reject, the
-        same cells under the uncorrected Poisson test (dispersion 1) must
-        reject above that bound: the correction, not a test that never
-        rejects, keeps the rate down.
+        The case the occupancy and dispersion corrections exist for: the
+        animal faces some directions about 20 times longer than others
+        (von Mises occupancy, κ = 1.5) and the heading stays correlated for
+        about a second. 1600 cells, 100 on each of 16 heading paths: the
+        rejection count at α = 0.05 lies in the 99% binomial interval from
+        both ends, and the p-values are uniform. Poisson cells are held to
+        the high end only: the dispersion is floored at 1, so the test is
+        slightly conservative for them (3.7% here).
         """
-        from dataclasses import replace
-
-        from scipy.stats import binom
+        from calibration_helpers import (
+            assert_pvalues_uniform,
+            assert_rejections_at_rate,
+        )
 
         from neurospatial.encoding import compute_directional_rates
 
-        times, headings = wandering_heading_session
-        dt = times[1] - times[0]
-        rng = np.random.default_rng(7)
-        decay = np.exp(-dt / 30.0)
-        trains = []
-        for k in range(100):
-            log_rate = np.empty(times.size)
-            log_rate[0] = rng.normal(0.0, 0.5)
-            noise = rng.normal(0.0, 0.5 * np.sqrt(1 - decay**2), times.size)
-            for i in range(1, times.size):
-                log_rate[i] = decay * log_rate[i - 1] + noise[i]
-            trains.append(
-                _frame_poisson_spikes(times, 3.0 * np.exp(log_rate), seed=5000 + k)
+        p_values = []
+        for path in range(16):
+            times, headings = _returning_heading(seed=200 + path)
+            rng = np.random.default_rng(900 + path)
+            trains = [
+                _flat_spikes(kind, times, int(rng.integers(2**32))) for _ in range(100)
+            ]
+            p_values.append(
+                compute_directional_rates(trains, times, headings).tuning_pvalues()
             )
-        rates = compute_directional_rates(trains, times, headings)
-        pvalues = rates.tuning_pvalues()
-        poisson = replace(
-            rates, spike_count_dispersion=np.ones(len(trains)), dispersion_dof=None
-        ).tuning_pvalues()
-        high = binom.ppf(0.9995, len(trains), 0.05)
-        assert np.all(np.isfinite(pvalues))
-        assert np.sum(pvalues < 0.05) <= high
+        p_values = np.concatenate(p_values)
+        assert_pvalues_uniform(p_values)
+        assert_rejections_at_rate(p_values < 0.05, 0.05, conservative=kind == "poisson")
+
+    def test_slow_rate_drift_is_conservative_when_heading_reverses(self) -> None:
+        """Movement heading in a walled box: drift is over-corrected.
+
+        Wall reflections reverse the heading, so its autocorrelation turns
+        negative after a few seconds. The dispersion window integrates only
+        the positive part, about three times the full integral, and the
+        dispersion of a cell whose rate drifts over 60 s comes out about twice
+        what the test needs. 600 such cells (six 10-minute trajectories)
+        reject below the 99% binomial interval at α = 0.05, as the
+        ``tuning_pvalue`` Notes state. The same cells under the uncorrected
+        Poisson test (dispersion 1) reject above it: the data can make the
+        test reject, and the correction keeps the rate down.
+        """
+        from dataclasses import replace
+
+        from calibration_helpers import null_rejection_interval
+        from shapely.geometry import box
+
+        from neurospatial import Environment
+        from neurospatial.behavior import heading_from_velocity
+        from neurospatial.encoding import compute_directional_rates
+        from neurospatial.simulation import simulate_trajectory_ou
+
+        env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
+        corrected, poisson = [], []
+        for path in range(6):
+            positions, times = simulate_trajectory_ou(
+                env,
+                duration=600.0,
+                speed_units="cm",
+                dt=1 / 30,
+                speed_mean=10.0,
+                speed_std=5.2,
+                rng=300 + path,
+            )
+            headings = heading_from_velocity(times, positions)
+            rng = np.random.default_rng(700 + path)
+            trains = [
+                _flat_spikes("drift_60s", times, int(rng.integers(2**32)))
+                for _ in range(100)
+            ]
+            rates = compute_directional_rates(trains, times, headings)
+            corrected.append(rates.tuning_pvalues())
+            poisson.append(
+                replace(
+                    rates,
+                    spike_count_dispersion=np.ones(len(trains)),
+                    dispersion_dof=None,
+                ).tuning_pvalues()
+            )
+        corrected, poisson = np.concatenate(corrected), np.concatenate(poisson)
+        low, high = null_rejection_interval(corrected.size, 0.05)
+        assert np.all(np.isfinite(corrected))
+        assert np.sum(corrected < 0.05) < low
         assert np.sum(poisson < 0.05) > high
 
     def test_bursting_hd_cells_are_detected(self, wandering_heading_session) -> None:

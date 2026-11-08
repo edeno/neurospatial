@@ -1312,13 +1312,27 @@ class DirectionalRateResult(_DirectionalRateMixin, SingleUnitRateMixin):
         compares ``T / φ`` with χ² on 2 degrees of freedom.
 
         In simulated 10-minute open-field and 50-lap linear-track sessions,
-        untuned cells were rejected at α = 0.05 in 4-5% of Poisson cells,
-        4-6% of cells firing geometric bursts of mean 1.5-4 spikes (13-69%
-        without the correction) and 0-1% of cells whose rate drifts on a
-        30-120 s time scale (6-25% without, so the correction is conservative
-        for drift). Detection of tuned cells (κ = 0.5-2, bursting or not)
-        was unchanged. Below 50 spikes a few bursts are too few independent
-        events to estimate ``φ``, so the p-value is NaN.
+        untuned cells were rejected at α = 0.05 in 4-5% of Poisson cells
+        and 4-6% of cells firing geometric bursts of mean 1.5-4 spikes
+        (13-69% without the correction). Detection of tuned cells
+        (κ = 0.5-2, bursting or not) was unchanged. Below 50 spikes a few
+        bursts are too few independent events to estimate ``φ``, so the
+        p-value is NaN.
+
+        With a heading that diffuses and returns toward one direction (von
+        Mises occupancy, κ = 1.5, correlated for about a second), 1600
+        untuned cells of each kind on 16 ten-minute paths were rejected at
+        α = 0.05 in 3.7% of Poisson cells (``φ`` is floored at 1, so the
+        test is slightly conservative for them), 5.3% of cells firing bursts
+        of 2.5 spikes (48% without the correction) and 4.8-5.9% of cells
+        whose rate drifts over 30-120 s (22-25% without), with uniform
+        p-values. Drift is corrected well while the heading's
+        autocorrelation stays positive. When it turns negative, as for
+        movement heading in a walled box, where reflections off the walls
+        reverse the heading, the window counts only the positive part and
+        the correction overshoots: of 600 cells drifting over 60 s, 0.5%
+        were rejected (17% without), so the test is conservative for drift
+        there.
 
         **Remaining assumptions.** The test targets one preferred direction
         and has little power for bimodal tuning. With many spikes even weak
