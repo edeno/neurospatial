@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+from calibration_helpers import monte_carlo_rejection_rate, null_rejection_interval
 
 
 def wrapped_bump(env, centers, sigma):
@@ -57,36 +58,6 @@ def template_stream(seed, name):
     return np.random.default_rng(
         np.random.SeedSequence(entropy, spawn_key=(zlib.crc32(name.encode()),))
     )
-
-
-def null_rejection_interval(n_events, rate, coverage=0.99):
-    """Central binomial interval for how many of ``n_events`` null events reject.
-
-    A test that rejects each null event with probability ``rate`` rejects
-    ``Binomial(n_events, rate)`` of them; the count falls outside the
-    returned ``(low, high)`` with probability at most ``1 - coverage``.
-    Asserting both ends fails a test that rejects too often and one that
-    never rejects.
-    """
-    from scipy import stats
-
-    tail = (1.0 - coverage) / 2.0
-    return (
-        int(stats.binom.ppf(tail, n_events, rate)),
-        int(stats.binom.ppf(1.0 - tail, n_events, rate)),
-    )
-
-
-def monte_carlo_rejection_rate(n_shuffles, alpha, strict=True):
-    """Exact rejection rate of ``p = (k + 1) / (n_shuffles + 1)`` under the null.
-
-    With exchangeable shuffles ``k`` is uniform on ``0..n_shuffles``, so the
-    rate is the share of those values whose p-value is below (``strict``) or
-    at most ``alpha``: 0.045, not 0.05, for ``p < 0.05`` with 199 shuffles.
-    """
-    p_values = np.arange(1, n_shuffles + 2) / (n_shuffles + 1)
-    rejected = p_values < alpha if strict else p_values <= alpha + 1e-12
-    return float(np.mean(rejected))
 
 
 def assert_null_verdicts_at_alpha(
