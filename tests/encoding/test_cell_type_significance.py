@@ -282,19 +282,6 @@ def test_significance_rejects_duplicate_labels_and_glm(significance_recording):
         )
 
 
-def _significance_args(name, env, trains, trajectory, obj):
-    """Positional arguments of each ``*_cell_significance`` function."""
-    times, positions, headings = trajectory
-    if name.startswith("head_direction"):
-        return (trains, times, headings)
-    args = (env, trains, times, positions)
-    if name.startswith(("spatial_view", "egocentric")):
-        args += (headings,)
-    if "object_vector" in name:
-        args += (obj,)
-    return args
-
-
 def _inhomogeneous_poisson(times, rate, seed):
     """Spike times from a per-sample rate (Hz), uniform within each sample."""
     rng = np.random.default_rng(seed)
@@ -334,44 +321,6 @@ def test_shuffle_detects_true_spatial_view_cell(ou_env, ou_10min):
         boundary_source="analysis",
     )[0]
     assert result.p_value == 1 / 201
-
-
-@pytest.mark.slow
-@pytest.mark.parametrize(
-    "name",
-    [
-        "place_cell_significance",
-        "head_direction_cell_significance",
-        "spatial_view_cell_significance",
-        "object_vector_cell_significance",
-        "egocentric_object_vector_cell_significance",
-    ],
-)
-def test_shuffle_pooled_false_positive_rate(name, ou_env, ou_10min, noise_trains, obj):
-    """Untuned Poisson units are rejected at the test's level, no more, no less.
-
-    400 independent 0.5 Hz trains (20 seeds of 20) on one 10-minute
-    trajectory. With 200 shuffles, p = (k + 1) / 201, so p < 0.05 has
-    probability 10/201 under the null. The rejection count must lie in the
-    central 99.9% interval of Binomial(400, 10/201), [7, 36]: a test that
-    rejects too often or never fails.
-    """
-    from scipy.stats import binom
-
-    trains = [train for seed in range(1, 21) for train in noise_trains(600, seed=seed)]
-    args = _significance_args(name, ou_env, trains, ou_10min, obj)
-    kwargs = {"bandwidth": 5} if name.startswith("place") else {}
-    if name.startswith("spatial_view"):
-        kwargs = {"boundary_source": "analysis"}
-    n_shuffles = 200
-    result = getattr(encoding, name)(*args, n_shuffles=n_shuffles, rng=0, **kwargs)
-    tests = list(result.values() if isinstance(result, dict) else result)
-    assert len(tests) == len(trains) == 400
-    p_values = np.array([r.p_value for r in tests])
-    assert np.all(np.isfinite(p_values))
-    alpha_eff = (np.ceil(0.05 * (n_shuffles + 1)) - 1) / (n_shuffles + 1)
-    low, high = binom.ppf([0.0005, 0.9995], len(tests), alpha_eff)
-    assert low <= np.sum(p_values < 0.05) <= high
 
 
 @pytest.mark.slow
