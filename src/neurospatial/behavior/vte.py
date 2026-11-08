@@ -803,6 +803,8 @@ def head_sweep_from_positions(
     the boxcars average the values present at the ends of a run, and slopes
     use the actual sample times, so uneven sampling and bridged gaps are
     timed correctly (equal to the lab's arithmetic on even sampling).
+    Tracking at 4 Hz or slower has no head turn, since the 0.5 s window then
+    holds fewer than 3 samples; such runs warn.
 
     Examples
     --------

@@ -46,8 +46,12 @@ as 29.97 Hz both give 15).
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 from numpy.typing import NDArray
+
+from neurospatial._stacklevel import _external_stacklevel
 
 #: Longest backward window, in seconds, of the lab's zIdPhi code.
 ADAPTIVE_WINDOW = 0.5
@@ -186,7 +190,13 @@ def turn_rates(
     finite = np.all(np.isfinite(positions[:, :2]), axis=1)
     dphi = np.full(times.size, np.nan)
     dt = np.full(times.size, np.nan)
+    coarse: list[float] = []
     for run in valid_run_samples(np.asarray(interval_mask, dtype=bool), finite):
+        if run.size >= 4:
+            run_dt = float(np.mean(np.diff(times[run])))
+            if _samples_in(ADAPTIVE_WINDOW, run_dt) < 3:
+                coarse.append(run_dt)
+                continue
         if headings is None:
             run_times = times[run]
             phi = np.arctan2(
@@ -203,5 +213,18 @@ def turn_rates(
             observed_times, np.unwrap(phi[np.isfinite(phi)])
         )
         dt[observed] = np.mean(np.diff(observed_times))
+    if coarse:
+        warnings.warn(
+            f"{len(coarse)} run(s) of samples are about {np.median(coarse):.3g} s "
+            "apart, so they have no head turn: the VTE velocity estimator's "
+            f"{ADAPTIVE_WINDOW} s window holds fewer than 3 sample intervals.\n"
+            "Why: IdPhi follows the Redish lab's adaptive-window estimator, "
+            "which fits backward windows of at least 3 samples within "
+            f"{ADAPTIVE_WINDOW} s.\n"
+            "Fix: use tracking sampled faster than "
+            f"{2 / ADAPTIVE_WINDOW:g} Hz for head sweeps.",
+            UserWarning,
+            stacklevel=_external_stacklevel(),
+        )
     dt[np.isnan(dphi)] = np.nan
     return dphi, dt

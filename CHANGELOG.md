@@ -30,6 +30,9 @@
   list what follows the lab's code and what does not.
 - `head_sweep_magnitude(headings)` is unchanged: the discrete sum of wrapped
   heading changes.
+- Tracking sampled at 4 Hz or slower has no head sweep, since the
+  estimator's 0.5 s window then holds fewer than 3 samples; the VTE functions
+  now warn and say so instead of returning NaN silently.
 
 ### Place fields: a field next to a split field is no longer lost
 
