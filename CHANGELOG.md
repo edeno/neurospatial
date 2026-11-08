@@ -182,8 +182,15 @@ give the measured rates:
   and an oblique distance reads up to 8.2% long on a square grid, 15.5% on a
   hexagonal grid and 12.8% on a 26-connected 3-D grid. It is exact between
   bin centers on a track, and it works on egocentric polar environments.
-- `metric="geodesic"` on an egocentric polar environment still raises
-  `CartesianOnlyError`; the message now suggests `metric="bin_graph"`.
+- `metric="geodesic"` on an egocentric polar environment raises
+  `CartesianOnlyError`, whose message suggests `metric="bin_graph"`. The
+  behavior functions already refused it; the `ops` distances, the basis
+  center selection and `Environment.distance_between` accepted it before and
+  walked the bin graph.
+- `rate_map_centroid` takes `method="bin_graph"`, the medoid along the bin
+  graph. `fields_table()` uses it for the centroid on a polar environment,
+  where it used the bin-graph geodesic before, so polar centroids do not
+  change.
 - `distance_field`, `pairwise_distances`, `geodesic_distance_matrix` and
   `neighbors_within` take the environment as their first argument instead
   of its graph, and `metric="geodesic"` (the default) now measures the

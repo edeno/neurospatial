@@ -443,14 +443,19 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
     "call",
     [
         lambda env: rate_map_centroid(
-            env, _rates(env), np.arange(4), method="geodesic"
+            env, _rates(env), np.arange(4), method="bin_graph"
         ),
         lambda env: field_emd(env, _rates(env), _rates(env)[::-1], metric="geodesic"),
         lambda env: select_basis_centers(
-            env, n_centers=3, method="farthest_point", rng=0
+            env, n_centers=3, method="farthest_point", metric="bin_graph", rng=0
         ),
         lambda env: geodesic_rbf_basis(
-            env, n_centers=3, bandwidth=5.0, center_method="farthest_point", rng=0
+            env,
+            n_centers=3,
+            bandwidth=5.0,
+            center_method="farthest_point",
+            metric="bin_graph",
+            rng=0,
         ),
         lambda env: trajectory_similarity(
             env,
@@ -462,6 +467,26 @@ def test_cartesian_coordinate_functions_refuse_polar(polar, call, operation):
 )
 def test_graph_modes_still_accept_polar(polar, call):
     call(polar)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda env: rate_map_centroid(
+            env, _rates(env), np.arange(4), method="geodesic"
+        ),
+        lambda env: select_basis_centers(
+            env, n_centers=3, method="farthest_point", rng=0
+        ),
+        lambda env: geodesic_rbf_basis(
+            env, n_centers=3, bandwidth=5.0, center_method="farthest_point", rng=0
+        ),
+    ],
+)
+def test_geodesic_refuses_polar_and_names_bin_graph(polar, call):
+    """The any-angle path is not defined in (distance, angle) coordinates."""
+    with pytest.raises(CartesianOnlyError, match="bin_graph"):
+        call(polar)
 
 
 def _line_or_volume(n_dims: int) -> Environment:

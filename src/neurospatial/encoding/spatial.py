@@ -498,9 +498,10 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             (``env.linear_to_nd``); a field over a branch point or an
             ``edge_spacing`` gap has no such mean, and its centroid is the
             geodesic one, a field bin. On a polar environment the columns are
-            ``centroid_distance`` and ``centroid_angle`` (rad) of the geodesic
-            centroid, because averaging angles and distances is not a
-            position. No
+            ``centroid_distance`` and ``centroid_angle`` (rad) of the field
+            bin nearest the rest along the bin graph
+            (``rate_map_centroid(method="bin_graph")``), because averaging
+            angles and distances is not a position. No
             rows when no field was detected. ``df.attrs`` holds
             ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
             :meth:`to_dataframe` has one row per bin, labeled by field.
@@ -517,12 +518,15 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         measures = np.asarray(self.env.bin_sizes, dtype=np.float64)
         names = [f"centroid_{name}" for name in _coord_dim_names(self.env)]
         # Averaging (distance, angle) bin centers is not a position: a polar
-        # centroid is the field bin nearest the rest (the geodesic one). The
-        # mean of a field around a track's corner is off the track, so a
-        # track's centroid is the mean distance along it, mapped back onto it.
-        method: Literal["euclidean", "geodesic"] = (
-            "geodesic"
-            if self.env.coordinate_kind == "polar" or self.env.is_linearized_track
+        # centroid is the field bin nearest the rest along the bin graph, as
+        # the any-angle path is not defined there. The mean of a field around
+        # a track's corner is off the track, so a track's centroid is the mean
+        # distance along it, mapped back onto it.
+        method: Literal["euclidean", "geodesic", "bin_graph"] = (
+            "bin_graph"
+            if self.env.coordinate_kind == "polar"
+            else "geodesic"
+            if self.env.is_linearized_track
             else "euclidean"
         )
         rows = []
