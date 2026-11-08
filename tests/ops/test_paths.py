@@ -234,3 +234,26 @@ class TestBinGraphPaths:
         np.testing.assert_allclose(
             field, [expected[b] for b in range(polar.n_bins)], rtol=1e-12
         )
+
+
+@pytest.mark.slow
+def test_a_long_session_keeps_whole_fields_with_the_same_lengths():
+    """Many pairs per bin grow whole fields once; few pairs grow partial ones."""
+    room = _grid(20, 5.0, walls={"divider": LineString([(50, 0), (50, 70)])})
+    rng = np.random.default_rng(6)
+    bins = rng.choice(room.n_bins, 20, replace=False)
+
+    def near(k):
+        jitter = rng.uniform(-2.0, 2.0, (k, 2))
+        return room.bin_centers[rng.choice(bins, k)] + jitter
+
+    starts, ends = near(1000), near(1000)
+    session = _environment_paths(room, call="test").between(starts, ends)
+    assert _environment_paths(room, call="test")._fields.n_kept > 0
+    room._cache.clear()
+    paths = _environment_paths(room, call="test")
+    pieces = np.concatenate(
+        [paths.between(starts[k : k + 2], ends[k : k + 2]) for k in range(0, 1000, 2)]
+    )
+    assert paths._fields.n_kept == 0
+    np.testing.assert_array_equal(session, pieces)
