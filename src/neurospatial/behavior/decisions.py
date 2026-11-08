@@ -1271,8 +1271,8 @@ def geodesic_voronoi_labels(
 def _resolved_goals(env: Environment, goals: Any, *, call: str) -> list[Goal]:
     """Each goal of ``goals`` resolved on the geodesic engine."""
     from neurospatial._exceptions import _format_error
-    from neurospatial.behavior._environment_paths import environment_paths
     from neurospatial.behavior._goals import resolve_goal
+    from neurospatial.ops import _environment_paths
 
     if isinstance(goals, str):
         msg = (
@@ -1289,7 +1289,7 @@ def _resolved_goals(env: Environment, goals: Any, *, call: str) -> list[Goal]:
                 fix="pass the goals' region names, e.g. goals=['left', 'right'].",
             )
         )
-    paths = environment_paths(env, call=call)
+    paths = _environment_paths(env, call=call)
     return [resolve_goal(env, goal, paths=paths, call=call) for goal in entries]
 
 
@@ -1307,9 +1307,9 @@ def _goal_fields(
     ndarray, shape (n_goals, n_bins)
         ``inf`` where a goal cannot be reached.
     """
-    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.ops import _environment_paths
 
-    paths = environment_paths(env, call=call)
+    paths = _environment_paths(env, call=call)
     centers = np.asarray(env.bin_centers, dtype=np.float64)
     return np.vstack(
         [
@@ -1412,8 +1412,8 @@ def distance_to_decision_boundary(
     ... ).tolist()
     [20.0, 0.0, 40.0]
     """
-    from neurospatial.behavior._environment_paths import environment_paths
     from neurospatial.behavior.navigation import _validated_route_samples
+    from neurospatial.ops import _environment_paths
 
     call = "distance_to_decision_boundary"
     targets = _resolved_goals(env, goals, call=call)
@@ -1426,7 +1426,7 @@ def distance_to_decision_boundary(
         # With a single goal there is no boundary.
         boundary_distances[located] = np.inf
         return boundary_distances
-    paths = environment_paths(env, call=call)
+    paths = _environment_paths(env, call=call)
     distances = np.vstack(
         [goal.distances(env, paths, positions_arr[located]) for goal in targets]
     )

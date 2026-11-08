@@ -74,7 +74,7 @@ from numpy.typing import NDArray
 from scipy.sparse import coo_array, csr_array
 from shapely.ops import substring, unary_union
 
-from neurospatial.environment._cache import CacheKey
+from neurospatial._cache import CacheKey
 from neurospatial.geometry import locate_outline_points, materialize_cells
 
 if TYPE_CHECKING:

@@ -83,9 +83,9 @@ from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
-    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
+    from neurospatial.ops import _EnvironmentPaths
     from neurospatial.ops._types import DistanceMetric
 
 
@@ -1818,9 +1818,9 @@ def _distances_from(
     closed loop of length L the farthest point from any place is L/2 away,
     and every full circuit passes it.
     """
-    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.ops import _environment_paths
 
-    distances = environment_paths(env, call="detect_laps").from_bins(
+    distances = _environment_paths(env, call="detect_laps").from_bins(
         np.unique(np.asarray(sources, dtype=np.intp))
     )
     finite = distances[np.isfinite(distances)]
@@ -2574,13 +2574,13 @@ def detect_goal_directed_runs(
         break_before=break_before,
     )
 
-    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.ops import _environment_paths
     from neurospatial.ops.distance import _bin_adjacency
     from neurospatial.ops.mapping import regions_to_mask
 
     # Path distances between bin centers on the connectivity graph; inf for
     # bins that cannot reach the goal.
-    paths = environment_paths(env, call="detect_goal_directed_runs")
+    paths = _environment_paths(env, call="detect_goal_directed_runs")
     distance_to_goal = paths.from_bins(np.flatnonzero(regions_to_mask(env, [region])))
     edges = _bin_adjacency(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
@@ -2655,7 +2655,7 @@ def _detect_goal_directed_runs_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     *,
-    paths: EnvironmentPaths,
+    paths: _EnvironmentPaths,
     edges: Any,
     distance_to_goal: NDArray[np.float64],
     directedness_threshold: float,

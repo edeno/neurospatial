@@ -221,11 +221,11 @@ def _errors_and_misses(
     actual_off = valid & (actual_bins < 0)
     measured = valid & ~decoded_off & ~actual_off
     if np.any(measured):
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _environment_paths
 
         decoded = _inside_or_bin_center(env, decoded_positions, decoded_bins)
         actual = _inside_or_bin_center(env, actual_positions, actual_bins)
-        errors[measured] = environment_paths(env, call=call).between(
+        errors[measured] = _environment_paths(env, call=call).between(
             decoded[measured],
             actual[measured],
             start_bins=decoded_bins[measured],

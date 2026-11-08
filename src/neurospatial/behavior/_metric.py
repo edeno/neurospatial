@@ -2,7 +2,7 @@
 
 ``"euclidean"`` is the straight line between two positions; ``"geodesic"``
 is the shortest path that stays inside the environment, measured by
-:mod:`neurospatial.behavior._environment_paths`.
+:mod:`neurospatial.ops._paths`.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
-    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.environment import Environment
+    from neurospatial.ops import _EnvironmentPaths
 
 
 def require_metric(metric: object, *, where: str) -> None:
@@ -50,7 +50,7 @@ def require_metric(metric: object, *, where: str) -> None:
 
 def metric_paths(
     metric: object, env: Environment | None, *, call: str
-) -> EnvironmentPaths | None:
+) -> _EnvironmentPaths | None:
     """The shortest-path engine ``metric`` measures with, or None for straight lines.
 
     Parameters
@@ -65,7 +65,7 @@ def metric_paths(
 
     Returns
     -------
-    EnvironmentPaths or None
+    _EnvironmentPaths or None
         ``env``'s shared engine for ``"geodesic"``; None for ``"euclidean"``.
 
     Raises
@@ -90,6 +90,6 @@ def metric_paths(
                 ),
             )
         )
-    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.ops import _environment_paths
 
-    return environment_paths(env, call=call)
+    return _environment_paths(env, call=call)

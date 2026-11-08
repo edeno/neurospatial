@@ -134,10 +134,10 @@ if TYPE_CHECKING:
 
     from neurospatial._interval_table import Intervals
     from neurospatial._observation import ObservationSupport
-    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.behavior._goals import Goal, GoalRow
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
+    from neurospatial.ops import _EnvironmentPaths
     from neurospatial.ops._types import DistanceMetric
 
 
@@ -2455,7 +2455,7 @@ def distance_to_boundary(
 
 def _distance_to_bins(
     env: Environment,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     bins: NDArray[np.intp],
     positions: NDArray[np.float64],
 ) -> NDArray[np.float64]:
@@ -2464,7 +2464,7 @@ def _distance_to_bins(
     Parameters
     ----------
     env : Environment
-    paths : EnvironmentPaths or None
+    paths : _EnvironmentPaths or None
         Shortest-path engine (:func:`metric_paths`); None for straight lines.
     bins : ndarray of intp, shape (n_targets,)
         Distinct, valid bin indices.
@@ -3384,7 +3384,7 @@ def _observed_path_length(
     sample_valid: NDArray[np.bool_],
     interval_mask: NDArray[np.bool_],
     *,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
 ) -> tuple[float, bool]:
     """Path length over usable intervals, and whether every interval counted.
 
@@ -3395,7 +3395,7 @@ def _observed_path_length(
         ``ObservationSupport.sample_valid`` of the same samples.
     interval_mask : ndarray of bool, shape (n_samples - 1,)
         ``ObservationSupport.interval_mask`` of the same samples.
-    paths : EnvironmentPaths or None
+    paths : _EnvironmentPaths or None
         Geodesic engine (``metric_paths``), or None for straight steps.
 
     Returns
@@ -3650,7 +3650,7 @@ def _require_inside(
 
     Parameters
     ----------
-    paths : EnvironmentPaths
+    paths : _EnvironmentPaths
     points : dict of str to ndarray, shape (n_dims,)
         Named positions, such as ``{"goal": goal}``.
     call : str
@@ -4059,7 +4059,7 @@ def _angular_efficiency(
     step: NDArray[np.float64],
     goal: Goal,
     *,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
 ) -> float:
     """``1 - sum(length * angle) / (pi * sum(length))`` over steps with an angle.
 
@@ -4071,7 +4071,7 @@ def _angular_efficiency(
     goal : Goal
         The resolved goal; its direction at each step start is the
         direction in which the shortest path to it leaves the start.
-    paths : EnvironmentPaths or None
+    paths : _EnvironmentPaths or None
         Geodesic engine (``metric_paths``), or None for straight lines.
     """
     to_goal = goal.directions(env, paths, starts)
@@ -4541,7 +4541,7 @@ def _path_efficiency(
     support: ObservationSupport,
     goal: Goal,
     *,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     metric: DistanceMetric,
     reference_speed: float | None,
 ) -> PathEfficiencyResult:
@@ -5763,7 +5763,7 @@ def _goal_directed(
     goal: Goal,
     *,
     bias: float,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     metric: DistanceMetric,
     goal_radius: float | None,
 ) -> GoalDirectedMetrics:

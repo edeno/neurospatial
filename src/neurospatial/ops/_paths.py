@@ -9,8 +9,8 @@ module, so the word has one meaning across :mod:`neurospatial.behavior`:
 The path never crosses a closed bin connection (a wall declared on the arena,
 an outline slit, a concave corner) and never leaves the environment. A
 function that takes bins rather than positions uses each bin's center as its
-position. :func:`environment_paths` returns the shared, cached
-:class:`EnvironmentPaths` of an environment.
+position. :func:`_environment_paths` returns the shared, cached
+:class:`_EnvironmentPaths` of an environment.
 
 **Open environments (grids, polygons, meshes).** Bin-graph distances (bin
 center to bin center along the connectivity graph, as
@@ -80,16 +80,15 @@ import numpy as np
 from numpy.typing import NDArray
 from typing_extensions import override
 
+from neurospatial._cache import CacheKey
 from neurospatial._intervals import ragged_arange
-from neurospatial.environment._cache import CacheKey
-from neurospatial.geometry import require_cartesian
-from neurospatial.geometry._hex_lookup import cartesian_to_fractional_cube
+from neurospatial.geometry import cartesian_to_fractional_cube, require_cartesian
 
 if TYPE_CHECKING:
     from scipy.sparse import csr_array
 
     from neurospatial.environment import Environment
-    from neurospatial.geometry._locators import HexLocator, LookupIndexes
+    from neurospatial.geometry import HexLocator, LookupIndexes
 
 # Probe a segment every half of the shortest graph edge. Consecutive probes
 # must land in the same or connected bins, so a probe step shorter than a bin
@@ -124,7 +123,7 @@ _SOURCE_CACHE_LIMIT = 8
 _GRAPH_RTOL = 1e-9
 
 
-def environment_paths(env: Environment, *, call: str) -> EnvironmentPaths:
+def _environment_paths(env: Environment, *, call: str) -> _EnvironmentPaths:
     """Shared shortest-path engine of ``env``, kept in its analysis cache.
 
     Parameters
@@ -136,7 +135,7 @@ def environment_paths(env: Environment, *, call: str) -> EnvironmentPaths:
 
     Returns
     -------
-    EnvironmentPaths
+    _EnvironmentPaths
         The track engine for a track environment, else the open-environment
         engine.
 
@@ -167,7 +166,7 @@ def environment_paths(env: Environment, *, call: str) -> EnvironmentPaths:
     )
 
 
-_PATHS_KEY: CacheKey[EnvironmentPaths] = CacheKey("environment paths")
+_PATHS_KEY: CacheKey[_EnvironmentPaths] = CacheKey("environment paths")
 
 
 def _bin_graph(env: Environment) -> csr_array:
@@ -190,10 +189,10 @@ def _rate_weighted(adjacency: csr_array, rate: NDArray[np.float64]) -> csr_array
     return weighted
 
 
-class EnvironmentPaths(ABC):
+class _EnvironmentPaths(ABC):
     """Shortest path lengths inside one environment.
 
-    Use :func:`environment_paths` to get the shared instance of an
+    Use :func:`_environment_paths` to get the shared instance of an
     environment: the open-environment engine (grids, polygons, meshes) or the
     track engine, which answer the same queries. Each query handles missing
     positions (NaN rows and positions outside the environment give NaN) and
@@ -309,7 +308,7 @@ class EnvironmentPaths(ABC):
         )
 
     @abstractmethod
-    def pairwise(self, points: NDArray[np.float64]) -> PairDistances:
+    def pairwise(self, points: NDArray[np.float64]) -> _PairDistances:
         """Distances between many pairs of the same positions, ``(i, j)``.
 
         Locates the positions once and prepares what every pair needs, so
@@ -323,7 +322,7 @@ class EnvironmentPaths(ABC):
 
         Returns
         -------
-        PairDistances
+        _PairDistances
         """
 
     def prepare(self, bins: NDArray[np.intp]) -> None:  # noqa: B027
@@ -545,7 +544,7 @@ class EnvironmentPaths(ABC):
         """:meth:`directions_to_bins` for points in ``point_bins``, none a source."""
 
 
-class _OpenPaths(EnvironmentPaths):
+class _OpenPaths(_EnvironmentPaths):
     """Any-angle shortest paths in an open environment, with cached fields."""
 
     def __init__(self, env: Environment) -> None:
@@ -585,7 +584,7 @@ class _OpenPaths(EnvironmentPaths):
             tuple[NDArray[np.float64], NDArray[np.int32], NDArray[np.int32]],
         ] = {}
 
-    def pairwise(self, points: NDArray[np.float64]) -> PairDistances:
+    def pairwise(self, points: NDArray[np.float64]) -> _PairDistances:
         return _OpenPairDistances(self, points)
 
     def prepare(self, bins: NDArray[np.intp]) -> None:
@@ -2984,16 +2983,16 @@ class _VertexFans:
         return passes
 
 
-class PairDistances(ABC):
+class _PairDistances(ABC):
     """Shortest path lengths between pairs of one set of positions.
 
-    Made by :meth:`EnvironmentPaths.pairwise`, which locates the positions
+    Made by :meth:`_EnvironmentPaths.pairwise`, which locates the positions
     once and prepares what every pair needs; results equal
-    :meth:`EnvironmentPaths.between` up to rounding (an open environment's
+    :meth:`_EnvironmentPaths.between` up to rounding (an open environment's
     tables sum the same terms in another order).
     """
 
-    def __init__(self, paths: EnvironmentPaths, points: NDArray[np.float64]) -> None:
+    def __init__(self, paths: _EnvironmentPaths, points: NDArray[np.float64]) -> None:
         self._points = points
         self._bins = paths.bins(points)
 
@@ -3026,7 +3025,7 @@ class PairDistances(ABC):
         """:meth:`between` for pairs whose two positions are both located."""
 
 
-class _OpenPairDistances(PairDistances):
+class _OpenPairDistances(_PairDistances):
     """Pair distances in an open environment, from per-bin-pair tables.
 
     The fields of every bin the positions visit are reduced to tables once,
@@ -3111,7 +3110,7 @@ class _OpenPairDistances(PairDistances):
         return distances
 
 
-class _TrackPairDistances(PairDistances):
+class _TrackPairDistances(_PairDistances):
     """Pair distances along a track, from each position's projection."""
 
     def __init__(self, paths: _TrackPaths, points: NDArray[np.float64]) -> None:
@@ -3196,7 +3195,7 @@ class _RootFields:
             self.n_kept = stop
 
 
-class _TrackPaths(EnvironmentPaths):
+class _TrackPaths(_EnvironmentPaths):
     """Distances along a track graph between projections onto the track."""
 
     def __init__(self, env: Environment) -> None:
@@ -3205,7 +3204,7 @@ class _TrackPaths(EnvironmentPaths):
 
         super().__init__(env)
         linearization = env.binning.linearization
-        assert linearization is not None  # environment_paths dispatches on it
+        assert linearization is not None  # _environment_paths dispatches on it
         graph = linearization.graph
         nodes = list(graph.nodes)
         index = {node: i for i, node in enumerate(nodes)}
@@ -3230,7 +3229,7 @@ class _TrackPaths(EnvironmentPaths):
         )
         self._node_distance = dijkstra(matrix, directed=False)
 
-    def pairwise(self, points: NDArray[np.float64]) -> PairDistances:
+    def pairwise(self, points: NDArray[np.float64]) -> _PairDistances:
         return _TrackPairDistances(self, points)
 
     def from_bins(self, source_bins: NDArray[np.intp]) -> NDArray[np.float64]:

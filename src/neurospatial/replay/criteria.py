@@ -20,12 +20,12 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from neurospatial._cache import CacheKey
 from neurospatial._exceptions import _format_error
 from neurospatial._keyword_hint import keyword_hint
 from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial._validation import is_integer_at_least, validate_choice
-from neurospatial.environment._cache import CacheKey
 from neurospatial.replay._inputs import (
     _STEP_WHY,
     _posterior_times,

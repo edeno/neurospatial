@@ -186,9 +186,9 @@ def region_reward_field(
         # inf for bins that cannot reach it. A shortest path into the region
         # enters through a boundary bin, so this is the distance from the
         # region boundary.
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _environment_paths
 
-        distances = environment_paths(env, call="region_reward_field").from_bins(
+        distances = _environment_paths(env, call="region_reward_field").from_bins(
             np.flatnonzero(region_mask)
         )
         reachable = np.isfinite(distances) & ~region_mask
@@ -367,9 +367,9 @@ def goal_reward_field(
         argument="goal_bins",
     ).tolist()
 
-    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.ops import _environment_paths
 
-    distances = environment_paths(env, call="goal_reward_field").from_bins(
+    distances = _environment_paths(env, call="goal_reward_field").from_bins(
         np.unique(goal_bins_list)
     )
 

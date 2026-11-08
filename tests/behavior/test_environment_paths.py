@@ -510,10 +510,10 @@ class TestTargetOutsideTheEnvironment:
         return _w_track(2.0, 10.0), np.array([0.0, -50.0])
 
     def test_to_point_and_directions_are_nan(self, env_and_outside):
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _environment_paths
 
         env, outside = env_and_outside
-        paths = environment_paths(env, call="test")
+        paths = _environment_paths(env, call="test")
         assert paths.bins(outside[None, :])[0] == -1
         points = env.bin_centers[:: max(1, env.n_bins // 10)]
         assert np.isnan(paths.to_point(points, outside)).all()
@@ -523,7 +523,7 @@ class TestTargetOutsideTheEnvironment:
 def test_fields_grown_only_to_the_start_bins_equal_whole_fields():
     """between() grows each target's field only as far as its start bins;
     the lengths equal those read from whole, kept fields."""
-    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.ops import _environment_paths
 
     edges = np.arange(0.0, 101.0, BIN)
 
@@ -544,8 +544,8 @@ def test_fields_grown_only_to_the_start_bins_equal_whole_fields():
         np.mod(np.cumsum(rng.normal(0, 8.0, (600, 2)), axis=0) + 50, 198) - 99
     )
     starts, ends = walk[:-1] + 0.5, walk[1:] + 0.5
-    grown = environment_paths(arena(), call="test").between(starts, ends)
-    whole = environment_paths(arena(), call="test")
+    grown = _environment_paths(arena(), call="test").between(starts, ends)
+    whole = _environment_paths(arena(), call="test")
     whole.prepare(whole.bins(ends))
     kept = whole.between(starts, ends)
     assert np.isfinite(grown).sum() > 500
@@ -555,12 +555,12 @@ def test_fields_grown_only_to_the_start_bins_equal_whole_fields():
 def test_field_cache_stays_within_its_budget(divider_arena, monkeypatch):
     """With room for five fields, the cache never holds more, and pairwise
     and per-target lengths equal those of an engine with room for all."""
-    import neurospatial.behavior._environment_paths as module
+    import neurospatial.ops._paths as module
 
     rng = np.random.default_rng(1)
     points = rng.uniform(1.0, 99.0, (80, 2))
     first, second = rng.integers(0, 80, (2, 500))
-    roomy = module.environment_paths(divider_arena, call="test")
+    roomy = module._environment_paths(divider_arena, call="test")
     expected_pairs = roomy.pairwise(points).between(first, second)
     expected_to = [roomy.to_point(points, target) for target in points[:12]]
 
@@ -599,7 +599,7 @@ def test_clean_hexagon_boxes_give_the_probe_walks_visibility(walled_hex_arena):
     """On a hexagonal lattice, skipping the probes of clean runs finds the
     same visible and blocked segments as probing every stretch, around the
     notch, along the wall and past its ends."""
-    from neurospatial.behavior._environment_paths import _HexCells, _OpenPaths
+    from neurospatial.ops._paths import _HexCells, _OpenPaths
 
     env = walled_hex_arena
     rng = np.random.default_rng(2)
@@ -646,12 +646,12 @@ class TestStraightLinesFromPositionsStayInside:
 
     @pytest.mark.parametrize("diagonal", [True, False])
     def test_positions_beside_a_missing_cell_go_around_its_corner(self, diagonal):
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _environment_paths
 
         env = _l_shape(diagonal)
         p, q = self.L_POINTS
         bound = self._l_bound()
-        paths = environment_paths(env, call="test")
+        paths = _environment_paths(env, call="test")
         lengths = [
             shortest_path_length(env, p, q),
             step_lengths(self.L_POINTS, metric="geodesic", env=env)[0],
@@ -661,18 +661,18 @@ class TestStraightLinesFromPositionsStayInside:
         assert np.all(np.array(lengths) >= bound - 1e-12)
 
     def test_direction_from_beside_a_missing_cell_does_not_cross_it(self):
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _environment_paths
 
         env = _l_shape(True)
         p, q = self.L_POINTS
-        direction = environment_paths(env, call="test").directions(p[None, :], q)[0]
+        direction = _environment_paths(env, call="test").directions(p[None, :], q)[0]
         # The straight line to q enters the missing cell within 0.15 cm; the
         # path heads for a bin center inside the environment instead.
         steps = p + np.linspace(0.0, 0.5, 51)[:, None] * direction
         assert np.all(env.bin_at(steps) >= 0)
 
     def test_distance_to_the_nearest_of_several_bins_goes_around_the_corner(self):
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _environment_paths
 
         x_edges, y_edges = np.array([0.0, 1.0, 2.0, 3.0]), np.array([0.0, 1.0, 2.0])
         mask = np.array([[True, False], [True, True], [True, True]])
@@ -685,17 +685,17 @@ class TestStraightLinesFromPositionsStayInside:
             np.linalg.norm(p[0] - self.L_CORNER) + np.linalg.norm([0.5, 0.5]),
             np.linalg.norm(p[0] - [2.5, 0.5]),
         )
-        distance = environment_paths(env, call="test").from_bins_at(sources, p)[0]
+        distance = _environment_paths(env, call="test").from_bins_at(sources, p)[0]
         assert distance >= bound - 1e-12
 
     def test_positions_either_side_of_a_wall_end_go_around_it(self, divider_arena):
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _environment_paths
 
         # The bins' centers see each other above the wall's end, but the line
         # between the positions crosses the wall at y = 65.3.
         p, q = np.array([49.9, 65.1]), np.array([54.9, 75.1])
         bound = np.linalg.norm(p - WALL_END) + np.linalg.norm(q - WALL_END)
-        paths = environment_paths(divider_arena, call="test")
+        paths = _environment_paths(divider_arena, call="test")
         points = np.array([p, q])
         lengths = [
             shortest_path_length(divider_arena, p, q),
@@ -713,8 +713,8 @@ def test_deep_mesh_interiors_locate_points_as_the_locator_does():
     locator's bins, at random, on shared edges, at vertices and a hair off
     them; and segments are visible exactly when probing with the locator
     finds them so."""
-    from neurospatial.behavior._environment_paths import _OpenPaths
     from neurospatial.layout import create_layout
+    from neurospatial.ops._paths import _OpenPaths
 
     outline = Polygon(
         [(0, 0), (60, 0), (60, 60), (35, 60), (35, 15), (25, 15), (25, 60), (0, 60)]
@@ -768,12 +768,12 @@ class TestMeshLinesOfSightPastVertices:
     turn."""
 
     def test_any_two_bins_of_a_convex_mesh_are_a_straight_line_apart(self):
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _environment_paths
 
         env = _mesh(box(0, 0, 40, 40))
         rng = np.random.default_rng(0)
         a, b = rng.integers(0, env.n_bins, (2, 2000))
-        distances = environment_paths(env, call="test").between_bins(a, b)
+        distances = _environment_paths(env, call="test").between_bins(a, b)
         straight = np.linalg.norm(env.bin_centers[a] - env.bin_centers[b], axis=1)
         np.testing.assert_allclose(distances, straight, rtol=1e-12, atol=0)
 
@@ -783,7 +783,7 @@ class TestMeshLinesOfSightPastVertices:
         outline (through a corner of the slot) may go either way."""
         import shapely
 
-        from neurospatial.behavior._environment_paths import _OpenPaths
+        from neurospatial.ops._paths import _OpenPaths
 
         outline = Polygon(
             [(0, 0), (60, 0), (60, 60), (35, 60), (35, 15), (25, 15), (25, 60), (0, 60)]
@@ -818,7 +818,7 @@ class TestMeshLinesOfSightPastVertices:
         there: the triangles either side of it, that share only that vertex,
         are joined only around the holes. Without the holes (the control)
         the straight line between them is inside."""
-        from neurospatial.behavior._environment_paths import _OpenPaths
+        from neurospatial.ops._paths import _OpenPaths
 
         holes = [
             [(10, 22), (22, 22), (22, 34), (10, 34)],
@@ -861,7 +861,7 @@ def test_rate_integral_on_a_grid_equals_the_probe_walk(
     equals, bit for bit, the cost the round-by-round probe walk adds up,
     and blocked segments cost inf; with rounds too large to take whole
     (a small probe chunk) the walk itself is used."""
-    import neurospatial.behavior._environment_paths as module
+    import neurospatial.ops._paths as module
 
     if probe_chunk is not None:
         monkeypatch.setattr(module, "_PROBE_CHUNK", probe_chunk)
