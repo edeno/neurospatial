@@ -66,7 +66,7 @@ from neurospatial.ops.egocentric import egocentric_bearing
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry import EgocentricPolarSystem
-    from neurospatial.ops._types import DistanceMetric
+    from neurospatial.ops._types import StraightOrGeodesic
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
 
@@ -192,7 +192,7 @@ def resolve_object_positions(
     *,
     env: Environment | None,
     positions: NDArray[np.float64],
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
 ) -> tuple[NDArray[np.float64], list[str] | None]:
     """Object coordinates for the egocentric encoders, and their landmark names.
 
@@ -294,7 +294,7 @@ def _compute_object_coords(
     headings: NDArray[np.float64] | None,
     object_positions: NDArray[np.float64],
     *,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     env: Environment | None = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Compute polar coordinates to the nearest object in the selected frame.
@@ -337,7 +337,7 @@ def _compute_object_coords(
         # distances: (n_time, n_objects)
         distances_all = np.linalg.norm(targets - positions[:, np.newaxis, :], axis=2)
     else:  # geodesic
-        from neurospatial.ops.distance import distance_field as compute_distance_field
+        from neurospatial.ops import _environment_paths
 
         # env validated by caller, this is for type narrowing
         if env is None:
@@ -347,6 +347,7 @@ def _compute_object_coords(
             )
             raise ValueError(msg)
         distances_all = np.full((n_time, n_objects), np.nan, dtype=np.float64)
+        paths = _environment_paths(env, call="object-vector distance")
 
         # Vectorized: compute all position bins at once
         pos_bins = env.bin_at(positions)
@@ -362,12 +363,15 @@ def _compute_object_coords(
                 # (filtered later in _coords_to_flat_bin_idx)
                 continue
 
-            # Get distance field from this object
-            dist_field = compute_distance_field(env, sources=[obj_bin])
-
-            # Vectorized lookup
-            valid_bins = pos_bins[valid_pos_mask]
-            distances_all[valid_pos_mask, i] = dist_field[valid_bins]
+            # The shortest path from each position to the object inside the
+            # environment, at any angle, as the behavior functions measure it.
+            inside = np.flatnonzero(valid_pos_mask)
+            distances_all[inside, i] = paths.between(
+                positions[inside],
+                np.broadcast_to(obj_pos, (inside.size, obj_pos.size)),
+                start_bins=pos_bins[inside],
+                end_bins=np.full(inside.size, obj_bin),
+            )
 
     # Compute bearings to all objects (egocentric)
     # bearings_all: (n_time, n_objects)
@@ -550,7 +554,7 @@ def object_frame_bins(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
     env: Environment | None,
 ) -> NDArray[np.intp]:
     """Polar bin of the nearest object at each sample, or -1.
@@ -609,7 +613,7 @@ def prepare_egocentric_binning(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     env: Environment | None = None,
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: NDArray[np.float64] | None = None,

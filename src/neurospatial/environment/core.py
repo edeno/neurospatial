@@ -28,6 +28,7 @@ from neurospatial.environment._affine import _apply_transform
 from neurospatial.environment._bin_mapping import BinMapping, _bin_mapping_from
 from neurospatial.environment._cache import (
     BIN_ATTRIBUTES,
+    BIN_GRAPH_DIAMETER,
     BOUNDARY_BINS,
     DIFFERENTIAL_OPERATOR,
     DIVERGENCE_OPERATOR,
@@ -382,24 +383,62 @@ class Environment(Generic[_C]):
         """
         return self._binning.dimension_ranges
 
-    def _geodesic_diameter(self) -> float:
+    def _geodesic_diameter(self, metric: PathMetric = "geodesic") -> float:
         """Longest shortest path between two connected bins, in the units.
 
-        Exact: Dijkstra from every bin, in memory-bounded blocks, once per
-        environment, then kept in the analysis cache. 0 for a single bin.
+        Exact, computed once per environment and metric and kept in the
+        analysis cache; 0 for a single bin. ``"bin_graph"`` runs Dijkstra
+        from every bin, in memory-bounded blocks. ``"geodesic"`` measures the
+        any-angle path between bin centers, the shorter of the two
+        directions; it grows any-angle fields only from the bins whose
+        bin-graph eccentricity could exceed the best length found, since no
+        any-angle path is longer than the bin-graph path.
         """
         from neurospatial.ops.distance import _bin_adjacency, _dijkstra_blocks
 
-        def build() -> float:
+        def eccentricities() -> NDArray[np.float64]:
             adjacency = _bin_adjacency(
                 self.connectivity, weight="distance", operation="geodesic diameter"
             )
-            longest = 0.0
+            out = np.zeros(self.n_bins)
             sources = np.arange(self.n_bins, dtype=np.intp)
-            for _, lengths in _dijkstra_blocks(adjacency, sources):
+            for start, lengths in _dijkstra_blocks(adjacency, sources):
+                finite = np.where(np.isfinite(lengths), lengths, 0.0)
+                out[start : start + len(lengths)] = finite.max(axis=1)
+            return out
+
+        if metric == "bin_graph":
+            return self._cache.get(
+                BIN_GRAPH_DIAMETER,
+                lambda: float(eccentricities().max(initial=0.0)),
+            )
+
+        def build() -> float:
+            from neurospatial.ops import _environment_paths
+
+            paths = _environment_paths(self, call="geodesic diameter")
+            graph = eccentricities()
+            if self.n_bins < 2:
+                return 0.0
+
+            def symmetric(bins: NDArray[np.intp]) -> NDArray[np.float64]:
+                fields = paths.to_bins(bins)[:, bins]
+                shorter: NDArray[np.float64] = np.minimum(fields, fields.T)
+                return shorter
+
+            # A first length: from the bin with the largest graph
+            # eccentricity to the bin farthest from it, both ways round.
+            first = int(np.argmax(graph))
+            field = paths.from_bins(np.array([first]))
+            far = int(np.argmax(np.where(np.isfinite(field), field, -1.0)))
+            longest = float(symmetric(np.array([first, far]))[0, 1])
+            # Two bins farther apart than that both have a graph eccentricity
+            # above it (the any-angle path is never longer than the graph's).
+            candidates = np.flatnonzero(graph > longest)
+            if candidates.size > 1:
+                lengths = symmetric(candidates)
                 finite = lengths[np.isfinite(lengths)]
-                if finite.size:
-                    longest = max(longest, float(finite.max()))
+                longest = max(longest, float(finite.max(initial=0.0)))
             return longest
 
         return self._cache.get(GEODESIC_DIAMETER, build)

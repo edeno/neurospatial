@@ -63,7 +63,7 @@ Transform landmark positions to egocentric coordinates:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -74,6 +74,7 @@ from neurospatial._pynapple import reads_pynapple_samples
 from neurospatial.geometry import CallIndexes, locate, require_cartesian
 
 if TYPE_CHECKING:
+    from neurospatial.environment import Environment
     from neurospatial.ops._protocols import GraphLookupConsumer
 
 __all__ = [
@@ -420,14 +421,22 @@ def egocentric_distance(
         Distance metric. Options:
 
         - "euclidean": Straight-line distance.
-        - "geodesic": Shortest-path distance along the environment's bin
-          graph, from the center of the animal's bin to the center of the
-          target's bin, so it goes around walls and holes. A position outside
-          the environment, or a NaN position or target (a missing
-          observation), gives NaN.
+        - "geodesic": Length of the shortest path from the animal's position
+          to the target that stays inside the environment, at any angle, as
+          the behavior functions measure it: the straight line when nothing
+          is in the way, around walls and holes otherwise.
+        - "bin_graph": Walk along the environment's connections from the
+          center of the animal's bin to the center of the target's bin.
+          Faster, but every position in a bin gets its center's distance,
+          and an oblique distance reads up to about 1.082 times the
+          straight line on a square grid (1.155 hexagonal); exact between
+          bin centers on a track.
+
+        For both path metrics a position outside the environment, or a NaN
+        position or target (a missing observation), gives NaN.
     env : Environment, optional
-        Required when metric="geodesic". The environment to compute
-        geodesic distances within.
+        Required when metric is "geodesic" or "bin_graph". The environment
+        to compute path distances within.
 
     Returns
     -------
@@ -437,13 +446,15 @@ def egocentric_distance(
     Raises
     ------
     ValueError
-        If metric is invalid or metric="geodesic" without an environment.
+        If metric is invalid, or a path metric is given without an
+        environment.
     ValueError
-        If metric="geodesic" and a finite target lies outside every bin of
-        ``env``; the message names the target and its distance to the
+        If a path metric is given and a finite target lies outside every bin
+        of ``env``; the message names the target and its distance to the
         nearest bin center.
     CartesianOnlyError
-        If metric="geodesic" and ``env`` is a polar environment.
+        For a path metric on a polar environment: positions and targets are
+        allocentric (x, y) positions.
 
     Examples
     --------
@@ -462,21 +473,22 @@ def egocentric_distance(
     targets = np.asarray(targets, dtype=np.float64)
     positions = np.asarray(positions, dtype=np.float64)
 
-    if metric not in ("euclidean", "geodesic"):
+    if metric not in ("euclidean", "geodesic", "bin_graph"):
         msg = (
             f"Invalid distance metric: '{metric}'.\n\n"
-            f"metric must be 'euclidean' or 'geodesic'\n"
+            f"metric must be 'euclidean', 'geodesic' or 'bin_graph'\n"
             f"Why: These are the supported distance algorithms\n\n"
             f"Fix:\n"
             f"1. Use 'euclidean' for straight-line distances (default, faster)\n"
-            f"2. Use 'geodesic' for boundary-respecting distances (requires env)"
+            f"2. Use 'geodesic' for boundary-respecting distances (requires env)\n"
+            f"3. Use 'bin_graph' for the faster walk between bin centers (requires env)"
         )
         raise ValueError(msg)
 
-    if metric == "geodesic" and env is None:
+    if metric != "euclidean" and env is None:
         msg = (
-            "Cannot compute geodesic distances: missing environment.\n\n"
-            "metric='geodesic' requires env parameter\n"
+            "Cannot compute path distances: missing environment.\n\n"
+            f"metric={metric!r} requires env parameter\n"
             "Why: Geodesic distances follow paths that respect environment boundaries\n\n"
             "Fix:\n"
             "1. Pass the environment: egocentric_distance(..., env=env)\n"
@@ -522,7 +534,7 @@ def egocentric_distance(
         diff = targets_3d - positions[:, np.newaxis, :]
         distances = np.sqrt(np.sum(diff**2, axis=-1))
 
-    else:  # geodesic
+    else:  # geodesic or bin_graph
         from neurospatial.ops.distance import _geodesic_pair_distances
 
         # env is guaranteed non-None here (validated above)
@@ -530,7 +542,7 @@ def egocentric_distance(
 
         require_cartesian(
             env.coordinate_system,
-            "egocentric_distance(metric='geodesic')",
+            f"egocentric_distance(metric={metric!r})",
             why="positions and targets are allocentric Cartesian positions, located "
             "in the environment's bins.",
             fix="use an allocentric environment, or metric='euclidean' for "
@@ -543,7 +555,7 @@ def egocentric_distance(
 
         # Vectorized: get bin indices for all positions at once
         indexes = CallIndexes()
-        call = "egocentric_distance(metric='geodesic')"
+        call = f"egocentric_distance(metric={metric!r})"
         pos_bins = locate(binning, arena, positions, indexes, call=call)
 
         # Map every target to its bin in one batched ``locate`` call rather
@@ -559,12 +571,27 @@ def egocentric_distance(
         )
 
         # A position outside the environment or a missing (NaN) target
-        # leaves its cell NaN. Dijkstra runs once per distinct target bin.
+        # leaves its cell NaN.
         position_bins = np.broadcast_to(pos_bins[:, np.newaxis], target_bins.shape)
         measured = (position_bins >= 0) & (target_bins >= 0)
-        distances[measured] = _geodesic_pair_distances(
-            graph, target_bins[measured], position_bins[measured], operation=call
-        )
+        if metric == "bin_graph":
+            # Dijkstra runs once per distinct target bin.
+            distances[measured] = _geodesic_pair_distances(
+                graph, target_bins[measured], position_bins[measured], operation=call
+            )
+        else:
+            from neurospatial.ops import _environment_paths
+
+            paths = _environment_paths(
+                cast("Environment", env), call="egocentric_distance"
+            )
+            starts = np.broadcast_to(positions[:, np.newaxis, :], targets_3d.shape)
+            distances[measured] = paths.between(
+                starts[measured],
+                targets_3d[measured],
+                start_bins=position_bins[measured],
+                end_bins=target_bins[measured],
+            )
 
     return distances
 

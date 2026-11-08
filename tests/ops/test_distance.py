@@ -473,3 +473,17 @@ class TestDistanceBetween:
             assert walled.distance_between(bins=[a, b]) == walled.distance_between(
                 bins=[b, a]
             )
+
+
+def test_geodesic_diameter_is_the_longest_symmetric_path(walled, two_rooms, square):
+    from shapely.geometry import Point
+
+    # In a disk the bin farthest out along the bin graph is not an end of the
+    # longest any-angle path, so the search must look past its first guess.
+    disk = Environment.from_polygon(Point(0, 0).buffer(20), bin_size=2.0)
+    for env in (walled, two_rooms, square, disk):
+        matrix = geodesic_distance_matrix(env)
+        longest = matrix[np.isfinite(matrix)].max()
+        assert env._geodesic_diameter("geodesic") == longest
+        graph = geodesic_distance_matrix(env, metric="bin_graph")
+        assert env._geodesic_diameter("bin_graph") == graph[np.isfinite(graph)].max()

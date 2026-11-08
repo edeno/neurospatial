@@ -32,7 +32,9 @@ CELL_POLYGONS: CacheKey[tuple[Polygon, ...]] = CacheKey("cell_polygons")
 # The KD-tree over the bin centers' Cartesian embedding, for polar nearest_bin.
 EMBEDDED_KDTREE: CacheKey[tuple[NDArray[Any], cKDTree]] = CacheKey("embedded_kdtree")
 BIN_SPACING: CacheKey[float] = CacheKey("bin_spacing")
-# The longest shortest path between two connected bins, along the graph.
+# The longest shortest path between two connected bins, along the bin graph.
+BIN_GRAPH_DIAMETER: CacheKey[float] = CacheKey("bin_graph_diameter")
+# The same for the any-angle (geodesic) path between bin centers.
 GEODESIC_DIAMETER: CacheKey[float] = CacheKey("geodesic_diameter")
 FACE_GEOMETRY: CacheKey[FaceGeometry] = CacheKey("face_geometry")
 DIFFUSION_GEOMETRY: CacheKey[DiffusionGeometry] = CacheKey("diffusion_geometry")
