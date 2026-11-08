@@ -675,14 +675,30 @@ def circular_linear_correlation(
     degree of freedom instead of two.
 
     Under independence, ``n * r**2`` is approximately chi-squared with as many
-    degrees of freedom as the fit (2, or 1 for collinear cos/sin). The
-    approximation is conservative for small samples (n < 20).
+    degrees of freedom as the fit (2, or 1 for collinear cos/sin), as in
+    CircStat's ``circ_corrcl`` (Berens 2009). The approximation is
+    conservative for small samples. ``r`` is at most 1, so ``pval`` is never
+    below ``exp(-n / 2)``: with 5 or fewer pairs it cannot fall below 0.05.
+    In simulation (4000-5000 draws per row, x normal and independent of
+    uniform or von Mises angles), ``pval < 0.05`` occurred in 4.0-4.5% of
+    draws at n = 10, 4.6-5.0% at n = 20 to 50 and 4.8-5.0% at n = 200;
+    ``pval < 0.01`` occurred in 0-0.02% at n = 10 and 0.8-1.1% at n = 200.
+    With two-valued angles (1 degree of freedom) ``pval < 0.05`` occurred in
+    5.5% at n = 10 and 4.8-4.9% at n = 30 and 200.
+    For a small sample with a 1% level, a permutation test of ``r`` is
+    exact.
 
     ``r`` is not a measure of how tightly points follow a wrapped line. The
     fit has one cycle of cosine and sine to work with, so a noiseless line
     that turns through ``c`` whole cycles gives ``r = sqrt(6) / (pi * c)``:
     0.78 at one cycle and 0.39 at two. For phase precession use
     ``mean_resultant_length`` or ``rho`` from ``compute_phase_precession``.
+
+    References
+    ----------
+    Mardia, K.V. & Jupp, P.E. (2000). Directional Statistics. Wiley.
+    Berens, P. (2009). CircStat: a MATLAB toolbox for circular statistics.
+        Journal of Statistical Software, 31(10).
 
     Examples
     --------
@@ -831,6 +847,15 @@ def circular_circular_correlation(
       (because deviations from circular means remain identical)
     - Anticorrelation requires reflection: r(a, -a) approaches -1.0
 
+    **Calibration.** The p-value is CircStat's normal approximation
+    (``circ_corrcc``, Berens 2009). For two independent samples it is
+    calibrated from about 30 pairs: ``pval < 0.05`` occurred in 4.7-5.3% of
+    20 000 draws of von Mises angles (kappa 0.5 to 2) at n = 30, 100 and 300,
+    and in 4.5-5.4% of 5000 draws of uniform angles at n = 30 to 200. It is
+    conservative for very small samples: in 5000 draws, ``pval < 0.05``
+    occurred in 1.1-1.9% at n = 5 and 4.3-5.7% at n = 10, and
+    ``pval < 0.01`` in 0.2-0.4% at n = 10.
+
     Examples
     --------
     >>> import numpy as np
@@ -851,6 +876,8 @@ def circular_circular_correlation(
         349-364. North-Holland.
     Jammalamadaka, S.R. & SenGupta, A. (2001). Topics in Circular Statistics.
         World Scientific, p. 176.
+    Berens, P. (2009). CircStat: a MATLAB toolbox for circular statistics.
+        Journal of Statistical Software, 31(10).
     """
     from scipy import stats
 
@@ -1386,6 +1413,18 @@ def circular_basis_metrics(
       is a 1.49-fold and 0.5 a 2.7-fold modulation
     - pvalue < 0.05 indicates statistically significant modulation
 
+    **Calibration.** The Wald statistic ``beta' cov^-1 beta`` is compared
+    with chi-squared on 2 degrees of freedom, a large-sample test. With a
+    Poisson GLM fit by statsmodels to untuned Poisson counts at uniform
+    random angles (2000 cells per row), ``pvalue < 0.05`` occurred in 5.0%
+    of cells with 100 spikes and 5.4% with 1000, but in 3.6-3.7% of cells
+    with 20 to 50 spikes, where the test is conservative. A fitted cell with
+    a planted modulation of amplitude 0.3 and about 400 spikes had the true
+    ``(beta_sin, beta_cos)`` inside its 95% Wald ellipse in 94.5% of 2000
+    fits. ``amplitude`` is biased upward when the modulation is weak
+    compared with its standard error: a true 0.1 was estimated as 0.13 on
+    average.
+
     Examples
     --------
     >>> import numpy as np
@@ -1469,6 +1508,13 @@ def is_modulated(
     when sample sizes are large. Requiring both significance AND a
     minimum magnitude ensures the modulation is both reliable and
     biologically meaningful.
+
+    The magnitude gate is neurospatial's own screening rule, not part of the
+    Wald test. For untuned Poisson cells it changes the false-positive rate
+    only when there are many spikes: with 20 to 100 spikes every significant
+    null amplitude was above 0.2, so the screen rejected as often as the
+    Wald test (3.6-5.0%); with 1000 spikes it rejected 0 to 1 of 2000 cells.
+    See :func:`circular_basis_metrics` for the Wald test's calibration.
 
     Examples
     --------
