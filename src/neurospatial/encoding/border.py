@@ -24,7 +24,7 @@ from neurospatial.encoding._field_metrics import _component_labels
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry._boundaries import BoundarySource
-    from neurospatial.ops._types import DistanceMetric
+    from neurospatial.ops._types import StraightOrGeodesic
 
 # Solstad et al. (2008): a field is at least 200 cm^2 of neighboring bins at
 # or above 30% of the peak rate.
@@ -40,7 +40,7 @@ def border_score(
     *,
     threshold: float = 0.3,
     min_area: float | None = None,
-    metric: DistanceMetric = "geodesic",
+    metric: StraightOrGeodesic = "geodesic",
     boundary_source: BoundarySource = "physical",
 ) -> float:
     """
@@ -344,7 +344,7 @@ def untuned_border_score(
     *,
     support: NDArray[np.bool_] | None = None,
     min_area: float | None = None,
-    metric: DistanceMetric = "geodesic",
+    metric: StraightOrGeodesic = "geodesic",
     boundary_source: BoundarySource = "physical",
 ) -> float:
     """

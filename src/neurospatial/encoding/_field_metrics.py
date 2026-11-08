@@ -34,7 +34,7 @@ from neurospatial.geometry import require_cartesian
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
-    from neurospatial.ops._types import DistanceMetric
+    from neurospatial.ops._types import StraightOrGeodesic
 
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
@@ -177,7 +177,7 @@ def rate_map_centroid(
     firing_rate: NDArray[np.float64],
     field_bins: NDArray[np.int64],
     *,
-    method: DistanceMetric = "euclidean",
+    method: StraightOrGeodesic = "euclidean",
 ) -> NDArray[np.float64]:
     """Compute firing-rate-weighted centroid of place field.
 
@@ -1003,7 +1003,7 @@ def field_shift_distance(
     firing_rate_b: NDArray[np.float64],
     field_bins_b: NDArray[np.int64],
     *,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
 ) -> float:
     """Compute distance between field centroids across sessions/environments.
 
@@ -1201,7 +1201,7 @@ def field_emd(
     firing_rate_a: NDArray[np.float64],
     firing_rate_b: NDArray[np.float64],
     *,
-    metric: DistanceMetric = "geodesic",
+    metric: StraightOrGeodesic = "geodesic",
     normalize: bool = True,
 ) -> float:
     """Compute Earth Mover's Distance (EMD) between two firing rate distributions.

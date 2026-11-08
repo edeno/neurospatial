@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Distances: one any-angle geodesic, and a faster `bin_graph` metric
+
+- A geodesic distance between two positions no longer depends on their
+  order. When the straight segment stays inside the environment it is the
+  straight line. Otherwise the path is grown from both ends and the shorter
+  one is kept: the any-angle search (Theta*) is not always optimal, and near
+  walls the path grown from one end could be a few percent longer than the
+  one grown from the other (up to 4% in a 100 cm box with two walls). This
+  changes `decoding_error`, `shortest_path_length`, `step_lengths`,
+  `traveled_path_length`, `mean_square_displacement` and the other behavior
+  functions with `metric="geodesic"` where a wall is in the way; it is never
+  longer than before.
+- `metric="bin_graph"` is a third choice for every behavior function with
+  `metric=` and for `decoding_error`. It walks the connections between the
+  centers of the positions' bins. It is faster for long sessions, fine grids
+  and many pairs, but every position in a bin gets its bin center's distance,
+  and an oblique distance reads up to 8.2% long on a square grid, 15.5% on a
+  hexagonal grid and 12.8% on a 26-connected 3-D grid. It is exact between
+  bin centers on a track, and it works on egocentric polar environments.
+- `metric="geodesic"` on an egocentric polar environment still raises
+  `CartesianOnlyError`; the message now suggests `metric="bin_graph"`.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then

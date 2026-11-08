@@ -15,7 +15,7 @@ from neurospatial._results import read_only_copy
 from neurospatial._units import default_length
 from neurospatial.environment import Environment
 from neurospatial.geometry import require_cartesian
-from neurospatial.ops._types import DistanceMetric
+from neurospatial.ops._types import StraightOrGeodesic
 from neurospatial.ops.distance import distance_field
 from neurospatial.simulation.models.base import (
     _check_metric,
@@ -249,7 +249,7 @@ class PlaceCellModel:
     width: float | NDArray[np.float64] | None = None
     max_rate: float = PLACE_FIELD_PEAK_HZ
     baseline_rate: float = 0.01
-    metric: DistanceMetric = "euclidean"
+    metric: StraightOrGeodesic = "euclidean"
     condition: (
         Callable[[NDArray[np.float64], NDArray[np.float64]], NDArray[np.bool_]] | None
     ) = None

@@ -1,8 +1,9 @@
-"""One reading of ``metric="euclidean" | "geodesic"`` for behavior functions.
+"""One reading of ``metric="euclidean" | "geodesic" | "bin_graph"`` for behavior.
 
 ``"euclidean"`` is the straight line between two positions; ``"geodesic"``
-is the shortest path that stays inside the environment, measured by
-:mod:`neurospatial.ops._paths`.
+is the shortest path that stays inside the environment, at any angle,
+measured by :mod:`neurospatial.ops._paths`; ``"bin_graph"`` walks the
+environment's connections between the centers of the positions' bins.
 """
 
 from __future__ import annotations
@@ -15,9 +16,11 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.ops import _EnvironmentPaths
 
+METRICS = ("euclidean", "geodesic", "bin_graph")
+
 
 def require_metric(metric: object, *, where: str) -> None:
-    """Raise unless ``metric`` is ``"euclidean"`` or ``"geodesic"``.
+    """Raise unless ``metric`` is ``"euclidean"``, ``"geodesic"`` or ``"bin_graph"``.
 
     Parameters
     ----------
@@ -32,17 +35,21 @@ def require_metric(metric: object, *, where: str) -> None:
     ValueError
         If ``metric`` is any other value, including another spelling.
     """
-    if metric not in ("euclidean", "geodesic"):
+    if metric not in METRICS:
         raise ValueError(
             _format_error(
-                f"{where} got metric={metric!r}; it must be 'euclidean' or 'geodesic'.",
+                f"{where} got metric={metric!r}; it must be 'euclidean', "
+                "'geodesic' or 'bin_graph'.",
                 why=(
-                    "distances are measured either along straight lines or along "
-                    "the shortest path inside the environment."
+                    "distances are measured along straight lines, along the "
+                    "shortest path inside the environment, or along the "
+                    "connections between bin centers."
                 ),
                 fix=(
-                    "use metric='euclidean' for straight-line distances, or "
-                    "metric='geodesic' with env= to respect barriers."
+                    "use metric='euclidean' for straight-line distances, "
+                    "metric='geodesic' with env= to respect barriers, or "
+                    "metric='bin_graph' with env= for the faster walk between "
+                    "bin centers."
                 ),
             )
         )
@@ -51,7 +58,7 @@ def require_metric(metric: object, *, where: str) -> None:
 def metric_paths(
     metric: object, env: Environment | None, *, call: str
 ) -> _EnvironmentPaths | None:
-    """The shortest-path engine ``metric`` measures with, or None for straight lines.
+    """The path engine ``metric`` measures with, or None for straight lines.
 
     Parameters
     ----------
@@ -59,20 +66,21 @@ def metric_paths(
         The value passed as ``metric``.
     env : Environment or None
         Environment the positions were recorded in; required for
-        ``metric="geodesic"``.
+        ``metric="geodesic"`` and ``metric="bin_graph"``.
     call : str
         Public function name, used in messages.
 
     Returns
     -------
     _EnvironmentPaths or None
-        ``env``'s shared engine for ``"geodesic"``; None for ``"euclidean"``.
+        ``env``'s shared any-angle engine for ``"geodesic"``, its bin-graph
+        engine for ``"bin_graph"``, None for ``"euclidean"``.
 
     Raises
     ------
     ValueError
-        If ``metric`` is not ``"euclidean"`` or ``"geodesic"``, or it is
-        ``"geodesic"`` and ``env`` is None.
+        If ``metric`` is not one of the three, or it needs ``env`` and
+        ``env`` is None.
     CartesianOnlyError
         For ``"geodesic"`` on an egocentric polar environment.
     """
@@ -82,14 +90,16 @@ def metric_paths(
     if env is None:
         raise ValueError(
             _format_error(
-                f"{call}(metric='geodesic') needs env=.",
-                why="the geodesic distance is a path inside the environment.",
+                f"{call}(metric={metric!r}) needs env=.",
+                why="the distance is a path inside the environment.",
                 fix=(
                     "pass the Environment the positions were recorded in, or use "
                     "metric='euclidean' for straight-line distances."
                 ),
             )
         )
-    from neurospatial.ops import _environment_paths
+    from neurospatial.ops import _bin_graph_paths, _environment_paths
 
+    if metric == "bin_graph":
+        return _bin_graph_paths(env)
     return _environment_paths(env, call=call)

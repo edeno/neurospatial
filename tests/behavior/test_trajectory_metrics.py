@@ -40,10 +40,14 @@ class TestComputeStepLengths:
         ids=["step_lengths", "msd"],
     )
     def test_unknown_metric_and_geodesic_without_env_raise(self, function):
-        with pytest.raises(ValueError, match="must be 'euclidean' or 'geodesic'"):
+        with pytest.raises(
+            ValueError, match="must be 'euclidean', 'geodesic' or 'bin_graph'"
+        ):
             function(metric="manhattan")
         with pytest.raises(ValueError, match=r"\(metric='geodesic'\) needs env="):
             function(metric="geodesic")
+        with pytest.raises(ValueError, match=r"\(metric='bin_graph'\) needs env="):
+            function(metric="bin_graph")
 
     def test_step_lengths_straight_line(self):
         """Test step lengths on a straight 1D trajectory with Euclidean distance."""

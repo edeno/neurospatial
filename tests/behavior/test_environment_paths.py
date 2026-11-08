@@ -880,3 +880,106 @@ def test_rate_integral_on_a_grid_equals_the_probe_walk(
     np.testing.assert_array_equal(cost, expected_cost)
     assert 300 < visible.sum() < visible.size - 300
     assert np.isinf(cost[~visible]).all()
+
+
+class TestBinGraphMetric:
+    """``metric="bin_graph"`` walks the connections between bin centers."""
+
+    @staticmethod
+    def _graph(env, a, b):
+        return nx.shortest_path_length(
+            env.connectivity, int(a), int(b), weight="distance"
+        )
+
+    def test_shortest_path_length_is_the_graph_distance(self, divider_arena):
+        start, goal = np.array([42.5, 12.5]), np.array([57.5, 12.5])
+        a, b = divider_arena.bin_at(np.stack([start, goal]))
+        length = shortest_path_length(divider_arena, start, goal, metric="bin_graph")
+        assert length == pytest.approx(self._graph(divider_arena, a, b), rel=1e-12)
+
+    def test_traveled_path_sums_graph_steps(self, divider_arena):
+        from neurospatial.behavior import traveled_path_length
+
+        positions = np.array([[12.0, 13.0], [31.0, 44.0], [33.0, 46.0], [80.0, 90.0]])
+        bins = divider_arena.bin_at(positions)
+        expected = sum(
+            self._graph(divider_arena, a, b) for a, b in zip(bins[:-1], bins[1:])
+        )
+        length = traveled_path_length(
+            np.arange(4.0), positions, metric="bin_graph", env=divider_arena
+        )
+        assert length == pytest.approx(expected, rel=1e-12)
+
+    def test_decoding_error_is_the_graph_distance_between_bins(self, divider_arena):
+        from neurospatial.decoding import decoding_error
+
+        rng = np.random.default_rng(0)
+        decoded = rng.uniform(1, 99, (50, 2))
+        actual = rng.uniform(1, 99, (50, 2))
+        errors = decoding_error(divider_arena, decoded, actual, metric="bin_graph")
+        a, b = divider_arena.bin_at(decoded), divider_arena.bin_at(actual)
+        expected = [self._graph(divider_arena, i, j) for i, j in zip(a, b)]
+        np.testing.assert_allclose(errors, expected, rtol=1e-12)
+
+    def test_region_goal_is_the_graph_distance_to_its_nearest_bin(self):
+        from neurospatial.behavior import distance_to_goal
+        from neurospatial.regions import Regions
+
+        edges = np.arange(0.0, 101.0, BIN)
+        regions = Regions()
+        regions.add("port", polygon=box(80, 80, 95, 95))
+        env = Environment.from_grid_mask(
+            np.ones((20, 20), dtype=bool),
+            grid_edges=(edges, edges),
+            units="cm",
+            regions=regions,
+            arena=OpenArena(
+                box(0, 0, 100, 100), walls={"divider": LineString([(50, 0), (50, 70)])}
+            ),
+        )
+        positions = np.array([[12.0, 13.0], [60.0, 10.0], [90.0, 90.0]])
+        distances = distance_to_goal(
+            env, np.arange(3.0), positions, goal="port", metric="bin_graph"
+        )
+        port = env.bins_in_region("port")
+        lengths = nx.multi_source_dijkstra_path_length(
+            env.connectivity, {int(b) for b in port}, weight="distance"
+        )
+        expected = [lengths[int(b)] for b in env.bin_at(positions)]
+        expected[2] = 0.0  # inside the region
+        np.testing.assert_allclose(distances, expected, rtol=1e-12)
+
+
+def test_shortest_path_length_is_the_same_either_way_round(divider_arena):
+    rng = np.random.default_rng(1)
+    for _ in range(20):
+        start, goal = rng.uniform(1, 99, 2), rng.uniform(1, 99, 2)
+        forward = shortest_path_length(divider_arena, start, goal)
+        assert forward == shortest_path_length(divider_arena, goal, start)
+
+
+class TestPolarMetrics:
+    @pytest.fixture(scope="class")
+    def polar(self):
+        return Environment.from_polar_egocentric(
+            distance_range=(0.0, 30.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 6,
+        )
+
+    def test_geodesic_is_refused_with_the_bin_graph_as_a_fix(self, polar):
+        from neurospatial._exceptions import CartesianOnlyError
+        from neurospatial.behavior import shortest_path_length
+
+        with pytest.raises(CartesianOnlyError, match="metric='bin_graph'"):
+            shortest_path_length(polar, np.array([10.0, 0.0]), np.array([20.0, 0.5]))
+
+    def test_bin_graph_walks_between_polar_bin_centers(self, polar):
+        start, goal = np.array([12.0, 0.1]), np.array([22.0, 1.5])
+        a, b = polar.bin_at(np.stack([start, goal]))
+        expected = nx.shortest_path_length(
+            polar.connectivity, int(a), int(b), weight="distance"
+        )
+        length = shortest_path_length(polar, start, goal, metric="bin_graph")
+        assert length == pytest.approx(expected, rel=1e-12)

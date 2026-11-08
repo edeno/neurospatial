@@ -81,7 +81,7 @@ if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry._arena import Arena
     from neurospatial.geometry._boundaries import BoundarySource
-    from neurospatial.ops._types import DistanceMetric
+    from neurospatial.ops._types import StraightOrGeodesic
 
 
 @dataclass(frozen=True)
@@ -895,7 +895,7 @@ def _border_score(
     fields: list[NDArray[np.intp]],
     firing_rate: NDArray[np.float64],
     bin_sizes: NDArray[np.float64],
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
     geometry: _BorderGeometry,
 ) -> float:
     """Solstad border score of the fields, with these walls.

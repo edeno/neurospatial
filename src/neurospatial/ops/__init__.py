@@ -27,6 +27,7 @@ from neurospatial.ops._linear_allocation import (
     _linear_grid_occupancy as _linear_grid_occupancy,
 )
 from neurospatial.ops._paths import _bin_graph as _bin_graph
+from neurospatial.ops._paths import _bin_graph_paths as _bin_graph_paths
 from neurospatial.ops._paths import _environment_paths as _environment_paths
 from neurospatial.ops._paths import _EnvironmentPaths as _EnvironmentPaths
 from neurospatial.ops._polygon_allocation import (
