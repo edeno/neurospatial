@@ -307,6 +307,15 @@ def decode_jointly(
     probability does not depend on how much of its environment the training
     data covered: two directions with different coverage still start equal.
 
+    When the spikes come from the model, ``template_probability`` is
+    calibrated: in a simulation of two tracks (100 and 60 cm, one trained on
+    70 cm only) with positions drawn from this prior, time bins given
+    probability p came from that template a fraction p of the time, within
+    2.3 standard errors in every decile of 40 000 bins. This holds for
+    spikes from the rate maps decoded with; with rate maps fitted on
+    training data, check it on held-out data, as for
+    :func:`~neurospatial.decoding.credible_region`.
+
     References
     ----------
     Ambrose, R. E., Pfeiffer, B. E., & Foster, D. J. (2016). Reverse replay of
