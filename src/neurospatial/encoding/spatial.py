@@ -5969,7 +5969,8 @@ def detect_place_fields(
           to the field whose peak it is reached from by flooding down the
           map, and each field ends at ``threshold`` times its own peak. Two
           touching fields are divided at the valley between them. It never
-          reports more fields than ``"core"``.
+          reports more fields than ``"core"``, so two fields that ``"core"``
+          reports as one stay one field.
         - ``None``: no separation. A field is the whole connected region at
           ``threshold`` times its peak.
 
