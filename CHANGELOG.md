@@ -35,6 +35,30 @@
   times with `shuffle_spike_times_circular` or permute cell identity with
   `shuffle_cell_identity`. The `PFEIFFER_FOSTER_2013` Notes now say this.
 
+### Documentation: how well p-values and credible regions are calibrated
+
+No p-value or interval changed. Each of these was checked against
+simulated data where the null or the model holds, and the docstrings now
+give the measured rates:
+
+- `circular_linear_correlation` (CircStat's `circ_corrcl` p-value) is
+  conservative for small samples. Its p-value is never below `exp(-n / 2)`,
+  so with 5 or fewer pairs it cannot reach 0.05. It is calibrated at 0.05
+  from about 20 pairs, and at 0.01 from about 200.
+- `circular_circular_correlation` (CircStat's `circ_corrcc`) is calibrated
+  from about 30 pairs and conservative below 10.
+- The Wald test of `circular_basis_metrics` is calibrated from about 100
+  spikes and conservative with 20 to 50. `is_modulated`'s magnitude gate
+  lowers the false-positive rate only when there are many spikes.
+- `compute_phase_precession`'s shuffle p-value is uniform for untuned cells
+  with 10 to 100 independent spikes.
+- `credible_region` says when a region's mass is its coverage. With rates
+  fitted on 10 minutes of training, 95% regions covered 96% on a simulated
+  track with the default estimator, 90% with unsmoothed binned rates, and
+  84% in a simulated open field (95% after 50 minutes).
+- `decode_jointly`'s template probability is calibrated on simulated
+  spikes, including a template trained on part of its track.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then
