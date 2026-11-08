@@ -257,7 +257,7 @@ def test_free_function_optional_data_list_is_current():
 REQUIRED_DATA_NAMES = {
     # Environments, graphs and recordings, and samples of them.
     *("env", "env_a", "env_b", "source_env", "target_env"),
-    *("graph", "nodes", "sources", "bin_from", "bin_to", "centers"),
+    *("graph", "bins", "sources", "centers"),
     *("nwbfile", "session", "obj", "data", "df", "path"),
     *("video_path", "xml_path", "json_path", "mask", "project"),
     *("times", "positions", "position", "points"),

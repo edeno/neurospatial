@@ -99,7 +99,7 @@ if TYPE_CHECKING:
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment import Environment
     from neurospatial.geometry._boundaries import BoundarySource
-    from neurospatial.ops._types import BackendType, DistanceMetric, ResolvedBackend
+    from neurospatial.ops._types import BackendType, ResolvedBackend, StraightOrGeodesic
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 # ruff: noqa: RUF022 - intentionally grouped by category
@@ -1993,7 +1993,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         self,
         threshold: float = 0.3,
         min_area: float | None = None,
-        metric: DistanceMetric = "geodesic",
+        metric: StraightOrGeodesic = "geodesic",
         *,
         boundary_source: BoundarySource = "physical",
     ) -> float:
@@ -2944,7 +2944,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         self,
         threshold: float = 0.3,
         min_area: float | None = None,
-        metric: DistanceMetric = "geodesic",
+        metric: StraightOrGeodesic = "geodesic",
         *,
         boundary_source: BoundarySource = "physical",
     ) -> BatchScoresResult:

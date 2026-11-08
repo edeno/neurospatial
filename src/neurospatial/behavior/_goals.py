@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 
     from neurospatial._interval_table import Intervals
     from neurospatial._observation import ObservationSupport
-    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.environment import Environment
+    from neurospatial.ops import _EnvironmentPaths
 
 
 @dataclass(frozen=True, eq=False)
@@ -67,7 +67,7 @@ class Goal:
     def distances(
         self,
         env: Environment,
-        paths: EnvironmentPaths | None,
+        paths: _EnvironmentPaths | None,
         positions: NDArray[np.float64],
     ) -> NDArray[np.float64]:
         """Distance from each position to the goal, shape (n_samples,).
@@ -82,7 +82,7 @@ class Goal:
         environment it is the straight line to the polygon's nearest point
         when that line stays inside the environment (the geodesic cannot be
         shorter), else the path through the region's field
-        (:meth:`EnvironmentPaths.to_area`): round walls through bin centres,
+        (:meth:`_EnvironmentPaths.to_area`): round walls through bin centres,
         then straight from the last of them to the edge. NaN at a missing
         position or one outside the environment; ``inf`` (geodesic) where the
         goal cannot be reached.
@@ -100,7 +100,7 @@ class Goal:
     def directions(
         self,
         env: Environment,
-        paths: EnvironmentPaths | None,
+        paths: _EnvironmentPaths | None,
         positions: NDArray[np.float64],
     ) -> NDArray[np.float64]:
         """Unit vector toward the goal at each position, shape (n_samples, n_dims).
@@ -182,7 +182,7 @@ def _track_projection(
 
 
 def _track_edge_points(
-    area: Any, env: Environment, paths: EnvironmentPaths
+    area: Any, env: Environment, paths: _EnvironmentPaths
 ) -> NDArray[np.float64]:
     """Where a track's centerline crosses a region's boundary, shape (k, 2)."""
     import shapely
@@ -215,7 +215,7 @@ def _region_paths(
     area: Any,
     bins: NDArray[np.intp],
     env: Environment,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     positions: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
     """Distance from each position to a region's edge, and where its path heads.
@@ -300,7 +300,7 @@ def resolve_goal(
     env: Environment,
     target: Any,
     *,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     call: str,
     name: str = "goal",
 ) -> Goal:
@@ -312,7 +312,7 @@ def resolve_goal(
     target : str or array-like of shape (n_dims,)
         A region name in ``env.regions`` (a polygon region is its area and
         bins, a point region its location), or a point in environment coordinates.
-    paths : EnvironmentPaths or None
+    paths : _EnvironmentPaths or None
         The geodesic engine, or None for straight lines; a geodesic goal
         point must lie inside the environment.
     call : str
@@ -364,7 +364,7 @@ def resolve_goal(
 def _checked_point(
     env: Environment,
     point: NDArray[np.float64],
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     name: str,
     call: str,
 ) -> NDArray[np.float64]:
@@ -518,7 +518,7 @@ def goal_rows(
     intervals: Intervals[Any] | None,
     goal: Any,
     *,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     call: str,
     disjoint: bool,
 ) -> list[GoalRow]:

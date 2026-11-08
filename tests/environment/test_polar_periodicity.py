@@ -57,7 +57,7 @@ def test_a_range_just_past_one_turn_is_refused_whatever_the_topology():
 def test_partial_range_has_no_shortcut_across_its_unobserved_angles():
     env = _polar((-np.pi / 2, np.pi / 2))
     np.testing.assert_allclose(
-        env.distance_to(bins=[0], metric="geodesic")[3], 15 * np.pi / 4
+        env.distance_to(bins=[0], metric="bin_graph")[3], 15 * np.pi / 4
     )
 
 

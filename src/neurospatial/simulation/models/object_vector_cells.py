@@ -109,7 +109,7 @@ from neurospatial.simulation.models.base import (
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
-    from neurospatial.ops._types import DistanceMetric
+    from neurospatial.ops._types import StraightOrGeodesic
 
 __all__ = ["ObjectVectorCellModel"]
 
@@ -294,7 +294,7 @@ class ObjectVectorCellModel:
     baseline_rate: float = 0.01
     object_selectivity: Literal["any", "nearest", "specific"] = "any"
     specific_object_index: int | None = None
-    metric: DistanceMetric = "euclidean"
+    metric: StraightOrGeodesic = "euclidean"
     _preferred_distance: float = field(init=False, repr=False)
     _distance_tolerance: float = field(init=False, repr=False)
     _distance_fields: NDArray[np.float64] | None = field(init=False, repr=False)
@@ -413,10 +413,7 @@ class ObjectVectorCellModel:
         if self.metric == "geodesic":
             object_bins = geodesic_lookup_bins(env, objects)
             fields = np.stack(
-                [
-                    distance_field(env.connectivity, sources=[int(b)])
-                    for b in object_bins
-                ],
+                [distance_field(env, sources=[int(b)]) for b in object_bins],
                 axis=1,
             )
             fields.setflags(write=False)

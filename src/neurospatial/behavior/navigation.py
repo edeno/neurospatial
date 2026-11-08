@@ -134,10 +134,10 @@ if TYPE_CHECKING:
 
     from neurospatial._interval_table import Intervals
     from neurospatial._observation import ObservationSupport
-    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.behavior._goals import Goal, GoalRow
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
+    from neurospatial.ops import _EnvironmentPaths
     from neurospatial.ops._types import DistanceMetric
 
 
@@ -372,8 +372,14 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
         The goal as given: a region name, or a point of shape (n_dims,).
         With intervals, a tuple with one goal per interval (None for an
         unknown goal).
-    metric : {"euclidean", "geodesic"}
+    metric : {"euclidean", "geodesic", "bin_graph"}
         Distance metric used.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     fully_observed : bool or ndarray of bool, shape (n_intervals,)
         True when every step from the first to the last observed sample is
         usable: missing samples are bridged within ``max_gap`` and there is
@@ -404,7 +410,7 @@ class PathEfficiencyResult(ReadOnlyArraysMixin, ResultMixin):
     angular_efficiency: float | NDArray[np.float64]
     start_position: NDArray[np.float64]
     goal: str | NDArray[np.float64] | tuple[str | NDArray[np.float64] | None, ...]
-    metric: Literal["euclidean", "geodesic"]
+    metric: DistanceMetric
     fully_observed: bool | NDArray[np.bool_]
     interval_ids: NDArray[Any] | None = field(default=None, kw_only=True)
     units: str | None = field(default=None, kw_only=True)
@@ -707,8 +713,14 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
         The goal as given: a region name, or a point of shape (n_dims,).
         With intervals, a tuple with one goal per interval (None for an
         unknown goal).
-    metric : {"euclidean", "geodesic"}
+    metric : {"euclidean", "geodesic", "bin_graph"}
         Distance metric used.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     arrival_tested : bool or ndarray of bool, shape (n_intervals,), default=True
         Whether arrival was tested: True for a region goal or a point goal
         with ``goal_radius``; False for a point goal without one, or an
@@ -756,7 +768,7 @@ class GoalDirectedMetrics(ReadOnlyArraysMixin, ResultMixin):
     goal_distance_at_start: float | NDArray[np.float64]
     goal_distance_at_end: float | NDArray[np.float64]
     goal: str | NDArray[np.float64] | tuple[str | NDArray[np.float64] | None, ...]
-    metric: Literal["euclidean", "geodesic"]
+    metric: DistanceMetric
     arrival_tested: bool | NDArray[np.bool_] = field(default=True, kw_only=True)
     interval_ids: NDArray[Any] | None = field(default=None, kw_only=True)
     units: str | None = field(default=None, kw_only=True)
@@ -1544,11 +1556,17 @@ def distance_to_goal(
         field of numbers or integers with one per interval are refused; in
         1-D a number is a position, so a well number there would be read as
         that many units along the track without an error.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         ``"geodesic"`` is the length of the shortest path that stays inside
         the environment, measured from the position itself; ``"euclidean"``
         is the straight line. A geodesic goal point must lie inside the
         environment.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     cost_map : array-like, shape (n_bins,), optional
         Extra cost per unit length of travel through each bin, dimensionless
         and ``>= 0``: ``0`` is plain travel and ``9`` makes moving through
@@ -1594,19 +1612,23 @@ def distance_to_goal(
 
     **Region goals.** A region is reached at its edge, as a trial ends when
     the animal enters it. With ``metric="euclidean"`` the distance is the
-    straight line to the region's polygon. With ``metric="geodesic"`` it is
-    the shortest path inside the environment to a point of the region's
-    edge: on a track, where the centerline crosses the region's boundary,
-    from the position's projection onto the centerline; in an open
-    environment, the straight line to the polygon's nearest point when that
-    line stays inside the environment (no path can be shorter). Otherwise
-    the path goes round walls through bin centres, as every geodesic here
-    does (see :func:`shortest_path_length`), and its last leg runs straight
-    from the last of them to the region's edge. That path is never shorter
-    than the true shortest path and can be up to about one bin longer per
-    corner it turns: against exact shortest paths it was at most 0.85 of a
-    bin longer (1.7 cm at 2 cm bins), and 0.17 cm longer on average behind
-    an 80 cm obstacle at 2 cm bins.
+    straight line to the region's polygon. With ``metric="geodesic"`` it is the
+    shortest path inside the environment to a point of the region's edge: on a
+    track, where the centerline crosses the region's boundary, from the
+    position's projection onto the centerline; in an open environment, the
+    straight line to the polygon's nearest point when that line stays inside the
+    environment (no path can be shorter). Otherwise the path goes round walls
+    through bin centres, as every geodesic here does (see
+    :func:`shortest_path_length`), and its last leg runs straight from the last
+    of them to the region's edge. That path is never shorter than the true
+    shortest path and can be up to about one bin longer per corner it turns:
+    against exact shortest paths it was at most 0.85 of a bin longer (1.7 cm at
+    2 cm bins), and 0.17 cm longer on average behind an 80 cm obstacle at 2 cm
+    bins. The distance is grown from the goal, one direction only: near walls
+    the length of a bin's path toward a goal, as grown from the goal, can differ
+    from the path grown the other way by up to 4.2% (measured in a 100 cm box
+    with two walls, 2 cm bins), while pair distances such as
+    :func:`shortest_path_length` are symmetric.
 
     **Travel cost.** Each bin has a cost rate per unit length,
     ``rate = terrain_difficulty * (1 + cost_map)``. The cost of a path is the
@@ -1773,13 +1795,19 @@ def distance_to_reward(
         location is read from the tracked positions at its reward time (see
         Notes); a reward whose location cannot be read that way has an
         unknown location. A NaN row is an unknown location.
-    metric : {'geodesic', 'euclidean'}, default='geodesic'
+    metric : {'geodesic', 'euclidean', 'bin_graph'}, default='geodesic'
         ``'euclidean'`` is the straight-line distance between the position and
         the reward location. ``'geodesic'`` is the length of the shortest path
         between two positions that stays inside the environment: it goes around
         walls and never leaves the environment, and on a track it runs along
         the track's centerline. Both are measured from the position itself, not
         its bin center.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     mode : {'nearest', 'last', 'next'}, default='nearest'
         Which reward to use for distance computation:
 
@@ -2321,11 +2349,17 @@ def distance_to_boundary(
     region : str, optional
         Name of region for boundary_type='region'. Required when
         boundary_type='region', ignored otherwise.
-    metric : {'geodesic', 'euclidean'}, default='geodesic'
+    metric : {'geodesic', 'euclidean', 'bin_graph'}, default='geodesic'
         ``'euclidean'`` is the straight-line distance. ``'geodesic'`` is the
         length of the shortest path between two positions that stays inside the
         environment: it goes around walls and never leaves the environment, and
         on a track it runs along the track's centerline.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
 
     Returns
     -------
@@ -2455,7 +2489,7 @@ def distance_to_boundary(
 
 def _distance_to_bins(
     env: Environment,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     bins: NDArray[np.intp],
     positions: NDArray[np.float64],
 ) -> NDArray[np.float64]:
@@ -2464,7 +2498,7 @@ def _distance_to_bins(
     Parameters
     ----------
     env : Environment
-    paths : EnvironmentPaths or None
+    paths : _EnvironmentPaths or None
         Shortest-path engine (:func:`metric_paths`); None for straight lines.
     bins : ndarray of intp, shape (n_targets,)
         Distinct, valid bin indices.
@@ -3384,7 +3418,7 @@ def _observed_path_length(
     sample_valid: NDArray[np.bool_],
     interval_mask: NDArray[np.bool_],
     *,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
 ) -> tuple[float, bool]:
     """Path length over usable intervals, and whether every interval counted.
 
@@ -3395,7 +3429,7 @@ def _observed_path_length(
         ``ObservationSupport.sample_valid`` of the same samples.
     interval_mask : ndarray of bool, shape (n_samples - 1,)
         ``ObservationSupport.interval_mask`` of the same samples.
-    paths : EnvironmentPaths or None
+    paths : _EnvironmentPaths or None
         Geodesic engine (``metric_paths``), or None for straight steps.
 
     Returns
@@ -3461,7 +3495,7 @@ def traveled_path_length(
         Position coordinates in allocentric frame. A 1-D array is one
         coordinate (for example a linearized track). Rows with a non-finite
         coordinate are missing.
-    metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic", "bin_graph"}, default="euclidean"
         ``"euclidean"`` sums the straight steps between samples. ``"geodesic"``
         sums, between consecutive samples, the length of the shortest path
         between two positions that stays inside the environment: it goes around
@@ -3469,6 +3503,12 @@ def traveled_path_length(
         the track's centerline. It is the straight step whenever the step stays
         inside, and the route around the walls when it does not (a bridged gap
         whose straight line crosses a wall). See Notes.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     env : Environment, optional
         Required when metric="geodesic". An interval with an endpoint outside
         the environment has no geodesic length and is left out; an interval
@@ -3572,11 +3612,17 @@ def shortest_path_length(
         Start position in allocentric frame.
     goal : NDArray[np.float64], shape (n_dims,)
         Goal position in allocentric frame.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         ``"euclidean"`` is the straight-line distance. ``"geodesic"`` is the
         length of the shortest path between two positions that stays inside the
         environment: it goes around walls and never leaves the environment, and
         on a track it runs along the track's centerline (see Notes).
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
 
     Returns
     -------
@@ -3640,7 +3686,8 @@ def shortest_path_length(
         return float(np.linalg.norm(goal - start))
 
     _require_inside(paths, {"start": start, "goal": goal}, call="shortest_path_length")
-    return float(paths.to_point(start[None, :], goal)[0])
+    # The same length either way round, as every pair distance.
+    return float(paths.between(start[None, :], goal[None, :])[0])
 
 
 def _require_inside(
@@ -3650,7 +3697,7 @@ def _require_inside(
 
     Parameters
     ----------
-    paths : EnvironmentPaths
+    paths : _EnvironmentPaths
     points : dict of str to ndarray, shape (n_dims,)
         Named positions, such as ``{"goal": goal}``.
     call : str
@@ -3859,7 +3906,7 @@ def angular_efficiency(
         the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         ``"geodesic"``: the shortest path that stays inside the environment
         (around walls, along a track's centerline), measured from each
         position; the goal direction is the direction in which that path
@@ -3867,6 +3914,12 @@ def angular_efficiency(
         straight line. In an arena without walls between the animal and the
         goal they agree. A geodesic goal point must lie inside the
         environment.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4059,7 +4112,7 @@ def _angular_efficiency(
     step: NDArray[np.float64],
     goal: Goal,
     *,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
 ) -> float:
     """``1 - sum(length * angle) / (pi * sum(length))`` over steps with an angle.
 
@@ -4071,7 +4124,7 @@ def _angular_efficiency(
     goal : Goal
         The resolved goal; its direction at each step start is the
         direction in which the shortest path to it leaves the start.
-    paths : EnvironmentPaths or None
+    paths : _EnvironmentPaths or None
         Geodesic engine (``metric_paths``), or None for straight lines.
     """
     to_goal = goal.directions(env, paths, starts)
@@ -4123,13 +4176,19 @@ def subgoal_efficiency(
     subgoals : ArrayLike, shape (n_subgoals, n_dims) or (n_dims,)
         Ordered sequence of subgoals, in the coordinates and units of
         ``positions``. A single row is one subgoal.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         Distance metric for path lengths, the closest approach and the goal
         direction, as in :func:`compute_path_efficiency`. ``"euclidean"`` is
         the straight-line distance. ``"geodesic"`` is the length of the
         shortest path between two positions that stays inside the environment:
         it goes around walls and never leaves the environment, and on a track
         it runs along the track's centerline.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -4358,7 +4417,7 @@ def compute_path_efficiency(
         the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         ``"geodesic"``: the shortest path that stays inside the environment
         (around walls, along a track's centerline), measured from each
         position; the goal direction is the direction in which that path
@@ -4366,6 +4425,12 @@ def compute_path_efficiency(
         straight line. In an arena without walls between the animal and the
         goal they agree. A geodesic goal point must lie inside the
         environment.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     reference_speed : float, optional
         Reference speed for time efficiency, in position units per second;
         finite and greater than zero. None leaves ``time_efficiency`` NaN.
@@ -4541,7 +4606,7 @@ def _path_efficiency(
     support: ObservationSupport,
     goal: Goal,
     *,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     metric: DistanceMetric,
     reference_speed: float | None,
 ) -> PathEfficiencyResult:
@@ -4822,7 +4887,7 @@ def instantaneous_goal_alignment(
         the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         ``"geodesic"``: the shortest path that stays inside the environment
         (around walls, along a track's centerline), measured from each
         position; the goal direction is the direction in which that path
@@ -4830,6 +4895,12 @@ def instantaneous_goal_alignment(
         straight line. In an arena without walls between the animal and the
         goal they agree. A geodesic goal point must lie inside the
         environment.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     min_speed : float or None, default=None
         Minimum speed for a direction of movement, in position units per second; None is
         5 cm/s expressed in ``env.units`` (``0.05`` for meters, ``50.0`` for
@@ -5149,7 +5220,7 @@ def goal_bias(
         the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         ``"geodesic"``: the shortest path that stays inside the environment
         (around walls, along a track's centerline), measured from each
         position; the goal direction is the direction in which that path
@@ -5157,6 +5228,12 @@ def goal_bias(
         straight line. In an arena without walls between the animal and the
         goal they agree. A geodesic goal point must lie inside the
         environment.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     min_speed : float or None, default=None
         Minimum speed for a direction of movement, in position units per second; None is
         5 cm/s expressed in ``env.units`` (``0.05`` for meters, ``50.0`` for
@@ -5334,7 +5411,7 @@ def approach_rate(
         the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         ``"geodesic"``: the shortest path that stays inside the environment
         (around walls, along a track's centerline), measured from each
         position; the goal direction is the direction in which that path
@@ -5342,6 +5419,12 @@ def approach_rate(
         straight line. In an arena without walls between the animal and the
         goal they agree. A geodesic goal point must lie inside the
         environment.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     max_gap : float or None, default=1.0
         Longest stretch of missing tracking, in seconds, to bridge: the time
         between consecutive valid samples (a dropped frame and a NaN row are
@@ -5524,7 +5607,7 @@ def compute_goal_directed_metrics(
         the distance to the goal falls fastest. For a round well
         (``regions.add(name, point=..., radius=...)``) that is the direction
         to its centre. A point region or a point is aimed at itself.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         ``"geodesic"``: the shortest path that stays inside the environment
         (around walls, along a track's centerline), measured from each
         position; the goal direction is the direction in which that path
@@ -5532,6 +5615,12 @@ def compute_goal_directed_metrics(
         straight line. In an arena without walls between the animal and the
         goal they agree. A geodesic goal point must lie inside the
         environment.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     min_speed : float or None, default=None
         Minimum speed for a direction of movement, in position units per second; None is
         5 cm/s expressed in ``env.units`` (``0.05`` for meters, ``50.0`` for
@@ -5763,7 +5852,7 @@ def _goal_directed(
     goal: Goal,
     *,
     bias: float,
-    paths: EnvironmentPaths | None,
+    paths: _EnvironmentPaths | None,
     metric: DistanceMetric,
     goal_radius: float | None,
 ) -> GoalDirectedMetrics:

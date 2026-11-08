@@ -26,6 +26,10 @@ basis : GLM spatial basis functions
 from neurospatial.ops._linear_allocation import (
     _linear_grid_occupancy as _linear_grid_occupancy,
 )
+from neurospatial.ops._paths import _bin_graph as _bin_graph
+from neurospatial.ops._paths import _bin_graph_paths as _bin_graph_paths
+from neurospatial.ops._paths import _environment_paths as _environment_paths
+from neurospatial.ops._paths import _EnvironmentPaths as _EnvironmentPaths
 from neurospatial.ops._polygon_allocation import (
     _polygon_linear_occupancy as _polygon_linear_occupancy,
 )
@@ -101,7 +105,6 @@ from neurospatial.ops.diffusion import _validate_occupancy as _validate_occupanc
 from neurospatial.ops.distance import (
     distance_field,
     euclidean_distance_matrix,
-    geodesic_distance_between_points,
     geodesic_distance_matrix,
     neighbors_within,
     pairwise_distances,
@@ -203,7 +206,6 @@ __all__ = [
     # Distance
     "distance_field",
     "euclidean_distance_matrix",
-    "geodesic_distance_between_points",
     "geodesic_distance_matrix",
     "neighbors_within",
     "pairwise_distances",

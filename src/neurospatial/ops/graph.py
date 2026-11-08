@@ -32,7 +32,9 @@ from numpy.typing import NDArray
 from neurospatial._validation import validate_choice
 
 if TYPE_CHECKING:
+    from neurospatial.environment import Environment
     from neurospatial.ops._protocols import GraphConsumer
+    from neurospatial.ops._types import PathMetric
 
 
 def neighbor_reduce(
@@ -277,11 +279,12 @@ def _neighbor_reduce_linear(
 
 
 def graph_convolve(
-    env: GraphConsumer,
+    env: Environment,
     field: NDArray[np.float64],
     kernel: Callable[[NDArray[np.float64]], NDArray[np.float64]] | NDArray[np.float64],
     *,
     normalize: bool = True,
+    metric: PathMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """
     Convolve a spatial field with a custom kernel on the graph.
@@ -300,7 +303,7 @@ def graph_convolve(
         Kernel specification, either:
         - **Callable**: Function mapping distances → weights.
           Signature: ``kernel(distances: NDArray) -> NDArray``. It is called
-          once with the full geodesic distance matrix, shape
+          once with the full distance matrix of ``metric``, shape
           ``(n_bins, n_bins)`` (``inf`` between disconnected bins), and must
           return weights of the same shape, ``[i, j]`` weighting source bin
           ``j`` at bin ``i``.
@@ -310,6 +313,16 @@ def graph_convolve(
         If True, normalize kernel weights to sum to 1 per bin (preserves
         constant fields). If False, use raw kernel weights (useful for
         edge detection kernels like Mexican hat).
+    metric : {"geodesic", "bin_graph"}, default="geodesic"
+        Distance a callable kernel is applied to (ignored for a kernel
+        matrix). ``"geodesic"`` is the shortest path between bin centers
+        that stays inside the environment, at any angle, so a kernel of
+        distance is round in an open arena. ``"bin_graph"`` walks the
+        connections between bin centers: faster (see
+        :func:`~neurospatial.ops.distance.geodesic_distance_matrix`), but an
+        oblique distance reads up to about 1.082 times the straight line on
+        a square grid (1.155 hexagonal, 1.128 in 3-D), so the kernel is an
+        octagon.
 
     Returns
     -------
@@ -352,7 +365,7 @@ def graph_convolve(
 
     **Algorithm**:
 
-    1. Compute the all-pairs graph distance matrix (callable kernels)
+    1. Compute the all-pairs distance matrix (callable kernels)
     2. Apply the kernel function, or take the precomputed weights
     3. Optionally normalize each row over its observed source bins
     4. Compute the weighted sum
@@ -413,6 +426,9 @@ def graph_convolve(
     Environment.smooth : Boundary-aware finite-volume diffusion smoothing
     neighbor_reduce : Local aggregation over graph neighborhoods
     """
+    validate_choice(
+        metric, ("geodesic", "bin_graph"), name="metric", owner="graph_convolve()"
+    )
     # Validate field shape
     if field.shape[0] != env.n_bins:
         msg = (
@@ -423,13 +439,9 @@ def graph_convolve(
 
     # Determine kernel type and compute kernel matrix if needed
     if callable(kernel):
-        # Callable kernel: compute distance-based weights for each bin
-        # Use geodesic_distance_matrix for efficient all-pairs shortest paths
         from neurospatial.ops.distance import geodesic_distance_matrix
 
-        # Compute all pairwise geodesic distances at once: O(n_bins * E log V)
-        # This is much faster than O(n_bins^2 * E log V) from individual Dijkstra calls
-        dist_matrix = geodesic_distance_matrix(env.connectivity, weight="distance")
+        dist_matrix = geodesic_distance_matrix(env, metric=metric)
 
         # Apply kernel function to entire distance matrix (vectorized)
         # Most kernel functions (e.g., Gaussian, exponential) are ufunc-compatible

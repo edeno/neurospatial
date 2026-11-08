@@ -277,8 +277,8 @@ def test_region_goal_behind_a_corner_goes_round_it():
     import shapely
     from shapely.geometry import LineString, Point
 
-    from neurospatial.behavior._environment_paths import environment_paths
     from neurospatial.behavior._goals import resolve_goal
+    from neurospatial.ops import _environment_paths
 
     arena = box(0, 0, 100, 100).difference(box(50, 50, 100, 100))
     env = Environment.from_polygon(arena, bin_size=2.0, units="cm")
@@ -310,7 +310,7 @@ def test_region_goal_behind_a_corner_goes_round_it():
     assert np.all(distances <= exact + env.bin_spacing)
     np.testing.assert_allclose(distances[3], exact[3], rtol=1e-12)
 
-    paths = environment_paths(env, call="test")
+    paths = _environment_paths(env, call="test")
     goal = resolve_goal(env, "well", paths=paths, call="test")
     unit = goal.directions(env, paths, positions)
     cosine = np.sum(unit * toward, axis=1) / np.linalg.norm(toward, axis=1)

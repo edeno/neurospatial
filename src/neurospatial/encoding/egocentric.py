@@ -114,7 +114,7 @@ if TYPE_CHECKING:
     from neurospatial.encoding._spatial_counts import FrameBinning
     from neurospatial.environment import Environment
     from neurospatial.geometry import EgocentricPolarSystem
-    from neurospatial.ops._types import BackendType, DistanceMetric, ResolvedBackend
+    from neurospatial.ops._types import BackendType, ResolvedBackend, StraightOrGeodesic
 
     PolarEnvironment = Environment[EgocentricPolarSystem]
     from neurospatial.stats.shuffle import ShuffleTestResult
@@ -1475,7 +1475,7 @@ def compute_egocentric_rate(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -1758,7 +1758,7 @@ def compute_object_vector_rate(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2105,7 +2105,7 @@ def _require_planar_positions(
 def _largest_object_distance(
     env: Environment,
     object_positions: NDArray[np.float64],
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
 ) -> float:
     """The farthest the animal can be from the nearest object inside ``env``.
 
@@ -2121,7 +2121,7 @@ def _largest_object_distance(
         object_bins = env.bin_at(np.asarray(object_positions).reshape(-1, 2))
         sources = [int(b) for b in object_bins if b >= 0]
         if sources:
-            field_ = distance_field(env.connectivity, sources=sources)
+            field_ = distance_field(env, sources=sources)
             reachable = field_[np.isfinite(field_)]
             if reachable.size:
                 return float(reachable.max())
@@ -2136,7 +2136,7 @@ def _object_vector_grid(
     env: Environment | None,
     object_positions: NDArray[np.float64],
     *,
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
     distance_range: tuple[float, float] | None,
     distance_bin_size: float | None,
     direction_bin_size: float,
@@ -2335,7 +2335,7 @@ def _count_object_vectors(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
     max_gap: float | None,
     epochs: Any,
     spike_window: Any,
@@ -2478,7 +2478,7 @@ def _object_vector_rate(
     distance_range: tuple[float, float] | None,
     distance_bin_size: float | None,
     direction_bin_size: float,
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
     max_gap: float | None,
     epochs: Any,
     break_before: ArrayLike | None,
@@ -2543,7 +2543,7 @@ def compute_egocentric_rates(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -2903,7 +2903,7 @@ def compute_object_vector_rates(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3255,7 +3255,7 @@ def _object_vector_rates(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3620,7 +3620,7 @@ def is_object_vector_cell(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -3912,7 +3912,7 @@ def is_egocentric_object_vector_cell(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -4211,7 +4211,7 @@ def _is_object_vector_cell(
     distance_range: tuple[float, float] | None,
     distance_bin_size: float | None,
     direction_bin_size: float,
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
     max_gap: float | None,
     epochs: Any,
     break_before: ArrayLike | None,
@@ -4461,7 +4461,7 @@ def _object_vector_null_maps(
     distance_range: tuple[float, float],
     n_distance_bins: int,
     n_direction_bins: int,
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
     env: Environment | None,
     max_gap: float | None,
     epochs: NDArray[np.float64] | None,
@@ -4618,7 +4618,7 @@ def _object_vector_significance(
     distance_range: tuple[float, float] | None,
     distance_bin_size: float | None,
     direction_bin_size: float,
-    metric: DistanceMetric,
+    metric: StraightOrGeodesic,
     max_gap: float | None,
     epochs: Any,
     break_before: ArrayLike | None,
@@ -4810,7 +4810,7 @@ def object_vector_cell_significance(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,
@@ -5061,7 +5061,7 @@ def egocentric_object_vector_cell_significance(
     distance_range: tuple[float, float] | None = None,
     distance_bin_size: float | None = None,
     direction_bin_size: float = DEFAULT_DIRECTION_BIN_SIZE,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
     max_gap: float | None = DEFAULT_MAX_GAP,
     epochs: Any = None,
     break_before: ArrayLike | None = None,

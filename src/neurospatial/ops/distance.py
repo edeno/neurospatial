@@ -1,24 +1,36 @@
 """Distance primitives for spatial environments.
 
-Low-level helpers for computing Euclidean and graph-geodesic distances between
-bins (nodes), distance fields from one or more source bins, and local
-neighborhood lookups. These operate on arrays of bin centers (shape
-``(n_bins, n_dims)``) or on the connectivity graph of an environment.
+Distances between bins, distance fields from one or more source bins, and
+neighborhoods, in one of three metrics:
+
+- ``"geodesic"`` (the default): the shortest path inside the environment,
+  at any angle. It equals the straight line between two bin centers when
+  nothing is in the way and goes around walls otherwise; it is the distance
+  the behavior functions and ``decoding_error`` measure.
+- ``"bin_graph"``: the walk along the environment's connections between
+  bin centers. It is faster, especially for matrices and fine grids, but an
+  oblique distance reads up to ``sqrt(4 - 2 sqrt(2))`` (about 1.082) times
+  the straight line on an 8-connected square grid, ``2 / sqrt(3)`` (about
+  1.155) on a hexagonal grid and about 1.128 on a 26-connected 3-D grid. It
+  is exact between bin centers on a track, and it works on egocentric polar
+  environments.
+- ``"euclidean"``: the straight line between bin centers, through walls.
+
+Hop counts (edges, not lengths) are ``Environment.reachable_from(...,
+metric="hops")`` and ``Environment.rings``.
 
 Functions
 ---------
 euclidean_distance_matrix
-    Pairwise Euclidean distance matrix between bin centers.
+    Pairwise Euclidean distance matrix between points.
 geodesic_distance_matrix
-    Pairwise shortest-path (graph) distance matrix between bins.
-geodesic_distance_between_points
-    Geodesic distance between two specific bins.
+    Distance between every pair of bins.
 distance_field
-    Shortest-path distance from one or more source bins to every bin.
+    Distance from every bin to the nearest of one or more source bins.
 pairwise_distances
-    Pairwise distances (Euclidean or geodesic) between selected bins.
+    Distances between selected bins.
 neighbors_within
-    Bins within a given distance of a source bin.
+    Bins within a given distance of each center bin.
 """
 
 from __future__ import annotations
@@ -34,6 +46,9 @@ from neurospatial._exceptions import _format_error
 
 if TYPE_CHECKING:
     from scipy.sparse import csr_array
+
+    from neurospatial.environment import Environment
+    from neurospatial.ops._types import DistanceMetric, PathMetric
 
 
 def euclidean_distance_matrix(centers: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -63,159 +78,170 @@ def euclidean_distance_matrix(centers: NDArray[np.float64]) -> NDArray[np.float6
 
 
 def geodesic_distance_matrix(
-    graph: nx.Graph,
+    env: Environment,
     *,
-    weight: str | None = "distance",
+    metric: PathMetric = "geodesic",
 ) -> NDArray[np.float64]:
-    """Compute geodesic (shortest-path) distance matrix on a graph.
-
-    Uses scipy's optimized shortest path implementation for improved performance.
+    """Distance between every pair of bins, along paths inside the environment.
 
     Parameters
     ----------
-    graph : nx.Graph
-        NetworkX graph representing spatial connectivity, such as
-        ``env.connectivity``. Its nodes must be the bin indices
-        ``0 .. n_bins - 1``.
-    weight : str or None, default="distance"
-        Edge attribute holding each edge's length. None counts edges (hops).
+    env : Environment
+        The environment whose bins are measured.
+    metric : {"geodesic", "bin_graph"}, default="geodesic"
+        ``"geodesic"`` is the shortest path between the two bin centers that
+        stays inside the environment, at any angle: the straight line when
+        nothing is in the way, around walls otherwise. ``"bin_graph"`` walks
+        the connections between bin centers, each edge as long as the
+        distance between its two centers. Choose it for speed (see Notes).
 
     Returns
     -------
     NDArray[np.float64], shape (n_bins, n_bins)
-        Geodesic distance matrix where element (i, j) is the shortest path
-        length from bin i to bin j. Disconnected bins have distance np.inf.
+        Element ``(i, j)`` is the distance between bins ``i`` and ``j``;
+        ``np.inf`` between disconnected parts. Symmetric.
 
     Raises
     ------
+    CartesianOnlyError
+        For ``metric="geodesic"`` on an egocentric polar environment, whose
+        bins are (distance, angle) in the animal's frame. Use
+        ``metric="bin_graph"`` there.
     ValueError
-        If ``graph`` is directed or a multigraph, its nodes are not exactly
-        ``0 .. n_bins - 1``, or an edge lacks the ``weight`` attribute.
+        If ``metric`` is not ``"geodesic"`` or ``"bin_graph"``.
 
     Notes
     -----
-    Distances run along the bin graph between bin centers. In an open arena
-    an oblique path on an 8-connected grid is a staircase of grid steps, up to
-    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-    the any-angle path between positions instead, which equals the straight line
-    when nothing is in the way.
-    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
-    26-connected 3-D grids about 1.128.
+    **Geodesic.** Two bin centers that see each other are the straight line
+    apart. For the others a path grows from each bin (Theta*, as in the
+    behavior functions); it is not always the shortest one near walls, so
+    entry ``(i, j)`` is the shorter of the paths grown from ``i`` and from
+    ``j``. Measured on an Apple M5 Max for 2,500 bins: 2.6 s and 130 MB of
+    working memory in an open box, 32 s and 420 MB with two walls. The
+    result itself is ``n_bins**2 * 8`` bytes (800 MB for 10,000 bins).
 
-    This function uses scipy.sparse.csgraph.shortest_path for optimized
-    performance (~10-100× faster than pure NetworkX implementation).
-    The algorithm automatically selects between Dijkstra's algorithm
-    (for sparse graphs) and Floyd-Warshall (for dense graphs).
+    **Bin graph.** ``scipy.sparse.csgraph.shortest_path`` on the bin graph,
+    about 6-40 times faster (0.6 s for 2,500 bins). An oblique distance reads
+    up to ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line on
+    an 8-connected square grid, ``2 / sqrt(3)`` (about 1.155) on a hexagonal
+    grid and about 1.128 on a 26-connected 3-D grid; between bin centers on
+    a track it is exact. It works on egocentric polar environments.
 
     Examples
     --------
-    >>> import networkx as nx
+    >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.ops.distance import geodesic_distance_matrix
-    >>> graph = nx.Graph()
-    >>> # Rows follow the bin index, whatever order the edges were added in.
-    >>> graph.add_edge(2, 3, distance=1.0)
-    >>> graph.add_edge(0, 1, distance=1.0)
-    >>> graph.add_edge(1, 2, distance=2.0)
-    >>> geodesic_distance_matrix(graph)[0].tolist()
-    [0.0, 1.0, 3.0, 4.0]
-
+    >>> edges = np.arange(0.0, 11.0, 2.0)
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((5, 5), dtype=bool), grid_edges=(edges, edges)
+    ... )
+    >>> # Corner to corner: the straight line, or a staircase on the graph.
+    >>> distances = geodesic_distance_matrix(env)
+    >>> round(float(distances[0, -1]), 3)  # sqrt(8**2 + 8**2)
+    11.314
+    >>> round(float(geodesic_distance_matrix(env, metric="bin_graph")[0, 2]), 3)
+    4.0
     """
     from scipy.sparse.csgraph import shortest_path
 
-    adjacency = _bin_adjacency(
-        graph, weight=weight, operation="geodesic_distance_matrix()"
-    )
-    if adjacency.shape[0] == 0:
+    _require_path_metric(metric, "geodesic_distance_matrix()")
+    if env.n_bins == 0:
         return np.empty((0, 0), dtype=np.float64)
+    if metric == "bin_graph":
+        adjacency = _bin_adjacency(
+            env.connectivity, weight="distance", operation="geodesic_distance_matrix()"
+        )
+        dist_matrix: NDArray[np.float64] = shortest_path(
+            csgraph=adjacency, method="auto", directed=False, return_predecessors=False
+        )
+        return dist_matrix
+    return _symmetric_fields(env, np.arange(env.n_bins), "geodesic_distance_matrix")
 
-    # Compute shortest paths using scipy's optimized implementation
-    dist_matrix: NDArray[np.float64] = shortest_path(
-        csgraph=adjacency,
-        method="auto",  # Automatically choose best algorithm
-        directed=False,  # Undirected graphs
-        return_predecessors=False,
-    )
 
-    return dist_matrix
+def _symmetric_fields(
+    env: Environment, bins: NDArray[np.intp], call: str
+) -> NDArray[np.float64]:
+    """Any-angle distances between ``bins``: the shorter of both directions."""
+    return _between_bin_sets(env, bins, bins, call)
 
 
-def geodesic_distance_between_points(
-    graph: nx.Graph,
-    bin_from: int,
-    bin_to: int,
-    *,
-    default: float = np.inf,
-    weight: str | None = "distance",
-) -> float:
-    """Compute geodesic distance between two specific nodes in a graph.
+def _between_bin_sets(
+    env: Environment, first: NDArray[np.intp], second: NDArray[np.intp], call: str
+) -> NDArray[np.float64]:
+    """Any-angle distance between each bin of ``first`` and each of ``second``.
 
-    Parameters
-    ----------
-    graph : nx.Graph
-        NetworkX graph representing spatial connectivity.
-    bin_from : int
-        Source node/bin index.
-    bin_to : int
-        Target node/bin index.
-    default : float, default=np.inf
-        Value to return if no path exists.
-    weight : str or None, default="distance"
-        Edge attribute holding each edge's length. None counts edges (hops).
+    Entry ``(i, j)`` is the straight line between the two centers when the
+    segment stays inside the environment, else the shorter of the paths
+    grown from ``first[i]`` and from ``second[j]``. Segments are traced a
+    block of rows at a time, and one field grows from each distinct bin with
+    a hidden pair, a block at a time, so the working memory beyond the
+    result (and a boolean table of hidden pairs) stays bounded however many
+    pairs there are.
 
     Returns
     -------
-    float
-        Shortest path length from bin_from to bin_to, summing ``weight``.
-        Returns `default` if no path exists.
-
-    Raises
-    ------
-    networkx.NodeNotFound
-        If either bin is not a node of ``graph``, such as the outside marker -1:
-        a missing bin has no distance, which is not the same as no path.
-    ValueError
-        If an edge lacks the ``weight`` attribute.
-
-
-    Notes
-    -----
-    Distances run along the bin graph between bin centers. In an open arena
-    an oblique path on an 8-connected grid is a staircase of grid steps, up to
-    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-    the any-angle path between positions instead, which equals the straight line
-    when nothing is in the way.
-    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
-    26-connected 3-D grids about 1.128.
+    NDArray[np.float64], shape (len(first), len(second))
     """
-    _require_nodes(graph, [bin_from, bin_to], "geodesic_distance_between_points()")
-    _require_edge_weight(graph, weight, "geodesic_distance_between_points()")
-    try:
-        length = nx.shortest_path_length(
-            graph,
-            source=bin_from,
-            target=bin_to,
-            weight=weight,
-        )
-        return float(length)
-    except nx.NetworkXNoPath:
-        return default
+    from neurospatial.ops._paths import _environment_paths
 
-
-def _require_nodes(graph: nx.Graph, nodes: Iterable[int], operation: str) -> None:
-    """Refuse bins that are not graph nodes, naming the outside marker -1."""
-    missing = [int(node) for node in nodes if node not in graph]
-    if missing:
-        _raise_missing_nodes(missing, operation)
+    paths = _environment_paths(env, call=call)
+    first = np.asarray(first, dtype=np.intp)
+    second = np.asarray(second, dtype=np.intp)
+    out = np.full((first.size, second.size), np.inf)
+    hidden = np.ones(out.shape, dtype=bool)
+    centers = np.asarray(env.bin_centers, dtype=np.float64)
+    if env.binning.linearization is None and first.size and second.size:
+        # No path is shorter than the straight line: where the segment
+        # between two centers stays inside, it is the distance. Traced a
+        # block of rows at a time, so the probe arrays stay bounded.
+        rows_per_block = max(1, _PAIR_BLOCK // second.size)
+        for lo in range(0, first.size, rows_per_block):
+            a = np.repeat(first[lo : lo + rows_per_block], second.size)
+            b = np.tile(second, a.size // second.size)
+            seen = paths.sees(centers[a], centers[b]).reshape(-1, second.size)
+            straight = np.linalg.norm(centers[a] - centers[b], axis=1).reshape(
+                seen.shape
+            )
+            out_rows = out[lo : lo + rows_per_block]
+            out_rows[seen] = straight[seen]
+            hidden[lo : lo + rows_per_block] = ~seen
+    # The rest: one field from each bin that has a hidden pair.
+    need_first = hidden.any(axis=1)
+    need_second = hidden.any(axis=0)
+    roots, where = np.unique(
+        np.concatenate([first[need_first], second[need_second]]), return_inverse=True
+    )
+    root_of_first = np.full(first.size, -1, dtype=np.intp)
+    root_of_second = np.full(second.size, -1, dtype=np.intp)
+    root_of_first[need_first] = where[: int(need_first.sum())]
+    root_of_second[need_second] = where[int(need_first.sum()) :]
+    block = max(1, _DIJKSTRA_BLOCK_VALUES // max(env.n_bins, 1))
+    for lo in range(0, roots.size, block):
+        hi = min(lo + block, roots.size)
+        # fields[k, b]: the path from bin b, grown from root lo + k.
+        fields = paths.to_bins(roots[lo:hi])
+        # Only hidden pairs take a field's length; a visible pair keeps its
+        # straight line exactly.
+        columns = np.flatnonzero((root_of_second >= lo) & (root_of_second < hi))
+        if columns.size:
+            grown = fields[root_of_second[columns] - lo][:, first].T
+            out[:, columns] = np.where(
+                hidden[:, columns], np.minimum(out[:, columns], grown), out[:, columns]
+            )
+        rows = np.flatnonzero((root_of_first >= lo) & (root_of_first < hi))
+        if rows.size:
+            grown = fields[root_of_first[rows] - lo][:, second]
+            out[rows] = np.where(hidden[rows], np.minimum(out[rows], grown), out[rows])
+    return out
 
 
 def _raise_missing_nodes(missing: list[int], operation: str) -> NoReturn:
     raise nx.NodeNotFound(
         _format_error(
-            f"{operation}: bin(s) {missing} are not nodes of the graph.",
+            f"{operation}: bin(s) {missing} are not bins of the environment.",
             why="-1 marks a sample outside the environment, which has no "
-            "graph distance; other values are not bins of this graph.",
+            "distance; other values are not bins of this environment.",
             fix="drop the -1 samples first (bins[bins >= 0]), or pass bins "
             "from env.bin_at() of positions inside the environment",
         )
@@ -358,6 +384,9 @@ def _bin_adjacency(graph: nx.Graph, *, weight: str | None, operation: str) -> cs
 # near 160 MB however large the environment.
 _DIJKSTRA_BLOCK_VALUES = 20_000_000
 
+# Center pairs whose segments are traced at once in a table of bin distances.
+_PAIR_BLOCK = 200_000
+
 
 def _dijkstra_blocks(
     adjacency: csr_array, sources: NDArray[np.intp], *, limit: float = np.inf
@@ -423,34 +452,45 @@ def _geodesic_pair_distances(
     return out
 
 
-def _require_metric(metric: str) -> None:
-    if metric not in ("geodesic", "euclidean"):
-        msg = (
-            f"metric must be 'geodesic' or 'euclidean', got '{metric}'. "
-            f"Use metric='geodesic' for graph-based distances or "
-            f"metric='euclidean' for coordinate-based distances."
+def _require_metric(metric: str, operation: str) -> None:
+    if metric not in ("geodesic", "bin_graph", "euclidean"):
+        raise ValueError(
+            _format_error(
+                f"{operation}: metric must be 'geodesic', 'bin_graph' or "
+                f"'euclidean', got {metric!r}.",
+                why="distances are measured along the shortest path inside the "
+                "environment, along the connections between bin centers, or "
+                "along straight lines.",
+                fix="use metric='geodesic' to go around walls, metric='bin_graph' "
+                "for the faster walk between bin centers, or metric='euclidean' "
+                "for straight lines",
+            )
         )
-        raise ValueError(msg)
 
 
-def _require_bin_centers(
-    bin_centers: NDArray[np.float64] | None, n_nodes: int
-) -> NDArray[np.float64]:
-    """Return ``bin_centers`` for a Euclidean query, refusing a missing or short one."""
-    if bin_centers is None:
-        msg = (
-            "bin_centers parameter is required when metric='euclidean'. "
-            "Provide an array of node coordinates with shape (n_nodes, n_dims)."
+def _require_path_metric(metric: str, operation: str) -> None:
+    if metric not in ("geodesic", "bin_graph"):
+        raise ValueError(
+            _format_error(
+                f"{operation}: metric must be 'geodesic' or 'bin_graph', got "
+                f"{metric!r}.",
+                why="this function measures paths inside the environment.",
+                fix="use metric='geodesic' for the shortest path at any angle, or "
+                "metric='bin_graph' for the faster walk between bin centers",
+            )
         )
-        raise ValueError(msg)
-    if bin_centers.shape[0] != n_nodes:
-        msg = (
-            f"bin_centers size {bin_centers.shape[0]} must match "
-            f"number of nodes in graph ({n_nodes}). "
-            f"Ensure bin_centers.shape[0] == graph.number_of_nodes()."
-        )
-        raise ValueError(msg)
-    return bin_centers
+
+
+def _require_cartesian_centers(env: Environment, operation: str) -> None:
+    from neurospatial.geometry import require_cartesian
+
+    require_cartesian(
+        env.coordinate_system,
+        f"{operation}(metric='euclidean')",
+        why="The straight-line distance between bin centers treats them as "
+        "Cartesian positions.",
+        fix="use metric='bin_graph', which walks the connections between bin centers",
+    )
 
 
 def _as_bin_indices(
@@ -484,128 +524,105 @@ def _as_bin_indices(
 
 
 def distance_field(
-    graph: nx.Graph,
-    sources: list[int] | NDArray[np.int_],
+    env: Environment,
+    sources: Iterable[int] | NDArray[np.int_],
     *,
-    metric: str = "geodesic",
-    bin_centers: NDArray[np.float64] | None = None,
-    weight: str | None = "distance",
+    metric: DistanceMetric = "geodesic",
     cutoff: float | None = None,
 ) -> NDArray[np.float64]:
-    """Compute distance field: distance from each node to nearest source node.
+    """Distance from every bin to the nearest source bin.
 
-    This is a common primitive for spatial analysis - compute the distance
-    from every bin to the nearest bin in a set of source bins (e.g., goal
-    locations, reward sites, or boundaries).
+    A common primitive for spatial analysis: the distance from every bin to
+    the nearest of a set of bins, such as goal locations, reward sites or
+    boundaries.
 
     Parameters
     ----------
-    graph : nx.Graph
-        NetworkX graph representing spatial connectivity.
-    sources : list[int] or NDArray[np.int_]
-        List of source node indices. Distance field measures distance to
-        nearest node in this set.
-    metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric to use:
-
-        - 'geodesic': Shortest-path length on graph using edge weights.
-          Respects graph connectivity.
-        - 'euclidean': Straight-line L2 distance in coordinate space.
-          Requires ``bin_centers`` parameter.
-    bin_centers : NDArray[np.float64], shape (n_nodes, n_dims), optional
-        Node coordinates in N-dimensional space. Required when
-        ``metric='euclidean'``. Ignored for geodesic metric.
-    weight : str or None, default="distance"
-        Edge attribute holding each edge's length; None counts edges (hops).
-        Only used when ``metric='geodesic'``.
+    env : Environment
+        The environment whose bins are measured.
+    sources : sequence of int or NDArray[np.int_]
+        Source bin indices. Each bin gets the distance to the nearest one.
+    metric : {"geodesic", "bin_graph", "euclidean"}, default="geodesic"
+        - ``"geodesic"``: the shortest path from each bin center to the
+          nearest source center that stays inside the environment, at any
+          angle. It goes around walls, and in an open arena it is the
+          straight line.
+        - ``"bin_graph"``: the walk along the connections between bin
+          centers, each edge as long as the distance between its centers.
+          It is faster, but an oblique distance reads up to about 1.082
+          times the straight line on an 8-connected square grid (1.155 on a
+          hexagonal grid, 1.128 on a 26-connected 3-D grid); exact between
+          bin centers on a track. It works on egocentric polar environments.
+        - ``"euclidean"``: the straight line between bin centers, through
+          walls.
     cutoff : float, optional
-        Maximum distance threshold. Nodes farther than ``cutoff`` from
-        all sources will have distance ``np.inf``. Interpretation:
-
-        - Geodesic: Path length limit (uses Dijkstra cutoff)
-        - Euclidean: Coordinate distance limit (distances beyond ``cutoff``
-          are set to ``np.inf``)
+        Bins farther than ``cutoff`` from every source are ``np.inf``. A
+        short cutoff makes the geodesic and bin-graph fields much faster,
+        since they are grown only as far as it.
 
     Returns
     -------
-    NDArray[np.float64], shape (n_nodes,)
-        For each node i, the distance to the nearest source node.
-        Nodes unreachable from all sources (or beyond cutoff) have
-        distance ``np.inf``.
+    NDArray[np.float64], shape (n_bins,)
+        Distance from each bin to its nearest source; ``np.inf`` where no
+        source can be reached or beyond ``cutoff``.
 
     Raises
     ------
     ValueError
-        If metric is not 'geodesic' or 'euclidean'. Valid options: 'geodesic', 'euclidean'.
-    ValueError
-        If cutoff is negative. Must be non-negative or None.
-    ValueError
-        If sources list is empty. Provide at least one source node.
-    ValueError
-        If metric='euclidean' but bin_centers is None. Provide bin_centers array.
-    ValueError
-        If bin_centers shape doesn't match number of graph nodes. Ensure
-        bin_centers.shape[0] == graph.number_of_nodes().
-    ValueError
-        If ``graph`` is directed or a multigraph, its nodes are not the bins
-        ``0 .. n_bins - 1``, or (geodesic) an edge lacks the ``weight``
-        attribute.
+        If ``metric`` is not one of the three, ``cutoff`` is negative, or
+        ``sources`` is empty.
     TypeError
         If ``sources`` are not integers.
     networkx.NodeNotFound
-        If a source is not a bin of ``graph``, such as the outside marker -1.
+        If a source is not a bin, such as the outside marker -1.
+    CartesianOnlyError
+        For ``metric="geodesic"`` or ``"euclidean"`` on an egocentric polar
+        environment. Use ``metric="bin_graph"`` there.
 
     Examples
     --------
-    >>> import networkx as nx
     >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.ops.distance import distance_field
-    >>> # Create a simple graph
-    >>> graph = nx.Graph()
-    >>> graph.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
-    >>> for u, v in graph.edges:
-    ...     graph.edges[u, v]["distance"] = 1.0
-    >>> # Geodesic distance field from node 2
-    >>> dists = distance_field(graph, sources=[2])
-    >>> dists
-    array([2., 1., 0., 1., 2.])
-    >>> # With cutoff
-    >>> dists = distance_field(graph, sources=[2], cutoff=1.5)
-    >>> dists
-    array([inf,  1.,  0.,  1., inf])
+    >>> edges = np.arange(0.0, 11.0, 2.0)
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((5, 5), dtype=bool), grid_edges=(edges, edges)
+    ... )
+    >>> field = distance_field(env, sources=[0])
+    >>> round(float(field[-1]), 3)  # the straight line to the far corner
+    11.314
+    >>> round(float(distance_field(env, sources=[0], metric="bin_graph")[7]), 3)
+    4.828
+    >>> distance_field(env, sources=[0], cutoff=3.0)[:3].tolist()
+    [0.0, 2.0, inf]
 
     Notes
     -----
-    Distances run along the bin graph between bin centers. In an open arena
-    an oblique path on an 8-connected grid is a staircase of grid steps, up to
-    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-    the any-angle path between positions instead, which equals the straight line
-    when nothing is in the way.
-    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
-    26-connected 3-D grids about 1.128.
+    **Geodesic.** One any-angle field (Theta*, as the behavior functions
+    use) grown from the sources; each bin's value is the length of its path
+    toward the nearest source. The field is one direction only: near walls the
+    length of a bin's path toward a source, as grown from the source, can differ
+    from the path grown the other way by up to 4.2% (measured in a 100 cm box
+    with two walls, 2 cm bins), while the pair distances
+    (:func:`pairwise_distances`, ``Environment.distance_between``) are
+    symmetric. A field costs about 10 ms for 2,500 open bins (50 ms with walls)
+    and 33 ms for 10,000, and it is kept, so asking again is a lookup.
 
-    **Geodesic mode**: Uses Dijkstra's algorithm with multiple sources,
-    which is O((V + E) log V) where V is number of nodes and E is number
-    of edges. The ``cutoff`` parameter is passed directly to Dijkstra
-    for efficiency.
+    **Bin graph.** One Dijkstra search from all sources together,
+    ``O((V + E) log V)``, a few milliseconds.
 
-    **Euclidean mode**: Computes L2 distances from node coordinates with a
-    KD-tree query over the source positions.
-
-    For large graphs or repeated queries, consider caching the result.
+    **Euclidean.** A KD-tree query over the source centers.
 
     See Also
     --------
-    geodesic_distance_matrix : Compute all-pairs geodesic distances
-    pairwise_distances : Compute distances between specific node pairs
-    neighbors_within : Find all neighbors within radius
-
+    geodesic_distance_matrix : Distance between every pair of bins.
+    pairwise_distances : Distances between selected bins.
+    neighbors_within : Bins within a radius.
     """
     from scipy.sparse.csgraph import dijkstra
     from scipy.spatial import cKDTree
 
-    _require_metric(metric)
+    _require_metric(metric, "distance_field()")
     if cutoff is not None and not cutoff >= 0:  # NaN is no distance
         msg = (
             f"cutoff must be non-negative, got {cutoff}. "
@@ -613,241 +630,227 @@ def distance_field(
         )
         raise ValueError(msg)
 
-    n_nodes = _require_bin_graph(graph, "distance_field()")
-    if n_nodes == 0:
+    n_bins = env.n_bins
+    if n_bins == 0:
         return np.empty(0, dtype=np.float64)
-
-    sources_array = _as_bin_indices(sources, n_nodes, "distance_field()", "sources")
+    sources_array = _as_bin_indices(sources, n_bins, "distance_field()", "sources")
     if len(sources_array) == 0:
         msg = (
             "sources must contain at least one node. "
             "Provide a non-empty list or array of source node indices."
         )
         raise ValueError(msg)
+    limit = np.inf if cutoff is None else float(cutoff)
 
     if metric == "euclidean":
-        coords = _require_bin_centers(bin_centers, n_nodes)
+        _require_cartesian_centers(env, "distance_field()")
+        coords = np.asarray(env.bin_centers, dtype=np.float64)
         # A KD-tree over the sources is O(N log M) time and O(N + M) memory,
         # however many sources there are.
-        tree = cKDTree(coords[sources_array])
-        distances, _ = tree.query(coords, k=1)
-
-        # Apply cutoff
+        distances, _ = cKDTree(coords[sources_array]).query(coords, k=1)
         if cutoff is not None:
             distances = np.where(distances <= cutoff, distances, np.inf)
-
         return np.asarray(distances, dtype=np.float64)
 
-    adjacency = _bin_adjacency(graph, weight=weight, operation="distance_field()")
+    if metric == "geodesic":
+        from neurospatial.ops._paths import _environment_paths
+
+        paths = _environment_paths(env, call="distance_field")
+        return paths.from_bins(np.unique(sources_array), limit=limit)
+
+    adjacency = _bin_adjacency(
+        env.connectivity, weight="distance", operation="distance_field()"
+    )
     # One Dijkstra from all sources together gives each bin its nearest
     # source's distance directly, without an (n_sources, n_nodes) array.
     distances = dijkstra(
         csgraph=adjacency,
         directed=False,
         indices=sources_array,
-        limit=cutoff if cutoff is not None else np.inf,
+        limit=limit,
         min_only=True,
     )
     return np.asarray(distances, dtype=np.float64)
 
 
 def pairwise_distances(
-    graph: nx.Graph,
-    nodes: list[int] | NDArray[np.int_],
+    env: Environment,
+    bins: Iterable[int] | NDArray[np.int_],
     *,
-    weight: str | None = "distance",
+    metric: DistanceMetric = "geodesic",
 ) -> NDArray[np.float64]:
-    """Compute pairwise geodesic distances between specified nodes.
+    """Distances between every pair of the given bins.
 
-    This is more efficient than computing the full distance matrix when you
-    only need distances between a subset of nodes.
+    Cheaper than :func:`geodesic_distance_matrix` when only some bins are
+    needed.
 
     Parameters
     ----------
-    graph : nx.Graph
-        NetworkX graph representing spatial connectivity.
-    nodes : list[int] or NDArray[np.int_]
-        List of node indices to compute distances between.
-    weight : str or None, default="distance"
-        Edge attribute holding each edge's length; None counts edges (hops).
+    env : Environment
+        The environment whose bins are measured.
+    bins : sequence of int or NDArray[np.int_]
+        Bin indices to measure between.
+    metric : {"geodesic", "bin_graph", "euclidean"}, default="geodesic"
+        As in :func:`distance_field`: the shortest path inside the
+        environment at any angle, the walk along the connections between
+        bin centers (faster; up to about 1.082 times the straight line on a
+        square grid, 1.155 hexagonal, 1.128 in 3-D; works on polar
+        environments), or the straight line.
 
     Returns
     -------
-    NDArray[np.float64], shape (len(nodes), len(nodes))
-        Pairwise distance matrix where element (i, j) is the shortest path
-        length between nodes[i] and nodes[j]. Disconnected nodes have distance np.inf.
+    NDArray[np.float64], shape (len(bins), len(bins))
+        Element ``(i, j)`` is the distance between ``bins[i]`` and
+        ``bins[j]``; ``np.inf`` between disconnected parts. The geodesic
+        matrix is symmetric: each entry is the shorter of the paths grown
+        from either bin.
 
     Raises
     ------
     ValueError
-        If ``graph`` is directed or a multigraph, its nodes are not the bins
-        ``0 .. n_bins - 1``, or an edge lacks the ``weight`` attribute.
+        If ``metric`` is not one of the three.
     TypeError
-        If ``nodes`` are not integers.
+        If ``bins`` are not integers.
     networkx.NodeNotFound
-        If a node is not a bin of ``graph``, such as the outside marker -1.
+        If a bin index is not a bin, such as the outside marker -1.
+    CartesianOnlyError
+        For ``metric="geodesic"`` or ``"euclidean"`` on an egocentric polar
+        environment.
 
     Notes
     -----
-    Distances run along the bin graph between bin centers. In an open arena
-    an oblique path on an 8-connected grid is a staircase of grid steps, up to
-    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-    the any-angle path between positions instead, which equals the straight line
-    when nothing is in the way.
-    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
-    26-connected 3-D grids about 1.128.
+    The geodesic matrix grows one any-angle field per bin: about 0.2 s for
+    200 bins of a 2,500-bin open box and 1.3 s for 200 of 10,000 bins (1.5 s
+    with walls), against 0.04 s and 0.2 s for the bin graph. The fields are
+    kept, so asking again is fast.
 
     Examples
     --------
-    >>> import networkx as nx
+    >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.ops.distance import pairwise_distances
-    >>> graph = nx.cycle_graph(10)
-    >>> for u, v in graph.edges:
-    ...     graph.edges[u, v]["distance"] = 1.0
-    >>> # Compute distances between nodes 0, 3, 7
-    >>> dists = pairwise_distances(graph, [0, 3, 7])
-    >>> dists.shape
+    >>> edges = np.arange(0.0, 11.0, 2.0)
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((5, 5), dtype=bool), grid_edges=(edges, edges)
+    ... )
+    >>> distances = pairwise_distances(env, [0, 7, 24])
+    >>> distances.shape
     (3, 3)
-    >>> float(dists[0, 1])  # Distance from node 0 to node 3
-    3.0
+    >>> round(float(distances[0, 1]), 3)  # 2 cm across, 4 cm up: sqrt(20)
+    4.472
+    >>> round(float(pairwise_distances(env, [0, 7], metric="bin_graph")[0, 1]), 3)
+    4.828
 
     See Also
     --------
-    geodesic_distance_matrix : Compute all-pairs distances
-    distance_field : Compute distance to nearest source
-
+    geodesic_distance_matrix : Distance between every pair of bins.
+    distance_field : Distance to the nearest source.
     """
     from scipy.sparse.csgraph import dijkstra
 
-    n_bins = _require_bin_graph(graph, "pairwise_distances()")
-    nodes_array = _as_bin_indices(nodes, n_bins, "pairwise_distances()", "nodes")
-    if len(nodes_array) == 0:
+    _require_metric(metric, "pairwise_distances()")
+    bins_array = _as_bin_indices(bins, env.n_bins, "pairwise_distances()", "bins")
+    if len(bins_array) == 0:
         return np.empty((0, 0), dtype=np.float64)
+    if metric == "euclidean":
+        _require_cartesian_centers(env, "pairwise_distances()")
+        return euclidean_distance_matrix(
+            np.asarray(env.bin_centers, dtype=np.float64)[bins_array]
+        )
+    if metric == "geodesic":
+        return _symmetric_fields(env, bins_array, "pairwise_distances")
 
-    adjacency = _bin_adjacency(graph, weight=weight, operation="pairwise_distances()")
-
-    # Run Dijkstra from all nodes at once; shape (n_nodes, n_graph_nodes).
+    adjacency = _bin_adjacency(
+        env.connectivity, weight="distance", operation="pairwise_distances()"
+    )
+    # Run Dijkstra from all bins at once; shape (n_bins_given, n_bins).
     dist_from_sources = dijkstra(
         csgraph=adjacency,
         directed=False,
-        indices=nodes_array,
+        indices=bins_array,
         return_predecessors=False,
     )
-    dist_matrix: NDArray[np.float64] = dist_from_sources[:, nodes_array]
+    dist_matrix: NDArray[np.float64] = dist_from_sources[:, bins_array]
     return dist_matrix
 
 
 def neighbors_within(
-    graph: nx.Graph,
-    centers: list[int] | NDArray[np.int_],
+    env: Environment,
+    centers: Iterable[int] | NDArray[np.int_],
     *,
     radius: float,
-    metric: str = "geodesic",
-    bin_centers: NDArray[np.float64] | None = None,
-    weight: str | None = "distance",
+    metric: DistanceMetric = "geodesic",
     include_center: bool = True,
 ) -> list[NDArray[np.int_]]:
-    """Return bins within radius of each center bin.
-
-    For each center bin, find all bins whose distance (geodesic or Euclidean)
-    is within the specified radius.
+    """Bins within ``radius`` of each center bin.
 
     Parameters
     ----------
-    graph : nx.Graph
-        NetworkX graph representing spatial connectivity.
-    centers : list[int] or NDArray[np.int_]
+    env : Environment
+        The environment whose bins are measured.
+    centers : sequence of int or NDArray[np.int_]
         Center bin indices to query around.
     radius : float
-        Neighborhood radius. Interpreted in:
-
-        - Geodesic: Graph path length units (using edge ``weight`` attribute)
-        - Euclidean: Coordinate units (L2 distance in ``bin_centers``)
-    metric : {'geodesic', 'euclidean'}, default='geodesic'
-        Distance metric to use:
-
-        - 'geodesic': Shortest-path length on graph
-        - 'euclidean': Straight-line L2 distance
-    bin_centers : NDArray[np.float64], shape (n_nodes, n_dims), optional
-        Node coordinates. Required when ``metric='euclidean'``.
-    weight : str or None, default="distance"
-        Edge attribute holding each edge's length, for geodesic distances;
-        None counts edges (hops).
+        Neighborhood radius, in the environment's units.
+    metric : {"geodesic", "bin_graph", "euclidean"}, default="geodesic"
+        As in :func:`distance_field`: the shortest path inside the
+        environment at any angle (a round neighborhood in an open arena),
+        the walk along the connections between bin centers (faster; an
+        octagon on a square grid, since an oblique distance reads up to
+        about 1.082 times the straight line, 1.155 on a hexagonal grid,
+        1.128 in 3-D; works on polar environments), or the straight line
+        through walls. For neighborhoods counted in edges, use
+        ``Environment.reachable_from(..., metric="hops")``.
     include_center : bool, default=True
         Whether to include the center bin itself in each neighborhood.
 
     Returns
     -------
     list[NDArray[np.int_]]
-        For each center, a 1-D array of bin indices within ``radius``.
-        Order of bins within each array is unspecified. Arrays contain
-        unique indices (no duplicates).
+        For each center, the unique bin indices within ``radius``, in no
+        particular order.
 
     Raises
     ------
     ValueError
-        If metric is not 'geodesic' or 'euclidean'. Valid options: 'geodesic', 'euclidean'.
-    ValueError
-        If radius is negative. Must be non-negative.
-    ValueError
-        If metric='euclidean' but bin_centers is None. Provide bin_centers array.
-    ValueError
-        If bin_centers shape doesn't match number of graph nodes. Ensure
-        bin_centers.shape[0] == graph.number_of_nodes().
-    ValueError
-        If ``graph`` is directed or a multigraph, its nodes are not the bins
-        ``0 .. n_bins - 1``, or (geodesic) an edge lacks the ``weight``
-        attribute.
+        If ``metric`` is not one of the three, or ``radius`` is negative.
     TypeError
         If ``centers`` are not integers.
     networkx.NodeNotFound
-        If a center is not a bin of ``graph``, such as the outside marker -1,
-        whatever the metric.
+        If a center is not a bin, such as the outside marker -1.
+    CartesianOnlyError
+        For ``metric="geodesic"`` or ``"euclidean"`` on an egocentric polar
+        environment.
 
     Examples
     --------
-    >>> import networkx as nx
+    >>> import numpy as np
+    >>> from neurospatial import Environment
     >>> from neurospatial.ops.distance import neighbors_within
-    >>> # Create line graph
-    >>> graph = nx.Graph()
-    >>> graph.add_edges_from([(0, 1), (1, 2), (2, 3), (3, 4)])
-    >>> for u, v in graph.edges:
-    ...     graph.edges[u, v]["distance"] = 1.0
-    >>> # Find neighbors within distance 1.5 of node 2
-    >>> neighborhoods = neighbors_within(
-    ...     graph, centers=[2], radius=1.5, metric="geodesic"
+    >>> edges = np.arange(0.0, 11.0, 2.0)
+    >>> env = Environment.from_grid_mask(
+    ...     np.ones((5, 5), dtype=bool), grid_edges=(edges, edges)
     ... )
-    >>> sorted(neighborhoods[0].tolist())
-    [1, 2, 3]
+    >>> # Within 4.5 cm of the middle bin: the 3 x 3 block and the 4 bins
+    >>> # 4 cm away along the axes, but not the corners sqrt(20) cm away.
+    >>> len(neighbors_within(env, [12], radius=4.0)[0])
+    13
 
     Notes
     -----
-    Distances run along the bin graph between bin centers. In an open arena
-    an oblique path on an 8-connected grid is a staircase of grid steps, up to
-    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-    the any-angle path between positions instead, which equals the straight line
-    when nothing is in the way.
-    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
-    26-connected 3-D grids about 1.128.
-
-    **Geodesic mode**: Runs Dijkstra from the centers, in memory-bounded
-    blocks, stopping each search at ``radius``. Complexity per center is
-    O((V + E) log V) but early termination typically makes it faster.
-
-    **Euclidean mode**: Uses KD-tree ball query over ``bin_centers``.
-    Complexity is O(log V) per center on average.
+    The geodesic and bin-graph searches stop at ``radius``: a geodesic
+    neighborhood grows only the bins whose centers lie within ``radius`` of
+    the center (no path is shorter than the straight line), about 25 ms for
+    200 centers in a 2,500-bin box and 0.1 s in a 10,000-bin one.
 
     See Also
     --------
-    distance_field : Compute distance to nearest source
-    pairwise_distances : Compute distances between specific pairs
-
+    distance_field : Distance to the nearest source.
+    pairwise_distances : Distances between selected bins.
     """
     from scipy.spatial import cKDTree
 
-    _require_metric(metric)
+    _require_metric(metric, "neighbors_within()")
     if not radius >= 0:  # NaN is no distance
         msg = (
             f"radius must be non-negative, got {radius}. "
@@ -855,21 +858,37 @@ def neighbors_within(
         )
         raise ValueError(msg)
 
-    n_nodes = _require_bin_graph(graph, "neighbors_within()")
-    centers_array = _as_bin_indices(centers, n_nodes, "neighbors_within()", "centers")
+    centers_array = _as_bin_indices(
+        centers, env.n_bins, "neighbors_within()", "centers"
+    )
     if len(centers_array) == 0:
         return []
 
     if metric == "euclidean":
-        coords = _require_bin_centers(bin_centers, n_nodes)
+        _require_cartesian_centers(env, "neighbors_within()")
+        coords = np.asarray(env.bin_centers, dtype=np.float64)
         neighborhoods = [
             np.asarray(neigh_list, dtype=np.int_)
             for neigh_list in cKDTree(coords).query_ball_point(
                 coords[centers_array], r=radius
             )
         ]
+    elif metric == "geodesic":
+        from neurospatial.ops._paths import _environment_paths
+
+        paths = _environment_paths(env, call="neighbors_within")
+        block = max(1, _DIJKSTRA_BLOCK_VALUES // max(env.n_bins, 1))
+        neighborhoods = [
+            np.flatnonzero(np.isfinite(row)).astype(np.int_)
+            for lo in range(0, centers_array.size, block)
+            for row in paths.to_bins(
+                centers_array[lo : lo + block], limit=float(radius)
+            )
+        ]
     else:
-        adjacency = _bin_adjacency(graph, weight=weight, operation="neighbors_within()")
+        adjacency = _bin_adjacency(
+            env.connectivity, weight="distance", operation="neighbors_within()"
+        )
         neighborhoods = [
             np.flatnonzero(np.isfinite(row)).astype(np.int_)
             for _, lengths in _dijkstra_blocks(adjacency, centers_array, limit=radius)

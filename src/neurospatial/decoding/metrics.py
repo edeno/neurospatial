@@ -63,7 +63,7 @@ def decoding_error(
         Decoded position estimates (e.g., MAP or mean positions).
     actual_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Ground truth positions.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         Distance metric to use:
 
         - "geodesic": Length of the shortest path between the two positions
@@ -86,6 +86,13 @@ def decoding_error(
           places in the animal's plane (the chord
           ``sqrt(r1**2 + r2**2 - 2 * r1 * r2 * cos(angle1 - angle2))``), so
           angles a turn apart coincide.
+
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
 
     Returns
     -------
@@ -179,7 +186,9 @@ def _errors_and_misses(
     decoded_positions, actual_positions = _paired_positions(
         env, decoded_positions, actual_positions, call=call
     )
-    validate_choice(metric, ("euclidean", "geodesic"), name="metric", owner=call)
+    validate_choice(
+        metric, ("euclidean", "geodesic", "bin_graph"), name="metric", owner=call
+    )
     for name, positions in (
         ("decoded_positions", decoded_positions),
         ("actual_positions", actual_positions),
@@ -200,14 +209,16 @@ def _errors_and_misses(
             none.copy(),
         )
 
-    require_cartesian(
-        env.coordinate_system,
-        f"{call.removesuffix('()')}(metric='geodesic')",
-        why="It locates the decoded and actual positions as allocentric "
-        "positions in the environment's bins.",
-        fix="decode on the allocentric environment the positions were "
-        "recorded in, or use metric='euclidean' on Cartesian positions",
-    )
+    if metric == "geodesic":
+        require_cartesian(
+            env.coordinate_system,
+            f"{call.removesuffix('()')}(metric='geodesic')",
+            why="It locates the decoded and actual positions as allocentric "
+            "positions in the environment's bins.",
+            fix="decode on the allocentric environment the positions were "
+            "recorded in, use metric='bin_graph' to walk between bin centers, "
+            "or metric='euclidean'",
+        )
     errors = np.full(len(decoded_positions), np.nan, dtype=np.float64)
     valid = ~(
         np.any(np.isnan(decoded_positions), axis=1)
@@ -221,11 +232,16 @@ def _errors_and_misses(
     actual_off = valid & (actual_bins < 0)
     measured = valid & ~decoded_off & ~actual_off
     if np.any(measured):
-        from neurospatial.behavior._environment_paths import environment_paths
+        from neurospatial.ops import _bin_graph_paths, _environment_paths
 
         decoded = _inside_or_bin_center(env, decoded_positions, decoded_bins)
         actual = _inside_or_bin_center(env, actual_positions, actual_bins)
-        errors[measured] = environment_paths(env, call=call).between(
+        paths = (
+            _bin_graph_paths(env)
+            if metric == "bin_graph"
+            else _environment_paths(env, call=call)
+        )
+        errors[measured] = paths.between(
             decoded[measured],
             actual[measured],
             start_bins=decoded_bins[measured],
@@ -337,8 +353,14 @@ def median_decoding_error(
         Decoded position estimates (e.g., MAP or mean positions).
     actual_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Ground truth positions.
-    metric : {"geodesic", "euclidean"}, default="geodesic"
+    metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
         Distance metric; see :func:`decoding_error`.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
 
     Returns
     -------

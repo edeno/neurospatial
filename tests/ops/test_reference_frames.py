@@ -269,8 +269,8 @@ class TestComputeEgocentricDistance:
         assert distances.shape == (1, 2)
         assert_allclose(distances, [[10.0, 10.0]], atol=1e-10)
 
-    def test_geodesic_distance_with_environment(self):
-        """Geodesic distance is the bin-graph path between the two bins' centers.
+    def test_bin_graph_distance_with_environment(self):
+        """The bin-graph distance is the path between the two bins' centers.
 
         On an open 8-connected grid of 5 cm bins, bins ``(Δx, Δy)`` bins apart
         are ``5 (max + (√2 - 1) min)`` cm apart: the straight line along a
@@ -287,11 +287,19 @@ class TestComputeEgocentricDistance:
         position = np.array([[11.0, 9.0]])
         targets = np.array([[51.0, 52.0], [81.0, 79.0]])
         distances = egocentric_distance(
-            position, None, targets, metric="geodesic", env=env
+            position, None, targets, metric="bin_graph", env=env
         )
 
         octile = 5.0 * np.array([9 + (np.sqrt(2) - 1) * 8, np.sqrt(2) * 14])
         assert_allclose(distances, [octile], rtol=1e-12)
+        # The geodesic of this open room is the straight line between the
+        # position and each target themselves.
+        geodesic = egocentric_distance(
+            position, None, targets, metric="geodesic", env=env
+        )
+        assert_allclose(
+            geodesic, np.linalg.norm(targets - position, axis=1)[None], rtol=1e-12
+        )
 
     def test_invalid_metric_raises(self):
         """Invalid metric raises ValueError."""
@@ -421,7 +429,7 @@ class TestGeodesicDistanceTimeVarying:
                     continue
                 if target_bin not in cache:
                     cache[target_bin] = compute_distance_field(
-                        env.connectivity, sources=[target_bin]
+                        env, sources=[target_bin], metric="bin_graph"
                     )
                 distances[t, i] = cache[target_bin][pos_bin]
         return distances
@@ -457,7 +465,7 @@ class TestGeodesicDistanceTimeVarying:
 
         expected = self._reference_geodesic(positions, targets, env)
         actual = egocentric_distance(
-            positions, None, targets, metric="geodesic", env=env
+            positions, None, targets, metric="bin_graph", env=env
         )
 
         assert_allclose(actual, expected, equal_nan=True)

@@ -65,7 +65,6 @@ def test_radial_profile_is_deterministic(grid_cell_setup):
 
 def test_radial_profile_matches_pairwise_pearson_by_distance():
     """Each distance bin is the Pearson correlation of the bin pairs in it."""
-    import networkx as nx
     from shapely.geometry import box
 
     env = Environment.from_polygon(box(0, 0, 30, 30), bin_size=3.0)
@@ -78,12 +77,11 @@ def test_radial_profile_matches_pairwise_pearson_by_distance():
     )
 
     valid = np.flatnonzero(np.isfinite(rate_map))
-    # Paths may cross unvisited bins: they are still part of the arena.
-    lengths = dict(
-        nx.all_pairs_dijkstra_path_length(env.connectivity, weight="distance")
-    )
+    # Paths may cross unvisited bins: they are still part of the arena. In
+    # this convex room the shortest path is the straight line.
+    centers = env.bin_centers
     pairs = [
-        (lengths[a][b], rate_map[a], rate_map[b])
+        (np.linalg.norm(centers[a] - centers[b]), rate_map[a], rate_map[b])
         for i, a in enumerate(valid)
         for b in valid[i + 1 :]
     ]

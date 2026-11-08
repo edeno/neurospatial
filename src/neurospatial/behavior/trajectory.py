@@ -68,8 +68,14 @@ class MSDResult(ReadOnlyArraysMixin, ResultMixin):
     msd : NDArray[np.float64], shape (n_lags,)
         Mean square displacement values, one per lag, in squared position
         units. NaN when no valid displacement pair supports that lag.
-    metric : {"euclidean", "geodesic"}
+    metric : {"euclidean", "geodesic", "bin_graph"}
         Distance the displacements were measured with.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     epochs : NDArray[np.float64] or None, shape (n_epochs, 2)
         Normalized half-open ``[start, stop)`` windows that were applied.
     """
@@ -1419,7 +1425,7 @@ def step_lengths(
     ----------
     positions : NDArray[np.float64], shape (n_samples, n_dims)
         Trajectory positions in continuous space. Each row is a position vector.
-    metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic", "bin_graph"}, default="euclidean"
         Distance metric to use:
         - "euclidean": Straight-line distance in physical space (ecology standard).
           Fast and appropriate for open environments without obstacles.
@@ -1427,6 +1433,12 @@ def step_lengths(
           positions that stays inside the environment: it goes around walls
           and never leaves the environment, and on a track it runs along the
           track's centerline. Requires ``env``.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
         metric="geodesic", ignored otherwise.
@@ -2051,7 +2063,7 @@ def mean_square_displacement(
     positions : array-like, shape (n_samples, n_dims) or (n_samples,)
         Trajectory positions in continuous space. A 1-D array is one
         coordinate. Rows with a non-finite coordinate are missing.
-    metric : {"euclidean", "geodesic"}, default="euclidean"
+    metric : {"euclidean", "geodesic", "bin_graph"}, default="euclidean"
         Distance metric for computing displacements:
         - "euclidean": Straight-line distance. Use for diffusion analysis,
           comparison with the single-particle-tracking literature, and
@@ -2061,6 +2073,12 @@ def mean_square_displacement(
           and never leaves the environment, and on a track it runs along the
           track's centerline. Requires ``env``. Use for constrained
           navigation analysis.
+        ``"bin_graph"`` walks the connections between the centers of the positions'
+        bins: faster for long sessions, fine grids and many pairs, but every position in
+        a bin has its bin center's distance, and an oblique distance reads up to 8.2 %
+        long on a square grid (15.5 % on a hexagonal grid, 12.8 % on a 3-D grid); it is
+        exact between bin centers on a track. It also needs ``env`` and works on
+        egocentric polar environments.
     env : Environment, optional
         Environment instance for computing geodesic distances. Required if
         metric="geodesic", ignored otherwise.

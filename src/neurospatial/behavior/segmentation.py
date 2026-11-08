@@ -83,9 +83,9 @@ from neurospatial.geometry import require_cartesian
 from neurospatial.ops.mapping import _require_region_mask
 
 if TYPE_CHECKING:
-    from neurospatial.behavior._environment_paths import EnvironmentPaths
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
+    from neurospatial.ops import _EnvironmentPaths
     from neurospatial.ops._types import DistanceMetric
 
 
@@ -1818,9 +1818,9 @@ def _distances_from(
     closed loop of length L the farthest point from any place is L/2 away,
     and every full circuit passes it.
     """
-    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.ops import _environment_paths
 
-    distances = environment_paths(env, call="detect_laps").from_bins(
+    distances = _environment_paths(env, call="detect_laps").from_bins(
         np.unique(np.asarray(sources, dtype=np.intp))
     )
     finite = distances[np.isfinite(distances)]
@@ -2030,14 +2030,17 @@ def trajectory_similarity(
         - 'dtw': 1 - dynamic time warping distance / its largest possible
           value in this environment. Range [0, 1].
         Default is 'jaccard'.
-    metric : {'geodesic', 'euclidean'} or None, default=None
-        Distance between two places for ``'hausdorff'`` and ``'dtw'``:
-        ``'geodesic'`` (what None means) is the shortest path through the
-        environment's connectivity graph, so it goes around walls and along
-        a maze's arms; ``'euclidean'`` is the straight line between bin
-        centers. Runs up two neighboring arms of a maze are close in a
-        straight line but far apart along the maze. ``'jaccard'`` and
-        ``'correlation'`` compare bins, not distances, and refuse a metric.
+    metric : {'geodesic', 'bin_graph', 'euclidean'} or None, default=None
+        Distance between two places (bin centers) for ``'hausdorff'`` and
+        ``'dtw'``: ``'geodesic'`` (what None means) is the shortest path that
+        stays inside the environment, at any angle, so it goes around walls
+        and along a maze's arms; ``'bin_graph'`` walks the connections
+        between bin centers, which is faster but reads oblique distances up
+        to about 8.2 % long on a square grid (15.5 % hexagonal);
+        ``'euclidean'`` is the straight line between bin centers. Runs up two
+        neighboring arms of a maze are close in a straight line but far
+        apart along the maze. ``'jaccard'`` and ``'correlation'`` compare
+        bins, not distances, and refuse a metric.
 
     Returns
     -------
@@ -2102,9 +2105,9 @@ def trajectory_similarity(
 
     Converted to similarity as :math:`1 - d_H / d_{max}` where :math:`d_{max}`
     is the environment's diameter in the chosen metric: the longest shortest
-    path between two connected bins for ``'geodesic'`` (computed once per
-    environment), or the diagonal of the bin centers' bounding box for
-    ``'euclidean'``.
+    path between two connected bins for ``'geodesic'`` and ``'bin_graph'``
+    (computed once per environment), or the diagonal of the bin centers'
+    bounding box for ``'euclidean'``.
 
     **Dynamic time warping (DTW)** finds optimal alignment between trajectories
     allowing temporal shifts. Useful for comparing paths with different speeds.
@@ -2116,10 +2119,15 @@ def trajectory_similarity(
     Both Hausdorff and DTW scores are relative to the environment's size:
     the same two paths, 5 cm apart, score higher in a 10 m arena than on a 1
     m track. Compare these scores only between paths in one environment.
-    Geodesic distances run along the bin graph, so on an open grid they can
-    exceed the straight line by up to about 8% (8-connected neighbors).
-    Two routes in parts of the environment not connected to each other have
-    no path between them and score 0.
+    Bin-graph distances can exceed the straight line on an open grid by up
+    to about 8% (8-connected neighbors); geodesic ones equal it there. The
+    geodesic table grows one any-angle field per route bin that some bin of
+    the other route cannot see, and the exact geodesic diameter grows fields
+    from the bins farthest out along the bin graph, once per environment.
+    For a 1 h session in a 2,500-bin room this took 3 s in an open box and
+    34 s with two walls (13 s once the diameter is known), against about
+    1 s for ``metric="bin_graph"``. Two routes in parts of the environment
+    not connected to each other have no path between them and score 0.
 
     A missing sample (NaN row) or a position outside the environment has no
     place in it. Jaccard, Hausdorff and DTW use only each trajectory's
@@ -2182,7 +2190,7 @@ def trajectory_similarity(
             )
         validate_choice(
             metric,
-            ("geodesic", "euclidean"),
+            ("geodesic", "bin_graph", "euclidean"),
             name="metric",
             owner="trajectory_similarity()",
         )
@@ -2271,7 +2279,7 @@ def trajectory_similarity(
         centers = env.bin_centers
         table = cdist(centers[first], centers[second])
         diameter = float(np.linalg.norm(np.ptp(centers, axis=0)))
-    else:
+    elif metric == "bin_graph":
         from neurospatial.ops.distance import _geodesic_pair_distances
 
         table = _geodesic_pair_distances(
@@ -2280,7 +2288,18 @@ def trajectory_similarity(
             np.tile(second, len(first)),
             operation="trajectory_similarity()",
         ).reshape(len(first), len(second))
-        diameter = env._geodesic_diameter()
+        diameter = env._geodesic_diameter("bin_graph")
+    else:
+        from neurospatial.ops.distance import _between_bin_sets
+
+        # One field per distinct route bin, not one query per pair of them.
+        table = _between_bin_sets(
+            env,
+            first.astype(np.intp),
+            second.astype(np.intp),
+            "trajectory_similarity",
+        )
+        diameter = env._geodesic_diameter("geodesic")
     if method == "hausdorff":
         distance = max(table.min(axis=1).max(), table.min(axis=0).max())
         largest = diameter
@@ -2574,13 +2593,13 @@ def detect_goal_directed_runs(
         break_before=break_before,
     )
 
-    from neurospatial.behavior._environment_paths import environment_paths
+    from neurospatial.ops import _environment_paths
     from neurospatial.ops.distance import _bin_adjacency
     from neurospatial.ops.mapping import regions_to_mask
 
     # Path distances between bin centers on the connectivity graph; inf for
     # bins that cannot reach the goal.
-    paths = environment_paths(env, call="detect_goal_directed_runs")
+    paths = _environment_paths(env, call="detect_goal_directed_runs")
     distance_to_goal = paths.from_bins(np.flatnonzero(regions_to_mask(env, [region])))
     edges = _bin_adjacency(
         env.connectivity, weight="distance", operation="detect_goal_directed_runs()"
@@ -2655,7 +2674,7 @@ def _detect_goal_directed_runs_contiguous(
     position_bins: NDArray[np.int64],
     times: NDArray[np.float64],
     *,
-    paths: EnvironmentPaths,
+    paths: _EnvironmentPaths,
     edges: Any,
     distance_to_goal: NDArray[np.float64],
     directedness_threshold: float,

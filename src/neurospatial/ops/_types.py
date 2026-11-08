@@ -15,9 +15,16 @@ from typing import Literal
 # ``smooth``, and ``diffuse`` across the ops and environment layers.
 KernelMode = Literal["transition", "density", "average"]
 
-# How distance between two places is measured: straight line, or shortest path
-# through the environment's bins.
-DistanceMetric = Literal["euclidean", "geodesic"]
+# How distance between two places is measured: the straight line, the
+# shortest path inside the environment at any angle ("geodesic"), or the walk
+# along the connections between bin centers ("bin_graph").
+DistanceMetric = Literal["euclidean", "geodesic", "bin_graph"]
+
+# The two choices of the functions that have no bin-graph walk.
+StraightOrGeodesic = Literal["euclidean", "geodesic"]
+
+# The two path lengths, for functions that measure no straight lines.
+PathMetric = Literal["geodesic", "bin_graph"]
 
 # Array backend a caller may request; "auto" picks JAX when it is available.
 BackendType = Literal["numpy", "jax", "auto"]

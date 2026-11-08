@@ -156,6 +156,75 @@ give the measured rates:
 - `head_sweep_magnitude(headings)` is unchanged: the discrete sum of wrapped
   heading changes that `method="line_fit"` uses.
 
+### Distances: one any-angle geodesic, and a faster `bin_graph` metric
+
+- A geodesic distance between two positions no longer depends on their
+  order. When the straight segment stays inside the environment it is the
+  straight line. Otherwise the path is grown from both ends and the shorter
+  one is kept: the any-angle search (Theta*) is not always optimal, and near
+  walls the path grown from one end could be a few percent longer than the
+  one grown from the other (up to 4% in a 100 cm box with two walls). This
+  changes `decoding_error`, `shortest_path_length`, `step_lengths`,
+  `traveled_path_length`, `mean_square_displacement` and the other behavior
+  functions with `metric="geodesic"` where a wall is in the way; it is never
+  longer than before.
+- On a grid that joins only face neighbors (`connect_diagonal_neighbors=False`),
+  a straight line through a cell corner no longer counts as blocked when all
+  four cells around the corner are free and joined. Before, a geodesic
+  between bin centers in an open room of such a grid was up to 41% longer
+  than the straight line for a third of the pairs; it is now the straight
+  line. A corner that touches a missing cell, the outline or a wall still
+  blocks.
+- `metric="bin_graph"` is a third choice for every behavior function with
+  `metric=` and for `decoding_error`. It walks the connections between the
+  centers of the positions' bins. It is faster for long sessions, fine grids
+  and many pairs, but every position in a bin gets its bin center's distance,
+  and an oblique distance reads up to 8.2% long on a square grid, 15.5% on a
+  hexagonal grid and 12.8% on a 26-connected 3-D grid. It is exact between
+  bin centers on a track, and it works on egocentric polar environments.
+- `metric="geodesic"` on an egocentric polar environment still raises
+  `CartesianOnlyError`; the message now suggests `metric="bin_graph"`.
+- `distance_field`, `pairwise_distances`, `geodesic_distance_matrix` and
+  `neighbors_within` take the environment as their first argument instead
+  of its graph, and `metric="geodesic"` (the default) now measures the
+  shortest path inside the environment at any angle, as the behavior
+  functions do: the straight line between bin centers when nothing is in the
+  way. Before, they walked the bin graph, which reads an oblique distance up
+  to 8.2% long on a square grid (15.5% on a hexagonal grid). The bin-graph
+  walk is `metric="bin_graph"` and gives exactly the old values. `weight=`
+  and `bin_centers=` are gone: lengths come from the environment, and edge
+  counts are `Environment.reachable_from(..., metric="hops")`. Geodesic
+  matrices are symmetric (the shorter of the paths grown from either bin)
+  and cost one any-angle field per bin that some other bin cannot see:
+  2.6 s for 2,500 open bins and 32 s with walls, against 0.6 s for
+  `metric="bin_graph"`.
+- `geodesic_distance_between_points` is removed; use
+  `Environment.distance_between`.
+- `Environment.distance_between`, `Environment.distance_to` and
+  `Environment.reachable_from(metric="geodesic")` measure the any-angle path
+  too, and take `metric="bin_graph"` for the old walk. `distance_between`
+  with `points=` now measures between the points themselves rather than
+  their bins' centers. Its `edge_weight=` argument is replaced by `metric=`.
+- `graph_convolve` applies a callable kernel to the any-angle distance, so a
+  kernel of distance is round in an open arena; `metric="bin_graph"` gives
+  the old octagonal kernel.
+- `spatial_autocorrelation` on layouts without a regular grid (hexagonal
+  bins, meshes, tracks) groups bin pairs by the any-angle distance. Before,
+  the bin graph read distances on a hexagonal layout a median of 11.5% and
+  up to 15.5% long, so the radial profile's peak, and a grid spacing read
+  from it, sat that much too far out.
+- `geodesic_rbf_basis` measures each basis function's distance along the
+  any-angle path, so a basis function is round in an open arena instead of
+  an octagon; `metric="bin_graph"` gives the old basis exactly.
+  `select_basis_centers(method="farthest_point")` takes the same `metric=`,
+  and `geodesic_rbf_basis` passes its own. The heat-kernel and Chebyshev
+  bases, which are built on the bin graph, still spread farthest-point
+  centers along it.
+- Distances that build on these functions follow them: the geodesic
+  `rate_map_centroid` and `field_shift_distance`, the geodesic place-cell and
+  object-vector-cell simulations, and the object distances behind
+  geodesic object-vector maps.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then
