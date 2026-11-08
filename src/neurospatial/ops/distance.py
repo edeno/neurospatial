@@ -112,14 +112,13 @@ def geodesic_distance_matrix(
 
     Notes
     -----
-    **Geodesic.** A path grows from every bin (Theta*, as in the behavior
-    functions); a path is not always the shortest one near walls, so entry
-    ``(i, j)`` is the shorter of the paths grown from ``i`` and from ``j``.
-    It costs one field per bin: about 3.5 s and 350 MB of working memory for
-    2,500 bins in an open box on an Apple M5 Max, up to seven times more with
-    walls (24 s with two walls), and on the order of a minute for 10,000
-    bins. The result itself is ``n_bins**2 * 8`` bytes (800 MB for 10,000
-    bins).
+    **Geodesic.** Two bin centers that see each other are the straight line
+    apart. For the others a path grows from each bin (Theta*, as in the
+    behavior functions); it is not always the shortest one near walls, so
+    entry ``(i, j)`` is the shorter of the paths grown from ``i`` and from
+    ``j``. Measured on an Apple M5 Max for 2,500 bins: 2.6 s and 130 MB of
+    working memory in an open box, 32 s and 420 MB with two walls. The
+    result itself is ``n_bins**2 * 8`` bytes (800 MB for 10,000 bins).
 
     **Bin graph.** ``scipy.sparse.csgraph.shortest_path`` on the bin graph,
     about 6-40 times faster (0.6 s for 2,500 bins). An oblique distance reads
@@ -172,10 +171,13 @@ def _between_bin_sets(
 ) -> NDArray[np.float64]:
     """Any-angle distance between each bin of ``first`` and each of ``second``.
 
-    Entry ``(i, j)`` is the shorter of the paths grown from ``first[i]`` and
-    from ``second[j]``. One field grows from each distinct bin of either set,
-    a block at a time, so the working memory beyond the result is one block
-    of ``(block, n_bins)`` rows however many pairs there are.
+    Entry ``(i, j)`` is the straight line between the two centers when the
+    segment stays inside the environment, else the shorter of the paths
+    grown from ``first[i]`` and from ``second[j]``. Segments are traced a
+    block of rows at a time, and one field grows from each distinct bin with
+    a hidden pair, a block at a time, so the working memory beyond the
+    result (and a boolean table of hidden pairs) stays bounded however many
+    pairs there are.
 
     Returns
     -------
@@ -186,22 +188,51 @@ def _between_bin_sets(
     paths = _environment_paths(env, call=call)
     first = np.asarray(first, dtype=np.intp)
     second = np.asarray(second, dtype=np.intp)
-    roots, where = np.unique(np.concatenate([first, second]), return_inverse=True)
-    root_of_first, root_of_second = where[: first.size], where[first.size :]
     out = np.full((first.size, second.size), np.inf)
+    hidden = np.ones(out.shape, dtype=bool)
+    centers = np.asarray(env.bin_centers, dtype=np.float64)
+    if env.binning.linearization is None and first.size and second.size:
+        # No path is shorter than the straight line: where the segment
+        # between two centers stays inside, it is the distance. Traced a
+        # block of rows at a time, so the probe arrays stay bounded.
+        rows_per_block = max(1, _PAIR_BLOCK // second.size)
+        for lo in range(0, first.size, rows_per_block):
+            a = np.repeat(first[lo : lo + rows_per_block], second.size)
+            b = np.tile(second, a.size // second.size)
+            seen = paths.sees(centers[a], centers[b]).reshape(-1, second.size)
+            straight = np.linalg.norm(centers[a] - centers[b], axis=1).reshape(
+                seen.shape
+            )
+            out_rows = out[lo : lo + rows_per_block]
+            out_rows[seen] = straight[seen]
+            hidden[lo : lo + rows_per_block] = ~seen
+    # The rest: one field from each bin that has a hidden pair.
+    need_first = hidden.any(axis=1)
+    need_second = hidden.any(axis=0)
+    roots, where = np.unique(
+        np.concatenate([first[need_first], second[need_second]]), return_inverse=True
+    )
+    root_of_first = np.full(first.size, -1, dtype=np.intp)
+    root_of_second = np.full(second.size, -1, dtype=np.intp)
+    root_of_first[need_first] = where[: int(need_first.sum())]
+    root_of_second[need_second] = where[int(need_first.sum()) :]
     block = max(1, _DIJKSTRA_BLOCK_VALUES // max(env.n_bins, 1))
     for lo in range(0, roots.size, block):
         hi = min(lo + block, roots.size)
         # fields[k, b]: the path from bin b, grown from root lo + k.
         fields = paths.to_bins(roots[lo:hi])
+        # Only hidden pairs take a field's length; a visible pair keeps its
+        # straight line exactly.
         columns = np.flatnonzero((root_of_second >= lo) & (root_of_second < hi))
         if columns.size:
             grown = fields[root_of_second[columns] - lo][:, first].T
-            out[:, columns] = np.minimum(out[:, columns], grown)
+            out[:, columns] = np.where(
+                hidden[:, columns], np.minimum(out[:, columns], grown), out[:, columns]
+            )
         rows = np.flatnonzero((root_of_first >= lo) & (root_of_first < hi))
         if rows.size:
             grown = fields[root_of_first[rows] - lo][:, second]
-            out[rows] = np.minimum(out[rows], grown)
+            out[rows] = np.where(hidden[rows], np.minimum(out[rows], grown), out[rows])
     return out
 
 
@@ -352,6 +383,9 @@ def _bin_adjacency(graph: nx.Graph, *, weight: str | None, operation: str) -> cs
 # Dijkstra runs per block of source bins: (block, n_bins) float64 rows stay
 # near 160 MB however large the environment.
 _DIJKSTRA_BLOCK_VALUES = 20_000_000
+
+# Center pairs whose segments are traced at once in a table of bin distances.
+_PAIR_BLOCK = 200_000
 
 
 def _dijkstra_blocks(

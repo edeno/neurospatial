@@ -34,8 +34,9 @@
   and `bin_centers=` are gone: lengths come from the environment, and edge
   counts are `Environment.reachable_from(..., metric="hops")`. Geodesic
   matrices are symmetric (the shorter of the paths grown from either bin)
-  and cost one any-angle field per bin, about 3.5 s for 2,500 open bins and
-  24 s with walls; `metric="bin_graph"` takes 0.6 s.
+  and cost one any-angle field per bin that some other bin cannot see:
+  2.6 s for 2,500 open bins and 32 s with walls, against 0.6 s for
+  `metric="bin_graph"`.
 - `geodesic_distance_between_points` is removed; use
   `Environment.distance_between`.
 - `Environment.distance_between`, `Environment.distance_to` and

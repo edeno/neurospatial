@@ -2121,10 +2121,13 @@ def trajectory_similarity(
     m track. Compare these scores only between paths in one environment.
     Bin-graph distances can exceed the straight line on an open grid by up
     to about 8% (8-connected neighbors); geodesic ones equal it there. The
-    exact geodesic diameter grows any-angle fields from the bins farthest
-    out along the bin graph, a few seconds once per environment on a
-    2,500-bin room with walls. Two routes in parts of the environment not connected to each other have
-    no path between them and score 0.
+    geodesic table grows one any-angle field per route bin that some bin of
+    the other route cannot see, and the exact geodesic diameter grows fields
+    from the bins farthest out along the bin graph, once per environment.
+    For a 1 h session in a 2,500-bin room this took 3 s in an open box and
+    34 s with two walls (13 s once the diameter is known), against about
+    1 s for ``metric="bin_graph"``. Two routes in parts of the environment
+    not connected to each other have no path between them and score 0.
 
     A missing sample (NaN row) or a position outside the environment has no
     place in it. Jaccard, Hausdorff and DTW use only each trajectory's
