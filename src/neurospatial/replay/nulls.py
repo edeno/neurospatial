@@ -267,7 +267,6 @@ def shuffle_place_fields_circular(
     - Each neuron's place field is shifted independently
     - Preserves the shape of each place field
     - Destroys spatial relationships between neurons
-    - More conservative than cell identity shuffle
     - A 2-D arena has no single axis to shift along: shift spike times with
       ``shuffle_spike_times_circular`` instead
 

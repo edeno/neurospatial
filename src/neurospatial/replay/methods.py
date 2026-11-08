@@ -5544,9 +5544,10 @@ BUSH_2022 = ReplayMethod(
         "shuffles): 14 of 150 events (9.3%) and 10 of 200 further events "
         "(5.0%) were replay, where an exact test gives 4% (at most 13 of "
         "150 in the 99% interval); 24 of 350 together is 6.9% (99% "
-        "interval 3.8 to 11.1%). The excess is smaller than for "
-        "OLAFSDOTTIR_2015, which permutes every cell; its cause has not "
-        "been measured. The recipe keeps the paper's shuffle so results "
+        "interval 3.8 to 11.1%; binomial p = 0.013 against 4%). The excess "
+        "is weak, and smaller than for OLAFSDOTTIR_2015, which permutes "
+        "every cell; another set of 150 events could fall within the "
+        "interval. Its cause has not been measured. The recipe keeps the paper's shuffle so results "
         "compare with the paper. Pinned by "
         "test_line_searches_call_random_events_replay_at_alpha[bush_2022] "
         "(tests/replay/test_more_published_recipes.py).",

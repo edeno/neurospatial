@@ -18,6 +18,9 @@
   `shuffle_cell_identity`, `shuffle_place_fields_circular`,
   `explained_variance_reactivation` and `ReactivationMethod(test=...)` say
   the same, and the replay and reactivation guides add a one-line caution.
+  `shuffle_place_fields_circular` no longer says it is more conservative
+  than the cell-identity shuffle: no test compares the two on the same
+  events.
 
 ### Replay: the uncited 2-D place-field shuffle is removed
 
