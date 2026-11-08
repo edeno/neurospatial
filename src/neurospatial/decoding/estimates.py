@@ -514,6 +514,27 @@ def credible_region(
     ``level`` keeps every bin with mass, and an undecodable (entirely NaN)
     row has an empty region.
 
+    **Coverage.** A region holds the true position as often as its mass
+    says only when the decoder's model is right: Poisson spikes from the
+    rates it decodes with, an animal that moves less than about a bin per
+    time bin, and positions spread over space as the prior assumes. Then a
+    region of whole bins covers its mass, which is at least ``level``. With
+    rates fitted on training data, coverage also depends on how well the
+    rate maps are estimated. On held-out data from simulated sessions
+    (``dt = 0.1`` s, the true position taken at the centre of each time
+    bin):
+
+    - 200 cm track with 2 cm bins, 40 place cells, 10 min of training: the
+      95% region (mass 0.96) covered 96.3% with the default
+      ``diffusion_kde`` rates and 95.8% with ``glm``, but 90.3% with
+      unsmoothed ``binned`` rates.
+    - 100 cm open field with 4 cm bins, 60 place cells: the 95% region
+      (mass 0.95) covered 84% after 10 min of training with
+      ``diffusion_kde`` rates and 95% after 50 min.
+
+    Check coverage on held-out data from your own session, or simulate one
+    like it, before reading a region as a confidence statement.
+
     See Also
     --------
     posterior_entropy : Scalar entropy measure
