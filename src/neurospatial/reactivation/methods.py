@@ -525,11 +525,16 @@ class ReactivationMethod:
 
         - ``"partial_correlation_t"``: the t test of the partial
           correlation (one control window), reactivated when ``p < alpha``
-          and the correlation is positive.
+          and the correlation is positive. Pairs share cells, so it is
+          anticonservative: 4.0% of simulated sessions without
+          reactivation are called at a nominal 2.5% (``KUDRIMOTI_1999``
+          notes).
         - ``"pair_bootstrap"``: ``n_shuffles`` resamples of the pairs with
           replacement, keeping each pair's three correlations together;
           reactivated when the ``100 * alpha / 2`` percentile of EV - REV is
-          above 0 (Lansink et al. 2009). One control window.
+          above 0 (Lansink et al. 2009). One control window. Conservative
+          on simulated sessions without reactivation: 0.1% called at a
+          nominal 2.5% (``LANSINK_2009`` notes).
         - ``"cell_identity_shuffle"``: in every time bin, the cells'
           identities are permuted ``n_shuffles`` times, and each bin's R(t)
           is compared with the ``percentile``-th percentile of its shuffles
@@ -2499,6 +2504,17 @@ KUDRIMOTI_1999 = ReactivationMethod(
         "a significant relationship (rRUN–POST|PRE, p < 0.0001)', p. 4094); "
         "the standard partial-correlation t test with n_pairs - 3 degrees of "
         "freedom is inferred. Pairs share cells, so it is anticonservative.",
+        "Measured on 2,000 simulated sessions without reactivation "
+        "(simulated_reactivation_session(duration=600.0, reactivation=0.0): "
+        "30 units, population bursts in both rests, one 10-min window): 80 "
+        "(4.0%) were called reactivated, against 2.5% for a calibrated test "
+        "(the verdict needs p < 0.05 and a positive correlation; 33 to 69 "
+        "in the 99% interval). The t test counts every pair as independent, "
+        "but pairs share cells. The recipe keeps the paper's test so results "
+        "compare with the paper; compare sessions, or build a null for the "
+        "recording, before claiming reactivation in one session. Pinned by "
+        "test_null_false_positive_rate_is_nominal[kudrimoti_1999] "
+        "(tests/reactivation/test_reactivation_calibration.py).",
         "Reactivated when p < 0.05 and the partial correlation is positive; "
         "0.05 is the level of the paper's across-session tests ('p < 0.05, t "
         "tests', p. 4096).",
@@ -2621,6 +2637,16 @@ LANSINK_2009 = ReactivationMethod(
         "'the Wilcoxon matched-pairs signed rank test'.",
         "Inclusion ('at least five well-isolated active neurons from each "
         "area'; interneurons excluded) is not applied.",
+        "Measured on 1,000 simulated sessions without reactivation "
+        "(simulated_reactivation_session(duration=600.0, reactivation=0.0): "
+        "30 units in two regions, population bursts in both rests, one "
+        "window per period, 300 bootstrap samples): 1 (0.1%) was called "
+        "reactivated, against 2.5% for a calibrated test (13 to 39 in the "
+        "99% interval). The test is conservative here, and the cause is not "
+        "known. The recipe keeps the paper's test so results compare with "
+        "the paper. "
+        "Pinned by test_null_false_positive_rate_is_nominal[lansink_2009] "
+        "(tests/reactivation/test_reactivation_calibration.py).",
     ),
 )
 

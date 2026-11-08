@@ -14,7 +14,6 @@ from numpy.testing import assert_allclose, assert_array_equal
 from neurospatial.replay.nulls import (
     shuffle_cell_identity,
     shuffle_place_fields_circular,
-    shuffle_place_fields_circular_2d,
     shuffle_posterior_circular,
     shuffle_posterior_weighted_circular,
 )
@@ -260,102 +259,6 @@ class TestShufflePlaceFieldsCircular:
                 found_different = True
                 break
         assert found_different, "Each neuron should be shifted independently"
-
-
-# =============================================================================
-# Tests for shuffle_place_fields_circular_2d
-# =============================================================================
-
-
-class TestShufflePlaceFieldsCircular2D:
-    """Tests for shuffle_place_fields_circular_2d (2D circular shift)."""
-
-    @pytest.fixture
-    def env_2d(self):
-        """Create a 2D environment with full grid (no inactive bins)."""
-        from neurospatial import Environment
-
-        # Create a full grid by using infer_active_bins=False
-        positions = np.random.default_rng(42).uniform(0, 10, (1000, 2))
-        return Environment.from_samples(
-            positions, bin_size=2.0, infer_active_bins=False
-        )
-
-    @pytest.fixture
-    def encoding_models_2d(self, env_2d) -> np.ndarray:
-        """Sample encoding models for 2D environment: (3 neurons, n_bins)."""
-        # For 2D shuffle, encoding models must match full grid size
-        grid_shape = env_2d.grid_shape
-        n_bins = int(np.prod(grid_shape))
-        rng = np.random.default_rng(42)
-        # Create simple place fields with some structure
-        return rng.random((3, n_bins))
-
-    def test_yields_correct_number_of_shuffles(
-        self, encoding_models_2d: np.ndarray, env_2d
-    ) -> None:
-        """Should yield exactly n_shuffles arrays."""
-
-        n_shuffles = 10
-        shuffles = list(
-            shuffle_place_fields_circular_2d(
-                env_2d, encoding_models_2d, n_shuffles=n_shuffles, rng=42
-            )
-        )
-        assert len(shuffles) == n_shuffles
-
-    def test_preserves_row_values(self, encoding_models_2d: np.ndarray, env_2d) -> None:
-        """Each row should contain same values (multiset) as original.
-
-        2D circular shift preserves the shape of each place field.
-        """
-
-        for shuffled in shuffle_place_fields_circular_2d(
-            env_2d, encoding_models_2d, n_shuffles=10, rng=42
-        ):
-            for i in range(encoding_models_2d.shape[0]):
-                original_sorted = sorted(encoding_models_2d[i, :].tolist())
-                shuffled_sorted = sorted(shuffled[i, :].tolist())
-                assert shuffled_sorted == original_sorted
-
-    def test_requires_2d_environment(self) -> None:
-        """Should raise ValueError for non-2D environments."""
-        from neurospatial import Environment
-
-        # Create a 1D environment
-        positions = np.linspace(0, 10, 50).reshape(-1, 1)
-        env_1d = Environment.from_samples(positions, bin_size=1.0)
-        encoding_models = np.random.default_rng(42).random((3, env_1d.n_bins))
-
-        with pytest.raises(ValueError, match="2D"):
-            list(
-                shuffle_place_fields_circular_2d(
-                    env_1d, encoding_models, n_shuffles=5, rng=42
-                )
-            )
-
-    def test_rejects_masked_grid(self) -> None:
-        """Should raise ValueError if environment has inactive bins (masked grid)."""
-        from neurospatial import Environment
-
-        # Create 2D environment with inactive bins (default behavior)
-        positions = np.random.default_rng(42).uniform(0, 10, (100, 2))
-        env = Environment.from_samples(positions, bin_size=2.0)
-        # Create encoding models matching n_bins (not grid_shape product)
-        encoding_models = np.random.default_rng(42).random((3, env.n_bins))
-
-        # Should fail because n_bins != prod(grid_shape)
-        with pytest.raises(ValueError, match="cells outside the arena") as error:
-            list(
-                shuffle_place_fields_circular_2d(
-                    env, encoding_models, n_shuffles=5, rng=42
-                )
-            )
-        # The 1-D shuffle would break the field on a masked grid; the message
-        # points to the spike-time shuffle instead.
-        assert "shuffle_spike_times_circular" in str(error.value)
-        assert "shuffle_place_fields_circular " not in str(error.value)
-        assert "shuffle_place_fields_circular for" not in str(error.value)
 
 
 # =============================================================================

@@ -289,8 +289,7 @@ Detecting the candidate events (ripples, population bursts) is not included.
   `compare_replay_methods(template_bias=...)` runs it with the other methods
 - `shuffle_cell_identity()`, `shuffle_spike_counts_circular()`,
   `shuffle_spike_counts_uniform()`, `shuffle_place_fields_circular()`,
-  `shuffle_place_fields_circular_2d()`, `shuffle_posterior_circular()`,
-  `shuffle_posterior_weighted_circular()`: Replay shuffles;
+  `shuffle_posterior_circular()`, `shuffle_posterior_weighted_circular()`: Replay shuffles;
   `replay_significance(nulls=...)` runs them by name
 
 ### [neurospatial.reactivation](neurospatial/reactivation/index.md)

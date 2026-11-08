@@ -311,7 +311,7 @@ def _null_false_calls(method, n_sessions: int) -> int:
             marks=pytest.mark.xfail(
                 strict=True,
                 reason=(
-                    "anticonservative: 93 of 2000 null sessions (4.65%) are called "
+                    "anticonservative: 80 of 2000 null sessions (4.0%) are called "
                     "reactivated against a nominal 2.5% (99% interval 33-69). The "
                     "partial-correlation t test treats pairs as independent, but "
                     "pairs share units, as the recipe's notes say."

@@ -4398,6 +4398,18 @@ TIROLE_2022 = ReplayMethod(
         "p < 0.025) are not included; split the event first.",
         "The Bendor-lab code zeroes the original event's empty time bins in "
         "shuffles that move time bins; here each shuffle zeroes its own.",
+        "Measured on simulated events with no sequence (1,000 events of ten "
+        "20 ms bins, spikes from a random position in each bin, 30 place "
+        "cells on a 200 cm track, weighted correlation, 39 shuffles): each "
+        "null alone gave p <= 0.1 for 149 (spike-train shift), 197 "
+        "(place-field shift) and 132 (column cycle) events, where a "
+        "calibrated test gives 76 to 125 (99% interval around 100). All "
+        "three together gave 98. Require all three, as the paper does; one "
+        "null alone calls too many events replay. The recipe keeps the "
+        "paper's nulls so results compare with the paper. Pinned by "
+        "test_each_tirole_null_alone_is_calibrated_without_replay and "
+        "test_tirole_nulls_together_are_calibrated_without_replay "
+        "(tests/replay/test_significance.py).",
     ),
 )
 
@@ -4493,12 +4505,19 @@ PFEIFFER_FOSTER_2013 = ReplayMethod(
         "40 cm are for rats in a 2 x 2 m arena, where path lengths ran 40.0 to "
         "199.1 cm, and they are not scaled here.",
         "Each trajectory event was also tested against 5,000 cell-identity "
-        "and 5,000 2-D place-field shuffles, p = (n + 1) / (r + 1) over the "
+        "shuffles and 5,000 shuffles of 'each cell's place field in both the "
+        "x and y dimensions' (Methods), p = (n + 1) / (r + 1) over the "
         "shuffles classified as trajectory events. Every trajectory event had "
         "p < 0.02 for both, so the test did not change which events counted "
-        "and is not applied. To add it, use dataclasses.replace(..., "
-        "nulls=('unit_identity',), n_shuffles=5000, alpha=0.02); the 2-D "
-        "place-field shuffle is not available as a named null.",
+        "and is not applied. To add the cell-identity test, use "
+        "dataclasses.replace(..., nulls=('unit_identity',), n_shuffles=5000, "
+        "alpha=0.02).",
+        "The place-field shuffle is not provided. The paper and its "
+        "Supplementary Information do not say how a field was moved (a "
+        "random offset or a reordering of rows and columns), what happened "
+        "at the arena walls, or what a moved field held in bins the rat "
+        "never visited, and no code was published. Any choice here would be "
+        "our own null, not theirs.",
     ),
 )
 
@@ -4567,6 +4586,18 @@ OLAFSDOTTIR_2017 = ReplayMethod(
         "Replay when the score exceeded the 97.5th percentile of the "
         "shuffles: with 100 shuffles, at most 2 scoring as high; here p = "
         "(k + 1) / (n + 1) < 0.025 allows at most 1.",
+        "Measured on 150 simulated events with no sequence (spikes from a "
+        "new random position every 20 ms, 40 place cells on a 200 cm "
+        "track): 4 were replay (2.7%; 2 / 101 = 2.0% expected, 0 to 8 in "
+        "the 99% interval), but 93 p-values fell below 0.5 where 59 to 90 "
+        "are expected. The verdict at 0.025 is within its interval, but the "
+        "place-field shift gives too many small p-values, so a looser "
+        "alpha, such as the p < 0.2 of OLAFSDOTTIR_2016, may call more "
+        "events than it should; that was not measured. The recipe keeps "
+        "the paper's shuffle so results "
+        "compare with the paper. Pinned by "
+        "TestOlafsdottir::test_calls_random_events_replay_at_alpha "
+        "(tests/replay/test_methods.py).",
         "Inbound and outbound runs were decoded separately and the event "
         "takes the direction with the higher best-fit score: score each "
         "direction's decode and keep the higher.",
@@ -5011,6 +5042,16 @@ OLAFSDOTTIR_2015 = ReplayMethod(
         "positions of Davidson et al. (not stated in the paper). Start "
         "positions are searched densely rather than in 1 cm steps from -15 "
         "to 16 m, speeds rather than in 0.2 m/s steps.",
+        "Measured on simulated events with no sequence (spikes from a new "
+        "random position every 20 ms, 40 place cells on a 200 cm track, 99 "
+        "shuffles): 18 of 150 events (12%) and 18 of 200 further events "
+        "(9.0%) were replay, where an exact test gives 4% (at most 13 of "
+        "150 in the 99% interval). The cell-identity shuffle alone calls "
+        "too many events replay here; the cause has not been measured. The "
+        "recipe keeps the paper's shuffle so results compare with the "
+        "paper. Pinned by "
+        "test_line_searches_call_random_events_replay_at_alpha[olafsdottir_2015] "
+        "(tests/replay/test_more_published_recipes.py).",
         "Each arm was decoded with its own rate maps: 1 cm bins smoothed "
         "with a Gaussian of sigma 2 cm, speeds below 3 cm/s and the last "
         "20 cm of each arm excluded, cells with a peak of at least 0.5 Hz, "
@@ -5498,6 +5539,18 @@ BUSH_2022 = ReplayMethod(
         "with 'separate rate maps for runs in the outbound and inbound "
         "directions'. How the two directions are combined for replay is not "
         "stated: run the recipe on each direction's decode.",
+        "Measured on simulated events with no sequence (spikes from a new "
+        "random position every 20 ms, 40 place cells on a 200 cm track, 99 "
+        "shuffles): 14 of 150 events (9.3%) and 10 of 200 further events "
+        "(5.0%) were replay, where an exact test gives 4% (at most 13 of "
+        "150 in the 99% interval); 24 of 350 together is 6.9% (99% "
+        "interval 3.8 to 11.1%; binomial p = 0.013 against 4%). The excess "
+        "is weak, and smaller than for OLAFSDOTTIR_2015, which permutes "
+        "every cell; another set of 150 events could fall within the "
+        "interval. Its cause has not been measured. The recipe keeps the paper's shuffle so results "
+        "compare with the paper. Pinned by "
+        "test_line_searches_call_random_events_replay_at_alpha[bush_2022] "
+        "(tests/replay/test_more_published_recipes.py).",
         "Candidate events are periods of multi-unit activity or ripple-band "
         "amplitude (Z >= 0 with a peak Z >= 3, merged across gaps of 40 ms "
         "or less, longer than 40 ms) with a median running speed of at most "

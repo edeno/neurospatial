@@ -10,7 +10,6 @@ the rest:
 | ``shuffle_spike_counts_circular`` | each cell's counts in time | co-firing order |
 | ``shuffle_spike_counts_uniform`` | each cell's spikes in the event | all spike timing |
 | ``shuffle_place_fields_circular`` | 1-D rate maps | field positions |
-| ``shuffle_place_fields_circular_2d`` | 2-D rate maps | field positions |
 | ``shuffle_posterior_circular`` | posterior rows | alignment along a trajectory |
 | ``shuffle_posterior_weighted_circular`` | posterior rows | alignment, with peaks drawn from the session's posterior |
 
@@ -110,6 +109,15 @@ def shuffle_cell_identity(
     Alternative implementation (equivalent):
         Instead of shuffling spike_counts columns, shuffle encoding_models
         rows. This yields the same decoded posteriors.
+
+    Used alone, this null calls too many events without a sequence replay.
+    On 150 simulated events of spikes from random positions, tested with 99
+    shuffles at a nominal 4%, the line search of ``OLAFSDOTTIR_2015``
+    called 12% replay and that of ``BUSH_2022`` (which permutes only the
+    active cells) 9.3%
+    (``test_line_searches_call_random_events_replay_at_alpha`` in
+    ``tests/replay/test_more_published_recipes.py``). The recipes keep it
+    because their papers used it alone.
 
     Examples
     --------
@@ -259,10 +267,17 @@ def shuffle_place_fields_circular(
     - Each neuron's place field is shifted independently
     - Preserves the shape of each place field
     - Destroys spatial relationships between neurons
-    - More conservative than cell identity shuffle
-    - A 2-D arena has no single axis to shift along: on a full rectangular
-      grid use ``shuffle_place_fields_circular_2d``; otherwise shift spike
-      times with ``shuffle_spike_times_circular``
+    - A 2-D arena has no single axis to shift along: shift spike times with
+      ``shuffle_spike_times_circular`` instead
+
+    Used alone, this null calls too many events without a sequence replay.
+    On 1,000 simulated events of spikes from random positions (weighted
+    correlation, 39 shuffles), 197 had ``p <= 0.1`` where a calibrated test
+    gives 76 to 125; with the spike-train and column-cycle nulls of Tirole
+    et al. (2022) also required, 98 did
+    (``tests/replay/test_significance.py``). With the line search of
+    ``OLAFSDOTTIR_2017``, 93 of 150 such events had ``p < 0.5`` where 59 to
+    90 are expected (``tests/replay/test_methods.py``).
 
     A shift moves values by a whole number of bins in track order: bins are
     ordered by their position along the track (linear position on a
@@ -296,7 +311,7 @@ def shuffle_place_fields_circular(
 
     See Also
     --------
-    shuffle_place_fields_circular_2d : 2D circular shift for 2D environments
+    shuffle_spike_times_circular : Spike-time shift, for any arena
     shuffle_cell_identity : Shuffle neuron-to-place-field mapping
     """
     validate_draw_count(
@@ -307,8 +322,7 @@ def shuffle_place_fields_circular(
         env,
         encoding_models,
         "shuffle_place_fields_circular()",
-        "on a full rectangular 2-D grid use shuffle_place_fields_circular_2d; "
-        "otherwise shift spike times with shuffle_spike_times_circular",
+        "shift spike times with shuffle_spike_times_circular instead",
     )
     # Bins where any cell's rate is NaN (no training data) stay as they are;
     # each field is shifted over the remaining bins, in track order.
@@ -368,165 +382,6 @@ def _roll_along(
     columns = (np.arange(n_bins) - shifts[:, np.newaxis]) % n_bins
     rolled: NDArray[np.float64] = along[np.arange(n_rows)[:, np.newaxis], columns]
     return rolled
-
-
-_NO_2D_FIELD_SHUFFLE = (
-    "there is no field-preserving shuffle for this arena; shift each "
-    "neuron's spike times with shuffle_spike_times_circular, the null used "
-    "by place_cell_significance and the other *_significance functions, and "
-    "recompute the rate maps"
-)
-
-
-def shuffle_place_fields_circular_2d(
-    env: Environment,
-    encoding_models: NDArray[np.float64],
-    *,
-    n_shuffles: int = 1000,
-    rng: np.random.Generator | int | None = None,
-) -> Generator[NDArray[np.float64], None, None]:
-    """Circularly shift 2D place fields in both dimensions.
-
-    For 2D environments, shifts place fields in both x and y dimensions.
-    This is the 2D analog of ``shuffle_place_fields_circular``, and the
-    second null of Pfeiffer & Foster (2013), who tested trajectory events
-    by "randomly shuffling each cell's place field in both the x and y
-    dimensions" (5,000 shuffles). It is not a named null of
-    :func:`~neurospatial.replay.replay_significance`: rate maps hold NaN in
-    unvisited bins, and a roll would move them into visited ones.
-
-    Each neuron's place field is reshaped to a 2D grid, shifted by random
-    amounts in both dimensions, and flattened back to 1D.
-
-    Parameters
-    ----------
-    env : Environment
-        2D environment with grid layout (provides ``grid_shape``).
-    encoding_models : NDArray[np.float64], shape (n_neurons, n_bins)
-        Firing rate maps (place fields) for each neuron.
-    n_shuffles : int, default=1000
-        Number of shuffled versions to generate.
-    rng : np.random.Generator | int | None, default=None
-        Random number generator for reproducibility.
-
-        - If Generator: Use directly
-        - If int: Seed for ``np.random.default_rng()``
-        - If None: Use default RNG (not reproducible)
-
-    Yields
-    ------
-    shuffled_models : NDArray[np.float64], shape (n_neurons, n_bins)
-        Place fields with 2D circular shifts applied.
-
-    Raises
-    ------
-    ValueError
-        If environment is not 2D or doesn't have grid layout, or if the grid
-        has cells outside the arena (a masked grid): no field-preserving
-        shuffle exists there, so shift spike times with
-        ``shuffle_spike_times_circular`` instead.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from neurospatial import Environment
-    >>> from neurospatial.replay.nulls import shuffle_place_fields_circular_2d
-
-    >>> positions = np.random.default_rng(42).uniform(0, 10, (100, 2))  # doctest: +SKIP
-    >>> env = Environment.from_samples(positions, bin_size=2.0)  # doctest: +SKIP
-    >>> encoding_models = np.random.default_rng(42).random(
-    ...     (3, env.n_bins)
-    ... )  # doctest: +SKIP
-    >>> for i, shuffled in enumerate(  # doctest: +SKIP
-    ...     shuffle_place_fields_circular_2d(env, encoding_models, n_shuffles=3, rng=42)
-    ... ):
-    ...     print(f"Shuffle {i}: shape={shuffled.shape}")
-    Shuffle 0: shape=(3, 36)
-    Shuffle 1: shape=(3, 36)
-    Shuffle 2: shape=(3, 36)
-
-    See Also
-    --------
-    shuffle_place_fields_circular : Circular shift along a 1-D track
-    shuffle_spike_times_circular : Spike-time shift, for any arena
-    shuffle_cell_identity : Shuffle neuron-to-place-field mapping
-
-    References
-    ----------
-    Pfeiffer, B. E., & Foster, D. J. (2013). Hippocampal place-cell sequences
-    depict future paths to remembered goals. Nature, 497(7447), 74-79.
-    """
-    validate_draw_count(
-        n_shuffles, name="n_shuffles", owner="shuffle_place_fields_circular_2d()"
-    )
-    # Validate 2D environment
-    if env.n_dims != 2:
-        msg = (
-            f"shuffle_place_fields_circular_2d requires a 2D environment, "
-            f"got {env.n_dims}D"
-        )
-        raise ValueError(msg)
-
-    grid_shape = env.grid_shape
-    if len(grid_shape) != 2:
-        raise ValueError(
-            _format_error(
-                "shuffle_place_fields_circular_2d() needs a world-aligned 2-D grid.",
-                why="it rolls each field along the grid's rows and columns",
-                fix=_NO_2D_FIELD_SHUFFLE,
-            )
-        )
-
-    # Verify encoding models match expected size
-    expected_bins = int(np.prod(grid_shape))
-    actual_bins = encoding_models.shape[1]
-    if actual_bins != expected_bins:
-        raise ValueError(
-            _format_error(
-                f"shuffle_place_fields_circular_2d() needs one value per cell of "
-                f"the full {grid_shape} grid ({expected_bins} bins), but got "
-                f"{actual_bins} bins, so the grid has cells outside the arena.",
-                why="rolling a field across a masked grid would move rates into "
-                "cells outside the arena and break fields at the mask edges",
-                fix=_NO_2D_FIELD_SHUFFLE,
-            )
-        )
-    generator = np.random.default_rng(rng)
-    n_neurons = encoding_models.shape[0]
-
-    # Pre-compute indices for vectorized 2D roll
-    # Create meshgrid of indices
-    rows, cols = np.arange(grid_shape[0]), np.arange(grid_shape[1])
-
-    for _ in range(n_shuffles):
-        # Generate random shift amounts for each neuron in each dimension
-        shifts_x = np.asarray(generator.integers(0, grid_shape[0], size=n_neurons))
-        shifts_y = np.asarray(generator.integers(0, grid_shape[1], size=n_neurons))
-
-        # Reshape all fields to 2D grids: (n_neurons, grid_shape[0], grid_shape[1])
-        fields_2d = encoding_models.reshape(n_neurons, grid_shape[0], grid_shape[1])
-
-        # Vectorized 2D circular shift using advanced indexing
-        # For each neuron i, we want:
-        #   row_indices = (rows - shifts_x[i]) % grid_shape[0]
-        #   col_indices = (cols - shifts_y[i]) % grid_shape[1]
-        # Shape: (n_neurons, grid_shape[0])
-        shifted_row_indices = (rows - shifts_x[:, np.newaxis]) % grid_shape[0]
-        # Shape: (n_neurons, grid_shape[1])
-        shifted_col_indices = (cols - shifts_y[:, np.newaxis]) % grid_shape[1]
-
-        # Apply shifts using advanced indexing
-        # fields_2d[n, shifted_row_indices[n, :, None], shifted_col_indices[n, None, :]]
-        neuron_indices = np.arange(n_neurons)[:, np.newaxis, np.newaxis]
-        row_idx = shifted_row_indices[:, :, np.newaxis]
-        col_idx = shifted_col_indices[:, np.newaxis, :]
-
-        shifted_2d = fields_2d[neuron_indices, row_idx, col_idx]
-
-        # Flatten back to 1D: (n_neurons, n_bins)
-        shuffled = shifted_2d.reshape(n_neurons, -1)
-
-        yield shuffled
 
 
 # =============================================================================

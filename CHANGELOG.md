@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Documentation: measured false-positive rates of published nulls
+
+- The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,
+  `OLAFSDOTTIR_2017`, `KUDRIMOTI_1999` and `LANSINK_2009` now give the rate
+  at which each recipe calls simulated events or sessions without replay or
+  reactivation significant, against its nominal rate, and name the test that
+  pins the number. Each of Tirole's three nulls alone calls 1.3 to 2 times
+  α (all three together hold α); the cell-identity shuffle calls 12%
+  (`OLAFSDOTTIR_2015`) and 9.3% (`BUSH_2022`) at a nominal 4%;
+  `OLAFSDOTTIR_2017` holds its α but gives too many p-values below 0.5;
+  Kudrimoti's t test calls 4.0% at a nominal 2.5% (pairs share cells), and
+  Lansink's bootstrap 0.1%. The recipes keep their papers' methods, so
+  results still compare with the papers. `replay_significance`,
+  `shuffle_cell_identity`, `shuffle_place_fields_circular`,
+  `explained_variance_reactivation` and `ReactivationMethod(test=...)` say
+  the same, and the replay and reactivation guides add a one-line caution.
+  `shuffle_place_fields_circular` no longer says it is more conservative
+  than the cell-identity shuffle: no test compares the two on the same
+  events.
+
+### Replay: the uncited 2-D place-field shuffle is removed
+
+- **Breaking:** `neurospatial.replay.shuffle_place_fields_circular_2d` is
+  removed. No named null used it, and it did not follow a published method.
+  Pfeiffer & Foster (2013) tested trajectory events by "randomly shuffling
+  each cell's place field in both the x and y dimensions", but neither the
+  paper nor its Supplementary Information says how a field was moved, what
+  happened at the arena walls, or what a moved field held in unvisited bins,
+  and no code was published. A circular roll was our own choice, and it moved
+  the NaN of unvisited bins into visited ones. In a 2-D arena, shift spike
+  times with `shuffle_spike_times_circular` or permute cell identity with
+  `shuffle_cell_identity`. The `PFEIFFER_FOSTER_2013` Notes now say this.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then
