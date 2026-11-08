@@ -355,18 +355,13 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
     assert metrics.mean_speed == expected_mean
     assert metrics.min_observed_speed == expected_min
     assert metrics.heading_mean_resultant_length == expected_heading[2]
+    # At 1 Hz the VTE velocity estimator's 0.5 s window holds no 3-sample
+    # window, so there is no head turn.
     trial = compute_vte_trial(
         times, positions, entry - duration, entry, max_gap=None, min_speed=5.0
     )
     assert trial.mean_speed == expected_mean
-    expected_sweep = head_sweep_from_positions(
-        times[selected],
-        positions[selected],
-        max_gap=None,
-        min_speed=5.0,
-    )
-    assert expected_sweep > 0
-    assert trial.head_sweep_magnitude == expected_sweep
+    assert np.isnan(trial.head_sweep_magnitude)
 
 
 def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
@@ -387,13 +382,6 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     expected_speed = pre_decision_speed_stats(
         times[selected], positions[selected], max_gap=None
     )[0]
-    expected_sweep = head_sweep_from_positions(
-        times[selected],
-        positions[selected],
-        max_gap=None,
-        min_speed=5.0,
-    )
-    assert expected_sweep > 0
     result = compute_vte_session(
         env,
         times,
@@ -407,7 +395,7 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     )
     assert len(result.trial_results) == 1
     assert result.trial_results[0].mean_speed == expected_speed
-    assert result.trial_results[0].head_sweep_magnitude == expected_sweep
+    assert np.isnan(result.trial_results[0].head_sweep_magnitude)
 
 
 def test_repeated_timestamps_are_refused_before_any_velocity():

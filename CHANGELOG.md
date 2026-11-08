@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Behavior: VTE head sweep uses the Redish lab's velocity estimator
+
+- `head_sweep_from_positions`, `compute_vte_trial` and `compute_vte_session`
+  estimate the orientation of motion and its change (dPhi) as Papale et al.
+  2012 did, with the Redish lab's adaptive-window estimator (`dxdt.m`, called
+  by the lab's zIdPhi code with a 0.5 s window and 0.1 s smoothing). Before,
+  the heading was the direction of a fixed 0.1 s Gaussian line-fit velocity
+  and IdPhi summed the changes between consecutive headings. Away from the
+  ends of a run, IdPhi equals the lab's code run in GNU Octave to 1e-12
+  (times the sample interval: the lab sums rad/s, IdPhi here is in radians).
+- dPhi is estimated over the whole recording passed in and summed over the
+  pass, as the lab restricted it to the pass. `compute_vte_trial` therefore
+  needs the recording around the pass, not the pass alone, and a pass
+  window of one sample has that sample's turn.
+- IdPhi values are smaller than before. The lab's estimator averages part of
+  a fast turn away (about half on a scan swinging once a second; a sharp
+  reversal counts about 0.7 pi), and it fits x and y separately, so IdPhi
+  depends on the camera's axes: rotating the same trajectories by 0.3 rad
+  changed IdPhi by -25% to +68% (5-95% of 46 passes, Carey et al. 2019).
+  Compare IdPhi and zIdPhi only within one camera frame.
+- The `min_speed` gate stays, though the lab's code has none: samples
+  slower than it add no turn. With the lab's estimator and no gate, 0.3 cm
+  tracking jitter on a still animal scored 5 to 17 rad over 1.5 s, against
+  3.5 to 4.9 rad for a real scan. The run-edge rules and timing by the actual
+  sample times are neurospatial's; the Notes of `head_sweep_from_positions`
+  list what follows the lab's code and what does not.
+- `head_sweep_magnitude(headings)` is unchanged: the discrete sum of wrapped
+  heading changes.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then

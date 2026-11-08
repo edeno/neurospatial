@@ -9,6 +9,7 @@ samples outside ``max_gap``, ``epochs`` and ``break_before`` stay excluded.
 
 import numpy as np
 import pytest
+from numpy.testing import assert_allclose
 
 from neurospatial.behavior import (
     compute_goal_directed_metrics,
@@ -26,6 +27,7 @@ from neurospatial.behavior import (
 from neurospatial.behavior.vte import compute_vte_trial, head_sweep_from_positions
 
 from ._kinematics_snapshots import load_kinematic_recording
+from ._reference_turning import reference_head_sweep
 from ._segmentation_snapshots import structural_snapshot
 from .test_segmentation_gap_free import assert_snapshot_equal
 
@@ -80,11 +82,13 @@ DEFAULT_CALLS = {
     "pre_decision_heading_stats": lambda r, p, **kw: pre_decision_heading_stats(
         r.times, p, min_speed=MIN_SPEED, **kw
     ),
+}
+SPEED_ONLY_CALLS = {
+    # Its default headings are the adaptive-window velocity's direction, not
+    # heading_from_velocity's (see test_vte.py for passing those).
     "head_sweep_from_positions": lambda r, p, **kw: head_sweep_from_positions(
         r.times, p, min_speed=MIN_SPEED, **kw
     ),
-}
-SPEED_ONLY_CALLS = {
     "pre_decision_speed_stats": lambda r, p, **kw: pre_decision_speed_stats(
         r.times, p, **kw
     ),
@@ -149,9 +153,19 @@ def test_window_metrics_take_your_motion_at_the_window_samples(session):
         headings=headings,
         **support,
     )
-    assert trial.head_sweep_magnitude == head_sweep_from_positions(
-        window_times, window_positions, min_speed=MIN_SPEED, max_gap=1.0, **mine
+    # dPhi comes from your headings over the run holding the window (the
+    # samples before the break at 6000, with the lost frames bridged like
+    # deleted rows), gated by your speed, and is summed over the window.
+    run = np.flatnonzero(np.isfinite(positions[:6000]).all(axis=1))
+    expected = reference_head_sweep(
+        r.times[run],
+        positions[run],
+        MIN_SPEED,
+        headings=headings[run],
+        speed=speed[run],
+        samples=(r.times[run] >= entry - duration) & (r.times[run] < entry),
     )
+    assert_allclose(trial.head_sweep_magnitude, expected, rtol=1e-12)
     assert trial.mean_speed == mean_speed
     # Random headings, not the tracked path's, set the window's statistics.
     default = compute_pre_decision_metrics(

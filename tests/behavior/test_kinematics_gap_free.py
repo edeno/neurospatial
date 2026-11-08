@@ -45,7 +45,14 @@ its trial results are unchanged. It was captured again when the VTE window
 became the first pass through the decision region instead of the 1 s before
 the entry: the first trial's window moved from [78.78, 79.78) s to
 [79.78, 80.28) s, its IdPhi from 0.0877 to 0.0423 rad and its mean speed
-from 14.01 to 12.98 cm/s.
+from 14.01 to 12.98 cm/s. The ``head_sweep_from_positions``,
+``compute_vte_trial`` and ``compute_vte_session`` entries were captured again
+when dPhi began to be estimated with the Redish lab's adaptive-window
+estimator over the whole recording, as in the lab's zIdPhi code, instead of
+summing changes of the Gaussian line-fit heading over the window alone:
+the whole-recording IdPhi moved from 57.05 to 39.11 rad, the trial's from
+0.0286 to 0.0332 rad and the session's first trial's from 0.0423 to 0.0757
+rad; speeds are unchanged.
 """
 
 import json

@@ -296,10 +296,10 @@ def test_vte_session_pass_starts_at_the_entry_after_the_pause(pause_track):
     assert trial_result.window_start == r.times[1005]
     assert trial_result.window_end == trial.stop_time
     assert trial_result.mean_speed == 0
-    # A stationary window has no heading, so the trial is unclassified.
-    assert np.isnan(trial_result.head_sweep_magnitude)
-    assert trial_result.is_vte is None
-    assert np.isnan(result.vte_fraction)
+    # A stationary window does not turn. Its first samples move by the
+    # session's speed, which sees the excursion before the entry, but their
+    # orientation of motion stays the same.
+    assert trial_result.head_sweep_magnitude == 0.0
 
 
 def test_decision_analysis_forwards_windows(pause_track):
