@@ -1724,7 +1724,18 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         agreed within 14% for unsmoothed maps (the default; boxes within 10%)
         and within 33% when smoothed with a 5 or 10 cm bandwidth; that repeat
         is harsher than the first check (``diffusion_kde`` came within 16%
-        in it). For
+        in it). On two 10-minute Ornstein-Uhlenbeck trajectories in a 1 m box
+        (5 cm bins), 400 untuned cells per setting: with ``diffusion_kde``
+        and ``gaussian_kde`` at 2.5, 5 and 10 cm and 1000 spikes, predicted
+        and simulated means agreed within 1 standard error of the simulated
+        mean (0.3-1.6%); at 100 spikes within 4% (2.5 cm leaves more
+        independent bins than spikes, so the bias is NaN). A GAM at a fixed
+        penalty of 1 agreed within 0.1% (60 cells, 1000 spikes). With REML
+        the penalty chosen for untuned cells is so large that both the bias
+        and the information are near 1e-4 bits/spike. Unsmoothed maps at
+        1000 spikes on 399 bins came out 8% below the simulated mean: the
+        Miller-Madow form is a first correction and underestimates once
+        ``K / N`` is not small. For
         a tuned cell the plug-in bias is smaller (its spikes come from fewer
         bins), so the correction is conservative.
 
