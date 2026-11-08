@@ -276,7 +276,8 @@ def test_vte_trial_uses_only_the_start_run(pause_track):
     assert np.isnan(resumed.head_sweep_magnitude)
 
 
-def test_vte_session_pass_starts_at_the_entry_after_the_pause(pause_track):
+@pytest.mark.parametrize("method", ["adaptive_window", "line_fit"])
+def test_vte_session_pass_starts_at_the_entry_after_the_pause(pause_track, method):
     from neurospatial.behavior import Trial
 
     r = pause_track
@@ -290,13 +291,15 @@ def test_vte_session_pass_starts_at_the_entry_after_the_pause(pause_track):
         positions,
         region="target",
         trials=Intervals([trial]),
+        method=method,
     )
     assert len(result.trial_results) == 1
     (trial_result,) = result.trial_results
     assert trial_result.window_start == r.times[1005]
     assert trial_result.window_end == trial.stop_time
     assert trial_result.mean_speed == 0
-    # A stationary window has no heading, so the trial is unclassified.
+    # A stationary window has no heading change measured, with either
+    # method, so the trial is unclassified: missing, not zero.
     assert np.isnan(trial_result.head_sweep_magnitude)
     assert trial_result.is_vte is None
     assert np.isnan(result.vte_fraction)

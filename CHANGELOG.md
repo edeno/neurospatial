@@ -116,6 +116,46 @@ give the measured rates:
   spikes for both kernel estimators and a fixed-penalty GAM, and within 4%
   at 100 spikes.
 
+### Behavior: VTE offers the Redish lab's velocity estimator, by default
+
+- `head_sweep_from_positions`, `compute_vte_trial` and `compute_vte_session`
+  take `method=`, how the orientation of motion and its change (dPhi) are
+  estimated:
+  - `"adaptive_window"` (default) follows Papale et al. 2012 and the Redish
+    lab's code: the lab's adaptive-window estimator (`dxdt.m`, called by the
+    lab's zIdPhi code with a 0.5 s window and 0.1 s smoothing), run over the
+    whole recording and summed over the pass. Away from the ends of a run,
+    IdPhi equals the lab's code run in GNU Octave to 1e-12 (times the sample
+    interval: the lab sums rad/s, IdPhi here is in radians). It reproduces
+    published IdPhi, but at a cost: it fits x and y separately, so IdPhi
+    depends on the camera's axes (rotating the same trajectories by 0.3 rad
+    changed IdPhi by -25% to +68%, 5-95% of 46 Carey et al. 2019 passes); it
+    captures about half the turn of a scan swinging once a second; and it
+    counts a sharp reversal as 11π/15 at 30 Hz. Compare its raw IdPhi only
+    within one camera setup.
+  - `"line_fit"` is the previous estimator, neurospatial's own: the
+    direction of the 0.1 s Gaussian line-fit velocity of the pass's samples,
+    with IdPhi the sum of its changes. It is rotation-invariant, so use it to
+    compare raw IdPhi across setups. Its results are unchanged.
+- Over 24 Carey et al. 2019 sessions the two methods gave the same VTE
+  verdict (zIdPhi within session) for 96-97% of trials.
+- With the default, `compute_vte_trial` needs the recording around the pass,
+  not the pass alone, because dPhi is estimated over the whole recording.
+- The `min_speed` gate applies with either method, though the lab's code has
+  none: with the lab's estimator and no gate, 0.3 cm tracking jitter on a
+  still animal scored 5 to 17 rad over 1.5 s, against 3.5 to 4.9 rad for a
+  real scan. The gate uses the same speed as the reported `mean_speed`, that
+  of the pass's samples, so a pass with no sample above the gate has a NaN
+  head sweep, not 0. The adaptive window's run-edge rules and timing by the
+  actual sample times are neurospatial's; the Notes of
+  `head_sweep_from_positions` list what follows the lab's code and what
+  does not.
+- Tracking sampled at 4 Hz or slower has no adaptive-window head sweep,
+  since the 0.5 s window then holds fewer than 3 samples; the VTE functions
+  warn and say so.
+- `head_sweep_magnitude(headings)` is unchanged: the discrete sum of wrapped
+  heading changes that `method="line_fit"` uses.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then

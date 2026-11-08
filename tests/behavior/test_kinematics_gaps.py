@@ -355,18 +355,33 @@ def test_composites_forward_coarse_sampling_optout(continuous_recording):
     assert metrics.mean_speed == expected_mean
     assert metrics.min_observed_speed == expected_min
     assert metrics.heading_mean_resultant_length == expected_heading[2]
-    trial = compute_vte_trial(
-        times, positions, entry - duration, entry, max_gap=None, min_speed=5.0
-    )
+    # At 1 Hz the VTE velocity estimator's 0.5 s window holds no 3-sample
+    # window, so there is no head turn, and it says so.
+    with pytest.warns(UserWarning, match="faster than 4 Hz"):
+        trial = compute_vte_trial(
+            times, positions, entry - duration, entry, max_gap=None, min_speed=5.0
+        )
     assert trial.mean_speed == expected_mean
+    assert np.isnan(trial.head_sweep_magnitude)
+    # The line fit has headings at 1 Hz; the window's are forwarded too.
+    line_fit = compute_vte_trial(
+        times,
+        positions,
+        entry - duration,
+        entry,
+        max_gap=None,
+        min_speed=5.0,
+        method="line_fit",
+    )
     expected_sweep = head_sweep_from_positions(
         times[selected],
         positions[selected],
         max_gap=None,
         min_speed=5.0,
+        method="line_fit",
     )
     assert expected_sweep > 0
-    assert trial.head_sweep_magnitude == expected_sweep
+    assert line_fit.head_sweep_magnitude == expected_sweep
 
 
 def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
@@ -387,27 +402,41 @@ def test_vte_session_forwards_coarse_sampling_optout(continuous_recording):
     expected_speed = pre_decision_speed_stats(
         times[selected], positions[selected], max_gap=None
     )[0]
+    with pytest.warns(UserWarning, match="faster than 4 Hz"):
+        result = compute_vte_session(
+            env,
+            times,
+            positions,
+            region="decision",
+            # The pass lasts to the last sample, so the trial must contain it.
+            trials=Intervals(
+                [Trial(times[0], times[-1] + 1.0, "source", "target", "reached")]
+            ),
+            max_gap=None,
+        )
+    assert len(result.trial_results) == 1
+    assert result.trial_results[0].mean_speed == expected_speed
+    assert np.isnan(result.trial_results[0].head_sweep_magnitude)
+    (line_fit,) = compute_vte_session(
+        env,
+        times,
+        positions,
+        region="decision",
+        trials=Intervals(
+            [Trial(times[0], times[-1] + 1.0, "source", "target", "reached")]
+        ),
+        max_gap=None,
+        method="line_fit",
+    ).trial_results
     expected_sweep = head_sweep_from_positions(
         times[selected],
         positions[selected],
         max_gap=None,
         min_speed=5.0,
+        method="line_fit",
     )
     assert expected_sweep > 0
-    result = compute_vte_session(
-        env,
-        times,
-        positions,
-        region="decision",
-        # The pass lasts to the last sample, so the trial must contain it.
-        trials=Intervals(
-            [Trial(times[0], times[-1] + 1.0, "source", "target", "reached")]
-        ),
-        max_gap=None,
-    )
-    assert len(result.trial_results) == 1
-    assert result.trial_results[0].mean_speed == expected_speed
-    assert result.trial_results[0].head_sweep_magnitude == expected_sweep
+    assert line_fit.head_sweep_magnitude == expected_sweep
 
 
 def test_repeated_timestamps_are_refused_before_any_velocity():
