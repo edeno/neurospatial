@@ -51,6 +51,13 @@
   the bin graph read distances on a hexagonal layout a median of 11.5% and
   up to 15.5% long, so the radial profile's peak, and a grid spacing read
   from it, sat that much too far out.
+- `geodesic_rbf_basis` measures each basis function's distance along the
+  any-angle path, so a basis function is round in an open arena instead of
+  an octagon; `metric="bin_graph"` gives the old basis exactly.
+  `select_basis_centers(method="farthest_point")` takes the same `metric=`,
+  and `geodesic_rbf_basis` passes its own. The heat-kernel and Chebyshev
+  bases, which are built on the bin graph, still spread farthest-point
+  centers along it.
 - Distances that build on these functions follow them: the geodesic
   `rate_map_centroid` and `field_shift_distance`, the geodesic place-cell and
   object-vector-cell simulations, and the object distances behind

@@ -107,7 +107,7 @@ References
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -118,7 +118,6 @@ from neurospatial._validation import validate_choice
 from neurospatial.geometry import MissingFaces, require_cartesian
 
 if TYPE_CHECKING:
-    import networkx as nx
     from matplotlib.axes import Axes
     from scipy.spatial import cKDTree
 
@@ -129,6 +128,7 @@ if TYPE_CHECKING:
         SpatialBasisConsumer,
         WaveletBasisConsumer,
     )
+    from neurospatial.ops._types import PathMetric
 
 __all__ = [
     "basis_at_positions",
@@ -217,6 +217,7 @@ def select_basis_centers(
     n_centers: int,
     method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     rng: int | np.random.Generator | None = None,
+    metric: PathMetric = "geodesic",
 ) -> NDArray[np.int_]:
     """
     Select well-distributed center nodes for basis functions.
@@ -243,15 +244,21 @@ def select_basis_centers(
 
         - "kmeans": K-means clustering on bin_centers, return nearest bins
           to cluster centroids. Good general-purpose choice.
-        - "farthest_point": Greedy farthest-point sampling using geodesic
-          distance, starting from a random bin. Each new center is the bin
-          farthest from those already chosen: a greedy heuristic that
-          spreads centers well, not a guaranteed maximum spread. Runs one
-          shortest-path search per center.
+        - "farthest_point": Greedy farthest-point sampling using the
+          distance ``metric``, starting from a random bin. Each new center
+          is the bin farthest from those already chosen: a greedy heuristic
+          that spreads centers well, not a guaranteed maximum spread. Runs
+          one shortest-path search per center.
         - "random": Uniform random selection. Fast but may cluster.
     rng : int, Generator, or None
         Random seed or generator for reproducibility. Seeds k-means, the
         first farthest-point center, and random selection.
+    metric : {"geodesic", "bin_graph"}, default="geodesic"
+        Distance the farthest-point method spreads centers by (the others
+        ignore it): the shortest path inside the environment at any angle,
+        or the faster walk along the connections between bin centers, which
+        reads oblique distances up to about 8 % long on a square grid. Use
+        ``"bin_graph"`` on egocentric polar environments.
 
     Returns
     -------
@@ -267,7 +274,9 @@ def select_basis_centers(
     CartesianOnlyError
         If method="kmeans" and ``env`` is polar: k-means would cluster
         ``(distance, angle)`` bin centers as ``(x, y)``. Use
-        ``method="farthest_point"`` or ``method="random"``.
+        ``method="farthest_point"`` with ``metric="bin_graph"``, or
+        ``method="random"``. Also for ``method="farthest_point"`` with
+        ``metric="geodesic"`` on a polar environment.
 
     Examples
     --------
@@ -317,17 +326,22 @@ def select_basis_centers(
             "select_basis_centers(method='kmeans')",
             why="k-means clusters bin centers as Cartesian positions.",
             fix=(
-                "use method='farthest_point', which spreads centers by graph "
-                "distance, or method='random' (center_method= in the basis functions)"
+                "use method='farthest_point' with metric='bin_graph', which "
+                "spreads centers by the walk between bin centers, or "
+                "method='random' (center_method= in the basis functions)"
             ),
         )
         return _select_centers_kmeans(
             env.bin_centers, env.bin_center_tree(), n_centers, generator
         )
     if method == "farthest_point":
-        return _select_centers_farthest_point(
-            env.connectivity, env.n_bins, n_centers, generator
+        validate_choice(
+            metric,
+            ("geodesic", "bin_graph"),
+            name="metric",
+            owner="select_basis_centers()",
         )
+        return _select_centers_farthest_point(env, n_centers, generator, metric)
     return _select_centers_random(env.n_bins, n_centers, generator)
 
 
@@ -368,47 +382,46 @@ def _select_centers_random(
 
 
 def _select_centers_farthest_point(
-    connectivity: nx.Graph,
-    n_bins: int,
+    env: BasisCentersConsumer,
     n_centers: int,
     rng: np.random.Generator,
+    metric: PathMetric,
 ) -> NDArray[np.int_]:
-    """Select centers using greedy farthest-point sampling with geodesic distance."""
+    """Select centers by greedy farthest-point sampling along paths of ``metric``."""
     from scipy.sparse.csgraph import shortest_path
 
     from neurospatial.ops.distance import _bin_adjacency
 
-    adjacency = _bin_adjacency(
-        connectivity, weight="distance", operation="select_basis_centers()"
-    )
+    if metric == "geodesic":
+        from neurospatial.ops import _environment_paths
 
-    # Start with a random point
-    centers = [int(rng.integers(0, n_bins))]
-
-    # Compute distances from first center
-    distances_from_centers = shortest_path(
-        csgraph=adjacency,
-        method="auto",
-        directed=False,
-        indices=centers[0],
-    )
-
-    # Greedy selection: iteratively add the farthest point
-    for _ in range(n_centers - 1):
-        # Find bin with maximum minimum distance to current centers
-        farthest_idx = np.argmax(distances_from_centers)
-        centers.append(int(farthest_idx))
-
-        # Update distances: compute distance from new center
-        new_distances = shortest_path(
-            csgraph=adjacency,
-            method="auto",
-            directed=False,
-            indices=farthest_idx,
+        paths = _environment_paths(
+            cast("Environment", env), call="select_basis_centers"
         )
 
-        # Keep minimum distance to any center
-        distances_from_centers = np.minimum(distances_from_centers, new_distances)
+        def field(center: int) -> NDArray[np.float64]:
+            return paths.from_bins(np.array([center]))
+
+    else:
+        adjacency = _bin_adjacency(
+            env.connectivity, weight="distance", operation="select_basis_centers()"
+        )
+
+        def field(center: int) -> NDArray[np.float64]:
+            distances: NDArray[np.float64] = shortest_path(
+                csgraph=adjacency, method="auto", directed=False, indices=center
+            )
+            return distances
+
+    # Start with a random point
+    centers = [int(rng.integers(0, env.n_bins))]
+    distances_from_centers = field(centers[0])
+
+    # Greedy selection: iteratively add the bin farthest from every center
+    for _ in range(n_centers - 1):
+        farthest_idx = int(np.argmax(distances_from_centers))
+        centers.append(farthest_idx)
+        distances_from_centers = np.minimum(distances_from_centers, field(farthest_idx))
 
     return np.asarray(centers, dtype=np.int_)
 
@@ -476,10 +489,12 @@ def _resolve_centers(
     center_method: Literal["kmeans", "farthest_point", "random"],
     rng: int | np.random.Generator | None,
     noun: str,
+    metric: PathMetric,
 ) -> NDArray[np.int_]:
     """Validated basis centers: ``centers`` as given, or ``n_centers`` selected.
 
-    ``noun`` names the basis functions in the error raised when neither is given.
+    ``noun`` names the basis functions in the error raised when neither is
+    given; ``metric`` is the distance farthest-point selection spreads them by.
     """
     if centers is None:
         if n_centers is None:
@@ -497,7 +512,7 @@ def _resolve_centers(
             )
             raise ValueError(msg)
         centers = select_basis_centers(
-            env, n_centers=n_centers, method=center_method, rng=rng
+            env, n_centers=n_centers, method=center_method, rng=rng, metric=metric
         )
     return _validate_centers(centers, env.n_bins)
 
@@ -624,6 +639,7 @@ def geodesic_rbf_basis(
     center_method: Literal["kmeans", "farthest_point", "random"] = "kmeans",
     normalize: Literal["unit", "max", "none"] = "unit",
     rng: int | np.random.Generator | None = None,
+    metric: PathMetric = "geodesic",
 ) -> NDArray[np.float64]:
     """
     Compute maze-aware RBF basis using geodesic distances.
@@ -671,6 +687,16 @@ def geodesic_rbf_basis(
           Only use if you're normalizing differently downstream.
     rng : int, Generator, or None
         Random seed or generator for center selection.
+    metric : {"geodesic", "bin_graph"}, default="geodesic"
+        ``"geodesic"`` is the shortest path from each bin center to the
+        basis center that stays inside the environment, at any angle, so a
+        basis function is round in an open arena and bends around walls.
+        ``"bin_graph"`` walks the connections between bin centers: faster
+        (see Notes), but an oblique distance reads up to about 1.082 times
+        the straight line on a square grid (1.155 hexagonal, 1.128 in 3-D),
+        so each basis function is an octagon, wider along the diagonals. It
+        works on egocentric polar environments. Farthest-point centers are
+        spread by the same distance.
 
     Returns
     -------
@@ -707,12 +733,12 @@ def geodesic_rbf_basis(
 
     Notes
     -----
-    Distances run along the bin graph between bin centers. In an open arena
-    an oblique path on an 8-connected grid is a staircase of grid steps, up to
-    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
-    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
-    the any-angle path between positions instead, which equals the straight line
-    when nothing is in the way.
+    The geodesic distance of each bin to a center is the length of its path
+    toward the center, as the any-angle search (Theta*) grows it from the
+    center; the behavior functions measure the same paths. It costs one
+    field per center: about 0.24 s for 200 centers in a 2,500-bin open box
+    and 1.5 s with walls, against 0.04 s for ``metric="bin_graph"``; the
+    fields are kept, so building another basis on the same centers is fast.
 
     **Why geodesic instead of Euclidean?**
 
@@ -722,7 +748,7 @@ def geodesic_rbf_basis(
 
     **Computational complexity**:
 
-    - Time: O(n_centers * n_bins * log(n_bins)) using batch shortest paths
+    - Time: O(n_centers * n_bins * log(n_bins)) for the bin graph
     - Space: O(n_centers * n_bandwidths * n_bins) for output basis
 
     Runtime grows with ``n_centers * n_bins``. For very large environments
@@ -774,7 +800,12 @@ def geodesic_rbf_basis(
 
     from neurospatial.ops.distance import _bin_adjacency
 
-    centers = _resolve_centers(env, centers, n_centers, center_method, rng, "basis")
+    validate_choice(
+        metric, ("geodesic", "bin_graph"), name="metric", owner="geodesic_rbf_basis()"
+    )
+    centers = _resolve_centers(
+        env, centers, n_centers, center_method, rng, "basis", metric
+    )
 
     # Handle bandwidth and validate
     bandwidths = _basis_bandwidths(env, bandwidth, "geodesic_rbf_basis()")
@@ -796,18 +827,20 @@ def geodesic_rbf_basis(
     n_bandwidths = len(bandwidths)
     n_bins = env.n_bins
 
-    # Compute distances from all centers at once using scipy's optimized implementation
-    # This is ~5-10x faster than per-center Dijkstra
-    adjacency = _bin_adjacency(
-        env.connectivity, weight="distance", operation="geodesic_rbf_basis()"
-    )
-    distances = shortest_path(
-        csgraph=adjacency,
-        method="auto",
-        directed=False,
-        indices=centers,  # Only compute from these sources
-    )
-    # Shape: (n_centers, n_bins)
+    # Distance from every bin to each center, shape (n_centers, n_bins).
+    if metric == "geodesic":
+        from neurospatial.ops import _environment_paths
+
+        distances = _environment_paths(
+            cast("Environment", env), call="geodesic_rbf_basis"
+        ).to_bins(np.asarray(centers, dtype=np.intp))
+    else:
+        adjacency = _bin_adjacency(
+            env.connectivity, weight="distance", operation="geodesic_rbf_basis()"
+        )
+        distances = shortest_path(
+            csgraph=adjacency, method="auto", directed=False, indices=centers
+        )
 
     # Check for disconnected graph (unreachable bins)
     if np.any(np.isinf(distances)):
@@ -959,7 +992,10 @@ def heat_kernel_basis(
 
     from neurospatial.ops.diffusion import _generator
 
-    centers = _resolve_centers(env, centers, n_centers, center_method, rng, "kernel")
+    # A diffusion on the bin graph: farthest-point centers along that graph.
+    centers = _resolve_centers(
+        env, centers, n_centers, center_method, rng, "kernel", "bin_graph"
+    )
 
     bandwidths = _basis_bandwidths(env, bandwidth, "heat_kernel_basis()")
     invalid_mask = ~(np.isfinite(bandwidths) & (bandwidths > 0))
@@ -1118,7 +1154,10 @@ def chebyshev_filter_basis(
 
     from neurospatial.ops.diffusion import _generator, _symmetric_conjugate
 
-    centers = _resolve_centers(env, centers, n_centers, center_method, rng, "filter")
+    # A filter on the bin graph: farthest-point centers along that graph.
+    centers = _resolve_centers(
+        env, centers, n_centers, center_method, rng, "filter", "bin_graph"
+    )
 
     # Validate max_degree
     if max_degree < 0:
@@ -1300,8 +1339,9 @@ def spatial_basis(
         "spatial_basis()",
         why="Its automatic scale comes from the Cartesian extent of the bins.",
         fix=(
-            "use geodesic_rbf_basis(env, bandwidth=..., center_method='farthest_point') "
-            "with bandwidth in distance units"
+            "use geodesic_rbf_basis(env, bandwidth=..., "
+            "center_method='farthest_point', metric='bin_graph') with bandwidth "
+            "in distance units"
         ),
     )
     # Compute environment extent
