@@ -487,3 +487,18 @@ def test_geodesic_diameter_is_the_longest_symmetric_path(walled, two_rooms, squa
         assert env._geodesic_diameter("geodesic") == longest
         graph = geodesic_distance_matrix(env, metric="bin_graph")
         assert env._geodesic_diameter("bin_graph") == graph[np.isfinite(graph)].max()
+
+
+def test_distances_between_two_bin_sets_are_the_symmetric_matrix(walled):
+    """Route tables grow one field per bin and keep the shorter direction."""
+    from neurospatial.ops.distance import _between_bin_sets
+
+    rng = np.random.default_rng(8)
+    first = rng.choice(walled.n_bins, 60, replace=False)
+    second = rng.choice(walled.n_bins, 45, replace=False)
+    table = _between_bin_sets(walled, first, second, "test")
+    matrix = geodesic_distance_matrix(walled)
+    np.testing.assert_array_equal(table, matrix[np.ix_(first, second)])
+    np.testing.assert_array_equal(
+        table, _between_bin_sets(walled, second, first, "test").T
+    )

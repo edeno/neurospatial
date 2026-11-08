@@ -164,22 +164,44 @@ def _symmetric_fields(
     env: Environment, bins: NDArray[np.intp], call: str
 ) -> NDArray[np.float64]:
     """Any-angle distances between ``bins``: the shorter of both directions."""
+    return _between_bin_sets(env, bins, bins, call)
+
+
+def _between_bin_sets(
+    env: Environment, first: NDArray[np.intp], second: NDArray[np.intp], call: str
+) -> NDArray[np.float64]:
+    """Any-angle distance between each bin of ``first`` and each of ``second``.
+
+    Entry ``(i, j)`` is the shorter of the paths grown from ``first[i]`` and
+    from ``second[j]``. One field grows from each distinct bin of either set,
+    a block at a time, so the working memory beyond the result is one block
+    of ``(block, n_bins)`` rows however many pairs there are.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (len(first), len(second))
+    """
     from neurospatial.ops._paths import _environment_paths
 
     paths = _environment_paths(env, call=call)
-    out = np.empty((bins.size, bins.size))
-    # Fields a block at a time, so only one block of (block, n_bins) rows is
-    # held beyond the result.
+    first = np.asarray(first, dtype=np.intp)
+    second = np.asarray(second, dtype=np.intp)
+    roots, where = np.unique(np.concatenate([first, second]), return_inverse=True)
+    root_of_first, root_of_second = where[: first.size], where[first.size :]
+    out = np.full((first.size, second.size), np.inf)
     block = max(1, _DIJKSTRA_BLOCK_VALUES // max(env.n_bins, 1))
-    for lo in range(0, bins.size, block):
-        out[lo : lo + block] = paths.to_bins(bins[lo : lo + block])[:, bins]
-    # Entry (i, j) is the path grown from bin j; keep the shorter direction,
-    # a block of rows (and the matching columns) at a time.
-    for lo in range(0, bins.size, block):
-        rows = slice(lo, lo + block)
-        shorter = np.minimum(out[rows], out[:, rows].T)
-        out[rows] = shorter
-        out[:, rows] = shorter.T
+    for lo in range(0, roots.size, block):
+        hi = min(lo + block, roots.size)
+        # fields[k, b]: the path from bin b, grown from root lo + k.
+        fields = paths.to_bins(roots[lo:hi])
+        columns = np.flatnonzero((root_of_second >= lo) & (root_of_second < hi))
+        if columns.size:
+            grown = fields[root_of_second[columns] - lo][:, first].T
+            out[:, columns] = np.minimum(out[:, columns], grown)
+        rows = np.flatnonzero((root_of_first >= lo) & (root_of_first < hi))
+        if rows.size:
+            grown = fields[root_of_first[rows] - lo][:, second]
+            out[rows] = np.minimum(out[rows], grown)
     return out
 
 

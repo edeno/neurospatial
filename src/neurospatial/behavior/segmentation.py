@@ -2287,12 +2287,15 @@ def trajectory_similarity(
         ).reshape(len(first), len(second))
         diameter = env._geodesic_diameter("bin_graph")
     else:
-        from neurospatial.ops import _environment_paths
+        from neurospatial.ops.distance import _between_bin_sets
 
-        paths = _environment_paths(env, call="trajectory_similarity")
-        table = paths.between_bins(
-            np.repeat(first, len(second)), np.tile(second, len(first))
-        ).reshape(len(first), len(second))
+        # One field per distinct route bin, not one query per pair of them.
+        table = _between_bin_sets(
+            env,
+            first.astype(np.intp),
+            second.astype(np.intp),
+            "trajectory_similarity",
+        )
         diameter = env._geodesic_diameter("geodesic")
     if method == "hausdorff":
         distance = max(table.min(axis=1).max(), table.min(axis=0).max())
