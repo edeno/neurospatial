@@ -257,3 +257,52 @@ def test_a_long_session_keeps_whole_fields_with_the_same_lengths():
     )
     assert paths._fields.n_kept == 0
     np.testing.assert_array_equal(session, pieces)
+
+
+class TestCornersOfFourConnectedGrids:
+    """A line through a cell corner passes only when every cell around it is free."""
+
+    @staticmethod
+    def _room(n, missing=(), walls=None):
+        mask = np.ones((n, n), dtype=bool)
+        for cell in missing:
+            mask[cell] = False
+        edges = np.arange(n + 1) * 2.0
+        arena = (
+            None if walls is None else OpenArena(box(0, 0, 2 * n, 2 * n), walls=walls)
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            return Environment.from_grid_mask(
+                mask,
+                grid_edges=(edges, edges),
+                connect_diagonal_neighbors=False,
+                arena=arena,
+            )
+
+    def test_an_open_room_is_the_straight_line_between_every_two_centers(self):
+        # Many center-to-center lines run exactly through cell corners here.
+        room = self._room(12)
+        paths = _environment_paths(room, call="test")
+        a, b = np.triu_indices(room.n_bins, k=1)
+        straight = np.linalg.norm(room.bin_centers[a] - room.bin_centers[b], axis=1)
+        np.testing.assert_allclose(paths.between_bins(a, b), straight, rtol=1e-12)
+
+    @pytest.mark.parametrize(
+        "obstacle",
+        [
+            {"missing": [(1, 0)]},  # the cell [2, 4] x [0, 2] is not a bin
+            {"walls": {"edge": LineString([(2, 0), (2, 2)])}},  # a wall up to (2, 2)
+        ],
+        ids=["missing-cell", "wall-to-the-corner"],
+    )
+    def test_a_corner_touching_an_obstacle_blocks(self, obstacle):
+        # From the center (1, 1) to (5, 5) the line runs through the corner
+        # (2, 2), which the missing cell or the wall touches.
+        room = self._room(4, **obstacle)
+        start, end = np.array([[1.0, 1.0]]), np.array([[5.0, 5.0]])
+        paths = _environment_paths(room, call="test")
+        assert not paths.sees(start, end)[0]
+        assert paths.between(start, end)[0] > np.hypot(4.0, 4.0) + 1e-6
+        # Shifted off the corner, the line passes beside it.
+        assert paths.sees(np.array([[1.0, 1.3]]), end)[0]

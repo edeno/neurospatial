@@ -1126,6 +1126,38 @@ class _OpenPaths(_EnvironmentPaths):
         found: NDArray[np.bool_] = np.any(self._neighbors[a] == b[:, None], axis=1)
         return found
 
+    def _corner_joined(
+        self, a: NDArray[np.intp], b: NDArray[np.intp]
+    ) -> NDArray[np.bool_]:
+        """Whether a step through a corner from bin ``a`` to bin ``b`` stays inside.
+
+        A straight line through a vertex shared by ``a`` and ``b`` passes
+        when ``a`` and ``b`` are connected, or, where the grid joins only
+        face neighbors (a 4-connected grid), when both cells sharing a face
+        with ``a`` and ``b`` are bins open to each: every cell around the
+        vertex is then free and joined, so the vertex lies inside the
+        environment. A vertex that touches a missing cell, the outline or a
+        wall along those faces still blocks.
+        """
+        joined = self._connected(a, b)
+        rest = np.flatnonzero(~joined)
+        if rest.size:
+            neighbors_a = self._neighbors[a[rest]]
+            via = (neighbors_a[:, :, None] == self._neighbors[b[rest]][:, None, :]).any(
+                axis=2
+            ) & (neighbors_a >= 0)
+            cell = np.maximum(neighbors_a, 0)
+            centers = self._centers
+            near_a = np.linalg.norm(
+                centers[cell] - centers[a[rest]][:, None, :], axis=2
+            )
+            near_b = np.linalg.norm(
+                centers[cell] - centers[b[rest]][:, None, :], axis=2
+            )
+            side = via & (near_a <= self._nearest) & (near_b <= self._nearest)
+            joined[rest] = side.sum(axis=1) >= 2
+        return joined
+
     def _flanked(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
         """Whether two connected bins have two open, face-sharing common neighbors.
 
@@ -1811,6 +1843,7 @@ class _OpenPaths(_EnvironmentPaths):
                 starts[seg] + f0[:, None] * span,
                 starts[seg] + f1[:, None] * span,
                 self._connected,
+                self._corner_joined,
             )
             bad[origin[walked & blocked]] = True
             origin, a, b, seg = (x[~walked] for x in (origin, a, b, seg))
@@ -2552,13 +2585,15 @@ class _GridCells(_BoxCells):
         p0: NDArray[np.float64],
         p1: NDArray[np.float64],
         connected: Callable[[NDArray[np.intp], NDArray[np.intp]], NDArray[np.bool_]],
+        corner: Callable[[NDArray[np.intp], NDArray[np.intp]], NDArray[np.bool_]],
     ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
         """Walk the cells a stretch crosses from bin ``a`` to bin ``b``.
 
         The stretch from ``p0`` (in ``a``) to ``p1`` (in ``b``) crosses each
         cell boundary between them in the order of its crossing times; two
         boundaries crossed at the same time (through an edge or a vertex)
-        are one step. Each step must enter a bin joined to the last.
+        are one step. A step across a face must enter a bin joined to the
+        last; a step through a vertex must pass ``corner``.
 
         Returns
         -------
@@ -2607,7 +2642,17 @@ class _GridCells(_BoxCells):
                 np.ravel_multi_index(tuple(pending[commit].T), self.shape)
             ]
             fails = enter < 0
-            fails[~fails] = ~connected(committed[commit][~fails], enter[~fails])
+            # A step that crossed several boundaries at once went through a
+            # vertex (or an edge in 3-D).
+            through = (
+                (k > 0) & tied[:, k - 1][commit]
+                if k > 0
+                else np.zeros(int(commit.sum()), dtype=bool)
+            )
+            face = ~fails & ~through
+            vertex = ~fails & through
+            fails[face] = ~connected(committed[commit][face], enter[face])
+            fails[vertex] = ~corner(committed[commit][vertex], enter[vertex])
             bad[commit] |= fails
             committed[commit] = np.where(enter >= 0, enter, committed[commit])
         blocked[rows] = bad

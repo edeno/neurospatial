@@ -491,14 +491,14 @@ class TestDistanceTo:
         )
         on_axis = offsets.min(axis=1) == 0
         np.testing.assert_allclose(dist_graph[on_axis], dist_euclidean[on_axis])
-        # The any-angle geodesic lies between the straight line and the
-        # staircase. Corner-touching cells are not connected on a 4-connected
-        # grid, so a line that passes through or very near a cell corner is
-        # blocked there; along an axis the geodesic is the straight line.
-        geodesic = small_2d_env.distance_to(bins=target, metric="geodesic")
-        assert np.all(geodesic >= dist_euclidean - 1e-12)
-        assert np.all(geodesic <= dist_graph + 1e-12)
-        np.testing.assert_allclose(geodesic[on_axis], dist_euclidean[on_axis])
+        # The any-angle geodesic of the open grid is the straight line, also
+        # where it runs through cell corners: every cell around them is free.
+        np.testing.assert_allclose(
+            small_2d_env.distance_to(bins=target, metric="geodesic"),
+            dist_euclidean,
+            rtol=1e-12,
+            atol=1e-12,
+        )
 
     def test_distance_to_invalid_metric_raises(self, small_2d_env):
         """Test that invalid metric raises ValueError."""

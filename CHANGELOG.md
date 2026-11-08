@@ -14,6 +14,13 @@
   `traveled_path_length`, `mean_square_displacement` and the other behavior
   functions with `metric="geodesic"` where a wall is in the way; it is never
   longer than before.
+- On a grid that joins only face neighbors (`connect_diagonal_neighbors=False`),
+  a straight line through a cell corner no longer counts as blocked when all
+  four cells around the corner are free and joined. Before, a geodesic
+  between bin centers in an open room of such a grid was up to 41% longer
+  than the straight line for a third of the pairs; it is now the straight
+  line. A corner that touches a missing cell, the outline or a wall still
+  blocks.
 - `metric="bin_graph"` is a third choice for every behavior function with
   `metric=` and for `decoding_error`. It walks the connections between the
   centers of the positions' bins. It is faster for long sessions, fine grids
