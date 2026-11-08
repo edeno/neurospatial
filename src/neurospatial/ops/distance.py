@@ -100,6 +100,8 @@ def geodesic_distance_matrix(
     behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
     the any-angle path between positions instead, which equals the straight line
     when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
 
     This function uses scipy.sparse.csgraph.shortest_path for optimized
     performance (~10-100× faster than pure NetworkX implementation).
@@ -184,6 +186,8 @@ def geodesic_distance_between_points(
     behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
     the any-angle path between positions instead, which equals the straight line
     when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
     """
     _require_nodes(graph, [bin_from, bin_to], "geodesic_distance_between_points()")
     _require_edge_weight(graph, weight, "geodesic_distance_between_points()")
@@ -578,6 +582,8 @@ def distance_field(
     behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
     the any-angle path between positions instead, which equals the straight line
     when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
 
     **Geodesic mode**: Uses Dijkstra's algorithm with multiple sources,
     which is O((V + E) log V) where V is number of nodes and E is number
@@ -689,6 +695,8 @@ def pairwise_distances(
     behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
     the any-angle path between positions instead, which equals the straight line
     when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
 
     Examples
     --------
@@ -821,6 +829,8 @@ def neighbors_within(
     behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
     the any-angle path between positions instead, which equals the straight line
     when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
 
     **Geodesic mode**: Runs Dijkstra from the centers, in memory-bounded
     blocks, stopping each search at ``radius``. Complexity per center is

@@ -26,7 +26,8 @@
 - The bin-graph distance functions (`distance_field`, `pairwise_distances`,
   `geodesic_distance_matrix`, `Environment.distance_between` and others) now
   say that they walk the bin graph between bin centers, which can exceed the
-  straight line by up to about 1.082 times.
+  straight line by up to about 1.082 times on a square grid, 1.155 on
+  hexagonal bins and 1.128 on 3-D grids.
 - `Environment.compute_kernel` names the polar distance correctly: the
   chord between the places, or `r1 + r2` across an open angular seam.
 - `heat_kernel_basis` says that it matches the columns of

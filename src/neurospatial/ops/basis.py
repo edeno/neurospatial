@@ -713,6 +713,8 @@ def geodesic_rbf_basis(
     behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
     the any-angle path between positions instead, which equals the straight line
     when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
 
     **Why geodesic instead of Euclidean?**
 
