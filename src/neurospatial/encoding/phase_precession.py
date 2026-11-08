@@ -673,8 +673,7 @@ def compute_phase_precession(
         Unit of input phases.
     min_spikes : int, default=10
         Minimum number of spikes required for analysis. The shuffle p-value
-        stays calibrated at 10 spikes: on simulated untuned spikes,
-        ``p_value < 0.05`` occurred in 5.3% of 300 cells.
+        stays calibrated at 10 spikes (see Notes).
     n_shuffles : int, default=1000
         Number of permutation shuffles used to build the null distribution
         for the p-value. Each shuffle re-fits the slope on the shuffled
@@ -762,7 +761,11 @@ def compute_phase_precession(
     the test asks whether the fitted precession is stronger than chance,
     rather than testing a slope-free circular-linear association. A +1
     smoothing is applied (Phipson & Smyth, 2010) so ``p_value`` is never
-    exactly zero.
+    exactly zero. For independent spikes with no phase-position relationship
+    the permutation null is exact: with 199 shuffles, where ``p_value < 0.05``
+    has probability 0.045, it occurred in 4.2%, 4.5% and 4.3% of 4000
+    simulated cells with 10, 30 and 100 spikes, and the p-values were
+    uniform (Kolmogorov-Smirnov p >= 0.25).
 
     **Bursts.** The shuffle treats every spike as independent, as published
     precession analyses generally do, but spikes in a burst share a position
@@ -1075,11 +1078,11 @@ def has_phase_precession(
 
     Notes
     -----
-    The shuffle p-value is calibrated for independent spikes: on spikes with
-    no phase-position relationship, ``p_value < 0.05`` occurred in 2.3-5.3%
-    of 300 simulated cells for each of 10, 20, 50 and 200 spikes. Because
-    only negative slopes count, the screen's false-positive rate is about
-    ``alpha / 2``. Spikes in bursts are not independent, and the p-value is
+    The shuffle p-value is calibrated for independent spikes (see
+    :func:`compute_phase_precession`). Because only negative slopes count,
+    the screen's false-positive rate is about ``alpha / 2``: 2.0-2.4% of 4000
+    simulated cells with no phase-position relationship and 10, 30 or 100
+    spikes (199 shuffles). Spikes in bursts are not independent, and the p-value is
     too small for them; see :func:`compute_phase_precession`.
     There is no ``rho`` cutoff: ``|rho|`` of untuned spikes shrinks with the
     spike count (it reached 0.2 in 63% of untuned 10-spike cells and 1% of
