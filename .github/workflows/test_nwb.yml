@@ -3,7 +3,8 @@ name: Tests (NWB interop)
 # NWB (pynwb) is an optional extra. The default test job installs only the dev
 # extra, so the NWB round-trip / lazy-read and component-reader tests
 # would otherwise only ever be skipped. This job installs the nwb extra and runs
-# the NWB tests, including operator regressions on reconstructed environments.
+# the NWB tests, including operator regressions on reconstructed environments
+# and the dataset opener's reading of a file's own extension versions.
 
 on:
   push:
@@ -60,6 +61,10 @@ jobs:
           uv run --no-sync pytest tests/nwb \
             tests/ops/test_differential.py::test_operators_raise_without_finite_volume_geometry \
             tests/ops/test_basis.py::test_diffusion_bases_raise_without_finite_volume_geometry \
+            tests/datasets/test_fetch.py::test_open_nwb_reads_types_only_the_files_extension_version_has \
+            tests/datasets/test_fetch.py::test_open_nwb_reads_those_types_when_the_extension_is_not_imported \
+            tests/datasets/test_fetch.py::test_open_nwb_keeps_an_extension_loaded_at_the_files_version \
+            tests/datasets/test_fetch.py::test_open_nwb_says_what_to_do_when_hdmf_cannot_set_the_loaded_version_aside \
             -n 0 -q
         env:
           MPLBACKEND: Agg

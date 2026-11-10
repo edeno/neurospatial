@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import datetime
 import email.message
 import functools
@@ -10,12 +11,16 @@ import io
 import json
 import logging
 import os
+import subprocess
+import sys
 import tarfile
 import threading
 import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -309,6 +314,18 @@ class _RangeHandler(http.server.SimpleHTTPRequestHandler):
         return io.BytesIO(body)
 
 
+@contextlib.contextmanager
+def _served(directory):
+    """Serve ``directory`` over HTTP on this machine; yield the server's URL."""
+    handler = functools.partial(_RangeHandler, directory=str(directory))
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}"
+        finally:
+            server.shutdown()
+
+
 def test_open_nwb_reads_local_and_http(tmp_path):
     pynwb = pytest.importorskip("pynwb")
     pytest.importorskip("fsspec")
@@ -337,15 +354,267 @@ def test_open_nwb_reads_local_and_http(tmp_path):
         with _fetch.open_nwb(source) as f:
             return f.processing["behavior"]["Position"]["xy"].data[:]
 
-    handler = functools.partial(_RangeHandler, directory=str(tmp_path))
-    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        try:
-            remote = positions(f"http://127.0.0.1:{server.server_port}/demo.nwb")
-        finally:
-            server.shutdown()
+    with _served(tmp_path) as url:
+        remote = positions(f"{url}/demo.nwb")
     np.testing.assert_array_equal(positions(str(path)), xy)
     np.testing.assert_array_equal(remote, xy)
+
+
+#: A stand-in for ndx-events 0.2.0. Its ``LabeledEvents`` and
+#: ``AnnotatedEventsTable`` types are in no later version of the extension, so
+#: only the file's own copy can describe them.
+_OLD_EVENTS_NAMESPACE = {
+    "namespaces": [
+        {
+            "name": "ndx-events",
+            "version": "0.2.0",
+            "doc": "events",
+            "author": ["author"],
+            "contact": ["contact"],
+            "schema": [
+                {
+                    "namespace": "core",
+                    "neurodata_types": [
+                        "NWBDataInterface",
+                        "DynamicTable",
+                        "VectorData",
+                    ],
+                },
+                {"source": "ndx-events.extensions"},
+            ],
+        }
+    ]
+}
+_OLD_EVENTS_TYPES = {
+    "groups": [
+        {
+            "neurodata_type_def": "LabeledEvents",
+            "neurodata_type_inc": "NWBDataInterface",
+            "doc": "event times, each with a label",
+            "datasets": [
+                {
+                    "name": "timestamps",
+                    "dtype": "float64",
+                    "dims": ["num_events"],
+                    "shape": [None],
+                    "doc": "event times",
+                },
+                {
+                    "name": "data",
+                    "dtype": "uint8",
+                    "dims": ["num_events"],
+                    "shape": [None],
+                    "doc": "index of each event's label",
+                    "attributes": [
+                        {
+                            "name": "labels",
+                            "dtype": "text",
+                            "dims": ["num_labels"],
+                            "shape": [None],
+                            "doc": "the labels",
+                        }
+                    ],
+                },
+            ],
+        },
+        {
+            "neurodata_type_def": "AnnotatedEventsTable",
+            "neurodata_type_inc": "DynamicTable",
+            "doc": "a table with one column the type requires",
+            "datasets": [
+                {
+                    "name": "event_times",
+                    "neurodata_type_inc": "VectorData",
+                    "dtype": "float64",
+                    "dims": ["num_events"],
+                    "shape": [None],
+                    "doc": "event times",
+                }
+            ],
+        },
+    ]
+}
+_REWARDS = [[1.0, 2.5, 4.0], [0, 1, 0], ["left_reward", "right_reward"]]
+_ANNOTATED = {"event_times": [0.5, 3.0], "duration": [0.1, 0.2]}
+#: pynwb's warning that it ignored a namespace a file caches, as hdmf worded
+#: it before and from 4.1.0.
+_IGNORED_NAMESPACE = r"Ignoring (the following )?cached namespace"
+
+
+@pytest.fixture
+def old_events_file(tmp_path):
+    """An NWB file with objects of both 0.2.0 types and the namespace defining them."""
+    pynwb = pytest.importorskip("pynwb")
+    h5py = pytest.importorskip("h5py")
+    path = tmp_path / "old_events.nwb"
+    nwbfile = pynwb.NWBFile("demo", "id", datetime.datetime.now(datetime.timezone.utc))
+    nwbfile.create_processing_module("behavior", "events")
+    with pynwb.NWBHDF5IO(path, "w") as io_:
+        io_.write(nwbfile)
+    text = h5py.string_dtype()
+
+    def typed(obj, namespace, neurodata_type, **attrs):
+        obj.attrs.update(
+            namespace=namespace,
+            neurodata_type=neurodata_type,
+            object_id=str(uuid.uuid4()),
+            **attrs,
+        )
+        return obj
+
+    with h5py.File(path, "a") as h5:
+        cached = h5["specifications"]
+        if "ndx-events" in cached:  # pynwb cached the version this process imported
+            del cached["ndx-events"]
+        spec = cached.create_group("ndx-events/0.2.0")
+        spec.create_dataset(
+            "namespace", data=json.dumps(_OLD_EVENTS_NAMESPACE), dtype=text
+        )
+        spec.create_dataset(
+            "ndx-events.extensions", data=json.dumps(_OLD_EVENTS_TYPES), dtype=text
+        )
+        behavior = h5["processing/behavior"]
+
+        times, codes, labels = _REWARDS
+        rewards = typed(behavior.create_group("rewards"), "ndx-events", "LabeledEvents")
+        rewards.create_dataset("timestamps", data=np.array(times))
+        data = rewards.create_dataset("data", data=np.array(codes, dtype=np.uint8))
+        data.attrs.create("labels", labels, dtype=text)
+
+        table = typed(
+            behavior.create_group("annotated"),
+            "ndx-events",
+            "AnnotatedEventsTable",
+            description="events",
+        )
+        table.attrs.create("colnames", list(_ANNOTATED), dtype=text)
+        n_rows = len(_ANNOTATED["event_times"])
+        ids = table.create_dataset("id", data=np.arange(n_rows))
+        typed(ids, "hdmf-common", "ElementIdentifiers")
+        for name, values in _ANNOTATED.items():
+            column = table.create_dataset(name, data=np.array(values))
+            typed(column, "hdmf-common", "VectorData", description=name)
+    return path
+
+
+def _read_old_events(source):
+    """The reward table as ``huszar_2022`` reads its own, and the annotated table."""
+    with _fetch.open_nwb(source) as nwbfile:
+        behavior = nwbfile.processing["behavior"]
+        rewards = behavior["rewards"]
+        return (
+            [
+                rewards.timestamps[:].tolist(),
+                rewards.data[:].tolist(),
+                list(rewards.fields["data__labels"]),
+            ],
+            behavior["annotated"].to_dataframe().to_dict("list"),
+        )
+
+
+def _loaded_version(namespace):
+    """The version of ``namespace`` in pynwb's process-wide type map."""
+    import pynwb
+
+    return pynwb.get_type_map().namespace_catalog.get_namespace(namespace)["version"]
+
+
+@pytest.mark.parametrize("where", ["path", "http"])
+def test_open_nwb_reads_types_only_the_files_extension_version_has(
+    old_events_file, where
+):
+    """Importing ndx-events 0.4.0 does not hide objects of 0.2.0 types."""
+    pytest.importorskip("ndx_events")  # loads its own version into pynwb, for good
+    assert _loaded_version("ndx-events") != "0.2.0"
+    with contextlib.ExitStack() as stack:
+        source = str(old_events_file)
+        if where == "http":
+            pytest.importorskip("fsspec")
+            pytest.importorskip("aiohttp")
+            url = stack.enter_context(_served(old_events_file.parent))
+            source = f"{url}/{old_events_file.name}"
+        stack.enter_context(warnings.catch_warnings())
+        warnings.filterwarnings("error", message=_IGNORED_NAMESPACE)
+        rewards, annotated = _read_old_events(source)
+    assert rewards == _REWARDS
+    assert annotated == _ANNOTATED
+
+
+def test_open_nwb_reads_those_types_when_the_extension_is_not_imported(
+    old_events_file,
+):
+    """In a new process, where nothing has loaded another ndx-events version."""
+    script = (
+        "import json, sys, warnings\n"
+        "import pynwb\n"
+        "from neurospatial.datasets import _fetch\n"
+        "warnings.simplefilter('error')\n"
+        "with _fetch.open_nwb(sys.argv[1]) as nwbfile:\n"
+        "    behavior = nwbfile.processing['behavior']\n"
+        "    rewards = behavior['rewards']\n"
+        "    read = (\n"
+        "        [\n"
+        "            rewards.timestamps[:].tolist(),\n"
+        "            rewards.data[:].tolist(),\n"
+        "            list(rewards.fields['data__labels']),\n"
+        "        ],\n"
+        "        behavior['annotated'].to_dataframe().to_dict('list'),\n"
+        "    )\n"
+        "assert 'ndx_events' not in sys.modules\n"
+        "print(json.dumps(read))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(old_events_file)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert json.loads(result.stdout) == [_REWARDS, _ANNOTATED]
+
+
+def test_open_nwb_keeps_an_extension_loaded_at_the_files_version(tmp_path):
+    """The file caches the imported ndx-events: the package's own class reads the table."""
+    pynwb = pytest.importorskip("pynwb")
+    ndx_events = pytest.importorskip("ndx_events")
+    import pandas as pd
+
+    from neurospatial.io.nwb import read_events, write_events
+
+    events = pd.DataFrame({"timestamp": [1.0, 2.5, 4.0], "label": ["a", "b", "a"]})
+    nwbfile = pynwb.NWBFile("demo", "id", datetime.datetime.now(datetime.timezone.utc))
+    write_events(nwbfile, events, name="rewards")
+    path = tmp_path / "events.nwb"
+    with pynwb.NWBHDF5IO(path, "w") as io_:
+        io_.write(nwbfile)
+    cached = pynwb.NWBHDF5IO.get_namespaces(path=str(path))
+    assert cached["ndx-events"] == _loaded_version("ndx-events")
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=_IGNORED_NAMESPACE)
+        with _fetch.open_nwb(str(path)) as read:
+            table = read.processing["behavior"]["rewards"]
+            assert isinstance(table, ndx_events.EventsTable)
+            read_back = read_events(read, table_name="rewards")
+    np.testing.assert_array_equal(read_back["timestamp"], events["timestamp"])
+    assert list(read_back["label"]) == list(events["label"])
+
+
+def test_open_nwb_says_what_to_do_when_hdmf_cannot_set_the_loaded_version_aside(
+    old_events_file, monkeypatch
+):
+    """hdmf before 4.1.0 has no ``NamespaceCatalog.core_namespaces``."""
+    pytest.importorskip("ndx_events")
+    import hdmf.spec
+
+    monkeypatch.delattr(hdmf.spec.NamespaceCatalog, "core_namespaces", raising=False)
+    with pytest.raises(RuntimeError) as excinfo:
+        _read_old_events(str(old_events_file))
+    message = str(excinfo.value)
+    assert "caches ndx-events 0.2.0" in message
+    assert f"has loaded ndx-events {_loaded_version('ndx-events')}" in message
+    assert "hdmf>=4.1.0" in message
+    assert "has not imported" in message
+    assert isinstance(excinfo.value.__cause__, AttributeError)
 
 
 _USER, _PASSWORD = "dummy-user-7f3a", "dummy-secret-91c2"
