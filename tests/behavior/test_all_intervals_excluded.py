@@ -267,6 +267,9 @@ def test_disabling_the_gap_gate_is_silent(coarse_track, name):
         warnings.filterwarnings("ignore", message="No variation in ")
         # The toy animal never stops, which is true but not under test.
         warnings.filterwarnings("ignore", message=".*crossed their region.*")
+        # Samples 2 s apart are too coarse for the VTE velocity estimator,
+        # which is true but not under test.
+        warnings.filterwarnings("ignore", message=r"\d+ run\(s\) of samples are about")
         warnings.filterwarnings("error", message=".*excluded ALL.*")
         CALLS[name](env, times, positions, max_gap=None)
 

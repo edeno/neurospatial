@@ -67,6 +67,11 @@ def grid() -> Environment:
     return _LAYOUTS["grid"]()
 
 
+def _path(env: Environment) -> str:
+    """The path metric a layout supports: polar bins have no any-angle path."""
+    return "bin_graph" if env.coordinate_kind == "polar" else "geodesic"
+
+
 def _goal(env: Environment) -> tuple[np.ndarray, int]:
     """A point just off a bin center, and that bin."""
     index = env.n_bins // 3
@@ -76,8 +81,11 @@ def _goal(env: Environment) -> tuple[np.ndarray, int]:
 class TestPointEqualsItsBin:
     def test_distance_to_a_point_equals_distance_to_its_bin(self, env):
         point, index = _goal(env)
-        from_point = env.distance_to(points=point)
-        np.testing.assert_array_equal(from_point, env.distance_to(bins=index))
+        metric = _path(env)
+        from_point = env.distance_to(points=point, metric=metric)
+        np.testing.assert_array_equal(
+            from_point, env.distance_to(bins=index, metric=metric)
+        )
         assert from_point[index] == 0.0
 
     def test_point_region_gives_exactly_its_bin(self, env):
@@ -86,8 +94,10 @@ class TestPointEqualsItsBin:
         regions.add("reward", point=point[0])
         env = env.with_regions(regions)
         np.testing.assert_array_equal(env.bins_in_region("reward"), [index])
+        metric = _path(env)
         np.testing.assert_array_equal(
-            env.distance_to(region="reward"), env.distance_to(points=point)
+            env.distance_to(region="reward", metric=metric),
+            env.distance_to(points=point, metric=metric),
         )
 
     def test_graph_queries_agree_for_a_point_and_its_bin(self, env):

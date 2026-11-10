@@ -336,7 +336,7 @@ class TestGraphOperationPerformance:
         rng = np.random.default_rng(42)
         nodes = rng.choice(medium_env.n_bins, size=50, replace=False).tolist()
 
-        result = benchmark(pairwise_distances, medium_env.connectivity, nodes)
+        result = benchmark(pairwise_distances, medium_env, nodes)
 
         assert result.shape == (len(nodes), len(nodes))
 

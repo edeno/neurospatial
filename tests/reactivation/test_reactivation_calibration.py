@@ -7,7 +7,9 @@ import dataclasses
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.stats import binom, binomtest
+from calibration_helpers import assert_rejections_at_rate
+from measured_rate_helpers import require_measured_rejections
+from scipy.stats import binomtest
 
 from neurospatial.reactivation import (
     KUDRIMOTI_1999,
@@ -251,11 +253,9 @@ def test_rate_change_alone_is_called_reactivation() -> None:
     assert rates.loc["peyrache_2010", "mean_value"] > 0.1
 
 
-def test_without_reactivation_or_rate_change_the_assembly_difference_is_near_0() -> (
-    None
-):
-    """The verdicts' false-positive rates are calibrated in
-    ``test_null_false_positive_rate_is_nominal``."""
+def test_without_reactivation_or_rate_change_few_sessions_are_called() -> None:
+    """Eight sessions bound the verdicts loosely; their rates are measured on
+    thousands in ``test_null_false_positive_rate_is_nominal``."""
     tables = [
         _table(
             simulated_reactivation_session(duration=600.0, reactivation=0.0, rng=seed),
@@ -264,13 +264,23 @@ def test_without_reactivation_or_rate_change_the_assembly_difference_is_near_0()
         for seed in range(8)
     ]
     rates = reactivation_detection_rates(pd.concat(tables)).set_index("method")
+    # Binomial(8, 0.04), Kudrimoti's measured rate, exceeds 2 with
+    # probability 0.003; Lansink's rate is lower.
+    assert rates.loc["kudrimoti_1999", "n_reactivated"] <= 2
+    assert rates.loc["lansink_2009", "n_reactivated"] <= 2
     assert abs(rates.loc["peyrache_2010", "mean_value"]) < 0.05
 
 
-def _null_false_calls(method, n_sessions: int) -> int:
-    """Sessions without reactivation or a rate change that ``method`` calls
-    reactivated, one verdict per session."""
-    calls = 0
+def _null_calls(method, n_sessions: int) -> np.ndarray:
+    """Whether ``method`` calls each of ``n_sessions`` sessions reactivated.
+
+    The sessions have no reactivation and no rate change. Each gives one
+    verdict: the unpacking raises ``ValueError`` for another number of rows
+    and ``bool`` raises ``TypeError`` for a missing verdict. Neither is an
+    ``AssertionError``, so neither counts as the failed rate assertion that
+    ``test_null_false_positive_rate_is_nominal`` expects.
+    """
+    calls = []
     for seed in range(n_sessions):
         session = simulated_reactivation_session(
             duration=600.0, reactivation=0.0, rng=seed
@@ -284,11 +294,9 @@ def _null_false_calls(method, n_sessions: int) -> int:
             unit_groups=GROUPS,
             rng=seed,
         )
-        verdicts = table["is_reactivated"]
-        assert len(verdicts) == 1
-        assert verdicts.notna().all()
-        calls += int(verdicts.sum())
-    return calls
+        (verdict,) = table["is_reactivated"]
+        calls.append(bool(verdict))
+    return np.array(calls)
 
 
 # Both verdicts are one-sided at alpha / 2 = 0.025: Kudrimoti's needs the
@@ -300,18 +308,27 @@ def _null_false_calls(method, n_sessions: int) -> int:
 # rate of twice the nominal (Kudrimoti, 2000 sessions: interval 33-69 against
 # an expected 100) or a tenth of it (Lansink, 1000 sessions: 13-39 against
 # 2.5) fall outside the interval.
+#
+# Neither recipe keeps the nominal rate, so each is expected to fail the
+# nominal-rate assertion, and only that. Before it, the count is held to the
+# 99% interval of its measured rate: 58-103 around Kudrimoti's 80, and 0-4
+# around Lansink's 1, whose rate can only be seen to rise. A count outside
+# that interval fails the test, whichever way it moved, and a count inside
+# the nominal interval fails it as an unexpected pass.
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    ("method", "n_sessions"),
+    ("method", "n_sessions", "measured"),
     [
         pytest.param(
             KUDRIMOTI_ONE_WINDOW,
             2000,
+            80,
             id="kudrimoti_1999",
             marks=pytest.mark.xfail(
                 strict=True,
+                raises=AssertionError,
                 reason=(
-                    "anticonservative: 93 of 2000 null sessions (4.65%) are called "
+                    "anticonservative: 80 of 2000 null sessions (4.0%) are called "
                     "reactivated against a nominal 2.5% (99% interval 33-69). The "
                     "partial-correlation t test treats pairs as independent, but "
                     "pairs share units, as the recipe's notes say."
@@ -321,9 +338,11 @@ def _null_false_calls(method, n_sessions: int) -> int:
         pytest.param(
             LANSINK_ONE_WINDOW,
             1000,
+            1,
             id="lansink_2009",
             marks=pytest.mark.xfail(
                 strict=True,
+                raises=AssertionError,
                 reason=(
                     "conservative: 1 of 1000 null sessions (0.1%) is called "
                     "reactivated against a nominal 2.5% (99% interval 13-39). "
@@ -336,11 +355,12 @@ def _null_false_calls(method, n_sessions: int) -> int:
         ),
     ],
 )
-def test_null_false_positive_rate_is_nominal(method, n_sessions: int) -> None:
-    nominal = method.alpha / 2
-    low, high = binom.ppf([0.005, 0.995], n_sessions, nominal)
-    calls = _null_false_calls(method, n_sessions)
-    assert low <= calls <= high, f"{calls} of {n_sessions} sessions called"
+def test_null_false_positive_rate_is_nominal(
+    method, n_sessions: int, measured: int
+) -> None:
+    calls = _null_calls(method, n_sessions)
+    require_measured_rejections(calls, measured)
+    assert_rejections_at_rate(calls, method.alpha / 2)
 
 
 # ---------------------------------------------------------------------------

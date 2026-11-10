@@ -65,7 +65,6 @@ def test_radial_profile_is_deterministic(grid_cell_setup):
 
 def test_radial_profile_matches_pairwise_pearson_by_distance():
     """Each distance bin is the Pearson correlation of the bin pairs in it."""
-    import networkx as nx
     from shapely.geometry import box
 
     env = Environment.from_polygon(box(0, 0, 30, 30), bin_size=3.0)
@@ -78,12 +77,11 @@ def test_radial_profile_matches_pairwise_pearson_by_distance():
     )
 
     valid = np.flatnonzero(np.isfinite(rate_map))
-    # Paths may cross unvisited bins: they are still part of the arena.
-    lengths = dict(
-        nx.all_pairs_dijkstra_path_length(env.connectivity, weight="distance")
-    )
+    # Paths may cross unvisited bins: they are still part of the arena. In
+    # this convex room the shortest path is the straight line.
+    centers = env.bin_centers
     pairs = [
-        (lengths[a][b], rate_map[a], rate_map[b])
+        (np.linalg.norm(centers[a] - centers[b]), rate_map[a], rate_map[b])
         for i, a in enumerate(valid)
         for b in valid[i + 1 :]
     ]
@@ -137,3 +135,130 @@ def test_radial_profile_does_not_depend_on_bin_numbering():
     assert_allclose(profiles[0], profiles[1], atol=1e-12)
     # Neighbors on a monotonic ramp are positively correlated.
     assert profiles[0][0] > 0
+
+
+def _pearson_by_distance(pair_distances, rates, n_distance_bins):
+    """Pearson correlation of the bin pairs in each distance band, by loops.
+
+    ``pair_distances`` is the (n, n) distance between the bins of ``rates``.
+    """
+    upper = np.triu_indices(len(rates), k=1)
+    pair_distance = pair_distances[upper]
+    first, second = rates[upper[0]], rates[upper[1]]
+    edges = np.linspace(0.0, pair_distance.max(), n_distance_bins + 1)
+    expected = np.full(n_distance_bins, np.nan)
+    for k in range(n_distance_bins):
+        inside = (pair_distance >= edges[k]) & (pair_distance < edges[k + 1])
+        if inside.sum() >= 2:
+            # Each unordered pair counts in both orientations.
+            expected[k] = np.corrcoef(
+                np.r_[first[inside], second[inside]],
+                np.r_[second[inside], first[inside]],
+            )[0, 1]
+    return expected
+
+
+def _maps_with_different_missing_bins(env, n_maps):
+    """Noisy maps of one environment, each with its own unvisited bins."""
+    rng = np.random.default_rng(4)
+    maps = rng.gamma(2.0, 1.0, (n_maps, env.n_bins))
+    for k, rate_map in enumerate(maps):
+        rate_map[rng.choice(env.n_bins, size=3 * k, replace=False)] = np.nan
+    return maps
+
+
+def test_radial_profiles_of_a_population_measure_the_environment_once(monkeypatch):
+    """The pair distances belong to the environment, not to a unit's map.
+
+    Every unit of a population reads the same distances, whichever bins its
+    map is missing, so they are measured once. In a convex room the distance
+    is the straight line between bin centers, which gives each profile
+    without the code under test.
+    """
+    from shapely.geometry import box
+
+    from neurospatial.encoding import spatial_autocorrelation_radial
+    from neurospatial.ops import distance
+
+    env = Environment.from_polygon(box(0, 0, 30, 30), bin_size=3.0)
+    maps = _maps_with_different_missing_bins(env, n_maps=5)
+    measured = []
+    measure = distance.pairwise_distances
+
+    def counting(env, bins, **kwargs):
+        measured.append(len(bins))
+        return measure(env, bins, **kwargs)
+
+    monkeypatch.setattr(distance, "pairwise_distances", counting)
+
+    centers = env.bin_centers
+    for rate_map in maps:
+        _, correlations = spatial_autocorrelation_radial(
+            env, rate_map, n_distance_bins=12
+        )
+        valid = np.flatnonzero(np.isfinite(rate_map))
+        straight = np.linalg.norm(centers[valid, None] - centers[valid], axis=2)
+        assert_allclose(
+            correlations,
+            _pearson_by_distance(straight, rate_map[valid], 12),
+            atol=1e-12,
+        )
+    assert measured == [env.n_bins]
+
+
+def test_radial_profile_reads_the_same_distances_behind_a_wall():
+    """Kept distances are the ones measured for a map's own bins: round walls."""
+    from shapely.geometry import LineString, box
+
+    from neurospatial.arena import OpenArena
+    from neurospatial.encoding import spatial_autocorrelation_radial
+    from neurospatial.ops.distance import pairwise_distances
+
+    outline = box(0, 0, 30, 30)
+    wall = LineString([(15, 0), (15, 21)])
+    env = Environment.from_polygon(
+        outline, bin_size=3.0, arena=OpenArena(outline, walls={"wall": wall})
+    )
+    for rate_map in _maps_with_different_missing_bins(env, n_maps=3):
+        valid = np.flatnonzero(np.isfinite(rate_map))
+        around_the_wall = pairwise_distances(env, valid)
+        # Two bins facing each other across the wall are farther than the line.
+        assert around_the_wall.max() > np.hypot(30, 30)
+
+        _, correlations = spatial_autocorrelation_radial(
+            env, rate_map, n_distance_bins=12
+        )
+
+        assert_allclose(
+            correlations,
+            _pearson_by_distance(around_the_wall, rate_map[valid], 12),
+            atol=1e-12,
+        )
+
+
+def test_radial_profile_of_a_large_environment_keeps_no_distance_matrix(monkeypatch):
+    """Above the memory the path engine keeps, each map measures its own pairs."""
+    from shapely.geometry import box
+
+    from neurospatial.encoding import spatial_autocorrelation_radial
+    from neurospatial.ops import _paths, distance
+
+    env = Environment.from_polygon(box(0, 0, 30, 30), bin_size=3.0)
+    maps = _maps_with_different_missing_bins(env, n_maps=3)
+    kept = [spatial_autocorrelation_radial(env, m, n_distance_bins=12) for m in maps]
+    measured = []
+    measure = distance.pairwise_distances
+
+    def counting(env, bins, **kwargs):
+        measured.append(len(bins))
+        return measure(env, bins, **kwargs)
+
+    monkeypatch.setattr(distance, "pairwise_distances", counting)
+    # The 100 x 100 matrix of this environment no longer fits.
+    monkeypatch.setattr(_paths, "_FIELD_CACHE_BYTES", 8 * env.n_bins**2 - 1)
+
+    for rate_map, (distances, correlations) in zip(maps, kept, strict=True):
+        again = spatial_autocorrelation_radial(env, rate_map, n_distance_bins=12)
+        np.testing.assert_array_equal(again[0], distances)
+        np.testing.assert_array_equal(again[1], correlations)
+    assert measured == [int(np.isfinite(m).sum()) for m in maps]

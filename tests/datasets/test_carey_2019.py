@@ -899,7 +899,7 @@ def test_a_jump_is_the_codes_number_of_bins(rec, side):
     from neurospatial.ops.distance import geodesic_distance_matrix
 
     env, _, _, max_jump = _rates_on_side(rec, side, rec.spike_times)
-    distance = geodesic_distance_matrix(env.connectivity, weight="distance")
+    distance = geodesic_distance_matrix(env, metric="bin_graph")
     jump = _jump_bins(rec)
     assert jump == 13
     bins = np.arange(env.n_bins - jump - 1)

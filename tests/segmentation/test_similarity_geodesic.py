@@ -62,17 +62,34 @@ def test_runs_up_the_two_arms_are_far_apart_along_the_maze(u_maze):
         assert along < straight
 
 
-def test_geodesic_hausdorff_and_dtw_match_networkx(u_maze):
+def test_bin_graph_hausdorff_and_dtw_match_networkx(u_maze):
     left, right = _arm_run(5.0), _arm_run(45.0)[::2]
     cost = _geodesic(u_maze, u_maze.bin_at(left), u_maze.bin_at(right))
     diameter = _diameter(u_maze)
     hausdorff = max(cost.min(axis=1).max(), cost.min(axis=0).max())
     assert trajectory_similarity(
-        u_maze, left, right, method="hausdorff"
+        u_maze, left, right, method="hausdorff", metric="bin_graph"
     ) == pytest.approx(1 - hausdorff / diameter, rel=1e-9)
     dtw = _dtw(cost) / (max(len(left), len(right)) * diameter)
-    assert trajectory_similarity(u_maze, left, right, method="dtw") == pytest.approx(
-        1 - dtw, rel=1e-9
+    assert trajectory_similarity(
+        u_maze, left, right, method="dtw", metric="bin_graph"
+    ) == pytest.approx(1 - dtw, rel=1e-9)
+
+
+@pytest.mark.parametrize("method", ["hausdorff", "dtw"])
+def test_geodesic_score_in_a_convex_room_is_the_straight_line_score(method):
+    """In a convex room the geodesic is the straight line, and so is its diameter."""
+    room = Environment.from_polygon(box(0, 0, 60, 40), bin_size=2.0, units="cm")
+    rng = np.random.default_rng(5)
+    first = rng.uniform([1, 1], [59, 39], (30, 2))
+    second = rng.uniform([1, 1], [59, 39], (20, 2))
+    assert trajectory_similarity(room, first, second, method=method) == (
+        pytest.approx(
+            trajectory_similarity(
+                room, first, second, method=method, metric="euclidean"
+            ),
+            rel=1e-12,
+        )
     )
 
 

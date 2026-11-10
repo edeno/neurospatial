@@ -643,7 +643,8 @@ Other common queries are `env.neighbors(bins=bin_index)`,
 `env.path_between(bins=[start_bin, end_bin])` and
 `env.distance_between(points=[point_a, point_b])`. Each query takes its target
 by keyword: `bins=` for bin indices, `points=` for coordinates (one row per
-point, mapped to the bin that contains it) and, for `distance_to`, `region=`
+point; `distance_between` measures from the points themselves, the other
+queries use the bin that contains each point) and, for `distance_to`, `region=`
 for a named region. A bin index and a coordinate look alike as numbers, so the
 keyword says which one you mean. See the [API reference](../api/index.md) for
 their coordinate and distance conventions.

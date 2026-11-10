@@ -34,7 +34,7 @@ from neurospatial.geometry import require_cartesian
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
     from neurospatial.geometry import CartesianSystem
-    from neurospatial.ops._types import DistanceMetric
+    from neurospatial.ops._types import DistanceMetric, StraightOrGeodesic
 
 # ruff: noqa: RUF022 - intentionally grouped by category
 __all__ = [
@@ -189,14 +189,18 @@ def rate_map_centroid(
         Firing rate map (Hz).
     field_bins : array
         Bin indices comprising the field.
-    method : {"euclidean", "geodesic"}, default "euclidean"
+    method : {"euclidean", "geodesic", "bin_graph"}, default "euclidean"
         Method for computing centroid:
 
         - ``"euclidean"``: Weighted mean in Euclidean space. Fast but may
           place centroid off-track for irregular geometries.
-        - ``"geodesic"``: Weighted medoid using graph distances. Finds the bin
-          within the field that minimizes weighted graph distance to all
-          other field bins. Always on-track and respects maze geometry.
+        - ``"geodesic"``: Weighted medoid using the shortest distance inside
+          the environment (any angle, around walls). Finds the bin within
+          the field that minimizes weighted distance to all other field
+          bins. Always a field bin, so it respects maze geometry.
+        - ``"bin_graph"``: the same medoid with distances walked along the
+          bin graph between bin centers. This is the method for polar
+          (distance, angle) environments, where ``"geodesic"`` is refused.
 
     Returns
     -------
@@ -206,9 +210,9 @@ def rate_map_centroid(
     Raises
     ------
     CartesianOnlyError
-        If ``method="euclidean"`` and ``env`` is polar: averaging
-        ``(distance, angle)`` bin centers is not a position. Use
-        ``method="geodesic"``, which returns a field bin.
+        If ``env`` is polar and ``method`` is ``"euclidean"`` (averaging
+        ``(distance, angle)`` bin centers is not a position) or
+        ``"geodesic"``. Use ``method="bin_graph"``, which returns a field bin.
 
     Notes
     -----
@@ -264,7 +268,10 @@ def rate_map_centroid(
     ... )
     """
     method = validate_choice(
-        method, ("euclidean", "geodesic"), name="method", owner="rate_map_centroid()"
+        method,
+        ("euclidean", "geodesic", "bin_graph"),
+        name="method",
+        owner="rate_map_centroid()",
     )
     if method == "euclidean":
         require_cartesian(
@@ -275,8 +282,8 @@ def rate_map_centroid(
                 "positions."
             ),
             fix=(
-                "use method='geodesic', which returns the field bin that minimizes "
-                "rate-weighted graph distance"
+                "use method='bin_graph', which returns the field bin that "
+                "minimizes rate-weighted bin-graph distance"
             ),
         )
 
@@ -300,7 +307,7 @@ def rate_map_centroid(
                 np.sum(field_positions * field_mass[:, None], axis=0) / total_mass
             )
 
-    else:  # geodesic
+    else:  # geodesic or bin_graph: a weighted medoid
         # Weighted medoid: the field bin that minimizes the sum of
         # (rate x measure x graph distance) to all field bins.
 
@@ -308,7 +315,7 @@ def rate_map_centroid(
 
         # distances[i, j]: graph distance from field bin i to candidate j,
         # 0 on the diagonal and inf between disconnected bins.
-        distances = pairwise_distances(env.connectivity, field_bins)
+        distances = pairwise_distances(env, field_bins, metric=method)
         with np.errstate(invalid="ignore"):
             # A zero-rate bin with no path adds 0 * inf = NaN; a NaN cost, like
             # an infinite one, never wins.
@@ -1003,7 +1010,7 @@ def field_shift_distance(
     firing_rate_b: NDArray[np.float64],
     field_bins_b: NDArray[np.int64],
     *,
-    metric: DistanceMetric = "euclidean",
+    metric: StraightOrGeodesic = "euclidean",
 ) -> float:
     """Compute distance between field centroids across sessions/environments.
 
@@ -1201,7 +1208,7 @@ def field_emd(
     firing_rate_a: NDArray[np.float64],
     firing_rate_b: NDArray[np.float64],
     *,
-    metric: DistanceMetric = "geodesic",
+    metric: StraightOrGeodesic = "geodesic",
     normalize: bool = True,
 ) -> float:
     """Compute Earth Mover's Distance (EMD) between two firing rate distributions.

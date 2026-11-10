@@ -139,7 +139,7 @@ def test_centroid_on_equal_bins_is_the_rate_weighted_one(grid, method) -> None:
     if method == "euclidean":
         expected = np.sum(centers * field_rates[:, None], axis=0) / field_rates.sum()
     else:
-        distances = pairwise_distances(grid.connectivity, field)
+        distances = pairwise_distances(grid, field)
         expected = centers[np.argmin(field_rates @ distances)]
     np.testing.assert_array_equal(
         rate_map_centroid(grid, rates, field, method=method), expected

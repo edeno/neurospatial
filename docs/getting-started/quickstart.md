@@ -162,7 +162,7 @@ per-bin spike counts. Firing rate is spikes ÷ occupancy, smoothed.
 neighboring bins. That is what makes the smoothing *boundary-aware*: probability
 mass flows between adjacent, reachable bins instead of leaking across walls or
 gaps — the difference between a physically meaningful map and a blurry one. The
-same graph powers geodesic distances and shortest paths:
+same graph tells geodesic distances and shortest paths where a wall is:
 
 ```python
 center_bin = env.bin_at([[50.0, 50.0]])[0]

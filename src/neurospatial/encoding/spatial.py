@@ -68,7 +68,7 @@ from neurospatial._results import (
 )
 from neurospatial._spikes import spike_unit_table
 from neurospatial._stacklevel import _external_stacklevel
-from neurospatial._validation import refuse_none_thresholds
+from neurospatial._validation import refuse_none_thresholds, validate_choice
 from neurospatial.encoding._base import (
     KERNEL_ESTIMATORS,
     BandwidthRule,
@@ -99,7 +99,7 @@ if TYPE_CHECKING:
     from neurospatial.encoding.grid import GridProperties
     from neurospatial.environment import Environment
     from neurospatial.geometry._boundaries import BoundarySource
-    from neurospatial.ops._types import BackendType, DistanceMetric, ResolvedBackend
+    from neurospatial.ops._types import BackendType, ResolvedBackend, StraightOrGeodesic
     from neurospatial.stats.shuffle import ShuffleTestResult
 
 # ruff: noqa: RUF022 - intentionally grouped by category
@@ -132,9 +132,11 @@ PLACE_FIELD_DETECTION_DEFAULTS = MappingProxyType(
         "min_peak_rate": 1.0,
         "min_secondary_peak_fraction": 0.0,
         "max_mean_rate": np.inf,
-        "detect_subfields": True,
+        "subfields": "core",
     }
 )
+# The ways detect_place_fields separates fields that merge at the threshold.
+_SUBFIELD_RULES = ("core", "watershed", None)
 # Statistics recomputed from every shifted spike train, in result column order.
 _CELL_TYPE_STATISTICS = ("spatial_information", "grid_score", "border_score")
 _CELL_TYPE_STATISTIC_UNITS = MappingProxyType(
@@ -443,8 +445,8 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             ``firing_rate`` (Hz; NaN where the map is unsupported). One
             ``field`` column suffices because fields are disjoint: detection
             assigns each bin to at most one field, and a coalescent field
-            (``detect_subfields``) replaces the region it was found in rather
-            than nesting inside it. Select ``df[df["field"] == k]`` for the
+            (``subfields``) replaces the region it was found in rather than
+            nesting inside it. Select ``df[df["field"] == k]`` for the
             bins of field ``k``. ``df.attrs`` holds ``units`` (per column),
             ``bandwidth`` and ``excluded_reason``. :meth:`fields_table` has
             one row per field.
@@ -496,9 +498,10 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
             (``env.linear_to_nd``); a field over a branch point or an
             ``edge_spacing`` gap has no such mean, and its centroid is the
             geodesic one, a field bin. On a polar environment the columns are
-            ``centroid_distance`` and ``centroid_angle`` (rad) of the geodesic
-            centroid, because averaging angles and distances is not a
-            position. No
+            ``centroid_distance`` and ``centroid_angle`` (rad) of the field
+            bin nearest the rest along the bin graph
+            (``rate_map_centroid(method="bin_graph")``), because averaging
+            angles and distances is not a position. No
             rows when no field was detected. ``df.attrs`` holds
             ``units`` (per column), ``bandwidth`` and ``excluded_reason``.
             :meth:`to_dataframe` has one row per bin, labeled by field.
@@ -515,12 +518,15 @@ class PlaceFieldsResult(ReadOnlyArraysMixin, ResultMixin):
         measures = np.asarray(self.env.bin_sizes, dtype=np.float64)
         names = [f"centroid_{name}" for name in _coord_dim_names(self.env)]
         # Averaging (distance, angle) bin centers is not a position: a polar
-        # centroid is the field bin nearest the rest (the geodesic one). The
-        # mean of a field around a track's corner is off the track, so a
-        # track's centroid is the mean distance along it, mapped back onto it.
-        method: Literal["euclidean", "geodesic"] = (
-            "geodesic"
-            if self.env.coordinate_kind == "polar" or self.env.is_linearized_track
+        # centroid is the field bin nearest the rest along the bin graph, as
+        # the any-angle path is not defined there. The mean of a field around
+        # a track's corner is off the track, so a track's centroid is the mean
+        # distance along it, mapped back onto it.
+        method: Literal["euclidean", "geodesic", "bin_graph"] = (
+            "bin_graph"
+            if self.env.coordinate_kind == "polar"
+            else "geodesic"
+            if self.env.is_linearized_track
             else "euclidean"
         )
         rows = []
@@ -1724,9 +1730,35 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         agreed within 14% for unsmoothed maps (the default; boxes within 10%)
         and within 33% when smoothed with a 5 or 10 cm bandwidth; that repeat
         is harsher than the first check (``diffusion_kde`` came within 16%
-        in it). For
-        a tuned cell the plug-in bias is smaller (its spikes come from fewer
-        bins), so the correction is conservative.
+        in it). On two 10-minute Ornstein-Uhlenbeck trajectories in a 1 m box
+        (5 cm bins), 400 untuned cells per setting: with ``diffusion_kde``
+        and ``gaussian_kde`` at 2.5, 5 and 10 cm and 1000 spikes, predicted
+        and simulated means agreed within 1 standard error of the simulated
+        mean (0.3-1.6%); at 100 spikes within 4% (2.5 cm leaves more
+        independent bins than spikes, so the bias is NaN). A GAM at a fixed
+        penalty of 1 agreed within 0.1% (60 cells, 1000 spikes). With REML
+        the penalty chosen for untuned cells is so large that both the bias
+        and the information are near 1e-4 bits/spike.
+
+        ``method="binned"`` is less accurate when bins are visited unevenly.
+        On four pairs of those 10-minute Ornstein-Uhlenbeck trajectories
+        (1 m box, 5 cm bins, 379-394 of the 400 bins visited, for 0.03 to
+        6 s each; 400 untuned cells per setting), maps smoothed with a 5 or
+        10 cm bandwidth predicted 6-20% more than the simulated mean at 100
+        spikes and 0-6% more at 1000 spikes. The rate is formed in each bin
+        before smoothing, so one spike in a briefly visited bin gives a
+        large rate there; the correction counts its square, but information
+        grows more slowly. The screens then subtract too much and are
+        conservative. With every bin visited about equally (positions drawn
+        uniformly) the prediction was within about 2%. Unsmoothed maps at
+        1000 spikes came out 7-8% below the simulated mean (11% below with
+        evenly visited bins): the Miller-Madow form is a first correction
+        and underestimates once ``K / N`` is not small, so the screens
+        subtract 0.02-0.04 bits/spike too little. With 100 spikes these
+        maps have more independent bins than spikes and the bias is NaN.
+
+        For a tuned cell the plug-in bias is smaller (its spikes come from
+        fewer bins), so the correction is conservative.
 
         References
         ----------
@@ -1980,7 +2012,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         self,
         threshold: float = 0.3,
         min_area: float | None = None,
-        metric: DistanceMetric = "geodesic",
+        metric: StraightOrGeodesic = "geodesic",
         *,
         boundary_source: BoundarySource = "physical",
     ) -> float:
@@ -2148,7 +2180,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         min_peak_rate: float = 1.0,
         min_secondary_peak_fraction: float = 0.0,
         max_mean_rate: float = np.inf,
-        detect_subfields: bool = True,
+        subfields: Literal["core", "watershed"] | None = "core",
     ) -> bool:
         """Detect whether the rate map has a place field; this is not a cell-type verdict.
 
@@ -2179,9 +2211,11 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             Optional upper bound on the unweighted mean of non-NaN spatial-bin
             rates (Hz). The default disables exclusion. This is not the
             recording-time mean firing rate and does not identify cell type.
-        detect_subfields : bool, default=True
-            If True, separate two fields that merge at ``threshold`` (the
-            FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
+        subfields : {"core", "watershed"} or None, default="core"
+            How to separate two fields that merge at ``threshold``:
+            ``"core"`` is the FMAToolbox ``MapStats`` rule, ``"watershed"``
+            divides them at the valley between them, ``None`` does not
+            separate them (see :func:`detect_place_fields`).
 
         Returns
         -------
@@ -2218,7 +2252,7 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
             min_peak_rate=min_peak_rate,
             min_secondary_peak_fraction=min_secondary_peak_fraction,
             max_mean_rate=max_mean_rate,
-            detect_subfields=detect_subfields,
+            subfields=subfields,
         )
         return len(fields) > 0
 
@@ -2929,7 +2963,7 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         self,
         threshold: float = 0.3,
         min_area: float | None = None,
-        metric: DistanceMetric = "geodesic",
+        metric: StraightOrGeodesic = "geodesic",
         *,
         boundary_source: BoundarySource = "physical",
     ) -> BatchScoresResult:
@@ -3111,6 +3145,28 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         - Border score: a uniform (untuned) map scores 0.50 in convex arenas
           and 0.58-0.79 on corridor mazes, so untuned cells pass the 0.5
           cutoff often; on a radial-arm maze, 6 of 12 arm place cells did.
+        - Untuned cells: 40,000 Poisson cells firing 0.5-3 Hz in a 1 m
+          square box and as many in a 1 m circle (400 ten-minute
+          trajectories of 100 cells in each arena, default 5 cm diffusion
+          kernel). None was labeled place, and 1.8% were labeled grid in
+          either arena. 14.8% were labeled border in the square and 11.5%
+          in the circle, but the border rate is not a per-cell chance.
+          Between sessions it ranged from 0% to 63% in the square
+          (standard deviation 14 percentage points; no border label in
+          16% of sessions) and from 0% to 46% in the circle (8 points;
+          none in 7%). Over 20 sessions it ranged from 9% to 23% in the
+          square and from 6% to 16% in the circle, so 20 sessions do not
+          tell the two arenas apart. An untuned cell seldom scores above
+          the session's
+          ``untuned_border_score(env, support=result.spatial_support)``:
+          95% of cells scored below it plus 0.012, and the median cell of
+          a session was within 0.015 of it in 98% of sessions. That
+          baseline was 0.39-0.51 in the square and 0.45-0.50 in the
+          circle, depending on which bins along the walls the animal
+          visited, and it sets the session's rate: 1 of 4,500 cells was
+          labeled border in the sessions where it was below 0.47, and 21%
+          (square) and 14% (circle) where it was 0.49 or more. Compare
+          border scores with that baseline.
 
         Pass precomputed scores via ``grid_scores=``/``border_scores=`` to avoid
         recomputation when you've already computed them.
@@ -5896,7 +5952,7 @@ def detect_place_fields(
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
-    detect_subfields: bool = True,
+    subfields: Literal["core", "watershed"] | None = "core",
 ) -> PlaceFieldsResult:
     """Segment a rate map into place fields around successive peaks.
 
@@ -5952,11 +6008,30 @@ def detect_place_fields(
         returns no fields and no warning; ``excluded_reason`` is
         ``"mean_rate_above_threshold"``. This is not the recording-time mean
         firing rate and does not identify cell type.
-    detect_subfields : bool, default=True
-        If True, separate two fields that merge at the ``threshold`` level,
-        with the rule of FMAToolbox ``MapStats`` [2]_: when the field's core
-        is less than half the field, the core is the field and the rest is
-        searched again from its own peak (see Notes, step 4).
+    subfields : {"core", "watershed"} or None, default="core"
+        How to separate two fields that merge at the ``threshold`` level
+        (see Notes, step 4).
+
+        - ``"core"``: the rule of FMAToolbox ``MapStats`` [2]_. When the
+          field's core is less than half the field, the core is the field
+          and the rest is searched again from its own peak. The skirt of
+          the stronger field (its bins below the core level) is then left
+          unassigned, and the weaker of two touching fields can take it:
+          that field wraps around the stronger one, so it is larger than
+          the weak field alone and its centroid lies toward the stronger
+          field. For a 10 Hz and a 3.3 Hz field 24 cm apart (8 cm wide,
+          2.5 cm bins), the weaker field has 184 bins, 80 of them nearer
+          the stronger peak, and a centroid 12 cm toward the stronger
+          field. Use ``"watershed"`` when the size or centroid of each
+          field matters.
+        - ``"watershed"``: the same fields as ``"core"``, but each bin goes
+          to the field whose peak it is reached from by flooding down the
+          map, and each field ends at ``threshold`` times its own peak. Two
+          touching fields are divided at the valley between them. It never
+          reports more fields than ``"core"``, so two fields that ``"core"``
+          reports as one stay one field.
+        - ``None``: no separation. A field is the whole connected region at
+          ``threshold`` times its peak.
 
     Returns
     -------
@@ -5984,13 +6059,22 @@ def detect_place_fields(
 
     1. **Optional map-mean filter**: if an explicit finite ``max_mean_rate``
        is exceeded, return no fields.
-    2. **Peak**: take the highest bin not yet assigned. Stop if its rate is
-       below ``max(min_peak_rate, min_secondary_peak_fraction * map_max)``.
+    2. **Peak**: take the highest bin not yet assigned or set aside. Stop if
+       its rate is below
+       ``max(min_peak_rate, min_secondary_peak_fraction * map_max)``.
        Because peaks are taken in decreasing order, every later peak would
-       also fail.
+       also fail. If a neighbor of the bin has a higher rate in the full
+       map, the bin is not a peak but the flank of a field already
+       assigned, left behind when that field was cut at its own threshold
+       or at its core. Set this one bin aside and take the next highest;
+       the bins around it stay unassigned, so a neighboring field is still
+       found from its own peak. This is the n-D form of neurocode's 1-D
+       check that the rate dips below threshold between two fields, and of
+       the ``localmax`` option of ``MapStats``.
     3. **Field**: the bins connected to the peak through ``env.connectivity``
-       whose rate is at least ``threshold`` times this peak.
-    4. **Coalescent fields**: with ``detect_subfields``, repeat step 3 on the
+       whose rate is at least ``threshold`` times this peak, among the bins
+       not assigned and not set aside.
+    4. **Coalescent fields**: with ``subfields="core"``, repeat step 3 on the
        map minus the field's floor ``m = threshold * peak``, at ``threshold``
        of the remaining height: the core is the connected region above
        ``m + threshold * (peak - m)`` (0.36 of the peak at the default 0.2).
@@ -5998,16 +6082,36 @@ def detect_place_fields(
        region, and the core replaces the field; the rest of the region stays
        unassigned, so the neighboring field is found from its own peak with
        the same rules. This is the subfield rule of FMAToolbox ``MapStats``
-       [2]_ (``Analyses/MapStats.m``, lines 194-203).
-    5. **Keep or discard**: mark the field's bins as assigned. Keep it only
-       if it is larger than the smallest field (below) and its peak bin is a
-       local maximum of the full map (no neighbor has a higher rate). A candidate
-       that rises toward a neighbor is the flank of a field already assigned,
-       left behind when that field was cut at its own threshold. This is the
-       n-D form of neurocode's 1-D check that the rate dips below threshold
-       between two fields, and of the ``localmax`` option of ``MapStats``.
+       [2]_ (``Analyses/MapStats.m``, lines 194-203). The neighboring
+       field's region can include the first field's skirt (the unassigned
+       bins around the core that are not above the second peak), so it can
+       wrap around the first field; ``subfields="watershed"`` divides the
+       two at the valley instead.
+
+       With ``subfields="watershed"``, the search runs as with ``"core"``
+       and the fields it keeps (step 5) give the peaks. Every bin then goes
+       to the peak it is reached from by flooding down the map: from all
+       peaks at once, the highest bin flooded so far (at equal rates, the
+       lowest bin index) passes its peak on to its unflooded neighbors
+       through ``env.connectivity``. NaN bins are not flooded, so they do
+       not connect basins. Each field is the part of its peak's basin
+       connected to the peak, with a rate from ``threshold`` times that peak
+       up to the peak. A higher bin in a basin is a bump the search did not
+       keep, and it belongs to no field. If a field is then no larger than
+       the smallest field (step 5), the lowest such peak is dropped and the
+       map is flooded again, so its bins go to its neighbors. A field whose
+       region holds no other kept peak is its whole region, as with
+       ``None``. This is neurospatial's own construction; the closest
+       published method is the FMAToolbox ``MapStats`` subfield rule [2]_.
+       Hockeimer et al. [4]_ also split fields with a watershed, but they
+       keep a split only when the highest rate on the line between two
+       subfields is at most 0.75 times the subfield's own peak (in their
+       code; the paper's text says the larger peak), and they do not cut a
+       subfield at its own threshold.
+    5. **Keep or discard**: mark the field's bins as assigned. Keep the
+       field only if it is larger than the smallest field (below).
     6. Repeat from step 2 until a peak fails the floor or every finite bin
-       is assigned.
+       is assigned or set aside.
 
     The floor in step 2 stops the search on noise. Without it, each
     successive threshold is a fraction of a smaller peak, so small bumps far
@@ -6093,6 +6197,12 @@ def detect_place_fields(
            https://github.com/michael-zugaro/FMAToolbox
     .. [3] Kavli Institute (NTNU) opexebo, ``opexebo/defaults.py``,
            https://github.com/kavli-ntnu/opexebo
+    .. [4] Hockeimer, W., Lai, R.-Y., Natrajan, M., Snider, W., & Knierim,
+           J. J. (2025). Leveraging place field repetition to understand
+           positional versus nonpositional inputs to hippocampal field CA1.
+           eLife, 14, e85599. https://doi.org/10.7554/eLife.85599; code:
+           ``RatterdamOpen_Project/RateMapClass_William_20190308.py``
+           (``findPlaceFields``), https://github.com/whock3/ratterdam
     """
     if isinstance(firing_rate, SpatialRatesResult):
         raise TypeError(
@@ -6171,6 +6281,7 @@ def detect_place_fields(
         min_peak_rate=min_peak_rate,
         min_secondary_peak_fraction=min_secondary_peak_fraction,
         bandwidth=bandwidth,
+        subfields=subfields,
     )
     searches = [
         _search_place_fields(
@@ -6180,7 +6291,7 @@ def detect_place_fields(
             min_peak_rate=min_peak_rate,
             min_secondary_peak_fraction=min_secondary_peak_fraction,
             max_mean_rate=max_mean_rate,
-            detect_subfields=detect_subfields,
+            subfields=subfields,
         )
         for rate in rates
     ]
@@ -6193,8 +6304,12 @@ def _check_place_field_arguments(
     min_peak_rate: float,
     min_secondary_peak_fraction: float,
     bandwidth: float,
+    subfields: object,
 ) -> None:
     """Refuse invalid :func:`detect_place_fields` arguments."""
+    validate_choice(
+        subfields, _SUBFIELD_RULES, name="subfields", owner="detect_place_fields()"
+    )
     if not 0 < threshold < 1:
         msg = f"threshold must be in (0, 1), got {threshold}"
         raise ValueError(msg)
@@ -6241,6 +6356,7 @@ class _FieldSearch(NamedTuple):
     observed: NDArray[np.bool_]
     firing_rate: NDArray[np.float64]
     excluded_reason: Literal["mean_rate_above_threshold"] | None = None
+    watershed: bool = False
 
 
 def _search_place_fields(
@@ -6251,7 +6367,7 @@ def _search_place_fields(
     min_peak_rate: float,
     min_secondary_peak_fraction: float,
     max_mean_rate: float,
-    detect_subfields: bool,
+    subfields: Literal["core", "watershed"] | None,
 ) -> _FieldSearch:
     """Segment one validated rate map into candidate fields around its peaks."""
 
@@ -6273,33 +6389,50 @@ def _search_place_fields(
     measures = np.asarray(env.binning.bins.sizes, dtype=np.float64)
     # Unassigned bins keep their rate; assigned and missing bins are NaN.
     remaining = np.where(finite, firing_rate, np.nan)
+    # The order in which bins are the highest one left: from the highest rate
+    # down, at equal rates the lowest bin index first.
+    order = np.flatnonzero(finite)
+    order = order[np.argsort(-firing_rate[order], kind="stable")]
+    turn = np.full(firing_rate.shape, -1, dtype=np.intp)
+    turn[order] = np.arange(order.size)
+    # A bin with a higher neighbor in the full map is the flank of a field,
+    # not a peak (NaN compares False, so a missing neighbor is not higher).
+    pairs = env.edge_pairs
+    first, second = firing_rate[pairs[:, 0]], firing_rate[pairs[:, 1]]
+    flank = np.zeros(firing_rate.shape, dtype=bool)
+    flank[pairs[first < second, 0]] = True
+    flank[pairs[second < first, 1]] = True
     peaks: list[int] = []
     candidates: list[NDArray[np.int64]] = []
-    while np.any(np.isfinite(remaining)):
-        peak_idx = int(np.nanargmax(remaining))
-        peak_rate = float(remaining[peak_idx])
+    for peak_idx in order[~flank[order]].tolist():
+        if np.isnan(remaining[peak_idx]):
+            continue  # already in the field of a higher peak
+        peak_rate = float(firing_rate[peak_idx])
         if peak_rate <= 0 or peak_rate < min_peak:
             break
-        if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
-            # A flank of a field already cut, not a peak. Only this bin is
-            # set aside: the region above its own floor can run into a
-            # neighbouring field, which must still be found from its own peak.
-            remaining[peak_idx] = np.nan
-            continue
+        # A flank bin is set aside when it is the highest bin left, and only
+        # that bin: the region above its own floor can run into a neighboring
+        # field, which must still be found from its own peak. So when this
+        # peak is the highest bin left, every unassigned bin before it in the
+        # order has been set aside, and the others can join its field.
+        available = turn >= turn[peak_idx]
 
         # NaN compares False, so assigned and missing bins are excluded.
         floor = peak_rate * threshold
-        field_bins = _seed_component(peak_idx, remaining >= floor, env)
-        if detect_subfields:
+        field_bins = _seed_component(peak_idx, available & (remaining >= floor), env)
+        # The watershed takes its peaks from the "core" search.
+        if subfields is not None:
             # FMAToolbox MapStats: the same search on the map minus the floor.
             core_level = floor + (peak_rate - floor) * threshold
-            core = _seed_component(peak_idx, remaining >= core_level, env)
+            core = _seed_component(peak_idx, available & (remaining >= core_level), env)
             if measures[core].sum() < measures[field_bins].sum() / 2:
                 field_bins = core
         remaining[field_bins] = np.nan
         peaks.append(peak_idx)
         candidates.append(field_bins)
-    return _FieldSearch(peaks, candidates, finite, firing_rate)
+    return _FieldSearch(
+        peaks, candidates, finite, firing_rate, watershed=subfields == "watershed"
+    )
 
 
 def _keep_place_fields(
@@ -6332,11 +6465,18 @@ def _keep_place_fields(
     for search, label in zip(searches, labels, strict=True):
         minima = smallest[start : start + len(search.candidates)]
         start += len(search.candidates)
-        fields = [
-            field_bins
-            for field_bins, minimum in zip(search.candidates, minima, strict=True)
+        kept = [
+            (peak, field_bins, minimum)
+            for peak, field_bins, minimum in zip(
+                search.peaks, search.candidates, minima, strict=True
+            )
             if measures[field_bins].sum() > minimum
         ]
+        fields = (
+            _watershed_fields(env, search.firing_rate, kept, threshold, measures)
+            if search.watershed
+            else [field_bins for _, field_bins, _ in kept]
+        )
         results.append(
             PlaceFieldsResult(
                 fields=fields,
@@ -6368,7 +6508,7 @@ def has_place_field(
     min_peak_rate: float = 1.0,
     min_secondary_peak_fraction: float = 0.0,
     max_mean_rate: float = np.inf,
-    detect_subfields: bool = True,
+    subfields: Literal["core", "watershed"] | None = "core",
     min_occupancy: float = 0.0,
     penalty: float | None = None,
     rank: int | None = None,
@@ -6452,9 +6592,11 @@ def has_place_field(
         returns no fields and no warning; ``excluded_reason`` is
         ``"mean_rate_above_threshold"``. This is not the recording-time mean
         firing rate and does not identify cell type.
-    detect_subfields : bool, default=True
-        If True, separate two fields that merge at ``threshold`` (the
-        FMAToolbox ``MapStats`` rule; see :func:`detect_place_fields`).
+    subfields : {"core", "watershed"} or None, default="core"
+        How to separate two fields that merge at ``threshold``: ``"core"``
+        is the FMAToolbox ``MapStats`` rule, ``"watershed"`` divides them at
+        the valley between them, ``None`` does not separate them (see
+        :func:`detect_place_fields`).
 
     min_occupancy : float, default=0.0
         Minimum occupancy (seconds) for a bin to be included; bins below the
@@ -6615,7 +6757,7 @@ def has_place_field(
         min_peak_rate=min_peak_rate,
         min_secondary_peak_fraction=min_secondary_peak_fraction,
         max_mean_rate=max_mean_rate,
-        detect_subfields=detect_subfields,
+        subfields=subfields,
     )
 
 
@@ -6901,7 +7043,20 @@ def is_place_cell(
     0.04 against 99 shifts) with only 0.04 bits/spike beyond their bias; the
     cutoff refuses them. A significant unit with fewer spikes than the map
     has independent bins has an unknown bias and is not a place cell, with a
-    warning. Circular shifting costs about n_shuffles recomputes of the
+    warning.
+
+    **Calibration (simulation).** Untuned Poisson cells firing 0.5-3 Hz in
+    10-minute explorations of a 1 m box (5 cm bins, the default 5 cm
+    diffusion kernel): the p-values of :func:`place_cell_significance` were
+    uniform, and 61 of 1400 (4.4%) fell below 0.05 with 199 shifts, where
+    an exact test rejects 4.5%. No untuned cell passed the verdict (0 of
+    200), because none reached ``min_info`` beyond its bias: the verdict's
+    false-positive rate is well below ``alpha``. The cutoff costs power. In
+    the same sessions, of 20 place cells with a Gaussian field (standard deviation 10 cm,
+    0.1 Hz baseline), the verdict found 2 at a 1 Hz peak (about 100
+    spikes), 15 at 2 Hz (about 140) and 20 at 5 Hz (199 shifts throughout).
+
+    Circular shifting costs about n_shuffles recomputes of the
     plural map. Its null assumes stable firing statistics on the joined
     analyzed clock; recording gaps and excluded epochs are never shift
     destinations. Results keep no raw arrays or recompute closures.
@@ -7018,18 +7173,113 @@ def is_place_cell(
     return rate_map().is_place_cell(min_info=min_info)
 
 
-def _rises_toward_a_neighbor(
-    peak_idx: int,
-    peak_rate: float,
-    firing_rate: NDArray[np.float64],
-    env: Environment,
-) -> bool:
-    """Whether a neighbor of the candidate peak has a higher rate in the full map.
+def _watershed_basins(
+    env: Environment, firing_rate: NDArray[np.float64], peaks: Sequence[int]
+) -> NDArray[np.intp]:
+    """Basin of every bin: the peak it is reached from by flooding down the map.
 
-    Such a candidate is the flank of an already assigned field, not a peak.
+    From all peaks at once, the flood takes the highest flooded bin next (at
+    equal rates the lowest bin index) and gives each of its unflooded finite
+    neighbors that bin's basin. NaN bins are never flooded, so they do not
+    connect basins.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment whose neighbor pairs connect the bins.
+    firing_rate : ndarray of float64, shape (n_bins,)
+        Rate map (Hz).
+    peaks : sequence of int, length (n_peaks,)
+        Bin of each basin's peak.
+
+    Returns
+    -------
+    ndarray of intp, shape (n_bins,)
+        Index into ``peaks`` of each bin's basin; -1 for a bin no peak
+        reaches through finite bins.
     """
-    neighbors = list(env.connectivity.neighbors(peak_idx))
-    return bool(np.any(firing_rate[neighbors] > peak_rate))
+    import heapq
+
+    n_bins = env.n_bins
+    finite = np.isfinite(firing_rate)
+    pairs = env.edge_pairs
+    pairs = pairs[finite[pairs[:, 0]] & finite[pairs[:, 1]]]
+    both = np.concatenate([pairs, pairs[:, ::-1]])
+    both = both[np.lexsort((both[:, 1], both[:, 0]))]
+    starts = np.searchsorted(both[:, 0], np.arange(n_bins + 1)).tolist()
+    neighbors = both[:, 1].tolist()
+    rates = firing_rate.tolist()
+    labels = [-1] * n_bins
+    for k, peak in enumerate(peaks):
+        labels[peak] = k
+    heap = [(-rates[peak], peak) for peak in peaks]
+    heapq.heapify(heap)
+    while heap:
+        _, b = heapq.heappop(heap)
+        for neighbor in neighbors[starts[b] : starts[b + 1]]:
+            if labels[neighbor] < 0:
+                labels[neighbor] = labels[b]
+                heapq.heappush(heap, (-rates[neighbor], neighbor))
+    return np.asarray(labels, dtype=np.intp)
+
+
+def _watershed_fields(
+    env: Environment,
+    firing_rate: NDArray[np.float64],
+    kept: Sequence[tuple[int, NDArray[np.int64], float]],
+    threshold: float,
+    measures: NDArray[np.float64],
+) -> list[NDArray[np.int64]]:
+    """Fields of the kept ``"core"`` peaks, each inside its own watershed basin.
+
+    Each field is the part of its peak's basin (:func:`_watershed_basins`)
+    connected to the peak with a rate between ``threshold`` times that peak
+    and the peak; a higher bin in the basin is a bump the search did not
+    keep, and it stays outside every field. If a field is then no larger than the smallest field of its peak,
+    the lowest such peak is dropped and the basins are flooded again, so its
+    bins go to the neighboring fields. See :func:`detect_place_fields`, Notes.
+
+    Parameters
+    ----------
+    env : Environment
+        Environment of the map.
+    firing_rate : ndarray of float64, shape (n_bins,)
+        Rate map (Hz).
+    kept : sequence of (int, ndarray of int64, float)
+        Peak bin, ``"core"`` field and smallest field measure of each kept
+        field, in order of decreasing peak.
+    threshold : float
+        Fraction of each field's own peak that bounds it.
+    measures : ndarray of float64, shape (n_bins,)
+        Measure of each bin.
+
+    Returns
+    -------
+    list of ndarray of int64
+        Bins of each field, in order of decreasing peak.
+    """
+    peaks = [peak for peak, _, _ in kept]
+    minima = [minimum for _, _, minimum in kept]
+    while True:
+        basins = _watershed_basins(env, firing_rate, peaks)
+        fields = [
+            _seed_component(
+                peak,
+                (basins == k)
+                & (firing_rate >= threshold * firing_rate[peak])
+                & (firing_rate <= firing_rate[peak]),
+                env,
+            )
+            for k, peak in enumerate(peaks)
+        ]
+        small = [
+            k
+            for k, (field_bins, minimum) in enumerate(zip(fields, minima, strict=True))
+            if measures[field_bins].sum() <= minimum
+        ]
+        if not small:
+            return fields
+        del peaks[small[-1]], minima[small[-1]]
 
 
 # Impulses are diffused this many map entries at a time. It bounds memory

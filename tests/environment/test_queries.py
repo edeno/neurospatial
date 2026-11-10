@@ -361,23 +361,22 @@ class TestDistanceBetween:
         with pytest.raises(ValueError, match=r"takes two bins, a start and an end"):
             small_2d_env.distance_between(bins=[0, 1, 2])
 
-    def test_distance_between_custom_edge_weight(self, small_2d_env):
-        """Test distance_between with custom edge weight."""
-        # Use two neighboring bins to ensure path exists
-        point_a = small_2d_env.bin_centers[0]
-        neighbors = small_2d_env.neighbors(bins=0)
-
-        if len(neighbors) > 0:
-            point_b = small_2d_env.bin_centers[neighbors[0]]
-
-            # Default uses 'distance' weight
-            dist_default = small_2d_env.distance_between(
-                points=[point_a, point_b], edge_weight="distance"
-            )
-
-            # Should be a finite positive number
-            assert np.isfinite(dist_default)
-            assert dist_default >= 0
+    def test_distance_between_neighbors_is_their_spacing(self, small_2d_env):
+        """Two neighboring bin centers are one edge apart in every path metric."""
+        neighbor = small_2d_env.neighbors(bins=0)[0]
+        spacing = np.linalg.norm(
+            small_2d_env.bin_centers[neighbor] - small_2d_env.bin_centers[0]
+        )
+        for metric in ("geodesic", "bin_graph"):
+            assert small_2d_env.distance_between(
+                bins=[0, neighbor], metric=metric
+            ) == pytest.approx(spacing, rel=1e-12)
+        with pytest.raises(
+            ValueError,
+            match=r"^Environment\.distance_between\(\) got metric='hops'; metric "
+            r"must be one of 'geodesic', 'bin_graph'\.",
+        ):
+            small_2d_env.distance_between(bins=[0, neighbor], metric="hops")
 
 
 class TestPathBetween:
@@ -478,30 +477,39 @@ class TestDistanceTo:
         )
 
     def test_distance_to_geodesic_vs_euclidean(self, small_2d_env):
-        """On a 4-connected grid the geodesic is the Manhattan distance."""
+        """On a 4-connected open grid the bin graph is the Manhattan distance."""
         target = [0]
 
-        dist_geodesic = small_2d_env.distance_to(bins=target, metric="geodesic")
+        dist_graph = small_2d_env.distance_to(bins=target, metric="bin_graph")
         dist_euclidean = small_2d_env.distance_to(bins=target, metric="euclidean")
 
         # Should have same shape
-        assert dist_geodesic.shape == dist_euclidean.shape
+        assert dist_graph.shape == dist_euclidean.shape
 
-        # This grid is 4-connected (orthogonal steps only), so the geodesic is
-        # the Manhattan distance; it equals the straight line only on an axis.
+        # This grid is 4-connected (orthogonal steps only), so the bin graph
+        # is the Manhattan distance; it equals the straight line only on an
+        # axis.
         offsets = np.abs(small_2d_env.bin_centers - small_2d_env.bin_centers[0])
         np.testing.assert_allclose(
-            dist_geodesic, offsets.sum(axis=1), rtol=1e-12, atol=1e-12
+            dist_graph, offsets.sum(axis=1), rtol=1e-12, atol=1e-12
         )
         on_axis = offsets.min(axis=1) == 0
-        np.testing.assert_allclose(dist_geodesic[on_axis], dist_euclidean[on_axis])
+        np.testing.assert_allclose(dist_graph[on_axis], dist_euclidean[on_axis])
+        # The any-angle geodesic of the open grid is the straight line, also
+        # where it runs through cell corners: every cell around them is free.
+        np.testing.assert_allclose(
+            small_2d_env.distance_to(bins=target, metric="geodesic"),
+            dist_euclidean,
+            rtol=1e-12,
+            atol=1e-12,
+        )
 
     def test_distance_to_invalid_metric_raises(self, small_2d_env):
         """Test that invalid metric raises ValueError."""
         target = [0]
 
         with pytest.raises(
-            ValueError, match="metric must be 'euclidean' or 'geodesic'"
+            ValueError, match="metric must be 'geodesic', 'bin_graph' or 'euclidean'"
         ):
             small_2d_env.distance_to(bins=target, metric="invalid")
 
@@ -614,7 +622,9 @@ class TestReachableFrom:
 
     def test_reachable_from_invalid_metric_raises(self, small_2d_env):
         """Test that invalid metric raises ValueError."""
-        with pytest.raises(ValueError, match="metric must be 'hops' or 'geodesic'"):
+        with pytest.raises(
+            ValueError, match="metric must be 'hops', 'geodesic' or 'bin_graph'"
+        ):
             small_2d_env.reachable_from(bins=0, radius=5, metric="invalid")
 
     def test_reachable_from_source_always_reachable(self, small_2d_env):

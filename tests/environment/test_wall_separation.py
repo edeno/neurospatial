@@ -370,9 +370,16 @@ def test_a_wall_thinner_than_a_bin_is_not_crossed(bin_size, offset, hole):
     that path drawn through bin centers: the path bends at the wall's two
     end corners, each bin center nearest a corner lies within half a bin
     diagonal (h/√2) of it, so moving both bends to bin centers adds at most
-    2 · 2 · h/√2 = 2√2 h (triangle inequality), and each straight leg
-    between bin centers costs at most the 8-connected staircase factor
-    √(4 - 2√2). The measured distances reach at most 0.90 of this bound.
+    2 · 2 · h/√2 = 2√2 h (triangle inequality). The legs between bin
+    centers are straight at any angle, so nothing more is allowed: the
+    measured distances are at most 2.33 h longer.
+
+    For two bins 45 cm either side of the wall the legs are oblique, and
+    the same bounds hold. That distance must also be shorter than any walk
+    along an 8-connected grid can be: a walk of displacement (dx, dy) is at
+    least √2 min(|dx|, |dy|) + ||dx| - |dy|| long, and it has to cross the
+    line of the wall's left side above the wall (or below it, for a hole).
+
     The corridor beside the wall and the gap above it keep their straight
     distances.
     """
@@ -382,8 +389,32 @@ def test_a_wall_thinner_than_a_bin_is_not_crossed(bin_size, offset, hole):
     around = _geodesic(floor, env.bin_centers[a], env.bin_centers[b])
     distance = env.distance_between(bins=[a, b])
     assert distance >= around - 2 * bin_size
-    staircase = np.sqrt(4.0 - 2.0 * np.sqrt(2.0))
-    assert distance <= staircase * (around + 2 * np.sqrt(2.0) * bin_size)
+    assert distance <= around + 2 * np.sqrt(2.0) * bin_size
+
+    far_a, far_b = (
+        int(i)
+        for i in env.bin_at(
+            [[left - 45.0, 17.5], [left + bin_size / 4 + 45.0, 17.5]]
+            if hole
+            else [[left - 45.0, 10.0], [left + bin_size / 4 + 45.0, 10.0]]
+        )
+    )
+    start, end = env.bin_centers[far_a], env.bin_centers[far_b]
+    around = _geodesic(floor, start, end)
+    distance = env.distance_between(bins=[far_a, far_b])
+    assert distance >= around - 2 * bin_size
+    assert distance <= around + 2 * np.sqrt(2.0) * bin_size
+    heights = np.linspace(30.0, 40.0, 2001)
+    if hole:
+        heights = np.r_[heights, np.linspace(0.0, 5.0, 1001)]
+    crossing = np.column_stack([np.full(heights.size, left), heights])
+
+    def shortest_walk(displacement):
+        low, high = np.sort(np.abs(displacement), axis=1).T
+        return np.sqrt(2.0) * low + (high - low)
+
+    walk = (shortest_walk(crossing - start) + shortest_walk(end - crossing)).min()
+    assert distance < walk - 1e-6
     c, d = _across(env, left, bin_size, 35.0)
     assert env.distance_between(bins=[c, d]) == pytest.approx(
         np.linalg.norm(env.bin_centers[c] - env.bin_centers[d])

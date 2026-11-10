@@ -504,7 +504,7 @@ required.
 - `convert_to_cm`: Convert pixel coordinates to centimeter coordinates.
 - `convert_to_pixels`: Convert centimeter coordinates to pixel coordinates with y-flip.
 - `diffusion_kernels`: Assemble a finite-volume diffusion kernel from a face-measure graph.
-- `distance_field`: Compute distance field: distance from each node to nearest source node.
+- `distance_field`: Distance from every bin to the nearest source bin.
 - `divergence`: Compute net outward flux per cell volume.
 - `egocentric_bearing`: Compute bearing angle to targets in egocentric coordinates.
 - `egocentric_distance`: Compute distance to targets from animal position.
@@ -514,8 +514,7 @@ required.
 - `flip_y`: Flip the *y*-axis of pixel coordinates so that origin moves from top-left to bottom-left.
 - `flip_y_data`: Flip y-axis of coordinates so that the origin moves from image-space top-left to Cartesian bottom-left.
 - `from_rotation_matrix`: Create affine transform from rotation matrix (2D or 3D).
-- `geodesic_distance_between_points`: Compute geodesic distance between two specific nodes in a graph.
-- `geodesic_distance_matrix`: Compute geodesic (shortest-path) distance matrix on a graph.
+- `geodesic_distance_matrix`: Distance between every pair of bins, along paths inside the environment.
 - `geodesic_rbf_basis`: Compute maze-aware RBF basis using geodesic distances.
 - `gradient`: Compute the directional derivative of a scalar field along every edge.
 - `graph_convolve`: Convolve a spatial field with a custom kernel on the graph.
@@ -525,9 +524,9 @@ required.
 - `map_probabilities`: Map probabilities on source_env onto target_env.
 - `nearest_boundary`: Distance and allocentric direction from each sample to the closest wall.
 - `neighbor_reduce`: Aggregate field values over spatial neighborhoods.
-- `neighbors_within`: Return bins within radius of each center bin.
+- `neighbors_within`: Bins within ``radius`` of each center bin.
 - `normalize_field`: Normalize field to sum to 1 (probability distribution).
-- `pairwise_distances`: Compute pairwise geodesic distances between specified nodes.
+- `pairwise_distances`: Distances between every pair of the given bins.
 - `plot_basis_functions`: Visualize selected basis functions for quality checking.
 - `regions_to_mask`: Select the environment bins that one or more regions cover.
 - `resample_field`: Resample field from source to destination environment.
@@ -695,7 +694,6 @@ required.
 - `shuffle_cell_identity`: Shuffle mapping between spike trains and place fields.
 - `shuffle_events`: Null data sets as decoded events, for a control analysed like real data.
 - `shuffle_place_fields_circular`: Circularly shift each place field by a random amount.
-- `shuffle_place_fields_circular_2d`: Circularly shift 2D place fields in both dimensions.
 - `shuffle_posterior_circular`: Circularly shift posterior at each time bin independently.
 - `shuffle_posterior_weighted_circular`: Shift each time bin's posterior so its peak lands at a weighted position.
 - `shuffle_spike_counts_circular`: Circularly shift each cell's spike counts in time, within one event.

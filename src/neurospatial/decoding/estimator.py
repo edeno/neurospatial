@@ -1156,9 +1156,10 @@ warn_on_drop
             ``nanmedian``; ``"mean_error"`` -> ``nanmean``. Lower is better.
         distance : {"geodesic", "euclidean"}, default="geodesic"
             Distance metric for the per-time-bin
-            error. ``"geodesic"`` measures along the environment's connectivity
-            graph (along the track, around walls); ``"euclidean"`` gives the
-            straight-line distance.
+            error. ``"geodesic"`` is the shortest path between the decoded
+            and the true position that stays inside the environment (along
+            the track, around walls); ``"euclidean"`` gives the straight-line
+            distance.
 
         epochs : (start, stop), array-like of shape (n, 2), IntervalSet, or None
             Restrict the analysis to these half-open [start, stop) windows (seconds,

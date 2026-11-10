@@ -69,6 +69,9 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
     session = compute_vte_session(
         env, r.times, r.positions, region="decision", trials=trials
     )
+    line_fit_session = compute_vte_session(
+        env, r.times, r.positions, region="decision", trials=trials, method="line_fit"
+    )
     assert session.trial_results, "The session golden must exercise real metrics."
     heading_clock = float(np.median(np.diff(r.times))) if legacy_heading else r.times
     return {
@@ -82,6 +85,9 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
         "pre_decision_speed_stats": pre_decision_speed_stats(r.times, r.positions),
         "head_sweep_from_positions": head_sweep_from_positions(
             r.times, r.positions, min_speed=5.0
+        ),
+        "head_sweep_from_positions[line_fit]": head_sweep_from_positions(
+            r.times, r.positions, min_speed=5.0, method="line_fit"
         ),
         "heading_direction_labels": heading_direction_labels(
             r.times, r.positions, min_speed=5.0
@@ -145,4 +151,13 @@ def capture_kinematics_outputs(recording, *, legacy_heading=False):
             min_speed=5.0,
         ),
         "compute_vte_session": session,
+        "compute_vte_trial[line_fit]": compute_vte_trial(
+            r.times,
+            r.positions,
+            start_time=98.0,
+            stop_time=100.0,
+            min_speed=5.0,
+            method="line_fit",
+        ),
+        "compute_vte_session[line_fit]": line_fit_session,
     }

@@ -2483,6 +2483,34 @@ def is_spatial_view_cell(
     alpha of untuned units pass the test by chance, with almost no
     information beyond what an untuned cell shows on the same map. A significant unit with fewer spikes than the map has independent
     bins has an unknown bias and is not a spatial view cell, with a warning.
+
+    **Calibration (simulation).** Untuned Poisson cells firing 0.5-3 Hz in
+    10-minute explorations of a 1 m box (ray-cast gaze along the movement
+    heading): the p-values of :func:`spatial_view_cell_significance` were
+    uniform, and 27 of 600 (4.5%) fell below 0.05 with 199 shifts, the
+    rate of an exact test. No untuned cell passed the verdict (0 of 200).
+    Of 20 cells tuned to a point on the wall (10 cm field, 0.1 Hz
+    baseline), the verdict found 1, 7 and 20 at 0.5, 1 and 2 Hz peaks
+    (about 75, 95 and 135 spikes).
+
+    **Place cells can pass.** The verdict cannot tell view tuning from
+    place tuning when the viewed point stays near the animal. With
+    ``gaze_model="fixed_distance"`` and ``view_distance=10`` cm, all 50
+    simulated place cells (10 cm field, 8 Hz peak) passed, and 86-88% at
+    30 cm. With the ray-cast gaze the viewed wall point moves with heading:
+    none of the 50 passed, and 4 of 120 narrower, stronger place cells
+    (5 cm field, 20 Hz). The shuffle is not what holds them back. On four
+    pairs of 10-minute explorations of a 1 m box (50 such place cells per
+    pair, 0.1 Hz baseline, ray-cast gaze along the movement heading, 199
+    shifts), the information test alone was significant for 13, 14, 16 and
+    23 of the 50 (26-46%, against the 4.5% of untuned cells), and none of
+    the 200 passed the verdict, because their bias-corrected information
+    stayed below the 0.5 bits/spike cutoff (0.46 at most, 0.12-0.18 at the
+    median). With the ray-cast gaze it is therefore the information cutoff,
+    not the shuffle, that separates place cells from view cells, and a
+    lower ``min_info`` admits them: 7 of 50 at 0.25. Test the cell with
+    :func:`~neurospatial.encoding.spatial.is_place_cell` as well, and
+    compare its place and view maps.
     Results keep no raw arrays or recompute closures. Shuffle keywords
     belong only to the shuffle; passing one with a value other than its
     default with ``criterion="threshold"`` raises.

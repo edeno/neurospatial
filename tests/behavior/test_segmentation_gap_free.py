@@ -39,7 +39,12 @@ first pass through the decision region instead of the 2 s before the entry:
 the window moved from [98.0, 100.0) s to [100.0, 109.9) s, the stationary
 stretch in the target after the entry, so the mean speed moved from 12.5
 to 0 cm/s, the head sweep from 0 rad to NaN (no movement heading) and
-``is_vte`` from False to None. ``compute_decision_analysis``'s
+``is_vte`` from False to None. When VTE gained ``method=`` with the Redish
+lab's adaptive window as the default, these two entries kept their values
+(``compute_vte_trial`` 0 rad, the session NaN), and the pre-change captures
+were stored unchanged as ``compute_vte_trial[line_fit]`` and
+``compute_vte_session[line_fit]``, which ``method="line_fit"`` reproduces.
+``compute_decision_analysis``'s
 ``distance_to_decision_boundary`` is no longer read from the stored capture: each goal region is measured to
 its edge from the position itself, so it is computed here independently. The
 track is a fully binned rectangle, so a shortest path inside it is a straight
@@ -98,6 +103,7 @@ def gap_free_goldens(continuous_pause_track):
     # The VTE session result later gained ``units`` (the environment's, "cm");
     # its trial results are unchanged.
     goldens["compute_vte_session"]["fields"]["units"] = "cm"
+    goldens["compute_vte_session[line_fit]"]["fields"]["units"] = "cm"
     return goldens
 
 
@@ -155,7 +161,9 @@ def assert_snapshot_equal(actual, expected):
         "compute_pre_decision_metrics",
         "compute_decision_analysis",
         "compute_vte_trial",
+        "compute_vte_trial[line_fit]",
         "compute_vte_session",
+        "compute_vte_session[line_fit]",
         "bin_sequence",
         "bin_sequence_per_sample",
         "bin_sequence_with_runs",

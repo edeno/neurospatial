@@ -6,7 +6,6 @@ point outside. Infinite values are refused where they are not a meaningful
 choice; ``inf`` stays allowed as "no limit" for cutoffs and radii.
 """
 
-import networkx as nx
 import numpy as np
 import pytest
 
@@ -27,10 +26,10 @@ def env():
     return Environment.from_grid_mask(np.ones((8, 8), bool), (edges, edges))
 
 
-def _path_graph():
-    graph = nx.path_graph(4)
-    nx.set_edge_attributes(graph, 1.0, "distance")
-    return graph
+def _row():
+    """Four 1 cm bins in a row."""
+    edges = (np.arange(5.0), np.arange(2.0))
+    return Environment.from_grid_mask(np.ones((4, 1), dtype=bool), grid_edges=edges)
 
 
 @pytest.mark.parametrize("value", [np.nan, np.inf])
@@ -89,11 +88,11 @@ def test_nonfinite_scale_is_refused(env, call, message, value):
             "max_distance must be non-negative",
         ),
         (
-            lambda env: distance_field(_path_graph(), [0], cutoff=np.nan),
+            lambda env: distance_field(_row(), [0], cutoff=np.nan),
             "cutoff must be non-negative",
         ),
         (
-            lambda env: neighbors_within(_path_graph(), [0], radius=np.nan),
+            lambda env: neighbors_within(_row(), [0], radius=np.nan),
             "radius must be non-negative",
         ),
     ],
@@ -105,11 +104,11 @@ def test_nan_limit_is_refused(env, call, message):
 
 
 def test_infinite_limit_means_no_limit(env):
-    graph = _path_graph()
+    row = _row()
     np.testing.assert_array_equal(
-        distance_field(graph, [0], cutoff=np.inf), [0.0, 1.0, 2.0, 3.0]
+        distance_field(row, [0], cutoff=np.inf), [0.0, 1.0, 2.0, 3.0]
     )
-    assert neighbors_within(graph, [0], radius=np.inf)[0].tolist() == [0, 1, 2, 3]
+    assert neighbors_within(row, [0], radius=np.inf)[0].tolist() == [0, 1, 2, 3]
     np.testing.assert_array_equal(
         env.nearest_bin(env.bin_centers + 50.0, max_distance=np.inf),
         env.nearest_bin(env.bin_centers + 50.0),

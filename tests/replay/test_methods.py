@@ -7,7 +7,8 @@ import pickle
 
 import numpy as np
 import pytest
-from replay_helpers import assert_null_verdicts_at_alpha
+from calibration_helpers import assert_rejections_at_rate
+from replay_helpers import assert_null_verdicts_at_alpha, null_verdicts
 
 from neurospatial import Environment
 from neurospatial.decoding import (
@@ -168,20 +169,37 @@ class TestPublishedMethods:
         assert result.is_replay, result.summary()
 
     @pytest.mark.parametrize(
-        "method", [KARLSSON_FRANK_2009, WU_2017, TIROLE_2022], ids=lambda m: m.name
+        ("method", "n_events"),
+        [
+            pytest.param(method, n_events, id=method.name)
+            for method, n_events in (
+                (KARLSSON_FRANK_2009, 600),
+                (WU_2017, 1000),
+                (TIROLE_2022, 150),
+            )
+        ],
     )
-    def test_spike_methods_call_random_events_replay_at_alpha(self, place_code, method):
-        """150 random events: replay at the shuffle test's rate, 0.04.
+    def test_spike_methods_call_random_events_replay_at_alpha(
+        self, place_code, method, n_events
+    ):
+        """Random events are replay at the shuffle test's rate, 0.04.
 
         A random event's time bins are independent, so Karlsson & Frank's
-        and Wu's time-bin permutations are exact. Tirole's p-value is the
-        largest of three, which can only lower the rate, so it is held to
-        the interval's high end only.
+        and Wu's time-bin permutations are exact. Their counts at 0.04 and
+        at the levels of ``NULL_LEVELS`` are held to both ends of the 99%
+        interval. With 80% power, Wu's 1000 events detect a true rate of
+        0.064 at alpha (1.6 times 0.04) and 0.235 at the 0.2 level (1.2
+        times 0.19); Karlsson & Frank's 600 events, which cost twice as
+        much each, detect 0.071 (1.8 times) and 0.247 (1.3 times).
+
+        Tirole's p-value is the largest of three, which can only lower the
+        rate, so it is held to the interval's high end only: 13 of 150,
+        which a true rate of 0.112 exceeds with 80% power.
         """
         env, rates = place_code
         method = self._spike_method(method, n_shuffles=99)
         results = []
-        for seed in range(150):
+        for seed in range(n_events):
             noise, noise_counts = _decoded(env, rates, "random", seed=200 + seed)
             results.append(
                 detect_replay(
@@ -201,6 +219,9 @@ class TestPublishedMethods:
             [all(r.criteria.values()) for r in results],
             alpha=method.alpha,
             n_shuffles=method.n_shuffles,
+            # Every event passes the criteria; the minimum leaves a margin
+            # of 10%.
+            min_eligible=int(0.9 * n_events),
             conservative=len(method.nulls) > 1,
         )
 
@@ -2369,31 +2390,38 @@ class TestOlafsdottir:
         assert sweep.p_value == pytest.approx(1 / 101)
 
     @pytest.mark.slow
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "The place-field shift null is anti-conservative on random events: "
-            "4 of 150 are replay (2.7%, 2 / 101 = 2.0% expected) and 93 of "
-            "150 p-values fall below 0.5 (62%, 59 to 90 expected)."
-        ),
-    )
     def test_calls_random_events_replay_at_alpha(self, place_code):
         """150 random events at the recipe's 100 shuffles and alpha = 0.025.
 
         P(p < 0.025) is 2 / 101 for an exact test, so the 99% interval runs
-        from 0 to 8 replay events, and P(p < 0.5) is checked as well.
+        from 0 to 8 replay events, and 4 are replay.
+
+        The place-field shift null still gives too many small p-values: 93
+        of the 150 fall below 0.5 (62%), where an exact test gives 50 / 101
+        of them, 59 to 90. That count is held to the 99% interval of its own
+        rate, 78 to 108, and must stay outside the exact interval, so the
+        test fails when the excess grows and when it goes away. The recipe's
+        notes then need the new count.
         """
         results = [
             self._detect(*place_code, "random", seed=300 + seed, rng=seed)
             for seed in range(150)
         ]
-        assert_null_verdicts_at_alpha(
+        verdicts = null_verdicts(
             [r.p_value for r in results],
             [r.is_replay for r in results],
             [all(r.criteria.values()) for r in results],
-            alpha=OLAFSDOTTIR_2017.alpha,
             n_shuffles=OLAFSDOTTIR_2017.n_shuffles,
+            # Every event passes the criteria; the minimum leaves a margin
+            # of 10%.
+            min_eligible=135,
         )
+        assert_rejections_at_rate(
+            verdicts.replay, verdicts.exact_rate(OLAFSDOTTIR_2017.alpha)
+        )
+        assert_rejections_at_rate(verdicts.below(0.5), 93 / 150)
+        with pytest.raises(AssertionError, match="null cases rejected"):
+            assert_rejections_at_rate(verdicts.below(0.5), verdicts.exact_rate(0.5))
 
     @pytest.mark.parametrize(
         ("n_active", "n_cells", "expected"),

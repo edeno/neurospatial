@@ -361,7 +361,7 @@ class TestGoalRewardField:
         # Check bins at different distances
         from neurospatial.ops.distance import distance_field
 
-        distances = distance_field(env.connectivity, sources=[center_bin])
+        distances = distance_field(env, sources=[center_bin])
 
         # Expected: reward = scale * exp(-distances / scale)
         expected = scale * np.exp(-distances / scale)
@@ -442,7 +442,7 @@ class TestGoalRewardField:
         # Verify inverse distance formula: scale / (1 + distance)
         from neurospatial.ops.distance import distance_field
 
-        distances = distance_field(env.connectivity, sources=[center_bin])
+        distances = distance_field(env, sources=[center_bin])
         expected = scale / (1 + distances)
         assert_array_almost_equal(reward, expected, decimal=6)
 
@@ -481,7 +481,7 @@ class TestGoalRewardField:
         # Verify that distance field uses nearest goal
         from neurospatial.ops.distance import distance_field
 
-        distances = distance_field(env.connectivity, sources=goal_bins)
+        distances = distance_field(env, sources=goal_bins)
         expected = scale * np.exp(-distances / scale)
         assert_array_almost_equal(reward, expected, decimal=6)
 

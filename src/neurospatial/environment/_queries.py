@@ -159,49 +159,45 @@ def _path_between(graph: nx.Graph, source_idx: int, target_idx: int) -> list[int
 
 
 def _distance_to(
+    env: Environment,
     targets: NDArray[np.intp],
     *,
     metric: DistanceMetric,
-    bin_centers: NDArray[np.float64],
-    graph: nx.Graph,
-    coordinates: CartesianSystem | EgocentricPolarSystem,
 ) -> NDArray[np.float64]:
     """Distance from every bin to the nearest of the resolved target bins."""
-    if metric not in ("euclidean", "geodesic"):
-        msg = f"metric must be 'euclidean' or 'geodesic', got '{metric}'"
+    if metric not in ("geodesic", "bin_graph", "euclidean"):
+        msg = f"metric must be 'geodesic', 'bin_graph' or 'euclidean', got '{metric}'"
         raise ValueError(msg)
     if metric == "euclidean":
         require_cartesian(
-            coordinates,
+            env.coordinate_system,
             "Environment.distance_to(metric='euclidean')",
             why="The straight-line distance between bin centers treats them as "
             "Cartesian positions.",
-            fix="use metric='geodesic', which follows the connectivity graph and "
-            "its physical edge lengths",
-            example="env.distance_to(bins=[0], metric='geodesic')",
+            fix="use metric='bin_graph', which walks the connections between "
+            "bin centers and their physical edge lengths",
+            example="env.distance_to(bins=[0], metric='bin_graph')",
         )
-    return distance_field(
-        graph, sources=targets, metric=metric, bin_centers=bin_centers
-    )
+    return distance_field(env, sources=targets, metric=metric)
 
 
 def _reachable_from(
-    graph: nx.Graph,
+    env: Environment,
     source_bin: int,
     *,
     radius: int | float | None,
-    metric: Literal["hops", "geodesic"],
+    metric: Literal["hops", "geodesic", "bin_graph"],
 ) -> NDArray[np.bool_]:
     """Bins reachable from a resolved active bin, optionally within a radius."""
     if radius is not None and radius < 0:
         msg = f"radius must be non-negative or None. Got radius={radius}"
         raise ValueError(msg)
 
-    if metric not in ("hops", "geodesic"):
-        msg = f"metric must be 'hops' or 'geodesic'. Got metric='{metric}'"
+    if metric not in ("hops", "geodesic", "bin_graph"):
+        msg = f"metric must be 'hops', 'geodesic' or 'bin_graph'. Got metric='{metric}'"
         raise ValueError(msg)
 
-    # Initialize result mask
+    graph = env.connectivity
     reachable = np.zeros(graph.number_of_nodes(), dtype=bool)
 
     # An isolated bin is its own component and lies within any radius of
@@ -212,10 +208,13 @@ def _reachable_from(
         reached = nx.single_source_shortest_path_length(
             graph, source_bin, cutoff=int(radius)
         )
-    else:
+    elif metric == "bin_graph":
         reached = nx.single_source_dijkstra_path_length(
             graph, source_bin, cutoff=radius, weight="distance"
         )
+    else:
+        field = distance_field(env, [source_bin], cutoff=float(radius))
+        reached = np.flatnonzero(np.isfinite(field)).tolist()
     reachable[list(reached)] = True
     return reachable
 

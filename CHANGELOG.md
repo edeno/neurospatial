@@ -2,6 +2,308 @@
 
 ## [Unreleased]
 
+### Documentation: measured false-positive rates of published nulls
+
+- The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,
+  `OLAFSDOTTIR_2017`, `KUDRIMOTI_1999` and `LANSINK_2009` now give the rate
+  at which each recipe calls simulated events or sessions without replay or
+  reactivation significant, against its nominal rate, and name the test that
+  pins the number. Each of Tirole's three nulls alone calls 1.3 to 2 times
+  α (all three together hold α); the cell-identity shuffle calls 12%
+  (`OLAFSDOTTIR_2015`) and 9.3% (`BUSH_2022`) at a nominal 4%;
+  `OLAFSDOTTIR_2017` holds its α but gives too many p-values below 0.5;
+  Kudrimoti's t test calls 4.0% at a nominal 2.5% (pairs share cells), and
+  Lansink's bootstrap 0.1%. `LIU_2023` notes a smaller excess that no test
+  pins: 4.8% of 5,000 such events at a nominal 4%, and 21.1% with p < 0.2
+  against 19%. The recipes keep their papers' methods, so
+  results still compare with the papers. `replay_significance`,
+  `shuffle_cell_identity`, `shuffle_place_fields_circular`,
+  `explained_variance_reactivation` and `ReactivationMethod(test=...)` say
+  the same, and the replay and reactivation guides add a one-line caution.
+  `shuffle_place_fields_circular` no longer says it is more conservative
+  than the cell-identity shuffle: no test compares the two on the same
+  events.
+
+### Replay: the uncited 2-D place-field shuffle is removed
+
+- **Breaking:** `neurospatial.replay.shuffle_place_fields_circular_2d` is
+  removed. No named null used it, and it did not follow a published method.
+  Pfeiffer & Foster (2013) tested trajectory events by "randomly shuffling
+  each cell's place field in both the x and y dimensions", but neither the
+  paper nor its Supplementary Information says how a field was moved, what
+  happened at the arena walls, or what a moved field held in unvisited bins,
+  and no code was published. A circular roll was our own choice, and it moved
+  the NaN of unvisited bins into visited ones. In a 2-D arena, shift spike
+  times with `shuffle_spike_times_circular` or permute cell identity with
+  `shuffle_cell_identity`. The `PFEIFFER_FOSTER_2013` Notes now say this.
+
+### Documentation: how well p-values and credible regions are calibrated
+
+No p-value or interval changed. Each of these was checked against
+simulated data where the null or the model holds, and the docstrings now
+give the measured rates:
+
+- `circular_linear_correlation` (CircStat's `circ_corrcl` p-value) is
+  conservative for small samples. Its p-value is never below `exp(-n / 2)`,
+  so with 5 or fewer pairs it cannot reach 0.05. It is calibrated at 0.05
+  from about 20 pairs, and at 0.01 from about 200.
+- `circular_circular_correlation` (CircStat's `circ_corrcc`) is calibrated
+  from about 30 pairs and conservative below 10.
+- The Wald test of `circular_basis_metrics` is calibrated from about 100
+  spikes and conservative with 20 to 50. `is_modulated`'s magnitude gate
+  lowers the false-positive rate only when there are many spikes.
+- `compute_phase_precession`'s shuffle p-value is uniform for untuned cells
+  with 10 to 100 independent spikes.
+- `credible_region` says when a region's mass is its coverage. With rates
+  fitted on 10 minutes of training, 95% regions covered 96% on a simulated
+  track with the default estimator, 90% with unsmoothed binned rates, and
+  84% in a simulated open field (95% after 50 minutes).
+- `decode_jointly`'s template probability is calibrated on simulated
+  spikes, including a template trained on part of its track.
+
+### Place fields: a watershed way to split touching fields
+
+- **Breaking:** `detect_place_fields`, `has_place_field`,
+  `SpatialRateResult.has_place_field` and `population_coverage` take
+  `subfields="core" | None` in place of `detect_subfields=True | False`.
+  `"core"` (the default) is the FMAToolbox `MapStats` subfield rule, as
+  before; `None` does not separate merged fields. The old name is gone.
+- New `subfields="watershed"` keeps the fields that `"core"` finds, but each
+  bin goes to the field whose peak it is reached from by flooding down the
+  map (through `env.connectivity`, so on every layout), and each field ends
+  at `threshold` times its own peak. With `"core"`, a weak field next to a
+  strong one grows through the strong field's edge and around it: for a
+  10 Hz and a 3.3 Hz field 24 cm apart (8 cm wide) the weak field has 184 bins
+  and a centroid 12 cm off; with `"watershed"` it has 82 bins and a centroid
+  1.4 cm off, and the strong field 122 bins (112 alone). It never reports
+  more fields than `"core"`: on seeded noise maps and simulated untuned
+  Poisson units it reported the same count or up to 3 fewer per map (a basin
+  too small to be a field). This is neurospatial's own construction; the closest published
+  method is the `MapStats` subfield rule.
+
+### Cell-type verdicts: measured false-positive rates and power
+
+- The circular-shift p-values of `place_cell_significance`,
+  `head_direction_cell_significance`, `spatial_view_cell_significance`,
+  `object_vector_cell_significance` and
+  `egocentric_object_vector_cell_significance` reject untuned cells at the
+  rate of an exact test and are uniform (600-1400 simulated untuned cells
+  each; head direction measured on 90,000 cells, see below). The place-cell
+  rate of 7.25% seen once on 400 cells sharing one
+  trajectory was chance: 1400 cells on seven trajectories rejected 4.4%
+  against 4.5% expected. No code changed.
+- `is_place_cell`, `is_spatial_view_cell`, `is_object_vector_cell` and
+  `is_egocentric_object_vector_cell` also need the bias-corrected
+  information to reach `min_info`, which no untuned cell did: their
+  false-positive rate is well below `alpha`. Their Notes now give the
+  measured rates and how detection grows with peak rate.
+- `is_head_direction_cell` Notes: on 90,000 simulated untuned cells the
+  shuffle rejected 4.66% at 199 shifts with the default `min_shift` and
+  4.58% with `min_shift=0`, where an exact test rejects 4.5% (standard
+  error 0.07 points); the verdict at its default 1000 shifts rejected 5.0%
+  of 6,600. Sets of 10,000 cells ranged from 4.4% to 5.2%. The default
+  stays at 20 s.
+- `is_spatial_view_cell` Notes: with `gaze_model="fixed_distance"` a place
+  cell passes as a spatial view cell (all 50 simulated place cells at a
+  10 cm view distance); with the ray-cast gaze none did. With the ray-cast
+  gaze the shuffle alone was significant for 26-46% of simulated place
+  cells (13 to 23 of 50), and none passed the verdict only because their
+  bias-corrected information stayed below the 0.5 bits/spike cutoff (0.46
+  at most); a lower `min_info` admits them (7 of 50 at 0.25).
+- `DirectionalRateResult.tuning_pvalue` Notes: the false-positive rate for
+  cells whose rate drifts slowly was given as 0-1%. It is about 5% when the
+  heading diffuses smoothly, and 0.5% (conservative) for movement heading
+  in a walled box, where wall reflections make the heading autocorrelation
+  turn negative.
+- `SpatialRatesResult.label_cell_types` Notes: untuned cells are labeled
+  grid in 1.8% of cases and border in 15% (1 m square) and 11% (1 m circle)
+  over 400 sessions each, but 0-63% from one session to the next and 6-23%
+  over 20 sessions, because untuned cells score at or just below the
+  session's `untuned_border_score`.
+- `spatial_information_bias` Notes record its agreement with the
+  information of simulated untuned cells: within 1 standard error at 1000
+  spikes for both kernel estimators and a fixed-penalty GAM, and within 4%
+  at 100 spikes. For `method="binned"` the bias is less accurate when bins
+  are visited unevenly: smoothed maps over-predict by 6-20% at 100 spikes
+  and 0-6% at 1000, so their screens are conservative, and unsmoothed maps
+  under-predict by 7-8% at 1000 spikes.
+
+### Behavior: VTE offers the Redish lab's velocity estimator, by default
+
+- `head_sweep_from_positions`, `compute_vte_trial` and `compute_vte_session`
+  take `method=`, how the orientation of motion and its change (dPhi) are
+  estimated:
+  - `"adaptive_window"` (default) follows Papale et al. 2012 and the Redish
+    lab's code: the lab's adaptive-window estimator (`dxdt.m`, called by the
+    lab's zIdPhi code with a 0.5 s window and 0.1 s smoothing), run over the
+    whole recording and summed over the pass. On three synthetic paths, over
+    samples away from the ends of the recording, IdPhi equals the lab's code
+    run in GNU Octave to 1e-12 (times the sample interval: the lab sums
+    rad/s, IdPhi here is in radians); real tracking, whole-pixel pauses and
+    the first samples of a run have no stored lab value. It follows the
+    published estimator, but at a cost: it fits x and y separately, so IdPhi
+    depends on the camera's axes (rotating the same trajectories by 0.3 rad
+    changed IdPhi by -25% to +68%, 5-95% of 46 Carey et al. 2019 passes); it
+    captures about half the turn of a scan swinging once a second; and it
+    counts a sharp reversal as 11π/15 at 30 Hz. Compare its raw IdPhi only
+    within one camera setup.
+  - `"line_fit"` is the previous estimator, neurospatial's own: the
+    direction of the 0.1 s Gaussian line-fit velocity of the pass's samples,
+    with IdPhi the sum of its changes. It is rotation-invariant, so use it to
+    compare raw IdPhi across setups. Its results are unchanged.
+- Over 24 Carey et al. 2019 sessions the two methods gave the same VTE
+  verdict (zIdPhi within session) for 96-97% of trials.
+- With the default, `compute_vte_trial` needs the recording around the pass,
+  not the pass alone, because dPhi is estimated over the whole recording.
+- The `min_speed` gate applies with either method, though the lab's code has
+  none: with the lab's estimator and no gate, 0.3 cm tracking jitter on a
+  still animal scored 5 to 17 rad over 1.5 s, against 3.5 to 4.9 rad for a
+  real scan. The gate uses the same speed as the reported `mean_speed`, that
+  of the pass's samples, so a pass with no sample above the gate has a NaN
+  head sweep, not 0. With `min_speed=0` the adaptive window counts samples
+  whose speed is exactly 0, as the lab's ungated sum does (its orientation
+  at zero velocity is `atan2(0, 0) = 0`, read from the lab's code, not
+  compared with its output), so a still pass has a head sweep of 0;
+  `"line_fit"` gives a zero-speed sample no direction, so a still pass
+  stays NaN. The adaptive window's run-edge rules and timing by the
+  actual sample times are neurospatial's; the Notes of
+  `head_sweep_from_positions` list what follows the lab's code and what
+  does not, and the estimator's cost by sampling rate (about 1 s per
+  recorded hour at 120 Hz, 20 s at 500 Hz and 90 s at 1 kHz).
+- Tracking sampled at 4 Hz or slower has no adaptive-window head sweep,
+  since the 0.5 s window then holds fewer than 3 samples; the VTE functions
+  warn and say so.
+- `head_sweep_magnitude(headings)` is unchanged: the discrete sum of wrapped
+  heading changes that `method="line_fit"` uses.
+
+### Distances: one any-angle geodesic, and a faster `bin_graph` metric
+
+- A geodesic distance between two positions no longer depends on their
+  order. When the straight segment stays inside the environment it is the
+  straight line. Otherwise the path is grown from both ends and the shorter
+  one is kept: the any-angle search (Theta*) is not always optimal, and near
+  walls the path grown from one end could be longer than the one grown from
+  the other: over every pair of bins, by at most 5.5% on square grids (5, 4
+  and 2 cm bins in a 100 cm box with one or two walls), 7.2% on rectangular
+  bins, 9.8% on hexagonal bins, 6.3% on a 3-D grid and 16.2% on a
+  triangular mesh. This changes `decoding_error`, `shortest_path_length`,
+  `step_lengths`, `traveled_path_length`, `mean_square_displacement` and
+  the other behavior functions with `metric="geodesic"` where a wall is in
+  the way; it is never longer than before. One exception remains: on
+  hexagonal bins with missing hexagons, the test of whether a segment stays
+  inside probes it at steps (1.5 cm for 3 cm hexagons) and can answer
+  differently for the two orders of a pair, so a pair can still read
+  differently by order (47 of 5,811 random pairs around 3 cm hexagons with
+  7 missing), and a segment that counts as inside can cut up to 1.3 cm
+  through a missing hexagon.
+- `mean_square_displacement(metric="geodesic")` took the shorter of the two
+  grown paths for every pair but never the straight line, so two positions
+  that see each other could read up to 0.56 cm too far apart (100 cm box,
+  2 cm bins, two walls). It now measures what `shortest_path_length` does.
+- One-to-all distances (`distance_field`, `Environment.distance_to`,
+  `neighbors_within`, `Environment.reachable_from` and the goal distances)
+  are grown from the source only. Their Notes say so: such a distance is
+  never shorter than the symmetric pair distance and never longer than the
+  bin-graph distance, it exceeded the pair distance by at most the
+  percentages above, and a geodesic neighborhood is therefore one-way near
+  walls. `distance_field` also documents that with several sources a bin
+  can read its distance to a source that is not the nearest: not on
+  8-connected square or 26-connected cubic grids, but for 1.7% of bins on a
+  4-connected square grid (by up to 1.3 bin spacings) and 1.0% on a
+  triangular mesh.
+- On a grid that joins only face neighbors (`connect_diagonal_neighbors=False`),
+  a straight line through a cell corner no longer counts as blocked when
+  every cell around the corner is a bin and every two of them that share a
+  face are connected, on square, rectangular and 3-D grids. Before, a geodesic
+  between bin centers in an open room of such a grid was up to 41% longer
+  than the straight line for a third of the pairs; it is now the straight
+  line. A corner that touches a missing cell, the outline or a wall still
+  blocks. A grid rotated or reflected with `apply_transform` does not have
+  this rule yet: joined by faces only, it still blocks such lines.
+- On a triangular mesh a path may start or end at a vertex on the
+  environment's edge. Before, such a path went by way of a triangle's
+  centroid, up to 4.3 cm longer in a 30 cm room of 3 cm triangles.
+- `metric="bin_graph"` is a third choice for every behavior function with
+  `metric=` and for `decoding_error`. It walks the connections between the
+  centers of the positions' bins. It is faster for long sessions, fine grids
+  and many pairs, but every position in a bin gets its bin center's distance,
+  and an oblique distance reads up to 8.2% long on a square grid, 15.5% on a
+  hexagonal grid and 12.8% on a 26-connected 3-D grid. It is exact between
+  bin centers on a track, and it works on egocentric polar environments.
+- `metric="geodesic"` on an egocentric polar environment raises
+  `CartesianOnlyError`, whose message suggests `metric="bin_graph"`. The
+  behavior functions already refused it; the `ops` distances, the basis
+  center selection and `Environment.distance_between` accepted it before and
+  walked the bin graph.
+- `rate_map_centroid` takes `method="bin_graph"`, the medoid along the bin
+  graph. `fields_table()` uses it for the centroid on a polar environment,
+  where it used the bin-graph geodesic before, so polar centroids do not
+  change.
+- `distance_field`, `pairwise_distances`, `geodesic_distance_matrix` and
+  `neighbors_within` take the environment as their first argument instead
+  of its graph, and `metric="geodesic"` (the default) now measures the
+  shortest path inside the environment at any angle, as the behavior
+  functions do: the straight line between bin centers when nothing is in the
+  way. Before, they walked the bin graph, which reads an oblique distance up
+  to 8.2% long on a square grid (15.5% on a hexagonal grid). The bin-graph
+  walk is `metric="bin_graph"` and gives exactly the old values. `weight=`
+  and `bin_centers=` are gone: lengths come from the environment, and edge
+  counts are `Environment.reachable_from(..., metric="hops")`. Geodesic
+  matrices are symmetric (the shorter of the paths grown from either bin)
+  and cost one any-angle field per bin that some other bin cannot see:
+  2.6 s for 2,500 open bins and 32 s with walls, against 0.6 s for
+  `metric="bin_graph"`.
+- `geodesic_distance_between_points` is removed; use
+  `Environment.distance_between`.
+- `Environment.distance_between`, `Environment.distance_to` and
+  `Environment.reachable_from(metric="geodesic")` measure the any-angle path
+  too, and take `metric="bin_graph"` for the old walk. `distance_between`
+  with `points=` now measures between the points themselves rather than
+  their bins' centers. Its `edge_weight=` argument is replaced by `metric=`.
+- `graph_convolve` applies a callable kernel to the any-angle distance, so a
+  kernel of distance is round in an open arena; `metric="bin_graph"` gives
+  the old octagonal kernel.
+- `spatial_autocorrelation` on layouts without a regular grid (hexagonal
+  bins, meshes, tracks) groups bin pairs by the any-angle distance. Before,
+  the bin graph read distances on a hexagonal layout a median of 11.5% and
+  up to 15.5% long, so the radial profile's peak, and a grid spacing read
+  from it, sat that much too far out. `spatial_autocorrelation_radial`
+  measures an environment's pair distances once and keeps them with the
+  environment (up to about 5,600 bins, a 256 MB matrix), so the other units
+  of a population reuse them; larger environments measure them per map.
+- `geodesic_rbf_basis` measures each basis function's distance along the
+  any-angle path, so a basis function is round in an open arena instead of
+  an octagon; `metric="bin_graph"` gives the old basis exactly.
+  `select_basis_centers(method="farthest_point")` takes the same `metric=`,
+  and `geodesic_rbf_basis` passes its own. The heat-kernel and Chebyshev
+  bases, which are built on the bin graph, still spread farthest-point
+  centers along it.
+- Distances that build on these functions follow them: the geodesic
+  `rate_map_centroid` and `field_shift_distance`, the geodesic place-cell and
+  object-vector-cell simulations, and the object distances behind
+  geodesic object-vector maps.
+- The default `distance_range` of the object-vector and egocentric rate
+  maps is now an upper bound on the distance from every position inside the
+  environment. With `metric="geodesic"` it is the path through bin centers
+  plus the farthest a position can be from its bin's center, with a margin
+  for rounding, so time at exactly the farthest distance (the far end of a
+  150 cm track from an object at its start) falls in the last ring. It is
+  usually one ring longer than before (145 cm instead of 140 cm in a 100 cm
+  box of 2 cm bins with the object at (0.1, 0.1)). With
+  `metric="euclidean"` it uses the arena's own box, which includes a
+  track's width, and for an object at a fixed position outside that box it
+  reaches the box's far corner. Before, positions across a track's width
+  and fixed objects outside the environment could be beyond the range and
+  dropped out of occupancy and spike counts. For an object inside an open
+  arena the Euclidean default is unchanged.
+- An object whose position changes over the session (positions per sample,
+  or a line or polygon landmark) keeps the arena's diagonal as its default
+  range, as before: pass `distance_range` if it leaves the arena. Time when
+  it is farther away is reported by `fraction_of_time_in_distance_range`.
+  Bins found by nearest center are covered out to their `max_distance`, and
+  with no finite `max_distance` at their centers, as before. A fixed object
+  with a NaN or infinite coordinate is left out of the default range.
+
 ### Place fields: a field next to a split field is no longer lost
 
 - `detect_place_fields` set aside the whole region of a candidate it then
@@ -10,7 +312,8 @@
   then never reported. A flank candidate now sets aside only its own bin, so
   the neighbouring field is found from its own peak, as the Notes describe.
   Found by comparing with FMAToolbox `MapStats`; on noisy simulated maps a
-  few more fields are reported, at the same run time.
+  few more fields are reported; smooth maps take the same time as before
+  and noisy maps less.
 
 ### Decoding: geodesic error follows the any-angle path
 
@@ -18,8 +321,12 @@
   the environment between the decoded and actual positions, as the behavior
   functions with `metric="geodesic"` do. Before, it walked the bin graph
   between bin centers, which in an open arena overstates a straight-line
-  error by up to about 8% and rounds it to bin-graph steps. Positions just
-  outside the environment are measured from the center of their bin.
+  error by up to about 8% and rounds it to bin-graph steps. A position
+  outside every bin is measured, on a track, from its projection onto the
+  track like any other position; on hexagonal, mesh and rotated-grid bins,
+  from the nearest point of the environment; and on other grids from the
+  nearest point of the bin with the nearest center. Errors stay continuous
+  across the environment's edge.
 
 ### Documentation: what the distance functions measure
 

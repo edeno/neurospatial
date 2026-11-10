@@ -383,7 +383,15 @@ def replay_significance(
     column cycle, rejects more often than its nominal rate, because a
     shuffled decode is flatter than the event's own posterior. Requiring
     every null to reject brings the rate back to about nominal (Takigawa et
-    al. 2024 measured the false-positive rates of these combinations).
+    al. 2024 measured the false-positive rates of these combinations). On
+    1,000 simulated events with spikes from random positions (39 shuffles,
+    weighted correlation), each Tirole null alone gave ``p <= 0.1`` for 149
+    (``"spike_train_circular"``), 197 (``"place_field_circular"``) and 132
+    (``"column_cycle"``) events where a calibrated test gives 76 to 125; all
+    three together gave 98 (``tests/replay/test_significance.py``). A
+    single ``"unit_identity"`` null called 12% (``OLAFSDOTTIR_2015``) and
+    9.3% (``BUSH_2022``) of 150 random events replay at a nominal 4% (see
+    their notes).
 
     Parameters
     ----------

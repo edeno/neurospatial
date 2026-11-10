@@ -323,9 +323,9 @@ class TestSelectBasisCenters:
     def test_farthest_point_is_the_greedy_max_min_choice(
         self, env_name, linear_env, walled_env
     ):
-        """Each new center is a bin farthest, by path length, from those chosen.
+        """Each new center is a bin farthest, along the bin graph, from those chosen.
 
-        The geodesic distances come from NetworkX on the connectivity graph.
+        The bin-graph distances come from NetworkX on the connectivity graph.
         Ties may resolve to any farthest bin, so the check compares the
         distance each choice reaches with the best any bin reaches.
         """
@@ -333,7 +333,7 @@ class TestSelectBasisCenters:
 
         env = linear_env if env_name == "linear_env" else walled_env[0]
         centers = select_basis_centers(
-            env, n_centers=6, method="farthest_point", rng=42
+            env, n_centers=6, method="farthest_point", rng=42, metric="bin_graph"
         )
         assert len(set(centers.tolist())) == 6
         lengths = dict(
@@ -395,24 +395,53 @@ class TestGeodesicRBFBasis:
 
         env, center, across, open_side = walled_env
         straight = np.linalg.norm(env.bin_centers[across] - env.bin_centers[center])
-        around = nx.shortest_path_length(
+        graph = nx.shortest_path_length(
             env.connectivity, center, across, weight="distance"
         )
+        # The wall's top corners are (10, 16) and (12, 16): no path is shorter
+        # than the taut string over them.
+        taut = 2 * np.hypot(5.0, 15.0) + 2.0
         assert straight == pytest.approx(12.0)
-        assert around > 3 * straight
+        assert taut > 2.5 * straight
+        # A path turns at bin centers. From (5, 1) the last center that sees
+        # past the wall is (9, 15); the path steps through the corner
+        # (10, 16) to (11, 17), through (12, 16) to (13, 15), and runs
+        # straight down to (17, 1).
+        around = 2 * np.hypot(4.0, 14.0) + 2 * np.hypot(2.0, 2.0)
+        assert taut < around < graph - 2.0
 
         bandwidth = 6.0
+
+        def gaussian(length):
+            return np.exp(-(length**2) / (2 * bandwidth**2))
+
         basis = geodesic_rbf_basis(
             env, centers=np.array([center]), bandwidth=bandwidth, normalize="none"
         )
-        assert basis[0, across] == pytest.approx(
-            np.exp(-(around**2) / (2 * bandwidth**2)), rel=1e-12
-        )
-        assert basis[0, open_side] == pytest.approx(
-            np.exp(-(straight**2) / (2 * bandwidth**2)), rel=1e-12
-        )
-        # The straight-line (leaking) value would be about 10^7 times larger.
+        assert basis[0, across] == pytest.approx(gaussian(around), rel=1e-12)
+        assert basis[0, open_side] == pytest.approx(gaussian(straight), rel=1e-12)
+        # The straight-line (leaking) value would be about 10^5 times larger.
         assert basis[0, across] < 1e-3 * basis[0, open_side]
+        # The bin graph gives the Gaussian of the staircase around the wall.
+        stairs = geodesic_rbf_basis(
+            env,
+            centers=np.array([center]),
+            bandwidth=bandwidth,
+            normalize="none",
+            metric="bin_graph",
+        )
+        assert stairs[0, across] == pytest.approx(gaussian(graph), rel=1e-12)
+        assert basis[0, across] > stairs[0, across]
+
+    def test_geodesic_basis_is_round_in_an_open_box(self, simple_2d_env):
+        """In a convex room each basis function is a Gaussian of the straight line."""
+        env = simple_2d_env
+        center = env.n_bins // 2
+        basis = geodesic_rbf_basis(
+            env, centers=np.array([center]), bandwidth=5.0, normalize="none"
+        )
+        straight = np.linalg.norm(env.bin_centers - env.bin_centers[center], axis=1)
+        assert_allclose(basis[0], np.exp(-(straight**2) / 50.0), rtol=1e-12)
 
     def test_unit_normalization(self, simple_2d_env):
         """Unit normalization should give L2 norm = 1."""
@@ -931,22 +960,71 @@ def test_graph_distances_follow_bin_ids_not_node_insertion_order(node_order):
     ordered = SimpleNamespace(n_bins=5, n_dims=1, connectivity=_path_graph(range(5)))
     shuffled = SimpleNamespace(n_bins=5, n_dims=1, connectivity=_path_graph(node_order))
 
+    # A bare graph has no geometry for the any-angle path: walk the graph.
+    graph = {"metric": "bin_graph"}
     basis = geodesic_rbf_basis(
-        shuffled, centers=np.array([0]), bandwidth=1.0, normalize="none"
+        shuffled, centers=np.array([0]), bandwidth=1.0, normalize="none", **graph
     )
     assert_allclose(basis[0], np.exp(-(np.arange(5.0) ** 2) / 2.0))
     assert_allclose(
         basis,
         geodesic_rbf_basis(
-            ordered, centers=np.array([0]), bandwidth=1.0, normalize="none"
+            ordered, centers=np.array([0]), bandwidth=1.0, normalize="none", **graph
         ),
     )
     for seed in range(3):
         np.testing.assert_array_equal(
             select_basis_centers(
-                shuffled, n_centers=3, method="farthest_point", rng=seed
+                shuffled, n_centers=3, method="farthest_point", rng=seed, **graph
             ),
             select_basis_centers(
-                ordered, n_centers=3, method="farthest_point", rng=seed
+                ordered, n_centers=3, method="farthest_point", rng=seed, **graph
             ),
         )
+
+
+def test_farthest_point_centers_spread_by_the_chosen_distance(walled_env):
+    """Each new center is the bin farthest, by ``metric``, from those chosen.
+
+    The distances are not the code's own: NetworkX walks the bin graph, and
+    for the any-angle metric a visibility graph over the bin centers
+    (``path_oracles``) gives the shortest path inside the room that turns
+    only at bin centers.
+    """
+    import networkx as nx
+    from path_oracles import through_centers
+    from shapely.geometry import box
+
+    from neurospatial.ops.distance import distance_field
+
+    env, *_ = walled_env
+    floor = box(0, 0, 22, 20).difference(box(10, 0, 12, 16))
+    walked = dict(
+        nx.all_pairs_dijkstra_path_length(env.connectivity, weight="distance")
+    )
+    distances = {
+        "geodesic": through_centers(env, floor),
+        "bin_graph": np.array(
+            [[walked[i][j] for j in range(env.n_bins)] for i in range(env.n_bins)]
+        ),
+    }
+    # The search grows each path greedily from the center, so a field can
+    # read a little longer than the shortest path through centers: at most
+    # 1.8% in this room. A chosen center is then that close to the farthest.
+    fields = np.stack([distance_field(env, [b]) for b in range(env.n_bins)])
+    greedy = 0.018
+    assert np.all(fields >= distances["geodesic"] - 1e-9)
+    assert np.all(fields <= (1 + greedy) * distances["geodesic"] + 1e-9)
+    slack = {"geodesic": 1 + greedy, "bin_graph": 1 + 1e-12}
+    chosen = {}
+    for metric in ("geodesic", "bin_graph"):
+        for seed in range(8):
+            centers = select_basis_centers(
+                env, n_centers=6, method="farthest_point", rng=seed, metric=metric
+            )
+            nearest = distances[metric][centers[0]].copy()
+            for k in range(1, len(centers)):
+                assert nearest[centers[k]] * slack[metric] >= nearest.max()
+                nearest = np.minimum(nearest, distances[metric][centers[k]])
+            chosen[metric, seed] = tuple(centers)
+    assert any(chosen["geodesic", s] != chosen["bin_graph", s] for s in range(8))

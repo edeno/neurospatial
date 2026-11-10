@@ -392,12 +392,19 @@ class TestConvolve:
         result = graph_convolve(env, field, mexican_hat, normalize=False)
 
         # Without normalization a unit impulse returns the kernel of each
-        # bin's path length to it. On this 8-connected unit grid the path to
-        # a bin (Δx, Δy) away is the octile staircase max + (√2 - 1) min,
-        # so the bins at (2, 1) get the kernel of 2.414, not of √5 = 2.236.
+        # bin's path length to it. In this open grid the geodesic path is
+        # the straight line, so the bins at (2, 1) get the kernel of √5.
         offsets = np.abs(env.bin_centers - env.bin_centers[center_idx])
+        straight = np.hypot(*offsets.T)
+        np.testing.assert_allclose(result, mexican_hat(straight), rtol=0, atol=1e-12)
+        # The bin graph's path to a bin (Δx, Δy) away is the octile
+        # staircase max + (√2 - 1) min: the bins at (2, 1) get the kernel of
+        # 2.414, not of √5 = 2.236.
+        graph = graph_convolve(
+            env, field, mexican_hat, normalize=False, metric="bin_graph"
+        )
         path = offsets.max(axis=1) + (np.sqrt(2.0) - 1.0) * offsets.min(axis=1)
-        np.testing.assert_allclose(result, mexican_hat(path), rtol=0, atol=1e-12)
+        np.testing.assert_allclose(graph, mexican_hat(path), rtol=0, atol=1e-12)
 
     def test_convolve_precomputed_kernel(self) -> None:
         """Test convolution with precomputed kernel matrix."""
@@ -501,7 +508,7 @@ class TestConvolve:
         """Each bin is sum_j K_ij f_j / sum_j K_ij over observed sources j."""
         field = np.arange(grid_3x3.n_bins, dtype=float)
         field[[2, 4]] = np.nan
-        kernel = self._gaussian(geodesic_distance_matrix(grid_3x3.connectivity))
+        kernel = self._gaussian(geodesic_distance_matrix(grid_3x3))
         observed = ~np.isnan(field)
         expected = (kernel[:, observed] @ field[observed]) / kernel[:, observed].sum(
             axis=1

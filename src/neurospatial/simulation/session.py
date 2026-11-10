@@ -510,7 +510,7 @@ def _spread_bins(
     """
     from scipy.sparse.csgraph import dijkstra
 
-    from neurospatial.behavior._environment_paths import _bin_graph
+    from neurospatial.ops import _bin_graph
 
     deepest = int(candidates[np.argmax(depths[candidates])])
     if n_points == 1:

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from calibration_helpers import assert_rejections_at_rate, monte_carlo_rejection_rate
 
 from neurospatial import stats
 
@@ -196,27 +197,29 @@ def _spatial_information(trains, times, positions, edges, occupancy):
 def test_place_shuffle_p_is_calibrated_for_untuned_cells():
     """Untuned cells give uniform shuffle p-values: neither too many nor too few.
 
-    400 homogeneous 2 Hz Poisson cells on a 10-min reflected OU path. Each
+    2000 homogeneous 2 Hz Poisson cells on a 10-min reflected OU path. Each
     cell's spatial information is ranked among 99 circular shifts; p =
     (1 + #null >= observed) / 100. With p <= 0.05 meaning rank <= 4, the
     rejection rate is exactly 0.05 when the shifted trains are exchangeable
-    with the observed one. (A 2000-cell run of this simulation gave 0.0525.)
+    with the observed one.
     """
-    from scipy.stats import binom, chisquare
+    from scipy.stats import chisquare
 
-    rng = np.random.default_rng(0)
-    times, positions = _reflected_ou_path(rng)
+    times, positions = _reflected_ou_path(np.random.default_rng(0))
+    spike_rng = np.random.default_rng(1)
     duration = times[-1] + times[1]
     edges = np.linspace(0, 100, 11)
     occupancy = np.histogram(positions, edges)[0] / len(positions)
-    n_cells, n_shuffles = 400, 99
+    n_cells, n_shuffles = 2000, 99
     ranks = np.empty(n_cells, dtype=int)
     for cell in range(n_cells):
-        spikes = np.sort(rng.uniform(0, duration, rng.poisson(2.0 * duration)))
+        spikes = np.sort(
+            spike_rng.uniform(0, duration, spike_rng.poisson(2.0 * duration))
+        )
         null = np.asarray(
             list(
                 stats.shuffle_spike_times_circular(
-                    spikes, [[0, duration]], n_shuffles=n_shuffles, rng=rng
+                    spikes, [[0, duration]], n_shuffles=n_shuffles, rng=spike_rng
                 )
             )
         )
@@ -227,10 +230,15 @@ def test_place_shuffle_p_is_calibrated_for_untuned_cells():
         ranks[cell] = np.sum(null_info >= observed)
     p_values = (1 + ranks) / (n_shuffles + 1)
 
-    # Two-sided 99.9% binomial intervals: a null that never rejects (or always
-    # does) fails, as does one whose median p is off.
+    # Two-sided 99% binomial intervals: a null that never rejects (or always
+    # does) fails, as does one whose median p is off. On 2000 cells the count
+    # leaves the interval with 80% probability once the true rate of
+    # p <= 0.05 is above 6.8% or below 3.4% (76 to 126 cells pass), and once
+    # that of p <= 0.5 is above 53.9% or below 46.1%.
     for level in (0.05, 0.5):
-        low, high = binom.ppf([0.0005, 0.9995], n_cells, level)
-        assert low <= np.sum(p_values <= level) <= high, level
+        assert_rejections_at_rate(
+            p_values <= level,
+            monte_carlo_rejection_rate(n_shuffles, level, strict=False),
+        )
     # Ranks 0..99 are uniform under exchangeability: chi-square over deciles.
     assert chisquare(np.bincount(ranks // 10, minlength=10)).pvalue > 1e-3

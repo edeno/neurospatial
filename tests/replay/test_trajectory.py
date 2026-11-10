@@ -9,12 +9,9 @@ import dataclasses
 
 import numpy as np
 import pytest
+from calibration_helpers import assert_rejections_at_rate
 from environment_helpers import renumbered, strips_1d
-from replay_helpers import (
-    monte_carlo_rejection_rate,
-    null_rejection_interval,
-    wrapped_bump,
-)
+from replay_helpers import monte_carlo_rejection_rate, wrapped_bump
 
 from neurospatial import Environment
 
@@ -1434,36 +1431,52 @@ class TestReplayShuffleCalibration:
             rng=seed,
         ).p_value
 
-    def test_events_without_sequences_are_rarely_significant(self, track):
+    @pytest.mark.parametrize(
+        "n_events", [200, pytest.param(1000, marks=pytest.mark.slow)]
+    )
+    def test_events_without_sequences_are_significant_at_alpha(self, track, n_events):
+        """P(p <= level) with 99 shuffles is the level, at 0.05, 0.2 and 0.5.
+
+        Each count is held to its 99% binomial interval from both sides: a
+        null that never moves the posterior would give none. At the 0.05
+        level, 200 events (3 to 19) detect a true rate of 0.117 or more with
+        80% power, 2.3 times the level, and 1000 events (33 to 69) a rate of
+        0.077, 1.5 times. At the 0.2 level the 200 events (26 to 55) detect
+        0.305, 1.5 times, and the 1000 (168 to 233) detect 0.245, 1.2 times.
+        """
         stimulus_rng = np.random.default_rng(1)
         spike_rng = np.random.default_rng(2)
-        p_values = [
-            self._p_value(
-                track,
-                self._decode(
-                    track, stimulus_rng.uniform(0, 100, self.N_TIME_BINS), spike_rng
-                ),
-                n_shuffles=99,
-                seed=seed,
-            )
-            for seed in range(200)
-        ]
-
-        # P(p <= 0.05) with 99 shuffles is 5 / 100, from both sides of its
-        # 99% binomial interval: a null that never moves the posterior would
-        # give none.
-        low, high = null_rejection_interval(
-            len(p_values), monte_carlo_rejection_rate(99, 0.05, strict=False)
+        p_values = np.array(
+            [
+                self._p_value(
+                    track,
+                    self._decode(
+                        track,
+                        stimulus_rng.uniform(0, 100, self.N_TIME_BINS),
+                        spike_rng,
+                    ),
+                    n_shuffles=99,
+                    seed=seed,
+                )
+                for seed in range(n_events)
+            ]
         )
-        assert low <= np.sum(np.array(p_values) <= 0.05) <= high
+        for level in (0.05, 0.2, 0.5):
+            assert_rejections_at_rate(
+                p_values <= level, monte_carlo_rejection_rate(99, level, strict=False)
+            )
 
     def test_planted_sweep_is_significant(self, track):
         posterior = self._decode(
             track, np.linspace(10.0, 90.0, self.N_TIME_BINS), np.random.default_rng(2)
         )
 
-        # Significant at 0.05; over seeds its p-value is 0.005 to 0.02.
-        assert self._p_value(track, posterior, n_shuffles=199, seed=999) < 0.05
+        # About 0.2% of shuffles score above this sweep (0.0012 to 0.0026
+        # with 9,999 shuffles, 4 seeds). 199 shuffles cannot show that: their
+        # smallest p-value is 0.005, and one shuffle above the sweep gives
+        # 0.01 (65 of 200 seeds gave 0.01 or more). With 999 shuffles,
+        # p < 0.01 allows 8 above it.
+        assert self._p_value(track, posterior, n_shuffles=999, seed=999) < 0.01
 
 
 # =============================================================================

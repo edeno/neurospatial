@@ -589,11 +589,14 @@ def reachable_from(
         Starting coordinate, mapped to the bin that contains it. Give exactly
         one of ``bins`` and ``points``.
     radius : int, float, or None, optional
-        Maximum number of edges (``metric="hops"``) or graph distance in
-        physical units (``metric="geodesic"``). If None, returns every bin
-        in the source's connected component. Default is None.
-    metric : {"hops", "geodesic"}, default="hops"
-        Count graph edges, or sum edge distances.
+        Maximum number of edges (``metric="hops"``) or path length in
+        physical units (``metric="geodesic"`` or ``"bin_graph"``). If None,
+        returns every bin in the source's connected component. Default is
+        None.
+    metric : {"hops", "geodesic", "bin_graph"}, default="hops"
+        Count graph edges; measure the shortest path from the start bin's
+        center that stays inside the environment, at any angle; or sum the
+        edge distances along the connections between bin centers.
 
     Returns
     -------
@@ -1053,7 +1056,7 @@ Compute geodesic or Euclidean distance from each bin to target bins or regions.
     - **Path planning**: Understand navigation strategies and route selection
     - **Multi-goal tasks**: Analyze behavior when multiple targets compete for attention
 
-    **Geodesic vs Euclidean**: Geodesic distance (also called "path distance" or "through-environment distance") follows the connectivity graph and respects barriers, while Euclidean measures straight-line distance ignoring structure.
+    **Geodesic vs Euclidean**: Geodesic distance (also called "path distance" or "through-environment distance") is the length of the shortest path that stays inside the environment and goes around barriers, while Euclidean measures straight-line distance ignoring structure.
 
 ```python
 def distance_to(
@@ -1079,7 +1082,7 @@ def distance_to(
         polygon). Give exactly one of ``bins``, ``points`` and ``region``.
     metric : {"euclidean", "geodesic"}, optional
         Distance metric:
-        - "geodesic": Follows connectivity graph (path distance, respects barriers)
+        - "geodesic": Shortest path inside the environment (respects barriers)
         - "euclidean": Straight-line distance
         Default is "geodesic".
 

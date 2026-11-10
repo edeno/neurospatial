@@ -47,25 +47,137 @@ def test_unsmoothed_bias_is_the_miller_madow_form(box):
     np.testing.assert_allclose(rates.spatial_information_bias(), expected, rtol=1e-10)
 
 
-@pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde", "binned"])
-def test_bias_is_the_mean_information_of_untuned_cells(box, method):
-    """Smoothing shares spikes between bins; the bias follows the estimator."""
-    env, times, positions = box
-    rates = compute_spatial_rates(
-        env,
-        _untuned(times, 200, 40, seed=100),
-        times,
-        positions,
-        method=method,
-        bandwidth=5.0,
+@pytest.fixture(scope="module")
+def ou_sessions():
+    """Two 10-minute OU explorations of a 1 m box (5 cm bins, 30 Hz)."""
+    from shapely.geometry import box as rectangle
+
+    from neurospatial.simulation import simulate_trajectory_ou
+
+    env = Environment.from_polygon(rectangle(0, 0, 100, 100), bin_size=5.0, units="cm")
+    sessions = []
+    for seed in (40, 41):
+        positions, times = simulate_trajectory_ou(
+            env,
+            duration=600.0,
+            speed_units="cm",
+            dt=1 / 30,
+            speed_mean=10.0,
+            speed_std=5.2,
+            rng=seed,
+        )
+        sessions.append((times, positions))
+    return env, sessions
+
+
+def _bias_against_untuned_information(env, sessions, n_spikes, n_units, **options):
+    """Mean predicted bias, mean untuned information and its standard error."""
+    information, bias = [], []
+    for k, (times, positions) in enumerate(sessions):
+        rates = compute_spatial_rates(
+            env,
+            _untuned(times, n_spikes, n_units, seed=10_000 * (k + 1) + n_spikes),
+            times,
+            positions,
+            **options,
+        )
+        information.append(np.asarray(rates.spatial_information()))
+        bias.append(np.asarray(rates.spatial_information_bias()))
+    return np.concatenate(bias), np.concatenate(information)
+
+
+def _expansion_allowance(method: str, bandwidth: float, n_spikes: int) -> float:
+    """Measured error of the bias beyond sampling noise, as a share of the mean.
+
+    The bias is the second-order term of an expansion. How far it lies from
+    the mean information of untuned cells was measured on four pairs of
+    10-minute trajectories (400 cells per setting); the allowance is the
+    largest error seen, rounded up.
+
+    - Kernel estimators: none at 1000 spikes (within 1.5 standard errors),
+      up to 4% above at 100 spikes, where a 5 cm kernel leaves about 42
+      independent bins.
+    - ``binned`` smoothed (the rate is formed in each bin, then averaged):
+      6-20% above at 100 spikes and 0-6% above at 1000. A spike in a briefly
+      visited bin gives a large rate there; the second-order term counts its
+      square, but information grows only as x log x.
+    - ``binned`` unsmoothed: 7-8% below at 1000 spikes on 379-394 visited
+      bins, the size of the expansion's next term (1 / (6 m) of the bias at
+      m = 2.6 spikes per bin).
+    """
+    if method != "binned":
+        return 0.05 if n_spikes == 100 else 0.0
+    if bandwidth == 0:
+        return 0.10
+    return 0.20 if n_spikes == 100 else 0.05
+
+
+@pytest.mark.parametrize("n_spikes", [100, 1000])
+@pytest.mark.parametrize(
+    ("method", "bandwidth"),
+    [
+        *[
+            (method, bandwidth)
+            for method in ("diffusion_kde", "gaussian_kde", "binned")
+            for bandwidth in (2.5, 5.0, 10.0)
+        ],
+        ("binned", 0.0),
+    ],
+)
+def test_bias_is_the_mean_information_of_untuned_cells(
+    ou_sessions, method, bandwidth, n_spikes
+):
+    """400 untuned Poisson cells on two trajectories, per estimator.
+
+    The predicted bias averages to the untuned cells' mean information
+    within 3 standard errors of that mean plus the estimator's measured
+    expansion error (``_expansion_allowance``): nothing for the kernel
+    estimators at 1000 spikes, 5% at 100 spikes, and more for ``binned``
+    maps, whose error also has a direction. Smoothed ``binned`` maps
+    over-predict at 100 spikes, so their screens subtract too much;
+    unsmoothed maps under-predict at 1000 spikes, so theirs subtract too
+    little (0.02 bits/spike here).
+
+    With more independent bins than spikes the bias is undetermined (NaN):
+    at 100 spikes, a 2.5 cm bandwidth with any estimator, and the
+    unsmoothed map with its 379 and 393 visited bins.
+    """
+    env, sessions = ou_sessions
+    bias, information = _bias_against_untuned_information(
+        env, sessions, n_spikes, 200, method=method, bandwidth=bandwidth
     )
-    information = rates.spatial_information()
-    bias = rates.spatial_information_bias()
+    if bandwidth <= 2.5 and n_spikes == 100:
+        assert np.isnan(bias).all()
+        return
     assert np.isfinite(bias).all()
-    # 441 bins but far fewer independent ones: K = bias * 2 ln2 * N.
-    effective_bins = np.median(bias * 2 * np.log(2) * _spikes_in_map(rates))
-    assert 30 < effective_bins < 80
-    assert np.mean(information) == pytest.approx(np.mean(bias), rel=0.15)
+    standard_error = information.std(ddof=1) / np.sqrt(information.size)
+    difference = bias.mean() - information.mean()
+    allowance = _expansion_allowance(method, bandwidth, n_spikes)
+    assert abs(difference) <= 3 * standard_error + allowance * information.mean()
+    if method == "binned" and bandwidth == 0:
+        assert difference < -3 * standard_error  # measured: -19 to -23
+    if method == "binned" and bandwidth > 0 and n_spikes == 100:
+        assert difference > 0  # measured: +3 to +19 standard errors
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("penalty", [1.0])
+def test_penalized_glm_bias_is_the_mean_information_of_untuned_cells(
+    ou_sessions, penalty
+):
+    """60 untuned cells of 1000 spikes, a GAM at a fixed penalty.
+
+    REML picks a nearly flat fit for untuned cells (bias and information
+    both near 1e-4 bits/spike), so a fixed penalty is what exercises the
+    GAM's one-spike response.
+    """
+    env, sessions = ou_sessions
+    bias, information = _bias_against_untuned_information(
+        env, sessions, 1000, 30, method="glm", penalty=penalty
+    )
+    assert np.isfinite(bias).all()
+    standard_error = information.std(ddof=1) / np.sqrt(information.size)
+    assert abs(bias.mean() - information.mean()) <= 3 * standard_error
 
 
 def test_screen_rejects_untuned_cells_that_pass_uncorrected(box):

@@ -12,7 +12,9 @@ import dataclasses
 import networkx as nx
 import numpy as np
 import pytest
-from replay_helpers import assert_null_verdicts_at_alpha
+from calibration_helpers import assert_rejections_at_rate
+from measured_rate_helpers import require_measured_rejections
+from replay_helpers import NULL_LEVELS, assert_null_verdicts_at_alpha, null_verdicts
 
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_jointly, decode_position
@@ -128,41 +130,61 @@ def test_line_searches_detect_a_sweep(place_code, method):
 
 _UNIT_IDENTITY_INFLATED = pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason=(
         "The cell-identity shuffle is anti-conservative on random events: "
         "18 (Olafsdottir 2015) and 14 (Bush 2022) of these 150 are replay, "
         "12% and 9.3% against 4% for an exact test with 99 shuffles (at most "
-        "13 in the 99% interval); 11.5% and 9.0% on 200 other events."
+        "13 in the 99% interval). On 200 further events (seeds 450 to 649) "
+        "they give 9.0% and 5.0%. For Bush 2022 the excess is weak: 24 of "
+        "350 together, 6.9% (binomial p = 0.013 against 4%), so an XPASS "
+        "after a change to the random streams need not mean it is fixed."
     ),
 )
 
 
 @pytest.mark.parametrize(
-    "method",
+    ("method", "measured"),
     [
         pytest.param(
             OLAFSDOTTIR_2015,
+            (18, 109),
             marks=[pytest.mark.slow, _UNIT_IDENTITY_INFLATED],
             id=OLAFSDOTTIR_2015.name,
         ),
         pytest.param(
             YAMAMOTO_TONEGAWA_2017,
+            None,
             marks=pytest.mark.slow,
             id=YAMAMOTO_TONEGAWA_2017.name,
         ),
-        pytest.param(LIU_2023, id=LIU_2023.name),
+        pytest.param(LIU_2023, None, id=LIU_2023.name),
         pytest.param(
             BUSH_2022,
+            (14, 96),
             marks=[pytest.mark.slow, _UNIT_IDENTITY_INFLATED],
             id=BUSH_2022.name,
         ),
     ],
 )
-def test_line_searches_call_random_events_replay_at_alpha(place_code, method):
+def test_line_searches_call_random_events_replay_at_alpha(place_code, method, measured):
     """150 random events with 99 shuffles: replay at P(p < 0.05) = 0.04.
 
     The 99% binomial interval is 1 to 13 replay events; a recipe at 25%
-    false positives gives about 38.
+    false positives gives about 38. That count detects a true rate of 0.112
+    with 80% power, 2.8 times 0.04. The counts of p-values below the levels
+    of ``NULL_LEVELS`` are held to both ends of their intervals too, and
+    see less: 0.184 at the 0.1 level (2.0 times 0.09), 0.309 at 0.2 (1.6
+    times 0.19) and 0.630 at 0.5 (1.3 times 0.49).
+
+    The two recipes whose only shuffle is of cell identity keep neither
+    rate. They are expected to fail the replay-rate assertion, and only
+    that. ``measured`` is their count of replay events and of p-values
+    below 0.5, and each count is first held to the 99% interval of its own
+    rate (Olafsdottir 2015: 9 to 29 and 95 to 123; Bush 2022: 6 to 24 and
+    81 to 111). A count outside its interval fails the test, whichever way
+    it moved, and a replay count inside the exact interval fails it as an
+    unexpected pass.
     """
     env, rates = place_code
     method = dataclasses.replace(method, n_shuffles=99)
@@ -170,13 +192,22 @@ def test_line_searches_call_random_events_replay_at_alpha(place_code, method):
         _detect(env, *_random(env, rates, seed=300 + seed), method, rates, rng=seed)
         for seed in range(150)
     ]
-    assert_null_verdicts_at_alpha(
+    verdicts = null_verdicts(
         [r.p_value for r in results],
         [r.is_replay for r in results],
         [all(r.criteria.values()) for r in results],
-        alpha=method.alpha,
         n_shuffles=method.n_shuffles,
+        # Every event passes the criteria; the minimum leaves a margin of 10%.
+        min_eligible=135,
     )
+    if measured is None:
+        for level in NULL_LEVELS:
+            assert_rejections_at_rate(verdicts.below(level), verdicts.exact_rate(level))
+    else:
+        n_replay, n_below_half = measured
+        require_measured_rejections(verdicts.replay, n_replay)
+        require_measured_rejections(verdicts.below(0.5), n_below_half)
+    assert_rejections_at_rate(verdicts.replay, verdicts.exact_rate(method.alpha))
 
 
 @pytest.mark.parametrize(
@@ -443,12 +474,16 @@ class TestWikenheiserRedish:
 
     def test_random_events_are_replay_at_alpha(self, circular_track):
         """Each time bin's cell is drawn independently, so time bins are
-        exchangeable and the time-bin permutation is exact: 150 events with
-        99 shuffles are replay at P(p < 0.05) = 0.04, 1 to 13 of them.
+        exchangeable and the time-bin permutation is exact: 1000 events with
+        99 shuffles are replay at P(p < 0.05) = 0.04, 25 to 57 of them.
+
+        With 80% power the count detects a true rate of 0.064, 1.6 times
+        0.04; the counts at the levels of ``NULL_LEVELS`` detect 1.4, 1.2
+        and 1.1 times their rates.
         """
         env, rates = circular_track
         results = []
-        for seed in range(150):
+        for seed in range(1000):
             generator = np.random.default_rng(100 + seed)
             counts = np.zeros((14, 32), dtype=np.int64)
             counts[np.arange(14), generator.integers(0, 32, size=14)] = 2
@@ -462,6 +497,9 @@ class TestWikenheiserRedish:
             [all(r.criteria.values()) for r in results],
             alpha=WIKENHEISER_REDISH_2013.alpha,
             n_shuffles=99,
+            # Every event passes the criteria; the minimum leaves a margin
+            # of 10%.
+            min_eligible=900,
         )
 
     def test_needs_5_spikes_from_3_cells(self, circular_track):

@@ -147,6 +147,10 @@ in different ways:
 | `SILVA_2015` | Weighted correlation | No shuffles: \|r\| > 0.6 and no decoded jump over 40% of the track |
 | `DIBA_BUZSAKI_2007` | Rank order of the cells' spikes vs. their place fields | Cell-order shuffle, p < 0.1; at least 5 active cells and 30% of the cells |
 
+Each of `TIROLE_2022`'s three shuffles alone calls 1.3 to 2 times its α of
+simulated events with no sequence replay; the three together hold α, which
+is why the paper requires all three (see the recipe's `notes`).
+
 Methods are compared on the same decoded events, so differences come from
 the test alone. A recipe's `decoding` attribute records the paper's
 decoding settings, which are not enforced. Criteria counted in time bins
@@ -414,6 +418,10 @@ The cause is that real maps are not like shifted ones. A shifted field that reac
 an end splits between both ends, which a real field never does, and real fields
 crowd near the track's ends. Decoding with shifted maps then gives a wider
 posterior, which lowers the null's weighted correlation.
+
+On simulated events with no sequence, `OLAFSDOTTIR_2017`'s verdicts at
+p < 0.025 stay near α, but too many of its p-values are small: 93 of 150
+fall below 0.5, where at most 90 should (see the recipe's `notes`).
 
 The presets keep the published shuffle. If you compare a rate across sessions or
 conditions, or read it as an amount of replay, also test with

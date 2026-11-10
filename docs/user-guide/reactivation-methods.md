@@ -98,6 +98,10 @@ because the correlation of 100 ms counts is a different number from that of
 | `OLIVA_2020_ASSEMBLY` | 20 ms | (assemblies, ICA) | whole periods; smoothed spikes, z-scored over the whole session | mean R(t) after − before | none |
 | `GIRI_2019`, `GIRI_2024` | 250 ms | different shanks; `pair_mask` | 15-min windows sliding by 5 min | EV averaged over windows before | none |
 
+The two within-session tests are off their nominal 2.5% on simulated
+sessions without reactivation: `KUDRIMOTI_1999`'s t test calls 4.0% (pairs
+share cells), `LANSINK_2009`'s bootstrap 0.1% (see each recipe's `notes`).
+
 REV, the reversed EV (Pennartz et al. 2004), swaps the two rest periods: how
 much the task's pattern predicts rest before it beyond rest after it. Its
 size shows how large EV is without any reactivation.

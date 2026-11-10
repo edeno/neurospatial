@@ -53,14 +53,6 @@ def _rows(n_rows: int, n_columns: int) -> np.ndarray:
     return raw / raw.sum(axis=1, keepdims=True)
 
 
-def _grid_env():
-    """A full 6 x 6 grid of 2 cm bins (no inactive bins)."""
-    from neurospatial import Environment
-
-    positions = np.random.default_rng(42).uniform(0, 10, (1000, 2))
-    return Environment.from_samples(positions, bin_size=2.0, infer_active_bins=False)
-
-
 def _draw(name: str, data: np.ndarray, rng, n: int = 5) -> list[np.ndarray]:
     """``n`` shuffles of ``data`` from the generator ``name``."""
     from neurospatial.replay import nulls
@@ -73,8 +65,6 @@ def _draw(name: str, data: np.ndarray, rng, n: int = 5) -> list[np.ndarray]:
     if name.startswith("generate_"):
         return list(getattr(surrogates, name)(data, n_surrogates=n, rng=rng))
     function = getattr(nulls if hasattr(nulls, name) else shuffle, name)
-    if name == "shuffle_place_fields_circular_2d":
-        return list(function(_grid_env(), data, n_shuffles=n, rng=rng))
     if name == "shuffle_posterior_weighted_circular":
         weights = np.ones(data.shape[1])
         return list(function(track_for(data), data, weights, n_shuffles=n, rng=rng))
@@ -94,7 +84,6 @@ GENERATOR_INPUTS = {
     "shuffle_spike_counts_uniform": _counts(10, 5),
     "shuffle_cell_identity": _counts(10, 5),
     "shuffle_place_fields_circular": _rows(3, 8),
-    "shuffle_place_fields_circular_2d": _rows(3, 36),
     "shuffle_posterior_circular": _rows(10, 20),
     "shuffle_posterior_weighted_circular": _rows(10, 20),
     "generate_poisson_surrogates": _counts(10, 5),

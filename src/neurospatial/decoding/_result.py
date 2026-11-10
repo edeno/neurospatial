@@ -1424,12 +1424,19 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         true_positions : NDArray[np.float64], shape (n_true, n_dims)
             Ground-truth positions sampled at ``true_times``. ``n_dims`` must
             match the environment dimensionality.
-        metric : {"geodesic", "euclidean"}, default="geodesic"
+        metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
             Distance metric passed through to
             :func:`neurospatial.decoding.metrics.decoding_error`. ``"geodesic"``
-            measures along this result's :attr:`env` connectivity graph, so a
+            is the shortest path between the two positions that stays inside
+            this result's :attr:`env` (along a track, around walls), so a
             decode in the wrong arm of a maze counts the path between the
             arms; ``"euclidean"`` gives the straight-line distance.
+            ``"bin_graph"`` walks the connections between the centers of the positions'
+            bins: faster for long sessions, fine grids and many pairs, but every
+            position in a bin has its bin center's distance, and an oblique distance
+            reads up to 8.2 % long on a square grid (15.5 % on a hexagonal grid, 12.8 %
+            on a 3-D grid); it is exact between bin centers on a track. It also needs
+            ``env`` and works on egocentric polar environments.
         max_gap : float or None, default=1.0
             Longest stretch of missing ground-truth tracking, in seconds, across
             which the true position is interpolated; missing samples inside a
