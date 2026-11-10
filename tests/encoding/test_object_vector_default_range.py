@@ -1,5 +1,8 @@
 """The default object-vector distance range covers every position in the environment."""
 
+import itertools
+
+import networkx as nx
 import numpy as np
 import pytest
 import shapely
@@ -233,23 +236,290 @@ def test_nearest_center_bins_are_covered_out_to_their_radius(metric):
     assert result.analysis_settings["time_beyond_distance_range"] == 0.0
 
 
-@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
-def test_bins_without_a_known_extent_need_an_explicit_range(metric):
-    """With no limit on how far a bin's positions reach, no range covers them."""
-    env = _wells(max_distance=np.inf)
-    positions = np.array([[0.0, 0.0], [20.0, 300.0], [20.0, 0.0]])
+@pytest.mark.parametrize(
+    ("metric", "expected_range"),
+    [("euclidean", (0.0, 30.0)), ("geodesic", (0.0, 45.0))],
+)
+@pytest.mark.parametrize("max_distance", [np.inf])
+def test_bins_with_no_lookup_radius_are_covered_at_their_centers(
+    metric, expected_range, max_distance
+):
+    """With no limit on how far a bin's positions reach, the default range
+    covers the bin centers, and time farther out is reported, not refused.
+
+    Euclidean: the 28.3 cm diagonal of the centers' box. Geodesic: 40 cm
+    along the two connections plus 1.4 cm from the first center to the
+    object.
+    """
+    env = _wells(max_distance=max_distance)
+    positions = np.array(
+        [[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [20.0, 300.0], [20.0, 20.0]]
+    )
     assert (env.bin_at(positions) >= 0).all()
     objects = np.array([[1.0, 1.0]])
 
-    with pytest.raises(ValueError, match="distance_range is required for this env"):
-        _map(env, positions, objects, metric)
-    result = compute_object_vector_rate(
+    result = _map(env, positions, objects, metric)
+
+    assert result.distance_range == expected_range
+    # Four 0.02 s intervals; the one that starts 300 cm out is beyond.
+    settings = result.analysis_settings
+    assert settings["time_beyond_distance_range"] == pytest.approx(0.02)
+    assert settings["fraction_of_time_in_distance_range"] == pytest.approx(0.75)
+
+
+def _session_with_a_moving_object(n_samples=400):
+    """Positions all over the 100 cm box and an object jittering at its center."""
+    rng = np.random.default_rng(6)
+    positions = rng.uniform(1.0, 99.0, (n_samples, 2))
+    objects = np.array([50.0, 50.0]) + rng.normal(0.0, 1.0, (n_samples, 1, 2))
+    return positions, objects
+
+
+@pytest.mark.parametrize("stray", [(-500.0, -500.0), (1e5, 1e5)])
+def test_one_stray_sample_of_a_moving_object_does_not_set_the_range(stray):
+    """A tracking glitch far outside the arena is one sample out of range.
+
+    The default range of an object that moves is the arena's diagonal
+    whatever its positions, so one stray sample cannot stretch the grid; the
+    time at that sample is reported as beyond the range.
+    """
+    env = _box()
+    positions, objects = _session_with_a_moving_object()
+    clean = _map(env, positions, objects, "euclidean")
+    objects[123, 0] = stray
+
+    result = _map(env, positions, objects, "euclidean")
+
+    assert result.distance_range == clean.distance_range == (0.0, 145.0)
+    assert result.n_distance_bins == clean.n_distance_bins == 29
+    settings = result.analysis_settings
+    assert settings["time_beyond_distance_range"] == pytest.approx(0.02)
+    assert settings["fraction_of_time_in_distance_range"] == pytest.approx(398 / 399)
+
+
+def test_a_moving_object_outside_the_arena_is_reported_not_covered():
+    """An object that moves outside the arena needs an explicit range.
+
+    At 100 cm east of the east wall it is beyond the 145 cm default from the
+    western part of the box; that time is reported, and an explicit range
+    covers it.
+    """
+    env = _box()
+    positions, objects = _session_with_a_moving_object()
+    objects[:, 0, 0] += 150.0
+
+    result = _map(env, positions, objects, "euclidean")
+
+    assert result.distance_range == (0.0, 145.0)
+    assert 0.2 < result.analysis_settings["fraction_of_time_in_distance_range"] < 0.9
+    times = np.arange(len(positions)) * 0.02
+    covered = compute_object_vector_rate(
         env,
         np.array([0.011]),
-        np.arange(3) * 0.02,
+        times,
         positions,
         objects,
-        metric=metric,
-        distance_range=(0.0, 400.0),
+        distance_range=(0.0, 215.0),
     )
-    assert result.distance_range == (0.0, 400.0)
+    assert covered.analysis_settings["time_beyond_distance_range"] == 0.0
+
+
+@pytest.mark.parametrize("missing", [(np.inf, 0.0), (0.0, -np.inf)])
+def test_an_infinite_sample_of_a_moving_object_is_a_missing_sample(missing):
+    """An infinite coordinate is an untracked object, like NaN: no observation.
+
+    The map is the one with NaN at that sample, on the default grid, and no
+    time is counted as beyond the range.
+    """
+    env = _box()
+    positions, objects = _session_with_a_moving_object()
+    objects[123, 0] = np.nan
+    untracked = _map(env, positions, objects, "euclidean")
+    objects[123, 0] = missing
+
+    result = _map(env, positions, objects, "euclidean")
+
+    assert result.distance_range == untracked.distance_range == (0.0, 145.0)
+    assert result.analysis_settings["time_beyond_distance_range"] == 0.0
+    np.testing.assert_array_equal(result.occupancy, untracked.occupancy)
+    np.testing.assert_array_equal(result.firing_rate, untracked.firing_rate)
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+@pytest.mark.parametrize("missing", [(np.inf, 0.0), (np.nan, np.nan)])
+def test_a_non_finite_fixed_object_is_left_out_of_the_default_range(metric, missing):
+    """Of two fixed objects, one with no position: the map of the other."""
+    env = _box()
+    positions, _ = _session_with_a_moving_object()
+    alone = _map(env, positions, np.array([[20.0, 30.0]]), metric)
+
+    result = _map(env, positions, np.array([missing, (20.0, 30.0)]), metric)
+
+    assert result.distance_range == alone.distance_range
+    np.testing.assert_array_equal(result.occupancy, alone.occupancy)
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+@pytest.mark.parametrize("missing", [np.inf, np.nan])
+def test_an_object_with_no_finite_position_is_refused_with_guidance(metric, missing):
+    """No object position at all: the same refusal for inf as for NaN."""
+    from neurospatial import InputError
+
+    env = _box()
+    positions, _ = _session_with_a_moving_object()
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        _map(env, positions, np.array([[missing, missing]]), metric)
+
+
+def test_a_moving_object_never_tracked_is_refused_with_guidance():
+    """Positions per sample that are all infinite: refused, not a crash."""
+    from neurospatial import InputError
+
+    env = _box()
+    positions, objects = _session_with_a_moving_object()
+    objects[:] = np.inf
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        _map(env, positions, objects, "euclidean")
+
+
+def _dwelling_session(run, dwell):
+    """Positions along ``run`` and back, with a third of the time at ``dwell``."""
+    positions = np.vstack([run, np.tile(dwell, (len(run), 1)), run[::-1]])
+    return np.arange(len(positions)) / 30.0, positions
+
+
+def _assert_the_whole_session_is_in_range(result, times):
+    settings = result.analysis_settings
+    assert settings["time_beyond_distance_range"] == 0.0
+    assert settings["fraction_of_time_in_distance_range"] == 1.0
+    assert np.nansum(result.occupancy) == pytest.approx(times[-1] - times[0])
+
+
+@pytest.mark.parametrize(
+    ("length", "bin_size", "angle", "start_x"),
+    [
+        (150.0, 2.0, 0.3, 0.0),
+        (150.0, 3.0, 0.3, 0.0),
+        (120.0, 0.7, 0.0, 0.0),
+        (50.0, 0.7, 0.0, 1000.3),
+    ],
+)
+def test_time_at_the_far_end_of_a_track_is_in_the_default_range(
+    length, bin_size, angle, start_x
+):
+    """The animal waits at the far end of a track; the object is at the start.
+
+    The run along the track is ``length``, a whole number of 5 cm rings, so
+    the range must end beyond it. A bound a few rounding errors short of
+    ``length`` ended the range at ``length`` and lost the third of the
+    session spent at the far end.
+    """
+    start = np.array([start_x, 0.0])
+    along = np.array([np.cos(angle), np.sin(angle)])
+    graph = nx.Graph()
+    graph.add_node(0, pos=tuple(start))
+    graph.add_node(1, pos=tuple(start + length * along))
+    graph.add_edge(0, 1, distance=length)
+    env = Environment.from_graph(
+        graph, [(0, 1)], bin_size=bin_size, units="cm", track_width=8.0
+    )
+    run = start + np.linspace(0.0, length, 300)[:, None] * along
+    # One cm past the end, inside the track's width: it projects to the end.
+    times, positions = _dwelling_session(run, start + (length + 1.0) * along)
+    assert (env.bin_at(positions) >= 0).all()
+
+    result = compute_object_vector_rate(
+        env, np.array([0.5]), times, positions, start[None], metric="geodesic"
+    )
+
+    assert result.distance_range == (0.0, length + 5.0)
+    _assert_the_whole_session_is_in_range(result, times)
+
+
+def test_time_at_the_far_well_of_a_w_track_is_in_the_default_range():
+    """Object at the first well, animal waiting at the last: 210 cm apart."""
+    nodes = {0: (0, 70), 1: (0, 0), 2: (35, 0), 3: (35, 70), 4: (70, 0), 5: (70, 70)}
+    order = [(0, 1), (1, 2), (2, 3), (2, 4), (4, 5)]
+    graph = nx.Graph()
+    for node, place in nodes.items():
+        graph.add_node(node, pos=(float(place[0]), float(place[1])))
+    graph.add_edges_from(order)
+    env = Environment.from_graph(
+        graph, order, bin_size=3.0, units="cm", track_width=8.0
+    )
+    corners = np.array([nodes[k] for k in (0, 1, 2, 4, 5)], dtype=float)
+    run = np.vstack(
+        [np.linspace(a, b, 60, endpoint=False) for a, b in itertools.pairwise(corners)]
+    )
+    times, positions = _dwelling_session(run, corners[-1])
+    assert (env.bin_at(positions) >= 0).all()
+
+    result = compute_object_vector_rate(
+        env, np.array([0.5]), times, positions, corners[:1], metric="geodesic"
+    )
+
+    assert result.distance_range == (0.0, 215.0)  # 70 + 35 + 35 + 70, and a ring
+    _assert_the_whole_session_is_in_range(result, times)
+
+
+def test_time_at_the_start_of_a_t_maze_is_in_range_with_rings_that_divide_the_run():
+    """Object 31 cm along the right arm, animal waiting at the start box.
+
+    The run is 100 cm up the stem and 31 cm along the arm. With rings of
+    131 / 29 cm it is 29 whole rings, so the range must have a thirtieth.
+    """
+    from neurospatial.simulation.mazes import make_t_maze
+
+    env = make_t_maze().env_track
+    start, junction = np.array([0.0, -50.0]), np.array([0.0, 50.0])
+    objects = np.array([[31.0, 50.0]])
+    run = np.vstack(
+        [
+            np.linspace(objects[0], junction, 40, endpoint=False),
+            np.linspace(junction, start, 100),
+        ]
+    )
+    times, positions = _dwelling_session(run, start)
+    assert (env.bin_at(positions) >= 0).all()
+    ring = 131.0 / 29
+
+    result = compute_object_vector_rate(
+        env,
+        np.array([0.5]),
+        times,
+        positions,
+        objects,
+        metric="geodesic",
+        distance_bin_size=ring,
+    )
+
+    assert result.n_distance_bins == 30
+    _assert_the_whole_session_is_in_range(result, times)
+
+
+def test_time_in_the_far_corner_of_a_box_is_in_the_default_euclidean_range():
+    """Object in one corner of the arena's box, animal waiting in the opposite one.
+
+    With rings that divide the diagonal into ten, the range must have an
+    eleventh. For this box the diagonal computed from its sides is one
+    rounding step below the distance between the two corners.
+    """
+    low = np.array([-250.1, 1000.3])
+    high = low + np.array([37.3, 40.0])
+    env = Environment.from_polygon(shapely.box(*low, *high), bin_size=2.5, units="cm")
+    run = np.linspace(low, high, 60)
+    times, positions = _dwelling_session(run, high)
+    assert (env.bin_at(positions) >= 0).all()
+    diagonal = float(np.linalg.norm(high - low))
+
+    result = compute_object_vector_rate(
+        env,
+        np.array([0.5]),
+        times,
+        positions,
+        low[None],
+        distance_bin_size=diagonal / 10,
+    )
+
+    assert result.n_distance_bins == 11
+    _assert_the_whole_session_is_in_range(result, times)
