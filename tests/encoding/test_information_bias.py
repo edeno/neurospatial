@@ -86,33 +86,78 @@ def _bias_against_untuned_information(env, sessions, n_spikes, n_units, **option
     return np.concatenate(bias), np.concatenate(information)
 
 
+def _expansion_allowance(method: str, bandwidth: float, n_spikes: int) -> float:
+    """Measured error of the bias beyond sampling noise, as a share of the mean.
+
+    The bias is the second-order term of an expansion. How far it lies from
+    the mean information of untuned cells was measured on four pairs of
+    10-minute trajectories (400 cells per setting); the allowance is the
+    largest error seen, rounded up.
+
+    - Kernel estimators: none at 1000 spikes (within 1.5 standard errors),
+      up to 4% above at 100 spikes, where a 5 cm kernel leaves about 42
+      independent bins.
+    - ``binned`` smoothed (the rate is formed in each bin, then averaged):
+      6-20% above at 100 spikes and 0-6% above at 1000. A spike in a briefly
+      visited bin gives a large rate there; the second-order term counts its
+      square, but information grows only as x log x.
+    - ``binned`` unsmoothed: 7-8% below at 1000 spikes on 385 bins, the size
+      of the expansion's next term (1 / (6 m) of the bias at m = 2.6 spikes
+      per bin).
+    """
+    if method != "binned":
+        return 0.05 if n_spikes == 100 else 0.0
+    if bandwidth == 0:
+        return 0.10
+    return 0.20 if n_spikes == 100 else 0.05
+
+
 @pytest.mark.parametrize("n_spikes", [100, 1000])
-@pytest.mark.parametrize("bandwidth", [2.5, 5.0, 10.0])
-@pytest.mark.parametrize("method", ["diffusion_kde", "gaussian_kde"])
+@pytest.mark.parametrize(
+    ("method", "bandwidth"),
+    [
+        *[
+            (method, bandwidth)
+            for method in ("diffusion_kde", "gaussian_kde", "binned")
+            for bandwidth in (2.5, 5.0, 10.0)
+        ],
+        ("binned", 0.0),
+    ],
+)
 def test_bias_is_the_mean_information_of_untuned_cells(
     ou_sessions, method, bandwidth, n_spikes
 ):
     """400 untuned Poisson cells on two trajectories, per estimator.
 
     The predicted bias averages to the untuned cells' mean information
-    within 3 standard errors of that mean. At 100 spikes a 5 cm kernel
-    leaves about 46 independent bins, half the spike count, and the
-    second-order expansion behind the bias is off by up to 4% (measured),
-    so 5% of the mean is allowed on top. A 2.5 cm kernel leaves more
-    independent bins than 100 spikes, so there the bias is undetermined
-    (NaN).
+    within 3 standard errors of that mean plus the estimator's measured
+    expansion error (``_expansion_allowance``): nothing for the kernel
+    estimators at 1000 spikes, 5% at 100 spikes, and more for ``binned``
+    maps, whose error also has a direction. Smoothed ``binned`` maps
+    over-predict at 100 spikes, so their screens subtract too much;
+    unsmoothed maps under-predict at 1000 spikes, so theirs subtract too
+    little (0.02 bits/spike here).
+
+    With more independent bins than spikes the bias is undetermined (NaN):
+    at 100 spikes, a 2.5 cm bandwidth with any estimator, and the
+    unsmoothed map with its 385 bins.
     """
     env, sessions = ou_sessions
     bias, information = _bias_against_untuned_information(
         env, sessions, n_spikes, 200, method=method, bandwidth=bandwidth
     )
-    if bandwidth == 2.5 and n_spikes == 100:
+    if bandwidth <= 2.5 and n_spikes == 100:
         assert np.isnan(bias).all()
         return
     assert np.isfinite(bias).all()
     standard_error = information.std(ddof=1) / np.sqrt(information.size)
-    expansion = 0.05 * information.mean() if n_spikes == 100 else 0.0
-    assert abs(bias.mean() - information.mean()) <= 3 * standard_error + expansion
+    difference = bias.mean() - information.mean()
+    allowance = _expansion_allowance(method, bandwidth, n_spikes)
+    assert abs(difference) <= 3 * standard_error + allowance * information.mean()
+    if method == "binned" and bandwidth == 0:
+        assert difference < -3 * standard_error  # measured: -19 to -23
+    if method == "binned" and bandwidth > 0 and n_spikes == 100:
+        assert difference > 0  # measured: +3 to +19 standard errors
 
 
 @pytest.mark.slow
