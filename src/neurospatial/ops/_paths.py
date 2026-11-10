@@ -656,6 +656,11 @@ class _OpenPaths(_EnvironmentPaths):
         self._neighbors[np.repeat(np.arange(n_bins), degree), ragged_arange(degree)] = (
             adjacency.indices
         )
+        # Neighbor pairs the layout lists but a wall or the outline closed,
+        # as keys ``low * n_bins + high``.
+        connections = env.binning.connections
+        closed = connections.all_pairs[~connections.is_open]
+        self._closed_pairs = closed.min(axis=1) * n_bins + closed.max(axis=1)
         lengths = adjacency.data[adjacency.data > 0]
         self._spacing = (
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
@@ -1164,36 +1169,41 @@ class _OpenPaths(_EnvironmentPaths):
         found: NDArray[np.bool_] = np.any(self._neighbors[a] == b[:, None], axis=1)
         return found
 
+    def _closed(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
+        """Whether each bin pair is a neighbor pair a wall or the outline closed.
+
+        False for an open pair and for two bins the layout does not list as
+        neighbors, such as cells that share only a corner on a grid that
+        joins face neighbors only.
+        """
+        keys = np.minimum(a, b) * self._n_bins + np.maximum(a, b)
+        found: NDArray[np.bool_] = np.isin(keys, self._closed_pairs)
+        return found
+
     def _corner_joined(
         self, a: NDArray[np.intp], b: NDArray[np.intp]
     ) -> NDArray[np.bool_]:
         """Whether a step through a corner from bin ``a`` to bin ``b`` stays inside.
 
-        A straight line through a vertex shared by ``a`` and ``b`` passes
-        when ``a`` and ``b`` are connected, or, where the grid joins only
-        face neighbors (a 4-connected grid), when both cells sharing a face
-        with ``a`` and ``b`` are bins open to each: every cell around the
-        vertex is then free and joined, so the vertex lies inside the
-        environment. A vertex that touches a missing cell, the outline or a
-        wall along those faces still blocks.
+        On a rectilinear grid in any number of dimensions, a straight line
+        through a vertex or an edge shared by the cells of ``a`` and ``b``
+        (which differ by one cell on two or more axes) passes when ``a`` and
+        ``b`` are connected. It is blocked when the layout lists the two as
+        neighbors and a wall or the outline closed that connection. Where
+        the layout does not list them (a grid that joins face neighbors
+        only), it passes when the corner is free
+        (:meth:`_GridCells.corner_free`): every cell around it is a bin and
+        every two of them that share a face are connected. A corner that
+        touches a missing cell, the outline or a wall along one of those
+        faces still blocks.
         """
+        grid = self._grid
+        assert grid is not None
         joined = self._connected(a, b)
         rest = np.flatnonzero(~joined)
+        rest = rest[~self._closed(a[rest], b[rest])]
         if rest.size:
-            neighbors_a = self._neighbors[a[rest]]
-            via = (neighbors_a[:, :, None] == self._neighbors[b[rest]][:, None, :]).any(
-                axis=2
-            ) & (neighbors_a >= 0)
-            cell = np.maximum(neighbors_a, 0)
-            centers = self._centers
-            near_a = np.linalg.norm(
-                centers[cell] - centers[a[rest]][:, None, :], axis=2
-            )
-            near_b = np.linalg.norm(
-                centers[cell] - centers[b[rest]][:, None, :], axis=2
-            )
-            side = via & (near_a <= self._nearest) & (near_b <= self._nearest)
-            joined[rest] = side.sum(axis=1) >= 2
+            joined[rest] = grid.corner_free(a[rest], b[rest], self._connected)
         return joined
 
     def _flanked(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
@@ -2616,6 +2626,55 @@ class _GridCells(_BoxCells):
             return None
         return cls(locator.edges, locator.flat_to_active, locator.shape, cell)
 
+    def corner_free(
+        self,
+        a: NDArray[np.intp],
+        b: NDArray[np.intp],
+        connected: Callable[[NDArray[np.intp], NDArray[np.intp]], NDArray[np.bool_]],
+    ) -> NDArray[np.bool_]:
+        """Whether the corner shared by the cells of ``a`` and ``b`` is free.
+
+        The cells of ``a`` and ``b`` differ by one cell on ``k >= 2`` axes
+        and share a vertex (an edge, for two axes of a 3-D grid). The
+        ``2**k`` cells around it are the box the two span. The corner is
+        free when each of them is a bin and every two that share a face
+        (they differ on one axis) are connected, whatever the cells' sizes.
+
+        Parameters
+        ----------
+        a, b : ndarray of int, shape (n,)
+            Bins whose cells differ by at most one on every axis.
+        connected : callable
+            ``connected(u, v)``: whether each bin pair is joined by an open
+            connection.
+
+        Returns
+        -------
+        ndarray of bool, shape (n,)
+        """
+        start = self.cell[a]
+        step = self.cell[b] - start
+        n_dims = start.shape[1]
+        free = np.ones(a.size, dtype=bool)
+        # Bin of each cell of the box, by its offset from ``a`` along
+        # ``step`` (0 or 1 per axis; an axis not stepped repeats the cell).
+        offsets = list(itertools.product((0, 1), repeat=n_dims))
+        bins = {}
+        for offset in offsets:
+            cells = start + step * np.asarray(offset)
+            bins[offset] = self.flat_to_active[
+                np.ravel_multi_index(tuple(cells.T), self.shape)
+            ]
+            free &= bins[offset] >= 0
+        for offset in offsets:
+            for axis in range(n_dims):
+                if offset[axis]:
+                    continue
+                across = (*offset[:axis], 1, *offset[axis + 1 :])
+                rows = np.flatnonzero(free & (step[:, axis] != 0))
+                free[rows] = connected(bins[offset][rows], bins[across][rows])
+        return free
+
     def walk(
         self,
         a: NDArray[np.intp],
@@ -2663,7 +2722,9 @@ class _GridCells(_BoxCells):
         times = np.take_along_axis(time, order, axis=1)
         # Crossings this close in time are one step through an edge or a
         # vertex, so mirror-image stretches take the same steps.
-        tied = np.diff(times, axis=1) <= 1e-9
+        # (Two axes not crossed, both inf, are not tied.)
+        with np.errstate(invalid="ignore"):
+            tied = np.diff(times, axis=1) <= 1e-9
         committed = a[rows].copy()
         pending = start.copy()
         index = np.arange(rows.size)
