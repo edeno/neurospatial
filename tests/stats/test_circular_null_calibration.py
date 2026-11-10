@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from calibration_helpers import assert_pvalues_uniform, assert_rejections_at_rate
+from calibration_helpers import (
+    assert_pvalues_uniform,
+    assert_rejections_at_rate,
+    null_rejection_interval,
+)
 from scipy import stats
 
 from neurospatial.stats.circular import (
@@ -166,26 +170,45 @@ class TestCircularBasisWald:
         """With few spikes the test is conservative and the gate does nothing."""
         p_values, modulated = _wald_null(500, 0.05, seed=3)
         assert_rejections_at_rate(p_values < 0.05, 0.05, conservative=True)
+        # A p-value that never rejects also stays under alpha. The floor pins
+        # the measured conservative rate, 633 of 18000 cells (3.5%) on nine
+        # other seeds: fewer cells than the low end of its 99% interval fail.
+        low, _ = null_rejection_interval(p_values.size, 0.035)
+        assert np.sum(p_values < 0.05) >= low
         assert np.array_equal(modulated, p_values < 0.05)
 
-    def test_wald_region_covers_the_planted_modulation(self):
-        """The 95% Wald ellipse holds the true (beta_sin, beta_cos) in 95% of fits."""
+    @pytest.mark.parametrize("occupancy_kappa", [0.0, 8.0])
+    def test_wald_region_covers_the_planted_modulation(self, occupancy_kappa):
+        """The 95% Wald region holds the true (beta_sin, beta_cos) in 95% of fits.
+
+        The region is every coefficient pair that the Wald test does not
+        reject at 0.05, so the truth lies outside it when the p-value of the
+        fitted coefficients minus the true ones is below 0.05.
+
+        With uniform angles the two estimates are nearly uncorrelated (0.01).
+        Angles within about 20 degrees of 45 degrees (von Mises, kappa = 8),
+        as on a run in one direction, correlate them at 0.87: the region is a
+        narrow ellipse, and one drawn without the covariance of the two
+        estimates leaves the truth outside in 7.7% of fits.
+        """
         amplitude, phase = 0.3, 1.0
         beta = np.array([amplitude * np.sin(phase), amplitude * np.cos(phase)])
-        rng = np.random.default_rng(7)
+        rng = np.random.default_rng(7 + int(occupancy_kappa))
         outside, significant, phases = [], [], []
         for _ in range(2000):
-            angles = rng.uniform(-np.pi, np.pi, 2000)
+            angles = _angles(rng, 2000, occupancy_kappa, mu=np.pi / 4)
             counts = rng.poisson(0.2 * np.exp(amplitude * np.cos(angles - phase)))
             params, cov = _fit_poisson_glm(angles, counts, dt=0.1)
-            error = params[1:3] - beta
-            wald = error @ np.linalg.solve(cov[1:3, 1:3], error)
-            outside.append(wald > stats.chi2.ppf(0.95, df=2))
+            _, _, p_truth = circular_basis_metrics(
+                params[1] - beta[0], params[2] - beta[1], cov[1:3, 1:3]
+            )
+            outside.append(p_truth < 0.05)
             _, fitted_phase, p = circular_basis_metrics(
                 params[1], params[2], cov[1:3, 1:3]
             )
             significant.append(p < 0.05)
             phases.append(fitted_phase)
         assert_rejections_at_rate(outside, 0.05)
-        assert np.mean(significant) > 0.9
-        assert abs(stats.circmean(phases, high=np.pi, low=-np.pi) - phase) < 0.02
+        if occupancy_kappa == 0:
+            assert np.mean(significant) > 0.9
+            assert abs(stats.circmean(phases, high=np.pi, low=-np.pi) - phase) < 0.02
