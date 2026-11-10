@@ -421,37 +421,95 @@ def _arena_session(arena: str, seed: int):
     return _circle_session(seed)
 
 
-@pytest.mark.parametrize(
-    ("arena", "border_rate", "grid_rate"),
-    [("square", 0.20, 0.0165), ("circle", 0.12, 0.018)],
-)
-def test_untuned_grid_and_border_label_rates(arena, border_rate, grid_rate):
-    """The label rates ``label_cell_types`` documents for untuned cells.
+# Labels of untuned cells in 400 sessions of 100 cells in each arena
+# (trajectory seeds 100-499, spike seeds 5000 + trajectory seed), the
+# measurement behind the Notes of ``SpatialRatesResult.label_cell_types``.
+# Grid labels: 729 (square) and 716 (circle) of 40000, binomial from cell to
+# cell (variance 1.06 and 0.99 of binomial between sessions).
+UNTUNED_GRID_RATE = 0.018
+# Border labels: 14.8% (square) and 11.5% (circle), but a session's rate runs
+# from 0 to 63% (standard deviation 13.8 points) in the square and from 0 to
+# 46% (8.0 points) in the circle, 15 and 6 times the binomial variance of 100
+# cells. The rate of 20 sessions is therefore held to the central 99% of the
+# mean of 20 sessions drawn with replacement from the 400 measured ones (a
+# normal interval, rate +- 2.58 sd / sqrt(20), is 0.068-0.227 and
+# 0.068-0.161, a little short on the skewed side).
+UNTUNED_BORDER_RATE_OF_20_SESSIONS = {
+    "square": (0.076, 0.233),
+    "circle": (0.0715, 0.164),
+}
+# Sessions whose median untuned border score lay within 0.015 of the
+# session's ``untuned_border_score``: 390 (square) and 395 (circle) of 400.
+MEDIAN_AT_BASELINE_RATE = 785 / 800
+
+
+@pytest.mark.parametrize("arena", ["square", "circle"])
+def test_untuned_grid_and_border_label_rates(arena):
+    """What ``label_cell_types`` documents for untuned cells, on 20 sessions.
 
     2000 untuned cells (20 trajectories of 100) at the default cutoffs. The
     labels are threshold screens with no nominal rate; the rates are the
-    ones in the Notes of ``SpatialRatesResult.label_cell_types``. Grid
-    labels fall independently from cell to cell, so their count is checked
-    against the 99% binomial interval. Border labels do not: an untuned
-    cell's border score sits at the session's ``untuned_border_score``, so
-    whole sessions pass or fail together and only the pooled rate is
-    pinned (to within 0.03). No untuned cell is labeled place.
+    measured ones in the Notes of ``SpatialRatesResult.label_cell_types``.
+
+    No untuned cell is labeled place. Grid labels fall independently from
+    cell to cell, so their count is checked against the 99% binomial
+    interval at the measured 1.8%.
+
+    Border labels do not. A session's untuned cells score near the
+    session's ``untuned_border_score``, which changes with the bins the
+    animal visited along the walls, so:
+
+    - the sessions do not share one per-cell rate (a chi-square test of
+      equal rates across the 20 sessions rejects at 0.001);
+    - the session's rate rises with its baseline (Spearman, one-sided
+      p < 0.01);
+    - the median untuned score of a session is within 0.015 of the
+      baseline in 98% of sessions: the count of such sessions is at or
+      above the low end of its 99% binomial interval, 17 of 20;
+    - the pooled rate of 20 sessions is only loosely determined. It must
+      lie in the central 99% of that rate over the measured sessions,
+      7.6-23.3% in the square and 7.2-16.4% in the circle. The two ranges
+      overlap: 20 sessions do not tell the arenas apart.
     """
+    from calibration_helpers import null_rejection_interval
+    from scipy import stats
+
     from neurospatial.encoding.border import untuned_border_score
 
-    labels, offsets = [], []
+    labels, baselines, medians = [], [], []
     for seed in range(100, 120):
         env, times, positions = _arena_session(arena, seed)
         rates = encoding.compute_spatial_rates(
             env, _untuned_trains(times, 100, seed=5000 + seed), times, positions
         )
         scores = np.asarray(rates.border_scores())
-        baseline = untuned_border_score(env, support=np.asarray(rates.spatial_support))
-        offsets.append(np.nanmedian(scores) - baseline)
+        baselines.append(
+            untuned_border_score(env, support=np.asarray(rates.spatial_support))
+        )
+        medians.append(np.nanmedian(scores))
         labels.append(rates.label_cell_types(border_scores=scores))
-    labels = np.concatenate(labels)
+    labels = np.array(labels)  # (n_sessions, n_cells)
+    baselines, medians = np.array(baselines), np.array(medians)
+    n_sessions, n_cells = labels.shape
     assert not np.isin(labels, ["place", "undetermined"]).any()
-    assert np.max(np.abs(offsets)) < 0.015
-    assert_rejections_at_rate(np.char.find(labels, "grid") >= 0, grid_rate)
-    border = np.mean(np.char.find(labels, "border") >= 0)
-    assert border == pytest.approx(border_rate, abs=0.03)
+    assert_rejections_at_rate(
+        np.char.find(labels, "grid").ravel() >= 0, UNTUNED_GRID_RATE
+    )
+
+    border = np.char.find(labels, "border") >= 0
+    session_rate = border.mean(axis=1)
+    pooled = session_rate.mean()
+    low, high = UNTUNED_BORDER_RATE_OF_20_SESSIONS[arena]
+    assert low <= pooled <= high, pooled
+    # Equal per-cell rates would make this chi-square on n_sessions - 1
+    # degrees of freedom (about 19); measured, it is 63 to 434.
+    equal_rates = np.sum(
+        (border.sum(axis=1) - n_cells * pooled) ** 2
+        / (n_cells * pooled * (1.0 - pooled))
+    )
+    assert equal_rates > stats.chi2.ppf(0.999, n_sessions - 1), equal_rates
+    rising = stats.spearmanr(session_rate, baselines, alternative="greater")
+    assert rising.pvalue < 0.01, rising
+    at_baseline = int(np.sum(np.abs(medians - baselines) < 0.015))
+    fewest, _ = null_rejection_interval(n_sessions, MEDIAN_AT_BASELINE_RATE)
+    assert at_baseline >= fewest, (at_baseline, fewest)

@@ -3130,17 +3130,28 @@ class SpatialRatesResult(PopulationRateMixin[SpatialRateResult]):
         - Border score: a uniform (untuned) map scores 0.50 in convex arenas
           and 0.58-0.79 on corridor mazes, so untuned cells pass the 0.5
           cutoff often; on a radial-arm maze, 6 of 12 arm place cells did.
-        - Untuned cells: of 2000 Poisson cells firing 0.5-3 Hz (20
-          ten-minute trajectories of 100, default 5 cm diffusion kernel),
-          none was labeled place; 1.7% were labeled grid in a 1 m square
-          box and 1.8% in a 1 m circle; 20% were labeled border in the
-          square and 12% in the circle. The border rate is not a per-cell
-          chance: it ranged from 0% to 63% between sessions. An untuned
-          cell's border score sits within 0.015 of the session's
-          ``untuned_border_score(env, support=result.spatial_support)``,
-          which was 0.39-0.51 depending on which bins along the walls the
-          animal visited, so the untuned cells of a session pass or fail
-          together. Compare border scores with that baseline.
+        - Untuned cells: 40,000 Poisson cells firing 0.5-3 Hz in a 1 m
+          square box and as many in a 1 m circle (400 ten-minute
+          trajectories of 100 cells in each arena, default 5 cm diffusion
+          kernel). None was labeled place, and 1.8% were labeled grid in
+          either arena. 14.8% were labeled border in the square and 11.5%
+          in the circle, but the border rate is not a per-cell chance.
+          Between sessions it ranged from 0% to 63% in the square
+          (standard deviation 14 percentage points; no border label in
+          16% of sessions) and from 0% to 46% in the circle (8 points;
+          none in 7%). Over 20 sessions it ranged from 9% to 23% in the
+          square and from 6% to 16% in the circle, so 20 sessions do not
+          tell the two arenas apart. An untuned cell seldom scores above
+          the session's
+          ``untuned_border_score(env, support=result.spatial_support)``:
+          95% of cells scored below it plus 0.012, and the median cell of
+          a session was within 0.015 of it in 98% of sessions. That
+          baseline was 0.39-0.51 in the square and 0.45-0.50 in the
+          circle, depending on which bins along the walls the animal
+          visited, and it sets the session's rate: 1 of 4,500 cells was
+          labeled border in the sessions where it was below 0.47, and 21%
+          (square) and 14% (circle) where it was 0.49 or more. Compare
+          border scores with that baseline.
 
         Pass precomputed scores via ``grid_scores=``/``border_scores=`` to avoid
         recomputation when you've already computed them.
