@@ -189,7 +189,13 @@ give the measured rates:
   triangular mesh. This changes `decoding_error`, `shortest_path_length`,
   `step_lengths`, `traveled_path_length`, `mean_square_displacement` and
   the other behavior functions with `metric="geodesic"` where a wall is in
-  the way; it is never longer than before.
+  the way; it is never longer than before. One exception remains: on
+  hexagonal bins with missing hexagons, the test of whether a segment stays
+  inside probes it at steps (1.5 cm for 3 cm hexagons) and can answer
+  differently for the two orders of a pair, so a pair can still read
+  differently by order (47 of 5,811 random pairs around 3 cm hexagons with
+  7 missing), and a segment that counts as inside can cut up to 1.3 cm
+  through a missing hexagon.
 - `mean_square_displacement(metric="geodesic")` took the shorter of the two
   grown paths for every pair but never the straight line, so two positions
   that see each other could read up to 0.56 cm too far apart (100 cm box,
@@ -212,7 +218,11 @@ give the measured rates:
   between bin centers in an open room of such a grid was up to 41% longer
   than the straight line for a third of the pairs; it is now the straight
   line. A corner that touches a missing cell, the outline or a wall still
-  blocks.
+  blocks. A grid rotated or reflected with `apply_transform` does not have
+  this rule yet: joined by faces only, it still blocks such lines.
+- On a triangular mesh a path may start or end at a vertex on the
+  environment's edge. Before, such a path went by way of a triangle's
+  centroid, up to 4.3 cm longer in a 30 cm room of 3 cm triangles.
 - `metric="bin_graph"` is a third choice for every behavior function with
   `metric=` and for `decoding_error`. It walks the connections between the
   centers of the positions' bins. It is faster for long sessions, fine grids
@@ -305,8 +315,10 @@ give the measured rates:
   between bin centers, which in an open arena overstates a straight-line
   error by up to about 8% and rounds it to bin-graph steps. A position
   outside every bin is measured, on a track, from its projection onto the
-  track like any other position, and elsewhere from the nearest point of
-  its nearest bin, so errors stay continuous across the environment's edge.
+  track like any other position; on hexagonal, mesh and rotated-grid bins,
+  from the nearest point of the environment; and on other grids from the
+  nearest point of the bin with the nearest center. Errors stay continuous
+  across the environment's edge.
 
 ### Documentation: what the distance functions measure
 
