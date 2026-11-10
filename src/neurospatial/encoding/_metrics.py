@@ -596,6 +596,33 @@ def _information_bias_terms(result: Any, *, base: float = 2.0) -> _InformationBi
         Expected information in bits per spike of an untuned Poisson cell
         with each unit's mean rate, on this result's occupancy and estimator,
         and the units where the expansion does not hold.
+
+    Notes
+    -----
+    The bias is the second-order term of an expansion of ``x log x``, and
+    the spikes-against-independent-bins gate is an average over the map. How
+    far the bias lies from the mean information of simulated untuned cells
+    depends on the estimator. On pairs of 10-minute Ornstein-Uhlenbeck
+    trajectories in a 1 m box (5 cm bins, 400 cells per setting, four
+    pairs; ``tests/encoding/test_information_bias.py``):
+
+    - ``diffusion_kde`` and ``gaussian_kde`` (2.5-10 cm): within 1.5
+      standard errors of the simulated mean at 1000 spikes, and up to 4%
+      above it at 100 spikes.
+    - ``binned`` smoothed with a bandwidth: 6-20% above at 100 spikes (5
+      and 10 cm) and 0-6% above at 1000 (2.5-10 cm). The rate is formed in
+      each bin before smoothing, so one spike in a briefly visited bin
+      gives a large rate there. The second-order term counts its square,
+      but information grows only as ``x log x``, so the bias is too large
+      and the screens that subtract it are conservative. With every bin
+      visited about equally (positions drawn uniformly) the bias was within
+      about 2% at 200 and 1000 spikes.
+    - ``binned`` unsmoothed: 7-8% below at 1000 spikes on 379-394 visited
+      bins, and 11% below with evenly visited bins. That is the size of the
+      expansion's
+      next term, ``1 / (6 m)`` of the bias for ``m`` spikes per bin
+      (here 2.6); the screens then subtract 0.02-0.04 bits/spike too
+      little. With fewer spikes than bins the bias is NaN.
     """
     from neurospatial.encoding._base import _to_numpy
 

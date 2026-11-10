@@ -172,13 +172,33 @@ class TestWithReplayMethods:
         )
         assert result.p_value < 0.01
 
-    def test_random_events_are_significant_at_alpha(self, place_code):
-        """Tirole et al.'s three nulls together keep alpha on random events.
+    def test_random_events_pass_three_nulls_no_more_often_than_alpha(self, place_code):
+        """Tirole et al.'s three nulls together: at most alpha of random events.
 
-        P(p <= 0.1) with 39 shuffles is 0.1; 600 events must fall in its 99%
-        binomial interval, 42 to 80, so an inflated 0.16 (about 96) fails,
-        and so does a test that never rejects.
+        The combined p-value is the largest of the three nulls' p-values, so
+        it is at or below 0.1 no more often than any one of them is. That
+        bounds the rate from above and promises no lower end, so the 600
+        events are held to the high end of the 99% binomial interval at 0.1
+        only: at most 80. A combined rate of 0.16 (about 96 events) fails;
+        three other sets of 600 events gave 51 to 58.
+        ``test_planted_sweep_is_detected_with_its_speed`` checks that the
+        test can reject.
+
+        The bound is measured, not guaranteed, because no one of the three
+        nulls is exact here. A ``"random"`` event has no order in time (a
+        time-bin permutation rejects 9% of them), but it has one position
+        per time bin, shared by the cells that fire in it, and a posterior
+        that stops at the track ends. The two spike shuffles break the
+        first and the column cycle wraps the second around the ends, so
+        each null alone rejects more often than alpha: the single-null rates
+        in the Notes of ``replay_significance``, measured in
+        ``tests/replay/test_significance.py``.
         """
+        from calibration_helpers import (
+            assert_rejections_at_rate,
+            monte_carlo_rejection_rate,
+        )
+
         env, rates = place_code
         shuffle_rng = np.random.default_rng(3)
         n_events = 600
@@ -209,8 +229,11 @@ class TestWithReplayMethods:
                     rng=shuffle_rng,
                 ).p_value
             )
-        low, high = stats.binom.ppf([0.005, 0.995], n_events, 0.1)
-        assert low <= np.sum(np.asarray(p_values) <= 0.1) <= high
+        assert_rejections_at_rate(
+            np.asarray(p_values) <= 0.1,
+            monte_carlo_rejection_rate(39, 0.1, strict=False),
+            conservative=True,
+        )
 
     def test_stationary_event_fools_the_line_fit_but_not_the_correlation(
         self, place_code

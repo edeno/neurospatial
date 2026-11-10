@@ -408,18 +408,14 @@ def test_shuffle_verdict_needs_bias_corrected_information(
 ):
     """Untuned units significant by chance in 2 minutes are not tuned cells.
 
-    About alpha of untuned units pass the information test by chance: the
-    count of the 20 units with p < 0.05 must lie in the central 99.9% of
-    Binomial(20, alpha_eff), alpha_eff = 4/100 the chance that p = (k+1)/100
-    falls below 0.05. Those seeded units include at least one chance
-    rejection, which the rest of the test needs. Their information beyond
-    the untuned-cell bias is far below the cutoff (or unknown, with fewer
-    spikes than independent bins), so the shuffle verdict refuses them, as
-    the shuffle labels do.
+    About alpha of untuned units pass the information test by chance, and
+    these 20 seeded units include at least one, which the test needs. Twenty
+    units cannot measure that rate; ``test_cell_type_calibration.py`` does.
+    Their information beyond the untuned-cell bias is far below the cutoff
+    (or unknown, with fewer spikes than independent bins), so the shuffle
+    verdict refuses them, as the shuffle labels do.
     """
     from types import SimpleNamespace
-
-    from scipy.stats import binom
 
     f = significance_family
     times, positions, headings = ou_2min
@@ -440,11 +436,7 @@ def test_shuffle_verdict_needs_bias_corrected_information(
         warnings.simplefilter("ignore", UserWarning)
         debiased = rates.spatial_information() - rates.spatial_information_bias()
     chance = [uid for uid in ids if tests[uid].p_value < 0.05]
-    n_values = shuffle["n_shuffles"] + 1
-    alpha_eff = (np.ceil(0.05 * n_values) - 1) / n_values
-    low, high = binom.ppf([0.0005, 0.9995], len(ids), alpha_eff)
-    assert low <= len(chance) <= high
-    assert chance  # the precondition for the checks below
+    assert chance  # the precondition for the checks below, not a rate
     assert not (debiased[chance] >= _information_cutoff(f)).any()
     predicate = getattr(f.module, _names(f)[0])
     for uid in chance:
