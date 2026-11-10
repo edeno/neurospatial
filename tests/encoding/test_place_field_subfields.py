@@ -10,6 +10,8 @@ same fields are divided at the valley between them (Notes, step 4).
 
 from __future__ import annotations
 
+import heapq
+
 import networkx as nx
 import numpy as np
 import pytest
@@ -18,7 +20,6 @@ from skimage.segmentation import watershed
 
 from neurospatial import Environment
 from neurospatial.encoding import compute_spatial_rates, detect_place_fields
-from neurospatial.encoding._field_metrics import _seed_component
 from neurospatial.encoding.population import population_coverage
 
 
@@ -179,6 +180,26 @@ def _centroid(env, rate, bins):
     return (env.bin_centers[bins] * rate[bins, None]).sum(axis=0) / rate[bins].sum()
 
 
+def _joined_to(env, seed, mask):
+    """Sorted bins of ``mask`` joined to ``seed`` through ``env.connectivity``.
+
+    A networkx component of the induced subgraph: the expected fields below
+    do not use the detector's own flood fill.
+    """
+    inside = env.connectivity.subgraph(np.flatnonzero(mask).tolist())
+    return np.array(sorted(nx.node_connected_component(inside, seed)))
+
+
+def _planted_peak(env, rate, center, radius=5.0):
+    """The highest bin within ``radius`` of a planted field center.
+
+    The sum of two fields moves the weaker maximum toward the stronger field
+    by about a bin, so the summit is searched near the center.
+    """
+    near = np.linalg.norm(env.bin_centers - np.asarray(center), axis=1) < radius
+    return int(np.argmax(np.where(near, rate, -np.inf)))
+
+
 def _dominance_fields(env, components, threshold=0.2):
     """Bins where each component is the larger, at ``threshold`` of its peak."""
     rate = components[0] + components[1]
@@ -186,10 +207,37 @@ def _dominance_fields(env, components, threshold=0.2):
     for own, other in (components, components[::-1]):
         mine = own > other
         peak = int(np.argmax(np.where(mine, rate, -np.inf)))
-        fields.append(
-            _seed_component(peak, mine & (rate >= threshold * rate[peak]), env)
-        )
+        fields.append(_joined_to(env, peak, mine & (rate >= threshold * rate[peak])))
     return fields
+
+
+def _flooded_fields(env, rate, peaks, threshold=0.2):
+    """Watershed fields of ``peaks`` by flooding ``env.connectivity`` directly.
+
+    ``detect_place_fields`` Notes, step 4: from all peaks at once, the
+    highest flooded bin (at equal rates the lowest bin index) gives its basin
+    to its unflooded finite neighbors. Each field is the part of its peak's
+    basin joined to the peak with a rate from ``threshold`` times the peak up
+    to the peak.
+    """
+    basin = np.full(env.n_bins, -1)
+    basin[list(peaks)] = np.arange(len(peaks))
+    flooded = [(-rate[peak], peak) for peak in peaks]
+    heapq.heapify(flooded)
+    while flooded:
+        _, highest = heapq.heappop(flooded)
+        for neighbor in env.connectivity.neighbors(highest):
+            if basin[neighbor] < 0 and np.isfinite(rate[neighbor]):
+                basin[neighbor] = basin[highest]
+                heapq.heappush(flooded, (-rate[neighbor], neighbor))
+    return [
+        _joined_to(
+            env,
+            peak,
+            (basin == k) & (rate >= threshold * rate[peak]) & (rate <= rate[peak]),
+        )
+        for k, peak in enumerate(peaks)
+    ]
 
 
 @pytest.fixture(scope="module")
@@ -252,11 +300,19 @@ def test_watershed_divides_touching_fields_at_the_valley(box):
     assert len(result) == len(core) == 2
     peaks = [int(field[np.argmax(rate[field])]) for field in result]
     assert peaks == [int(field[np.argmax(rate[field])]) for field in core]
-    # An independent marker watershed (scikit-image) gives the same bins.
-    for field, expected in zip(
-        result, _skimage_watershed_fields(box, rate, peaks), strict=True
+    # An independent marker watershed (scikit-image) gives the same bins, and
+    # so does flooding the bin graph, the reference for the other layouts.
+    assert peaks == [
+        _planted_peak(box, rate, center) for center in (first_center, second_center)
+    ]
+    for field, expected, flooded in zip(
+        result,
+        _skimage_watershed_fields(box, rate, peaks),
+        _flooded_fields(box, rate, peaks),
+        strict=True,
     ):
         np.testing.assert_array_equal(field, expected)
+        np.testing.assert_array_equal(flooded, expected)
 
     # Each centroid is within one bin of its field's center (36.1 and
     # 60.4 cm measured); "core" puts the second one 12 cm off.
@@ -274,26 +330,55 @@ def test_watershed_divides_touching_fields_at_the_valley(box):
 
 
 def test_watershed_on_a_track_ends_each_field_at_the_valley(track):
-    """On a line the basins meet at the lowest rate between the two peaks."""
+    """On a line the basins meet at the lowest rate between the two peaks.
+
+    10 Hz at 60 cm and 3.3 Hz at 88 cm merge at the first field's threshold.
+    A 2.5 Hz field at 150 cm is above that threshold too, but nothing joins
+    it to them, so it is a field of its own.
+    """
     x = track.bin_centers[:, 0]
-    rate = 10.0 * np.exp(-((x - 60.0) ** 2) / 128) + 3.3 * np.exp(
-        -((x - 88.0) ** 2) / 128
+    centers = (60.0, 88.0, 150.0)
+    rate = sum(
+        peak * np.exp(-((x - center) ** 2) / 128)
+        for center, peak in zip(centers, (10.0, 3.3, 2.5), strict=True)
     )
     core = detect_place_fields(track, rate, bandwidth=0.0, subfields="core")
     result = detect_place_fields(track, rate, bandwidth=0.0, subfields="watershed")
-    assert len(core) == len(result) == 2
+    assert len(core) == len(result) == 3
 
-    # Closed form on a line: bins left of the valley for the first field,
-    # right of it for the second, each at 20% of its own peak.
+    # By hand, along the bins in order of position. The valley is the lowest
+    # bin between the two planted centers; the flood reaches it from its
+    # higher neighbor, so it goes to that side. The far field's side starts
+    # at the lowest bin before it.
     order = np.argsort(x)
-    peaks = [int(field[np.argmax(rate[field])]) for field in result]
-    first, second = sorted(peaks, key=lambda b: x[b])
-    between = order[(x[order] > x[first]) & (x[order] < x[second])]
-    valley_x = x[between[np.argmin(rate[between])]]
-    for peak, field in zip(peaks, result, strict=True):
-        side = x <= valley_x if peak == first else x > valley_x
-        expected = _seed_component(peak, side & (rate >= 0.2 * rate[peak]), track)
-        np.testing.assert_array_equal(field, expected)
+    along, rate_along = x[order], rate[order]
+
+    def lowest_between(low, high):
+        between = np.flatnonzero((along > low) & (along < high))
+        return int(between[np.argmin(rate_along[between])])
+
+    valley = lowest_between(centers[0], centers[1])
+    to_first = rate_along[valley - 1] > rate_along[valley + 1]
+    first_end = valley + 1 if to_first else valley
+    gap = lowest_between(centers[1], centers[2])
+    assert rate_along[gap] < 0.2 * 2.5  # below every field's threshold
+    for (start, stop), field in zip(
+        ((0, first_end), (first_end, gap), (gap, len(along))), result, strict=True
+    ):
+        summit = start + int(np.argmax(rate_along[start:stop]))
+        floor = 0.2 * rate_along[summit]
+        low = high = summit
+        while low > start and rate_along[low - 1] >= floor:
+            low -= 1
+        while high + 1 < stop and rate_along[high + 1] >= floor:
+            high += 1
+        np.testing.assert_array_equal(field, np.sort(order[low : high + 1]))
+    # The same intervals, read off the map: 2 cm bins centered on odd cm.
+    assert [(x[f].min(), x[f].max()) for f in result] == [
+        (47.0, 77.0),
+        (79.0, 101.0),
+        (137.0, 163.0),
+    ]
     # "core" lets the second field run through the first's edge (centroid
     # 85.6 cm for a field at 88); the watershed keeps it on its peak (88.6).
     second_field = result[1]
@@ -301,23 +386,33 @@ def test_watershed_on_a_track_ends_each_field_at_the_valley(track):
 
 
 def test_watershed_on_hexagonal_bins(hexagons):
-    """A non-grid layout: the weak field stays on its own peak."""
-    first_center, second_center = np.array([30.0, 30.0]), np.array([54.0, 30.0])
-    components = (
-        _gaussian(hexagons, first_center, 10.0),
-        _gaussian(hexagons, second_center, 3.3),
+    """A non-grid layout: the weak field stays on its own peak.
+
+    A third field far from the two that touch is above the strong field's
+    threshold, but no bin joins it to them, so it stays a field of its own.
+    """
+    centers = (np.array([30.0, 30.0]), np.array([54.0, 30.0]), np.array([80.0, 80.0]))
+    components = tuple(
+        _gaussian(hexagons, center, peak)
+        for center, peak in zip(centers, (10.0, 3.3, 2.5), strict=True)
     )
-    rate = components[0] + components[1]
+    rate = sum(components)
     core = detect_place_fields(hexagons, rate, bandwidth=0.0, subfields="core")
     result = detect_place_fields(hexagons, rate, bandwidth=0.0, subfields="watershed")
-    assert len(core) == len(result) == 2
+    assert len(core) == len(result) == 3
+    # The fields of the planted summits, flooded on the bin graph.
+    peaks = [_planted_peak(hexagons, rate, center) for center in centers]
+    for field, expected in zip(
+        result, _flooded_fields(hexagons, rate, peaks), strict=True
+    ):
+        np.testing.assert_array_equal(field, expected)
     # Measured centroids 31.5 and 56.3 cm; "core" puts the second at 42.5 cm.
-    for field, center in zip(result, (first_center, second_center), strict=True):
+    for field, center in zip(result, centers, strict=True):
         np.testing.assert_allclose(_centroid(hexagons, rate, field), center, atol=4.0)
     # Measured 53 and 33 bins against 48 and 41 dominated bins: the valley
     # lies nearer the weaker field, as on the grid.
     for field, dominated in zip(
-        result, _dominance_fields(hexagons, components), strict=True
+        result.fields[:2], _dominance_fields(hexagons, components[:2]), strict=True
     ):
         assert abs(len(field) - len(dominated)) <= 0.25 * len(dominated)
 
@@ -354,7 +449,8 @@ def _noise_maps(env, bandwidth):
 
 
 def _assert_watershed_fields_are_valid(env, rate, fields, core, threshold=0.2):
-    """Disjoint, connected, decreasing peaks, each within its own threshold."""
+    """Disjoint, connected, decreasing peaks, each within its own threshold,
+    and each the whole part of its peak's basin within that threshold."""
     assert len(fields) <= len(core)
     used = np.concatenate([np.asarray(f) for f in fields] + [np.array([], int)])
     assert len(used) == len(set(used.tolist()))
@@ -362,11 +458,14 @@ def _assert_watershed_fields_are_valid(env, rate, fields, core, threshold=0.2):
     assert peaks == sorted(peaks, reverse=True)
     for field, peak in zip(fields, peaks, strict=True):
         assert np.min(rate[field]) >= threshold * peak
-        mask = np.zeros(env.n_bins, dtype=bool)
-        mask[field] = True
-        np.testing.assert_array_equal(
-            _seed_component(int(field[np.argmax(rate[field])]), mask, env), field
-        )
+        assert nx.is_connected(env.connectivity.subgraph(field.tolist()))
+    # No bin is missing: flooding the bin graph from the same peaks gives
+    # the same fields.
+    peak_bins = [int(field[np.argmax(rate[field])]) for field in fields]
+    for field, flooded in zip(
+        fields, _flooded_fields(env, rate, peak_bins, threshold), strict=True
+    ):
+        np.testing.assert_array_equal(field, flooded)
 
 
 @pytest.mark.parametrize("bandwidth", [0.0, 5.0])
