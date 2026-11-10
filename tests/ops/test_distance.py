@@ -19,6 +19,8 @@ from neurospatial import Environment
 from neurospatial._exceptions import CartesianOnlyError
 from neurospatial.arena import OpenArena
 from neurospatial.ops.distance import (
+    _bin_adjacency,
+    _geodesic_pair_distances,
     distance_field,
     euclidean_distance_matrix,
     geodesic_distance_matrix,
@@ -509,6 +511,251 @@ class TestNeighborsWithin:
             neighbors_within(line, [0], radius=1.0, metric="hops")
         with pytest.raises(ValueError, match="radius must be non-negative"):
             neighbors_within(line, [0], radius=-1.0)
+
+
+def _networkx_matrix(env):
+    lengths = dict(
+        nx.all_pairs_dijkstra_path_length(env.connectivity, weight="distance")
+    )
+    return np.array(
+        [
+            [lengths[a].get(b, np.inf) for b in range(env.n_bins)]
+            for a in range(env.n_bins)
+        ]
+    )
+
+
+class TestBinGraphAgainstNetworkX:
+    """``metric="bin_graph"`` is NetworkX's shortest path on ``env.connectivity``."""
+
+    @pytest.mark.parametrize(
+        "layout", ["walled", "two_rooms", "hexagonal", "cubes-26-connected"]
+    )
+    def test_matrix_field_pairs_and_neighborhoods(self, layout, walled, two_rooms):
+        env = (
+            {"walled": walled, "two_rooms": two_rooms}[layout]
+            if layout in ("walled", "two_rooms")
+            else _OBSTRUCTED[layout][0]()
+        )
+        expected = _networkx_matrix(env)
+        assert_allclose(
+            geodesic_distance_matrix(env, metric="bin_graph"), expected, rtol=1e-12
+        )
+        centers = np.random.default_rng(13).choice(
+            env.n_bins, min(6, env.n_bins), replace=False
+        )
+        assert_allclose(
+            pairwise_distances(env, centers, metric="bin_graph"),
+            expected[np.ix_(centers, centers)],
+            rtol=1e-12,
+        )
+        assert_allclose(
+            distance_field(env, centers[:3], metric="bin_graph"),
+            expected[centers[:3]].min(axis=0),
+            rtol=1e-12,
+        )
+        # A radius between two of the distances, so rounding moves no bin.
+        finite = np.unique(np.round(expected[np.isfinite(expected)], 9))
+        radius = float(finite[len(finite) // 3 : len(finite) // 3 + 2].mean())
+        balls = neighbors_within(env, centers, radius=radius, metric="bin_graph")
+        for center, ball in zip(centers, balls, strict=True):
+            np.testing.assert_array_equal(
+                np.sort(ball), np.flatnonzero(expected[center] <= radius)
+            )
+
+    def test_disconnected_rooms_are_infinitely_far(self, two_rooms):
+        matrix = geodesic_distance_matrix(two_rooms, metric="bin_graph")
+        assert np.all(np.isinf(matrix[:4, 4:]))
+        assert np.all(np.isfinite(matrix[:4, :4]))
+
+
+class TestNeighborsWithinSets:
+    def test_euclidean_balls_in_two_and_three_dimensions(self, square):
+        cubes = _grid(np.ones((4, 4, 4)), 2.0)
+        for env, centers in ((square, [0, 12, 24]), (cubes, [0, 21, 63])):
+            straight = _straight(env)
+            for radius in (2.0, 3.0, 4.5):
+                balls = neighbors_within(
+                    env, centers, radius=radius, metric="euclidean"
+                )
+                assert len(balls) == len(centers)
+                for center, ball in zip(centers, balls, strict=True):
+                    np.testing.assert_array_equal(
+                        np.sort(ball), np.flatnonzero(straight[center] <= radius)
+                    )
+
+    @pytest.mark.parametrize("metric", ["geodesic", "bin_graph", "euclidean"])
+    def test_a_path_ball_stays_in_its_room_and_a_straight_one_does_not(
+        self, two_rooms, metric
+    ):
+        # Two 2 x 2 rooms of 1 cm bins, 1 cm apart: bin 2 at (1.5, 0.5) and
+        # bin 4 at (3.5, 0.5) are 2 cm apart across the gap.
+        (ball,) = neighbors_within(two_rooms, [2], radius=2.5, metric=metric)
+        if metric == "euclidean":
+            assert sorted(ball.tolist()) == [0, 1, 2, 3, 4, 5]
+        else:
+            assert sorted(ball.tolist()) == [0, 1, 2, 3]
+
+    @pytest.mark.parametrize("metric", ["geodesic", "bin_graph", "euclidean"])
+    def test_each_ball_is_an_array_of_distinct_bin_indices(self, walled, metric):
+        centers = [0, 150, 150, 399]  # a center may repeat
+        balls = neighbors_within(walled, centers, radius=12.0, metric=metric)
+        assert len(balls) == len(centers)
+        for center, ball in zip(centers, balls, strict=True):
+            assert isinstance(ball, np.ndarray)
+            assert ball.dtype == np.int_
+            assert ball.ndim == 1
+            assert len(np.unique(ball)) == len(ball)
+            assert center in ball
+        np.testing.assert_array_equal(np.sort(balls[1]), np.sort(balls[2]))
+
+
+class TestDistanceFieldBeyondTheBasics:
+    def test_euclidean_in_three_dimensions(self):
+        cubes = _grid(np.ones((4, 4, 4)), 2.0)
+        straight = _straight(cubes)
+        assert_allclose(
+            distance_field(cubes, [0, 63], metric="euclidean"),
+            np.minimum(straight[0], straight[63]),
+            rtol=1e-12,
+        )
+        # Bin 21 is at (3, 3, 3) and bin 0 at (1, 1, 1).
+        assert distance_field(cubes, [21], metric="euclidean")[0] == pytest.approx(
+            np.sqrt(12.0), rel=1e-12
+        )
+
+    @pytest.mark.parametrize("metric", ["geodesic", "bin_graph", "euclidean"])
+    def test_cutoff_with_several_sources(self, walled, metric):
+        sources = [0, 210, 399]
+        full = distance_field(walled, sources, metric=metric)
+        for cutoff in (0.0, 12.0, 30.0, 75.0):
+            limited = distance_field(walled, sources, metric=metric, cutoff=cutoff)
+            np.testing.assert_array_equal(
+                limited, np.where(full <= cutoff, full, np.inf)
+            )
+            assert np.isfinite(limited).sum() >= len(sources)
+        assert np.isinf(
+            distance_field(walled, sources, metric=metric, cutoff=12.0)
+        ).any()
+
+
+def _path_inserted_out_of_order():
+    """Bins 0-1-2-3-4 in a row, 1 cm apart, added to the graph out of order."""
+    graph = nx.Graph()
+    graph.add_nodes_from([3, 0, 4, 2, 1])
+    for u in (2, 0, 3, 1):
+        graph.add_edge(u, u + 1, distance=1.0)
+    return graph
+
+
+def _reciprocal_digraph():
+    graph = nx.DiGraph()
+    graph.add_edge(0, 1, distance=2.0)
+    graph.add_edge(1, 0, distance=2.0)
+    graph.add_edge(1, 2, distance=2.0)
+    return graph
+
+
+def _path_multigraph(directed=False):
+    graph = nx.MultiDiGraph() if directed else nx.MultiGraph()
+    graph.add_edge(0, 1, distance=2.0)
+    graph.add_edge(1, 2, distance=2.0)
+    return graph
+
+
+_GRAPH_READERS = {
+    "adjacency": lambda graph, weight: _bin_adjacency(
+        graph, weight=weight, operation="test()"
+    ),
+    "pair distances": lambda graph, weight: _geodesic_pair_distances(
+        graph,
+        np.array([0]),
+        np.array([2]),
+        weight=weight,
+        operation="test()",
+    ),
+}
+
+
+@pytest.mark.parametrize("read", list(_GRAPH_READERS))
+class TestBinGraphsAreValidated:
+    """Every bin-graph distance reads its graph through these checks.
+
+    No public function takes a graph of its own any more; they pass
+    ``env.connectivity``. The checks still stand between any graph and the
+    distance arrays, which are indexed by bin.
+    """
+
+    def test_rows_are_bins_whatever_the_node_order(self, read):
+        graph = _path_inserted_out_of_order()
+        if read == "adjacency":
+            expected = np.zeros((5, 5))
+            for u in range(4):
+                expected[u, u + 1] = expected[u + 1, u] = 1.0
+            np.testing.assert_array_equal(
+                _GRAPH_READERS[read](graph, "distance").toarray(), expected
+            )
+        else:
+            assert_allclose(_GRAPH_READERS[read](graph, "distance"), [2.0])
+
+    def test_a_node_that_is_not_a_bin_index_is_refused(self, read):
+        graph = nx.Graph()
+        graph.add_edge(0, 1, distance=1.0)
+        graph.add_edge(1, 5, distance=1.0)  # three nodes, but no bin 2
+        with pytest.raises(
+            ValueError,
+            match=r"^test\(\): the graph's nodes must be the bin indices 0 to 2; "
+            r"nodes \[5\] are not\.",
+        ):
+            _GRAPH_READERS[read](graph, "distance")
+
+    def test_an_edge_without_the_weight_is_refused(self, read):
+        graph = nx.Graph()
+        graph.add_edge(0, 1, distance=2.5)
+        graph.add_edge(1, 2, distance=2.5)
+        with pytest.raises(
+            ValueError,
+            match=r"^test\(\): 2 edge\(s\) have no 'dist' attribute, for example "
+            r"edge \(0, 1\) \(its attributes: \['distance'\]\)\.",
+        ):
+            _GRAPH_READERS[read](graph, "dist")
+        graph.edges[0, 1]["dist"] = 1.0
+        with pytest.raises(
+            ValueError,
+            match=r"1 edge\(s\) have no 'dist' attribute, for example edge \(1, 2\)",
+        ):
+            _GRAPH_READERS[read](graph, "dist")
+
+    def test_no_weight_counts_edges(self, read):
+        graph = nx.Graph()
+        graph.add_edge(0, 1, distance=2.5)
+        graph.add_edge(1, 2, distance=2.5)
+        if read == "adjacency":
+            np.testing.assert_array_equal(
+                _GRAPH_READERS[read](graph, None).toarray(),
+                [[0.0, 1.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+            )
+        else:
+            assert_allclose(_GRAPH_READERS[read](graph, None), [2.0])
+            assert_allclose(_GRAPH_READERS[read](graph, "distance"), [5.0])
+
+    @pytest.mark.parametrize(
+        ("graph", "kind"),
+        [
+            (_reciprocal_digraph(), "DiGraph"),
+            (_path_multigraph(), "MultiGraph"),
+            (_path_multigraph(directed=True), "MultiDiGraph"),
+        ],
+        ids=["directed", "multi", "directed-multi"],
+    )
+    @pytest.mark.parametrize("weight", ["distance", None])
+    def test_a_directed_or_multigraph_is_refused(self, read, graph, kind, weight):
+        with pytest.raises(
+            ValueError,
+            match=rf"^test\(\): the graph must be an undirected simple nx\.Graph, "
+            rf"got {kind}\.",
+        ):
+            _GRAPH_READERS[read](graph, weight)
 
 
 _BIN_QUERIES = {
