@@ -371,7 +371,11 @@ class TestDistanceBetween:
             assert small_2d_env.distance_between(
                 bins=[0, neighbor], metric=metric
             ) == pytest.approx(spacing, rel=1e-12)
-        with pytest.raises(ValueError, match="metric"):
+        with pytest.raises(
+            ValueError,
+            match=r"^Environment\.distance_between\(\) got metric='hops'; metric "
+            r"must be one of 'geodesic', 'bin_graph'\.",
+        ):
             small_2d_env.distance_between(bins=[0, neighbor], metric="hops")
 
 

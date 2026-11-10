@@ -36,6 +36,36 @@ def _around_the_wall(start, stop):
     )
 
 
+def _wide_u_shape():
+    """A U of corridors three 1 cm bins wide around a wall.
+
+    The left arm is x in [0, 3], the right arm x in [6, 9] (y in [0, 12]),
+    joined by the top rows y in [9, 12]; the wall x in [3, 6], y in [0, 9]
+    has its top corners at (3, 9) and (6, 9). In corridors this wide a path
+    at any angle is shorter than a walk between neighboring bin centers.
+    """
+    from neurospatial import Environment
+
+    cells = np.array([(x + 0.5, y + 0.5) for x in range(9) for y in range(12)])
+    u_shape = cells[(cells[:, 0] < 3) | (cells[:, 0] > 6) | (cells[:, 1] > 9)]
+    return Environment.from_samples(u_shape, bin_size=1.0)
+
+
+def _through_the_wide_u(start, stop):
+    """Shortest path from the left arm to the right arm that turns at bin centers.
+
+    Straight to the center (2.5, 8.5) below the wall's corner (3, 9), through
+    that corner to (3.5, 9.5), 2 cm along the top to (5.5, 9.5), through the
+    corner (6, 9) to (6.5, 8.5), and straight on.
+    """
+    return (
+        np.hypot(2.5 - start[0], 8.5 - start[1])
+        + 2 * np.sqrt(2.0)
+        + 2.0
+        + np.hypot(stop[0] - 6.5, 8.5 - stop[1])
+    )
+
+
 @pytest.fixture
 def simple_grid_env():
     """Create a simple 10x10 grid environment for testing."""
@@ -339,9 +369,10 @@ class TestDistanceToReward:
 
         In the open grid the shortest path inside is the straight line:
         sqrt(5) from (0, 0) to (2, 1), not the 1 + sqrt(2) of a walk along
-        grid neighbors. Across the wall of a U it is the taut path over the
-        wall's corners, within a bin per corner, while the Euclidean
-        distance is still the straight line through the wall.
+        grid neighbors. Across the wall of a U it is the path over the
+        wall's corners that turns at bin centers, shorter than the walk
+        along grid neighbors, while the Euclidean distance is still the
+        straight line through the wall.
         """
         from neurospatial.behavior.navigation import distance_to_reward
 
@@ -362,11 +393,21 @@ class TestDistanceToReward:
                 value = distance(simple_grid_env, [0.0, 0.0], reward, metric)
                 assert value == pytest.approx(straight, rel=1e-12)
 
-        u_shape = _u_shape()
-        start, reward = [0.5, 0.5], [4.5, 0.5]
-        assert distance(u_shape, start, reward, "euclidean") == pytest.approx(4.0)
-        taut = _around_the_wall(start, reward)
-        assert taut <= distance(u_shape, start, reward, "geodesic") <= taut + 2.0
+        u_shape = _wide_u_shape()
+        for start, reward in (([0.5, 0.5], [8.5, 0.5]), ([0.8, 0.3], [8.2, 0.7])):
+            assert distance(u_shape, start, reward, "euclidean") == pytest.approx(
+                np.hypot(reward[0] - start[0], reward[1] - start[1]), rel=1e-12
+            )
+            assert distance(u_shape, start, reward, "geodesic") == pytest.approx(
+                _through_the_wide_u(start, reward), rel=1e-12
+            )
+        # Between the two bin centers the walk along grid neighbors takes
+        # two diagonal and six straight steps up each arm instead.
+        staircase = 2 * (2 * np.sqrt(2.0) + 6.0) + 2 * np.sqrt(2.0) + 2.0
+        assert distance(u_shape, [0.5, 0.5], [8.5, 0.5], "bin_graph") == pytest.approx(
+            staircase, rel=1e-12
+        )
+        assert _through_the_wide_u([0.5, 0.5], [8.5, 0.5]) < staircase - 1.0
 
 
 class TestDistanceToRewardValidation:
@@ -950,7 +991,8 @@ class TestDistanceToBoundary:
         found here by brute force. In a U with a goal region at the bottom of
         the right arm, from the left arm the Euclidean distance runs through
         the wall to the region's boundary bin (the region bin next to a
-        non-region bin), while the geodesic one runs over the wall's corners.
+        non-region bin), while the geodesic one runs over the wall's corners,
+        turning at bin centers.
         """
         from shapely.geometry import box
 
@@ -968,18 +1010,20 @@ class TestDistanceToBoundary:
             )
             np.testing.assert_allclose(result, nearest, rtol=1e-12)
 
-        u_shape = _u_shape()
+        u_shape = _wide_u_shape()
         regions = Regions(u_shape.regions.values())
-        regions.add("goal", polygon=box(4, 0, 5, 2))
+        regions.add("goal", polygon=box(6, 0, 9, 2))
         u_shape = u_shape.with_regions(regions)
         centers = u_shape.bin_centers
-        in_goal = (centers[:, 0] > 4) & (centers[:, 1] < 2)
+        in_goal = (centers[:, 0] > 6) & (centers[:, 1] < 2)
         edge = [
             b
             for b in np.flatnonzero(in_goal)
             if any(not in_goal[n] for n in u_shape.connectivity.neighbors(b))
         ]
-        positions = np.array([[0.5, 0.5], [0.5, 3.2]])
+        # The goal's boundary bins are its upper row, at y = 1.5.
+        assert sorted(centers[edge].tolist()) == [[6.5, 1.5], [7.5, 1.5], [8.5, 1.5]]
+        positions = np.array([[0.5, 0.5], [0.5, 3.2], [1.5, 6.5]])
         euclidean = distance_to_boundary(
             u_shape,
             positions,
@@ -993,13 +1037,12 @@ class TestDistanceToBoundary:
         through_wall = np.min(
             np.linalg.norm(positions[:, None, :] - centers[edge][None], axis=2), axis=1
         )
-        taut = np.array(
-            [min(_around_the_wall(p, centers[b]) for b in edge) for p in positions]
+        around = np.array(
+            [min(_through_the_wide_u(p, centers[b]) for b in edge) for p in positions]
         )
         np.testing.assert_allclose(euclidean, through_wall, rtol=1e-12)
-        assert np.all(taut <= geodesic)
-        assert np.all(geodesic <= taut + 2.0)
-        assert np.all(geodesic > 3 * euclidean)  # over the wall, not through it
+        np.testing.assert_allclose(geodesic, around, rtol=1e-12)
+        assert np.all(geodesic > 1.9 * euclidean)  # over the wall, not through it
 
     def test_invalid_boundary_type_raises(self, simple_grid_env):
         """Test invalid boundary_type raises ValueError."""

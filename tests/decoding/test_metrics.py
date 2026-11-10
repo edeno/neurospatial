@@ -543,10 +543,14 @@ class TestErrorAlongTheEnvironment:
         rng = np.random.default_rng(0)
         decoded = rng.uniform(0.5, 99.5, (300, 2))
         actual = rng.uniform(0.5, 99.5, (300, 2))
+        straight = np.linalg.norm(decoded - actual, axis=1)
         np.testing.assert_allclose(
-            decoding_error(arena, decoded, actual),
+            decoding_error(arena, decoded, actual), straight, rtol=1e-12
+        )
+        np.testing.assert_allclose(
             decoding_error(arena, decoded, actual, metric="euclidean"),
-            rtol=1e-9,
+            straight,
+            rtol=1e-12,
         )
 
     def test_positions_must_match_the_environment_dimensions(self, small_2d_env):
