@@ -2677,36 +2677,46 @@ def test_vte_trial_measures_the_session_pass(method):
 @pytest.mark.parametrize("method", METHODS)
 @pytest.mark.parametrize("seed", range(5))
 def test_jittered_pause_does_not_score_as_head_sweeping(seed, method):
-    """Tracking jitter on a still or creeping animal is not VTE.
+    """Tracking jitter on a still or slowly moving animal is not VTE.
 
     Jitter sets the heading of a slow animal, with either estimator: without
     the speed gate, over seeds 0-9, a still animal scores 5-17 rad and a
     2 cm/s creep 5-12 rad against 3.5-4.9 rad for the scan with the adaptive
     window, and a still animal about 16 rad against 8 rad with the line fit.
-    With the default gate a still animal has no head sweep and a creep is
-    far below a scan.
-    """
-    from neurospatial.behavior import compute_vte_trial
 
+    With the gate at most one sample of a still animal passes (the first,
+    where the velocity fit is one-sided), and one sample has no turn, so no
+    head sweep was measured: NaN, not 0. A straight creep at 1.5 times the
+    gate is the slow movement the gate lets through: the jitter moves its
+    estimated speed by up to 1.9 cm/s (seeds 0-9), so every sample stays
+    above the gate and its head sweep is a number, all of it jitter. It is
+    below the scan's: 0.2-2.6 rad against 3.5-4.9 rad with the adaptive
+    window (6-53% of the scan) and 0.7-1.9 against 7.8-8.2 rad with the line
+    fit (9-23%), over seeds 0-9. It is not always far below: with the
+    adaptive window seed 3 reaches half of the scan.
+    """
+    from neurospatial.behavior import compute_speed, compute_vte_trial
+
+    gate = 5.0  # cm/s
     rng = np.random.default_rng(seed)
     times = np.arange(45) / 30.0  # 1.5 s at 30 Hz
     jitter = rng.normal(0.0, 0.3, (times.size, 2))  # cm
     still = np.zeros((times.size, 2)) + jitter
-    creep = np.column_stack([2.0 * times, np.zeros_like(times)]) + jitter
+    creep = np.column_stack([1.5 * gate * times, np.zeros_like(times)]) + jitter
     scan = np.column_stack([10.0 * times, 8.0 * np.sin(2 * np.pi * times)]) + jitter
 
     def sweep(xy):
         return compute_vte_trial(
-            times, xy, 0.0, 1.5, min_speed=5.0, method=method
+            times, xy, 0.0, 1.5, min_speed=gate, method=method
         ).head_sweep_magnitude
 
     # Without jitter, the scan's IdPhi is that of the reference estimator.
     clean = scan - jitter
     clean_sweep = sweep(clean)
     reference = (
-        reference_head_sweep(times, clean, 5.0)
+        reference_head_sweep(times, clean, gate)
         if method == "adaptive_window"
-        else _line_fit_head_sweep(times, clean, 5.0)
+        else _line_fit_head_sweep(times, clean, gate)
     )
     assert_allclose(clean_sweep, reference, rtol=1e-10)
     scan_sweep = sweep(scan)
@@ -2717,6 +2727,10 @@ def test_jittered_pause_does_not_score_as_head_sweeping(seed, method):
     # more). Every scan sample stays above the gate, and 3/4 of the clean
     # value is still a strong sweep.
     assert scan_sweep > 0.75 * clean_sweep
+    # At most the first sample of the still animal reaches the gate (seed 3,
+    # where the fit is one-sided), and one sample alone has no turn.
+    assert (compute_speed(times, still)[1:] < gate).all()
     assert np.isnan(sweep(still))
-    creep_sweep = sweep(creep)
-    assert np.isnan(creep_sweep) or creep_sweep < 0.25 * scan_sweep
+    # Every sample of the creep passes the gate, so its sweep is compared.
+    assert (compute_speed(times, creep) >= gate).all()
+    assert sweep(creep) < scan_sweep
