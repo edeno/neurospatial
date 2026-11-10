@@ -815,16 +815,8 @@ class _OpenPaths(_EnvironmentPaths):
     ) -> NDArray[np.float64]:
         out = np.empty(starts.shape[0])
         # No path is shorter than the straight line, so where the segment
-        # stays inside it is the path: points in one bin (cells are convex),
-        # and any other pair whose segment is visible. Only the rest need a
-        # field.
-        straight = start_bins == end_bins
-        other = np.flatnonzero(~straight)
-        for lo in range(0, other.size, _PAIR_CHUNK):
-            part = other[lo : lo + _PAIR_CHUNK]
-            straight[part] = self._sees(
-                starts[part], ends[part], start_bins[part], end_bins[part]
-            )
+        # stays inside it is the path. Only the rest need a field.
+        straight = self._straight_pairs(starts, ends, start_bins, end_bins)
         out[straight] = np.linalg.norm(ends[straight] - starts[straight], axis=1)
         rest = np.flatnonzero(~straight)
         if rest.size:
@@ -847,6 +839,38 @@ class _OpenPaths(_EnvironmentPaths):
                 fields.ensure(self, ends_of_pairs)
             out[rest] = np.minimum(self._toward(s, e, a, b), self._toward(e, s, b, a))
         return out
+
+    def _straight_pairs(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+    ) -> NDArray[np.bool_]:
+        """Whether each pair of points is the straight line apart.
+
+        Points in one bin are (cells are convex), and so is any other pair
+        whose segment stays inside (:meth:`_sees`), traced ``_PAIR_CHUNK``
+        pairs at a time.
+
+        Parameters
+        ----------
+        starts, ends : ndarray, shape (n_pairs, n_dims)
+            Points in ``start_bins`` and ``end_bins``.
+        start_bins, end_bins : ndarray of int, shape (n_pairs,)
+
+        Returns
+        -------
+        ndarray of bool, shape (n_pairs,)
+        """
+        straight: NDArray[np.bool_] = start_bins == end_bins
+        other = np.flatnonzero(~straight)
+        for lo in range(0, other.size, _PAIR_CHUNK):
+            part = other[lo : lo + _PAIR_CHUNK]
+            straight[part] = self._sees(
+                starts[part], ends[part], start_bins[part], end_bins[part]
+            )
+        return straight
 
     def _toward(
         self,
@@ -3279,7 +3303,7 @@ class _OpenPairDistances(_PairDistances):
     """Pair distances in an open environment, from per-bin-pair tables.
 
     The fields of every bin the positions visit are reduced to tables once,
-    so each pair is a few lookups.
+    so a pair whose straight segment is blocked is a few lookups.
     """
 
     def __init__(self, paths: _OpenPaths, points: NDArray[np.float64]) -> None:
@@ -3332,9 +3356,20 @@ class _OpenPairDistances(_PairDistances):
     def _between(
         self, first: NDArray[np.intp], second: NDArray[np.intp]
     ) -> NDArray[np.float64]:
-        # The shorter of the paths along either position's field, as
-        # :meth:`_OpenPaths._between` measures.
-        return np.minimum(self._toward(first, second), self._toward(second, first))
+        # As :meth:`_OpenPaths._between` measures: the straight line where
+        # the segment stays inside, else the shorter of the paths along
+        # either position's field.
+        starts, ends = self._points[first], self._points[second]
+        out = np.empty(first.size)
+        straight = self._paths._straight_pairs(
+            starts, ends, self._bins[first], self._bins[second]
+        )
+        out[straight] = np.linalg.norm(ends[straight] - starts[straight], axis=1)
+        rest = np.flatnonzero(~straight)
+        if rest.size:
+            one, other = first[rest], second[rest]
+            out[rest] = np.minimum(self._toward(one, other), self._toward(other, one))
+        return out
 
     def _toward(
         self, first: NDArray[np.intp], second: NDArray[np.intp]

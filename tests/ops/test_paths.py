@@ -95,6 +95,40 @@ class TestSymmetricPairs:
         )
 
 
+def _ring(rng):
+    """Hexagonal bins on a ring: the hole hides opposite sides from each other."""
+    samples = rng.uniform(-20, 20, (40_000, 2))
+    radius = np.linalg.norm(samples, axis=1)
+    return Environment.from_samples(
+        samples[(radius > 8) & (radius < 20)], bin_size=2.0, layout="hexagonal"
+    )
+
+
+@pytest.mark.parametrize("layout", ["walled", "open", "ring"])
+def test_pair_tables_measure_what_single_pairs_measure(layout, walled):
+    # ``pairwise(points).between(i, j)`` and ``between(points[i], points[j])``
+    # are two routes to one length: the straight line where the segment stays
+    # inside, else the shorter grown path.
+    rng = np.random.default_rng(7)
+    env = {"walled": walled, "open": _grid(20, 2.0), "ring": _ring(rng)}[layout]
+    points = _inside(env, 400, rng)
+    first, second = rng.integers(0, 400, 6000), rng.integers(0, 400, 6000)
+    paths = _environment_paths(env, call="test")
+    single = paths.between(points[first], points[second])
+    np.testing.assert_allclose(
+        paths.pairwise(points).between(first, second), single, rtol=1e-9
+    )
+    visible = paths.sees(points[first], points[second])
+    if layout != "open":
+        # Both kinds of pair are compared.
+        assert 0.1 < visible.mean() < 0.9
+    np.testing.assert_allclose(
+        single[visible],
+        np.linalg.norm(points[second[visible]] - points[first[visible]], axis=1),
+        rtol=1e-12,
+    )
+
+
 class TestStraightLines:
     def test_a_visible_segment_is_the_straight_line(self, walled):
         rng = np.random.default_rng(2)
