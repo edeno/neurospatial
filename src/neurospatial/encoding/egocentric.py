@@ -1531,7 +1531,9 @@ def compute_egocentric_rate(
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
         inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Required when ``env`` is None.
+        object with ``metric="geodesic"``. Bins found by nearest center
+        with no finite ``max_distance`` are covered at their centers only.
+        Required when ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -1809,7 +1811,9 @@ def compute_object_vector_rate(
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
         inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Required when ``env`` is None.
+        object with ``metric="geodesic"``. Bins found by nearest center
+        with no finite ``max_distance`` are covered at their centers only.
+        Required when ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -2104,7 +2108,7 @@ def _require_planar_positions(
     )
 
 
-def _bin_reach(env: Environment) -> NDArray[np.float64] | None:
+def _bin_reach(env: Environment) -> NDArray[np.float64]:
     """Farthest a position in each bin can be from the bin's center.
 
     Parameters
@@ -2114,14 +2118,16 @@ def _bin_reach(env: Environment) -> NDArray[np.float64] | None:
 
     Returns
     -------
-    ndarray, shape (n_bins,), or None
+    ndarray, shape (n_bins,)
         On a track, half the bin's length: distance there is measured along
         the centerline, and every point of the centerline is within half a
         bin's length of a bin center. For bins with cells, the straight
         distance from the center to the farthest corner of the cell and of
         the arena slivers at the outline whose positions the bin takes. For
-        bins found by nearest center, the locator's ``max_distance``. None
-        when none of these says where a bin's positions end.
+        bins found by nearest center, the locator's ``max_distance``. Zero
+        when none of these says where a bin's positions end (nearest-center
+        bins with no finite radius): the default range then covers the bin
+        centers only.
     """
     import shapely
 
@@ -2135,12 +2141,12 @@ def _bin_reach(env: Environment) -> NDArray[np.float64] | None:
     if isinstance(binning.locator, NearestBinLocator):
         radius = binning.locator.max_distance
         if radius is None or not np.isfinite(radius):
-            return None
+            return np.zeros(len(centers))
         return np.full(len(centers), radius)
     try:
         cells = cell_polygons(binning)
     except ValueError:
-        return None
+        return np.zeros(len(centers))
     slivers = outline_sliver_regions(binning, env.arena)
     owner = np.r_[np.arange(len(cells)), [bin_ for bin_, _ in slivers]].astype(np.intp)
     shapes = np.asarray([*cells, *(part for _, part in slivers)], dtype=object)
@@ -2164,7 +2170,9 @@ def _largest_object_distance(
     """An upper bound on the distance to the nearest object from inside ``env``.
 
     No position that ``env.bin_at`` gives a bin is farther from its nearest
-    object than this.
+    object than this. The one exception is bins found by nearest center with
+    no finite ``max_distance``, which have no farthest position: the bound
+    then holds for positions at the bin centers.
 
     Euclidean: the diagonal of the box around the environment (the arena's
     box when its domain is known, which includes a track's width; else the
@@ -2191,38 +2199,19 @@ def _largest_object_distance(
     context : str
         Public function name for error messages.
 
-    Raises
-    ------
-    ValueError
-        If the environment does not say how far from a bin's center its
-        positions reach, so no range can be guaranteed.
     """
     centers = np.asarray(env.bin_centers, dtype=np.float64)
     objects = np.asarray(object_positions, dtype=np.float64)
-    reach = None
     box = env.arena.domain_bounds()
     if box is None and env.dimension_ranges is not None:
         box = np.array(env.dimension_ranges, dtype=np.float64).T
-    if box is None or metric == "geodesic":
-        reach = _bin_reach(env)
-        if reach is None:
-            raise ValueError(
-                _format_error(
-                    f"{context}: distance_range is required for this environment.",
-                    why="Why: its bins have no cells and no finite lookup "
-                    "radius, so how far a position inside a bin can be from "
-                    "an object is unknown",
-                    fix="pass distance_range=(0.0, max_distance) in the units "
-                    "of positions",
-                )
-            )
-        if box is None:
-            margin = reach.max(initial=0.0)
-            box = np.array([centers.min(axis=0) - margin, centers.max(axis=0) + margin])
+    if box is None:
+        margin = _bin_reach(env).max(initial=0.0)
+        box = np.array([centers.min(axis=0) - margin, centers.max(axis=0) + margin])
     if metric == "geodesic":
         from neurospatial.ops import _environment_paths
 
-        assert reach is not None  # found above
+        reach = _bin_reach(env)
         paths = _environment_paths(env, call=context)
         object_bins = paths.bins(objects)
         inside = np.flatnonzero(object_bins >= 0)
@@ -2270,9 +2259,8 @@ def _object_vector_grid(
     Raises
     ------
     ValueError
-        If the default range has no ``env`` to measure or ``env`` does not
-        say where its bins' positions end, or the widths or range are
-        invalid.
+        If the default range has no ``env`` to measure, or the widths or
+        range are invalid.
     """
     if distance_range is None and env is None:
         raise ValueError(
@@ -2738,7 +2726,9 @@ def compute_egocentric_rates(
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
         inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Required when ``env`` is None.
+        object with ``metric="geodesic"``. Bins found by nearest center
+        with no finite ``max_distance`` are covered at their centers only.
+        Required when ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -3093,7 +3083,9 @@ def compute_object_vector_rates(
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
         inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Required when ``env`` is None.
+        object with ``metric="geodesic"``. Bins found by nearest center
+        with no finite ``max_distance`` are covered at their centers only.
+        Required when ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -3804,7 +3796,9 @@ def is_object_vector_cell(
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
         inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Required when ``env`` is None.
+        object with ``metric="geodesic"``. Bins found by nearest center
+        with no finite ``max_distance`` are covered at their centers only.
+        Required when ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -4103,7 +4097,9 @@ def is_egocentric_object_vector_cell(
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
         inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Required when ``env`` is None.
+        object with ``metric="geodesic"``. Bins found by nearest center
+        with no finite ``max_distance`` are covered at their centers only.
+        Required when ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -5014,7 +5010,9 @@ def object_vector_cell_significance(
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
         inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Required when ``env`` is None.
+        object with ``metric="geodesic"``. Bins found by nearest center
+        with no finite ``max_distance`` are covered at their centers only.
+        Required when ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -5272,7 +5270,9 @@ def egocentric_object_vector_cell_significance(
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
         inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Required when ``env`` is None.
+        object with ``metric="geodesic"``. Bins found by nearest center
+        with no finite ``max_distance`` are covered at their centers only.
+        Required when ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.

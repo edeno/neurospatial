@@ -233,23 +233,32 @@ def test_nearest_center_bins_are_covered_out_to_their_radius(metric):
     assert result.analysis_settings["time_beyond_distance_range"] == 0.0
 
 
-@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
-def test_bins_without_a_known_extent_need_an_explicit_range(metric):
-    """With no limit on how far a bin's positions reach, no range covers them."""
-    env = _wells(max_distance=np.inf)
-    positions = np.array([[0.0, 0.0], [20.0, 300.0], [20.0, 0.0]])
+@pytest.mark.parametrize(
+    ("metric", "expected_range"),
+    [("euclidean", (0.0, 30.0)), ("geodesic", (0.0, 45.0))],
+)
+@pytest.mark.parametrize("max_distance", [np.inf])
+def test_bins_with_no_lookup_radius_are_covered_at_their_centers(
+    metric, expected_range, max_distance
+):
+    """With no limit on how far a bin's positions reach, the default range
+    covers the bin centers, and time farther out is reported, not refused.
+
+    Euclidean: the 28.3 cm diagonal of the centers' box. Geodesic: 40 cm
+    along the two connections plus 1.4 cm from the first center to the
+    object.
+    """
+    env = _wells(max_distance=max_distance)
+    positions = np.array(
+        [[0.0, 0.0], [20.0, 0.0], [20.0, 20.0], [20.0, 300.0], [20.0, 20.0]]
+    )
     assert (env.bin_at(positions) >= 0).all()
     objects = np.array([[1.0, 1.0]])
 
-    with pytest.raises(ValueError, match="distance_range is required for this env"):
-        _map(env, positions, objects, metric)
-    result = compute_object_vector_rate(
-        env,
-        np.array([0.011]),
-        np.arange(3) * 0.02,
-        positions,
-        objects,
-        metric=metric,
-        distance_range=(0.0, 400.0),
-    )
-    assert result.distance_range == (0.0, 400.0)
+    result = _map(env, positions, objects, metric)
+
+    assert result.distance_range == expected_range
+    # Four 0.02 s intervals; the one that starts 300 cm out is beyond.
+    settings = result.analysis_settings
+    assert settings["time_beyond_distance_range"] == pytest.approx(0.02)
+    assert settings["fraction_of_time_in_distance_range"] == pytest.approx(0.75)
