@@ -12,7 +12,9 @@ import dataclasses
 import networkx as nx
 import numpy as np
 import pytest
-from replay_helpers import assert_null_verdicts_at_alpha
+from calibration_helpers import assert_rejections_at_rate
+from measured_rate_helpers import require_measured_rejections
+from replay_helpers import assert_null_verdicts_at_alpha, null_verdicts
 
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_jointly, decode_position
@@ -128,6 +130,7 @@ def test_line_searches_detect_a_sweep(place_code, method):
 
 _UNIT_IDENTITY_INFLATED = pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason=(
         "The cell-identity shuffle is anti-conservative on random events: "
         "18 (Olafsdottir 2015) and 14 (Bush 2022) of these 150 are replay, "
@@ -141,31 +144,44 @@ _UNIT_IDENTITY_INFLATED = pytest.mark.xfail(
 
 
 @pytest.mark.parametrize(
-    "method",
+    ("method", "measured"),
     [
         pytest.param(
             OLAFSDOTTIR_2015,
+            (18, 109),
             marks=[pytest.mark.slow, _UNIT_IDENTITY_INFLATED],
             id=OLAFSDOTTIR_2015.name,
         ),
         pytest.param(
             YAMAMOTO_TONEGAWA_2017,
+            None,
             marks=pytest.mark.slow,
             id=YAMAMOTO_TONEGAWA_2017.name,
         ),
-        pytest.param(LIU_2023, id=LIU_2023.name),
+        pytest.param(LIU_2023, None, id=LIU_2023.name),
         pytest.param(
             BUSH_2022,
+            (14, 96),
             marks=[pytest.mark.slow, _UNIT_IDENTITY_INFLATED],
             id=BUSH_2022.name,
         ),
     ],
 )
-def test_line_searches_call_random_events_replay_at_alpha(place_code, method):
+def test_line_searches_call_random_events_replay_at_alpha(place_code, method, measured):
     """150 random events with 99 shuffles: replay at P(p < 0.05) = 0.04.
 
     The 99% binomial interval is 1 to 13 replay events; a recipe at 25%
-    false positives gives about 38.
+    false positives gives about 38. P(p < 0.5) = 0.49 is checked too, 58 to
+    89 of the p-values, so a null that never rejects fails.
+
+    The two recipes whose only shuffle is of cell identity keep neither
+    rate. They are expected to fail the replay-rate assertion, and only
+    that. ``measured`` is their count of replay events and of p-values
+    below 0.5, and each count is first held to the 99% interval of its own
+    rate (Olafsdottir 2015: 9 to 29 and 95 to 123; Bush 2022: 6 to 24 and
+    81 to 111). A count outside its interval fails the test, whichever way
+    it moved, and a replay count inside the exact interval fails it as an
+    unexpected pass.
     """
     env, rates = place_code
     method = dataclasses.replace(method, n_shuffles=99)
@@ -173,13 +189,19 @@ def test_line_searches_call_random_events_replay_at_alpha(place_code, method):
         _detect(env, *_random(env, rates, seed=300 + seed), method, rates, rng=seed)
         for seed in range(150)
     ]
-    assert_null_verdicts_at_alpha(
+    verdicts = null_verdicts(
         [r.p_value for r in results],
         [r.is_replay for r in results],
         [all(r.criteria.values()) for r in results],
-        alpha=method.alpha,
         n_shuffles=method.n_shuffles,
     )
+    if measured is None:
+        assert_rejections_at_rate(verdicts.below(0.5), verdicts.exact_rate(0.5))
+    else:
+        n_replay, n_below_half = measured
+        require_measured_rejections(verdicts.replay, n_replay)
+        require_measured_rejections(verdicts.below(0.5), n_below_half)
+    assert_rejections_at_rate(verdicts.replay, verdicts.exact_rate(method.alpha))
 
 
 @pytest.mark.parametrize(

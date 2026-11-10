@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 from calibration_helpers import monte_carlo_rejection_rate, null_rejection_interval
 
@@ -95,4 +97,46 @@ def assert_null_verdicts_at_alpha(
     assert half_low <= n_half <= half_high, (
         f"{n_half} of {defined.size} null p-values below 0.5; "
         f"{half_low} to {half_high} expected"
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class NullVerdicts:
+    """A recipe's verdicts and p-values on events without replay.
+
+    ``replay`` holds the verdict of each event that passes every criterion
+    and ``p_values`` the defined p-values. ``below(level)`` marks the
+    p-values under ``level``; an exact shuffle test puts a share
+    ``exact_rate(level)`` of them there.
+    """
+
+    replay: np.ndarray
+    p_values: np.ndarray
+    n_shuffles: int
+
+    def below(self, level):
+        return self.p_values < level
+
+    def exact_rate(self, level):
+        return monte_carlo_rejection_rate(self.n_shuffles, level)
+
+
+def null_verdicts(p_values, is_replay, eligible, *, n_shuffles):
+    """Collect a recipe's p-values and verdicts on null events.
+
+    ``eligible`` marks the events that pass every criterion. A replay
+    verdict for an event that fails one raises ``ValueError``. It is not an
+    ``AssertionError``, so it does not count as the failed rate assertion of
+    a test marked ``xfail(raises=AssertionError)``.
+    """
+    p_values = np.asarray(p_values, dtype=float)
+    is_replay = np.asarray(is_replay, dtype=bool)
+    eligible = np.asarray(eligible, dtype=bool)
+    if np.any(is_replay & ~eligible):
+        msg = "replay verdict for an event that fails a criterion"
+        raise ValueError(msg)
+    return NullVerdicts(
+        replay=is_replay[eligible],
+        p_values=p_values[np.isfinite(p_values)],
+        n_shuffles=n_shuffles,
     )

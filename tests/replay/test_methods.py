@@ -7,7 +7,8 @@ import pickle
 
 import numpy as np
 import pytest
-from replay_helpers import assert_null_verdicts_at_alpha
+from calibration_helpers import assert_rejections_at_rate
+from replay_helpers import assert_null_verdicts_at_alpha, null_verdicts
 
 from neurospatial import Environment
 from neurospatial.decoding import (
@@ -2369,31 +2370,35 @@ class TestOlafsdottir:
         assert sweep.p_value == pytest.approx(1 / 101)
 
     @pytest.mark.slow
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "The place-field shift null is anti-conservative on random events: "
-            "4 of 150 are replay (2.7%, 2 / 101 = 2.0% expected) and 93 of "
-            "150 p-values fall below 0.5 (62%, 59 to 90 expected)."
-        ),
-    )
     def test_calls_random_events_replay_at_alpha(self, place_code):
         """150 random events at the recipe's 100 shuffles and alpha = 0.025.
 
         P(p < 0.025) is 2 / 101 for an exact test, so the 99% interval runs
-        from 0 to 8 replay events, and P(p < 0.5) is checked as well.
+        from 0 to 8 replay events, and 4 are replay.
+
+        The place-field shift null still gives too many small p-values: 93
+        of the 150 fall below 0.5 (62%), where an exact test gives 50 / 101
+        of them, 59 to 90. That count is held to the 99% interval of its own
+        rate, 78 to 108, and must stay outside the exact interval, so the
+        test fails when the excess grows and when it goes away. The recipe's
+        notes then need the new count.
         """
         results = [
             self._detect(*place_code, "random", seed=300 + seed, rng=seed)
             for seed in range(150)
         ]
-        assert_null_verdicts_at_alpha(
+        verdicts = null_verdicts(
             [r.p_value for r in results],
             [r.is_replay for r in results],
             [all(r.criteria.values()) for r in results],
-            alpha=OLAFSDOTTIR_2017.alpha,
             n_shuffles=OLAFSDOTTIR_2017.n_shuffles,
         )
+        assert_rejections_at_rate(
+            verdicts.replay, verdicts.exact_rate(OLAFSDOTTIR_2017.alpha)
+        )
+        assert_rejections_at_rate(verdicts.below(0.5), 93 / 150)
+        with pytest.raises(AssertionError, match="null cases rejected"):
+            assert_rejections_at_rate(verdicts.below(0.5), verdicts.exact_rate(0.5))
 
     @pytest.mark.parametrize(
         ("n_active", "n_cells", "expected"),
