@@ -2,8 +2,14 @@
 
 The any-angle engine measures the shortest path inside the environment; the
 bin-graph engine walks the connections between bin centers. Expected values
-come from geometry (straight lines, taut strings) or from an independent
-shortest-path search (NetworkX), not from the code under test.
+come from geometry (straight lines, paths through named bin centers), from
+Shapely's segment-against-wall test (``path_oracles``) or from an
+independent shortest-path search (NetworkX).
+
+A few tests compare two routes of the engine with each other instead: both
+directions of a pair, pair tables against single pairs, a limited field
+against the full one, a long query against the same pairs in pieces. Their
+names say so. They check that the routes agree, not that either is right.
 """
 
 import itertools
@@ -12,6 +18,8 @@ import warnings
 import networkx as nx
 import numpy as np
 import pytest
+import shapely
+from path_oracles import clear_of_walls
 from shapely.geometry import LineString, box
 
 from neurospatial import Environment
@@ -131,27 +139,56 @@ def test_pair_tables_measure_what_single_pairs_measure(layout, walled):
 
 
 class TestStraightLines:
-    def test_a_visible_segment_is_the_straight_line(self, walled):
+    @pytest.mark.parametrize("ends_at", ["positions", "bin centers"])
+    def test_line_of_sight_is_a_segment_clear_of_the_walls(self, walled, ends_at):
+        # Shapely decides which segments touch a wall of the arena (the
+        # walls as fitted to the bin edges, ``walled.arena.walls``).
+        rng = np.random.default_rng(8)
+        starts, ends = _inside(walled, 20_000, rng), _inside(walled, 20_000, rng)
+        if ends_at == "bin centers":
+            # Lines between centers run exactly through cell corners.
+            starts = walled.bin_centers[walled.bin_at(starts)]
+            ends = walled.bin_centers[walled.bin_at(ends)]
+        clear = clear_of_walls(walled, starts, ends)
+        assert 0.2 < clear.mean() < 0.9
+        # A segment through the very end of a wall is neither: left out.
+        wall_ends = shapely.multipoints(
+            [end for wall in walled.arena.walls for end in wall.boundary.geoms]
+        )
+        segments = shapely.linestrings(np.stack([starts, ends], axis=1))
+        decided = shapely.distance(segments, wall_ends) > 1e-9
+        assert decided.mean() > 0.99
+        sees = _environment_paths(walled, call="test").sees(starts, ends)
+        np.testing.assert_array_equal(sees[decided], clear[decided])
+
+    def test_a_segment_clear_of_the_walls_is_the_straight_line(self, walled):
         rng = np.random.default_rng(2)
         starts, ends = _inside(walled, 3000, rng), _inside(walled, 3000, rng)
+        clear = clear_of_walls(walled, starts, ends)
+        assert 0.2 < clear.mean() < 0.9
         paths = _environment_paths(walled, call="test")
-        visible = paths.sees(starts, ends)
-        assert 0.2 < visible.mean() < 0.9
         np.testing.assert_allclose(
-            paths.between(starts[visible], ends[visible]),
-            np.linalg.norm(ends[visible] - starts[visible], axis=1),
+            paths.between(starts[clear], ends[clear]),
+            np.linalg.norm(ends[clear] - starts[clear], axis=1),
             rtol=1e-12,
         )
+        # A segment through a wall is longer than the straight line.
+        blocked = paths.between(starts[~clear], ends[~clear])
+        assert np.all(
+            blocked > np.linalg.norm(ends[~clear] - starts[~clear], axis=1) + 1e-9
+        )
 
-    def test_a_path_across_the_divider_is_the_taut_string(self, walled):
-        # Either side of the divider, below its end at (50, 70): no path is
-        # shorter than the string around the end; bin-center waypoints keep
-        # the path within one bin diagonal of it.
+    def test_a_path_across_the_divider_turns_at_the_centers_past_its_end(self, walled):
+        # Either side of the divider, which ends at (50, 70). A path turns
+        # at bin centers, and the nearest ones that see past the wall's end
+        # are (49, 71) and (51, 71): up 51 and across 4, 2 over the end,
+        # and down again. The string pulled taut around the end itself is
+        # 0.3 cm shorter; the staircase along the bin graph is 1 cm longer.
         start, end = np.array([[45.0, 20.0]]), np.array([[55.0, 20.0]])
-        tip = np.array([50.0, 70.0])
-        taut = np.linalg.norm(tip - start) + np.linalg.norm(end - tip)
+        around = 2 * np.hypot(4.0, 51.0) + 2.0
         length = _environment_paths(walled, call="test").between(start, end)[0]
-        assert taut <= length <= taut + 2 * np.hypot(2.0, 2.0)
+        assert length == pytest.approx(around, rel=1e-12)
+        assert 2 * np.hypot(5.0, 50.0) < around
 
 
 class TestLimitedFields:
@@ -361,7 +398,15 @@ class TestCellCorners:
         end = np.array([[2.5 * width, 2.5 * height]])
         paths = _environment_paths(room, call="test")
         assert not paths.sees(start, end)[0]
-        assert paths.between(start, end)[0] > np.linalg.norm(end - start) + 1e-6
+        # The path turns at one bin center beside the corner: up one cell
+        # to the center of cell (0, 1) and on to the end (it crosses cells
+        # (1, 1) and (1, 2)), or across the top of cell (1, 1) from the
+        # center of cell (1, 2), whichever is shorter.
+        around = min(
+            height + np.hypot(2 * width, height), width + np.hypot(width, 2 * height)
+        )
+        assert around > np.linalg.norm(end - start) + 0.5
+        assert paths.between(start, end)[0] == pytest.approx(around, rel=1e-12)
         # Shifted off the corner, the line passes beside it.
         assert paths.sees(start + np.array([0.0, 0.15 * height]), end)[0]
 
