@@ -12,6 +12,7 @@ import networkx as nx
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from path_oracles import FIELD_EXCESS, PAIR_EXCESS, through_centers
 from shapely.geometry import LineString, box
 
 from neurospatial import Environment
@@ -106,6 +107,12 @@ def walled():
 
 
 @pytest.fixture(scope="module")
+def through_walled_centers(walled):
+    """Shortest paths of ``walled`` that turn only at bin centers (not the engine)."""
+    return through_centers(walled)
+
+
+@pytest.fixture(scope="module")
 def two_rooms():
     """Two 2 x 2 rooms of 1 cm bins with an empty column between them."""
     mask = np.ones((5, 2), dtype=bool)
@@ -125,6 +132,24 @@ def polar():
 
 def _straight(env):
     return euclidean_distance_matrix(np.asarray(env.bin_centers))
+
+
+def _assert_pair_distances(values, shortest):
+    """Symmetric pair distances against the shortest paths through bin centers.
+
+    The bin graph cannot pass: its staircases are up to 8.2% longer, and it
+    equals the shortest path through centers for one pair in eight.
+    """
+    assert np.all(values >= shortest - 1e-9)
+    assert np.all(values <= (1 + PAIR_EXCESS) * shortest + 1e-9)
+    assert np.mean(np.isclose(values, shortest, rtol=1e-12, atol=1e-12)) > 0.75
+
+
+def _assert_field_lengths(values, shortest):
+    """One-direction field lengths against the shortest paths through bin centers."""
+    assert np.all(values >= shortest - 1e-9)
+    assert np.all(values <= (1 + FIELD_EXCESS) * shortest + 1e-9)
+    assert np.mean(np.isclose(values, shortest, rtol=1e-12, atol=1e-12)) > 0.7
 
 
 def _octile(env):
@@ -287,17 +312,24 @@ class TestDistanceField:
                 rtol=1e-12,
             )
 
-    def test_geodesic_goes_around_the_wall_end(self, walled):
+    def test_geodesic_goes_around_the_wall_end(self, walled, through_walled_centers):
+        # From the center (37.5, 12.5) to (62.5, 12.5) across the divider,
+        # which ends at (50, 70). A path turns at bin centers, and the
+        # nearest ones that see past the wall's end are (47.5, 72.5) and
+        # (52.5, 72.5): up 60 and across 10, 5 over the end, and down again.
         source = int(walled.bin_at(np.array([[37.5, 12.5]]))[0])
         target = int(walled.bin_at(np.array([[62.5, 12.5]]))[0])
-        tip = np.array([50.0, 70.0])
-        a, b = walled.bin_centers[source], walled.bin_centers[target]
-        taut = np.linalg.norm(a - tip) + np.linalg.norm(b - tip)
-        field = distance_field(walled, [source])
-        assert taut <= field[target] <= taut + 2 * np.hypot(5.0, 5.0)
-        assert (
-            field[target] < distance_field(walled, [source], metric="bin_graph")[target]
+        around = 2 * np.hypot(10.0, 60.0) + 5.0
+        assert through_walled_centers[source, target] == pytest.approx(
+            around, rel=1e-12
         )
+        field = distance_field(walled, [source])
+        assert field[target] == pytest.approx(around, rel=1e-12)
+        # The staircase along the bin graph is longer; the straight line
+        # runs through the wall.
+        assert distance_field(walled, [source], metric="bin_graph")[
+            target
+        ] == pytest.approx(2 * (10 * np.sqrt(2) + 50.0) + 5.0, rel=1e-12)
         assert distance_field(walled, [source], metric="euclidean")[target] == 25.0
 
     @pytest.mark.parametrize("metric", ["geodesic", "bin_graph", "euclidean"])
@@ -342,14 +374,17 @@ class TestPairwiseAndMatrix:
             rtol=1e-12,
         )
 
-    def test_geodesic_matrix_near_a_wall_is_symmetric_and_bounded(self, walled):
+    def test_geodesic_matrix_near_a_wall_is_the_path_through_bin_centers(
+        self, walled, through_walled_centers
+    ):
         matrix = geodesic_distance_matrix(walled)
         np.testing.assert_array_equal(matrix, matrix.T)
         np.testing.assert_array_equal(np.diag(matrix), 0.0)
-        assert np.all(matrix >= _straight(walled) - 1e-9)
-        assert np.all(
-            matrix <= geodesic_distance_matrix(walled, metric="bin_graph") + 1e-9
-        )
+        # Against the shortest path that turns only at bin centers, found
+        # by Dijkstra over a visibility graph built in the tests: never
+        # shorter, the same for most pairs, and nowhere longer than a path
+        # grown greedily from both ends was measured to be.
+        _assert_pair_distances(matrix, through_walled_centers)
 
     def test_pairwise_is_the_matrix_restricted_to_its_bins(self, walled):
         bins = np.array([3, 77, 150, 151, 299, 398])
@@ -562,6 +597,206 @@ class TestDistanceBetween:
             a, b = rng.integers(0, walled.n_bins, 2)
             assert walled.distance_between(bins=[a, b]) == walled.distance_between(
                 bins=[b, a]
+            )
+
+
+def _hexagons_in_a_box():
+    samples = np.random.default_rng(0).uniform(0, 30, (40_000, 2))
+    return Environment.from_samples(samples, bin_size=3.0, layout="hexagonal")
+
+
+def _mesh_in_a_box():
+    from neurospatial.layout import create_layout
+
+    return Environment.from_layout(
+        create_layout(
+            "TriangularMesh", boundary_polygon=box(0, 0, 30, 30), point_spacing=3.0
+        )
+    )
+
+
+# Convex rooms with nothing in them, on every kind of bins. A grid joins
+# its diagonal neighbors or its face neighbors only.
+_CONVEX = {
+    f"{name}-{'diagonal' if diagonal else 'faces'}": (
+        lambda mask=mask, size=size, diagonal=diagonal: _grid(
+            mask, size, diagonal=diagonal
+        )
+    )
+    for name, mask, size in [
+        ("squares", np.ones((8, 8)), 2.0),
+        ("rectangles", np.ones((10, 4)), (2.0, 5.0)),
+        ("cubes", np.ones((5, 5, 5)), 2.0),
+        ("boxes", np.ones((5, 4, 3)), (2.0, 3.0, 5.0)),
+    ]
+    for diagonal in (True, False)
+} | {"hexagons": _hexagons_in_a_box, "triangles": _mesh_in_a_box}
+
+
+@pytest.mark.parametrize("layout", list(_CONVEX))
+def test_every_route_is_the_straight_line_in_a_convex_room(layout):
+    """Nothing is in the way, so the shortest path is the straight line.
+
+    Lines between bin centers run through cell corners and along cell
+    edges; on every layout and connectivity they still pass.
+    """
+    env = _CONVEX[layout]()
+    straight = _straight(env)
+    exact = {"rtol": 1e-12, "atol": 1e-12}
+    assert_allclose(geodesic_distance_matrix(env), straight, **exact)
+    bins = np.random.default_rng(12).choice(env.n_bins, 12, replace=False)
+    assert_allclose(
+        pairwise_distances(env, bins), straight[np.ix_(bins, bins)], **exact
+    )
+    for source in bins[:4]:
+        assert_allclose(distance_field(env, [int(source)]), straight[source], **exact)
+        assert_allclose(env.distance_to(bins=[int(source)]), straight[source], **exact)
+    for a, b in zip(bins[:6], bins[6:], strict=True):
+        assert env.distance_between(bins=[int(a), int(b)]) == pytest.approx(
+            straight[a, b], rel=1e-12
+        )
+    # A radius between two of the distances from the first bin, so that
+    # rounding cannot move a bin across it.
+    distances = np.unique(np.round(straight[bins[0]], 9))
+    radius = float(distances[len(distances) // 2 : len(distances) // 2 + 2].mean())
+    inside = straight[bins] <= radius
+    for center, ball, expected in zip(
+        bins, neighbors_within(env, bins, radius=radius), inside, strict=True
+    ):
+        np.testing.assert_array_equal(np.sort(ball), np.flatnonzero(expected))
+        np.testing.assert_array_equal(
+            env.reachable_from(bins=int(center), radius=radius, metric="geodesic"),
+            expected,
+        )
+
+
+@pytest.mark.xfail(
+    reason="With several sources a bin joins the field through a neighbor "
+    "nearer on the bin graph, so it can keep a source that is farther in a "
+    "straight line: (11, 1) reads 10.0 cm, its distance to (1, 1), though "
+    "(5, 7) is 8.49 cm away with nothing between them."
+)
+def test_a_field_from_several_sources_is_the_distance_to_the_nearest():
+    """In an open room every bin is the straight line from its nearest source."""
+    room = _grid(np.ones((6, 6)), 2.0, diagonal=False)
+    sources = room.bin_at(np.array([[1.0, 1.0], [5.0, 7.0]]))
+    assert_allclose(
+        distance_field(room, sources),
+        _straight(room)[sources].min(axis=0),
+        rtol=1e-12,
+    )
+
+
+def test_every_route_runs_along_the_centerline_of_a_track():
+    """On a track the distance is along its centerline, whatever its width."""
+    nodes = [(0.0, 0.0), (0.0, 40.0), (-30.0, 40.0), (30.0, 40.0), (-30.0, 0.0)]
+    nodes.append((30.0, 0.0))
+    edges = [(0, 1), (1, 2), (1, 3), (2, 4), (3, 5)]
+    graph = nx.Graph()
+    for node, position in enumerate(nodes):
+        graph.add_node(node, pos=position)
+    for u, v in edges:
+        graph.add_edge(
+            u,
+            v,
+            distance=float(
+                np.linalg.norm(np.subtract(*map(nodes.__getitem__, (u, v))))
+            ),
+        )
+    track = Environment.from_graph(
+        graph, [(0, 1), (1, 2), (2, 4), (1, 3), (3, 5)], bin_size=2.0, track_width=10.0
+    )
+    # Near the ends of the two outer arms, which hang down from the bar at
+    # y = 40: up one arm, 60 cm along the bar, down the other.
+    a, b = (int(i) for i in track.bin_at(np.array([[-30.0, 1.0], [30.0, 1.0]])))
+    (xa, ya), (xb, yb) = track.bin_centers[a], track.bin_centers[b]
+    assert (xa, xb) == (-30.0, 30.0)
+    along = (40.0 - ya) + 60.0 + (40.0 - yb)
+    assert along == pytest.approx(138.0)
+    exact = pytest.approx(along, rel=1e-12)
+    assert geodesic_distance_matrix(track)[a, b] == exact
+    assert pairwise_distances(track, [a, b])[0, 1] == exact
+    assert distance_field(track, [a])[b] == exact
+    assert track.distance_to(bins=[a])[b] == exact
+    assert track.distance_between(bins=[a, b]) == exact
+    (ball,) = neighbors_within(track, [a], radius=along + 0.5)
+    assert b in ball
+    (ball,) = neighbors_within(track, [a], radius=along - 0.5)
+    assert b not in ball
+    assert distance_field(track, [a], metric="euclidean")[b] == pytest.approx(60.0)
+
+
+class TestEachRouteNearAWall:
+    """Every geodesic route of ``walled`` against the independent shortest paths.
+
+    The routes are compared with ``through_centers`` (Shapely visibility and
+    SciPy's Dijkstra over bin centers), not with each other.
+    """
+
+    @pytest.fixture(scope="class")
+    def bins(self, walled):
+        return np.random.default_rng(11).choice(walled.n_bins, 80, replace=False)
+
+    def test_pairwise_distances(self, walled, through_walled_centers, bins):
+        _assert_pair_distances(
+            pairwise_distances(walled, bins),
+            through_walled_centers[np.ix_(bins, bins)],
+        )
+
+    def test_distance_between_bins(self, walled, through_walled_centers, bins):
+        first, second = bins[:40], bins[40:]
+        between = np.array(
+            [
+                float(np.ravel(walled.distance_between(bins=[int(a), int(b)]))[0])
+                for a in first
+                for b in second
+            ]
+        )
+        _assert_pair_distances(
+            between, through_walled_centers[np.ix_(first, second)].ravel()
+        )
+
+    def test_distance_field(self, walled, through_walled_centers, bins):
+        fields = np.stack([distance_field(walled, [int(b)]) for b in bins])
+        _assert_field_lengths(fields, through_walled_centers[bins])
+
+    def test_distance_field_to_the_nearest_of_several_sources(
+        self, walled, through_walled_centers, bins
+    ):
+        sources = bins[:5]
+        _assert_field_lengths(
+            distance_field(walled, sources),
+            through_walled_centers[sources].min(axis=0),
+        )
+
+    def test_distance_to(self, walled, through_walled_centers, bins):
+        fields = np.stack([walled.distance_to(bins=[int(b)]) for b in bins])
+        _assert_field_lengths(fields, through_walled_centers[bins])
+
+    @pytest.mark.parametrize("radius", [24.0, 48.0, 75.0, 110.0])
+    def test_neighbors_within_and_reachable_from(
+        self, walled, through_walled_centers, bins, radius
+    ):
+        # A ball of the field holds every bin whose shortest path through
+        # centers is within the radius even when grown greedily, and no bin
+        # whose shortest path is beyond it. The short radii lie between the
+        # straight length and the staircase length of a bin two (four)
+        # across and one (two) up: 22.4 and 24.1 cm, 44.7 and 48.3 cm.
+        surely = (1 + FIELD_EXCESS) * through_walled_centers[bins] <= radius
+        possibly = through_walled_centers[bins] <= radius + 1e-9
+        balls = neighbors_within(walled, bins, radius=radius)
+        for center, ball, inside, allowed in zip(
+            bins, balls, surely, possibly, strict=True
+        ):
+            member = np.zeros(walled.n_bins, dtype=bool)
+            member[ball] = True
+            assert np.all(member[inside])
+            assert np.all(allowed[member])
+            np.testing.assert_array_equal(
+                walled.reachable_from(
+                    bins=int(center), radius=radius, metric="geodesic"
+                ),
+                member,
             )
 
 

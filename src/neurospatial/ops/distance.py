@@ -621,6 +621,17 @@ def distance_field(
     open bins (50 ms with walls) and 33 ms for 10,000, and it is kept, so
     asking again is a lookup.
 
+    With several sources, a bin joins the field through a neighbor that is
+    nearer on the bin graph. Where the bin graph and the straight line
+    disagree about which source is nearer, a bin can therefore read its
+    distance to a source that is not the nearest, never less than the
+    distance to the nearest. In open convex rooms (200 random sets of 2 to
+    12 sources each) this did not happen on 8-connected square or
+    26-connected cubic grids; it affected 1.7% of bins on a 4-connected
+    square grid (by at most 1.3 bin spacings), 3.9% on a 6-connected cubic
+    grid (1.0), 0.1% on hexagonal bins (0.5) and 1.0% on a triangular mesh
+    (1.4). Take the minimum of single-source fields where that matters.
+
     **Bin graph.** One Dijkstra search from all sources together,
     ``O((V + E) log V)``, a few milliseconds.
 
