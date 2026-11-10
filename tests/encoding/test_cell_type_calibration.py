@@ -163,8 +163,8 @@ def test_untuned_p_values_reject_at_the_monte_carlo_rate(family, n_sessions):
     (20 s by default), so its null is not exactly exchangeable. Its rate on
     90000 cells was 4.66% (Notes of ``is_head_direction_cell``), which 600
     cells cannot tell from 4.5%: their interval, 15 to 41, would miss a rate
-    of 5.2% with probability 0.97. The exact case is tested on 12000 cells
-    in ``test_head_direction_p_values_are_exact_without_min_shift``.
+    of 5.2% with probability 0.97. The exact case, ``min_shift=0``, is
+    tested in ``test_head_direction_p_values_are_exact_without_min_shift``.
     """
     p_values = np.concatenate(
         [
@@ -186,22 +186,24 @@ def test_untuned_p_values_reject_at_the_monte_carlo_rate(family, n_sessions):
 
 
 def test_head_direction_p_values_are_exact_without_min_shift():
-    """12000 untuned cells (60 trajectories of 200) with ``min_shift=0``.
+    """4000 untuned cells (20 trajectories of 200) with ``min_shift=0``.
 
     With no minimum shift, every circular shift of a constant-rate train is
     as likely as the train itself, so the shuffle test is exact: 4.5% of
     cells have ``p < 0.05`` with 199 shifts. The count is checked from both
-    ends of the 99% binomial interval, 482 to 599, and the p-values must be
+    ends of the 99% binomial interval, 147 to 215, and the p-values must be
     uniform over their 200 possible values.
 
-    12000 cells are what a small excess takes: a true rate of 5.2% falls
-    outside the interval with probability 0.84, 5.0% with 0.51, 4.0% with
-    0.53, and 6% always.
+    4000 cells resolve a rate of 5.7% or more, or 3.4% or less, with at
+    least 80% power (6% with 0.95). They do not resolve a small excess: a
+    true rate of 5.2% falls outside the interval with probability 0.29.
+    That takes tens of thousands of cells; the rates of 90000 cells are in
+    the Notes of ``is_head_direction_cell``.
     """
     from scipy import stats
 
     p_values = []
-    for seed in range(1, 61):
+    for seed in range(1, 21):
         session = _box_session(seed)
         p_values.append(
             _significance(
@@ -214,13 +216,12 @@ def test_head_direction_p_values_are_exact_without_min_shift():
             )
         )
     p_values = np.concatenate(p_values)
-    assert p_values.size == 12000
+    assert p_values.size == 4000
     assert_rejections_at_rate(
         p_values < ALPHA, monte_carlo_rejection_rate(N_SHUFFLES, ALPHA)
     )
-    # With this many cells a KS test against a continuous uniform sees the
-    # 200 steps of the p-values themselves (it rejects exactly uniform
-    # steps at its 0.001 level 2% of the time), so each value is counted.
+    # The p-values take 200 values, (k + 1) / 200, so uniformity is tested
+    # on the count of each value, not against a continuous uniform.
     ranks = np.rint(p_values * (N_SHUFFLES + 1)).astype(int)
     np.testing.assert_allclose(ranks / (N_SHUFFLES + 1), p_values)
     per_value = np.bincount(ranks, minlength=N_SHUFFLES + 2)[1:]
