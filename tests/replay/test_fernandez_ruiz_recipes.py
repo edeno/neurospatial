@@ -107,13 +107,26 @@ def test_regression_line_recipes_find_sweeps(place_code, method):
     assert table.loc[0, "p_value"] == pytest.approx(1 / 200)
 
 
-@pytest.mark.parametrize("method", [SOULA_2023, HARVEY_2023_LINE], ids=lambda m: m.name)
-def test_regression_line_recipes_call_random_events_replay_at_alpha(place_code, method):
+def test_regression_line_recipes_call_random_events_replay_at_alpha(place_code):
     """150 random events with 99 shuffles: replay at P(p < 0.05) = 0.04.
 
     The 99% binomial interval is 1 to 13 replay events; a recipe at 25%
-    false positives gives about 38.
+    false positives gives about 38. That count detects a true rate of 0.112
+    with 80% power, 2.8 times 0.04; the counts at the levels of
+    ``NULL_LEVELS`` detect 2.0, 1.6 and 1.3 times their rates.
+
+    ``SOULA_2023`` and ``HARVEY_2023_LINE`` are one test: the same score,
+    null, criteria and alpha on the same events. One run covers both, and
+    the first assertion fails if the recipes come to differ.
     """
+    method = SOULA_2023
+    assert method == dataclasses.replace(
+        HARVEY_2023_LINE,
+        name=method.name,
+        reference=method.reference,
+        notes=method.notes,
+        decoding=method.decoding,
+    )
     env, rates = place_code
     dt = 0.02
     events, counts = [], []

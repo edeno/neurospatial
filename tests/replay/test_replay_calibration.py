@@ -8,8 +8,11 @@ import warnings
 import numpy as np
 import pandas as pd
 import pytest
-from calibration_helpers import COVERAGE
-from replay_helpers import null_rejection_interval
+from calibration_helpers import (
+    COVERAGE,
+    assert_rejections_at_rate,
+    monte_carlo_rejection_rate,
+)
 from scipy.stats import binomtest, nhypergeom, pearsonr
 
 from neurospatial import Environment
@@ -902,8 +905,11 @@ def test_false_positives_on_null_copies(track, kind):
 
     Each copy is itself a draw of the shuffle that does the same to the
     spikes, so that shuffle tests it exactly, from both sides: given the
-    sweep, a copy and its shuffles are exchangeable, and P(p <= 0.1) with
-    39 shuffles is 0.1 for every copy.
+    sweep, a copy and its shuffles are exchangeable, and P(p <= level) with
+    39 shuffles is the level for every copy. 1000 further copies, 100 of
+    each sweep, are counted at 0.1, 0.2 and 0.5. With 80% power the count
+    at 0.1 (76 to 125) detects a true rate of 0.135, 1.35 times the level,
+    and the counts at 0.2 and 0.5 detect 1.2 and 1.1 times theirs.
     """
     x = track.bin_centers[:, 0]
     rates = 0.5 + 25.0 * np.exp(
@@ -942,6 +948,10 @@ def test_false_positives_on_null_copies(track, kind):
     assert rates_by_data.loc["real", "rate"] >= 0.8
     assert rates_by_data.loc["null", "rate"] <= 0.1
 
+    many = null_events(trains, intervals, kind=kind, n_copies=100, rng=1)
+    many_decoded, many_counts = decode_intervals(
+        track, many.spike_times, many.intervals, rates, dt=DT
+    )
     shuffle_rng = np.random.default_rng(1)
     p_values = np.array(
         [
@@ -957,11 +967,15 @@ def test_false_positives_on_null_copies(track, kind):
                 n_shuffles=39,
                 rng=shuffle_rng,
             ).p_value
-            for event, event_counts in zip(null_decoded, null_counts, strict=True)
+            for event, event_counts in zip(many_decoded, many_counts, strict=True)
         ]
     )
-    low, high = null_rejection_interval(len(p_values), 0.1)
-    assert low <= np.sum(p_values <= 0.1) <= high
+    assert len(p_values) == 1000
+    assert np.isfinite(p_values).all()
+    for level in (0.1, 0.2, 0.5):
+        assert_rejections_at_rate(
+            p_values <= level, monte_carlo_rejection_rate(39, level, strict=False)
+        )
 
 
 KF = KARLSSON_FRANK_2009

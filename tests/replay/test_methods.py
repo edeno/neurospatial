@@ -169,20 +169,37 @@ class TestPublishedMethods:
         assert result.is_replay, result.summary()
 
     @pytest.mark.parametrize(
-        "method", [KARLSSON_FRANK_2009, WU_2017, TIROLE_2022], ids=lambda m: m.name
+        ("method", "n_events"),
+        [
+            pytest.param(method, n_events, id=method.name)
+            for method, n_events in (
+                (KARLSSON_FRANK_2009, 600),
+                (WU_2017, 1000),
+                (TIROLE_2022, 150),
+            )
+        ],
     )
-    def test_spike_methods_call_random_events_replay_at_alpha(self, place_code, method):
-        """150 random events: replay at the shuffle test's rate, 0.04.
+    def test_spike_methods_call_random_events_replay_at_alpha(
+        self, place_code, method, n_events
+    ):
+        """Random events are replay at the shuffle test's rate, 0.04.
 
         A random event's time bins are independent, so Karlsson & Frank's
-        and Wu's time-bin permutations are exact. Tirole's p-value is the
-        largest of three, which can only lower the rate, so it is held to
-        the interval's high end only.
+        and Wu's time-bin permutations are exact. Their counts at 0.04 and
+        at the levels of ``NULL_LEVELS`` are held to both ends of the 99%
+        interval. With 80% power, Wu's 1000 events detect a true rate of
+        0.064 at alpha (1.6 times 0.04) and 0.235 at the 0.2 level (1.2
+        times 0.19); Karlsson & Frank's 600 events, which cost twice as
+        much each, detect 0.071 (1.8 times) and 0.247 (1.3 times).
+
+        Tirole's p-value is the largest of three, which can only lower the
+        rate, so it is held to the interval's high end only: 13 of 150,
+        which a true rate of 0.112 exceeds with 80% power.
         """
         env, rates = place_code
         method = self._spike_method(method, n_shuffles=99)
         results = []
-        for seed in range(150):
+        for seed in range(n_events):
             noise, noise_counts = _decoded(env, rates, "random", seed=200 + seed)
             results.append(
                 detect_replay(
@@ -204,7 +221,7 @@ class TestPublishedMethods:
             n_shuffles=method.n_shuffles,
             # Every event passes the criteria; the minimum leaves a margin
             # of 10%.
-            min_eligible=135,
+            min_eligible=int(0.9 * n_events),
             conservative=len(method.nulls) > 1,
         )
 

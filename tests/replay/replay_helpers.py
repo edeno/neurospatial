@@ -68,6 +68,18 @@ def template_stream(seed, name):
     )
 
 
+NULL_LEVELS = (0.1, 0.2, 0.5)
+"""Levels at which an exact shuffle test's null p-values are counted.
+
+A count at a nominal 4% (alpha = 0.05 with 99 shuffles) has little power:
+150 events detect a true rate of 11.2% with 80% power, 2.8 times the
+nominal, and 1000 events one of 6.4%, 1.6 times. An inflated null gives too
+many small p-values at every level, and the same events see a smaller ratio
+at a larger level: 2.0 times at 0.1, 1.6 at 0.2 and 1.3 at 0.5 with 150
+events; 1.4, 1.2 and 1.1 with 1000.
+"""
+
+
 @dataclasses.dataclass(frozen=True)
 class NullVerdicts:
     """A recipe's verdicts and p-values on events without replay.
@@ -135,6 +147,7 @@ def assert_null_verdicts_at_alpha(
     n_shuffles,
     min_eligible,
     conservative=False,
+    levels=NULL_LEVELS,
 ):
     """Check a recipe's verdicts on null events against its alpha.
 
@@ -142,11 +155,13 @@ def assert_null_verdicts_at_alpha(
     be replay, and each is replay with probability
     ``monte_carlo_rejection_rate(n_shuffles, alpha)`` if the shuffle test is
     exact. The count of replay verdicts must fall inside the central 99%
-    binomial interval. ``P(p < 0.5)`` over the eligible events must match
-    too, so a null that never rejects fails even when a small alpha puts the
-    interval's low end at 0.
+    binomial interval. So must the count of eligible events with
+    ``p < level`` for each of ``levels``: a null that never rejects fails
+    even when a small alpha puts the interval's low end at 0, and the larger
+    levels see a smaller inflation than alpha does with the same events
+    (``NULL_LEVELS``).
     A ``conservative`` test, such as the largest of several p-values, is
-    checked against the high end only.
+    checked against the high end at alpha only.
 
     At least ``min_eligible`` events must be eligible, each with a finite
     p-value (see ``null_verdicts``).
@@ -162,4 +177,5 @@ def assert_null_verdicts_at_alpha(
         verdicts.replay, verdicts.exact_rate(alpha), conservative=conservative
     )
     if not conservative:
-        assert_rejections_at_rate(verdicts.below(0.5), verdicts.exact_rate(0.5))
+        for level in levels:
+            assert_rejections_at_rate(verdicts.below(level), verdicts.exact_rate(level))
