@@ -75,7 +75,7 @@ def reference_turns(times, positions, min_speed=0.0, headings=None, speed=None):
     if speed is None:
         velocity = reference_velocity(times, positions, 0.1)
         speed = np.hypot(velocity[:, 0], velocity[:, 1])
-    turns[~((speed > 0) & (speed >= min_speed))] = np.nan
+    turns[~(speed >= min_speed)] = np.nan
     return turns
 
 

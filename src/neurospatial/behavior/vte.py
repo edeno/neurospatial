@@ -719,8 +719,10 @@ def head_sweep_from_positions(
         63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped):
         this function sees no environment, so it cannot know the positions' unit.
         Samples slower than this (units/s) add no turn; finite and
-        non-negative. ``0`` keeps every sample, as the lab's code did, but
-        then tracking jitter at a pause scores as head sweeping (see Notes).
+        non-negative. ``0`` applies no speed gate, as in the lab's code, but
+        then tracking jitter at a pause scores as head sweeping, and the two
+        methods treat a sample with exactly zero speed differently (see
+        Notes).
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -866,6 +868,21 @@ def head_sweep_from_positions(
     ``speed``. When no sample is at least ``min_speed`` fast, no heading
     change was measured and the result is NaN, not 0.
 
+    ``min_speed=0`` applies no speed gate. What a sample with a speed of
+    exactly 0 (a pause of whole-pixel tracking) then adds depends on the
+    method:
+
+    - ``method="adaptive_window"`` counts every sample that has a dPhi, as
+      the lab's sum does. The lab's code has no rule for a sample whose
+      estimated velocity is zero: its Phi there is ``atan2(0, 0) = 0``
+      (East), so stopping and starting each add the turn between the
+      direction of travel and East, and a pass with no movement at all has
+      an IdPhi of 0, not NaN. This is read from the lab's code; no output
+      of that code for a pause was compared.
+    - ``method="line_fit"`` gives a sample with zero speed no direction of
+      movement and skips it like a missing heading, also when you pass
+      ``headings``, so a pass with no movement at all has a NaN IdPhi.
+
     Examples
     --------
     >>> import numpy as np
@@ -967,7 +984,9 @@ def _measured_motion(
         )
         return _head_sweep(heading, interval_mask), speed
     speed = run_speed(times, positions, interval_mask, speed=motion.speed)
-    moving = (speed > 0) & (speed >= motion.min_speed) & np.isfinite(turns)
+    # A sample with zero speed counts when ``min_speed`` is 0: the lab's code
+    # has no gate, and its Phi at zero velocity is atan2(0, 0) = 0.
+    moving = (speed >= motion.min_speed) & np.isfinite(turns)
     head_sweep = float(np.sum(turns[moving])) if moving.any() else np.nan
     return head_sweep, speed
 
@@ -1345,7 +1364,8 @@ def compute_vte_trial(
         63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat as stopped):
         this function sees no environment, so it cannot know the positions' unit.
         Samples slower than this (units/s) add no turn; finite and
-        non-negative.
+        non-negative. ``0`` applies no speed gate (see Notes of
+        :func:`head_sweep_from_positions`).
     speed : ArrayLike, shape (n_samples,), optional
         Your own speed of each sample in position units per second (NaN
         where not observed), used instead of computing it from
@@ -1630,6 +1650,8 @@ def compute_vte_session(
         ``50.0`` for millimeters), the speed below which Davidson, Kloosterman & Wilson
         (2009, Neuron 63:497) and Pfeiffer & Foster (2013, Nature 497:74) counted a rat
         as stopped. With units that are not a metric length, pass it explicitly.
+        ``0`` applies no speed gate (see Notes of
+        :func:`head_sweep_from_positions`).
     head_sweep_weight : float, default=1.0
         Weight for head sweep in VTE index (1-head_sweep_weight for speed), in [0, 1].
         Default 1.0 scores zIdPhi alone, as Papale et al. (2012) did; 0.5

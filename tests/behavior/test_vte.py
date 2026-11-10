@@ -1743,6 +1743,94 @@ def test_head_sweep_counts_each_reversal_as_its_three_estimated_turns():
         )
 
 
+def _north_pause_north():
+    """Whole-pixel tracking at 30 Hz: 2 s north, 2 s still, 2 s north.
+
+    x stays at 50 px; y climbs 2 px per frame, holds for 60 frames, then
+    climbs again.
+    """
+    climb = 2.0 * np.arange(60)
+    top = 100.0 + climb[-1]
+    y = np.concatenate([100.0 + climb, np.full(60, top), top + 2.0 + climb])
+    times = np.arange(y.size) / _FS
+    return times, np.column_stack([np.full(y.size, 50.0), y])
+
+
+def test_min_speed_zero_counts_the_turns_at_zero_speed():
+    """With no speed gate IdPhi is the ungated sum, zero-speed samples included.
+
+    x never changes, so its estimated velocity is exactly 0. The estimated
+    y-velocity is positive while its window sees the climb and exactly 0
+    in the pause, so Phi is atan2(positive, 0) = pi/2 while the animal moves
+    and atan2(0, 0) = 0 in the pause: the lab's code has no rule for a zero
+    velocity. Phi steps by pi/2 on stopping and again on starting. A step
+    adds its size times (2/3 + 1/15) at 30 Hz (the three turns derived in
+    ``test_head_sweep_counts_each_reversal_as_its_three_estimated_turns``,
+    which scale with the step), so the ungated IdPhi is pi * (2/3 + 1/15).
+
+    The turns of the stopping step lie inside the pause, where a
+    frame-to-frame speed is exactly 0. With ``min_speed=0`` they count; a
+    positive gate on that speed drops them, leaving at most the starting
+    step's half.
+    """
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    times, positions = _north_pause_north()
+    frame_speed = np.r_[0.0, np.abs(np.diff(positions[:, 1]))] * _FS
+    assert (frame_speed[60:120] == 0).all()
+    ungated = np.pi * (2 / 3 + 1 / 15)
+    for speed in (None, frame_speed):
+        assert_allclose(
+            head_sweep_from_positions(times, positions, min_speed=0.0, speed=speed),
+            ungated,
+            rtol=1e-12,
+        )
+    gated = head_sweep_from_positions(
+        times, positions, min_speed=1.0, speed=frame_speed
+    )
+    assert 0 < gated <= ungated / 2 + 1e-12
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_pass_with_no_movement_has_a_head_sweep_only_without_the_gate(method):
+    """No movement: NaN under a speed gate; with none, 0 from the lab's sum.
+
+    Whole-pixel tracking of a still animal has a speed of exactly 0. Under a
+    positive gate no sample counts and the head sweep is NaN, not 0, with
+    either method. With ``min_speed=0`` the adaptive window counts every
+    sample: Phi is atan2(0, 0) = 0 throughout, so dPhi and IdPhi are 0. The
+    line fit gives a sample with zero speed no direction of movement, so its
+    IdPhi stays NaN. The same holds for a pass that lies inside a pause of a
+    longer recording.
+    """
+    from neurospatial.behavior.vte import compute_vte_trial, head_sweep_from_positions
+
+    def expect(head_sweep, *, gated):
+        if gated or method == "line_fit":
+            assert np.isnan(head_sweep)
+        else:
+            assert head_sweep == 0.0
+
+    times = np.arange(90) / _FS
+    still = np.tile([137.0, 88.0], (times.size, 1))
+    times_pause, positions = _north_pause_north()
+    for min_speed in (5.0, 0.0):
+        expect(
+            head_sweep_from_positions(times, still, min_speed=min_speed, method=method),
+            gated=min_speed > 0,
+        )
+        in_pause = compute_vte_trial(
+            times_pause,
+            positions,
+            times_pause[75],
+            times_pause[105],
+            min_speed=min_speed,
+            method=method,
+        )
+        assert in_pause.mean_speed == 0.0
+        expect(in_pause.head_sweep_magnitude, gated=min_speed > 0)
+
+
 def _circle(n_revolutions, fs=30, radius=20.0, period=4.0):
     """Constant-speed counter-clockwise circling, ``period`` s per revolution."""
     times = np.arange(0, n_revolutions * period, 1 / fs)
