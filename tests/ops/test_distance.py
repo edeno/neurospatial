@@ -489,6 +489,53 @@ def test_geodesic_diameter_is_the_longest_symmetric_path(walled, two_rooms, squa
         assert env._geodesic_diameter("bin_graph") == graph[np.isfinite(graph)].max()
 
 
+@pytest.mark.parametrize("layout", ["disk", "walled"])
+def test_geodesic_diameter_grows_its_fields_in_bounded_blocks(layout, monkeypatch):
+    """However many bins could end the longest path, a block of fields is held."""
+    from shapely.geometry import Point
+
+    from neurospatial.ops import _paths, distance
+
+    def build():
+        if layout == "disk":
+            return Environment.from_polygon(Point(0, 0).buffer(20), bin_size=2.0)
+        divider = {"divider": LineString([(50, 0), (50, 70)])}
+        return _grid(np.ones((20, 20)), 5.0, walls=divider)
+
+    matrix = geodesic_distance_matrix(build())
+    env = build()  # nothing cached
+    block = 8
+    monkeypatch.setattr(distance, "_DIJKSTRA_BLOCK_VALUES", block * env.n_bins)
+    grown_at_once = []
+    to_bins = _paths._OpenPaths.to_bins
+
+    def recorded(self, bins, **kwargs):
+        grown_at_once.append(len(bins))
+        return to_bins(self, bins, **kwargs)
+
+    monkeypatch.setattr(_paths._OpenPaths, "to_bins", recorded)
+    assert env._geodesic_diameter("geodesic") == matrix[np.isfinite(matrix)].max()
+    assert sum(grown_at_once) > block  # more fields than one block holds
+    assert max(grown_at_once) <= block
+
+
+def test_both_diameters_share_one_search_from_every_bin(square, monkeypatch):
+    from neurospatial.ops import distance
+
+    env = _grid(np.ones((5, 5)), 2.0)  # nothing cached
+    searched = []
+    blocks = distance._dijkstra_blocks
+
+    def recorded(adjacency, sources, **kwargs):
+        searched.append(len(sources))
+        return blocks(adjacency, sources, **kwargs)
+
+    monkeypatch.setattr(distance, "_dijkstra_blocks", recorded)
+    assert env._geodesic_diameter("geodesic") == square._geodesic_diameter("geodesic")
+    assert env._geodesic_diameter("bin_graph") == square._geodesic_diameter("bin_graph")
+    assert searched == [env.n_bins]
+
+
 def test_distances_between_two_bin_sets_are_the_symmetric_matrix(walled):
     """Route tables grow one field per bin and keep the shorter direction."""
     from neurospatial.ops.distance import _between_bin_sets

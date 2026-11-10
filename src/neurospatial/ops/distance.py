@@ -405,13 +405,17 @@ def _dijkstra_blocks(
 
     block = max(1, _DIJKSTRA_BLOCK_VALUES // max(adjacency.shape[0], 1))
     for start in range(0, len(sources), block):
-        lengths = dijkstra(
-            adjacency,
-            directed=False,
-            indices=sources[start : start + block],
-            limit=limit,
+        # Yielded without a name here, so a caller that drops a block frees
+        # it before the next one is made.
+        yield (
+            start,
+            dijkstra(
+                adjacency,
+                directed=False,
+                indices=sources[start : start + block],
+                limit=limit,
+            ),
         )
-        yield start, lengths
 
 
 def _geodesic_pair_distances(

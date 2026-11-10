@@ -29,6 +29,7 @@ from neurospatial.environment._bin_mapping import BinMapping, _bin_mapping_from
 from neurospatial.environment._cache import (
     BIN_ATTRIBUTES,
     BIN_GRAPH_DIAMETER,
+    BIN_GRAPH_ECCENTRICITIES,
     BOUNDARY_BINS,
     DIFFERENTIAL_OPERATOR,
     DIVERGENCE_OPERATOR,
@@ -388,13 +389,21 @@ class Environment(Generic[_C]):
 
         Exact, computed once per environment and metric and kept in the
         analysis cache; 0 for a single bin. ``"bin_graph"`` runs Dijkstra
-        from every bin, in memory-bounded blocks. ``"geodesic"`` measures the
-        any-angle path between bin centers, the shorter of the two
-        directions; it grows any-angle fields only from the bins whose
-        bin-graph eccentricity could exceed the best length found, since no
-        any-angle path is longer than the bin-graph path.
+        from every bin, one memory-bounded block at a time, and keeps each
+        bin's eccentricity (its longest bin-graph path) for both metrics.
+        ``"geodesic"`` measures the any-angle path between bin centers, the
+        shorter of the two directions; it grows any-angle fields only from
+        the bins whose bin-graph eccentricity could exceed the best length
+        found, since no any-angle path is longer than the bin-graph path.
+        Those fields grow a block at a time and only their lengths at the
+        other such bins are kept, so the working memory beyond that table
+        does not grow with the number of bins.
         """
-        from neurospatial.ops.distance import _bin_adjacency, _dijkstra_blocks
+        from neurospatial.ops.distance import (
+            _DIJKSTRA_BLOCK_VALUES,
+            _bin_adjacency,
+            _dijkstra_blocks,
+        )
 
         def eccentricities() -> NDArray[np.float64]:
             adjacency = _bin_adjacency(
@@ -403,27 +412,42 @@ class Environment(Generic[_C]):
             out = np.zeros(self.n_bins)
             sources = np.arange(self.n_bins, dtype=np.intp)
             for start, lengths in _dijkstra_blocks(adjacency, sources):
-                finite = np.where(np.isfinite(lengths), lengths, 0.0)
-                out[start : start + len(lengths)] = finite.max(axis=1)
+                out[start : start + len(lengths)] = np.max(
+                    lengths, axis=1, where=np.isfinite(lengths), initial=0.0
+                )
+                # Release this block before the next one is made.
+                del lengths
+            out.setflags(write=False)
             return out
 
         if metric == "bin_graph":
             return self._cache.get(
                 BIN_GRAPH_DIAMETER,
-                lambda: float(eccentricities().max(initial=0.0)),
+                lambda: float(
+                    self._cache.get(BIN_GRAPH_ECCENTRICITIES, eccentricities).max(
+                        initial=0.0
+                    )
+                ),
             )
 
         def build() -> float:
             from neurospatial.ops import _environment_paths
 
             paths = _environment_paths(self, call="geodesic diameter")
-            graph = eccentricities()
+            graph = self._cache.get(BIN_GRAPH_ECCENTRICITIES, eccentricities)
             if self.n_bins < 2:
                 return 0.0
 
             def symmetric(bins: NDArray[np.intp]) -> NDArray[np.float64]:
-                fields = paths.to_bins(bins)[:, bins]
-                shorter: NDArray[np.float64] = np.minimum(fields, fields.T)
+                # lengths[i, j]: the path from bins[j] along the field grown
+                # from bins[i]. A block of whole fields is held at a time,
+                # and none is kept: each is needed only here.
+                lengths = np.empty((bins.size, bins.size))
+                block = max(1, _DIJKSTRA_BLOCK_VALUES // self.n_bins)
+                for lo in range(0, bins.size, block):
+                    part = bins[lo : lo + block]
+                    lengths[lo : lo + block] = paths.to_bins(part, keep=False)[:, bins]
+                shorter: NDArray[np.float64] = np.minimum(lengths, lengths.T)
                 return shorter
 
             # A first length: from the bin with the largest graph

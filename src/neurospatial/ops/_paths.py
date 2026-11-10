@@ -482,7 +482,11 @@ class _EnvironmentPaths(ABC):
         """:meth:`from_bins` as a new array, exact at least up to ``limit``."""
 
     def to_bins(
-        self, bins: NDArray[np.intp], *, limit: float = np.inf
+        self,
+        bins: NDArray[np.intp],
+        *,
+        limit: float = np.inf,
+        keep: bool = True,  # noqa: ARG002  # for engines that keep fields
     ) -> NDArray[np.float64]:
         """Distance from every bin center to each of ``bins``, one row each.
 
@@ -495,6 +499,10 @@ class _EnvironmentPaths(ABC):
             Valid bin indices.
         limit : float, default=inf
             Lengths above it are ``inf``.
+        keep : bool, default=True
+            Whether an engine that keeps per-target fields may keep these
+            for later queries. False for targets needed once, so the rows
+            returned are the only memory the call leaves in use.
 
         Returns
         -------
@@ -749,12 +757,16 @@ class _OpenPaths(_EnvironmentPaths):
 
     @override
     def to_bins(
-        self, bins: NDArray[np.intp], *, limit: float = np.inf
+        self, bins: NDArray[np.intp], *, limit: float = np.inf, keep: bool = True
     ) -> NDArray[np.float64]:
         bins = np.asarray(bins, dtype=np.intp)
         out = np.empty((bins.size, self._n_bins))
         fields = self._fields
-        if not np.isfinite(limit) and fields.n_kept + bins.size <= fields.limit:
+        if (
+            keep
+            and not np.isfinite(limit)
+            and fields.n_kept + bins.size <= fields.limit
+        ):
             # Every field fits in the cache: keep them for later queries.
             fields.ensure(self, np.unique(bins))
             out[:] = fields.length[fields.row_of_root[bins]]
@@ -3902,7 +3914,11 @@ class _BinGraphPaths(_EnvironmentPaths):
 
     @override
     def to_bins(
-        self, bins: NDArray[np.intp], *, limit: float = np.inf
+        self,
+        bins: NDArray[np.intp],
+        *,
+        limit: float = np.inf,
+        keep: bool = True,  # nothing is kept: one search per row
     ) -> NDArray[np.float64]:
         from neurospatial.ops.distance import _dijkstra_blocks
 
