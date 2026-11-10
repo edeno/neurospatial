@@ -262,3 +262,60 @@ def test_bins_with_no_lookup_radius_are_covered_at_their_centers(
     settings = result.analysis_settings
     assert settings["time_beyond_distance_range"] == pytest.approx(0.02)
     assert settings["fraction_of_time_in_distance_range"] == pytest.approx(0.75)
+
+
+def _session_with_a_moving_object(n_samples=400):
+    """Positions all over the 100 cm box and an object jittering at its center."""
+    rng = np.random.default_rng(6)
+    positions = rng.uniform(1.0, 99.0, (n_samples, 2))
+    objects = np.array([50.0, 50.0]) + rng.normal(0.0, 1.0, (n_samples, 1, 2))
+    return positions, objects
+
+
+@pytest.mark.parametrize("stray", [(-500.0, -500.0), (1e5, 1e5)])
+def test_one_stray_sample_of_a_moving_object_does_not_set_the_range(stray):
+    """A tracking glitch far outside the arena is one sample out of range.
+
+    The default range of an object that moves is the arena's diagonal
+    whatever its positions, so one stray sample cannot stretch the grid; the
+    time at that sample is reported as beyond the range.
+    """
+    env = _box()
+    positions, objects = _session_with_a_moving_object()
+    clean = _map(env, positions, objects, "euclidean")
+    objects[123, 0] = stray
+
+    result = _map(env, positions, objects, "euclidean")
+
+    assert result.distance_range == clean.distance_range == (0.0, 145.0)
+    assert result.n_distance_bins == clean.n_distance_bins == 29
+    settings = result.analysis_settings
+    assert settings["time_beyond_distance_range"] == pytest.approx(0.02)
+    assert settings["fraction_of_time_in_distance_range"] == pytest.approx(398 / 399)
+
+
+def test_a_moving_object_outside_the_arena_is_reported_not_covered():
+    """An object that moves outside the arena needs an explicit range.
+
+    At 100 cm east of the east wall it is beyond the 145 cm default from the
+    western part of the box; that time is reported, and an explicit range
+    covers it.
+    """
+    env = _box()
+    positions, objects = _session_with_a_moving_object()
+    objects[:, 0, 0] += 150.0
+
+    result = _map(env, positions, objects, "euclidean")
+
+    assert result.distance_range == (0.0, 145.0)
+    assert 0.2 < result.analysis_settings["fraction_of_time_in_distance_range"] < 0.9
+    times = np.arange(len(positions)) * 0.02
+    covered = compute_object_vector_rate(
+        env,
+        np.array([0.011]),
+        times,
+        positions,
+        objects,
+        distance_range=(0.0, 215.0),
+    )
+    assert covered.analysis_settings["time_beyond_distance_range"] == 0.0

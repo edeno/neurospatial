@@ -1530,10 +1530,15 @@ def compute_egocentric_rate(
         the distance from every position inside ``env``, from 0 in whole
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
-        inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Bins found by nearest center
-        with no finite ``max_distance`` are covered at their centers only.
-        Required when ``env`` is None.
+        inside it; a fixed object outside the box extends the range to the
+        box's far corner), or up to a bound on the longest path to the
+        nearest object with ``metric="geodesic"``. Two cases are not
+        covered. An object whose position changes over the session
+        (positions per sample, or a line or polygon landmark) gets the
+        diagonal whatever its positions, so pass ``distance_range`` if it
+        leaves the arena. Bins found by nearest center with no finite
+        ``max_distance`` are covered at their centers only. Required when
+        ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -1810,10 +1815,15 @@ def compute_object_vector_rate(
         the distance from every position inside ``env``, from 0 in whole
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
-        inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Bins found by nearest center
-        with no finite ``max_distance`` are covered at their centers only.
-        Required when ``env`` is None.
+        inside it; a fixed object outside the box extends the range to the
+        box's far corner), or up to a bound on the longest path to the
+        nearest object with ``metric="geodesic"``. Two cases are not
+        covered. An object whose position changes over the session
+        (positions per sample, or a line or polygon landmark) gets the
+        diagonal whatever its positions, so pass ``distance_range`` if it
+        leaves the arena. Bins found by nearest center with no finite
+        ``max_distance`` are covered at their centers only. Required when
+        ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -2178,8 +2188,13 @@ def _largest_object_distance(
     box when its domain is known, which includes a track's width; else the
     extent of the bins' cells). It bounds the distance between any two
     points inside the box, so maps of one arena with the object moved inside
-    it share a grid. When every object is outside the box, the distance from
-    the nearest object to the box's farthest corner is used if it is larger.
+    it share a grid. When every object has a fixed position outside the box,
+    the distance from the nearest object to the box's farthest corner is
+    used if it is larger. Objects whose positions change over the session
+    get the diagonal whatever their positions: a bound over every sample
+    would let one stray sample, or one outside the analyzed epochs, set the
+    grid of the whole map. Time when such an object is farther away is
+    beyond the range and is reported as such.
 
     Geodesic: a path from a position to an object is never longer than the
     way through bin centers: from the position to a bin center, on to the
@@ -2230,15 +2245,13 @@ def _largest_object_distance(
             if reachable.size:
                 return float(reachable.max())
     diagonal = float(np.hypot(*(box[1] - box[0])))
+    if objects.ndim == 3 or not len(objects):
+        return diagonal
     # The point of the box farthest from an object is one of its corners.
     to_far_corner = np.hypot(
-        *np.moveaxis(
-            np.maximum(np.abs(objects - box[0]), np.abs(objects - box[1])), -1, 0
-        )
+        *np.maximum(np.abs(objects - box[0]), np.abs(objects - box[1])).T
     )
-    # Per sample the nearest object; NaN rows (no object tracked) add nothing.
-    nearest = np.fmin.reduce(to_far_corner, axis=-1)
-    return float(np.fmax.reduce(np.ravel(nearest), initial=diagonal))
+    return max(diagonal, float(to_far_corner.min()))
 
 
 def _object_vector_grid(
@@ -2725,10 +2738,15 @@ def compute_egocentric_rates(
         the distance from every position inside ``env``, from 0 in whole
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
-        inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Bins found by nearest center
-        with no finite ``max_distance`` are covered at their centers only.
-        Required when ``env`` is None.
+        inside it; a fixed object outside the box extends the range to the
+        box's far corner), or up to a bound on the longest path to the
+        nearest object with ``metric="geodesic"``. Two cases are not
+        covered. An object whose position changes over the session
+        (positions per sample, or a line or polygon landmark) gets the
+        diagonal whatever its positions, so pass ``distance_range`` if it
+        leaves the arena. Bins found by nearest center with no finite
+        ``max_distance`` are covered at their centers only. Required when
+        ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -3082,10 +3100,15 @@ def compute_object_vector_rates(
         the distance from every position inside ``env``, from 0 in whole
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
-        inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Bins found by nearest center
-        with no finite ``max_distance`` are covered at their centers only.
-        Required when ``env`` is None.
+        inside it; a fixed object outside the box extends the range to the
+        box's far corner), or up to a bound on the longest path to the
+        nearest object with ``metric="geodesic"``. Two cases are not
+        covered. An object whose position changes over the session
+        (positions per sample, or a line or polygon landmark) gets the
+        diagonal whatever its positions, so pass ``distance_range`` if it
+        leaves the arena. Bins found by nearest center with no finite
+        ``max_distance`` are covered at their centers only. Required when
+        ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -3795,10 +3818,15 @@ def is_object_vector_cell(
         the distance from every position inside ``env``, from 0 in whole
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
-        inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Bins found by nearest center
-        with no finite ``max_distance`` are covered at their centers only.
-        Required when ``env`` is None.
+        inside it; a fixed object outside the box extends the range to the
+        box's far corner), or up to a bound on the longest path to the
+        nearest object with ``metric="geodesic"``. Two cases are not
+        covered. An object whose position changes over the session
+        (positions per sample, or a line or polygon landmark) gets the
+        diagonal whatever its positions, so pass ``distance_range`` if it
+        leaves the arena. Bins found by nearest center with no finite
+        ``max_distance`` are covered at their centers only. Required when
+        ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -4096,10 +4124,15 @@ def is_egocentric_object_vector_cell(
         the distance from every position inside ``env``, from 0 in whole
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
-        inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Bins found by nearest center
-        with no finite ``max_distance`` are covered at their centers only.
-        Required when ``env`` is None.
+        inside it; a fixed object outside the box extends the range to the
+        box's far corner), or up to a bound on the longest path to the
+        nearest object with ``metric="geodesic"``. Two cases are not
+        covered. An object whose position changes over the session
+        (positions per sample, or a line or polygon landmark) gets the
+        diagonal whatever its positions, so pass ``distance_range`` if it
+        leaves the arena. Bins found by nearest center with no finite
+        ``max_distance`` are covered at their centers only. Required when
+        ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -5009,10 +5042,15 @@ def object_vector_cell_significance(
         the distance from every position inside ``env``, from 0 in whole
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
-        inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Bins found by nearest center
-        with no finite ``max_distance`` are covered at their centers only.
-        Required when ``env`` is None.
+        inside it; a fixed object outside the box extends the range to the
+        box's far corner), or up to a bound on the longest path to the
+        nearest object with ``metric="geodesic"``. Two cases are not
+        covered. An object whose position changes over the session
+        (positions per sample, or a line or polygon landmark) gets the
+        diagonal whatever its positions, so pass ``distance_range`` if it
+        leaves the arena. Bins found by nearest center with no finite
+        ``max_distance`` are covered at their centers only. Required when
+        ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
@@ -5269,10 +5307,15 @@ def egocentric_object_vector_cell_significance(
         the distance from every position inside ``env``, from 0 in whole
         rings: up to the diagonal of the box around ``env`` with
         ``metric="euclidean"`` (the same grid wherever the object is placed
-        inside it), or up to a bound on the longest path to the nearest
-        object with ``metric="geodesic"``. Bins found by nearest center
-        with no finite ``max_distance`` are covered at their centers only.
-        Required when ``env`` is None.
+        inside it; a fixed object outside the box extends the range to the
+        box's far corner), or up to a bound on the longest path to the
+        nearest object with ``metric="geodesic"``. Two cases are not
+        covered. An object whose position changes over the session
+        (positions per sample, or a line or polygon landmark) gets the
+        diagonal whatever its positions, so pass ``distance_range`` if it
+        leaves the arena. Bins found by nearest center with no finite
+        ``max_distance`` are covered at their centers only. Required when
+        ``env`` is None.
         ``analysis_settings["fraction_of_time_in_distance_range"]`` records
         the share of analyzed time the map covers, and a unit whose peak lies
         in the outermost ring while time was cut off raises a warning.
