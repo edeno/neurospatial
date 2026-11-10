@@ -137,6 +137,8 @@ def test_regression_line_recipes_call_random_events_replay_at_alpha(place_code, 
         criteria.all(axis=1),
         alpha=method.alpha,
         n_shuffles=99,
+        # Every event passes the criteria; the minimum leaves a margin of 10%.
+        min_eligible=135,
     )
 
 

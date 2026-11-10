@@ -474,4 +474,7 @@ class TestRecipe:
             [all(r.criteria.values()) for r in results],
             alpha=MABOUDI_2018.alpha,
             n_shuffles=199,
+            # Every event passes the criteria; the minimum leaves a margin
+            # of 10%.
+            min_eligible=90,
         )

@@ -194,6 +194,8 @@ def test_line_searches_call_random_events_replay_at_alpha(place_code, method, me
         [r.is_replay for r in results],
         [all(r.criteria.values()) for r in results],
         n_shuffles=method.n_shuffles,
+        # Every event passes the criteria; the minimum leaves a margin of 10%.
+        min_eligible=135,
     )
     if measured is None:
         assert_rejections_at_rate(verdicts.below(0.5), verdicts.exact_rate(0.5))
@@ -487,6 +489,9 @@ class TestWikenheiserRedish:
             [all(r.criteria.values()) for r in results],
             alpha=WIKENHEISER_REDISH_2013.alpha,
             n_shuffles=99,
+            # Every event passes the criteria; the minimum leaves a margin
+            # of 10%.
+            min_eligible=135,
         )
 
     def test_needs_5_spikes_from_3_cells(self, circular_track):

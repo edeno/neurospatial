@@ -202,6 +202,9 @@ class TestPublishedMethods:
             [all(r.criteria.values()) for r in results],
             alpha=method.alpha,
             n_shuffles=method.n_shuffles,
+            # Every event passes the criteria; the minimum leaves a margin
+            # of 10%.
+            min_eligible=135,
             conservative=len(method.nulls) > 1,
         )
 
@@ -2392,6 +2395,9 @@ class TestOlafsdottir:
             [r.is_replay for r in results],
             [all(r.criteria.values()) for r in results],
             n_shuffles=OLAFSDOTTIR_2017.n_shuffles,
+            # Every event passes the criteria; the minimum leaves a margin
+            # of 10%.
+            min_eligible=135,
         )
         assert_rejections_at_rate(
             verdicts.replay, verdicts.exact_rate(OLAFSDOTTIR_2017.alpha)
