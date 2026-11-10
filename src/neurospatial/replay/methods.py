@@ -4408,7 +4408,7 @@ TIROLE_2022 = ReplayMethod(
         "null alone calls too many events replay. The recipe keeps the "
         "paper's nulls so results compare with the paper. Pinned by "
         "test_each_tirole_null_alone_is_calibrated_without_replay and "
-        "test_tirole_nulls_together_are_calibrated_without_replay "
+        "test_tirole_nulls_together_stay_within_alpha_without_replay "
         "(tests/replay/test_significance.py).",
     ),
 )
@@ -5676,6 +5676,14 @@ LIU_2023 = ReplayMethod(
         "Candidate events: pyramidal-cell rate above its mean with a peak "
         "more than 2 SD above it, 100-500 ms, overlapping an independently "
         "detected SWR; event selection is not applied here.",
+        "Measured on simulated events with no sequence (spikes from a new "
+        "random position every 20 ms, 40 place cells on a 200 cm track, 99 "
+        "shuffles): 242 of 5,000 events (4.8%) were replay, where an exact "
+        "test gives 4%, and 1,056 (21.1%) had p < 0.2, where it gives 19%. "
+        "The column-cycle shuffle with this line search calls slightly too "
+        "many events replay, about 1.1 to 1.2 times the nominal rate; the "
+        "cause has not been measured. No test pins these counts: the "
+        "150-event test of this recipe cannot see an excess this small.",
     ),
 )
 
