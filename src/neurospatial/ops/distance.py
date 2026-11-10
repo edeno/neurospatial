@@ -604,13 +604,22 @@ def distance_field(
     -----
     **Geodesic.** One any-angle field (Theta*, as the behavior functions
     use) grown from the sources; each bin's value is the length of its path
-    toward the nearest source. The field is one direction only: near walls the
-    length of a bin's path toward a source, as grown from the source, can differ
-    from the path grown the other way by up to 4.2% (measured in a 100 cm box
-    with two walls, 2 cm bins), while the pair distances
-    (:func:`pairwise_distances`, ``Environment.distance_between``) are
-    symmetric. A field costs about 10 ms for 2,500 open bins (50 ms with walls)
-    and 33 ms for 10,000, and it is kept, so asking again is a lookup.
+    toward the nearest source. The field is one direction only: it holds the
+    length of each bin's path toward a source as grown from the source, while
+    the pair distances (:func:`pairwise_distances`,
+    ``Environment.distance_between``) take the shorter of the paths grown from
+    either end and are symmetric. So ``distance_field(env, [a])[b]`` is never
+    shorter than the pair distance of ``a`` and ``b``, can differ from
+    ``distance_field(env, [b])[a]``, and is never longer than the bin-graph
+    distance. Measured over every pair of bins, a field was longer than the
+    pair distance for 1-15% of pairs, most for short paths around a wall's
+    end: by at most 5.5% on square grids (5, 4 and 2 cm bins in a 100 cm box
+    with one or two walls; at most 5.1 cm), 7.2% on 5 x 4 cm rectangular
+    bins, 9.8% on 3 cm hexagonal bins around a barrier, 6.3% on a 3-D grid of
+    2 cm cubes around a slab, and 16.2% on a triangular mesh around a slit.
+    In an open arena the two are equal. A field costs about 10 ms for 2,500
+    open bins (50 ms with walls) and 33 ms for 10,000, and it is kept, so
+    asking again is a lookup.
 
     **Bin graph.** One Dijkstra search from all sources together,
     ``O((V + E) log V)``, a few milliseconds.
@@ -842,6 +851,16 @@ def neighbors_within(
 
     Notes
     -----
+    The geodesic neighborhood of a center is the ball of the field grown
+    from it: the bins where ``distance_field(env, [center])`` is at most
+    ``radius``. A field is one direction only, so near walls a bin can lie
+    in a center's neighborhood while the center lies outside the bin's, and
+    the neighborhood can leave out a bin whose symmetric pair distance
+    (:func:`pairwise_distances`) is within ``radius`` by less than the
+    field's excess (see the Notes of :func:`distance_field`). In an open
+    arena, and for the bin-graph and Euclidean metrics, neighborhoods are
+    symmetric.
+
     The geodesic and bin-graph searches stop at ``radius``: a geodesic
     neighborhood grows only the bins whose centers lie within ``radius`` of
     the center (no path is shorter than the straight line), about 25 ms for

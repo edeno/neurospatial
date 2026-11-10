@@ -61,15 +61,25 @@ space instead:
    stays inside the environment are the straight line apart, the true
    geodesic. Otherwise a path is grown from each end and the shorter is the
    length. A grown path is not always the shortest (Theta* is not
-   optimal): near walls the path grown from one end exceeded the one grown
-   from the other, a valid path, by up to 4.2% (a 100 cm box with two walls,
-   2 cm bins), and before the straight segment was checked first, grown
+   optimal), and before the straight segment was checked first, grown
    paths exceeded a visible straight segment by up to 0.54 cm. Against exact
    shortest paths around an obstacle, paths through bin centers were at most
-   0.85 of a bin longer. **Fields** (:meth:`from_bins`, :meth:`to_point`,
-   :meth:`to_bins`) are one direction only: each bin's length is that of
-   its path toward the source as grown from the source, so a field and the
-   reverse direction can differ by the same 4.2%.
+   0.85 of a bin longer. Against the shortest path that turns only at bin
+   centers (a visibility graph over the centers, searched exhaustively),
+   pair distances between bin centers were never shorter and at most 3.3%
+   longer, and equal for about four pairs in five (square and rectangular grids of
+   4 and 5 cm bins in a 100 cm box with one or two walls). **Fields**
+   (:meth:`from_bins`, :meth:`to_point`, :meth:`to_bins`) are one direction
+   only: each bin's length is that of its path toward the source as grown
+   from the source. A field length is never shorter than the pair distance
+   and never longer than the bin-graph distance (the edge to a nearer
+   neighbor is always one of the paths a bin chooses from). Measured over
+   every pair of bins, it was longer than the pair distance for 1-15% of
+   pairs, most for short paths around a wall's end: by at most 5.5% on
+   square grids (5, 4 and 2 cm bins in a 100 cm box with one or two walls;
+   at most 5.1 cm), 7.2% on 5 x 4 cm rectangular bins, 9.8% on 3 cm
+   hexagonal bins around a barrier, 6.3% on a 3-D grid of 2 cm cubes around
+   a slab, and 16.2% on a triangular mesh around a slit.
 
 **Track environments** (``Environment.from_graph``, ``linear_track``,
 ``maze``) are one-dimensional: the distance is measured along the track graph

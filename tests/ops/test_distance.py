@@ -26,19 +26,63 @@ from neurospatial.ops.distance import (
 )
 
 
-def _grid(mask, size, walls=None):
+def _grid(mask, size, walls=None, diagonal=True):
+    """Grid of ``mask``'s cells; ``size`` is one cell size or one per axis."""
     mask = np.asarray(mask, dtype=bool)
-    edges = [np.arange(n + 1) * size for n in mask.shape]
+    sizes = np.broadcast_to(size, (mask.ndim,))
+    edges = [
+        np.arange(n + 1) * width for n, width in zip(mask.shape, sizes, strict=True)
+    ]
     arena = None
     if walls is not None:
-        arena = OpenArena(
-            box(0, 0, mask.shape[0] * size, mask.shape[1] * size), walls=walls
-        )
+        arena = OpenArena(box(0, 0, edges[0][-1], edges[1][-1]), walls=walls)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         return Environment.from_grid_mask(
-            mask, grid_edges=tuple(edges), units="cm", arena=arena
+            mask,
+            grid_edges=tuple(edges),
+            units="cm",
+            arena=arena,
+            connect_diagonal_neighbors=diagonal,
         )
+
+
+_DIVIDER = {"divider": LineString([(50, 0), (50, 70)])}
+
+
+def _hexagons_around_a_barrier():
+    """3 cm hexagons over 60 x 60 cm, none in a 5 cm wide strip up to y = 42."""
+    samples = np.random.default_rng(0).uniform(0, 60, (60_000, 2))
+    barrier = (np.abs(samples[:, 0] - 30) < 2.5) & (samples[:, 1] < 42)
+    return Environment.from_samples(samples[~barrier], bin_size=3.0, layout="hexagonal")
+
+
+def _cubes_around_a_slab(diagonal):
+    """10 x 10 x 5 cubes of 2 cm, without the slab x in [10, 12], y < 14."""
+    mask = np.ones((10, 10, 5), dtype=bool)
+    mask[5, :7, :] = False
+    return _grid(mask, 2.0, diagonal=diagonal)
+
+
+# Layouts with something to go around, and the most a one-direction field
+# exceeded the pair distance over every pair of their bins (as a share of
+# the pair distance), as the Notes of ``distance_field`` quote it.
+_OBSTRUCTED = {
+    "square-8-connected": (lambda: _grid(np.ones((20, 20)), 5.0, _DIVIDER), 0.056),
+    "square-4-connected": (
+        lambda: _grid(np.ones((20, 20)), 5.0, _DIVIDER, diagonal=False),
+        0.056,
+    ),
+    "rectangular": (
+        lambda: _grid(
+            np.ones((20, 25)), (5.0, 4.0), {"divider": LineString([(50, 0), (50, 68)])}
+        ),
+        0.073,
+    ),
+    "hexagonal": (_hexagons_around_a_barrier, 0.099),
+    "cubes-26-connected": (lambda: _cubes_around_a_slab(True), 0.031),
+    "cubes-6-connected": (lambda: _cubes_around_a_slab(False), 0.064),
+}
 
 
 @pytest.fixture(scope="module")
@@ -334,6 +378,33 @@ class TestPairwiseAndMatrix:
         assert np.isfinite(matrix[0, 3])
 
 
+@pytest.mark.parametrize("layout", list(_OBSTRUCTED))
+def test_a_field_lies_between_the_pair_distance_and_the_bin_graph(layout):
+    """The documented relation of the three routes, for every pair of bins.
+
+    ``distance_field`` grows each path from the source only; the pair
+    distance is the shorter of the paths grown from either end, so it is
+    never longer; and a field never exceeds the walk along the bin graph,
+    which is one of the paths it chooses from.
+    """
+    build, one_way_excess = _OBSTRUCTED[layout]
+    env = build()
+    pair = geodesic_distance_matrix(env)
+    graph = geodesic_distance_matrix(env, metric="bin_graph")
+    # field[s, t]: from bin t toward source s.
+    field = np.stack([distance_field(env, [s]) for s in range(env.n_bins)])
+    reached = np.isfinite(pair)
+    np.testing.assert_array_equal(np.isfinite(field), reached)
+    np.testing.assert_array_equal(pair, pair.T)
+    rounding = 1e-9
+    assert np.all(pair[reached] <= field[reached] + rounding)
+    assert np.all(field[reached] <= graph[reached] + rounding)
+    assert np.all(field[reached] <= (1 + one_way_excess) * pair[reached] + rounding)
+    # Something is one-way here, and most paths beat the staircase.
+    assert np.any(field[reached] > pair[reached] + rounding)
+    assert np.mean(field[reached] < graph[reached] - rounding) > 0.5
+
+
 class TestNeighborsWithin:
     def test_geodesic_ball_in_a_convex_room_is_round(self, square):
         straight = _straight(square)
@@ -349,14 +420,33 @@ class TestNeighborsWithin:
         )
 
     def test_limited_growth_equals_the_full_field(self, walled):
-        centers = np.array([0, 150, 155, 260, 399])
-        matrix = geodesic_distance_matrix(walled)
-        for radius in (7.5, 20.0, 40.0):
+        # A center's neighborhood is the ball of the field grown from it,
+        # for every center and whether the radius stops short of the wall's
+        # end or reaches around it.
+        centers = np.arange(walled.n_bins)
+        fields = np.stack([distance_field(walled, [c]) for c in centers])
+        for radius in (7.5, 40.0, 90.0):
             balls = neighbors_within(walled, centers, radius=radius)
             for center, ball in zip(centers, balls, strict=True):
                 np.testing.assert_array_equal(
-                    np.sort(ball), np.flatnonzero(matrix[center] <= radius)
+                    np.sort(ball), np.flatnonzero(fields[center] <= radius)
                 )
+
+    def test_a_geodesic_ball_is_one_way_near_a_wall(self, walled):
+        # Bins 14 and 385 are on either side of the divider. The path grown
+        # from 14 reaches 385 in 113.64 cm, the one grown from 385 reaches
+        # 14 in 112.27 cm (the pair distance), so at a radius between the
+        # two each bin's neighborhood holds the other only one way round.
+        radius = 113.0
+        to_385 = distance_field(walled, [385])[14]
+        to_14 = distance_field(walled, [14])[385]
+        assert min(to_385, to_14) < radius < max(to_385, to_14)
+        around_14, around_385 = neighbors_within(walled, [14, 385], radius=radius)
+        assert (385 in around_14) == (to_14 <= radius)
+        assert (14 in around_385) == (to_385 <= radius)
+        assert (385 in around_14) != (14 in around_385)
+        reachable = walled.reachable_from(bins=14, radius=radius, metric="geodesic")
+        assert reachable[385] == (385 in around_14)
 
     def test_the_wall_splits_a_geodesic_neighborhood(self, walled):
         center = int(walled.bin_at(np.array([[47.5, 12.5]]))[0])
@@ -519,7 +609,7 @@ def test_geodesic_diameter_grows_its_fields_in_bounded_blocks(layout, monkeypatc
     assert max(grown_at_once) <= block
 
 
-def test_both_diameters_share_one_search_from_every_bin(square, monkeypatch):
+def test_both_diameters_share_one_search_from_every_bin(monkeypatch):
     from neurospatial.ops import distance
 
     env = _grid(np.ones((5, 5)), 2.0)  # nothing cached
@@ -531,8 +621,11 @@ def test_both_diameters_share_one_search_from_every_bin(square, monkeypatch):
         return blocks(adjacency, sources, **kwargs)
 
     monkeypatch.setattr(distance, "_dijkstra_blocks", recorded)
-    assert env._geodesic_diameter("geodesic") == square._geodesic_diameter("geodesic")
-    assert env._geodesic_diameter("bin_graph") == square._geodesic_diameter("bin_graph")
+    # Corner to corner of the 5 x 5 grid of 2 cm bins: four diagonal steps
+    # on the bin graph, the same straight line at any angle.
+    corner_to_corner = pytest.approx(np.hypot(8.0, 8.0), rel=1e-12)
+    assert env._geodesic_diameter("geodesic") == corner_to_corner
+    assert env._geodesic_diameter("bin_graph") == corner_to_corner
     assert searched == [env.n_bins]
 
 

@@ -5073,9 +5073,12 @@ class Environment(Generic[_C]):
         as the behavior functions do; each bin's value is the length of its path
         toward the nearest target. It is kept, so asking again is fast. It is
         one direction only: near walls the length of a bin's path toward a
-        target, as grown from the target, can differ from the path grown the
-        other way by up to 4.2% (measured in a 100 cm box with two walls, 2 cm
-        bins), while :meth:`distance_between` is symmetric.
+        target, as grown from the target, can exceed :meth:`distance_between`,
+        which takes the shorter of the paths grown from either end and is
+        symmetric. It is never shorter than that and never longer than the
+        bin-graph distance; on the square grids measured it was at most 5.5%
+        longer (the Notes of ``neurospatial.ops.distance.distance_field`` give
+        every layout measured).
 
         ``metric='bin_graph'`` runs Dijkstra's algorithm on the connectivity
         graph, with each edge's ``"distance"`` (the physical distance between
@@ -5186,7 +5189,13 @@ class Environment(Generic[_C]):
         **Algorithm details**:
         - metric='hops': Uses breadth-first search (BFS) to specified depth.
         - metric='geodesic': Grows the any-angle field only through the bins
-          whose centers lie within the radius.
+          whose centers lie within the radius. The result is the ball of the
+          field grown from the start bin, ``distance_to(bins=[start]) <=
+          radius``. That field is one direction only, so near walls bin ``b``
+          can be reachable from ``a`` within a radius while ``a`` is not
+          reachable from ``b``, and the ball can differ from the bins whose
+          :meth:`distance_between` is within the radius (see the Notes of
+          :meth:`distance_to`).
         - metric='bin_graph': Uses Dijkstra's algorithm with distance cutoff.
 
         **Performance**:

@@ -589,11 +589,14 @@ def reachable_from(
         Starting coordinate, mapped to the bin that contains it. Give exactly
         one of ``bins`` and ``points``.
     radius : int, float, or None, optional
-        Maximum number of edges (``metric="hops"``) or graph distance in
-        physical units (``metric="geodesic"``). If None, returns every bin
-        in the source's connected component. Default is None.
-    metric : {"hops", "geodesic"}, default="hops"
-        Count graph edges, or sum edge distances.
+        Maximum number of edges (``metric="hops"``) or path length in
+        physical units (``metric="geodesic"`` or ``"bin_graph"``). If None,
+        returns every bin in the source's connected component. Default is
+        None.
+    metric : {"hops", "geodesic", "bin_graph"}, default="hops"
+        Count graph edges; measure the shortest path from the start bin's
+        center that stays inside the environment, at any angle; or sum the
+        edge distances along the connections between bin centers.
 
     Returns
     -------
