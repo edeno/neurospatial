@@ -8,6 +8,7 @@ import zlib
 import numpy as np
 import pandas as pd
 import pytest
+from calibration_helpers import assert_rejections_at_rate
 from reactivation_helpers import ASSEMBLIES, N_UNITS, UNIT_GROUPS, session
 from scipy import stats
 
@@ -411,18 +412,41 @@ def test_van_de_ven_activations_follow_the_events(reactivated) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_reactivation_gives_small_assembly_effects() -> None:
-    """Rest after running without assembly events: the assembly effect sizes
-    stay near 0. The false-positive rates of the verdict recipes are
-    calibrated in ``test_reactivation_calibration.py``."""
-    differences, shares = [], []
+def test_no_reactivation_gives_few_verdicts_and_small_effects() -> None:
+    """Rest after running without assembly events: few sessions are called
+    reactivated and the assembly effect sizes stay near 0.
+
+    Twelve sessions bound the verdicts from above only. The bounds are the
+    99.5% points of Binomial(12, rate) at the rates measured on thousands of
+    sessions of another simulation in ``test_reactivation_calibration.py``:
+    at most 3 for Kudrimoti (4.0%; the tail above 3 is 0.001, and 0.002 at
+    4.65%) and at most 1 for Lansink (0.1%; the tail above 1 is 0.00007).
+    """
+    kudrimoti = dataclasses.replace(
+        KUDRIMOTI_1999, match_windows=ReactivationWindows(length=600.0)
+    )
+    lansink = dataclasses.replace(
+        LANSINK_2009,
+        n_shuffles=200,
+        control_windows=ReactivationWindows(),
+        match_windows=ReactivationWindows(),
+    )
     peyrache = dataclasses.replace(PEYRACHE_2010, n_shuffles=200)
+    calls: dict[str, list[bool]] = {kudrimoti.name: [], lansink.name: []}
+    differences, shares = [], []
     for seed in range(12):
         table = _compare(
-            session(100 + seed, reactivation=0.0, duration=600.0), [peyrache]
+            session(100 + seed, reactivation=0.0, duration=600.0),
+            [kudrimoti, lansink, peyrache],
         )
-        differences.extend(table["value"])
-        shares.extend(table["match_fraction_above_shuffle"])
+        for name, verdicts in calls.items():
+            (verdict,) = table.loc[table["method"] == name, "is_reactivated"]
+            verdicts.append(bool(verdict))
+        assembly = table[table["method"] == peyrache.name]
+        differences.extend(assembly["value"])
+        shares.extend(assembly["match_fraction_above_shuffle"])
+    assert_rejections_at_rate(calls[kudrimoti.name], 80 / 2000, conservative=True)
+    assert_rejections_at_rate(calls[lansink.name], 1 / 1000, conservative=True)
     # Mean R(t) of a period without co-firing is 0 up to about sqrt(2 / n)
     # for n = 6000 bins; the difference of two periods within a few times that.
     assert np.max(np.abs(differences)) < 0.15
