@@ -319,3 +319,61 @@ def test_a_moving_object_outside_the_arena_is_reported_not_covered():
         distance_range=(0.0, 215.0),
     )
     assert covered.analysis_settings["time_beyond_distance_range"] == 0.0
+
+
+@pytest.mark.parametrize("missing", [(np.inf, 0.0), (0.0, -np.inf)])
+def test_an_infinite_sample_of_a_moving_object_is_a_missing_sample(missing):
+    """An infinite coordinate is an untracked object, like NaN: no observation.
+
+    The map is the one with NaN at that sample, on the default grid, and no
+    time is counted as beyond the range.
+    """
+    env = _box()
+    positions, objects = _session_with_a_moving_object()
+    objects[123, 0] = np.nan
+    untracked = _map(env, positions, objects, "euclidean")
+    objects[123, 0] = missing
+
+    result = _map(env, positions, objects, "euclidean")
+
+    assert result.distance_range == untracked.distance_range == (0.0, 145.0)
+    assert result.analysis_settings["time_beyond_distance_range"] == 0.0
+    np.testing.assert_array_equal(result.occupancy, untracked.occupancy)
+    np.testing.assert_array_equal(result.firing_rate, untracked.firing_rate)
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+@pytest.mark.parametrize("missing", [(np.inf, 0.0), (np.nan, np.nan)])
+def test_a_non_finite_fixed_object_is_left_out_of_the_default_range(metric, missing):
+    """Of two fixed objects, one with no position: the map of the other."""
+    env = _box()
+    positions, _ = _session_with_a_moving_object()
+    alone = _map(env, positions, np.array([[20.0, 30.0]]), metric)
+
+    result = _map(env, positions, np.array([missing, (20.0, 30.0)]), metric)
+
+    assert result.distance_range == alone.distance_range
+    np.testing.assert_array_equal(result.occupancy, alone.occupancy)
+
+
+@pytest.mark.parametrize("metric", ["euclidean", "geodesic"])
+@pytest.mark.parametrize("missing", [np.inf, np.nan])
+def test_an_object_with_no_finite_position_is_refused_with_guidance(metric, missing):
+    """No object position at all: the same refusal for inf as for NaN."""
+    from neurospatial import InputError
+
+    env = _box()
+    positions, _ = _session_with_a_moving_object()
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        _map(env, positions, np.array([[missing, missing]]), metric)
+
+
+def test_a_moving_object_never_tracked_is_refused_with_guidance():
+    """Positions per sample that are all infinite: refused, not a crash."""
+    from neurospatial import InputError
+
+    env = _box()
+    positions, objects = _session_with_a_moving_object()
+    objects[:] = np.inf
+    with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
+        _map(env, positions, objects, "euclidean")

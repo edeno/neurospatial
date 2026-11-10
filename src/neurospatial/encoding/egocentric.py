@@ -2217,6 +2217,9 @@ def _largest_object_distance(
     """
     centers = np.asarray(env.bin_centers, dtype=np.float64)
     objects = np.asarray(object_positions, dtype=np.float64)
+    if objects.ndim == 2:
+        # A fixed object with a NaN or infinite coordinate has no position.
+        objects = objects[np.isfinite(objects).all(axis=1)]
     box = env.arena.domain_bounds()
     if box is None and env.dimension_ranges is not None:
         box = np.array(env.dimension_ranges, dtype=np.float64).T
