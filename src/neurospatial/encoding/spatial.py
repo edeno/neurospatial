@@ -6348,28 +6348,42 @@ def _search_place_fields(
     measures = np.asarray(env.binning.bins.sizes, dtype=np.float64)
     # Unassigned bins keep their rate; assigned and missing bins are NaN.
     remaining = np.where(finite, firing_rate, np.nan)
+    # The order in which bins are the highest one left: from the highest rate
+    # down, at equal rates the lowest bin index first.
+    order = np.flatnonzero(finite)
+    order = order[np.argsort(-firing_rate[order], kind="stable")]
+    turn = np.full(firing_rate.shape, -1, dtype=np.intp)
+    turn[order] = np.arange(order.size)
+    # A bin with a higher neighbor in the full map is the flank of a field,
+    # not a peak (NaN compares False, so a missing neighbor is not higher).
+    pairs = env.edge_pairs
+    first, second = firing_rate[pairs[:, 0]], firing_rate[pairs[:, 1]]
+    flank = np.zeros(firing_rate.shape, dtype=bool)
+    flank[pairs[first < second, 0]] = True
+    flank[pairs[second < first, 1]] = True
     peaks: list[int] = []
     candidates: list[NDArray[np.int64]] = []
-    while np.any(np.isfinite(remaining)):
-        peak_idx = int(np.nanargmax(remaining))
-        peak_rate = float(remaining[peak_idx])
+    for peak_idx in order[~flank[order]].tolist():
+        if np.isnan(remaining[peak_idx]):
+            continue  # already in the field of a higher peak
+        peak_rate = float(firing_rate[peak_idx])
         if peak_rate <= 0 or peak_rate < min_peak:
             break
-        if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
-            # A flank of a field already cut, not a peak. Only this bin is
-            # set aside: the region above its own floor can run into a
-            # neighbouring field, which must still be found from its own peak.
-            remaining[peak_idx] = np.nan
-            continue
+        # A flank bin is set aside when it is the highest bin left, and only
+        # that bin: the region above its own floor can run into a neighboring
+        # field, which must still be found from its own peak. So when this
+        # peak is the highest bin left, every unassigned bin before it in the
+        # order has been set aside, and the others can join its field.
+        available = turn >= turn[peak_idx]
 
         # NaN compares False, so assigned and missing bins are excluded.
         floor = peak_rate * threshold
-        field_bins = _seed_component(peak_idx, remaining >= floor, env)
+        field_bins = _seed_component(peak_idx, available & (remaining >= floor), env)
         # The watershed takes its peaks from the "core" search.
         if subfields is not None:
             # FMAToolbox MapStats: the same search on the map minus the floor.
             core_level = floor + (peak_rate - floor) * threshold
-            core = _seed_component(peak_idx, remaining >= core_level, env)
+            core = _seed_component(peak_idx, available & (remaining >= core_level), env)
             if measures[core].sum() < measures[field_bins].sum() / 2:
                 field_bins = core
         remaining[field_bins] = np.nan
@@ -7116,20 +7130,6 @@ def is_place_cell(
             kind="place",
         )
     return rate_map().is_place_cell(min_info=min_info)
-
-
-def _rises_toward_a_neighbor(
-    peak_idx: int,
-    peak_rate: float,
-    firing_rate: NDArray[np.float64],
-    env: Environment,
-) -> bool:
-    """Whether a neighbor of the candidate peak has a higher rate in the full map.
-
-    Such a candidate is the flank of an already assigned field, not a peak.
-    """
-    neighbors = list(env.connectivity.neighbors(peak_idx))
-    return bool(np.any(firing_rate[neighbors] > peak_rate))
 
 
 def _watershed_basins(
