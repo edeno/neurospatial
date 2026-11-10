@@ -1,14 +1,26 @@
-"""The Redish lab's zIdPhi head-turn estimate, computed independently of the package.
+"""The package's adaptive-window head-turn estimate, written a second way.
 
-The package scores every backward window for all samples at once. This
-reference walks sample by sample, as the lab's ``dxdt.m`` reads: at sample
+This is not the Redish lab's code and not an external reference. It is the
+algorithm of ``neurospatial.behavior._adaptive_window``, from the same
+reading of the lab's ``dxdt.m``, as a plain loop over samples: at sample
 ``i`` it tries the backward windows of 3 to ``ceil(window / dt)`` samples,
 scores each by ``mean((x[i-k] - x[i] - slope * (t[i] - t[i-k]))**2)`` with
 ``slope`` the window's end-to-end slope, keeps the first smallest score's
 slope, then averages ``ceil(smoothing / dt)`` rates in a boxcar placed as
-MATLAB's ``conv2(..., 'same')``. Edge rules are the package's: no rate before
-3 earlier samples, the boxcar averages the rates present, and the sample
-counts are rounded to 9 decimals before their ceiling.
+MATLAB's ``conv2(..., 'same')``. The edge rules are the package's too: no
+rate before 3 earlier samples, the boxcar averages the rates present, the
+sample counts are rounded to 9 decimals before their ceiling, and the speed
+gate is the package's.
+
+So agreement with it checks the package's array code (the choice of window,
+the boxcar, runs, gaps and the gate) against a loop that is easy to read. It
+does not check that the algorithm is the lab's. The only values from the
+lab's own code are in ``test_head_sweep_matches_the_redish_lab_code`` of
+``test_vte.py``: IdPhi printed by GNU Octave running ``dxdt.m`` on three
+synthetic paths, over samples away from the ends of the recording. Nothing
+from the lab's code is stored for real tracking, for a pause of whole-pixel
+tracking, or for the first samples of a run, where the package gives no
+rate and the lab's code gives 0.
 """
 
 import numpy as np
@@ -17,7 +29,12 @@ from ._reference_velocity import reference_velocity
 
 
 def lab_rate(times, values, window=0.5, smoothing=0.1):
-    """Rate of one run, per second, shape (n_samples,)."""
+    """Rate of one run, per second, shape (n_samples,).
+
+    The package's algorithm as a loop over samples (see the module
+    docstring); the name says whose estimator it follows, not whose code
+    produced the values.
+    """
     times = np.asarray(times, dtype=float)
     values = np.asarray(values, dtype=float)
     n = values.size
@@ -75,7 +92,7 @@ def reference_turns(times, positions, min_speed=0.0, headings=None, speed=None):
     if speed is None:
         velocity = reference_velocity(times, positions, 0.1)
         speed = np.hypot(velocity[:, 0], velocity[:, 1])
-    turns[~((speed > 0) & (speed >= min_speed))] = np.nan
+    turns[~(speed >= min_speed)] = np.nan
     return turns
 
 

@@ -13,6 +13,7 @@ Key metrics:
 
 import functools
 import itertools
+import re
 import warnings
 
 import numpy as np
@@ -243,9 +244,10 @@ class TestHeadSweepFromPositions:
 
         Four 1 s legs at 30 Hz, each moving 20 cm/s East and 10 cm/s North
         or South in turn: headings of +-atan(1/2) with three corners, a turn
-        of ``6 * atan(1/2)`` in all. IdPhi is the reference transcription of
-        the lab's estimator, which spreads each corner over its backward
-        windows and averages part of the turn away.
+        of ``6 * atan(1/2)`` in all. IdPhi equals the loop form of the
+        package's estimator (``reference_head_sweep``), which, like the
+        lab's, spreads each corner over its backward windows and averages
+        part of the turn away.
         """
         from neurospatial.behavior.vte import head_sweep_from_positions
 
@@ -1743,6 +1745,94 @@ def test_head_sweep_counts_each_reversal_as_its_three_estimated_turns():
         )
 
 
+def _north_pause_north():
+    """Whole-pixel tracking at 30 Hz: 2 s north, 2 s still, 2 s north.
+
+    x stays at 50 px; y climbs 2 px per frame, holds for 60 frames, then
+    climbs again.
+    """
+    climb = 2.0 * np.arange(60)
+    top = 100.0 + climb[-1]
+    y = np.concatenate([100.0 + climb, np.full(60, top), top + 2.0 + climb])
+    times = np.arange(y.size) / _FS
+    return times, np.column_stack([np.full(y.size, 50.0), y])
+
+
+def test_min_speed_zero_counts_the_turns_at_zero_speed():
+    """With no speed gate IdPhi is the ungated sum, zero-speed samples included.
+
+    x never changes, so its estimated velocity is exactly 0. The estimated
+    y-velocity is positive while its window sees the climb and exactly 0
+    in the pause, so Phi is atan2(positive, 0) = pi/2 while the animal moves
+    and atan2(0, 0) = 0 in the pause: the lab's code has no rule for a zero
+    velocity. Phi steps by pi/2 on stopping and again on starting. A step
+    adds its size times (2/3 + 1/15) at 30 Hz (the three turns derived in
+    ``test_head_sweep_counts_each_reversal_as_its_three_estimated_turns``,
+    which scale with the step), so the ungated IdPhi is pi * (2/3 + 1/15).
+
+    The turns of the stopping step lie inside the pause, where a
+    frame-to-frame speed is exactly 0. With ``min_speed=0`` they count; a
+    positive gate on that speed drops them, leaving at most the starting
+    step's half.
+    """
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    times, positions = _north_pause_north()
+    frame_speed = np.r_[0.0, np.abs(np.diff(positions[:, 1]))] * _FS
+    assert (frame_speed[60:120] == 0).all()
+    ungated = np.pi * (2 / 3 + 1 / 15)
+    for speed in (None, frame_speed):
+        assert_allclose(
+            head_sweep_from_positions(times, positions, min_speed=0.0, speed=speed),
+            ungated,
+            rtol=1e-12,
+        )
+    gated = head_sweep_from_positions(
+        times, positions, min_speed=1.0, speed=frame_speed
+    )
+    assert 0 < gated <= ungated / 2 + 1e-12
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_pass_with_no_movement_has_a_head_sweep_only_without_the_gate(method):
+    """No movement: NaN under a speed gate; with none, 0 from the lab's sum.
+
+    Whole-pixel tracking of a still animal has a speed of exactly 0. Under a
+    positive gate no sample counts and the head sweep is NaN, not 0, with
+    either method. With ``min_speed=0`` the adaptive window counts every
+    sample: Phi is atan2(0, 0) = 0 throughout, so dPhi and IdPhi are 0. The
+    line fit gives a sample with zero speed no direction of movement, so its
+    IdPhi stays NaN. The same holds for a pass that lies inside a pause of a
+    longer recording.
+    """
+    from neurospatial.behavior.vte import compute_vte_trial, head_sweep_from_positions
+
+    def expect(head_sweep, *, gated):
+        if gated or method == "line_fit":
+            assert np.isnan(head_sweep)
+        else:
+            assert head_sweep == 0.0
+
+    times = np.arange(90) / _FS
+    still = np.tile([137.0, 88.0], (times.size, 1))
+    times_pause, positions = _north_pause_north()
+    for min_speed in (5.0, 0.0):
+        expect(
+            head_sweep_from_positions(times, still, min_speed=min_speed, method=method),
+            gated=min_speed > 0,
+        )
+        in_pause = compute_vte_trial(
+            times_pause,
+            positions,
+            times_pause[75],
+            times_pause[105],
+            min_speed=min_speed,
+            method=method,
+        )
+        assert in_pause.mean_speed == 0.0
+        expect(in_pause.head_sweep_magnitude, gated=min_speed > 0)
+
+
 def _circle(n_revolutions, fs=30, radius=20.0, period=4.0):
     """Constant-speed counter-clockwise circling, ``period`` s per revolution."""
     times = np.arange(0, n_revolutions * period, 1 / fs)
@@ -1765,6 +1855,14 @@ def _circle(n_revolutions, fs=30, radius=20.0, period=4.0):
 )
 def test_head_sweep_matches_the_redish_lab_code(path, lab_idphi):
     """IdPhi over a pass inside a recording equals the lab's zIdPhi code.
+
+    These three values are the only ones in the tests that come from the
+    lab's own code: synthetic paths, evenly sampled, summed over samples
+    1 s or more from either end of the recording. Real tracking, pauses of
+    whole-pixel tracking and the first samples of a run (where the package
+    gives no rate and the lab's code gives 0) have no stored value from the
+    lab's code; other tests compare the package with ``lab_rate``, which is
+    the package's algorithm written as a loop.
 
     Away from the recording's ends the estimate is the lab's, so the pass's
     IdPhi equals the lab's sum of |dPhi| times the sample interval (the lab
@@ -1791,6 +1889,110 @@ def test_head_sweep_matches_the_redish_lab_code(path, lab_idphi):
         positions = np.column_stack([20.0 * times, y])
     result = compute_vte_trial(times, positions, 1.0, 3.0, min_speed=0.0)
     assert_allclose(result.head_sweep_magnitude, lab_idphi, rtol=1e-9)
+
+
+def _tied_signal(kind, n_samples, rng):
+    """Signals whose backward windows tie, exactly or to rounding.
+
+    Whole-pixel tracking, pauses and steps give many windows the same score;
+    scaling the pixels by 0.37 and shifting them leaves ties that differ
+    only by rounding, where the order of the sum decides.
+    """
+    walk = np.cumsum(rng.integers(-1, 2, n_samples)).astype(float)
+    if kind == "pixels":
+        return walk
+    if kind == "scaled pixels":
+        return 0.37 * walk + 1234.567
+    if kind == "pause":
+        half = n_samples // 2
+        return np.minimum(np.arange(n_samples), half) * 2.0
+    if kind == "steps":
+        return np.repeat(rng.integers(0, 4, n_samples // 5 + 1), 5)[:n_samples] * 0.1
+    return np.cumsum(rng.normal(0.0, 1.0, n_samples))  # "jitter"
+
+
+@pytest.mark.parametrize("clock", ["even", "uneven"])
+@pytest.mark.parametrize("fs", [30.0, 30000 / 1001, 60.0])
+@pytest.mark.parametrize(
+    "kind", ["pixels", "scaled pixels", "pause", "steps", "jitter"]
+)
+def test_adaptive_window_rate_is_that_of_summing_every_window(kind, fs, clock):
+    """The rate equals, bit for bit, the rate from every window's full sum.
+
+    The package bounds each window's score and sums in full only the windows
+    that can hold the smallest; the reference sums every window of every
+    sample in order. The slopes agree exactly, so the same window was chosen
+    at every sample, ties included (the shorter window wins a tie).
+    """
+    from neurospatial.behavior._adaptive_window import adaptive_window_rate
+
+    rng = np.random.default_rng([int(fs * 100), len(kind), len(clock)])
+    n_samples = int(3 * fs)
+    times = np.arange(n_samples) / fs
+    if clock == "uneven":
+        times = np.sort(times + rng.uniform(-0.3, 0.3, n_samples) / fs)
+    values = _tied_signal(kind, n_samples, rng)
+    rate = adaptive_window_rate(times, values, smoothing=0)
+    assert np.isfinite(rate[3:]).all()
+    np.testing.assert_array_equal(rate, lab_rate(times, values, smoothing=0))
+
+
+def test_adaptive_window_tie_decided_by_rounding_follows_the_sum_in_order():
+    """Two windows that tie exactly on paper: the order of the sum decides.
+
+    At the last of these 16 Hz samples the 6-sample window has slope 0 and
+    misses 0, 0, 0.1, 0.1, 0.2, 0, so its score is 0.06 / 6 = 0.01. The
+    7-sample window has slope 0.1 / 7 per sample and misses -1, -2, 4, 3, 9,
+    -6 and -14 seventieths, so its score is (343 / 4900) / 7 = 0.01 too.
+    Summed in order, k = 1 to the window length, the 6-sample score rounds
+    to 0.010000000000000004 and the 7-sample score to 0.01, so the longer
+    window is chosen and the rate is its slope, 1.6 / 7 per second, not 0.
+    (The expanded square, summed another way, ranks them the other way.)
+    """
+    from neurospatial.behavior._adaptive_window import adaptive_window_rate
+
+    values = 0.1 * np.array([1.0, 1, 2, 4, 3, 3, 2, 2, 2])
+    times = np.arange(values.size) / 16.0
+    rate = adaptive_window_rate(times, values, smoothing=0)
+    assert rate[-1] == (values[8] - values[1]) / (times[8] - times[1])
+    assert_allclose(rate[-1], 1.6 / 7, rtol=1e-12)
+    np.testing.assert_array_equal(rate, lab_rate(times, values, smoothing=0))
+
+
+def test_adaptive_window_keeps_the_shortest_of_exactly_tied_windows():
+    """Windows with the same score, bit for bit: the shortest is chosen.
+
+    The signal repeats 0, 1, 1 at 16 Hz, where every sum is exact. At a
+    sample where it is 0, the windows of 3, 6 and 9 samples end on a 0, so
+    their slope is 0 and their misses are 1, 1, 0 repeated: scores 2/3, 4/6
+    and 6/9, the same number. The windows of 4, 5, 7 and 8 samples score
+    67/32, 11/5, 93/49 and 255/128.
+    """
+    from neurospatial.behavior._adaptive_window import _best_windows
+
+    values = np.tile([0.0, 1.0, 1.0], 6)[:16]
+    times = np.arange(values.size) / 16.0
+    assert _best_windows(times, values, 9)[15] == 3
+
+
+# A serial run takes about 0.3 s; the budget leaves room for a loaded machine
+# while still catching the full sum over every window this replaced (6 s
+# serial, growing with the square of the sampling rate).
+@pytest.mark.wallclock
+def test_head_sweep_of_one_kilohertz_tracking_is_fast():
+    """20 s of 1 kHz tracking: the cost grows with the window, not its square."""
+    import time
+
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    rng = np.random.default_rng(0)
+    times = np.arange(20_000) / 1000.0
+    positions = np.column_stack([10.0 * times, 8.0 * np.sin(2 * np.pi * times)])
+    positions += rng.normal(0.0, 0.3, positions.shape)
+    start = time.perf_counter()
+    head_sweep = head_sweep_from_positions(times, positions, min_speed=5.0)
+    assert time.perf_counter() - start <= 2.5
+    assert head_sweep > 0
 
 
 def test_passing_the_estimated_heading_reproduces_the_default():
@@ -2026,14 +2228,14 @@ def test_unknown_method_raises(method, t_maze_environment):
 
     times, positions = _sine_scan(90)
     trials = Intervals([Trial(0.0, 2.9, "start", "center", "reached")])
-    calls = [
-        lambda: head_sweep_from_positions(
+    calls = {
+        "head_sweep_from_positions": lambda: head_sweep_from_positions(
             times, positions, min_speed=1.0, method=method
         ),
-        lambda: compute_vte_trial(
+        "compute_vte_trial": lambda: compute_vte_trial(
             times, positions, 0.5, 2.5, min_speed=1.0, method=method
         ),
-        lambda: compute_vte_session(
+        "compute_vte_session": lambda: compute_vte_session(
             t_maze_environment,
             times,
             positions,
@@ -2042,9 +2244,13 @@ def test_unknown_method_raises(method, t_maze_environment):
             min_speed=1.0,
             method=method,
         ),
-    ]
-    for call in calls:
-        with pytest.raises(ValueError, match="method"):
+    }
+    for name, call in calls.items():
+        message = (
+            f"{name}() got method={method!r}; "
+            "method must be one of 'adaptive_window', 'line_fit'."
+        )
+        with pytest.raises(ValueError, match="^" + re.escape(message)):
             call()
 
 
@@ -2476,36 +2682,46 @@ def test_vte_trial_measures_the_session_pass(method):
 @pytest.mark.parametrize("method", METHODS)
 @pytest.mark.parametrize("seed", range(5))
 def test_jittered_pause_does_not_score_as_head_sweeping(seed, method):
-    """Tracking jitter on a still or creeping animal is not VTE.
+    """Tracking jitter on a still or slowly moving animal is not VTE.
 
     Jitter sets the heading of a slow animal, with either estimator: without
     the speed gate, over seeds 0-9, a still animal scores 5-17 rad and a
     2 cm/s creep 5-12 rad against 3.5-4.9 rad for the scan with the adaptive
     window, and a still animal about 16 rad against 8 rad with the line fit.
-    With the default gate a still animal has no head sweep and a creep is
-    far below a scan.
-    """
-    from neurospatial.behavior import compute_vte_trial
 
+    With the gate at most one sample of a still animal passes (the first,
+    where the velocity fit is one-sided), and one sample has no turn, so no
+    head sweep was measured: NaN, not 0. A straight creep at 1.5 times the
+    gate is the slow movement the gate lets through: the jitter moves its
+    estimated speed by up to 1.9 cm/s (seeds 0-9), so every sample stays
+    above the gate and its head sweep is a number, all of it jitter. It is
+    below the scan's: 0.2-2.6 rad against 3.5-4.9 rad with the adaptive
+    window (6-53% of the scan) and 0.7-1.9 against 7.8-8.2 rad with the line
+    fit (9-23%), over seeds 0-9. It is not always far below: with the
+    adaptive window seed 3 reaches half of the scan.
+    """
+    from neurospatial.behavior import compute_speed, compute_vte_trial
+
+    gate = 5.0  # cm/s
     rng = np.random.default_rng(seed)
     times = np.arange(45) / 30.0  # 1.5 s at 30 Hz
     jitter = rng.normal(0.0, 0.3, (times.size, 2))  # cm
     still = np.zeros((times.size, 2)) + jitter
-    creep = np.column_stack([2.0 * times, np.zeros_like(times)]) + jitter
+    creep = np.column_stack([1.5 * gate * times, np.zeros_like(times)]) + jitter
     scan = np.column_stack([10.0 * times, 8.0 * np.sin(2 * np.pi * times)]) + jitter
 
     def sweep(xy):
         return compute_vte_trial(
-            times, xy, 0.0, 1.5, min_speed=5.0, method=method
+            times, xy, 0.0, 1.5, min_speed=gate, method=method
         ).head_sweep_magnitude
 
     # Without jitter, the scan's IdPhi is that of the reference estimator.
     clean = scan - jitter
     clean_sweep = sweep(clean)
     reference = (
-        reference_head_sweep(times, clean, 5.0)
+        reference_head_sweep(times, clean, gate)
         if method == "adaptive_window"
-        else _line_fit_head_sweep(times, clean, 5.0)
+        else _line_fit_head_sweep(times, clean, gate)
     )
     assert_allclose(clean_sweep, reference, rtol=1e-10)
     scan_sweep = sweep(scan)
@@ -2516,6 +2732,10 @@ def test_jittered_pause_does_not_score_as_head_sweeping(seed, method):
     # more). Every scan sample stays above the gate, and 3/4 of the clean
     # value is still a strong sweep.
     assert scan_sweep > 0.75 * clean_sweep
+    # At most the first sample of the still animal reaches the gate (seed 3,
+    # where the fit is one-sided), and one sample alone has no turn.
+    assert (compute_speed(times, still)[1:] < gate).all()
     assert np.isnan(sweep(still))
-    creep_sweep = sweep(creep)
-    assert np.isnan(creep_sweep) or creep_sweep < 0.25 * scan_sweep
+    # Every sample of the creep passes the gate, so its sweep is compared.
+    assert (compute_speed(times, creep) >= gate).all()
+    assert sweep(creep) < scan_sweep
