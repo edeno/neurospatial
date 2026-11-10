@@ -55,17 +55,21 @@ def clear_of_walls(env, starts, ends):
     return ~shapely.intersects(segments, walls_of(env))
 
 
-def through_centers(env):
+def through_centers(env, floor=None):
     """Shortest path length between every two bin centers, turning at centers.
 
     The visibility graph joins two bin centers when the straight segment
-    between them is clear of the arena's walls; the room itself must be
-    convex, so a clear segment stays inside it.
+    between them is clear of the arena's walls (the room itself must then
+    be convex, so a clear segment stays inside it) or, with ``floor``, when
+    the segment lies in that polygon, its boundary included.
 
     Parameters
     ----------
     env : Environment
-        A convex two-dimensional room with declared walls.
+        A two-dimensional environment: a convex room with declared walls,
+        or the bins that tile ``floor``.
+    floor : shapely.Polygon, optional
+        The area the bins tile, for a room whose obstacles are missing bins.
 
     Returns
     -------
@@ -73,7 +77,13 @@ def through_centers(env):
     """
     centers = np.asarray(env.bin_centers, dtype=float)
     first, second = np.triu_indices(len(centers), k=1)
-    clear = clear_of_walls(env, centers[first], centers[second])
+    if floor is None:
+        clear = clear_of_walls(env, centers[first], centers[second])
+    else:
+        segments = shapely.linestrings(
+            np.stack([centers[first], centers[second]], axis=1)
+        )
+        clear = shapely.covers(floor, segments)
     lengths = np.zeros((len(centers), len(centers)))  # 0 marks no edge
     lengths[first[clear], second[clear]] = np.linalg.norm(
         centers[first[clear]] - centers[second[clear]], axis=1

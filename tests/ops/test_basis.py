@@ -323,9 +323,9 @@ class TestSelectBasisCenters:
     def test_farthest_point_is_the_greedy_max_min_choice(
         self, env_name, linear_env, walled_env
     ):
-        """Each new center is a bin farthest, by path length, from those chosen.
+        """Each new center is a bin farthest, along the bin graph, from those chosen.
 
-        The geodesic distances come from NetworkX on the connectivity graph.
+        The bin-graph distances come from NetworkX on the connectivity graph.
         Ties may resolve to any farthest bin, so the check compares the
         distance each choice reaches with the best any bin reaches.
         """
@@ -333,7 +333,7 @@ class TestSelectBasisCenters:
 
         env = linear_env if env_name == "linear_env" else walled_env[0]
         centers = select_basis_centers(
-            env, n_centers=6, method="farthest_point", rng=42
+            env, n_centers=6, method="farthest_point", rng=42, metric="bin_graph"
         )
         assert len(set(centers.tolist())) == 6
         lengths = dict(
@@ -403,6 +403,12 @@ class TestGeodesicRBFBasis:
         taut = 2 * np.hypot(5.0, 15.0) + 2.0
         assert straight == pytest.approx(12.0)
         assert taut > 2.5 * straight
+        # A path turns at bin centers. From (5, 1) the last center that sees
+        # past the wall is (9, 15); the path steps through the corner
+        # (10, 16) to (11, 17), through (12, 16) to (13, 15), and runs
+        # straight down to (17, 1).
+        around = 2 * np.hypot(4.0, 14.0) + 2 * np.hypot(2.0, 2.0)
+        assert taut < around < graph - 2.0
 
         bandwidth = 6.0
 
@@ -412,9 +418,7 @@ class TestGeodesicRBFBasis:
         basis = geodesic_rbf_basis(
             env, centers=np.array([center]), bandwidth=bandwidth, normalize="none"
         )
-        # Around the wall at any angle: between the taut string and the
-        # bin-graph staircase.
-        assert gaussian(graph) <= basis[0, across] <= gaussian(taut)
+        assert basis[0, across] == pytest.approx(gaussian(around), rel=1e-12)
         assert basis[0, open_side] == pytest.approx(gaussian(straight), rel=1e-12)
         # The straight-line (leaking) value would be about 10^5 times larger.
         assert basis[0, across] < 1e-3 * basis[0, open_side]
@@ -980,21 +984,47 @@ def test_graph_distances_follow_bin_ids_not_node_insertion_order(node_order):
 
 
 def test_farthest_point_centers_spread_by_the_chosen_distance(walled_env):
-    """Each new center is the bin farthest, by ``metric``, from those chosen."""
+    """Each new center is the bin farthest, by ``metric``, from those chosen.
+
+    The distances are not the code's own: NetworkX walks the bin graph, and
+    for the any-angle metric a visibility graph over the bin centers
+    (``path_oracles``) gives the shortest path inside the room that turns
+    only at bin centers.
+    """
+    import networkx as nx
+    from path_oracles import through_centers
+    from shapely.geometry import box
+
     from neurospatial.ops.distance import distance_field
 
     env, *_ = walled_env
+    floor = box(0, 0, 22, 20).difference(box(10, 0, 12, 16))
+    walked = dict(
+        nx.all_pairs_dijkstra_path_length(env.connectivity, weight="distance")
+    )
+    distances = {
+        "geodesic": through_centers(env, floor),
+        "bin_graph": np.array(
+            [[walked[i][j] for j in range(env.n_bins)] for i in range(env.n_bins)]
+        ),
+    }
+    # The search grows each path greedily from the center, so a field can
+    # read a little longer than the shortest path through centers: at most
+    # 1.8% in this room. A chosen center is then that close to the farthest.
+    fields = np.stack([distance_field(env, [b]) for b in range(env.n_bins)])
+    greedy = 0.018
+    assert np.all(fields >= distances["geodesic"] - 1e-9)
+    assert np.all(fields <= (1 + greedy) * distances["geodesic"] + 1e-9)
+    slack = {"geodesic": 1 + greedy, "bin_graph": 1 + 1e-12}
     chosen = {}
     for metric in ("geodesic", "bin_graph"):
-        for seed in range(4):
+        for seed in range(8):
             centers = select_basis_centers(
                 env, n_centers=6, method="farthest_point", rng=seed, metric=metric
             )
-            nearest = distance_field(env, [centers[0]], metric=metric)
+            nearest = distances[metric][centers[0]].copy()
             for k in range(1, len(centers)):
-                assert nearest[centers[k]] == nearest.max()
-                nearest = np.minimum(
-                    nearest, distance_field(env, [centers[k]], metric=metric)
-                )
+                assert nearest[centers[k]] * slack[metric] >= nearest.max()
+                nearest = np.minimum(nearest, distances[metric][centers[k]])
             chosen[metric, seed] = tuple(centers)
-    assert any(chosen["geodesic", s] != chosen["bin_graph", s] for s in range(4))
+    assert any(chosen["geodesic", s] != chosen["bin_graph", s] for s in range(8))
