@@ -485,6 +485,87 @@ class TestErrorAlongTheEnvironment:
             atol=(1 - np.sqrt(3) / 2) * circumradius + 2 * step,
         )
 
+    @pytest.fixture(scope="class")
+    def square_mesh(self):
+        """Triangles of about 3 cm tiling the convex room [0, 30] x [0, 30]."""
+        from shapely.geometry import box
+
+        from neurospatial.layout import create_layout
+
+        room = box(0, 0, 30, 30)
+        layout = create_layout(
+            "TriangularMesh", boundary_polygon=room, point_spacing=3.0
+        )
+        return Environment.from_layout(layout), room
+
+    def test_error_just_outside_a_mesh_is_from_the_nearest_point(self, square_mesh):
+        """A position that moves onto a mesh vertex is measured like any other.
+
+        (-0.87, 6.04) is nearest the room at (0, 6.04), beside the mesh
+        vertex (0, 6); nothing is in the way to (2.88, 13.11).
+        """
+        from neurospatial.decoding.metrics import decoding_error
+
+        env, _ = square_mesh
+        decoded, actual = np.array([[-0.87, 6.04]]), np.array([[2.88, 13.11]])
+        assert env.bin_at(decoded)[0] == -1
+        np.testing.assert_allclose(
+            decoding_error(env, decoded, actual),
+            [np.hypot(2.88, 13.11 - 6.04)],
+            rtol=1e-9,
+        )
+
+    def test_errors_around_a_convex_mesh_are_straight_lines(self, square_mesh):
+        """In a convex room the error is the straight line from the nearest point.
+
+        The nearest point of the room to each position comes from Shapely
+        and the length from ``np.linalg.norm``, not from the path search.
+        """
+        import shapely
+
+        from neurospatial.decoding.metrics import decoding_error
+
+        env, room = square_mesh
+        rng = np.random.default_rng(21)
+        # Up to 0.25 cm outside the room, all the way round, corners
+        # included: near enough that every one of them is measured.
+        positions = rng.uniform(-0.25, 30.25, (120_000, 2))
+        positions = positions[env.bin_at(positions) < 0]
+        assert len(positions) > 3000
+        others = rng.uniform(0.5, 29.5, positions.shape)
+        nearest = shapely.get_coordinates(
+            shapely.shortest_line(room, shapely.points(positions))
+        )[::2]
+        straight = np.linalg.norm(nearest - others, axis=1)
+        np.testing.assert_allclose(
+            decoding_error(env, positions, others), straight, rtol=1e-9
+        )
+        np.testing.assert_allclose(
+            decoding_error(env, others, positions), straight, rtol=1e-9
+        )
+
+    def test_error_changes_no_faster_than_a_position_slides_along_a_wall(
+        self, square_mesh
+    ):
+        """Two positions a step apart have errors at most a step apart."""
+        from neurospatial.decoding.metrics import decoding_error
+
+        env, _ = square_mesh
+        step = 0.01
+        along = np.arange(-0.25, 30.25, step)
+        beyond = np.full(along.size, -0.25)
+        actual = np.array([2.88, 13.11])
+        for wall in (
+            np.column_stack([beyond, along]),  # left of x = 0
+            np.column_stack([along, beyond]),  # below y = 0
+            np.column_stack([30.0 - beyond, along]),  # right of x = 30
+            np.column_stack([along, 30.0 - beyond]),  # above y = 30
+        ):
+            assert np.all(env.bin_at(wall) < 0)
+            errors = decoding_error(env, wall, np.tile(actual, (len(wall), 1)))
+            assert np.all(np.isfinite(errors))
+            assert np.abs(np.diff(errors)).max() <= step + 1e-9
+
     def test_each_position_is_located_once(self, small_2d_env, monkeypatch):
         """One ``bin_at`` lookup per position array, not two."""
         from neurospatial.decoding.metrics import decoding_error
