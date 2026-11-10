@@ -8,8 +8,9 @@ import warnings
 import numpy as np
 import pandas as pd
 import pytest
+from calibration_helpers import COVERAGE
 from replay_helpers import null_rejection_interval
-from scipy.stats import binomtest, pearsonr
+from scipy.stats import binomtest, nhypergeom, pearsonr
 
 from neurospatial import Environment
 from neurospatial.decoding import (
@@ -1307,10 +1308,24 @@ def test_apply_alpha_matches_a_rerun_on_the_longest_segment(two_segment_event):
 def test_matched_alpha_holds_the_false_positive_rate(track, sweeps_and_nulls):
     """Workflow: match on cell-identity copies, then call the real events.
 
-    The rate at the matched alpha is checked on independent copies, not on
-    the copies it was matched on, where it holds by construction: 128
-    fresh copies must be replay at the target rate, 0.1, within the 99%
-    binomial interval.
+    ``matched_alpha`` promises the target rate, 0.1, on the copies it was
+    given: at most 12 of the 128 may be replay, so alpha is their 13th
+    smallest p-value. On fresh copies it promises no rate. Alpha is an
+    estimate from 128 events, and 128 fresh events add their own spread.
+
+    What holds on fresh copies is an upper bound. If they are exchangeable
+    with the fitted copies, the fresh p-values below the 13th smallest
+    fitted one are the fresh ones met before the 13th fitted one when all
+    256 are read in increasing order, in random order of origin. That count
+    is negative hypergeometric: 12.9 on average, and above 27 with
+    probability 0.0046 for each method. Tied p-values (200 shuffles give 201
+    values) only lower the count, so no lower bound holds.
+
+    The copies are 16 of each of 8 real events, so they are exchangeable
+    within a real event only. That did not widen the count's spread:
+    splitting the null p-values of 60 such tables (seeds 0 to 59) within
+    events, 100,000 times, put the count above 27 with probability 0.0034
+    (Wu) and 0.0036 (Diba).
     """
     rates, real, _ = sweeps_and_nulls
     methods = [
@@ -1325,6 +1340,7 @@ def test_matched_alpha_holds_the_false_positive_rate(track, sweeps_and_nulls):
     fit_table = copies(seed=0)
     matched = matched_alpha(fit_table, replay_methods=methods, target=0.1)
     assert (matched["n_events"] == 128).all()
+    assert (matched["rate"] <= 0.1).all()
     alphas = matched.set_index("method")["alpha"]
     # apply_alpha at the matched alpha reproduces the rate matched_alpha reports.
     on_fit = detection_rates(
@@ -1335,9 +1351,11 @@ def test_matched_alpha_holds_the_false_positive_rate(track, sweeps_and_nulls):
     held_out = detection_rates(
         apply_alpha(copies(seed=1), alpha=alphas, replay_methods=methods)
     )
-    low, high = null_rejection_interval(128, 0.1)
     assert held_out["n_events"].eq(128).all()
-    assert held_out["n_replay"].between(low, high).all(), held_out
+    # 256 p-values, 128 of them fresh, read until the 13th fitted one.
+    fresh_below_alpha = nhypergeom(256, 128, int(0.1 * 128) + 1)
+    high = int(fresh_below_alpha.ppf(1 - (1 - COVERAGE) / 2))
+    assert (held_out["n_replay"] <= high).all(), held_out
     real_table = apply_alpha(
         _compare(track, rates, *real, methods), alpha=alphas, replay_methods=methods
     )
