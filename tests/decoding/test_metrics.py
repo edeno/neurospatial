@@ -329,11 +329,9 @@ class TestErrorAlongTheEnvironment:
         with pytest.warns(UserWarning, match=r"1 of 2 time bins.*outside"):
             errors = decoding_error(env, decoded, actual)
         assert np.isnan(errors[0])
-        assert errors[1] == pytest.approx(
-            decoding_error(
-                env, env.bin_centers[env.nearest_bin(decoded[1:])], actual[1:]
-            )[0]
-        )
+        # Half a centimeter beyond the arm's edge at x = 50: measured from
+        # the nearest point of the arm, (50, 30), 5 cm from (45, 30).
+        assert errors[1] == pytest.approx(5.0, rel=1e-12)
 
     def test_median_counts_a_decode_off_the_maze_as_a_failure(self):
         """An off-maze decode is a failed decode, not a missing sample.
@@ -393,12 +391,115 @@ class TestErrorAlongTheEnvironment:
 
         jitter = np.array([[60.0, -4.5]])
         assert w_track.bin_at(jitter)[0] == -1
-        nearest = w_track.bin_centers[w_track.nearest_bin(jitter)]
         actual = np.array([[0.0, 79.0]])
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             error = decoding_error(w_track, jitter, actual)
-        np.testing.assert_allclose(error, decoding_error(w_track, nearest, actual))
+        # From its projection (60, 0): 60 cm along the base, 79 cm up the arm.
+        np.testing.assert_allclose(error, [60.0 + 79.0], rtol=1e-12)
+
+    @pytest.mark.parametrize("side", [4.9, 5.1], ids=["on-track", "beyond-the-side"])
+    def test_error_on_a_track_does_not_depend_on_distance_to_its_side(self, side):
+        """A head just beyond the 10 cm track width is measured like one on it.
+
+        The distance along a track is between projections onto its
+        centerline, so it is ``60 - x`` here whichever side of the track's
+        edge (y = 5) the decoded position lies.
+        """
+        from neurospatial.decoding.metrics import decoding_error
+
+        track = Environment.linear_track(
+            endpoints=[(0, 0), (100, 0)], bin_size=5.0, track_width=10.0
+        )
+        x = np.arange(8.0, 12.01, 0.5)
+        decoded = np.column_stack([x, np.full(x.size, side)])
+        assert np.all((track.bin_at(decoded) >= 0) == (side < 5.0))
+        actual = np.tile([60.0, 0.0], (x.size, 1))
+        np.testing.assert_allclose(
+            decoding_error(track, decoded, actual), 60.0 - x, rtol=1e-12
+        )
+
+    def test_error_just_outside_a_grid_arena_is_from_its_nearest_point(self):
+        """Tracking jitter past a wall is measured from the wall, not a bin center."""
+        from neurospatial.decoding.metrics import decoding_error
+
+        edges = np.arange(0.0, 100.1, 5.0)
+        arena = Environment.from_grid_mask(
+            np.ones((20, 20), dtype=bool), grid_edges=(edges, edges), units="cm"
+        )
+        x = np.arange(8.0, 12.01, 0.5)
+        actual = np.tile([60.0, 50.0], (x.size, 1))
+        outside = np.column_stack([x, np.full(x.size, 100.1)])
+        assert np.all(arena.bin_at(outside) == -1)
+        # The nearest point of the arena to (x, 100.1) is (x, 100).
+        np.testing.assert_allclose(
+            decoding_error(arena, outside, actual),
+            np.hypot(60.0 - x, 50.0),
+            rtol=1e-12,
+        )
+        # Either position can be the one outside.
+        np.testing.assert_allclose(
+            decoding_error(arena, actual, outside),
+            np.hypot(60.0 - x, 50.0),
+            rtol=1e-12,
+        )
+
+    def test_error_is_continuous_across_the_edge_of_hexagonal_bins(self):
+        """Stepping just outside a hexagonal arena moves the error by little.
+
+        A position within ``d`` of a hexagon is within ``R + d`` of its
+        center (``R`` the hexagon's circumradius), so its nearest center is
+        too, and that center's hexagon (inradius ``sqrt(3) / 2 * R``) is
+        within ``(1 - sqrt(3) / 2) * R + d`` of the position. The error
+        from the nearest point of that hexagon is therefore within
+        ``(1 - sqrt(3) / 2) * R + 2 * d`` of the error ``d`` further in.
+        """
+        from neurospatial.decoding.metrics import decoding_error
+
+        rng = np.random.default_rng(0)
+        arena = Environment.from_samples(
+            rng.uniform(0, 40, (30_000, 2)), bin_size=2.0, layout="hexagonal"
+        )
+        center = arena.bin_centers.mean(axis=0)
+        angles = np.linspace(0, 2 * np.pi, 60, endpoint=False)
+        rays = np.column_stack([np.cos(angles), np.sin(angles)])
+        # Along each ray, the last step inside and the first step outside.
+        step = 0.01
+        radius = np.arange(10.0, 40.0, step)
+        inside = (
+            arena.bin_at((center + radius[:, None, None] * rays).reshape(-1, 2)) >= 0
+        ).reshape(radius.size, -1)
+        last = inside.argmin(axis=0) - 1
+        assert np.all(last > 0)
+        just_inside = center + radius[last, None] * rays
+        just_outside = center + radius[last + 1, None] * rays
+        actual = np.tile(center, (len(rays), 1))
+        circumradius = np.linalg.norm(
+            arena.bin_centers[arena.nearest_bin(just_inside)] - just_inside, axis=1
+        ).max()
+        errors = decoding_error(arena, just_outside, actual)
+        assert np.all(errors <= radius[last + 1] + 1e-9)  # never beyond itself
+        np.testing.assert_allclose(
+            errors,
+            decoding_error(arena, just_inside, actual),
+            atol=(1 - np.sqrt(3) / 2) * circumradius + 2 * step,
+        )
+
+    def test_each_position_is_located_once(self, small_2d_env, monkeypatch):
+        """One ``bin_at`` lookup per position array, not two."""
+        from neurospatial.decoding.metrics import decoding_error
+
+        lookups = []
+        bin_at = Environment.bin_at
+
+        def recorded(self, positions, *args, **kwargs):
+            lookups.append(len(positions))
+            return bin_at(self, positions, *args, **kwargs)
+
+        monkeypatch.setattr(Environment, "bin_at", recorded)
+        positions = small_2d_env.bin_centers[:7]
+        decoding_error(small_2d_env, positions, positions[::-1])
+        assert lookups == [7, 7]
 
     def test_geodesic_error_is_between_the_positions(self, small_2d_env):
         """Two positions in one bin are their straight-line distance apart."""

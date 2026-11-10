@@ -76,8 +76,11 @@ def decoding_error(
           around a wall corner keeps about half a bin from the corner.
           A position outside every bin but within about one
           ``env.bin_spacing`` of the environment itself, such as tracking
-          jitter at an edge, is measured from its nearest bin. A position
-          farther out, such as a posterior mean between two arms of a maze,
+          jitter at an edge or a head beyond the side of a track, is still
+          measured: on a track from its projection onto the track, like
+          every other position, and elsewhere from the nearest point of its
+          nearest bin, so the error changes continuously as a position
+          crosses the edge. A position farther out, such as a posterior mean between two arms of a maze,
           is not in the environment: its error is NaN, with a warning. Use
           ``map_position`` for a decoded position that is always a bin.
           Positions in disconnected components are ``inf`` apart.
@@ -226,21 +229,30 @@ def _errors_and_misses(
     )
     decoded_bins = np.full(len(errors), -1, dtype=np.intp)
     actual_bins = np.full(len(errors), -1, dtype=np.intp)
-    decoded_bins[valid] = _bins_or_nearest(env, decoded_positions[valid])
-    actual_bins[valid] = _bins_or_nearest(env, actual_positions[valid])
+    decoded_edge = np.zeros(len(errors), dtype=bool)
+    actual_edge = np.zeros(len(errors), dtype=bool)
+    decoded_bins[valid], decoded_edge[valid] = _bins_or_nearest(
+        env, decoded_positions[valid]
+    )
+    actual_bins[valid], actual_edge[valid] = _bins_or_nearest(
+        env, actual_positions[valid]
+    )
     decoded_off = valid & (decoded_bins < 0)
     actual_off = valid & (actual_bins < 0)
     measured = valid & ~decoded_off & ~actual_off
     if np.any(measured):
         from neurospatial.ops import _bin_graph_paths, _environment_paths
 
-        decoded = _inside_or_bin_center(env, decoded_positions, decoded_bins)
-        actual = _inside_or_bin_center(env, actual_positions, actual_bins)
-        paths = (
-            _bin_graph_paths(env)
-            if metric == "bin_graph"
-            else _environment_paths(env, call=call)
-        )
+        if metric == "bin_graph":
+            # Measured between the bins' centers, wherever the positions are.
+            paths = _bin_graph_paths(env)
+            decoded, actual = decoded_positions, actual_positions
+        else:
+            paths = _environment_paths(env, call=call.removesuffix("()"))
+            decoded = _inside_the_bin(
+                env, decoded_positions, decoded_bins, decoded_edge
+            )
+            actual = _inside_the_bin(env, actual_positions, actual_bins, actual_edge)
         errors[measured] = paths.between(
             decoded[measured],
             actual[measured],
@@ -250,21 +262,68 @@ def _errors_and_misses(
     return errors, decoded_off, actual_off
 
 
-def _inside_or_bin_center(
-    env: Environment, positions: NDArray[np.float64], bins: NDArray[np.intp]
+def _inside_the_bin(
+    env: Environment,
+    positions: NDArray[np.float64],
+    bins: NDArray[np.intp],
+    just_outside: NDArray[np.bool_],
 ) -> NDArray[np.float64]:
-    """Each position, or its bin's center when it lies just outside every bin.
+    """Each position, moved onto its nearest bin where it lies just outside.
 
     A position within a bin spacing of the environment but outside every bin
-    (tracking jitter at an edge) is measured from its nearest bin's center,
-    so the path length is measured between points inside the environment.
+    (tracking jitter at an edge, a head beyond the side of a track) has its
+    nearest bin in ``bins``. On a track it stays where it is: the distance is
+    measured between projections onto the track, so it does not depend on
+    how far to the side a position lies. Elsewhere it moves to the nearest
+    point of that bin's cell, so the path is measured between points inside
+    the environment and the error changes continuously as a position crosses
+    the environment's edge. Bins without a known cell (neither a rectilinear
+    grid nor planar cells) use their center.
+
+    Parameters
+    ----------
+    env : Environment
+    positions : NDArray[np.float64], shape (n_time_bins, n_dims)
+    bins : NDArray[np.intp], shape (n_time_bins,)
+        Bin of each position, its nearest bin where ``just_outside``.
+    just_outside : NDArray[np.bool_], shape (n_time_bins,)
+        Positions outside every bin that were given their nearest bin.
+
+    Returns
+    -------
+    NDArray[np.float64], shape (n_time_bins, n_dims)
     """
-    located: NDArray[np.float64] = np.array(positions, dtype=np.float64)
-    rows = np.flatnonzero(bins >= 0)
-    if rows.size:
-        inside = np.asarray(env.bin_at(positions[rows]), dtype=np.intp) >= 0
-        snapped = rows[~inside]
-        located[snapped] = env.bin_centers[bins[snapped]]
+    rows = np.flatnonzero(just_outside)
+    if not rows.size or env.binning.linearization is not None:
+        return positions
+    located: NDArray[np.float64] = positions.copy()
+    grid = env.binning.rectilinear
+    if grid is not None:
+        centers = env.bin_centers[bins[rows]]
+        for axis, edges in enumerate(grid.edges):
+            cell = np.searchsorted(edges, centers[:, axis], side="right") - 1
+            located[rows, axis] = np.clip(
+                positions[rows, axis], edges[cell], edges[cell + 1]
+            )
+    elif env.n_dims == 2 and (
+        env.binning.shapes is not None or env.binning.grid_frame is not None
+    ):
+        import shapely
+
+        from neurospatial.environment._cache import CELL_POLYGONS
+        from neurospatial.geometry import cell_polygons
+
+        cells = np.asarray(
+            env._cache.get(CELL_POLYGONS, lambda: cell_polygons(env.binning)),
+            dtype=object,
+        )
+        # Each line runs from the cell's nearest point to the position.
+        lines = shapely.shortest_line(
+            cells[bins[rows]], shapely.points(positions[rows])
+        )
+        located[rows] = shapely.get_coordinates(lines)[::2]
+    else:
+        located[rows] = env.bin_centers[bins[rows]]
     return located
 
 
@@ -296,7 +355,7 @@ def _paired_positions(
 
 def _bins_or_nearest(
     env: Environment, positions: NDArray[np.float64]
-) -> NDArray[np.intp]:
+) -> tuple[NDArray[np.intp], NDArray[np.bool_]]:
     """Bin of each finite position, its nearest bin when just outside, else -1.
 
     A position outside every bin is measured from its nearest bin when it
@@ -307,8 +366,15 @@ def _bins_or_nearest(
     farther out, such as a posterior mean in the gap between two arms of a
     maze, is not in the environment and gets -1: its nearest bin would pick
     an arm by proximity, not by where the posterior put its mass.
+
+    Returns
+    -------
+    bins : NDArray[np.intp], shape (n_positions,)
+    just_outside : NDArray[np.bool_], shape (n_positions,)
+        Positions outside every bin that were given their nearest bin.
     """
     bins = np.asarray(env.bin_at(positions), dtype=np.intp)
+    just_outside = np.zeros(len(bins), dtype=bool)
     outside = np.flatnonzero(bins < 0)
     if outside.size:
         query = positions[outside]
@@ -324,7 +390,8 @@ def _bins_or_nearest(
             distance = np.linalg.norm(query - env.bin_centers[nearest], axis=1)
             near = distance <= 1.5 * spacing
         bins[outside[near]] = nearest[near]
-    return bins
+        just_outside[outside[near]] = True
+    return bins, just_outside
 
 
 @keyword_hint()
