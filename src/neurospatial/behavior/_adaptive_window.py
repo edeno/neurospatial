@@ -56,6 +56,8 @@ from neurospatial._stacklevel import _external_stacklevel
 ADAPTIVE_WINDOW = 0.5
 #: Length of the boxcar, in seconds, that averages the rates.
 ADAPTIVE_SMOOTHING = 0.1
+#: Entries of the samples-by-lags arrays that window selection holds at once.
+_BLOCK_ELEMENTS = 2**18
 
 
 def adaptive_window_rate(
@@ -96,26 +98,137 @@ def adaptive_window_rate(
         return rate
     dt = float(np.mean(np.diff(times)))
     longest = min(_samples_in(window, dt), n_samples - 1)
-    best = np.full(n_samples, np.inf)
-    for width in range(3, longest + 1):
-        # Samples i >= width: slope between x[i - width] and x[i].
-        end = values[width:]
-        slope = (end - values[:-width]) / (times[width:] - times[:-width])
-        score = np.zeros(n_samples - width)
-        # Summed in the lab's order, k = 1..width, so near-ties break alike.
-        for k in range(1, width + 1):
-            lagged = values[width - k : n_samples - k]
-            elapsed = times[width:] - times[width - k : n_samples - k]
-            miss = lagged - end - slope * elapsed
-            score += miss * miss
-        score /= width
-        # Strictly smaller: on a tie the shorter window is kept, as in the lab.
-        better = score < best[width:]
-        best[width:][better] = score[better]
-        rate[width:][better] = slope[better]
+    widths = _best_windows(times, values, longest)
+    chosen = np.flatnonzero(widths)
+    start = chosen - widths[chosen]
+    rate[chosen] = (values[chosen] - values[start]) / (times[chosen] - times[start])
     if smoothing > 0:
         rate = _boxcar(rate, _samples_in(smoothing, dt))
     return rate
+
+
+def _best_windows(
+    times: NDArray[np.float64], values: NDArray[np.float64], longest: int
+) -> NDArray[np.intp]:
+    """Length, in samples, of the backward window with the smallest score.
+
+    The score of the window of ``width`` samples ending at sample ``i`` is
+    the lab's: with ``slope`` the slope between the window's two ends, the
+    mean over ``k = 1..width`` of
+    ``(x[i-k] - x[i] - slope * (t[i] - t[i-k]))**2``, summed in that order.
+    On a tie the shorter window is kept, as in the lab.
+
+    Summing every window's score takes ``longest**2 / 2`` terms per sample.
+    Instead each score is first bounded. Expanding the square gives
+    ``(A + 2 * f * B + f**2 * C) / width`` with ``f = -slope`` and ``A``,
+    ``B``, ``C`` the running sums over ``k`` of ``(x[i-k] - x[i])**2``,
+    ``(x[i-k] - x[i]) * (t[i] - t[i-k])`` and ``(t[i] - t[i-k])**2``: one
+    pass gives every width. This value and the sum in the lab's order
+    round differently, by less than ``slack``, so the smallest score can
+    only belong to a window whose lower bound is no higher than the
+    smallest upper bound. Usually that is one window. Where it is several
+    (ties and near-ties: whole-pixel tracking, pauses), those windows are
+    summed in the lab's order and compared as before. The window chosen is
+    therefore the one that summing every window chooses, ties included.
+
+    Parameters
+    ----------
+    times, values : ndarray, shape (n_samples,)
+        One run's sample times and signal.
+    longest : int
+        Longest window tried, in samples; the shortest is 3.
+
+    Returns
+    -------
+    ndarray of int, shape (n_samples,)
+        Window length per sample; 0 where no window has a score (fewer than
+        3 earlier samples, or ``longest < 3``).
+    """
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    n_samples = values.size
+    widths = np.zeros(n_samples, dtype=np.intp)
+    if longest < 3:
+        return widths
+    # Arrays below are (longest, n_block): lag k in row k - 1, one sample
+    # per column, so sums over lags run down a column.
+    lags = np.arange(1, longest + 1)[:, None]
+    # Row i of each view holds samples i - longest .. i; before the run's
+    # start the first sample is repeated, and those lags are never used.
+    value_rows = sliding_window_view(
+        np.concatenate([np.full(longest, values[0]), values]), longest + 1
+    )
+    time_rows = sliding_window_view(
+        np.concatenate([np.full(longest, times[0]), times]), longest + 1
+    )
+    # Rounding of the expanded score and of the lab's sum: each adds
+    # ``width`` rounded terms no larger than those of 2 * (A + f**2 * C), so
+    # the two differ by less than (width + 5) * eps of it, doubled here
+    # (measured: at most 0.14 of ``slack``). ``tiny`` covers underflow.
+    eps, tiny = np.finfo(np.float64).eps, np.finfo(np.float64).tiny
+    reach = 4 * (lags + 5) * eps / lags
+    block = max(1, _BLOCK_ELEMENTS // longest)
+    for first in range(3, n_samples, block):
+        last = min(first + block, n_samples)
+        samples = np.arange(first, last)
+        # x[i-k] - x[i] and t[i] - t[i-k].
+        behind = value_rows[first:last, -2::-1].T - values[first:last]
+        elapsed = times[first:last] - time_rows[first:last, -2::-1].T
+        fits = lags <= samples
+        fits[:2] = False
+        with np.errstate(over="ignore", invalid="ignore"):
+            fall = behind / elapsed
+            flat = _running_sum(behind * behind)
+            cross = _running_sum(behind * elapsed)
+            steep = _running_sum(elapsed * elapsed) * fall * fall
+            size = flat + steep
+            score = (size + 2 * fall * cross) / lags
+            slack = reach * size + tiny
+            # No score is below 0, so an exact 0 ends a sample's search.
+            lowest, highest = np.maximum(score - slack, 0.0), score + slack
+        # A sample with a bound that is not finite is summed in full.
+        unsure = ~np.isfinite(highest).all(axis=0)
+        lowest[:, unsure] = -np.inf
+        highest[unsure | ~fits] = np.inf
+        candidate = fits & (lowest <= highest.min(axis=0))
+
+        # A lone candidate with finite bounds holds the smallest score.
+        lone = (candidate.sum(axis=0) == 1) & ~unsure
+        widths[samples[lone]] = candidate.argmax(axis=0)[lone] + 1
+        best = np.full(samples.size, np.inf)
+        columns = np.flatnonzero(~lone)
+        while columns.size:
+            # The shortest window of each sample that can still win.
+            row = candidate[:, columns].argmax(axis=0)
+            width = row + 1
+            deepest = width.max()
+            end = samples[columns]
+            slope = (values[end] - values[end - width]) / (
+                times[end] - times[end - width]
+            )
+            miss = behind[:deepest, columns] - slope * elapsed[:deepest, columns]
+            # Added in the lab's order, k = 1..width.
+            exact = _running_sum(miss * miss)[row, np.arange(columns.size)]
+            exact /= width
+            # Strictly smaller: on a tie the shorter window is kept.
+            better = exact < best[columns]
+            best[columns[better]] = exact[better]
+            widths[end[better]] = width[better]
+            candidate[row, columns] = False
+            candidate[:, columns] &= lowest[:, columns] < best[columns]
+            columns = columns[candidate[:, columns].any(axis=0)]
+    return widths
+
+
+def _running_sum(terms: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Sum down each column in place, row 0 first: row ``k`` holds rows 0 to ``k``.
+
+    One vector addition per row, in the same order as a loop over lags
+    (``numpy.cumsum`` gives the same sums several times slower).
+    """
+    for k in range(1, terms.shape[0]):
+        terms[k] += terms[k - 1]
+    return terms
 
 
 def _samples_in(duration: float, dt: float) -> int:

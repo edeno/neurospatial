@@ -831,6 +831,10 @@ def head_sweep_from_positions(
     - Within a session its zIdPhi ranks trials much as the line fit's does:
       over 24 Carey et al. (2019) sessions the two methods gave the same VTE
       verdict for 96-97% of the trials.
+    - Its run time grows with the square of the sampling rate, since both
+      the samples and the windows tried at each sample grow with it: about
+      0.1 s per recorded hour at 30 Hz, 1 s at 120 Hz, 20 s at 500 Hz and
+      100 s at 1 kHz on one laptop core.
 
     Its run edges are neurospatial's, since the lab ran ``dxdt`` over whole
     sessions: a sample with fewer than 3 earlier samples in its run has no

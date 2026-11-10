@@ -1793,6 +1793,110 @@ def test_head_sweep_matches_the_redish_lab_code(path, lab_idphi):
     assert_allclose(result.head_sweep_magnitude, lab_idphi, rtol=1e-9)
 
 
+def _tied_signal(kind, n_samples, rng):
+    """Signals whose backward windows tie, exactly or to rounding.
+
+    Whole-pixel tracking, pauses and steps give many windows the same score;
+    scaling the pixels by 0.37 and shifting them leaves ties that differ
+    only by rounding, where the order of the sum decides.
+    """
+    walk = np.cumsum(rng.integers(-1, 2, n_samples)).astype(float)
+    if kind == "pixels":
+        return walk
+    if kind == "scaled pixels":
+        return 0.37 * walk + 1234.567
+    if kind == "pause":
+        half = n_samples // 2
+        return np.minimum(np.arange(n_samples), half) * 2.0
+    if kind == "steps":
+        return np.repeat(rng.integers(0, 4, n_samples // 5 + 1), 5)[:n_samples] * 0.1
+    return np.cumsum(rng.normal(0.0, 1.0, n_samples))  # "jitter"
+
+
+@pytest.mark.parametrize("clock", ["even", "uneven"])
+@pytest.mark.parametrize("fs", [30.0, 30000 / 1001, 60.0])
+@pytest.mark.parametrize(
+    "kind", ["pixels", "scaled pixels", "pause", "steps", "jitter"]
+)
+def test_adaptive_window_rate_is_that_of_summing_every_window(kind, fs, clock):
+    """The rate equals, bit for bit, the rate from every window's full sum.
+
+    The package bounds each window's score and sums in full only the windows
+    that can hold the smallest; the reference sums every window of every
+    sample in order. The slopes agree exactly, so the same window was chosen
+    at every sample, ties included (the shorter window wins a tie).
+    """
+    from neurospatial.behavior._adaptive_window import adaptive_window_rate
+
+    rng = np.random.default_rng([int(fs * 100), len(kind), len(clock)])
+    n_samples = int(3 * fs)
+    times = np.arange(n_samples) / fs
+    if clock == "uneven":
+        times = np.sort(times + rng.uniform(-0.3, 0.3, n_samples) / fs)
+    values = _tied_signal(kind, n_samples, rng)
+    rate = adaptive_window_rate(times, values, smoothing=0)
+    assert np.isfinite(rate[3:]).all()
+    np.testing.assert_array_equal(rate, lab_rate(times, values, smoothing=0))
+
+
+def test_adaptive_window_tie_decided_by_rounding_follows_the_sum_in_order():
+    """Two windows that tie exactly on paper: the order of the sum decides.
+
+    At the last of these 16 Hz samples the 6-sample window has slope 0 and
+    misses 0, 0, 0.1, 0.1, 0.2, 0, so its score is 0.06 / 6 = 0.01. The
+    7-sample window has slope 0.1 / 7 per sample and misses -1, -2, 4, 3, 9,
+    -6 and -14 seventieths, so its score is (343 / 4900) / 7 = 0.01 too.
+    Summed in order, k = 1 to the window length, the 6-sample score rounds
+    to 0.010000000000000004 and the 7-sample score to 0.01, so the longer
+    window is chosen and the rate is its slope, 1.6 / 7 per second, not 0.
+    (The expanded square, summed another way, ranks them the other way.)
+    """
+    from neurospatial.behavior._adaptive_window import adaptive_window_rate
+
+    values = 0.1 * np.array([1.0, 1, 2, 4, 3, 3, 2, 2, 2])
+    times = np.arange(values.size) / 16.0
+    rate = adaptive_window_rate(times, values, smoothing=0)
+    assert rate[-1] == (values[8] - values[1]) / (times[8] - times[1])
+    assert_allclose(rate[-1], 1.6 / 7, rtol=1e-12)
+    np.testing.assert_array_equal(rate, lab_rate(times, values, smoothing=0))
+
+
+def test_adaptive_window_keeps_the_shortest_of_exactly_tied_windows():
+    """Windows with the same score, bit for bit: the shortest is chosen.
+
+    The signal repeats 0, 1, 1 at 16 Hz, where every sum is exact. At a
+    sample where it is 0, the windows of 3, 6 and 9 samples end on a 0, so
+    their slope is 0 and their misses are 1, 1, 0 repeated: scores 2/3, 4/6
+    and 6/9, the same number. The windows of 4, 5, 7 and 8 samples score
+    67/32, 11/5, 93/49 and 255/128.
+    """
+    from neurospatial.behavior._adaptive_window import _best_windows
+
+    values = np.tile([0.0, 1.0, 1.0], 6)[:16]
+    times = np.arange(values.size) / 16.0
+    assert _best_windows(times, values, 9)[15] == 3
+
+
+# A serial run takes about 0.3 s; the budget leaves room for a loaded machine
+# while still catching the full sum over every window this replaced (6 s
+# serial, growing with the square of the sampling rate).
+@pytest.mark.wallclock
+def test_head_sweep_of_one_kilohertz_tracking_is_fast():
+    """20 s of 1 kHz tracking: the cost grows with the window, not its square."""
+    import time
+
+    from neurospatial.behavior.vte import head_sweep_from_positions
+
+    rng = np.random.default_rng(0)
+    times = np.arange(20_000) / 1000.0
+    positions = np.column_stack([10.0 * times, 8.0 * np.sin(2 * np.pi * times)])
+    positions += rng.normal(0.0, 0.3, positions.shape)
+    start = time.perf_counter()
+    head_sweep = head_sweep_from_positions(times, positions, min_speed=5.0)
+    assert time.perf_counter() - start <= 2.5
+    assert head_sweep > 0
+
+
 def test_passing_the_estimated_heading_reproduces_the_default():
     """The default Phi is the direction of the adaptive-window velocity.
 
