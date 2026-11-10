@@ -1738,12 +1738,27 @@ reml_objective, reml_at_boundary, penalty_selected_by_reml, pooled
         independent bins than spikes, so the bias is NaN). A GAM at a fixed
         penalty of 1 agreed within 0.1% (60 cells, 1000 spikes). With REML
         the penalty chosen for untuned cells is so large that both the bias
-        and the information are near 1e-4 bits/spike. Unsmoothed maps at
-        1000 spikes on 399 bins came out 8% below the simulated mean: the
-        Miller-Madow form is a first correction and underestimates once
-        ``K / N`` is not small. For
-        a tuned cell the plug-in bias is smaller (its spikes come from fewer
-        bins), so the correction is conservative.
+        and the information are near 1e-4 bits/spike.
+
+        ``method="binned"`` is less accurate when bins are visited unevenly.
+        On four pairs of those 10-minute Ornstein-Uhlenbeck trajectories
+        (1 m box, 5 cm bins, 379-394 of the 400 bins visited, for 0.03 to
+        6 s each; 400 untuned cells per setting), maps smoothed with a 5 or
+        10 cm bandwidth predicted 6-20% more than the simulated mean at 100
+        spikes and 0-6% more at 1000 spikes. The rate is formed in each bin
+        before smoothing, so one spike in a briefly visited bin gives a
+        large rate there; the correction counts its square, but information
+        grows more slowly. The screens then subtract too much and are
+        conservative. With every bin visited about equally (positions drawn
+        uniformly) the prediction was within about 2%. Unsmoothed maps at
+        1000 spikes came out 7-8% below the simulated mean (11% below with
+        evenly visited bins): the Miller-Madow form is a first correction
+        and underestimates once ``K / N`` is not small, so the screens
+        subtract 0.02-0.04 bits/spike too little. With 100 spikes these
+        maps have more independent bins than spikes and the bias is NaN.
+
+        For a tuned cell the plug-in bias is smaller (its spikes come from
+        fewer bins), so the correction is conservative.
 
         References
         ----------

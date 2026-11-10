@@ -101,9 +101,9 @@ def _expansion_allowance(method: str, bandwidth: float, n_spikes: int) -> float:
       6-20% above at 100 spikes and 0-6% above at 1000. A spike in a briefly
       visited bin gives a large rate there; the second-order term counts its
       square, but information grows only as x log x.
-    - ``binned`` unsmoothed: 7-8% below at 1000 spikes on 385 bins, the size
-      of the expansion's next term (1 / (6 m) of the bias at m = 2.6 spikes
-      per bin).
+    - ``binned`` unsmoothed: 7-8% below at 1000 spikes on 379-394 visited
+      bins, the size of the expansion's next term (1 / (6 m) of the bias at
+      m = 2.6 spikes per bin).
     """
     if method != "binned":
         return 0.05 if n_spikes == 100 else 0.0
@@ -140,7 +140,7 @@ def test_bias_is_the_mean_information_of_untuned_cells(
 
     With more independent bins than spikes the bias is undetermined (NaN):
     at 100 spikes, a 2.5 cm bandwidth with any estimator, and the
-    unsmoothed map with its 385 bins.
+    unsmoothed map with its 379 and 393 visited bins.
     """
     env, sessions = ou_sessions
     bias, information = _bias_against_untuned_information(

@@ -617,8 +617,9 @@ def _information_bias_terms(result: Any, *, base: float = 2.0) -> _InformationBi
       and the screens that subtract it are conservative. With every bin
       visited about equally (positions drawn uniformly) the bias was within
       about 2% at 200 and 1000 spikes.
-    - ``binned`` unsmoothed: 7-8% below at 1000 spikes on 385 bins, and 11%
-      below with evenly visited bins. That is the size of the expansion's
+    - ``binned`` unsmoothed: 7-8% below at 1000 spikes on 379-394 visited
+      bins, and 11% below with evenly visited bins. That is the size of the
+      expansion's
       next term, ``1 / (6 m)`` of the bias for ``m`` spikes per bin
       (here 2.6); the screens then subtract 0.02-0.04 bits/spike too
       little. With fewer spikes than bins the bias is NaN.
