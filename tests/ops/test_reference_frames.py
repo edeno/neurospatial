@@ -323,7 +323,7 @@ class TestComputeEgocentricDistance:
 
 
 class TestGeodesicDistanceTimeVarying:
-    """Geodesic distance honors time-varying targets (shape (n_time, n_targets, 2))."""
+    """Path distances honor time-varying targets (shape (n_time, n_targets, 2))."""
 
     def _build_quasi_1d_env(self):
         """Build a 2D environment that behaves like a 1D linear track along x."""
@@ -342,30 +342,62 @@ class TestGeodesicDistanceTimeVarying:
 
         env = self._build_quasi_1d_env()
 
-        # Animal stationary at (50, 0) for 3 timesteps.
-        positions = np.tile(np.array([[50.0, 0.0]]), (3, 1))
-        # Target moves: (10, 0) -> (50, 0) -> (90, 0).
+        # Animal stationary at (50.3, 0.1) for 3 timesteps, off its bin's
+        # center, so a distance between bin centers would read differently.
+        positions = np.tile(np.array([[50.3, 0.1]]), (3, 1))
+        # Target moves along the strip, also off the bin centers.
         # Shape (n_time=3, n_targets=1, 2) triggers the time-varying path.
         targets = np.array(
             [
-                [[10.0, 0.0]],
-                [[50.0, 0.0]],
-                [[90.0, 0.0]],
+                [[10.2, -0.2]],
+                [[50.3, 0.1]],
+                [[90.4, 0.2]],
             ],
             dtype=np.float64,
         )
+        assert np.all(env.bin_at(targets[:, 0]) >= 0)
 
         distances = egocentric_distance(
             positions, None, targets, metric="geodesic", env=env
         )
 
         assert distances.shape == (3, 1)
-        # Graph distance is approximately the linear x-distance along the strip.
-        # Tolerance: 1.5 * bin_size (1.0) accounts for binning discretization.
-        bin_size = 1.0
-        assert distances[0, 0] == pytest.approx(40.0, abs=1.5 * bin_size)
-        assert distances[1, 0] == pytest.approx(0.0, abs=1.5 * bin_size)
-        assert distances[2, 0] == pytest.approx(40.0, abs=1.5 * bin_size)
+        # Nothing is in the way along the strip: the straight line between
+        # the position and the target themselves.
+        assert_allclose(
+            distances[:, 0],
+            np.linalg.norm(targets[:, 0] - positions, axis=1),
+            rtol=1e-12,
+            atol=1e-12,
+        )
+
+    def test_geodesic_in_an_open_room_is_the_straight_line_to_each_target(self):
+        """Time-varying targets in an open room, with missing rows and cells.
+
+        A position outside the room or missing gives a NaN row and a missing
+        target a NaN cell; every other cell is the straight line between the
+        position and the target at that time.
+        """
+        from neurospatial import Environment
+        from neurospatial.ops.egocentric import egocentric_distance
+
+        edges = np.arange(21) * 5.0  # 100 x 100 cm
+        env = Environment.from_grid_mask(np.ones((20, 20), bool), (edges, edges))
+        rng = np.random.default_rng(3)
+        positions = rng.uniform(1.0, 99.0, (40, 2))
+        targets = rng.uniform(1.0, 99.0, (40, 3, 2))
+        positions[5] = [1e4, 1e4]  # outside the room
+        positions[11] = np.nan  # tracking lost
+        targets[7, 1] = np.nan  # this target missing at this time
+        targets[20, :] = np.nan
+        expected = np.linalg.norm(targets - positions[:, None, :], axis=2)
+        expected[5] = np.nan
+        assert np.isnan(expected).sum() == 3 + 3 + 1 + 3
+
+        actual = egocentric_distance(
+            positions, None, targets, metric="geodesic", env=env
+        )
+        assert_allclose(actual, expected, rtol=1e-12, equal_nan=True)
 
     def test_static_target_via_tile_matches_2d_broadcast(self):
         """Passing a static target explicitly tiled to 3D matches the 2D-broadcast path."""
@@ -399,8 +431,8 @@ class TestGeodesicDistanceTimeVarying:
         assert_allclose(dist_3d, dist_2d, equal_nan=True)
 
     @staticmethod
-    def _reference_geodesic(positions, targets, env):
-        """Reference geodesic distance: original per-cell bin_at loop.
+    def _reference_bin_graph(positions, targets, env):
+        """Reference bin-graph distance: original per-cell bin_at loop.
 
         Mirrors the pre-optimization implementation so the hoisted version can
         be verified for exact equivalence (including NaN handling for
@@ -434,8 +466,8 @@ class TestGeodesicDistanceTimeVarying:
                 distances[t, i] = cache[target_bin][pos_bin]
         return distances
 
-    def test_geodesic_matches_reference_loop_with_out_of_env(self):
-        """Batched geodesic distance equals the reference loop, incl. NaN cells."""
+    def test_bin_graph_matches_reference_loop_with_out_of_env(self):
+        """Batched bin-graph distance equals the reference loop, incl. NaN cells."""
         from neurospatial import Environment
         from neurospatial.ops.egocentric import egocentric_distance
 
@@ -463,7 +495,7 @@ class TestGeodesicDistanceTimeVarying:
             dtype=np.float64,
         )
 
-        expected = self._reference_geodesic(positions, targets, env)
+        expected = self._reference_bin_graph(positions, targets, env)
         actual = egocentric_distance(
             positions, None, targets, metric="bin_graph", env=env
         )
