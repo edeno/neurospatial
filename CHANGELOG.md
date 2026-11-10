@@ -124,10 +124,12 @@ give the measured rates:
   - `"adaptive_window"` (default) follows Papale et al. 2012 and the Redish
     lab's code: the lab's adaptive-window estimator (`dxdt.m`, called by the
     lab's zIdPhi code with a 0.5 s window and 0.1 s smoothing), run over the
-    whole recording and summed over the pass. Away from the ends of a run,
-    IdPhi equals the lab's code run in GNU Octave to 1e-12 (times the sample
-    interval: the lab sums rad/s, IdPhi here is in radians). It reproduces
-    published IdPhi, but at a cost: it fits x and y separately, so IdPhi
+    whole recording and summed over the pass. On three synthetic paths, over
+    samples away from the ends of the recording, IdPhi equals the lab's code
+    run in GNU Octave to 1e-12 (times the sample interval: the lab sums
+    rad/s, IdPhi here is in radians); real tracking, whole-pixel pauses and
+    the first samples of a run have no stored lab value. It follows the
+    published estimator, but at a cost: it fits x and y separately, so IdPhi
     depends on the camera's axes (rotating the same trajectories by 0.3 rad
     changed IdPhi by -25% to +68%, 5-95% of 46 Carey et al. 2019 passes); it
     captures about half the turn of a scan swinging once a second; and it
@@ -146,10 +148,16 @@ give the measured rates:
   still animal scored 5 to 17 rad over 1.5 s, against 3.5 to 4.9 rad for a
   real scan. The gate uses the same speed as the reported `mean_speed`, that
   of the pass's samples, so a pass with no sample above the gate has a NaN
-  head sweep, not 0. The adaptive window's run-edge rules and timing by the
+  head sweep, not 0. With `min_speed=0` the adaptive window counts samples
+  whose speed is exactly 0, as the lab's ungated sum does (its orientation
+  at zero velocity is `atan2(0, 0) = 0`, read from the lab's code, not
+  compared with its output), so a still pass has a head sweep of 0;
+  `"line_fit"` gives a zero-speed sample no direction, so a still pass
+  stays NaN. The adaptive window's run-edge rules and timing by the
   actual sample times are neurospatial's; the Notes of
   `head_sweep_from_positions` list what follows the lab's code and what
-  does not.
+  does not, and the estimator's cost by sampling rate (about 1 s per
+  recorded hour at 120 Hz, 20 s at 500 Hz and 90 s at 1 kHz).
 - Tracking sampled at 4 Hz or slower has no adaptive-window head sweep,
   since the 0.5 s window then holds fewer than 3 samples; the VTE functions
   warn and say so.
@@ -162,15 +170,33 @@ give the measured rates:
   order. When the straight segment stays inside the environment it is the
   straight line. Otherwise the path is grown from both ends and the shorter
   one is kept: the any-angle search (Theta*) is not always optimal, and near
-  walls the path grown from one end could be a few percent longer than the
-  one grown from the other (up to 4% in a 100 cm box with two walls). This
-  changes `decoding_error`, `shortest_path_length`, `step_lengths`,
-  `traveled_path_length`, `mean_square_displacement` and the other behavior
-  functions with `metric="geodesic"` where a wall is in the way; it is never
-  longer than before.
+  walls the path grown from one end could be longer than the one grown from
+  the other: over every pair of bins, by at most 5.5% on square grids (5, 4
+  and 2 cm bins in a 100 cm box with one or two walls), 7.2% on rectangular
+  bins, 9.8% on hexagonal bins, 6.3% on a 3-D grid and 16.2% on a
+  triangular mesh. This changes `decoding_error`, `shortest_path_length`,
+  `step_lengths`, `traveled_path_length`, `mean_square_displacement` and
+  the other behavior functions with `metric="geodesic"` where a wall is in
+  the way; it is never longer than before.
+- `mean_square_displacement(metric="geodesic")` took the shorter of the two
+  grown paths for every pair but never the straight line, so two positions
+  that see each other could read up to 0.56 cm too far apart (100 cm box,
+  2 cm bins, two walls). It now measures what `shortest_path_length` does.
+- One-to-all distances (`distance_field`, `Environment.distance_to`,
+  `neighbors_within`, `Environment.reachable_from` and the goal distances)
+  are grown from the source only. Their Notes say so: such a distance is
+  never shorter than the symmetric pair distance and never longer than the
+  bin-graph distance, it exceeded the pair distance by at most the
+  percentages above, and a geodesic neighborhood is therefore one-way near
+  walls. `distance_field` also documents that with several sources a bin
+  can read its distance to a source that is not the nearest: not on
+  8-connected square or 26-connected cubic grids, but for 1.7% of bins on a
+  4-connected square grid (by up to 1.3 bin spacings) and 1.0% on a
+  triangular mesh.
 - On a grid that joins only face neighbors (`connect_diagonal_neighbors=False`),
-  a straight line through a cell corner no longer counts as blocked when all
-  four cells around the corner are free and joined. Before, a geodesic
+  a straight line through a cell corner no longer counts as blocked when
+  every cell around the corner is a bin and every two of them that share a
+  face are connected, on square, rectangular and 3-D grids. Before, a geodesic
   between bin centers in an open room of such a grid was up to 41% longer
   than the straight line for a third of the pairs; it is now the straight
   line. A corner that touches a missing cell, the outline or a wall still
@@ -219,7 +245,10 @@ give the measured rates:
   bins, meshes, tracks) groups bin pairs by the any-angle distance. Before,
   the bin graph read distances on a hexagonal layout a median of 11.5% and
   up to 15.5% long, so the radial profile's peak, and a grid spacing read
-  from it, sat that much too far out.
+  from it, sat that much too far out. `spatial_autocorrelation_radial`
+  measures an environment's pair distances once and keeps them with the
+  environment (up to about 5,600 bins, a 256 MB matrix), so the other units
+  of a population reuse them; larger environments measure them per map.
 - `geodesic_rbf_basis` measures each basis function's distance along the
   any-angle path, so a basis function is round in an open arena instead of
   an octagon; `metric="bin_graph"` gives the old basis exactly.
@@ -231,6 +260,19 @@ give the measured rates:
   `rate_map_centroid` and `field_shift_distance`, the geodesic place-cell and
   object-vector-cell simulations, and the object distances behind
   geodesic object-vector maps.
+- The default `distance_range` of the object-vector and egocentric rate
+  maps is now an upper bound on the distance from every position inside the
+  environment. With `metric="geodesic"` it is the path through bin centers
+  plus the farthest a position can be from its bin's center, usually one
+  ring longer than before (145 cm instead of 140 cm in a 100 cm box of 2 cm
+  bins with the object at (0.1, 0.1)). With `metric="euclidean"` it uses
+  the arena's own box, which includes a track's width, and reaches the
+  box's far corner from the nearest object when every object lies outside
+  the box. Before, positions across a track's width and objects outside the
+  environment could be beyond the range and dropped out of occupancy and
+  spike counts. For an object inside an open arena the Euclidean default is
+  unchanged. An environment whose bins have no cells and no finite lookup
+  radius now needs an explicit `distance_range`.
 
 ### Place fields: a field next to a split field is no longer lost
 
@@ -240,7 +282,8 @@ give the measured rates:
   then never reported. A flank candidate now sets aside only its own bin, so
   the neighbouring field is found from its own peak, as the Notes describe.
   Found by comparing with FMAToolbox `MapStats`; on noisy simulated maps a
-  few more fields are reported, at the same run time.
+  few more fields are reported; smooth maps take the same time as before
+  and noisy maps less.
 
 ### Decoding: geodesic error follows the any-angle path
 
@@ -248,8 +291,10 @@ give the measured rates:
   the environment between the decoded and actual positions, as the behavior
   functions with `metric="geodesic"` do. Before, it walked the bin graph
   between bin centers, which in an open arena overstates a straight-line
-  error by up to about 8% and rounds it to bin-graph steps. Positions just
-  outside the environment are measured from the center of their bin.
+  error by up to about 8% and rounds it to bin-graph steps. A position
+  outside every bin is measured, on a track, from its projection onto the
+  track like any other position, and elsewhere from the nearest point of
+  its nearest bin, so errors stay continuous across the environment's edge.
 
 ### Documentation: what the distance functions measure
 

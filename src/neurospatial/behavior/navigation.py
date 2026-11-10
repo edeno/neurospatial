@@ -1625,9 +1625,10 @@ def distance_to_goal(
     against exact shortest paths it was at most 0.85 of a bin longer (1.7 cm at
     2 cm bins), and 0.17 cm longer on average behind an 80 cm obstacle at 2 cm
     bins. The distance is grown from the goal, one direction only: near walls
-    the length of a bin's path toward a goal, as grown from the goal, can differ
-    from the path grown the other way by up to 4.2% (measured in a 100 cm box
-    with two walls, 2 cm bins), while pair distances such as
+    the length of a bin's path toward a goal, as grown from the goal, can
+    exceed the symmetric pair distance, by at most 5.5% on the square grids
+    measured (see the Notes of :func:`neurospatial.ops.distance.distance_field`
+    for other layouts), while pair distances such as
     :func:`shortest_path_length` are symmetric.
 
     **Travel cost.** Each bin has a cost rate per unit length,
