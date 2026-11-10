@@ -415,8 +415,9 @@ epochs to measure accuracy on held-out data.
 
 Because decoding runs through the `Environment`, `BayesianDecoder` decodes
 **linearized tracks**, masked open fields, and graph-based layouts — not just a
-rectangular grid — and `score(..., distance="geodesic")` measures error along the
-environment's connectivity graph.
+rectangular grid — and `score(..., distance="geodesic")` measures error as the
+shortest path between the decoded and the true position that stays inside the
+environment: along a track, around walls.
 
 ## pynapple interop
 

@@ -61,15 +61,25 @@ space instead:
    stays inside the environment are the straight line apart, the true
    geodesic. Otherwise a path is grown from each end and the shorter is the
    length. A grown path is not always the shortest (Theta* is not
-   optimal): near walls the path grown from one end exceeded the one grown
-   from the other, a valid path, by up to 4.2% (a 100 cm box with two walls,
-   2 cm bins), and before the straight segment was checked first, grown
+   optimal), and before the straight segment was checked first, grown
    paths exceeded a visible straight segment by up to 0.54 cm. Against exact
    shortest paths around an obstacle, paths through bin centers were at most
-   0.85 of a bin longer. **Fields** (:meth:`from_bins`, :meth:`to_point`,
-   :meth:`to_bins`) are one direction only: each bin's length is that of
-   its path toward the source as grown from the source, so a field and the
-   reverse direction can differ by the same 4.2%.
+   0.85 of a bin longer. Against the shortest path that turns only at bin
+   centers (a visibility graph over the centers, searched exhaustively),
+   pair distances between bin centers were never shorter and at most 3.3%
+   longer, and equal for about four pairs in five (square and rectangular grids of
+   4 and 5 cm bins in a 100 cm box with one or two walls). **Fields**
+   (:meth:`from_bins`, :meth:`to_point`, :meth:`to_bins`) are one direction
+   only: each bin's length is that of its path toward the source as grown
+   from the source. A field length is never shorter than the pair distance
+   and never longer than the bin-graph distance (the edge to a nearer
+   neighbor is always one of the paths a bin chooses from). Measured over
+   every pair of bins, it was longer than the pair distance for 1-15% of
+   pairs, most for short paths around a wall's end: by at most 5.5% on
+   square grids (5, 4 and 2 cm bins in a 100 cm box with one or two walls;
+   at most 5.1 cm), 7.2% on 5 x 4 cm rectangular bins, 9.8% on 3 cm
+   hexagonal bins around a barrier, 6.3% on a 3-D grid of 2 cm cubes around
+   a slab, and 16.2% on a triangular mesh around a slit.
 
 **Track environments** (``Environment.from_graph``, ``linear_track``,
 ``maze``) are one-dimensional: the distance is measured along the track graph
@@ -482,7 +492,11 @@ class _EnvironmentPaths(ABC):
         """:meth:`from_bins` as a new array, exact at least up to ``limit``."""
 
     def to_bins(
-        self, bins: NDArray[np.intp], *, limit: float = np.inf
+        self,
+        bins: NDArray[np.intp],
+        *,
+        limit: float = np.inf,
+        keep: bool = True,  # noqa: ARG002  # for engines that keep fields
     ) -> NDArray[np.float64]:
         """Distance from every bin center to each of ``bins``, one row each.
 
@@ -495,6 +509,10 @@ class _EnvironmentPaths(ABC):
             Valid bin indices.
         limit : float, default=inf
             Lengths above it are ``inf``.
+        keep : bool, default=True
+            Whether an engine that keeps per-target fields may keep these
+            for later queries. False for targets needed once, so the rows
+            returned are the only memory the call leaves in use.
 
         Returns
         -------
@@ -656,6 +674,11 @@ class _OpenPaths(_EnvironmentPaths):
         self._neighbors[np.repeat(np.arange(n_bins), degree), ragged_arange(degree)] = (
             adjacency.indices
         )
+        # Neighbor pairs the layout lists but a wall or the outline closed,
+        # as keys ``low * n_bins + high``.
+        connections = env.binning.connections
+        closed = connections.all_pairs[~connections.is_open]
+        self._closed_pairs = closed.min(axis=1) * n_bins + closed.max(axis=1)
         lengths = adjacency.data[adjacency.data > 0]
         self._spacing = (
             _PROBE_FRACTION * float(lengths.min()) if lengths.size else np.inf
@@ -744,12 +767,16 @@ class _OpenPaths(_EnvironmentPaths):
 
     @override
     def to_bins(
-        self, bins: NDArray[np.intp], *, limit: float = np.inf
+        self, bins: NDArray[np.intp], *, limit: float = np.inf, keep: bool = True
     ) -> NDArray[np.float64]:
         bins = np.asarray(bins, dtype=np.intp)
         out = np.empty((bins.size, self._n_bins))
         fields = self._fields
-        if not np.isfinite(limit) and fields.n_kept + bins.size <= fields.limit:
+        if (
+            keep
+            and not np.isfinite(limit)
+            and fields.n_kept + bins.size <= fields.limit
+        ):
             # Every field fits in the cache: keep them for later queries.
             fields.ensure(self, np.unique(bins))
             out[:] = fields.length[fields.row_of_root[bins]]
@@ -815,16 +842,8 @@ class _OpenPaths(_EnvironmentPaths):
     ) -> NDArray[np.float64]:
         out = np.empty(starts.shape[0])
         # No path is shorter than the straight line, so where the segment
-        # stays inside it is the path: points in one bin (cells are convex),
-        # and any other pair whose segment is visible. Only the rest need a
-        # field.
-        straight = start_bins == end_bins
-        other = np.flatnonzero(~straight)
-        for lo in range(0, other.size, _PAIR_CHUNK):
-            part = other[lo : lo + _PAIR_CHUNK]
-            straight[part] = self._sees(
-                starts[part], ends[part], start_bins[part], end_bins[part]
-            )
+        # stays inside it is the path. Only the rest need a field.
+        straight = self._straight_pairs(starts, ends, start_bins, end_bins)
         out[straight] = np.linalg.norm(ends[straight] - starts[straight], axis=1)
         rest = np.flatnonzero(~straight)
         if rest.size:
@@ -847,6 +866,38 @@ class _OpenPaths(_EnvironmentPaths):
                 fields.ensure(self, ends_of_pairs)
             out[rest] = np.minimum(self._toward(s, e, a, b), self._toward(e, s, b, a))
         return out
+
+    def _straight_pairs(
+        self,
+        starts: NDArray[np.float64],
+        ends: NDArray[np.float64],
+        start_bins: NDArray[np.intp],
+        end_bins: NDArray[np.intp],
+    ) -> NDArray[np.bool_]:
+        """Whether each pair of points is the straight line apart.
+
+        Points in one bin are (cells are convex), and so is any other pair
+        whose segment stays inside (:meth:`_sees`), traced ``_PAIR_CHUNK``
+        pairs at a time.
+
+        Parameters
+        ----------
+        starts, ends : ndarray, shape (n_pairs, n_dims)
+            Points in ``start_bins`` and ``end_bins``.
+        start_bins, end_bins : ndarray of int, shape (n_pairs,)
+
+        Returns
+        -------
+        ndarray of bool, shape (n_pairs,)
+        """
+        straight: NDArray[np.bool_] = start_bins == end_bins
+        other = np.flatnonzero(~straight)
+        for lo in range(0, other.size, _PAIR_CHUNK):
+            part = other[lo : lo + _PAIR_CHUNK]
+            straight[part] = self._sees(
+                starts[part], ends[part], start_bins[part], end_bins[part]
+            )
+        return straight
 
     def _toward(
         self,
@@ -1140,36 +1191,41 @@ class _OpenPaths(_EnvironmentPaths):
         found: NDArray[np.bool_] = np.any(self._neighbors[a] == b[:, None], axis=1)
         return found
 
+    def _closed(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
+        """Whether each bin pair is a neighbor pair a wall or the outline closed.
+
+        False for an open pair and for two bins the layout does not list as
+        neighbors, such as cells that share only a corner on a grid that
+        joins face neighbors only.
+        """
+        keys = np.minimum(a, b) * self._n_bins + np.maximum(a, b)
+        found: NDArray[np.bool_] = np.isin(keys, self._closed_pairs)
+        return found
+
     def _corner_joined(
         self, a: NDArray[np.intp], b: NDArray[np.intp]
     ) -> NDArray[np.bool_]:
         """Whether a step through a corner from bin ``a`` to bin ``b`` stays inside.
 
-        A straight line through a vertex shared by ``a`` and ``b`` passes
-        when ``a`` and ``b`` are connected, or, where the grid joins only
-        face neighbors (a 4-connected grid), when both cells sharing a face
-        with ``a`` and ``b`` are bins open to each: every cell around the
-        vertex is then free and joined, so the vertex lies inside the
-        environment. A vertex that touches a missing cell, the outline or a
-        wall along those faces still blocks.
+        On a rectilinear grid in any number of dimensions, a straight line
+        through a vertex or an edge shared by the cells of ``a`` and ``b``
+        (which differ by one cell on two or more axes) passes when ``a`` and
+        ``b`` are connected. It is blocked when the layout lists the two as
+        neighbors and a wall or the outline closed that connection. Where
+        the layout does not list them (a grid that joins face neighbors
+        only), it passes when the corner is free
+        (:meth:`_GridCells.corner_free`): every cell around it is a bin and
+        every two of them that share a face are connected. A corner that
+        touches a missing cell, the outline or a wall along one of those
+        faces still blocks.
         """
+        grid = self._grid
+        assert grid is not None
         joined = self._connected(a, b)
         rest = np.flatnonzero(~joined)
+        rest = rest[~self._closed(a[rest], b[rest])]
         if rest.size:
-            neighbors_a = self._neighbors[a[rest]]
-            via = (neighbors_a[:, :, None] == self._neighbors[b[rest]][:, None, :]).any(
-                axis=2
-            ) & (neighbors_a >= 0)
-            cell = np.maximum(neighbors_a, 0)
-            centers = self._centers
-            near_a = np.linalg.norm(
-                centers[cell] - centers[a[rest]][:, None, :], axis=2
-            )
-            near_b = np.linalg.norm(
-                centers[cell] - centers[b[rest]][:, None, :], axis=2
-            )
-            side = via & (near_a <= self._nearest) & (near_b <= self._nearest)
-            joined[rest] = side.sum(axis=1) >= 2
+            joined[rest] = grid.corner_free(a[rest], b[rest], self._connected)
         return joined
 
     def _flanked(self, a: NDArray[np.intp], b: NDArray[np.intp]) -> NDArray[np.bool_]:
@@ -2592,6 +2648,55 @@ class _GridCells(_BoxCells):
             return None
         return cls(locator.edges, locator.flat_to_active, locator.shape, cell)
 
+    def corner_free(
+        self,
+        a: NDArray[np.intp],
+        b: NDArray[np.intp],
+        connected: Callable[[NDArray[np.intp], NDArray[np.intp]], NDArray[np.bool_]],
+    ) -> NDArray[np.bool_]:
+        """Whether the corner shared by the cells of ``a`` and ``b`` is free.
+
+        The cells of ``a`` and ``b`` differ by one cell on ``k >= 2`` axes
+        and share a vertex (an edge, for two axes of a 3-D grid). The
+        ``2**k`` cells around it are the box the two span. The corner is
+        free when each of them is a bin and every two that share a face
+        (they differ on one axis) are connected, whatever the cells' sizes.
+
+        Parameters
+        ----------
+        a, b : ndarray of int, shape (n,)
+            Bins whose cells differ by at most one on every axis.
+        connected : callable
+            ``connected(u, v)``: whether each bin pair is joined by an open
+            connection.
+
+        Returns
+        -------
+        ndarray of bool, shape (n,)
+        """
+        start = self.cell[a]
+        step = self.cell[b] - start
+        n_dims = start.shape[1]
+        free = np.ones(a.size, dtype=bool)
+        # Bin of each cell of the box, by its offset from ``a`` along
+        # ``step`` (0 or 1 per axis; an axis not stepped repeats the cell).
+        offsets = list(itertools.product((0, 1), repeat=n_dims))
+        bins = {}
+        for offset in offsets:
+            cells = start + step * np.asarray(offset)
+            bins[offset] = self.flat_to_active[
+                np.ravel_multi_index(tuple(cells.T), self.shape)
+            ]
+            free &= bins[offset] >= 0
+        for offset in offsets:
+            for axis in range(n_dims):
+                if offset[axis]:
+                    continue
+                across = (*offset[:axis], 1, *offset[axis + 1 :])
+                rows = np.flatnonzero(free & (step[:, axis] != 0))
+                free[rows] = connected(bins[offset][rows], bins[across][rows])
+        return free
+
     def walk(
         self,
         a: NDArray[np.intp],
@@ -2639,7 +2744,9 @@ class _GridCells(_BoxCells):
         times = np.take_along_axis(time, order, axis=1)
         # Crossings this close in time are one step through an edge or a
         # vertex, so mirror-image stretches take the same steps.
-        tied = np.diff(times, axis=1) <= 1e-9
+        # (Two axes not crossed, both inf, are not tied.)
+        with np.errstate(invalid="ignore"):
+            tied = np.diff(times, axis=1) <= 1e-9
         committed = a[rows].copy()
         pending = start.copy()
         index = np.arange(rows.size)
@@ -3279,7 +3386,7 @@ class _OpenPairDistances(_PairDistances):
     """Pair distances in an open environment, from per-bin-pair tables.
 
     The fields of every bin the positions visit are reduced to tables once,
-    so each pair is a few lookups.
+    so a pair whose straight segment is blocked is a few lookups.
     """
 
     def __init__(self, paths: _OpenPaths, points: NDArray[np.float64]) -> None:
@@ -3332,9 +3439,20 @@ class _OpenPairDistances(_PairDistances):
     def _between(
         self, first: NDArray[np.intp], second: NDArray[np.intp]
     ) -> NDArray[np.float64]:
-        # The shorter of the paths along either position's field, as
-        # :meth:`_OpenPaths._between` measures.
-        return np.minimum(self._toward(first, second), self._toward(second, first))
+        # As :meth:`_OpenPaths._between` measures: the straight line where
+        # the segment stays inside, else the shorter of the paths along
+        # either position's field.
+        starts, ends = self._points[first], self._points[second]
+        out = np.empty(first.size)
+        straight = self._paths._straight_pairs(
+            starts, ends, self._bins[first], self._bins[second]
+        )
+        out[straight] = np.linalg.norm(ends[straight] - starts[straight], axis=1)
+        rest = np.flatnonzero(~straight)
+        if rest.size:
+            one, other = first[rest], second[rest]
+            out[rest] = np.minimum(self._toward(one, other), self._toward(other, one))
+        return out
 
     def _toward(
         self, first: NDArray[np.intp], second: NDArray[np.intp]
@@ -3806,7 +3924,11 @@ class _BinGraphPaths(_EnvironmentPaths):
 
     @override
     def to_bins(
-        self, bins: NDArray[np.intp], *, limit: float = np.inf
+        self,
+        bins: NDArray[np.intp],
+        *,
+        limit: float = np.inf,
+        keep: bool = True,  # nothing is kept: one search per row
     ) -> NDArray[np.float64]:
         from neurospatial.ops.distance import _dijkstra_blocks
 

@@ -2,15 +2,24 @@
 
 The any-angle engine measures the shortest path inside the environment; the
 bin-graph engine walks the connections between bin centers. Expected values
-come from geometry (straight lines, taut strings) or from an independent
-shortest-path search (NetworkX), not from the code under test.
+come from geometry (straight lines, paths through named bin centers), from
+Shapely's segment-against-wall test (``path_oracles``) or from an
+independent shortest-path search (NetworkX).
+
+A few tests compare two routes of the engine with each other instead: both
+directions of a pair, pair tables against single pairs, a limited field
+against the full one, a long query against the same pairs in pieces. Their
+names say so. They check that the routes agree, not that either is right.
 """
 
+import itertools
 import warnings
 
 import networkx as nx
 import numpy as np
 import pytest
+import shapely
+from path_oracles import clear_of_walls
 from shapely.geometry import LineString, box
 
 from neurospatial import Environment
@@ -95,28 +104,91 @@ class TestSymmetricPairs:
         )
 
 
+def _ring(rng):
+    """Hexagonal bins on a ring: the hole hides opposite sides from each other."""
+    samples = rng.uniform(-20, 20, (40_000, 2))
+    radius = np.linalg.norm(samples, axis=1)
+    return Environment.from_samples(
+        samples[(radius > 8) & (radius < 20)], bin_size=2.0, layout="hexagonal"
+    )
+
+
+@pytest.mark.parametrize("layout", ["walled", "open", "ring"])
+def test_pair_tables_measure_what_single_pairs_measure(layout, walled):
+    # ``pairwise(points).between(i, j)`` and ``between(points[i], points[j])``
+    # are two routes to one length: the straight line where the segment stays
+    # inside, else the shorter grown path.
+    rng = np.random.default_rng(7)
+    env = {"walled": walled, "open": _grid(20, 2.0), "ring": _ring(rng)}[layout]
+    points = _inside(env, 400, rng)
+    first, second = rng.integers(0, 400, 6000), rng.integers(0, 400, 6000)
+    paths = _environment_paths(env, call="test")
+    single = paths.between(points[first], points[second])
+    np.testing.assert_allclose(
+        paths.pairwise(points).between(first, second), single, rtol=1e-9
+    )
+    visible = paths.sees(points[first], points[second])
+    if layout != "open":
+        # Both kinds of pair are compared.
+        assert 0.1 < visible.mean() < 0.9
+    np.testing.assert_allclose(
+        single[visible],
+        np.linalg.norm(points[second[visible]] - points[first[visible]], axis=1),
+        rtol=1e-12,
+    )
+
+
 class TestStraightLines:
-    def test_a_visible_segment_is_the_straight_line(self, walled):
+    @pytest.mark.parametrize("ends_at", ["positions", "bin centers"])
+    def test_line_of_sight_is_a_segment_clear_of_the_walls(self, walled, ends_at):
+        # Shapely decides which segments touch a wall of the arena (the
+        # walls as fitted to the bin edges, ``walled.arena.walls``).
+        rng = np.random.default_rng(8)
+        starts, ends = _inside(walled, 20_000, rng), _inside(walled, 20_000, rng)
+        if ends_at == "bin centers":
+            # Lines between centers run exactly through cell corners.
+            starts = walled.bin_centers[walled.bin_at(starts)]
+            ends = walled.bin_centers[walled.bin_at(ends)]
+        clear = clear_of_walls(walled, starts, ends)
+        assert 0.2 < clear.mean() < 0.9
+        # A segment through the very end of a wall is neither: left out.
+        wall_ends = shapely.multipoints(
+            [end for wall in walled.arena.walls for end in wall.boundary.geoms]
+        )
+        segments = shapely.linestrings(np.stack([starts, ends], axis=1))
+        decided = shapely.distance(segments, wall_ends) > 1e-9
+        assert decided.mean() > 0.99
+        sees = _environment_paths(walled, call="test").sees(starts, ends)
+        np.testing.assert_array_equal(sees[decided], clear[decided])
+
+    def test_a_segment_clear_of_the_walls_is_the_straight_line(self, walled):
         rng = np.random.default_rng(2)
         starts, ends = _inside(walled, 3000, rng), _inside(walled, 3000, rng)
+        clear = clear_of_walls(walled, starts, ends)
+        assert 0.2 < clear.mean() < 0.9
         paths = _environment_paths(walled, call="test")
-        visible = paths.sees(starts, ends)
-        assert 0.2 < visible.mean() < 0.9
         np.testing.assert_allclose(
-            paths.between(starts[visible], ends[visible]),
-            np.linalg.norm(ends[visible] - starts[visible], axis=1),
+            paths.between(starts[clear], ends[clear]),
+            np.linalg.norm(ends[clear] - starts[clear], axis=1),
             rtol=1e-12,
         )
+        # A segment through a wall is longer than the straight line.
+        blocked = paths.between(starts[~clear], ends[~clear])
+        assert np.all(
+            blocked > np.linalg.norm(ends[~clear] - starts[~clear], axis=1) + 1e-9
+        )
 
-    def test_a_path_across_the_divider_is_the_taut_string(self, walled):
-        # Either side of the divider, below its end at (50, 70): no path is
-        # shorter than the string around the end; bin-center waypoints keep
-        # the path within one bin diagonal of it.
+    def test_a_path_across_the_divider_turns_at_the_centers_past_its_end(self, walled):
+        # Either side of the divider, which ends at (50, 70). A path turns
+        # at bin centers, and the nearest ones that see past the wall's end
+        # are (49, 71) and (51, 71): up 51 and across 4, 2 over the end,
+        # and down again. The string pulled taut around the end itself is
+        # 0.3 cm shorter; the staircase along the bin graph is 1 cm longer.
         start, end = np.array([[45.0, 20.0]]), np.array([[55.0, 20.0]])
-        tip = np.array([50.0, 70.0])
-        taut = np.linalg.norm(tip - start) + np.linalg.norm(end - tip)
+        around = 2 * np.hypot(4.0, 51.0) + 2.0
         length = _environment_paths(walled, call="test").between(start, end)[0]
-        assert taut <= length <= taut + 2 * np.hypot(2.0, 2.0)
+        assert length == pytest.approx(around, rel=1e-12)
+        assert 2 * np.hypot(5.0, 50.0) < around
 
 
 class TestLimitedFields:
@@ -259,50 +331,129 @@ def test_a_long_session_keeps_whole_fields_with_the_same_lengths():
     np.testing.assert_array_equal(session, pieces)
 
 
-class TestCornersOfFourConnectedGrids:
-    """A line through a cell corner passes only when every cell around it is free."""
+class TestCellCorners:
+    """A line through a cell corner passes only when the corner is free."""
 
     @staticmethod
-    def _room(n, missing=(), walls=None):
-        mask = np.ones((n, n), dtype=bool)
+    def _room(shape, sizes, missing=(), walls=None, diagonal=False):
+        """A grid of ``shape`` cells of ``sizes``, joining face neighbors only."""
+        mask = np.ones(shape, dtype=bool)
         for cell in missing:
             mask[cell] = False
-        edges = np.arange(n + 1) * 2.0
+        edges = tuple(
+            np.arange(n + 1) * size for n, size in zip(shape, sizes, strict=True)
+        )
         arena = (
-            None if walls is None else OpenArena(box(0, 0, 2 * n, 2 * n), walls=walls)
+            None
+            if walls is None
+            else OpenArena(box(0, 0, edges[0][-1], edges[1][-1]), walls=walls)
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             return Environment.from_grid_mask(
                 mask,
-                grid_edges=(edges, edges),
-                connect_diagonal_neighbors=False,
+                grid_edges=edges,
+                connect_diagonal_neighbors=diagonal,
                 arena=arena,
             )
 
-    def test_an_open_room_is_the_straight_line_between_every_two_centers(self):
-        # Many center-to-center lines run exactly through cell corners here.
-        room = self._room(12)
+    @pytest.mark.parametrize(
+        ("shape", "sizes"),
+        [
+            ((12, 12), (2.0, 2.0)),
+            ((10, 8), (2.0, 3.0)),
+            ((5, 5, 5), (2.0, 2.0, 2.0)),
+            ((5, 4, 3), (2.0, 3.0, 5.0)),
+        ],
+        ids=["squares", "rectangles", "cubes", "boxes"],
+    )
+    def test_an_open_room_is_the_straight_line_between_every_two_centers(
+        self, shape, sizes
+    ):
+        # Many center-to-center lines run exactly through cell corners (and,
+        # in 3-D, cell edges) here; every cell around them is a bin.
+        room = self._room(shape, sizes)
         paths = _environment_paths(room, call="test")
         a, b = np.triu_indices(room.n_bins, k=1)
         straight = np.linalg.norm(room.bin_centers[a] - room.bin_centers[b], axis=1)
         np.testing.assert_allclose(paths.between_bins(a, b), straight, rtol=1e-12)
 
+    @pytest.mark.parametrize("sizes", [(2.0, 2.0), (2.0, 3.0)])
     @pytest.mark.parametrize(
         "obstacle",
-        [
-            {"missing": [(1, 0)]},  # the cell [2, 4] x [0, 2] is not a bin
-            {"walls": {"edge": LineString([(2, 0), (2, 2)])}},  # a wall up to (2, 2)
-        ],
-        ids=["missing-cell", "wall-to-the-corner"],
+        ["missing-cell", "wall-to-the-corner"],
     )
-    def test_a_corner_touching_an_obstacle_blocks(self, obstacle):
-        # From the center (1, 1) to (5, 5) the line runs through the corner
-        # (2, 2), which the missing cell or the wall touches.
-        room = self._room(4, **obstacle)
-        start, end = np.array([[1.0, 1.0]]), np.array([[5.0, 5.0]])
+    def test_a_corner_touching_an_obstacle_blocks(self, obstacle, sizes):
+        # From the center of cell (0, 0) to that of cell (2, 2) the line runs
+        # through the corner shared by cells (0, 0), (1, 0), (0, 1) and
+        # (1, 1), which the missing cell (1, 0) or a wall along the face
+        # between cells (0, 0) and (1, 0) touches.
+        width, height = sizes
+        if obstacle == "missing-cell":
+            room = self._room((4, 4), sizes, missing=[(1, 0)])
+        else:
+            wall = LineString([(width, 0), (width, height)])
+            room = self._room((4, 4), sizes, walls={"edge": wall})
+        start = np.array([[0.5 * width, 0.5 * height]])
+        end = np.array([[2.5 * width, 2.5 * height]])
         paths = _environment_paths(room, call="test")
         assert not paths.sees(start, end)[0]
-        assert paths.between(start, end)[0] > np.hypot(4.0, 4.0) + 1e-6
+        # The path turns at one bin center beside the corner: up one cell
+        # to the center of cell (0, 1) and on to the end (it crosses cells
+        # (1, 1) and (1, 2)), or across the top of cell (1, 1) from the
+        # center of cell (1, 2), whichever is shorter.
+        around = min(
+            height + np.hypot(2 * width, height), width + np.hypot(width, 2 * height)
+        )
+        assert around > np.linalg.norm(end - start) + 0.5
+        assert paths.between(start, end)[0] == pytest.approx(around, rel=1e-12)
         # Shifted off the corner, the line passes beside it.
-        assert paths.sees(np.array([[1.0, 1.3]]), end)[0]
+        assert paths.sees(start + np.array([0.0, 0.15 * height]), end)[0]
+
+    @pytest.mark.parametrize(
+        "missing",
+        [c for c in itertools.product((0, 1), repeat=3) if 0 < sum(c) < 3],
+    )
+    def test_a_missing_cell_at_a_vertex_blocks_the_body_diagonal(self, missing):
+        # The line between the centers of cubes (0, 0, 0) and (1, 1, 1) runs
+        # through the vertex (2, 2, 2); the other six cubes around it each
+        # touch that vertex.
+        room = self._room((3, 3, 3), (2.0, 2.0, 2.0), missing=[missing])
+        start, end = np.array([[1.0, 1.0, 1.0]]), np.array([[3.0, 3.0, 3.0]])
+        paths = _environment_paths(room, call="test")
+        assert not paths.sees(start, end)[0]
+        assert paths.between(start, end)[0] > np.sqrt(12.0) + 1e-6
+
+    def test_only_cells_around_a_3d_cell_edge_block_a_line_through_it(self):
+        # Between the centers of cubes (0, 0, 0) and (1, 1, 0) the line runs
+        # through the cell edge x = y = 2 at height z = 1. The four cubes
+        # around it are in layer 0; the cube (1, 0, 1) above does not touch
+        # the line.
+        start, end = np.array([[1.0, 1.0, 1.0]]), np.array([[3.0, 3.0, 1.0]])
+        above = self._room((3, 3, 3), (2.0, 2.0, 2.0), missing=[(1, 0, 1)])
+        assert _environment_paths(above, call="test").sees(start, end)[0]
+        beside = self._room((3, 3, 3), (2.0, 2.0, 2.0), missing=[(1, 0, 0)])
+        assert not _environment_paths(beside, call="test").sees(start, end)[0]
+
+    def test_a_wall_through_a_corner_closes_the_diagonal_connection(self):
+        # On a grid that joins diagonal neighbors, the wall from (9, 11) to
+        # (11, 9) through the corner (10, 10) closes the connection between
+        # the bins at (9, 9) and (11, 11) and no face between bins. The
+        # shortest path between their centers goes around the wall's end at
+        # (9, 11) or (11, 9): 2 + 2 cm.
+        wall = LineString([(9, 11), (11, 9)])
+        room = self._room((10, 10), (2.0, 2.0), walls={"wall": wall}, diagonal=True)
+        start, end = np.array([[9.0, 9.0]]), np.array([[11.0, 11.0]])
+        a, b = room.bin_at(start)[0], room.bin_at(end)[0]
+        assert not room.connectivity.has_edge(a, b)
+        corner_cells = room.bin_at(np.array([[9.0, 11.0], [11.0, 9.0]]))
+        for cell in corner_cells:
+            assert room.connectivity.has_edge(a, cell)
+            assert room.connectivity.has_edge(cell, b)
+        paths = _environment_paths(room, call="test")
+        assert not paths.sees(start, end)[0]
+        np.testing.assert_allclose(paths.between(start, end), [4.0], rtol=1e-12)
+        # A corner no wall touches still passes.
+        np.testing.assert_allclose(
+            paths.between(start - 4.0, end - 4.0), [np.hypot(2.0, 2.0)], rtol=1e-12
+        )

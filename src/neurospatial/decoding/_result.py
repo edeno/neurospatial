@@ -1427,7 +1427,8 @@ class DecodingResult(_DecodeRecordMixin, ReadOnlyArraysMixin, ResultMixin):
         metric : {"geodesic", "euclidean", "bin_graph"}, default="geodesic"
             Distance metric passed through to
             :func:`neurospatial.decoding.metrics.decoding_error`. ``"geodesic"``
-            measures along this result's :attr:`env` connectivity graph, so a
+            is the shortest path between the two positions that stays inside
+            this result's :attr:`env` (along a track, around walls), so a
             decode in the wrong arm of a maze counts the path between the
             arms; ``"euclidean"`` gives the straight-line distance.
             ``"bin_graph"`` walks the connections between the centers of the positions'
