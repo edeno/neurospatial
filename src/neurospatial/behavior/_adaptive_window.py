@@ -8,7 +8,8 @@ pass. The lab's estimator is ``dxdt.m`` ("ADR 2003", "Based on
 Janabi-Sharifi/Hayward/Chen ... But modified extensively"), called by the
 lab's zIdPhi code with a 0.5 s window and 0.1 s smoothing. Copies read for
 this port, none of them licensed for reuse, so the algorithm here is
-written from their behavior and checked against them in GNU Octave:
+written from their behavior and checked against ``dxdt.m`` in GNU Octave
+on three synthetic paths, over samples away from the ends of the recording:
 
 - ``andrewpapale/odorTrails`` @ 91954210ec: ``dxdt.m`` (with the
   "CORRECTED ADR 6 August 2012" sign fix) and ``zIdPhi.m``, whose 2012

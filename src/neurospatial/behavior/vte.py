@@ -805,11 +805,13 @@ def head_sweep_from_positions(
     over each run; dPhi is ``dxdt`` applied to Phi; dPhi is estimated over
     every sample given and summed over the samples counted. The lab sums
     ``|dPhi|`` in rad/s; here each sample's ``|dPhi|`` is multiplied by the
-    sample interval, so IdPhi is in radians (zIdPhi is unchanged). On evenly
-    sampled positions away from the ends of a run the result equals the
-    lab's code run in GNU Octave to 1e-12, except where a velocity component
-    is exactly 0 (pixel-quantized tracking): there rounding picks the side
-    of the arctangent's ±π branch, as it does in the lab's code.
+    sample interval, so IdPhi is in radians (zIdPhi is unchanged). The result
+    was compared with the lab's code run in GNU Octave on three synthetic,
+    evenly sampled paths (a 1 Hz scan, a circle and a zig-zag), over samples
+    away from the ends of the recording, and equals it to 1e-12. Where a
+    velocity component is exactly 0 (pixel-quantized tracking) rounding
+    picks the side of the arctangent's ±π branch, here and in the lab's
+    code, so the two can differ there.
 
     The lab's window score is the mean squared distance of the window's
     earlier samples from the line through the current sample with the

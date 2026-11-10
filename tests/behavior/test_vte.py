@@ -243,9 +243,10 @@ class TestHeadSweepFromPositions:
 
         Four 1 s legs at 30 Hz, each moving 20 cm/s East and 10 cm/s North
         or South in turn: headings of +-atan(1/2) with three corners, a turn
-        of ``6 * atan(1/2)`` in all. IdPhi is the reference transcription of
-        the lab's estimator, which spreads each corner over its backward
-        windows and averages part of the turn away.
+        of ``6 * atan(1/2)`` in all. IdPhi equals the loop form of the
+        package's estimator (``reference_head_sweep``), which, like the
+        lab's, spreads each corner over its backward windows and averages
+        part of the turn away.
         """
         from neurospatial.behavior.vte import head_sweep_from_positions
 
@@ -1853,6 +1854,14 @@ def _circle(n_revolutions, fs=30, radius=20.0, period=4.0):
 )
 def test_head_sweep_matches_the_redish_lab_code(path, lab_idphi):
     """IdPhi over a pass inside a recording equals the lab's zIdPhi code.
+
+    These three values are the only ones in the tests that come from the
+    lab's own code: synthetic paths, evenly sampled, summed over samples
+    1 s or more from either end of the recording. Real tracking, pauses of
+    whole-pixel tracking and the first samples of a run (where the package
+    gives no rate and the lab's code gives 0) have no stored value from the
+    lab's code; other tests compare the package with ``lab_rate``, which is
+    the package's algorithm written as a loop.
 
     Away from the recording's ends the estimate is the lab's, so the pass's
     IdPhi equals the lab's sum of |dPhi| times the sample interval (the lab
