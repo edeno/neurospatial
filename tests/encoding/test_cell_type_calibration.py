@@ -280,6 +280,21 @@ def _tuned_model(family, env, strength, rng):
     )
 
 
+# First line of the warning for a significant unit whose information bias is
+# unknown (``neurospatial.encoding._metrics._warn_unknown_bias``), by the cell
+# type it names. In this file only weak object-vector cells are refused this
+# way: their maps have more independent bins than the cells have spikes.
+UNKNOWN_BIAS_WARNING = (
+    "1 of 1 units have significant information but fewer spikes than their "
+    "rate maps have independent bins, so their information bias is unknown "
+    "and they are not called {kind} cells."
+)
+UNKNOWN_BIAS_KIND = {
+    "object_vector": "object-vector",
+    "egocentric_object_vector": "egocentric object-vector",
+}
+
+
 @pytest.mark.parametrize(
     ("family", "strengths"),
     [
@@ -290,23 +305,29 @@ def _tuned_model(family, env, strength, rng):
         ("egocentric_object_vector", (2.5, 5.0, 10.0)),
     ],
 )
-@pytest.mark.filterwarnings("ignore:.*information bias is unknown:UserWarning")
 def test_detection_rises_with_tuning_strength(family, strengths):
     """20 tuned cells at each of three peak rates, 10 minutes.
 
     Detection does not fall as the peak rate rises, rises from the weakest
-    to the strongest level, and the strongest cells are detected. A weak
-    cell with fewer spikes than its map has independent bins is not
-    detected, with a warning.
+    to the strongest level, and the strongest cells are detected.
+
+    A significant cell with fewer spikes than its map has independent bins
+    is not detected, and the verdict says so in a warning. That happens to
+    the object-vector families only: at their weakest level (about 100
+    spikes) most cells are refused this way (19 or 20 of 20 on four sets of
+    cells), which is why none is detected there. No other warning is
+    raised, and none at all for the other families.
     """
+    import warnings
+
     from neurospatial.simulation import generate_poisson_spikes
 
     session = _box_session(1)
     env, times, positions, headings = session
-    detected = []
+    detected, refused = [], []
     for strength in strengths:
         rng = np.random.default_rng(3)
-        hits = 0
+        hits, unknown_bias = 0, 0
         for k in range(20):
             model = _tuned_model(family, env, strength, rng)
             rate = (
@@ -315,11 +336,27 @@ def test_detection_rises_with_tuning_strength(family, strengths):
                 else model.firing_rate(times, positions, headings=headings)
             )
             train = generate_poisson_spikes(rate, times, rng=int(rng.integers(2**32)))
-            hits += _verdict(family, session, train, n_shuffles=N_SHUFFLES, rng=k)
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                verdict = _verdict(family, session, train, n_shuffles=N_SHUFFLES, rng=k)
+            hits += verdict
+            if caught:
+                (warning,) = caught
+                assert issubclass(warning.category, UserWarning)
+                assert str(warning.message).splitlines()[0] == (
+                    UNKNOWN_BIAS_WARNING.format(kind=UNKNOWN_BIAS_KIND[family])
+                )
+                assert not verdict
+                unknown_bias += 1
         detected.append(hits)
+        refused.append(unknown_bias)
     assert detected == sorted(detected), detected
     assert detected[0] < detected[-1], detected
     assert detected[-1] >= 18, detected
+    if family in UNKNOWN_BIAS_KIND:
+        assert refused[0] > 10, refused
+    else:
+        assert refused == [0, 0, 0]
 
 
 @pytest.mark.parametrize(
