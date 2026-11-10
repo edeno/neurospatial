@@ -559,18 +559,28 @@ class TestReplaySignificance:
                 p_values[null].append(result.shuffles[null].p_value)
         return {name: np.asarray(values) for name, values in p_values.items()}
 
-    def test_tirole_nulls_together_are_calibrated_without_replay(
+    def test_tirole_nulls_together_stay_within_alpha_without_replay(
         self, random_position_p_values
     ):
-        """Spikes from random positions: all three nulls together keep alpha.
+        """Spikes from random positions: requiring all three nulls holds alpha.
 
-        P(p <= 0.1) with 39 shuffles is 0.1; 1000 events put an inflated
-        rate of 0.16 (about 160) well past the 99% interval's end of 125.
+        The combined p-value is the largest of the three. P(p <= 0.1) with
+        39 shuffles is 0.1 for an exact test, and 98 of the 1000 events
+        have a combined p <= 0.1; an inflated rate of 0.16 (about 160) is
+        well past the 99% interval's high end of 125.
+
+        Only the high end is asserted. Each null alone rejects too many of
+        these events (149, 197 and 132, the test below), and 98 is how many
+        all three reject. With each null's threshold lowered until it
+        rejects at most 10% of them, all three reject 37, below the
+        interval's low end of 76.
         """
         p_values = random_position_p_values["combined"]
-        alpha = monte_carlo_rejection_rate(39, 0.1, strict=False)
-        low, high = null_rejection_interval(len(p_values), alpha)
-        assert low <= np.sum(p_values <= 0.1) <= high
+        assert_rejections_at_rate(
+            p_values <= 0.1,
+            monte_carlo_rejection_rate(39, 0.1, strict=False),
+            conservative=True,
+        )
 
     @pytest.mark.parametrize(
         ("null", "measured"),
