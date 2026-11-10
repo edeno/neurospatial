@@ -360,28 +360,35 @@ def test_detection_rises_with_tuning_strength(family, strengths):
 
 
 @pytest.mark.parametrize(
-    ("gaze", "expected_rate"),
+    ("gaze", "passes"),
     [
-        ({"gaze_model": "ray_cast"}, None),
-        ({"gaze_model": "fixed_distance", "view_distance": 10.0}, 1.0),
+        ({"gaze_model": "ray_cast"}, False),
+        ({"gaze_model": "fixed_distance", "view_distance": 10.0}, True),
     ],
 )
-def test_place_cells_as_spatial_view_cells(gaze, expected_rate):
-    """A place cell (8 Hz peak, 10 cm field) tested as a spatial view cell.
+def test_place_cells_as_spatial_view_cells(gaze, passes):
+    """50 place cells (8 Hz peak, 10 cm field) given to ``is_spatial_view_cell``.
 
-    With a ray-cast gaze the viewed wall point moves with heading, so a
-    place cell carries little view information and passes no more often
-    than an untuned cell. With a fixed 10 cm gaze distance the viewed point
-    stays within 10 cm of the animal, so every place cell passes: the
-    verdict alone cannot tell place from view tuning (documented in
-    ``is_spatial_view_cell``).
+    With a fixed 10 cm gaze distance the viewed point stays within 10 cm of
+    the animal, so every place cell passes: the verdict alone cannot tell
+    place from view tuning (documented in ``is_spatial_view_cell``).
+
+    With a ray-cast gaze the viewed wall point moves with heading, and no
+    place cell passes (0 of 200 on four pairs of trajectories). The shuffle
+    is not what refuses them: the view-information test alone is
+    significant for far more place cells than for untuned ones (13 to 23 of
+    50, against the 99% binomial interval's end of 7 at the 4.5% of an
+    exact test). Their bias-corrected view information stays under the 0.5
+    bits/spike cutoff (0.46 at most).
     """
+    from calibration_helpers import null_rejection_interval
+
     from neurospatial.simulation import PlaceCellModel, generate_poisson_spikes
 
-    passed = []
+    verdicts, p_values = [], []
     for seed in (1, 2):
         session = _box_session(seed)
-        env, times, positions, headings = session
+        env, times, positions, _ = session
         rng = np.random.default_rng(40 + seed)
         trains = [
             generate_poisson_spikes(
@@ -397,37 +404,32 @@ def test_place_cells_as_spatial_view_cells(gaze, expected_rate):
             )
             for _ in range(25)
         ]
-        p_values = np.array(
-            [
-                test.p_value
-                for test in encoding.spatial_view_cell_significance(
-                    env,
-                    trains,
-                    times,
-                    positions,
-                    headings,
-                    n_shuffles=N_SHUFFLES,
-                    rng=seed,
-                    boundary_source="analysis",
-                    **gaze,
-                ).values()
-            ]
+        verdicts.extend(
+            _verdict(
+                "spatial_view",
+                session,
+                train,
+                n_shuffles=N_SHUFFLES,
+                rng=1000 * seed + k,
+                **gaze,
+            )
+            for k, train in enumerate(trains)
         )
-        rates = encoding.compute_view_rates(
-            env, trains, times, positions, headings, boundary_source="analysis", **gaze
+        p_values.append(
+            _significance(
+                "spatial_view", session, trains, n_shuffles=N_SHUFFLES, rng=seed, **gaze
+            )
         )
-        information = np.asarray(rates.spatial_information()) - np.asarray(
-            rates.spatial_information_bias()
-        )
-        # The verdict of is_spatial_view_cell: significant and min_info=0.5.
-        passed.append((p_values < ALPHA) & (information >= 0.5))
-    passed = np.concatenate(passed)
-    if expected_rate is None:
-        assert_rejections_at_rate(
-            passed, monte_carlo_rejection_rate(N_SHUFFLES, ALPHA), conservative=True
-        )
-    else:
-        assert passed.mean() >= 0.9
+    verdicts, p_values = np.array(verdicts), np.concatenate(p_values)
+    assert verdicts.size == 50
+    if passes:
+        assert verdicts.all()
+        return
+    assert not verdicts.any()
+    _, untuned_most = null_rejection_interval(
+        p_values.size, monte_carlo_rejection_rate(N_SHUFFLES, ALPHA)
+    )
+    assert np.sum(p_values < ALPHA) > untuned_most
 
 
 def _circle_session(seed: int):
