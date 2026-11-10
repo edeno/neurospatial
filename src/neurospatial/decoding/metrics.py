@@ -36,6 +36,7 @@ from neurospatial.geometry._arena import _track_distances
 
 if TYPE_CHECKING:
     from neurospatial.environment import Environment
+    from neurospatial.ops import _EnvironmentPaths
     from neurospatial.ops._types import DistanceMetric
 
 
@@ -244,6 +245,7 @@ def _errors_and_misses(
     if np.any(measured):
         from neurospatial.ops import _bin_graph_paths, _environment_paths
 
+        paths: _EnvironmentPaths
         if metric == "bin_graph":
             # Measured between the bins' centers, wherever the positions are.
             paths = _bin_graph_paths(env)
