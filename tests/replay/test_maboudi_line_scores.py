@@ -461,7 +461,11 @@ class TestRecipe:
         """100 random events with 199 shuffles at alpha = 0.01.
 
         P(p < 0.01) is 1 / 200 for an exact test, so 0 to 3 events are
-        replay; P(p < 0.5) keeps the check two-sided.
+        replay. That count has little power: 80% only at a true rate of
+        0.055, 11 times 0.005. The counts at the levels of ``NULL_LEVELS``
+        are two-sided and see less: with 80% power, a rate of 0.220 at the
+        0.1 level (2.3 times 0.095), 0.345 at 0.2 (1.8 times 0.195) and
+        0.665 at 0.5 (1.3 times 0.495).
         """
         env, rates = place_code
         results = [
@@ -474,4 +478,7 @@ class TestRecipe:
             [all(r.criteria.values()) for r in results],
             alpha=MABOUDI_2018.alpha,
             n_shuffles=199,
+            # Every event passes the criteria; the minimum leaves a margin
+            # of 10%.
+            min_eligible=90,
         )

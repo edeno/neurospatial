@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
-from calibration_helpers import monte_carlo_rejection_rate, null_rejection_interval
+from calibration_helpers import (
+    assert_rejections_at_rate,
+    monte_carlo_rejection_rate,
+)
+
+# Replay tests import the shared interval from here.
+from calibration_helpers import null_rejection_interval as null_rejection_interval
 
 
 def wrapped_bump(env, centers, sigma):
@@ -60,8 +68,86 @@ def template_stream(seed, name):
     )
 
 
+NULL_LEVELS = (0.1, 0.2, 0.5)
+"""Levels at which an exact shuffle test's null p-values are counted.
+
+A count at a nominal 4% (alpha = 0.05 with 99 shuffles) has little power:
+150 events detect a true rate of 11.2% with 80% power, 2.8 times the
+nominal, and 1000 events one of 6.4%, 1.6 times. An inflated null gives too
+many small p-values at every level, and the same events see a smaller ratio
+at a larger level: 2.0 times at 0.1, 1.6 at 0.2 and 1.3 at 0.5 with 150
+events; 1.4, 1.2 and 1.1 with 1000.
+"""
+
+
+@dataclasses.dataclass(frozen=True)
+class NullVerdicts:
+    """A recipe's verdicts and p-values on events without replay.
+
+    ``replay`` and ``p_values`` hold the verdict and the p-value of each
+    event that passes every criterion. ``below(level)`` marks the p-values
+    under ``level``; an exact shuffle test puts a share
+    ``exact_rate(level)`` of them there.
+    """
+
+    replay: np.ndarray
+    p_values: np.ndarray
+    n_shuffles: int
+
+    def below(self, level):
+        return self.p_values < level
+
+    def exact_rate(self, level):
+        return monte_carlo_rejection_rate(self.n_shuffles, level)
+
+
+def null_verdicts(p_values, is_replay, eligible, *, n_shuffles, min_eligible):
+    """Collect a recipe's p-values and verdicts on null events.
+
+    ``eligible`` marks the events that pass every criterion. At least
+    ``min_eligible`` of them must, and each of those must have a finite
+    p-value: a recipe that scores no event has no verdict to count, and no
+    rejection among no events lies inside every interval.
+
+    A broken result raises ``ValueError``: too few eligible events, an
+    eligible event without a p-value, or a replay verdict for an event that
+    fails a criterion. It is not an ``AssertionError``, so it does not count
+    as the failed rate assertion of a test marked
+    ``xfail(raises=AssertionError)``.
+    """
+    p_values = np.asarray(p_values, dtype=float)
+    is_replay = np.asarray(is_replay, dtype=bool)
+    eligible = np.asarray(eligible, dtype=bool)
+    n_eligible = int(eligible.sum())
+    n_undefined = int(np.sum(~np.isfinite(p_values[eligible])))
+    if np.any(is_replay & ~eligible):
+        msg = "replay verdict for an event that fails a criterion"
+    elif n_eligible < min_eligible:
+        msg = (
+            f"{n_eligible} of {eligible.size} null events pass every criterion; "
+            f"at least {min_eligible} expected"
+        )
+    elif n_undefined:
+        msg = f"{n_undefined} of {n_eligible} eligible null events have no p-value"
+    else:
+        return NullVerdicts(
+            replay=is_replay[eligible],
+            p_values=p_values[eligible],
+            n_shuffles=n_shuffles,
+        )
+    raise ValueError(msg)
+
+
 def assert_null_verdicts_at_alpha(
-    p_values, is_replay, eligible, *, alpha, n_shuffles, conservative=False
+    p_values,
+    is_replay,
+    eligible,
+    *,
+    alpha,
+    n_shuffles,
+    min_eligible,
+    conservative=False,
+    levels=NULL_LEVELS,
 ):
     """Check a recipe's verdicts on null events against its alpha.
 
@@ -69,30 +155,27 @@ def assert_null_verdicts_at_alpha(
     be replay, and each is replay with probability
     ``monte_carlo_rejection_rate(n_shuffles, alpha)`` if the shuffle test is
     exact. The count of replay verdicts must fall inside the central 99%
-    binomial interval. ``P(p < 0.5)`` over all null events must match too,
-    so a null that never rejects fails even when a small alpha puts the
-    interval's low end at 0.
+    binomial interval. So must the count of eligible events with
+    ``p < level`` for each of ``levels``: a null that never rejects fails
+    even when a small alpha puts the interval's low end at 0, and the larger
+    levels see a smaller inflation than alpha does with the same events
+    (``NULL_LEVELS``).
     A ``conservative`` test, such as the largest of several p-values, is
-    checked against the high end only.
+    checked against the high end at alpha only.
+
+    At least ``min_eligible`` events must be eligible, each with a finite
+    p-value (see ``null_verdicts``).
     """
-    p_values = np.asarray(p_values, dtype=float)
-    is_replay = np.asarray(is_replay, dtype=bool)
-    eligible = np.asarray(eligible, dtype=bool)
-    assert not np.any(is_replay & ~eligible), "replay verdict failing a criterion"
-    rate = monte_carlo_rejection_rate(n_shuffles, alpha)
-    low, high = null_rejection_interval(int(eligible.sum()), rate)
-    n_replay = int(is_replay.sum())
-    message = f"{n_replay} of {int(eligible.sum())} null events are replay"
-    assert n_replay <= high, f"{message}; at most {high} expected at rate {rate}"
-    if conservative:
-        return
-    assert n_replay >= low, f"{message}; at least {low} expected at rate {rate}"
-    defined = p_values[np.isfinite(p_values)]
-    half_low, half_high = null_rejection_interval(
-        defined.size, monte_carlo_rejection_rate(n_shuffles, 0.5)
+    verdicts = null_verdicts(
+        p_values,
+        is_replay,
+        eligible,
+        n_shuffles=n_shuffles,
+        min_eligible=min_eligible,
     )
-    n_half = int(np.sum(defined < 0.5))
-    assert half_low <= n_half <= half_high, (
-        f"{n_half} of {defined.size} null p-values below 0.5; "
-        f"{half_low} to {half_high} expected"
+    assert_rejections_at_rate(
+        verdicts.replay, verdicts.exact_rate(alpha), conservative=conservative
     )
+    if not conservative:
+        for level in levels:
+            assert_rejections_at_rate(verdicts.below(level), verdicts.exact_rate(level))
