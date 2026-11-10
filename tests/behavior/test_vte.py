@@ -13,6 +13,7 @@ Key metrics:
 
 import functools
 import itertools
+import re
 import warnings
 
 import numpy as np
@@ -2227,14 +2228,14 @@ def test_unknown_method_raises(method, t_maze_environment):
 
     times, positions = _sine_scan(90)
     trials = Intervals([Trial(0.0, 2.9, "start", "center", "reached")])
-    calls = [
-        lambda: head_sweep_from_positions(
+    calls = {
+        "head_sweep_from_positions": lambda: head_sweep_from_positions(
             times, positions, min_speed=1.0, method=method
         ),
-        lambda: compute_vte_trial(
+        "compute_vte_trial": lambda: compute_vte_trial(
             times, positions, 0.5, 2.5, min_speed=1.0, method=method
         ),
-        lambda: compute_vte_session(
+        "compute_vte_session": lambda: compute_vte_session(
             t_maze_environment,
             times,
             positions,
@@ -2243,9 +2244,13 @@ def test_unknown_method_raises(method, t_maze_environment):
             min_speed=1.0,
             method=method,
         ),
-    ]
-    for call in calls:
-        with pytest.raises(ValueError, match="method"):
+    }
+    for name, call in calls.items():
+        message = (
+            f"{name}() got method={method!r}; "
+            "method must be one of 'adaptive_window', 'line_fit'."
+        )
+        with pytest.raises(ValueError, match="^" + re.escape(message)):
             call()
 
 
