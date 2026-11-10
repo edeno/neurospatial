@@ -513,23 +513,42 @@ class TestTransitionsModelBased:
         # Middle bin (e.g., bin 2) should have equal prob to neighbors
         # Assuming 1D connectivity: bin 2 connects to bins 1 and 3
         middle_bin = 2
-        neighbors = list(linear_track_1d_env.connectivity.neighbors(middle_bin))
+        neighbors = sorted(linear_track_1d_env.connectivity.neighbors(middle_bin))
+        assert neighbors == [1, 3]
 
-        if len(neighbors) > 0:
-            expected_prob = 1.0 / len(neighbors)
-            for neighbor in neighbors:
-                assert_allclose(T[middle_bin, neighbor], expected_prob, rtol=1e-6)
+        expected = np.zeros(linear_track_1d_env.n_bins)
+        expected[neighbors] = 0.5
+        assert_allclose(T[[middle_bin]].toarray().ravel(), expected, rtol=0, atol=1e-15)
 
-    def test_diffusion_basic(self, linear_track_1d_env):
-        """Test basic diffusion transition matrix."""
-        T = linear_track_1d_env.transitions(method="diffusion", bandwidth=5.0)
+    def test_diffusion_basic(self):
+        """Row i is where heat released at bin i is after spreading by ``bandwidth``.
+
+        ``T = H = expm(-(b²/2) M⁻¹ (D - W))``, built here from the published
+        conductances and cell measures with a dense matrix exponential, so
+        ``T[i, j]`` is the share of bin i's mass that moves to bin j. Polar
+        bins grow with distance, which makes ``H`` differ from ``Hᵀ``.
+        """
+        import scipy.linalg
+
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 30.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 4,
+        )
+        bandwidth = 5.0
+        T = env.transitions(method="diffusion", bandwidth=bandwidth)
 
         assert scipy.sparse.issparse(T)
-        assert T.shape == (linear_track_1d_env.n_bins, linear_track_1d_env.n_bins)
-
-        # Check it's row-stochastic (from heat kernel)
-        row_sums = np.array(T.sum(axis=1)).flatten()
-        assert_allclose(row_sums, 1.0, rtol=1e-3)  # Slightly looser tolerance
+        geometry = env.get_diffusion_geometry()
+        weights = geometry.W.toarray()
+        generator = (np.diag(weights.sum(axis=1)) - weights) / geometry.volumes[:, None]
+        heat = scipy.linalg.expm(-(bandwidth**2 / 2) * generator)
+        # Two dense matrix exponentials of 48 bins: they agree to ~1e-15.
+        assert_allclose(T.toarray(), heat, rtol=0, atol=1e-12)
+        assert np.max(np.abs(T.toarray() - heat.T)) > 0.01
+        # Each row is a distribution: the heat kernel conserves mass exactly.
+        assert_allclose(np.asarray(T.sum(axis=1)).ravel(), 1.0, rtol=0, atol=1e-12)
 
     def test_diffusion_locality(self):
         """Test that diffusion emphasizes local transitions.
@@ -605,15 +624,6 @@ class TestTransitionsModelBased:
         assert T.shape == (linear_track_1d_env.n_bins, linear_track_1d_env.n_bins)
         # Should be unnormalized adjacency matrix (integer counts)
         assert T.dtype in [np.int32, np.int64, np.float64]
-
-    def test_random_walk_vs_diffusion(self, linear_track_1d_env):
-        """Test that random walk and diffusion give different results."""
-        T_random = linear_track_1d_env.transitions(method="random_walk")
-        T_diffusion = linear_track_1d_env.transitions(method="diffusion", bandwidth=5.0)
-
-        # They should be different (diffusion is distance-weighted)
-        diff = (T_random - T_diffusion).toarray()
-        assert np.abs(diff).max() > 0.01  # At least some difference
 
     def test_model_based_returns_sparse_row_stochastic(self):
         """Test that model-based methods return sparse row-stochastic matrices.

@@ -69,8 +69,10 @@ class TestTrajectorySimilarity:
             env, _at(env, trajectory1), _at(env, trajectory2), method="jaccard"
         )
 
-        # Jaccard = |{2,3,4}| / |{0,1,2,3,4,5,6}| = 3/7 ≈ 0.428
-        assert 0.4 < similarity < 0.5
+        # Bins 0-6 are equally long, so Jaccard is the share of bins:
+        # |{2,3,4}| / |{0,1,2,3,4,5,6}| = 3/7.
+        np.testing.assert_array_equal(env.bin_sizes[:7], env.bin_sizes[0])
+        assert similarity == pytest.approx(3 / 7, rel=1e-12)
 
     def test_trajectory_similarity_correlation(self):
         """Identical runs along a 1-D track correlate perfectly."""
@@ -171,20 +173,30 @@ class TestTrajectorySimilarity:
         assert on_fine == pytest.approx(on_coarse)
 
     def test_trajectory_similarity_hausdorff(self):
-        """Test Hausdorff distance-based similarity."""
-        # Create 2D environment
-        positions = np.random.RandomState(42).uniform(0, 100, (200, 2))
-        env = Environment.from_samples(positions, bin_size=5.0)
+        """Hausdorff similarity is 1 - (largest gap) / (track length).
 
-        # Same trajectory = minimum Hausdorff distance
-        trajectory = np.array([0, 5, 10, 15], dtype=np.int64)
+        On a 1-D track of 2 cm bins, the geodesic and Euclidean distances
+        between bin centers are both their separation, and the diameter is
+        the distance between the end bins. A run over bins 0-3 against one
+        over bins 0-5: bin 5 is 2 bins (4 cm) from the nearest bin of the
+        first run, the largest such gap. Identical runs are 1.
+        """
+        env = Environment.from_samples(np.linspace(0, 100, 100)[:, None], bin_size=2.0)
+        centers = env.bin_centers[:, 0]
+        diameter = centers.max() - centers.min()
+        short, long = np.arange(4), np.arange(6)
 
-        similarity = trajectory_similarity(
-            env, _at(env, trajectory), _at(env, trajectory), method="hausdorff"
-        )
-
-        # Identical should give similarity 1.0 (distance normalized to [0,1])
-        assert similarity == pytest.approx(1.0, abs=0.01)
+        for metric in ("geodesic", "euclidean"):
+            identical = trajectory_similarity(
+                env, _at(env, long), _at(env, long), method="hausdorff", metric=metric
+            )
+            assert identical == pytest.approx(1.0, abs=1e-12)
+            similarity = trajectory_similarity(
+                env, _at(env, short), _at(env, long), method="hausdorff", metric=metric
+            )
+            gap = centers[5] - centers[3]
+            assert gap == pytest.approx(4.0)
+            assert similarity == pytest.approx(1 - gap / diameter, rel=1e-12)
 
     def test_trajectory_similarity_dtw(self):
         """Test dynamic time warping similarity."""
@@ -200,8 +212,17 @@ class TestTrajectorySimilarity:
             env, _at(env, trajectory1), _at(env, trajectory2), method="dtw"
         )
 
-        # DTW should recognize similar spatial paths despite timing differences
-        assert similarity > 0.7
+        # The slower run only repeats bins 0 and 5, so the warping aligns
+        # every sample with one in the same bin: cost 0, similarity 1.
+        assert similarity == pytest.approx(1.0, abs=1e-12)
+
+        # One sample each, 5 bins (10 cm) apart: the one pair costs 10 cm
+        # out of at most max(1, 1) * diameter.
+        centers = env.bin_centers[:, 0]
+        apart = trajectory_similarity(env, _at(env, [0]), _at(env, [5]), method="dtw")
+        assert apart == pytest.approx(
+            1 - 10.0 / (centers.max() - centers.min()), rel=1e-12
+        )
 
     def test_trajectory_similarity_all_methods(self):
         """Test that all methods return values in [0, 1] range."""

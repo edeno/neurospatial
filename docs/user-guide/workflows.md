@@ -264,18 +264,18 @@ for name, error in [("Held-out outbound laps", within_error),
           f"errors over 10 cm in {100 * np.mean(error > 10):.1f}% of time bins")
 print("Training coverage:", int(decoder.spatial_support.sum()), "of", env.n_bins, "bins")
 assert within.times.min() >= out_test.start[0]
-assert abs(np.median(within_error) - 5.0) < 0.5
-assert abs(np.median(transfer_error) - 5.0) < 0.5
-assert abs(100 * np.mean(within_error > 10) - 4.5) < 1.0
-assert abs(100 * np.mean(transfer_error > 10) - 37.4) < 2.0
+assert abs(np.median(within_error) - 2.6) < 0.5
+assert abs(np.median(transfer_error) - 7.0) < 0.5
+assert abs(100 * np.mean(within_error > 10) - 8.5) < 1.0
+assert abs(100 * np.mean(transfer_error > 10) - 44.9) < 2.0
 assert int(decoder.spatial_support.sum()) == 19
 ```
 
-On held-out outbound laps the median error is 5.0 cm, one bin, and errors
-larger than 10 cm (two bins) occur in 4.5% of time bins. On inbound laps the median
-is also 5.0 cm, because the four cells that keep their fields still place the
-animal correctly most of the time. The large errors tell the difference: they
-occur in 37.4% of inbound time bins. Where `c2` and `c3` fire differently on
+On held-out outbound laps the median error is 2.6 cm, about half a bin, and
+errors larger than 10 cm (two bins) occur in 8.5% of time bins. On inbound laps
+the median is 7.0 cm, still under two bins, because the four cells that keep
+their fields still place the animal near the right place most of the time. The
+large errors tell the difference: they occur in 44.9% of inbound time bins. Where `c2` and `c3` fire differently on
 the way back, the outbound model is the wrong model for them. A median alone
 would hide this, so report the spread of errors, not only their center.
 

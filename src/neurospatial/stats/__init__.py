@@ -45,7 +45,6 @@ from neurospatial.stats.shuffle import (
     shuffle_spike_times_circular,
     shuffle_spikes_isi,
     shuffle_time_bins,
-    shuffle_time_bins_coherent,
     shuffle_trials,
     shuffle_zscore,
 )
@@ -85,7 +84,6 @@ __all__ = [  # noqa: RUF022
     "shuffle_spikes_isi",
     "shuffle_spike_times_circular",
     "shuffle_time_bins",
-    "shuffle_time_bins_coherent",
     "shuffle_trials",
     # Surrogate generation
     "generate_poisson_surrogates",

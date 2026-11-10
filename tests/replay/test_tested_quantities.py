@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from replay_helpers import monte_carlo_rejection_rate, null_rejection_interval
 
 from neurospatial import Environment
 from neurospatial.decoding import bin_spikes_in_time, decode_position
@@ -117,14 +118,23 @@ class TestShuffleTest:
             metrics.mean_mean_jump
         )
 
-    def test_events_decoded_from_shuffled_cells_are_rarely_replay(
+    @pytest.mark.slow
+    def test_events_decoded_from_shuffled_cells_are_replay_at_alpha(
         self, place_code, sweep
     ):
-        """A sweep's counts with the cells permuted is itself a shuffle."""
+        """A sweep's counts with the cells permuted is itself a shuffle.
+
+        So each tested quantity's p-value is exact: P(p < 0.05) with 99
+        shuffles is 0.04, and 150 events must fall in its 99% binomial
+        interval, 1 to 13. The event's p-value is the larger of the two,
+        which can only lower the rate.
+        """
         env, rates = place_code
         _, times, counts = sweep
-        p_values = []
-        for seed in range(20):
+        n_events = 150
+        per_quantity = dict.fromkeys(TESTED, 0)
+        n_replay = 0
+        for seed in range(n_events):
             order = np.random.default_rng(100 + seed).permutation(counts.shape[1])
             shuffled = counts[:, order]
             posterior = decode_position(env, shuffled, rates, dt=DT).posterior
@@ -134,10 +144,15 @@ class TestShuffleTest:
                 _method(n_shuffles=99),
                 rng=seed,
             )
-            p_values.append(result.p_value)
-        p_values = np.asarray(p_values)
-        assert np.sum(p_values < 0.05) <= 2
-        assert np.median(p_values) > 0.2
+            for quantity, p_value in result.tested_p_values.items():
+                per_quantity[quantity] += p_value < 0.05
+            n_replay += result.is_replay
+        low, high = null_rejection_interval(
+            n_events, monte_carlo_rejection_rate(99, 0.05)
+        )
+        for quantity, count in per_quantity.items():
+            assert low <= count <= high, (quantity, count)
+        assert n_replay <= high
 
     def test_each_tail_is_counted_from_the_same_shuffles(self, place_code, sweep, spy):
         tails = {

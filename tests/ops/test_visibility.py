@@ -30,29 +30,30 @@ class TestFieldOfView:
         assert_allclose(fov.right_angle, -np.pi / 2)
         assert_allclose(fov.total_angle, np.pi)
 
-    def test_rat_preset(self):
-        """FieldOfView.rat() returns ~300 degree FOV."""
+    @pytest.mark.parametrize(
+        ("preset", "total", "binocular"),
+        [("rat", 320.0, 50.0), ("mouse", 310.0, 40.0), ("primate", 180.0, 120.0)],
+    )
+    def test_presets_are_the_documented_assumptions(self, preset, total, binocular):
+        """Each preset is the field its docstring states, centered straight ahead.
+
+        The angles are approximations chosen for the presets, not measured
+        values, so the test pins the stated numbers and the shape they
+        imply: symmetric about ahead, blind behind, binocular in front.
+        """
         from neurospatial.ops.visibility import FieldOfView
 
-        fov = FieldOfView.rat()
-        # Rats have ~300 degree FOV with ~30 degree blind spot behind
-        assert 290 < fov.total_angle_degrees < 340
-
-    def test_mouse_preset(self):
-        """FieldOfView.mouse() returns FOV similar to rat."""
-        from neurospatial.ops.visibility import FieldOfView
-
-        fov = FieldOfView.mouse()
-        # Mice have similar FOV to rats
-        assert 280 < fov.total_angle_degrees < 340
-
-    def test_primate_preset(self):
-        """FieldOfView.primate() returns ~180 degree FOV."""
-        from neurospatial.ops.visibility import FieldOfView
-
-        fov = FieldOfView.primate()
-        # Primates have ~180 degree FOV (forward-facing eyes)
-        assert 150 < fov.total_angle_degrees < 200
+        fov = getattr(FieldOfView, preset)()
+        assert fov.total_angle_degrees == pytest.approx(total, abs=1e-12)
+        assert fov.left_angle == pytest.approx(-fov.right_angle, abs=1e-15)
+        assert np.degrees(2 * fov.binocular_half_angle) == pytest.approx(
+            binocular, abs=1e-12
+        )
+        edge = np.radians(total / 2)
+        assert fov.contains_angle(edge - 1e-9)
+        assert fov.contains_angle(-edge + 1e-9)
+        assert not fov.contains_angle(edge + 1e-9)
+        assert not fov.contains_angle(np.pi)
 
     def test_total_angle_property(self):
         """total_angle returns sum of left and right angles."""

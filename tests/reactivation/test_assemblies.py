@@ -10,6 +10,7 @@ import warnings
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from scipy import stats
 
 from neurospatial.reactivation.assemblies import (
     AssemblyDetectionResult,
@@ -231,15 +232,26 @@ class TestDetectAssemblies:
         assert result.patterns[0].member_indices.tolist() == list(range(20, 25))
         assert result.patterns[1].member_indices.tolist() == list(range(10, 15))
 
-    @pytest.mark.parametrize("seed", range(5))
-    def test_independent_neurons_have_no_significant_dimension(self, seed: int) -> None:
-        """Independent Poisson neurons stay below the Marchenko-Pastur bound."""
-        counts = np.random.default_rng(seed).poisson(5, (3000, 30)).astype(float)
-        result = detect_assemblies(counts, rng=42)
-
-        assert result.n_significant == 0
-        assert result.patterns == ()
-        assert result.eigenvalues[0] <= result.threshold
+    def test_independent_neurons_exceed_marchenko_pastur_in_5_percent(self) -> None:
+        """Independent Poisson neurons: the largest eigenvalue exceeds the
+        Marchenko-Pastur edge in about 5% of recordings, as the 95th
+        percentile of the null maxima "matches very closely" the edge
+        (Lopes-dos-Santos et al. 2013, Fig. 3C)."""
+        n_datasets, n_bins, n_neurons = 400, 3000, 30
+        edge = (1.0 + np.sqrt(n_neurons / n_bins)) ** 2
+        n_called = 0
+        for seed in range(n_datasets):
+            counts = np.random.default_rng(seed).poisson(5, (n_bins, n_neurons))
+            result = detect_assemblies(counts.astype(float), method="pca", rng=0)
+            eigenvalues = np.linalg.eigvalsh(np.corrcoef(counts, rowvar=False))
+            assert result.n_significant == np.sum(eigenvalues > edge)
+            if result.n_significant == 0:
+                assert result.patterns == ()
+            n_called += result.n_significant > 0
+        # Central 99% binomial interval around 5% for 400 recordings: 10-32
+        # (2.5% to 8%). A calibrated edge fails 1% of seed sets.
+        low, high = stats.binom.ppf([0.005, 0.995], n_datasets, 0.05)
+        assert low <= n_called <= high
 
     @pytest.mark.parametrize("method", ["pca", "ica", "nmf"])
     def test_method_is_recorded(
@@ -792,28 +804,37 @@ class TestExplainedVarianceReactivation:
         assert_allclose(result.explained_variance, 1.0, rtol=1e-10)
         assert result.n_pairs == len(corr)
 
-    def test_random_no_reactivation(self, rng: np.random.Generator) -> None:
-        """Random correlations should give low EV."""
-        corr1 = rng.uniform(-1, 1, 100)
-        corr2 = rng.uniform(-1, 1, 100)
-
-        result = explained_variance_reactivation(corr1, corr2)
-
-        # EV should be low for random data
-        assert result.explained_variance < 0.1
-
-    def test_ev_bounds(self, rng: np.random.Generator) -> None:
-        """EV should be in [0, 1]."""
-        corr1 = rng.uniform(-1, 1, 50)
-        corr2 = rng.uniform(-1, 1, 50)
-
-        control = rng.uniform(-1, 1, 50)
-        result = explained_variance_reactivation(
-            corr1, corr2, control_correlations=control
-        )
-
-        assert 0 <= result.explained_variance <= 1
-        assert 0 <= result.reversed_explained_variance <= 1
+    def test_null_explained_variance_has_the_squared_correlation_distribution(
+        self, rng: np.random.Generator
+    ) -> None:
+        """For independent Gaussian correlation vectors of n pairs, r² follows
+        Beta(1/2, (n - 2)/2), mean 1/(n - 1), and the squared partial
+        correlation given one control Beta(1/2, (n - 3)/2), mean 1/(n - 2);
+        the reversed EV is the same under this null."""
+        n_pairs, n_draws = 100, 2000
+        ev, ev_given_control, rev_given_control = [], [], []
+        for _ in range(n_draws):
+            template, match, control = rng.standard_normal((3, n_pairs))
+            ev.append(
+                explained_variance_reactivation(template, match).explained_variance
+            )
+            result = explained_variance_reactivation(
+                template, match, control_correlations=control
+            )
+            ev_given_control.append(result.explained_variance)
+            rev_given_control.append(result.reversed_explained_variance)
+        for values, n_controls in (
+            (ev, 0),
+            (ev_given_control, 1),
+            (rev_given_control, 1),
+        ):
+            null = stats.beta(0.5, (n_pairs - 2 - n_controls) / 2)
+            # 4 SE of the mean of n_draws values: a calibrated EV fails
+            # with probability 6e-5; an EV of 0 or of |r| misses by > 30 SE.
+            assert np.mean(values) == pytest.approx(
+                null.mean(), abs=4 * null.std() / np.sqrt(n_draws)
+            )
+            assert stats.kstest(values, null.cdf).pvalue > 0.001
 
     def test_mismatched_lengths_raises_error(self) -> None:
         """Should raise ValueError for mismatched correlation lengths."""

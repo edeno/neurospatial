@@ -1726,41 +1726,46 @@ class TestSpatialRatesResultClassify:
         # disabled grid/border classification with unreachable thresholds)
         assert all(label == "unclassified" for label in labels)
 
-    def test_classify_border_cell_high_border_score(
-        self, simple_env: Environment
-    ) -> None:
-        """classify() should label neurons with high border score as border cells."""
+    def test_classify_border_cell_high_border_score(self) -> None:
+        """label_cell_types() labels a cell firing along one wall as a border cell.
+
+        A 10 x 10 box of unit cells with its outline declared. Unit 0 fires
+        on the west column only: its one field covers the whole west wall
+        (cM = 1) and every field bin is half a cell from that wall, over an
+        inscribed radius of 5 (dm = 0.1), so b = 0.9 / 1.1 = 9/11 by hand.
+        Unit 1 fires in the central 2 x 2 cells: dm = 4.5 / 5, cM = 0, and
+        b = -1. At the default 0.5 cutoff only unit 0 is a border cell.
+        """
+        from shapely.geometry import box
+
+        from neurospatial.arena import OpenArena
         from neurospatial.encoding.spatial import SpatialRatesResult
 
-        n_bins = simple_env.n_bins
-        n_neurons = 1
-        firing_rates = np.zeros((n_neurons, n_bins), dtype=np.float64)
-
-        # Set high firing on boundary bins
-        boundary_bins = simple_env.boundary_bins
-        if len(boundary_bins) > 0:
-            firing_rates[0, boundary_bins] = 20.0
-        occupancy = np.ones(n_bins, dtype=np.float64)
-
+        env = Environment.from_grid_mask(
+            np.ones((10, 10), dtype=bool),
+            grid_edges=(np.arange(11.0),) * 2,
+            arena=OpenArena(box(0, 0, 10, 10)),
+        )
+        x, y = env.bin_centers.T
+        west = np.where(x < 1, 20.0, 0.1)
+        center = np.where((np.abs(x - 5) < 1) & (np.abs(y - 5) < 1), 20.0, 0.1)
         result = SpatialRatesResult(
-            firing_rates=firing_rates,
-            occupancy=occupancy,
-            env=simple_env,
-            method="diffusion_kde",
-            bandwidth=5.0,
+            firing_rates=np.stack([west, center]),
+            occupancy=np.ones(env.n_bins),
+            env=env,
+            method="binned",
+            bandwidth=0.0,
         )
 
-        # Get the actual border score to set appropriate threshold
-        border_score = result.border_scores(boundary_source="analysis")[0]
-        if not np.isnan(border_score) and border_score > 0.0:
-            # Set threshold just below the actual score
-            labels = result.label_cell_types(
-                min_spatial_info=0.0,  # Don't require spatial info
-                min_grid_score=2.0,  # Effectively disable grid classification
-                min_border_score=border_score - 0.1,
-                boundary_source="analysis",  # Just below actual score
-            )
-            assert labels[0] == "border"
+        scores = result.border_scores(min_area=0.0)
+        np.testing.assert_allclose(scores, [9 / 11, -1.0], rtol=1e-12)
+        labels = result.label_cell_types(
+            min_spatial_info=np.inf,  # No place labels: border only.
+            min_grid_score=2.0,  # Effectively disable grid classification
+            border_scores=scores,
+        )
+        assert labels[0] == "border"
+        assert "border" not in labels[1]
 
     def test_tuned_cell_without_grid_or_border_is_place(
         self, simple_env: Environment

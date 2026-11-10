@@ -91,7 +91,10 @@ class TestDistanceFieldEuclideanMetric:
         assert_allclose(dists[4], np.sqrt(2.0))
 
     def test_euclidean_vs_geodesic(self, grid_graph_with_coords):
-        """Test that Euclidean <= Geodesic (triangle inequality)."""
+        """On a 4-connected unit grid the geodesic is the Manhattan distance.
+
+        Euclidean is the straight line; they agree only along an axis.
+        """
         G, bin_centers = grid_graph_with_coords
 
         sources = [0]
@@ -101,8 +104,9 @@ class TestDistanceFieldEuclideanMetric:
         )
         dist_geo = distance_field(G, sources=sources, metric="geodesic")
 
-        # Euclidean should be <= geodesic for all bins
-        assert np.all(dist_euc <= dist_geo + 1e-10)
+        offsets = bin_centers - bin_centers[0]
+        assert_allclose(dist_geo, np.abs(offsets).sum(axis=1), rtol=0, atol=1e-12)
+        assert_allclose(dist_euc, np.hypot(*offsets.T), rtol=0, atol=1e-12)
 
     def test_euclidean_3d(self):
         """Test Euclidean distance in 3D coordinates."""

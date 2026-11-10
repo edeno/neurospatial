@@ -95,24 +95,49 @@ def test_bin_shuffle_maximum_matches_a_hand_shuffled_matrix() -> None:
     np.testing.assert_allclose(np.sort(shuffled, axis=0), np.sort(z, axis=0))
 
 
+@pytest.fixture(scope="module")
+def null_largest_eigenvalues() -> np.ndarray:
+    """Largest eigenvalue of the correlation matrix of 2000 independent
+    recordings like ``_independent``, by NumPy alone."""
+    rng = np.random.default_rng(1000)
+    return np.array(
+        [
+            np.linalg.eigvalsh(
+                np.corrcoef(rng.poisson(1.0, (2000, 20)), rowvar=False)
+            ).max()
+            for _ in range(2000)
+        ]
+    )
+
+
 @pytest.mark.parametrize("kind", ["bin_shuffle", "circular_shift"])
-def test_95th_percentile_is_close_to_marchenko_pastur_for_independent_neurons(
-    kind: str,
+def test_95th_percentile_is_the_null_95th_percentile_for_independent_neurons(
+    kind: str, null_largest_eigenvalues: np.ndarray
 ) -> None:
-    """Lopes-dos-Santos et al. (2013, Fig. 3C): the 95th percentiles of both
-    surrogates are at or just below the analytical edge for Poisson neurons."""
-    counts = _independent(4)
+    """Lopes-dos-Santos et al. (2013, Fig. 3C): for independent Poisson
+    neurons the 95th percentile of either surrogate's maxima is the 95th
+    percentile of the largest eigenvalue over independent recordings, which
+    "matches very closely" the Marchenko-Pastur edge."""
+    n_shuffles = 1000
     result = detect_assemblies(
-        counts,
+        _independent(4),
         method="pca",
         n_components=1,
         component_threshold=kind,
         percentile=95.0,
-        n_shuffles=200,
+        n_shuffles=n_shuffles,
         rng=0,
     )
+    reference = null_largest_eigenvalues
+    # The 95th percentile of n surrogate maxima lies at a null quantile with
+    # binomial SE sqrt(0.95 * 0.05 / n); the empirical null CDF of the
+    # reference adds its own. Their 3 SE is 0.025, so a 90th or 99th
+    # percentile falls outside.
+    se = np.sqrt(0.95 * 0.05 * (1 / n_shuffles + 1 / reference.size))
+    assert np.mean(reference <= result.threshold) == pytest.approx(0.95, abs=3 * se)
     edge = marchenko_pastur_threshold(20, 2000)
-    assert result.threshold == pytest.approx(edge, rel=0.05)
+    se_edge = np.sqrt(0.95 * 0.05 / reference.size)
+    assert np.mean(reference <= edge) == pytest.approx(0.95, abs=3 * se_edge)
 
 
 def test_circular_shift_keeps_slow_drift_that_marchenko_pastur_calls_assemblies() -> (

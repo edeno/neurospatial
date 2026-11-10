@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Place fields: a field next to a split field is no longer lost
+
+- `detect_place_fields` set aside the whole region of a candidate it then
+  discarded as the flank of an earlier field. After the subfield rule split
+  two touching fields, that region could include the second field, which was
+  then never reported. A flank candidate now sets aside only its own bin, so
+  the neighbouring field is found from its own peak, as the Notes describe.
+  Found by comparing with FMAToolbox `MapStats`; on noisy simulated maps a
+  few more fields are reported, at the same run time.
+
+### Decoding: geodesic error follows the any-angle path
+
+- `decoding_error(..., metric="geodesic")` measures the shortest path inside
+  the environment between the decoded and actual positions, as the behavior
+  functions with `metric="geodesic"` do. Before, it walked the bin graph
+  between bin centers, which in an open arena overstates a straight-line
+  error by up to about 8% and rounds it to bin-graph steps. Positions just
+  outside the environment are measured from the center of their bin.
+
+### Documentation: what the distance functions measure
+
+- The bin-graph distance functions (`distance_field`, `pairwise_distances`,
+  `geodesic_distance_matrix`, `Environment.distance_between` and others) now
+  say that they walk the bin graph between bin centers, which can exceed the
+  straight line by up to about 1.082 times on a square grid, 1.155 on
+  hexagonal bins and 1.128 on 3-D grids.
+- `Environment.compute_kernel` names the polar distance correctly: the
+  chord between the places, or `r1 + r2` across an open angular seam.
+- `heat_kernel_basis` says that it matches the columns of
+  `compute_kernel(..., mode="average")`.
+- `rayleigh_test` says its p-value is 0.0 when it is below the smallest
+  float, as in CircStat, and that `exp(-z)` is conservative for small
+  samples, not anti-conservative.
+- `simulate_trajectory_ou` explains that its 8 cm/s default speed is
+  RatInABox's 1-D value; RatInABox's 2-D default has mean 10.0 cm/s.
+
+### Statistics: one name for the time-bin shuffle
+
+- `shuffle_time_bins_coherent` is removed. It returned exactly what
+  `shuffle_time_bins` returns, which already permutes the time bins of all
+  neurons together. Use `shuffle_time_bins`.
+
 ### Behavior: VTE follows Papale et al. 2012
 
 - `compute_vte_session` measures each trial over its first pass through the

@@ -69,33 +69,49 @@ class TestOccupancyBasic:
         assert_allclose(occ.sum(), 10.0, rtol=1e-6)
         assert np.all(occ >= 0)
 
-    def test_occupancy_l_shaped_path(self, minimal_20x20_grid_env):
-        """Test occupancy on L-shaped trajectory with known durations."""
-        env = minimal_20x20_grid_env
+    @pytest.mark.parametrize(
+        ("time_allocation", "expected_seconds"),
+        [
+            # Each interval goes to the bin it starts in: 0-3 s and 3-8 s
+            # start at (5, 5), 8-10 s starts at (15, 5); (15, 15) gets none.
+            ("start", {(5, 5): 8.0, (15, 5): 2.0}),
+            # The 5 s run from x = 5 to 15 crosses 10 cm of 5 cm cells with
+            # faces at 7.5 and 12.5: 2.5 / 5 / 2.5 cm, so 1.25 / 2.5 / 1.25 s.
+            # The 2 s run from y = 5 to 15 splits the same way: 0.5 / 1 / 0.5 s.
+            (
+                "linear",
+                {
+                    (5, 5): 3.0 + 1.25,
+                    (10, 5): 2.5,
+                    (15, 5): 1.25 + 0.5,
+                    (15, 10): 1.0,
+                    (15, 15): 0.5,
+                },
+            ),
+        ],
+    )
+    def test_occupancy_l_shaped_path(
+        self, minimal_20x20_grid_env, time_allocation, expected_seconds
+    ):
+        """An L-shaped path puts known seconds in each bin it starts or crosses.
 
-        # L-shaped path: horizontal segment, then vertical segment
-        # Segment 1: (5, 5) for 0-3 seconds
-        # Segment 2: (15, 5) for 3-8 seconds
-        # Segment 3: (15, 15) for 8-10 seconds
+        The animal rests at (5, 5) for 3 s, runs to (15, 5) in 5 s, then to
+        (15, 15) in 2 s. The 5 cm bins are centered on multiples of 5 cm.
+        """
+        env = minimal_20x20_grid_env
         times = np.array([0.0, 3.0, 8.0, 10.0])
-        positions = np.array(
-            [
-                [5.0, 5.0],  # Start
-                [5.0, 5.0],  # End of segment 1 (3 sec at bin A)
-                [15.0, 5.0],  # End of segment 2 (5 sec at bin B)
-                [15.0, 15.0],  # End of segment 3 (2 sec at bin C)
-            ]
+        positions = np.array([[5.0, 5.0], [5.0, 5.0], [15.0, 5.0], [15.0, 15.0]])
+
+        occ = env.occupancy(
+            times, positions, max_gap=10.0, time_allocation=time_allocation
         )
 
-        # Use max_gap=10.0 to allow all intervals
-        occ = env.occupancy(times, positions, max_gap=10.0)
-
-        # Total time should be 10 seconds
-        assert_allclose(occ.sum(), 10.0, rtol=1e-6)
-
-        # Find which bins were occupied
-        occupied_bins = np.where(occ > 0)[0]
-        assert len(occupied_bins) >= 1  # At least one bin visited
+        expected = np.zeros(env.n_bins)
+        for center, seconds in expected_seconds.items():
+            (bin_index,) = np.flatnonzero(np.all(env.bin_centers == center, axis=1))
+            expected[bin_index] = seconds
+        # The seconds are sums of a few binary fractions of the durations.
+        assert_allclose(occ, expected, rtol=0, atol=1e-12)
 
     def test_occupancy_empty_arrays(self, minimal_2d_grid_env):
         """Test occupancy with empty input arrays."""
@@ -321,6 +337,44 @@ class TestOccupancySmoothing:
 
         # Mass conservation
         assert_allclose(occ_smoothed.sum(), occ_raw.sum(), rtol=1e-3)
+
+    def test_smoothed_occupancy_is_the_transition_kernel_applied(self):
+        """``bandwidth=`` moves each bin's seconds with the transition kernel.
+
+        Polar bins grow with distance, so the transition kernel ``Hᵀ`` (columns
+        sum to 1: it moves mass) and the average kernel ``H`` (rows sum to 1)
+        differ; on equal bins they coincide and cannot tell the modes apart.
+        ``H = expm(-(b²/2) M⁻¹ (D - W))`` is built here from the published
+        conductances and cell measures with a dense matrix exponential.
+        """
+        import scipy.linalg
+
+        env = Environment.from_polar_egocentric(
+            distance_range=(0.0, 50.0),
+            angle_range=(-np.pi, np.pi),
+            distance_bin_size=5.0,
+            angle_bin_size=np.pi / 8,
+            units="cm",
+        )
+        assert np.ptp(env.bin_sizes) > 80.0  # 4.9 to 93.3 cm²
+        times = np.arange(0.0, 200.0, 0.1)
+        rng = np.random.default_rng(0)
+        positions = np.column_stack(
+            [rng.uniform(1.0, 49.0, times.size), rng.uniform(-3.0, 3.0, times.size)]
+        )
+        bandwidth = 8.0
+
+        raw = env.occupancy(times, positions, max_gap=None)
+        smoothed = env.occupancy(times, positions, max_gap=None, bandwidth=bandwidth)
+
+        geometry = env.get_diffusion_geometry()
+        weights = geometry.W.toarray()
+        generator = (np.diag(weights.sum(axis=1)) - weights) / geometry.volumes[:, None]
+        heat = scipy.linalg.expm(-(bandwidth**2 / 2) * generator)
+        # Dense expm agrees with the kernel to ~1e-15 on these 160 bins.
+        assert_allclose(smoothed, heat.T @ raw, rtol=1e-10, atol=1e-12)
+        # The wrong (average) mode misses by far more than that tolerance.
+        assert np.max(np.abs(heat @ raw - smoothed)) > 0.1
 
 
 class TestOccupancyOutsideBehavior:

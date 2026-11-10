@@ -12,7 +12,6 @@ from numpy.testing import assert_array_equal
 
 from neurospatial.stats.shuffle import (
     shuffle_time_bins,
-    shuffle_time_bins_coherent,
 )
 
 # =============================================================================
@@ -81,7 +80,6 @@ def _draw(name: str, data: np.ndarray, rng, n: int = 5) -> list[np.ndarray]:
         return list(function(track_for(data), data, weights, n_shuffles=n, rng=rng))
     if name in (
         "shuffle_time_bins",
-        "shuffle_time_bins_coherent",
         "shuffle_spike_counts_circular",
         "shuffle_spike_counts_uniform",
     ):
@@ -92,7 +90,6 @@ def _draw(name: str, data: np.ndarray, rng, n: int = 5) -> list[np.ndarray]:
 # Each generator with an input whose shuffles differ between seeds.
 GENERATOR_INPUTS = {
     "shuffle_time_bins": _counts(10, 5),
-    "shuffle_time_bins_coherent": _counts(10, 5),
     "shuffle_spike_counts_circular": _counts(10, 5),
     "shuffle_spike_counts_uniform": _counts(10, 5),
     "shuffle_cell_identity": _counts(10, 5),
@@ -111,8 +108,6 @@ DEGENERATE_INPUTS = [
     ("shuffle_time_bins", "empty", np.zeros((0, 3), dtype=np.int64), "unchanged"),
     ("shuffle_time_bins", "single_time_bin", _counts(1, 3), "unchanged"),
     ("shuffle_time_bins", "single_neuron", _counts(5, 1), "same_values_by_column"),
-    ("shuffle_time_bins_coherent", "empty", np.zeros((0, 3), np.int64), "unchanged"),
-    ("shuffle_time_bins_coherent", "single_time_bin", _counts(1, 3), "unchanged"),
     ("shuffle_cell_identity", "single_neuron", _counts(5, 1), "unchanged"),
     ("shuffle_spike_counts_uniform", "empty", np.zeros((0, 3), np.int64), "unchanged"),
     ("shuffle_spike_counts_uniform", "single_time_bin", _counts(1, 3), "unchanged"),
@@ -237,40 +232,46 @@ class TestShuffleTimeBins:
             shuffled_row_sums = sorted(shuffled.sum(axis=1).tolist())
             assert shuffled_row_sums == original_row_sums
 
-    def test_rows_are_permuted(self, spike_counts: np.ndarray) -> None:
-        """Rows should be permutations of original rows."""
-        original_rows = {tuple(row) for row in spike_counts}
-        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=10, rng=42):
-            shuffled_rows = {tuple(row) for row in shuffled}
-            assert shuffled_rows == original_rows
+    def test_rows_are_permuted(self) -> None:
+        """Rows should be permutations of original rows.
+
+        A permutation keeps each row as many times as it occurs. The input
+        repeats rows (silent bins are common), so compare the sorted lists of
+        rows (multisets): a set comparison would accept drawing rows with
+        replacement.
+        """
+        spike_counts = np.array(
+            [[0, 0, 0], [0, 0, 0], [0, 0, 0], [1, 0, 2], [1, 0, 2], [3, 1, 0]]
+        )
+        original_rows = sorted(tuple(row) for row in spike_counts)
+        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=50, rng=42):
+            assert sorted(tuple(row) for row in shuffled) == original_rows
 
 
 # =============================================================================
-# Tests for shuffle_time_bins_coherent
+# shuffle_time_bins keeps population vectors whole (time-swap shuffle)
 # =============================================================================
 
 
-class TestShuffleTimeBinsCoherent:
-    """Tests for shuffle_time_bins_coherent (time-swap shuffle)."""
+class TestShuffleTimeBinsIsCoherent:
+    """All neurons share one permutation of the time bins (time-swap shuffle)."""
 
     def test_yields_correct_number_of_shuffles(self, spike_counts: np.ndarray) -> None:
         """Should yield exactly n_shuffles arrays."""
         n_shuffles = 10
-        shuffles = list(
-            shuffle_time_bins_coherent(spike_counts, n_shuffles=n_shuffles, rng=42)
-        )
+        shuffles = list(shuffle_time_bins(spike_counts, n_shuffles=n_shuffles, rng=42))
         assert len(shuffles) == n_shuffles
 
     def test_preserves_total_spikes(self, spike_counts: np.ndarray) -> None:
         """Total spike count should be preserved."""
         total_original = spike_counts.sum()
-        for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=10, rng=42):
+        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=10, rng=42):
             assert shuffled.sum() == total_original
 
     def test_preserves_spikes_per_neuron(self, spike_counts: np.ndarray) -> None:
         """Total spikes per neuron should be preserved."""
         spikes_per_neuron = spike_counts.sum(axis=0)
-        for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=10, rng=42):
+        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=10, rng=42):
             assert_array_equal(shuffled.sum(axis=0), spikes_per_neuron)
 
     def test_preserves_instantaneous_population_vectors(
@@ -282,7 +283,7 @@ class TestShuffleTimeBinsCoherent:
         permutation is applied coherently across all neurons.
         """
         original_rows = {tuple(row) for row in spike_counts}
-        for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=10, rng=42):
+        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=10, rng=42):
             shuffled_rows = {tuple(row) for row in shuffled}
             assert shuffled_rows == original_rows
 
@@ -294,7 +295,7 @@ class TestShuffleTimeBinsCoherent:
         If row i goes to position j for neuron 0, it should go to
         position j for all other neurons too.
         """
-        for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=10, rng=42):
+        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=10, rng=42):
             # Find where each original row went
             # Each row in shuffled should exactly match some row in original
             for shuffled_row in shuffled:
@@ -304,47 +305,6 @@ class TestShuffleTimeBinsCoherent:
                 assert match_found, (
                     "Shuffled row should match some original row exactly"
                 )
-
-
-# =============================================================================
-# Tests comparing shuffle_time_bins vs shuffle_time_bins_coherent
-# =============================================================================
-
-
-class TestShuffleComparison:
-    """Tests comparing the two shuffle functions."""
-
-    def test_coherent_matches_time_bins_for_fixed_seed(self):
-        """shuffle_time_bins_coherent equals shuffle_time_bins for a fixed seed.
-
-        The coherent variant is documented as the same permutation applied
-        to every neuron, which is exactly what shuffle_time_bins does. They
-        must produce byte-identical output for the same seed; this guards
-        against the two implementations silently diverging.
-        """
-        rng = np.random.default_rng(7)
-        spike_counts = rng.integers(0, 5, size=(8, 4)).astype(np.int64)
-
-        plain = list(shuffle_time_bins(spike_counts, n_shuffles=20, rng=2024))
-        coherent = list(
-            shuffle_time_bins_coherent(spike_counts, n_shuffles=20, rng=2024)
-        )
-
-        assert len(plain) == len(coherent) == 20
-        for a, b in zip(plain, coherent, strict=True):
-            np.testing.assert_array_equal(a, b)
-
-    def test_both_preserve_row_multiset(self, spike_counts: np.ndarray) -> None:
-        """Both shuffles should preserve the multiset of rows."""
-        original_rows = sorted([tuple(row) for row in spike_counts])
-
-        for shuffled in shuffle_time_bins(spike_counts, n_shuffles=5, rng=42):
-            shuffled_rows = sorted([tuple(row) for row in shuffled])
-            assert shuffled_rows == original_rows
-
-        for shuffled in shuffle_time_bins_coherent(spike_counts, n_shuffles=5, rng=42):
-            shuffled_rows = sorted([tuple(row) for row in shuffled])
-            assert shuffled_rows == original_rows
 
 
 # =============================================================================

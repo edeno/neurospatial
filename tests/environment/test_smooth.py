@@ -12,27 +12,31 @@ from neurospatial import Environment
 class TestSmoothBasic:
     """Basic smoothing functionality tests."""
 
-    def test_smooth_impulse_spreads_to_neighbors(self, graph_env):
-        """Impulse at one bin should spread to neighbors after smoothing."""
-        env = graph_env
+    def test_smooth_impulse_is_the_heat_kernel_column(self, graph_env):
+        """An impulse smooths to the column of ``Hᵀ`` that the bin releases.
 
-        # Create impulse at center bin (bin 4 in plus maze)
+        ``H = expm(-(b²/2) M⁻¹ (D - W))`` is built here from the published
+        conductances and cell measures with a dense matrix exponential. The
+        documented truncation contract is a relative error of at most 1e-6
+        in the M-weighted norm; measured 2e-15 on this plus maze.
+        """
+        import scipy.linalg
+
+        env = graph_env
         field = np.zeros(env.n_bins)
         field[4] = 1.0
+        bandwidth = 1.0  # two bins on each side, well inside the 2-unit arms
 
-        # Apply smoothing with small bandwidth
-        smoothed = env.smooth(field, bandwidth=5.0, mode="transition")
+        smoothed = env.smooth(field, bandwidth=bandwidth, mode="transition")
 
-        # Check that impulse spread to neighbors
-        assert smoothed[4] > 0  # Center should still have mass
-        neighbors = list(env.connectivity.neighbors(4))
-        for neighbor in neighbors:
-            assert smoothed[neighbor] > 0, (
-                f"Neighbor {neighbor} should have positive value"
-            )
-
-        # Non-neighbors should have less mass (or zero for distant bins)
-        # This is a weak assertion - just checking basic spreading behavior
+        geometry = env.get_diffusion_geometry()
+        weights = geometry.W.toarray()
+        volumes = geometry.volumes
+        generator = (np.diag(weights.sum(axis=1)) - weights) / volumes[:, None]
+        expected = scipy.linalg.expm(-(bandwidth**2 / 2) * generator).T @ field
+        error = np.sqrt(np.sum(volumes * (smoothed - expected) ** 2))
+        assert error <= 1e-6 * np.sqrt(np.sum(volumes * expected**2))
+        assert smoothed.sum() == pytest.approx(1.0, abs=1e-12)
 
     def test_smooth_constant_field_unchanged(self):
         """Constant field should remain constant after smoothing."""

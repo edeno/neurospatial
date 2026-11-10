@@ -426,10 +426,15 @@ def test_result_summary_reports_the_observed_wall_fraction():
     assert "unavailable_metrics" not in table.attrs
     # The west wall and one cell each of the north and south walls.
     assert table.attrs["border_observed_wall_fraction"] == pytest.approx(28 / 40)
-    # A map firing everywhere observed, scored on the same walls.
-    assert table.attrs["border_score_untuned"] == pytest.approx(
-        border_score(env, rates)
-    )
+    # A map firing everywhere observed, scored on the same walls, by hand: one
+    # field of the 90 observed cells covers the whole east wall (cM = 1); its
+    # mean distance to the nearest of the four walls (the unvisited west one
+    # included) is 11/6, over the inscribed radius 5: dm = 11/30. So
+    # b = (1 - 11/30) / (1 + 11/30) = 19/41.
+    x, y = env.bin_centers[~unvisited].T
+    distance = np.min([x, 10 - x, y, 10 - y], axis=0)
+    assert distance.mean() == pytest.approx(11 / 6)
+    assert table.attrs["border_score_untuned"] == pytest.approx(19 / 41, rel=1e-12)
 
 
 def test_batch_scores_each_unit_on_its_own_observed_walls():

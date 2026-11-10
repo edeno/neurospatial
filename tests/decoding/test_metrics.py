@@ -400,15 +400,18 @@ class TestErrorAlongTheEnvironment:
             error = decoding_error(w_track, jitter, actual)
         np.testing.assert_allclose(error, decoding_error(w_track, nearest, actual))
 
-    def test_geodesic_error_is_between_bin_centers(self, small_2d_env):
-        """Two positions in one bin are zero apart along the graph."""
+    def test_geodesic_error_is_between_the_positions(self, small_2d_env):
+        """Two positions in one bin are their straight-line distance apart."""
         from neurospatial.decoding.metrics import decoding_error
 
         center = small_2d_env.bin_centers[[0]]
         offset = center + 0.2 * small_2d_env.bin_spacing
         assert small_2d_env.bin_at(offset)[0] == 0
-        assert decoding_error(small_2d_env, center, offset)[0] == 0.0
-        assert decoding_error(small_2d_env, center, offset, metric="euclidean")[0] > 0
+        straight = decoding_error(small_2d_env, center, offset, metric="euclidean")
+        assert straight[0] > 0
+        np.testing.assert_allclose(
+            decoding_error(small_2d_env, center, offset), straight, rtol=1e-12
+        )
 
     @pytest.mark.parametrize("metric", ["geodesic", "euclidean"])
     def test_infinite_positions_are_refused(self, small_2d_env, metric):
@@ -423,20 +426,26 @@ class TestErrorAlongTheEnvironment:
         ):
             decoding_error(small_2d_env, bad, positions, metric=metric)
 
-    def test_geodesic_matches_all_pairs_shortest_paths(self, small_2d_env):
-        from neurospatial.decoding.metrics import decoding_error
-        from neurospatial.ops.distance import geodesic_distance_matrix
+    def test_geodesic_error_in_an_open_arena_is_the_straight_line(self):
+        """No wall in the way: the path inside the arena is the straight line.
 
+        The 8-connected bin graph would run up to sqrt(4 - 2 sqrt(2)) = 1.082
+        times longer on oblique pairs; the error is measured in continuous
+        space instead.
+        """
+        from neurospatial.decoding.metrics import decoding_error
+
+        edges = np.arange(0.0, 100.1, 4.0)
+        arena = Environment.from_grid_mask(
+            np.ones((25, 25), dtype=bool), grid_edges=(edges, edges), units="cm"
+        )
         rng = np.random.default_rng(0)
-        decoded_bins = rng.integers(0, small_2d_env.n_bins, 200)
-        actual_bins = rng.integers(0, small_2d_env.n_bins, 200)
-        expected = geodesic_distance_matrix(small_2d_env.connectivity)[
-            decoded_bins, actual_bins
-        ]
-        centers = small_2d_env.bin_centers
+        decoded = rng.uniform(0.5, 99.5, (300, 2))
+        actual = rng.uniform(0.5, 99.5, (300, 2))
         np.testing.assert_allclose(
-            decoding_error(small_2d_env, centers[decoded_bins], centers[actual_bins]),
-            expected,
+            decoding_error(arena, decoded, actual),
+            decoding_error(arena, decoded, actual, metric="euclidean"),
+            rtol=1e-9,
         )
 
     def test_positions_must_match_the_environment_dimensions(self, small_2d_env):
@@ -570,10 +579,6 @@ class TestMedianDecodingErrorNaNHandling:
         )
 
         assert np.isnan(result)
-
-
-class TestSuccessCriteria:
-    """Test success criteria."""
 
 
 class TestEdgeCases:
@@ -933,10 +938,6 @@ class TestConfusionMatrix:
             np.testing.assert_array_almost_equal(result[i], np.zeros(n_bins))
 
 
-class TestConfusionMatrixSuccessCriteria:
-    """Test success criteria for confusion_matrix."""
-
-
 class TestDecodingCorrelation:
     """Test decoding_correlation function."""
 
@@ -964,22 +965,27 @@ class TestDecodingCorrelation:
         assert result == pytest.approx(-1.0)
 
     def test_decoding_correlation_no_correlation(self):
-        """Uncorrelated data should return ~0.0."""
+        """Independent decoded and actual positions give r near 0.
+
+        In 2-D the result is the mean of the per-dimension Pearson r.
+        """
         from neurospatial.decoding.metrics import decoding_correlation
 
-        # Construct orthogonal data: decoded[i] = actual[n-1-i]
-        # For special case where mean-centered versions are orthogonal
         rng = np.random.default_rng(42)
-
-        # Generate random data that should be approximately uncorrelated
         n = 1000
         actual = rng.uniform(0, 100, (n, 2))
         decoded = rng.uniform(0, 100, (n, 2))
 
         result = decoding_correlation(_space_for(decoded), decoded, actual)
 
-        # With random data, correlation should be near zero (not exact)
-        assert -0.2 < result < 0.2
+        expected = np.mean(
+            [np.corrcoef(decoded[:, d], actual[:, d])[0, 1] for d in range(2)]
+        )
+        assert result == pytest.approx(expected, rel=1e-10)
+        # Under independence each per-dimension r has SD 1/sqrt(n - 1), so the
+        # mean of two independent ones has SD 1/sqrt(2(n - 1)) = 0.022. Four
+        # SDs: a false failure has probability about 6e-5.
+        assert abs(result) < 4.0 / np.sqrt(2 * (n - 1))
 
     def test_decoding_correlation_range(self):
         """Correlation should always be in [-1, 1]."""
@@ -1300,10 +1306,6 @@ class TestDecodingCorrelationOnTracksAndPolar:
         positions = surround.bin_centers[:5]
         with pytest.raises(CartesianOnlyError, match="circular_circular_correlation"):
             decoding_correlation(surround, positions, positions)
-
-
-class TestDecodingCorrelationSuccessCriteria:
-    """Test success criteria for decoding correlation."""
 
 
 class TestConfusionMatrixNaNRows:

@@ -94,6 +94,15 @@ def geodesic_distance_matrix(
 
     Notes
     -----
+    Distances run along the bin graph between bin centers. In an open arena
+    an oblique path on an 8-connected grid is a staircase of grid steps, up to
+    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+    the any-angle path between positions instead, which equals the straight line
+    when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
+
     This function uses scipy.sparse.csgraph.shortest_path for optimized
     performance (~10-100× faster than pure NetworkX implementation).
     The algorithm automatically selects between Dijkstra's algorithm
@@ -168,6 +177,17 @@ def geodesic_distance_between_points(
     ValueError
         If an edge lacks the ``weight`` attribute.
 
+
+    Notes
+    -----
+    Distances run along the bin graph between bin centers. In an open arena
+    an oblique path on an 8-connected grid is a staircase of grid steps, up to
+    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+    the any-angle path between positions instead, which equals the straight line
+    when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
     """
     _require_nodes(graph, [bin_from, bin_to], "geodesic_distance_between_points()")
     _require_edge_weight(graph, weight, "geodesic_distance_between_points()")
@@ -556,6 +576,15 @@ def distance_field(
 
     Notes
     -----
+    Distances run along the bin graph between bin centers. In an open arena
+    an oblique path on an 8-connected grid is a staircase of grid steps, up to
+    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+    the any-angle path between positions instead, which equals the straight line
+    when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
+
     **Geodesic mode**: Uses Dijkstra's algorithm with multiple sources,
     which is O((V + E) log V) where V is number of nodes and E is number
     of edges. The ``cutoff`` parameter is passed directly to Dijkstra
@@ -657,6 +686,17 @@ def pairwise_distances(
         If ``nodes`` are not integers.
     networkx.NodeNotFound
         If a node is not a bin of ``graph``, such as the outside marker -1.
+
+    Notes
+    -----
+    Distances run along the bin graph between bin centers. In an open arena
+    an oblique path on an 8-connected grid is a staircase of grid steps, up to
+    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+    the any-angle path between positions instead, which equals the straight line
+    when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
 
     Examples
     --------
@@ -783,6 +823,15 @@ def neighbors_within(
 
     Notes
     -----
+    Distances run along the bin graph between bin centers. In an open arena
+    an oblique path on an 8-connected grid is a staircase of grid steps, up to
+    ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+    behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+    the any-angle path between positions instead, which equals the straight line
+    when nothing is in the way.
+    On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+    26-connected 3-D grids about 1.128.
+
     **Geodesic mode**: Runs Dijkstra from the centers, in memory-bounded
     blocks, stopping each search at ``radius``. Complexity per center is
     O((V + E) log V) but early termination typically makes it faster.

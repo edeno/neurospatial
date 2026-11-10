@@ -750,7 +750,6 @@ neurospatial.stats.shuffle_pvalue(observed, null_scores, *, alternative='greater
 neurospatial.stats.shuffle_spike_times_circular(spike_times, windows, *, n_shuffles=1000, min_shift=20.0, rng=None)
 neurospatial.stats.shuffle_spikes_isi(spike_times, *, n_shuffles=1000, rng=None)
 neurospatial.stats.shuffle_time_bins(spike_counts, *, n_shuffles=1000, rng=None)
-neurospatial.stats.shuffle_time_bins_coherent(spike_counts, *, n_shuffles=1000, rng=None)
 neurospatial.stats.shuffle_trials(trial_labels, *, n_shuffles=1000, rng=None)
 neurospatial.stats.shuffle_zscore(observed, null_scores)
 neurospatial.stats.wrap_angle(angle)

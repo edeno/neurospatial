@@ -22,6 +22,35 @@ from neurospatial.behavior.trajectory import compute_speed
 # -----------------------------------------------------------------------------
 
 
+def _sector_labels(headings, n_directions):
+    """Label of the half-open sector [c - w/2, c + w/2) holding each heading.
+
+    Sectors are centred on multiples of w = 360° / n_directions, named by
+    their centre in degrees within (-180°, 180°].
+    """
+    width = 2 * np.pi / n_directions
+    index = np.floor(np.asarray(headings) / width + 0.5).astype(int) % n_directions
+    degrees = index * 360.0 / n_directions
+    degrees = np.where(degrees > 180.0, degrees - 360.0, degrees)
+    return [f"{d:g}°" for d in degrees]
+
+
+def _circling(n_samples, duration):
+    """Counter-clockwise circling of radius 100 cm, one revolution.
+
+    The angles are offset by 0.3 of a sample so that no sample's direction
+    of movement lies on a sector edge (with 400 or 800 samples and 4, 8 or
+    16 sectors, an offset of half a sample would put some exactly on one).
+    Away from the two ends the Gaussian line
+    fit is symmetric, so the direction is exactly the tangent, angle + 90°;
+    at the ends it lags by under 0.01 rad, near 90°, a sector centre.
+    """
+    times = np.linspace(0.0, duration, n_samples)
+    angles = 2 * np.pi * (np.arange(n_samples) + 0.3) / n_samples
+    positions = 100.0 * np.column_stack([np.cos(angles), np.sin(angles)])
+    return times, positions, angles + np.pi / 2
+
+
 @pytest.fixture
 def rng():
     """Create a seeded random number generator for reproducible tests."""
@@ -114,27 +143,28 @@ class TestHeadingDirectionLabels:
         assert all(label == "stationary" for label in labels)
 
     def test_min_min_speed(self) -> None:
-        """Verify min_speed threshold is respected."""
+        """A constant 0.4 cm/s run East is moving above 0.4 cm/s, still below.
+
+        4 cm in 10 s: the line fit's speed is exactly 0.4 cm/s at every
+        sample, so the gate (moving at speed >= min_speed) labels every
+        sample "0°" at or below 0.39 cm/s and "stationary" at or above
+        0.41 cm/s.
+        """
         n_samples = 100
         times = np.linspace(0.0, 10.0, n_samples)
-        # Speed of exactly 4.0 cm/s in +x direction (dt = 0.1s, so dx = 0.4 per sample)
-        x_positions = np.linspace(0.0, 4.0, n_samples)  # 4 cm total over 10s = 0.4 cm/s
+        x_positions = np.linspace(0.0, 4.0, n_samples)
         positions = np.column_stack([x_positions, np.zeros(n_samples)])
 
-        # With min_speed=5.0, these should all be stationary
-        labels_high_thresh = heading_direction_labels(
-            positions=positions, times=times, min_speed=5.0
-        )
-        # With min_speed=0.1, these should have direction labels
-        labels_low_thresh = heading_direction_labels(
-            positions=positions, times=times, min_speed=0.1
-        )
-
-        # High threshold: mostly stationary
-        assert sum(1 for lbl in labels_high_thresh if lbl == "stationary") > 90
-
-        # Low threshold: mostly directions
-        assert sum(1 for lbl in labels_low_thresh if lbl != "stationary") > 50
+        for min_speed in (0.1, 0.39):
+            labels = heading_direction_labels(
+                positions=positions, times=times, min_speed=min_speed
+            )
+            assert labels.tolist() == ["0°"] * n_samples
+        for min_speed in (0.41, 5.0):
+            labels = heading_direction_labels(
+                positions=positions, times=times, min_speed=min_speed
+            )
+            assert labels.tolist() == ["stationary"] * n_samples
 
     def test_precomputed_matches_computed(self) -> None:
         """Precomputed speed/heading produces same result as positions/times."""
@@ -170,35 +200,19 @@ class TestHeadingDirectionLabels:
             headings_to_direction_labels(headings, speeds, min_speed=5.0)
 
     def test_n_directions_default_8(self) -> None:
-        """Default n_directions=8 produces 8 bins (45° each)."""
-        n_samples = 800
-        times = np.linspace(0.0, 80.0, n_samples)
-
-        # Create circular trajectory to sample all directions
-        angles = np.linspace(0, 2 * np.pi, n_samples, endpoint=False)
-        # Large radius so speed is high
-        radius = 100.0
-        positions = np.column_stack([radius * np.cos(angles), radius * np.sin(angles)])
+        """Circling labels each sample by the 45° sector of its tangent."""
+        times, positions, tangent = _circling(800, 80.0)  # 7.9 cm/s
 
         labels = heading_direction_labels(
             positions=positions, times=times, min_speed=5.0
         )
 
-        # Get unique non-stationary labels
-        direction_labels = {lbl for lbl in labels if lbl != "stationary"}
-
-        # Should have 8 unique direction bins
-        assert len(direction_labels) == 8
+        assert labels.tolist() == _sector_labels(tangent, 8)
+        assert len(set(labels.tolist())) == 8
 
     def test_n_directions_custom(self) -> None:
-        """Custom n_directions produces correct number of bins."""
-        n_samples = 400
-        times = np.linspace(0.0, 40.0, n_samples)
-
-        # Create circular trajectory
-        angles = np.linspace(0, 2 * np.pi, n_samples, endpoint=False)
-        radius = 100.0
-        positions = np.column_stack([radius * np.cos(angles), radius * np.sin(angles)])
+        """Circling labels each sample by its tangent's 90° or 22.5° sector."""
+        times, positions, tangent = _circling(400, 40.0)
 
         # Test with n_directions=4 (90° bins)
         labels_4 = heading_direction_labels(
@@ -207,8 +221,8 @@ class TestHeadingDirectionLabels:
             n_directions=4,
             min_speed=5.0,
         )
-        direction_labels_4 = {lbl for lbl in labels_4 if lbl != "stationary"}
-        assert len(direction_labels_4) == 4
+        assert labels_4.tolist() == _sector_labels(tangent, 4)
+        assert len(set(labels_4.tolist())) == 4
 
         # Test with n_directions=16 (22.5° bins)
         labels_16 = heading_direction_labels(
@@ -217,8 +231,8 @@ class TestHeadingDirectionLabels:
             n_directions=16,
             min_speed=5.0,
         )
-        direction_labels_16 = {lbl for lbl in labels_16 if lbl != "stationary"}
-        assert len(direction_labels_16) == 16
+        assert labels_16.tolist() == _sector_labels(tangent, 16)
+        assert len(set(labels_16.tolist())) == 16
 
     def test_bin_boundaries_at_edges(self) -> None:
         """Verify bin boundaries are correct at exact angles."""

@@ -7,6 +7,7 @@ import pickle
 
 import numpy as np
 import pytest
+from replay_helpers import assert_null_verdicts_at_alpha
 
 from neurospatial import Environment
 from neurospatial.decoding import (
@@ -135,21 +136,24 @@ class TestPublishedMethods:
         assert result.is_replay
         assert result.p_value == pytest.approx(1 / 200)
 
-    @pytest.mark.parametrize(
-        "method", [KARLSSON_FRANK_2009, WU_2017, TIROLE_2022], ids=lambda m: m.name
-    )
-    def test_spike_methods_detect_a_sweep_and_reject_a_random_event(
-        self, place_code, method
-    ):
-        env, rates = place_code
-        method = _fast(method)
-        if method.name == "karlsson_frank_2009":
-            import dataclasses
+    @staticmethod
+    def _spike_method(method, n_shuffles):
+        import dataclasses
 
+        method = dataclasses.replace(method, n_shuffles=n_shuffles)
+        if method.name == "karlsson_frank_2009":
             method = dataclasses.replace(
                 method,
                 score_options={"method": "sample", "n_samples_per_time_bin": 200},
             )
+        return method
+
+    @pytest.mark.parametrize(
+        "method", [KARLSSON_FRANK_2009, WU_2017, TIROLE_2022], ids=lambda m: m.name
+    )
+    def test_spike_methods_detect_a_sweep(self, place_code, method):
+        env, rates = place_code
+        method = self._spike_method(method, n_shuffles=199)
         sweep, counts = _decoded(env, rates, "sweep", seed=2, speed=900.0)
         result = detect_replay(
             env,
@@ -162,10 +166,24 @@ class TestPublishedMethods:
             rng=0,
         )
         assert result.is_replay, result.summary()
-        verdicts = []
-        for seed in range(6):
+
+    @pytest.mark.parametrize(
+        "method", [KARLSSON_FRANK_2009, WU_2017, TIROLE_2022], ids=lambda m: m.name
+    )
+    def test_spike_methods_call_random_events_replay_at_alpha(self, place_code, method):
+        """150 random events: replay at the shuffle test's rate, 0.04.
+
+        A random event's time bins are independent, so Karlsson & Frank's
+        and Wu's time-bin permutations are exact. Tirole's p-value is the
+        largest of three, which can only lower the rate, so it is held to
+        the interval's high end only.
+        """
+        env, rates = place_code
+        method = self._spike_method(method, n_shuffles=99)
+        results = []
+        for seed in range(150):
             noise, noise_counts = _decoded(env, rates, "random", seed=200 + seed)
-            verdicts.append(
+            results.append(
                 detect_replay(
                     env,
                     noise.posterior,
@@ -175,9 +193,16 @@ class TestPublishedMethods:
                     encoding_models=rates,
                     dt=DT,
                     rng=seed,
-                ).is_replay
+                )
             )
-        assert sum(verdicts) <= 1
+        assert_null_verdicts_at_alpha(
+            [r.p_value for r in results],
+            [r.is_replay for r in results],
+            [all(r.criteria.values()) for r in results],
+            alpha=method.alpha,
+            n_shuffles=method.n_shuffles,
+            conservative=len(method.nulls) > 1,
+        )
 
     def test_silva_thresholds_correlation_and_jump(self, place_code):
         env, _ = place_code
@@ -2319,33 +2344,56 @@ def dataclasses_replace_nulls(method):
 
 
 class TestOlafsdottir:
-    def test_detects_a_sweep_and_rejects_a_random_event(self, place_code):
-        env, rates = place_code
-        verdicts = []
-        for kind, seed in (("sweep", 1), ("random", 9)):
-            decoded, counts = _decoded(
-                env,
-                rates,
-                kind,
-                seed=seed,
-                **({"speed": 900.0} if kind == "sweep" else {}),
-            )
-            verdicts.append(
-                detect_replay(
-                    env,
-                    decoded.posterior,
-                    decoded.times,
-                    replay_method=OLAFSDOTTIR_2017,
-                    spike_counts=counts,
-                    encoding_models=rates,
-                    dt=DT,
-                    rng=0,
-                )
-            )
-        sweep, random_event = verdicts
+    def _detect(self, env, rates, kind, seed, rng=0):
+        decoded, counts = _decoded(
+            env,
+            rates,
+            kind,
+            seed=seed,
+            **({"speed": 900.0} if kind == "sweep" else {}),
+        )
+        return detect_replay(
+            env,
+            decoded.posterior,
+            decoded.times,
+            replay_method=OLAFSDOTTIR_2017,
+            spike_counts=counts,
+            encoding_models=rates,
+            dt=DT,
+            rng=rng,
+        )
+
+    def test_detects_a_sweep(self, place_code):
+        sweep = self._detect(*place_code, "sweep", seed=1)
         assert sweep.is_replay
         assert sweep.p_value == pytest.approx(1 / 101)
-        assert not random_event.is_replay
+
+    @pytest.mark.slow
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "The place-field shift null is anti-conservative on random events: "
+            "4 of 150 are replay (2.7%, 2 / 101 = 2.0% expected) and 93 of "
+            "150 p-values fall below 0.5 (62%, 59 to 90 expected)."
+        ),
+    )
+    def test_calls_random_events_replay_at_alpha(self, place_code):
+        """150 random events at the recipe's 100 shuffles and alpha = 0.025.
+
+        P(p < 0.025) is 2 / 101 for an exact test, so the 99% interval runs
+        from 0 to 8 replay events, and P(p < 0.5) is checked as well.
+        """
+        results = [
+            self._detect(*place_code, "random", seed=300 + seed, rng=seed)
+            for seed in range(150)
+        ]
+        assert_null_verdicts_at_alpha(
+            [r.p_value for r in results],
+            [r.is_replay for r in results],
+            [all(r.criteria.values()) for r in results],
+            alpha=OLAFSDOTTIR_2017.alpha,
+            n_shuffles=OLAFSDOTTIR_2017.n_shuffles,
+        )
 
     @pytest.mark.parametrize(
         ("n_active", "n_cells", "expected"),

@@ -156,10 +156,16 @@ class TestSegmentByVelocity:
     """Test segment_by_velocity function."""
 
     def test_segment_movement_vs_rest(self):
-        """Test segmentation of movement and rest periods."""
-        # Create trajectory with clear movement and rest periods
-        # Rest: stationary at position 0
-        # Movement: linear motion from 0 to 100
+        """Rest, a constant-speed run, rest: one epoch from run onset to rest.
+
+        The run moves 100/99 cm per frame over samples 50-149 (the first and
+        last of them repeat the rest positions 0 and 100). With
+        ``smooth_window=0`` the speed is the centered secant: 0 at samples
+        49 and 150, half the run speed (5.03 cm/s, above the 2 cm/s
+        threshold) at samples 50 and 149, the run speed in between. The epoch
+        starts at the first sample above threshold and stops at the first
+        slower one: exactly ``[times[50], times[150])``.
+        """
         rest1 = np.zeros((50, 1))
         movement = np.linspace(0, 100, 100)[:, None]
         rest2 = np.ones((50, 1)) * 100
@@ -169,70 +175,124 @@ class TestSegmentByVelocity:
 
         from neurospatial.behavior.segmentation import segment_by_velocity
 
-        # Threshold chosen to separate movement from rest
         segments = segment_by_velocity(
+            times,
+            trajectory,
+            min_speed=2.0,
+            min_duration=0.5,
+            hysteresis=2.0,
+            smooth_window=0.0,
+        ).windows
+        np.testing.assert_array_equal(segments, [[times[50], times[150]]])
+
+        # With the default 0.1 s smoothing, a sample whose 4-sigma window
+        # holds only rest samples has zero speed, so the one epoch can only
+        # widen by the kernel's reach (0.4 s) plus one frame.
+        smoothed = segment_by_velocity(
             times, trajectory, min_speed=2.0, min_duration=0.5, hysteresis=2.0
         ).windows
-
-        # Should detect at least one movement period
-        assert len(segments) > 0
+        reach = 0.4 + (times[1] - times[0])
+        assert smoothed.shape == (1, 2)
+        assert times[50] - reach <= smoothed[0, 0] <= times[50]
+        assert times[150] <= smoothed[0, 1] <= times[150] + reach
 
     def test_hysteresis_prevents_flickering(self):
-        """Higher hysteresis must produce no more segments than lower.
+        """A speed alternating 6 and 3 cm/s is one epoch, not ten.
 
-        Construct a velocity time series that oscillates just above and
-        below the threshold. A wide hysteresis band suppresses crossings
-        in the middle of the band; a narrow band lets every crossing
-        through. The test asserts the monotone direction
-        (wide ≤ narrow), which is the contract — not just that both
-        calls returned a ``list``.
+        The threshold is 5 cm/s. With ``hysteresis=2`` movement stops only
+        below 2.5 cm/s, so the 3 cm/s samples hold it: one epoch from the
+        first 6 cm/s sample (sample 5) to the first rest sample (25). With
+        ``hysteresis=1.1`` it stops below 4.55 cm/s, so every 3 cm/s sample
+        ends an epoch: ten one-frame epochs ``[times[k], times[k + 1])``,
+        ``k = 5, 7, ..., 23``. The speed is passed in, so the expected
+        bounds follow from the rule alone.
         """
-        rng = np.random.default_rng(42)
-        n = 200
-        # Trajectory whose first-difference (≈ speed) wanders around the
-        # threshold of 1.0, generating many crossings.
-        velocity = 1.0 + 0.5 * rng.standard_normal(n)
-        trajectory = np.cumsum(velocity)[:, None]
-        times = np.linspace(0, 20, n)
+        times = np.arange(30) / 10.0
+        speed = np.r_[np.zeros(5), np.tile([6.0, 3.0], 10), np.zeros(5)]
+        positions = np.zeros((30, 1))
 
         from neurospatial.behavior.segmentation import segment_by_velocity
 
         wide = segment_by_velocity(
-            times, trajectory, min_speed=1.0, min_duration=0.0, hysteresis=2.0
+            times, positions, min_speed=5.0, speed=speed, min_duration=0.0
         ).windows
         narrow = segment_by_velocity(
-            times, trajectory, min_speed=1.0, min_duration=0.0, hysteresis=1.01
+            times,
+            positions,
+            min_speed=5.0,
+            speed=speed,
+            min_duration=0.0,
+            hysteresis=1.1,
         ).windows
 
-        # Wide hysteresis band ⇒ fewer (or equal) transitions, hence
-        # fewer segments. A strict ``<`` would over-fit this noise; the
-        # real contract is the monotone direction.
-        assert len(wide) <= len(narrow), (
-            f"Wider hysteresis produced more segments "
-            f"({len(wide)} vs {len(narrow)}) — flickering not suppressed."
+        np.testing.assert_array_equal(wide, [[times[5], times[25]]])
+        starts = np.arange(5, 25, 2)
+        np.testing.assert_array_equal(
+            narrow, np.column_stack([times[starts], times[starts + 1]])
         )
 
-    def test_min_duration_filter(self):
-        """Test that brief segments are filtered out."""
-        # Create trajectory with very brief movement
-        rest = np.zeros((100, 1))
-        brief_movement = np.linspace(0, 10, 5)[:, None]
-        trajectory = np.vstack([rest[:50], brief_movement, rest[50:]])
-        times = np.linspace(0, 10, len(trajectory))
+    def test_hysteresis_holds_movement_between_thresholds(self):
+        """Speeds 0, 10, 4, 1, 10 cm/s: movement continues through 4 cm/s.
+
+        With ``min_speed=5`` and ``hysteresis=2`` movement starts above 5 and
+        stops below 2.5 cm/s. The 4 cm/s stretch (samples 15-24) is between
+        the two and keeps the epoch going; the 1 cm/s stretch (25-34) ends it
+        at sample 25. The last stretch (35-39) runs to the end of the
+        recording and is truncated at its last sample.
+        """
+        dt = 0.1
+        times = np.arange(40) * dt
+        speed = np.r_[np.zeros(5), np.full(10, 10.0), np.full(10, 4.0), np.ones(10)]
+        speed = np.r_[speed, np.full(5, 10.0)]
+        expected = [[times[5], times[25]], [times[35], times[39]]]
 
         from neurospatial.behavior.segmentation import segment_by_velocity
 
-        segments = segment_by_velocity(
-            times,
-            trajectory,
-            min_speed=5.0,
-            min_duration=1.0,  # Require 1 second
+        given = segment_by_velocity(
+            times, np.zeros((40, 1)), min_speed=5.0, speed=speed, min_duration=0.0
+        ).windows
+        np.testing.assert_array_equal(given, expected)
+
+        # The same profile from positions. Interval k -> k + 1 moves at
+        # velocity[k]; with smooth_window=0 a sample's speed is the centered
+        # secant, the mean of its two intervals: 6 cm/s at sample 5 (on),
+        # 8 at 15, 2.25 at 25 (off: 0.5 cm/s after it keeps the junction
+        # clear of the 2.5 threshold) and 6.25 at 35 (on again).
+        velocity = np.r_[np.zeros(5), np.full(10, 12.0), np.full(10, 4.0)]
+        velocity = np.r_[velocity, np.full(10, 0.5), np.full(4, 12.0)]
+        positions = np.r_[0.0, np.cumsum(velocity * dt)][:, None]
+        from_positions = segment_by_velocity(
+            times, positions, min_speed=5.0, min_duration=0.0, smooth_window=0.0
+        ).windows
+        np.testing.assert_array_equal(from_positions, expected)
+
+    def test_min_duration_filter(self):
+        """A 0.3 s burst is dropped and a 2 s run kept by min_duration=1 s.
+
+        The speed is passed in (20 cm/s on the burst and the run, 0 at
+        rest), so each epoch runs from its first fast sample to the first
+        rest sample after it: the burst ``[0.5, 0.8)`` lasts 0.3 s, the run
+        ``[1.8, 3.8)`` lasts 2 s. Without the filter both are found.
+        """
+        times = np.arange(50) / 10.0
+        speed = np.zeros(50)
+        speed[5:8] = 20.0  # burst: samples 5-7
+        speed[18:38] = 20.0  # run: samples 18-37
+        positions = np.zeros((50, 1))
+
+        from neurospatial.behavior.segmentation import segment_by_velocity
+
+        kept = segment_by_velocity(
+            times, positions, min_speed=5.0, speed=speed, min_duration=1.0
+        ).windows
+        unfiltered = segment_by_velocity(
+            times, positions, min_speed=5.0, speed=speed, min_duration=0.0
         ).windows
 
-        # Brief movement should be filtered
-        # All segments should have duration >= min_duration
-        for run in segments:
-            assert run.end_time - run.start_time >= 1.0 - 1e-6
+        np.testing.assert_array_equal(kept, [[times[18], times[38]]])
+        np.testing.assert_array_equal(
+            unfiltered, [[times[5], times[8]], [times[18], times[38]]]
+        )
 
     def test_movement_epoch_extends_to_recording_boundary(self):
         """A constant-speed run touching the recording edges is not broken.

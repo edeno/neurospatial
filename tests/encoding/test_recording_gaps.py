@@ -108,6 +108,14 @@ def test_spatial_all_methods_recover_rate(two_epoch_recording, method):
     pooled = np.nansum(result.firing_rate * result.occupancy) / result.occupancy.sum()
     assert pooled == pytest.approx(5.0, rel=0.05)
     assert result.occupancy.sum() == pytest.approx(199.96, abs=1e-6)
+    # A mass-preserving smoother can move rate between bins and keep the
+    # pooled total; every well-sampled bin must recover 5 Hz on its own. The
+    # spikes are regular, so each pass through a bin holds 5 Hz x dwell time
+    # to within one spike: at 2 s or more (10+ spikes) that is within 10%.
+    rates = np.asarray(result.firing_rate)
+    well_sampled = result.occupancy >= 2.0
+    assert well_sampled.sum() >= 5
+    np.testing.assert_allclose(rates[well_sampled], 5.0, rtol=0.1)
 
 
 @pytest.mark.parametrize("max_gap", [0.5, None])

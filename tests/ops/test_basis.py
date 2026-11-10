@@ -37,15 +37,35 @@ def test_heat_kernel_spread_is_the_bandwidth_at_any_bin_size(uniform_grid, spaci
             assert sigma == pytest.approx(bandwidth, rel=1e-3)
 
 
-def test_heat_kernel_converges_to_a_sampled_gaussian():
+def _heat_basis_column(env, center, bandwidth):
+    return heat_kernel_basis(
+        env, centers=np.array([center]), bandwidth=bandwidth, normalize="none"
+    )[0]
+
+
+def _compute_kernel_column(env, center, bandwidth):
+    return env.compute_kernel(bandwidth=bandwidth, mode="transition")[:, center]
+
+
+@pytest.mark.parametrize(
+    ("heat_kernel", "spacings", "finest_gap"),
+    [
+        (_heat_basis_column, (5.0, 2.5, 1.25), 0.005),
+        # The dense kernel at 1.25 cm (6400 bins) takes a minute: one halving.
+        (_compute_kernel_column, (5.0, 2.5), 0.02),
+    ],
+    ids=["heat_kernel_basis", "compute_kernel"],
+)
+def test_heat_kernel_converges_to_a_sampled_gaussian(heat_kernel, spacings, finest_gap):
     """Far from walls the lattice heat kernel tends to the Gaussian as bins shrink.
 
     Measured gap (max |kernel - Gaussian| over the Gaussian's peak) at a
     10 cm bandwidth: 0.077, 0.016 and 0.004 at 5, 2.5 and 1.25 cm bins, a
-    fourfold drop per halving (second order).
+    fourfold drop per halving (second order). The smoothing kernel of
+    ``env.compute_kernel`` itself converges the same way, not only the basis.
     """
     gaps = []
-    for spacing in (5.0, 2.5, 1.25):
+    for spacing in spacings:
         n = round(100 / spacing)
         x, y = np.meshgrid(
             (np.arange(n) + 0.5) * spacing, (np.arange(n) + 0.5) * spacing
@@ -54,16 +74,42 @@ def test_heat_kernel_converges_to_a_sampled_gaussian():
             np.column_stack([x.ravel(), y.ravel()]), bin_size=spacing
         )
         center = int(np.argmin(np.linalg.norm(env.bin_centers - 50.0, axis=1)))
-        kernel = heat_kernel_basis(
-            env, centers=np.array([center]), bandwidth=10.0, normalize="none"
-        )[0]
+        kernel = heat_kernel(env, center, 10.0)
         squared = np.sum((env.bin_centers - env.bin_centers[center]) ** 2, axis=1)
         gaussian = np.exp(-squared / (2 * 10.0**2))
         kernel, gaussian = kernel / kernel.sum(), gaussian / gaussian.sum()
         gaps.append(np.max(np.abs(kernel - gaussian)) / gaussian.max())
     ratios = np.array(gaps[:-1]) / np.array(gaps[1:])
     assert np.all((ratios > 3.5) & (ratios < 5.0))  # error ~ spacing²
-    assert gaps[-1] < 0.005
+    assert gaps[-1] < finest_gap
+
+
+def test_heat_kernel_basis_is_a_column_of_the_average_smoothing_kernel():
+    """Each basis function is ``env.compute_kernel(b, mode="average")[:, c]``.
+
+    The basis is ``exp(-(b²/2) L) δ_c``, column c of ``H``, and the
+    average-mode kernel is ``H`` itself. Polar bins grow with distance, so
+    ``H`` is not symmetric there and the transition kernel ``Hᵀ`` has a
+    different column c (its row c instead); on equal bins the two agree.
+    """
+    env = Environment.from_polar_egocentric(
+        distance_range=(0.0, 50.0),
+        angle_range=(-np.pi, np.pi),
+        distance_bin_size=5.0,
+        angle_bin_size=np.pi / 8,
+        units="cm",
+    )
+    centers = np.array([3, 37, 150])
+    bandwidth = 8.0
+    basis = heat_kernel_basis(
+        env, centers=centers, bandwidth=bandwidth, normalize="none"
+    )
+    average = env.compute_kernel(bandwidth=bandwidth, mode="average")
+    transition = env.compute_kernel(bandwidth=bandwidth, mode="transition")
+    # expm_multiply against a cached dense kernel: measured 2e-16.
+    assert_allclose(basis, average[:, centers].T, rtol=0, atol=1e-12)
+    assert_allclose(basis, transition[centers, :], rtol=0, atol=1e-12)
+    assert np.max(np.abs(basis - transition[:, centers].T)) > 0.01
 
 
 def test_heat_kernel_uses_smooth_generator(fv_env):
@@ -273,17 +319,32 @@ class TestSelectBasisCenters:
         )
         assert len(centers) == 10
 
-    def test_farthest_point_maximizes_spread(self, linear_env):
-        """Farthest point should maximize spatial spread."""
+    @pytest.mark.parametrize("env_name", ["linear_env", "walled"])
+    def test_farthest_point_is_the_greedy_max_min_choice(
+        self, env_name, linear_env, walled_env
+    ):
+        """Each new center is a bin farthest, by path length, from those chosen.
+
+        The geodesic distances come from NetworkX on the connectivity graph.
+        Ties may resolve to any farthest bin, so the check compares the
+        distance each choice reaches with the best any bin reaches.
+        """
+        import networkx as nx
+
+        env = linear_env if env_name == "linear_env" else walled_env[0]
         centers = select_basis_centers(
-            linear_env, n_centers=3, method="farthest_point", rng=42
+            env, n_centers=6, method="farthest_point", rng=42
         )
-        # In a linear environment, 3 farthest points should be spread out
-        # (near start, middle, end)
-        centers_sorted = np.sort(centers)
-        # Check they're reasonably spread (not all clustered)
-        gaps = np.diff(centers_sorted)
-        assert all(gap > 2 for gap in gaps)  # Each gap should be substantial
+        assert len(set(centers.tolist())) == 6
+        lengths = dict(
+            nx.all_pairs_dijkstra_path_length(env.connectivity, weight="distance")
+        )
+        distance = np.array(
+            [[lengths[i][j] for j in range(env.n_bins)] for i in range(env.n_bins)]
+        )
+        for k in range(1, len(centers)):
+            to_chosen = distance[centers[:k]].min(axis=0)
+            assert to_chosen[centers[k]] == pytest.approx(to_chosen.max(), rel=1e-12)
 
 
 # =============================================================================
@@ -436,28 +497,25 @@ class TestHeatKernelBasis:
         basis = heat_kernel_basis(simple_2d_env, n_centers=10, bandwidth=[1.0, 2.0])
         assert basis.shape == (20, simple_2d_env.n_bins)
 
-    def test_larger_bandwidth_is_wider(self, simple_2d_env):
-        """A larger bandwidth should spread heat more uniformly."""
-        center_idx = simple_2d_env.n_bins // 2
-        center = np.array([center_idx])
-        small_scale = heat_kernel_basis(
-            simple_2d_env, centers=center, bandwidth=0.45, normalize="none"
-        )
-        large_scale = heat_kernel_basis(
-            simple_2d_env, centers=center, bandwidth=2.8, normalize="none"
-        )
+    def test_bandwidths_add_in_quadrature(self, walled_env):
+        """Smoothing a kernel of width b1 by b2 gives the kernel of √(b1² + b2²).
 
-        # Heat diffusion: small scale = sharp peak, large scale = spread out
-        # At small scale, values far from center should be near zero
-        # At large scale, values far from center should be higher (heat reached them)
-        # Check that distant bins have higher values at larger scale
-        distant_bins = [0, simple_2d_env.n_bins - 1]  # Corners
-        small_distant_sum = np.sum(small_scale[0, distant_bins])
-        large_distant_sum = np.sum(large_scale[0, distant_bins])
-        assert large_distant_sum > small_distant_sum
-
-        # Also check that large scale has lower peak at center (heat has diffused away)
-        assert large_scale[0, center_idx] < small_scale[0, center_idx]
+        Heat released for ``t1`` and then ``t2`` is heat released for
+        ``t1 + t2`` (``exp(-t1 L) exp(-t2 L) = exp(-(t1 + t2) L)``), with
+        ``t = b² / 2``: the variances add, walls and edges included.
+        """
+        env, center, _, _ = walled_env
+        centers = np.array([center])
+        narrow = heat_kernel_basis(
+            env, centers=centers, bandwidth=3.0, normalize="none"
+        )
+        wide = heat_kernel_basis(env, centers=centers, bandwidth=5.0, normalize="none")
+        again = env.compute_kernel(bandwidth=4.0, mode="average") @ narrow[0]
+        # Measured 6e-17 on these 102 bins.
+        assert_allclose(again, wide[0], rtol=0, atol=1e-12)
+        # A width that did not add in quadrature (3 + 4 = 7) is far off.
+        seven = heat_kernel_basis(env, centers=centers, bandwidth=7.0, normalize="none")
+        assert np.max(np.abs(again - seven[0])) > 0.01
 
     def test_respects_walls(self, walled_env):
         """Heat reaching a bin behind the wall is far below an open bin as near."""
@@ -548,17 +606,27 @@ class TestSpatialBasis:
         assert basis.ndim == 2
         assert basis.shape[1] == simple_2d_env.n_bins
 
-    def test_coverage_affects_bandwidth(self, simple_2d_env):
-        """Local coverage should give narrower basis than global."""
-        basis_local = spatial_basis(simple_2d_env, coverage="local", n_features=30)
-        basis_global = spatial_basis(simple_2d_env, coverage="global", n_features=30)
+    @pytest.mark.parametrize(
+        ("coverage", "fraction"), [("local", 0.05), ("medium", 0.10), ("global", 0.20)]
+    )
+    def test_coverage_sets_the_bandwidth_fraction(self, coverage, fraction):
+        """Bandwidths are half, one and two times a fraction of the arena size.
 
-        # After unit normalization:
-        # - Local (small bandwidth): sharper peaks, values more concentrated → higher std
-        # - Global (large bandwidth): broader bumps, values more uniform → lower std
-        local_spread = np.mean([np.std(b) for b in basis_local])
-        global_spread = np.mean([np.std(b) for b in basis_global])
-        assert local_spread > global_spread
+        A 60 x 30 cm arena's size is the geometric mean of its sides,
+        √(60 · 30) = 42.43 cm; the documented fractions are 5, 10 and 20 %.
+        """
+        edges = (np.linspace(0.0, 60.0, 21), np.linspace(0.0, 30.0, 11))
+        env = Environment.from_grid_mask(np.ones((20, 10), bool), edges)
+        size = np.sqrt(60.0 * 30.0)
+        basis = spatial_basis(env, coverage=coverage, n_features=12, rng=0)
+        expected = geodesic_rbf_basis(
+            env,
+            n_centers=4,
+            bandwidth=[fraction * size / 2, fraction * size, 2 * fraction * size],
+            normalize="unit",
+            rng=0,
+        )
+        assert_allclose(basis, expected, rtol=1e-12, atol=0)
 
     def test_n_features_approximate(self, simple_2d_env):
         """n_features should approximately control output size."""

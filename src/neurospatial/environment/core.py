@@ -1779,6 +1779,17 @@ class Environment(Generic[_C]):
         BinIndexOutOfRangeError
             If a bin index is outside ``[0, n_bins)``.
 
+        Notes
+        -----
+        Distances run along the bin graph between bin centers. In an open arena
+        an oblique path on an 8-connected grid is a staircase of grid steps, up to
+        ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+        behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+        the any-angle path between positions instead, which equals the straight line
+        when nothing is in the way.
+        On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+        26-connected 3-D grids about 1.128.
+
         Examples
         --------
         >>> import numpy as np
@@ -4857,6 +4868,17 @@ class Environment(Generic[_C]):
         BinIndexOutOfRangeError
             If a bin index is outside ``[0, n_bins)``.
 
+        Notes
+        -----
+        Distances run along the bin graph between bin centers. In an open arena
+        an oblique path on an 8-connected grid is a staircase of grid steps, up to
+        ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+        behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+        the any-angle path between positions instead, which equals the straight line
+        when nothing is in the way.
+        On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+        26-connected 3-D grids about 1.128.
+
         Examples
         --------
         >>> import numpy as np
@@ -4938,6 +4960,15 @@ class Environment(Generic[_C]):
 
         Notes
         -----
+        Distances run along the bin graph between bin centers. In an open arena
+        an oblique path on an 8-connected grid is a staircase of grid steps, up to
+        ``sqrt(4 - 2 * sqrt(2))`` (about 1.082) times the straight line. The
+        behavior functions with ``metric="geodesic"`` and ``decoding_error`` measure
+        the any-angle path between positions instead, which equals the straight line
+        when nothing is in the way.
+        On hexagonal bins the factor reaches 2/sqrt(3) (about 1.155), and on
+        26-connected 3-D grids about 1.128.
+
         The geodesic metric runs Dijkstra's algorithm on the connectivity
         graph, with each edge's ``"distance"`` (the physical distance between
         bin centers) as its length.
@@ -6780,9 +6811,12 @@ class Environment(Generic[_C]):
         Notes
         -----
         Cartesian coordinates use Euclidean distances. Polar coordinates use
-        radial differences and mean-radius angular arc lengths, with angular
-        wrapping only for a circular coordinate system. Weights can cross
-        physical walls; use diffuse() for boundary-aware smoothing.
+        the straight line between the two places, the chord with
+        ``d**2 = r1**2 + r2**2 - 2 * r1 * r2 * cos(dtheta)``. When the angular
+        axis is open and that line would cross the angles outside its range,
+        the distance goes around the cut through the animal, ``r1 + r2``.
+        Weights can cross physical walls; use diffuse() for boundary-aware
+        smoothing.
 
         The dense matrix costs O(n_bins**2) memory. Repeated calls reuse an
         environment-owned bounded cache and return independent array headers

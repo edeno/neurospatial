@@ -2045,12 +2045,12 @@ def left_gaze_cell():
     """A cell that fires while the animal looks LEFT at the middle of the North wall.
 
     A 100 x 100 cm box; 10 minutes of uniform positions and headings at
-    30 Hz. The viewed point is the first wall along heading + pi/2, and the
-    rate is a 10 cm Gaussian around (50, 100) on that wall.
+    30 Hz. The viewed point is the first wall along heading + pi/2, found by
+    hand from the box's sides (not with the estimator's ``viewed_location``),
+    and the rate is a 10 cm Gaussian around (50, 100) on that wall.
     """
     from shapely.geometry import box
 
-    from neurospatial.ops.visibility import viewed_location
     from neurospatial.simulation import generate_poisson_spikes
 
     env = Environment.from_polygon(box(0, 0, 100, 100), bin_size=5.0, units="cm")
@@ -2058,13 +2058,11 @@ def left_gaze_cell():
     times = np.arange(0, 600, 1 / 30)
     positions = rng.uniform(5, 95, (len(times), 2))
     headings = rng.uniform(-np.pi, np.pi, len(times))
-    viewed = viewed_location(
-        positions,
-        headings,
-        method="ray_cast",
-        env=env,
-        gaze_offsets=np.full(len(times), np.pi / 2),
-    )
+    # First side of the box hit by the ray from each position along the gaze.
+    gaze = np.c_[np.cos(headings + np.pi / 2), np.sin(headings + np.pi / 2)]
+    with np.errstate(divide="ignore"):
+        to_side = np.where(gaze > 0, (100 - positions) / gaze, -positions / gaze)
+    viewed = positions + np.min(np.abs(to_side), axis=1)[:, None] * gaze
     target = np.array([50.0, 100.0])
     rate = 0.5 + 20 * np.exp(-0.5 * (np.linalg.norm(viewed - target, axis=1) / 10) ** 2)
     spikes = generate_poisson_spikes(rate, times, rng=7)

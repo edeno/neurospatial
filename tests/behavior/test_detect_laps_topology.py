@@ -58,15 +58,29 @@ def test_open_box_has_no_loop():
 
 @pytest.mark.parametrize("build", ["polygon", "samples"])
 def test_annulus_has_a_loop(build):
+    """Three turns round an annulus are three laps, one per turn.
+
+    The start line is the bin of the first sample, at angle 0. A boundary is
+    the sample of a pass nearest that bin's center, off angle 0 by at most
+    half a bin diagonal at radius 32 cm, plus half a frame.
+    """
     ring = shapely.Point(50, 50).buffer(40).difference(shapely.Point(50, 50).buffer(25))
     positions = _circle((50, 50), 32.0, 900)
     if build == "polygon":
         env = Environment.from_polygon(ring, bin_size=3.0)
     else:
         env = Environment.from_samples(positions, bin_size=3.0)
-    laps = detect_laps(env, np.arange(900) / 30.0, positions)
-    assert len(laps) >= 2
-    assert np.all(np.isin(laps.direction, ["clockwise", "counter-clockwise"]))
+    times = np.arange(900) / 30.0
+    laps = detect_laps(env, times, positions)
+    assert len(laps) == 3
+    assert laps.start[0] == times[0]
+    np.testing.assert_array_equal(laps.start[1:], laps.stop[:-1])
+    period = times[-1] / 3.0
+    omega = 2 * np.pi / period  # rad/s
+    tolerance = 1.5 * np.sqrt(2) / 32.0 / omega + (times[1] - times[0]) / 2
+    # The last lap ends at the final pass, at the end of the third turn.
+    np.testing.assert_allclose(laps.stop, [1, 2, 3] * np.r_[period], atol=tolerance)
+    assert np.all(laps.direction == "counter-clockwise")  # theta increases
 
 
 @pytest.mark.parametrize("direction", ["increasing", "decreasing"])
@@ -78,7 +92,7 @@ def test_loop_refuses_linear_directions(direction):
     positions = _circle((50, 50), 32.0, 900)
     times = np.arange(900) / 30.0
     laps = detect_laps(env, times, positions, direction="counter-clockwise")
-    assert len(laps) >= 2
+    assert len(laps) == 3
     with pytest.raises(
         ValueError, match=r"'clockwise' or 'counter-clockwise'[\s\S]*has a loop"
     ):

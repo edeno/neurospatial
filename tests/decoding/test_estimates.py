@@ -344,10 +344,6 @@ class TestCredibleRegion:
             credible_region(small_2d_env, posterior, level=-0.1)
 
 
-class TestSuccessCriteria:
-    """Test success criteria."""
-
-
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 

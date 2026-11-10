@@ -55,19 +55,19 @@ class TestGeneratePoissonSpikes:
                 isis >= refractory_period - 1e-10
             )  # Small tolerance for float
 
-    def test_mean_firing_rate(self):
-        """Test that mean firing rate is approximately correct."""
-        # 20 Hz for 10 seconds
-        firing_rate = np.full(10000, 20.0)
-        times = np.linspace(0, 10, 10000)
+    def test_mean_firing_rate_with_the_default_dead_time(self):
+        """The default 2 ms dead time τ lowers 20 Hz to r / (1 + r τ)."""
+        rate, duration, tau = 20.0, 2000.0, 0.002
+        times = np.linspace(0.0, duration, 2_000_001)
 
-        spike_times = generate_poisson_spikes(firing_rate, times, rng=42)
+        spike_times = generate_poisson_spikes(np.full(times.shape, rate), times, rng=42)
 
-        # Expected: ~200 spikes
-        mean_rate = len(spike_times) / 10.0
-
-        # Allow 20% tolerance (Poisson variance)
-        assert abs(mean_rate - 20.0) < 4.0
+        expected = rate / (1 + rate * tau)  # 19.23 Hz
+        # A renewal process with exponential plus dead-time intervals has
+        # count variance N / (1 + r τ)^2; 4 SE of the rate is 0.37 Hz, half
+        # of the 0.77 Hz the dead time removes.
+        se = np.sqrt(expected * duration) / (1 + rate * tau) / duration
+        assert len(spike_times) / duration == pytest.approx(expected, abs=4 * se)
 
     def test_reproducibility_with_seed(self):
         """Test that same seed produces same spikes."""

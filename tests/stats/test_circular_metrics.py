@@ -321,19 +321,29 @@ class TestRayleighTest:
             assert 0 <= p <= 1, f"p={p} outside [0, 1]"
 
     def test_small_sample_correction(self) -> None:
-        """Small samples should use finite-sample correction."""
+        """At n = 10 the p-value is Zar's finite-sample form, not exp(-z).
+
+        Ten angles, half at +a and half at -a, have mean resultant length
+        R = cos(a) exactly; R = 0.75 is in the tail where the two differ.
+        """
         from neurospatial.stats.circular import rayleigh_test
 
-        # With very few samples, correction matters more
-        rng = np.random.default_rng(42)
-        from scipy.stats import vonmises
+        n, r = 10, 0.75
+        a = np.arccos(r)
+        z, p = rayleigh_test(np.r_[np.full(n // 2, a), np.full(n // 2, -a)])
 
-        angles = vonmises.rvs(kappa=1.0, loc=0, size=10, random_state=rng)
-        z, p = rayleigh_test(angles)
+        assert z == pytest.approx(n * r**2, rel=1e-12)
+        zar = np.exp(np.sqrt(1 + 4 * n + 4 * (n**2 - (n * r) ** 2)) - (1 + 2 * n))
+        assert p == pytest.approx(zar, rel=1e-12, abs=0)
 
-        # Should still be valid
-        assert 0 <= z <= 10
-        assert 0 <= p <= 1
+        # Monte Carlo tail: the chance a uniform sample of 10 has R >= 0.75
+        # (about 0.0018; with 200k draws its SE is 5% of it). Zar's
+        # approximation is within 2% of it here, so 15% is 3 MC SE; the
+        # asymptotic exp(-z) = 0.0036 is twice too large.
+        draws = np.random.default_rng(0).uniform(0, 2 * np.pi, (200_000, n))
+        tail = np.mean(np.abs(np.exp(1j * draws).mean(axis=1)) >= r - 1e-12)
+        assert p == pytest.approx(tail, rel=0.15)
+        assert np.exp(-z) != pytest.approx(tail, rel=0.5)
 
     def test_empty_array_raises(self) -> None:
         """Empty array should raise ValueError."""
@@ -1119,8 +1129,9 @@ class TestCircularBasisMetrics:
         cov = np.array([[0.01, 0.0], [0.0, 0.01]])
 
         _, _, pvalue = circular_basis_metrics(beta_sin, beta_cos, cov_matrix=cov)
-        assert pvalue is not None
-        assert 0 <= pvalue <= 1
+        # Wald statistic W = beta' inv(cov) beta = (0.25 + 0.25) / 0.01 = 50;
+        # a chi-square with 2 df has survival function exp(-W / 2).
+        assert pvalue == pytest.approx(np.exp(-25.0), rel=1e-12, abs=0)
 
     def test_significant_modulation_low_pvalue(self) -> None:
         """Test that strong modulation with small variance gives low p-value."""
@@ -1877,10 +1888,13 @@ class TestFuzzEdgeCases:
         angles = np.full(100, np.pi / 4)
 
         z_stat, pvalue = rayleigh_test(angles)
-        # z = n * R^2, where R = 1 for identical angles
-        # So z should be approximately n = 100
-        assert z_stat >= 90  # Allow some tolerance
-        assert pvalue < 0.001  # Highly significant
+        # z = n * R^2 with R = 1, so z = n = 100 up to float rounding, and
+        # Zar's p with n R = n is exp(sqrt(1 + 4n) - (1 + 2n)), about 2.5e-79.
+        n = 100
+        assert z_stat == pytest.approx(n, rel=1e-12)
+        assert pvalue == pytest.approx(
+            np.exp(np.sqrt(1 + 4 * n) - (1 + 2 * n)), rel=1e-9, abs=0
+        )
 
     def test_rayleigh_with_opposite_angles(self) -> None:
         """Rayleigh test with exactly opposite angles (zero concentration)."""
@@ -1924,18 +1938,39 @@ class TestFuzzEdgeCases:
         """Rayleigh test produces valid p-values near 0 and 1 boundaries."""
         from neurospatial.stats.circular import rayleigh_test
 
-        rng = np.random.default_rng(42)
+        # Near 0: n = 1000 angles split between +a and -a have R = cos(a).
+        # R = 0.738 puts Zar's log p near -650, close to the smallest normal
+        # double (log about -708), so a clipped or rounded p shows. Comparing
+        # exp of an exponent near 650 amplifies its float error to ~1e-10.
+        n, r = 1000, 0.738
+        a = np.arccos(r)
+        _z_low, pvalue_low = rayleigh_test(np.r_[np.full(500, a), np.full(500, -a)])
+        log_p = np.sqrt(1 + 4 * n + 4 * (n**2 - (n * r) ** 2)) - (1 + 2 * n)
+        assert -700 < log_p < -600
+        assert pvalue_low == pytest.approx(np.exp(log_p), rel=1e-8, abs=0)
+        assert pvalue_low > 0
 
-        # Highly concentrated - p-value near 0
-        concentrated = rng.vonmises(0.0, 100.0, size=1000)
-        _z_low, pvalue_low = rayleigh_test(concentrated)
-        assert 0 <= pvalue_low <= 1
-        assert pvalue_low < 0.01
+        # Near 1: evenly spaced angles have R = 0, so z = 0 and Zar's
+        # exponent is sqrt((1 + 2n)^2) - (1 + 2n) = 0: p = 1 up to rounding.
+        z_high, pvalue_high = rayleigh_test(
+            np.linspace(0, 2 * np.pi, n, endpoint=False)
+        )
+        assert z_high == pytest.approx(0.0, abs=1e-12)
+        assert pvalue_high == pytest.approx(1.0, abs=1e-12)
 
-        # Uniform distribution - p-value higher
-        uniform = rng.uniform(0, 2 * np.pi, size=1000)
-        _z_high, pvalue_high = rayleigh_test(uniform)
-        assert 0 <= pvalue_high <= 1
+    def test_rayleigh_pvalue_underflows_to_zero(self) -> None:
+        """Zar's p-value is 0.0, not NaN, when its exponent underflows."""
+        from neurospatial.stats.circular import rayleigh_test
+
+        concentrated = np.random.default_rng(42).vonmises(0.0, 100.0, size=1000)
+        n = concentrated.size
+        r_n = np.abs(np.exp(1j * concentrated).sum())
+        log_p = np.sqrt(1 + 4 * n + 4 * (n**2 - r_n**2)) - (1 + 2 * n)
+        assert log_p < np.log(np.finfo(np.float64).tiny)
+
+        z, pvalue = rayleigh_test(concentrated)
+        assert pvalue == 0.0
+        assert z == pytest.approx(r_n**2 / n, rel=1e-12)
 
     def test_z_statistic_range(self) -> None:
         """Rayleigh z-statistic stays in valid range [0, n] for all inputs."""

@@ -308,20 +308,25 @@ class TestDirectionalOccupancy:
         self,
         simple_trajectory: dict,
     ) -> None:
-        """Total occupancy should approximately equal recording duration."""
-        occupancy, _ = _occupancy(
-            simple_trajectory["times"], simple_trajectory["headings"], np.pi / 30
-        )
+        """Each interval's time goes to the heading bin of the sample that starts it.
 
-        # Duration is approximately 10 seconds (last frame excluded)
-        # times range from 0 to ~10 seconds
-        expected_duration = (
-            simple_trajectory["times"][-2] - simple_trajectory["times"][0]
-        )
-        total_occupancy = np.sum(occupancy)
+        By hand: interval ``i`` lasts ``t[i+1] - t[i]`` and is charged to the
+        bin of heading ``i`` (wrapped to [-π, π), bins of width π/30 from -π);
+        the last sample starts no interval. The total is ``t[-1] - t[0]``.
+        Charging each interval to its end sample instead gives the same
+        total but different bins.
+        """
+        times = simple_trajectory["times"]
+        headings = simple_trajectory["headings"]
+        bin_size = np.pi / 30
+        occupancy, _ = _occupancy(times, headings, bin_size)
 
-        # Should be close to expected duration
-        assert np.isclose(total_occupancy, expected_duration, rtol=0.01)
+        wrapped = np.mod(headings[:-1] + np.pi, 2 * np.pi) - np.pi
+        bins = np.floor((wrapped + np.pi) / bin_size).astype(int)
+        expected = np.bincount(bins, weights=np.diff(times), minlength=60)
+
+        assert np.sum(occupancy) == pytest.approx(times[-1] - times[0], rel=1e-12)
+        np.testing.assert_allclose(occupancy, expected, rtol=1e-12, atol=1e-12)
 
     def test_angle_unit_deg(self) -> None:
         """Should handle headings in degrees with angle_unit='deg'."""
