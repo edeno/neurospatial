@@ -3188,15 +3188,20 @@ def is_head_direction_cell(
 
     **Calibration (simulation).** Untuned Poisson cells firing 0.5-3 Hz in
     10-minute explorations of a 1 m box, with movement heading as the
-    heading: of 10000 cells, 5.2% had ``p < 0.05`` with 199 shifts, where an
-    exact test rejects 4.5%, and the p-values were uniform to a KS test; the
-    verdict at its default 1000 shifts rejected 41 of 600 (6.8%, 5.0%
-    exact). Part of the excess comes from ``min_shift``: excluding the
+    heading. With 199 shifts an exact test rejects 4.5% at ``p < 0.05``.
+    Of 90,000 cells, 4.66% were rejected with the default ``min_shift`` and
+    4.58% with ``min_shift=0`` (standard error 0.07 percentage points).
+    With ``min_shift=0`` every shift of a constant-rate train is
+    exchangeable with the observed one, so the test is exact. Excluding the
     shifts near zero leaves out the null values most like the observed one,
-    so the observed statistic looks a little more extreme, and the excess
-    grows with how long the heading stays correlated. With ``min_shift=0``
-    every shift of a constant-rate train is exchangeable with the observed
-    one, and the same 10000 cells rejected 4.8%. With a heading that
+    which can make the observed statistic look a little more extreme: the
+    default rejected 0.08 points more of the same cells (standard error
+    0.04). An excess that small is not visible in fewer than tens of
+    thousands of cells: sets of 10,000 gave 4.4-5.2% with the default and
+    4.2-5.0% with ``min_shift=0``. The verdict at its default 1000 shifts
+    rejected 331 of 6,600 cells (5.0%, the rate of an exact test); sets of
+    600 gave 3.7-6.8%. The p-values of 12,000 cells were uniform to a KS
+    test with either setting. With a heading that
     dwells near one direction (von Mises occupancy, κ = 1.5) and stays
     correlated for about a second, 3.5-4.4% of 1000 Poisson, bursting or
     slowly drifting untuned cells were rejected (199 shifts). The threshold

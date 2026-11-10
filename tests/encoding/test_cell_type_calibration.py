@@ -7,6 +7,11 @@ bins); headings are the direction of movement. A circular-shift p-value
 ``(k + 1) / (n + 1)`` of an exchangeable null rejects at the exact rate
 ``monte_carlo_rejection_rate``, and the rejection count is checked from both
 ends. Each trajectory and each set of spike trains has its own seed.
+
+A rejection rate measured on a few hundred cells is uncertain by about a
+percentage point (one standard error of 600 cells at 4.5% is 0.85 points),
+so each test states how many cells it uses and what that number can tell
+apart.
 """
 
 from __future__ import annotations
@@ -153,6 +158,13 @@ def test_untuned_p_values_reject_at_the_monte_carlo_rate(family, n_sessions):
     With 199 shuffles ``p < 0.05`` rejects 9 of 200 equally likely ranks
     (4.5%); the count must lie in the 99% binomial interval from both ends
     and the p-values must be uniform.
+
+    The head direction shuffle leaves out shifts shorter than ``min_shift``
+    (20 s by default), so its null is not exactly exchangeable. Its rate on
+    90000 cells was 4.66% (Notes of ``is_head_direction_cell``), which 600
+    cells cannot tell from 4.5%: their interval, 15 to 41, would miss a rate
+    of 5.2% with probability 0.97. The exact case is tested on 12000 cells
+    in ``test_head_direction_p_values_are_exact_without_min_shift``.
     """
     p_values = np.concatenate(
         [
@@ -173,41 +185,106 @@ def test_untuned_p_values_reject_at_the_monte_carlo_rate(family, n_sessions):
     )
 
 
-@pytest.mark.parametrize("family", FAMILIES)
-def test_untuned_verdicts_are_at_most_the_shuffle_rate(family):
-    """The public predicate on untuned cells.
+def test_head_direction_p_values_are_exact_without_min_shift():
+    """12000 untuned cells (60 trajectories of 200) with ``min_shift=0``.
 
-    The head direction verdict is the shuffle test alone: 400 cells (two
-    trajectories) at its default 1000 shuffles, checked from both ends
-    against 5.5%. An exact test would reject 5.0%; with the default
-    ``min_shift`` 10000 cells rejected 5.2% where 4.5% is exact (199
-    shuffles), as the Notes of ``is_head_direction_cell`` state. The 99%
-    interval at 5.5% also holds 5.0%, so either rate passes, and a doubled
-    or a vanishing rate fails. The other verdicts also need the
-    bias-corrected information to reach ``min_info``, which none of 200
-    untuned cells (two trajectories) does: they are conservative, held to
-    the high end only.
+    With no minimum shift, every circular shift of a constant-rate train is
+    as likely as the train itself, so the shuffle test is exact: 4.5% of
+    cells have ``p < 0.05`` with 199 shifts. The count is checked from both
+    ends of the 99% binomial interval, 482 to 599, and the p-values must be
+    uniform over their 200 possible values.
+
+    12000 cells are what a small excess takes: a true rate of 5.2% falls
+    outside the interval with probability 0.84, 5.0% with 0.51, 4.0% with
+    0.53, and 6% always.
     """
-    shuffle_only = family == "head_direction"
+    from scipy import stats
+
+    p_values = []
+    for seed in range(1, 61):
+        session = _box_session(seed)
+        p_values.append(
+            _significance(
+                "head_direction",
+                session,
+                _untuned_trains(session[1], 200, seed=1000 + seed),
+                n_shuffles=N_SHUFFLES,
+                min_shift=0.0,
+                rng=seed,
+            )
+        )
+    p_values = np.concatenate(p_values)
+    assert p_values.size == 12000
+    assert_rejections_at_rate(
+        p_values < ALPHA, monte_carlo_rejection_rate(N_SHUFFLES, ALPHA)
+    )
+    # With this many cells a KS test against a continuous uniform sees the
+    # 200 steps of the p-values themselves (it rejects exactly uniform
+    # steps at its 0.001 level 2% of the time), so each value is counted.
+    ranks = np.rint(p_values * (N_SHUFFLES + 1)).astype(int)
+    np.testing.assert_allclose(ranks / (N_SHUFFLES + 1), p_values)
+    per_value = np.bincount(ranks, minlength=N_SHUFFLES + 2)[1:]
+    assert stats.chisquare(per_value).pvalue >= 0.001
+
+
+@pytest.mark.parametrize(
+    "family", [family for family in FAMILIES if family != "head_direction"]
+)
+def test_untuned_verdicts_are_at_most_the_shuffle_rate(family):
+    """The public predicate of an information-tuned cell type on untuned cells.
+
+    These verdicts need a significant shuffle test and bias-corrected
+    information at ``min_info``. No untuned cell of 200 (two trajectories)
+    reaches both, so the verdicts are conservative: they are held to the
+    high end of the shuffle's binomial interval only, and to zero. The head
+    direction verdict has no information cutoff and is tested separately.
+    """
     rejected = []
     for seed in (1, 2):
         session = _box_session(seed)
-        n_units = 200 if shuffle_only else 100
-        trains = _untuned_trains(session[1], n_units, seed=2000 + seed)
-        for k, train in enumerate(trains):
-            kwargs = {"rng": 1000 * seed + k}
-            if not shuffle_only:
-                kwargs["n_shuffles"] = N_SHUFFLES
-            rejected.append(_verdict(family, session, train, **kwargs))
-    if shuffle_only:
-        assert_rejections_at_rate(rejected, 0.055)
-    else:
-        assert_rejections_at_rate(
-            rejected,
-            monte_carlo_rejection_rate(N_SHUFFLES, ALPHA),
-            conservative=True,
+        trains = _untuned_trains(session[1], 100, seed=2000 + seed)
+        rejected.extend(
+            _verdict(family, session, train, n_shuffles=N_SHUFFLES, rng=1000 * seed + k)
+            for k, train in enumerate(trains)
         )
-        assert sum(rejected) == 0
+    assert_rejections_at_rate(
+        rejected, monte_carlo_rejection_rate(N_SHUFFLES, ALPHA), conservative=True
+    )
+    assert sum(rejected) == 0
+
+
+def test_untuned_head_direction_verdict_rejects_at_the_shuffle_rate():
+    """``is_head_direction_cell`` on 2000 untuned cells (ten trajectories).
+
+    The head direction verdict is the shuffle test alone, so it calls
+    untuned cells head direction cells at the shuffle's rate, not below it:
+    4.5% with 199 shifts (4.66% of 90000 cells at the default
+    ``min_shift``, a difference 2000 cells cannot see), checked from both
+    ends of the 99% binomial interval, 67 to 115 of 2000. A true rate of 7%
+    falls outside it with probability 0.99, 6.5% with 0.91 and 3% with
+    0.81; 400 cells, with an interval of 8 to 29, would pass at 7% six
+    times in ten.
+
+    The predicate's default is 1000 shifts, where an exact test rejects
+    5.0%. That costs five times as much per cell; its measured rate, 331 of
+    6600 cells (5.0%), is in the Notes of ``is_head_direction_cell``.
+    """
+    rejected = []
+    for seed in range(1, 11):
+        session = _box_session(seed)
+        trains = _untuned_trains(session[1], 200, seed=2000 + seed)
+        rejected.extend(
+            _verdict(
+                "head_direction",
+                session,
+                train,
+                n_shuffles=N_SHUFFLES,
+                rng=1000 * seed + k,
+            )
+            for k, train in enumerate(trains)
+        )
+    assert len(rejected) == 2000
+    assert_rejections_at_rate(rejected, monte_carlo_rejection_rate(N_SHUFFLES, ALPHA))
 
 
 def test_head_direction_threshold_screen_rejects_no_untuned_cell():
