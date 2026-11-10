@@ -437,6 +437,18 @@ give the measured rates:
 
 ### Datasets
 
+- `load("huszar_2022")` no longer raises `KeyError` for its reward table after
+  `ndx_events` has been imported in the same Python session, and `kanter_2025`
+  and `valero_2022` no longer show pynwb's "Ignoring ... cached namespace"
+  warning. These files were written with ndx-events 0.2.0. Once a newer
+  ndx-events was imported, pynwb read them with the imported version and left
+  out every object of a type that version does not define. The loaders now read
+  each NWB file with the extension version stored in the file, so the result
+  does not depend on what was imported first. The values of the three default
+  sessions are unchanged. This needs hdmf 4.1.0 or later: with an older hdmf,
+  such a file raises an error that names both versions and says what to do.
+  With hdmf 5 or later, hdmf's `DeprecationWarning` for `TypeMap.copy_mappers`
+  comes with such a read.
 - Loading `forli_2025` or `vollan_2025` no longer changes pandas settings for the
   rest of the session. Importing mat-io turns on `future.infer_string`, so text
   in every later table became string dtype. Text columns of these two datasets

@@ -162,6 +162,11 @@ filterwarnings = [
     "ignore:`json_encoders` is deprecated:DeprecationWarning",
     # pynwb 4 defines the event types ndx-events also defines; it keeps its own.
     "ignore:ndx-events.extensions defines a different specification",
+    # hdmf 5 deprecated TypeMap.copy_mappers, its only public call that copies
+    # the classes of chosen namespaces; the replacement, TypeMap.merge, needs the
+    # namespace the dataset opener sets aside. Without the method the opener
+    # raises an error that says what to do.
+    "ignore:copy_mappers is deprecated:DeprecationWarning:hdmf\\.build\\.manager",
     # POT 0.9.7's ot/datasets.py has an invalid escape, reported when the
     # module is first compiled: a DeprecationWarning before Python 3.12, a
     # SyntaxWarning after (3.14 words it '"\\d" is an invalid...').

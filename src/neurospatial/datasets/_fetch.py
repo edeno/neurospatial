@@ -500,25 +500,143 @@ def dandi_stream_url(asset_id: str, *, sha256: str) -> str:
 
 @contextlib.contextmanager
 def open_nwb(source: str) -> Iterator[Any]:
-    """Yield the NWBFile at a local path, or at an http(s) URL read by byte range."""
+    """Yield the NWBFile at a local path, or at an http(s) URL read by byte range.
+
+    Extension types are read with the specification the file itself caches,
+    whichever version of the extension the process has imported.
+
+    Parameters
+    ----------
+    source : str
+        A local path, or an http(s) URL.
+
+    Yields
+    ------
+    pynwb.NWBFile
+        Open until the block ends.
+
+    Raises
+    ------
+    RuntimeError
+        If the file caches an extension at another version than the process
+        has loaded and the installed hdmf (before 4.1.0) cannot read the file
+        with its own version.
+    """
     from neurospatial._optional import require_optional
 
     pynwb = require_optional("pynwb", extra="datasets", purpose="reading NWB files")
+    h5py = require_optional("h5py", extra="datasets", purpose="reading NWB files")
     if not source.startswith(("https://", "http://")):
-        with pynwb.NWBHDF5IO(source, "r", load_namespaces=True) as io:
+        with h5py.File(source, "r") as h5, _nwb_io(pynwb, h5, source) as io:
             yield io.read()
         return
     fsspec = require_optional(
         "fsspec", extra="datasets", purpose="reading NWB files by byte range"
-    )
-    h5py = require_optional(
-        "h5py", extra="datasets", purpose="reading NWB files by byte range"
     )
     with (
         fsspec.open(
             source, "rb", block_size=4 << 20, cache_type="blockcache"
         ) as remote,
         h5py.File(remote, "r") as h5,
-        pynwb.NWBHDF5IO(file=h5, mode="r", load_namespaces=True) as io,
+        _nwb_io(pynwb, h5, source) as io,
     ):
         yield io.read()
+
+
+def _nwb_io(pynwb: Any, h5: Any, source: str) -> Any:
+    """Open ``NWBHDF5IO`` on an HDF5 file, its extensions as the file specifies them.
+
+    pynwb reads a file with a copy of its process-wide type map, to which it
+    adds the namespaces the file caches. Importing an extension package puts
+    that package's version in the map, and a namespace the copy already holds
+    at another version is not added: hdmf warns that it ignored the file's,
+    and every object of a type only the file's version defines is then left
+    out of what is read, with no further notice. After ``import ndx_events``
+    (0.4.0), a file written with ndx-events 0.2.0 has no ``LabeledEvents``.
+
+    Here such an extension is taken out of the copy first, so the file's
+    version is the one added and its types are read as in a process that has
+    not imported the package. pynwb's and hdmf's own namespaces stay as
+    loaded: their classes belong to the installed schema.
+
+    hdmf has one public call that copies the classes of chosen namespaces,
+    ``TypeMap.copy_mappers``. hdmf 5.0 deprecated it for ``TypeMap.merge``,
+    which copies every class and so needs the namespace being taken out; from
+    5.0 on, hdmf's DeprecationWarning accompanies the read.
+
+    Parameters
+    ----------
+    pynwb : module
+    h5 : h5py.File
+        Open for reading.
+    source : str
+        The file's path or URL, for the error message.
+
+    Returns
+    -------
+    pynwb.NWBHDF5IO
+
+    Raises
+    ------
+    RuntimeError
+        If an extension must be taken out and hdmf cannot build a type map
+        without it: hdmf before 4.1.0 has no
+        ``NamespaceCatalog.core_namespaces``.
+    """
+    import hdmf
+    from hdmf.build import BuildManager, TypeMap
+    from hdmf.common import CORE_NAMESPACE as HDMF_COMMON
+    from hdmf.common import EXP_NAMESPACE as HDMF_EXPERIMENTAL
+    from hdmf.common import get_type_map as hdmf_type_map
+    from hdmf.spec import NamespaceCatalog
+
+    from neurospatial._exceptions import _format_error
+
+    type_map = pynwb.get_type_map()
+    loaded = type_map.namespace_catalog
+    own = {pynwb.CORE_NAMESPACE, HDMF_COMMON, HDMF_EXPERIMENTAL}
+    # extension -> (the file's version, the loaded version), where they differ
+    differing = {
+        name: (version, loaded.get_namespace(name)["version"])
+        for name, version in pynwb.NWBHDF5IO.get_namespaces(file=h5).items()
+        if name not in own
+        and name in loaded.namespaces
+        and loaded.get_namespace(name)["version"] != version
+    }
+    if differing:
+        try:
+            kept = NamespaceCatalog(
+                loaded.group_spec_cls,
+                loaded.dataset_spec_cls,
+                loaded.spec_namespace_cls,
+                core_namespaces=list(loaded.core_namespaces),
+            )
+            for name in loaded.namespaces:
+                if name not in differing:
+                    kept.add_namespace(name, loaded.get_namespace(name))
+            without = TypeMap(kept)
+            # hdmf's class generator for table types; copy_mappers copies none.
+            without.merge(hdmf_type_map())
+            without.copy_mappers(type_map)
+        except (AttributeError, TypeError) as error:
+            cached = ", ".join(f"{name} {v[0]}" for name, v in differing.items())
+            imported = ", ".join(f"{name} {v[1]}" for name, v in differing.items())
+            raise RuntimeError(
+                _format_error(
+                    f"{source}: cannot read the file with the extension version "
+                    "it was written with.",
+                    why=f"the file caches {cached}, and this process has loaded "
+                    f"{imported} (importing an extension package registers its "
+                    "version with pynwb). pynwb would ignore the file's version "
+                    "and leave out every object of a type only that version "
+                    "defines. Setting the loaded version aside needs hdmf>=4.1.0 "
+                    "(NamespaceCatalog.core_namespaces and TypeMap.copy_mappers); "
+                    f"hdmf {hdmf.__version__} is installed and raised "
+                    f"{type(error).__name__}: {error}.",
+                    fix='pip install "hdmf>=4.1.0", or read this file in a Python '
+                    "process that has not imported the extension package.",
+                )
+            ) from error
+        type_map = without
+    pynwb.NWBHDF5IO.load_namespaces(type_map, file=h5)
+    return pynwb.NWBHDF5IO(file=h5, mode="r", manager=BuildManager(type_map))
