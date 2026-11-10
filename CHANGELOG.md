@@ -285,16 +285,24 @@ give the measured rates:
 - The default `distance_range` of the object-vector and egocentric rate
   maps is now an upper bound on the distance from every position inside the
   environment. With `metric="geodesic"` it is the path through bin centers
-  plus the farthest a position can be from its bin's center, usually one
-  ring longer than before (145 cm instead of 140 cm in a 100 cm box of 2 cm
-  bins with the object at (0.1, 0.1)). With `metric="euclidean"` it uses
-  the arena's own box, which includes a track's width, and reaches the
-  box's far corner from the nearest object when every object lies outside
-  the box. Before, positions across a track's width and objects outside the
-  environment could be beyond the range and dropped out of occupancy and
-  spike counts. For an object inside an open arena the Euclidean default is
-  unchanged. An environment whose bins have no cells and no finite lookup
-  radius now needs an explicit `distance_range`.
+  plus the farthest a position can be from its bin's center, with a margin
+  for rounding, so time at exactly the farthest distance (the far end of a
+  150 cm track from an object at its start) falls in the last ring. It is
+  usually one ring longer than before (145 cm instead of 140 cm in a 100 cm
+  box of 2 cm bins with the object at (0.1, 0.1)). With
+  `metric="euclidean"` it uses the arena's own box, which includes a
+  track's width, and for an object at a fixed position outside that box it
+  reaches the box's far corner. Before, positions across a track's width
+  and fixed objects outside the environment could be beyond the range and
+  dropped out of occupancy and spike counts. For an object inside an open
+  arena the Euclidean default is unchanged.
+- An object whose position changes over the session (positions per sample,
+  or a line or polygon landmark) keeps the arena's diagonal as its default
+  range, as before: pass `distance_range` if it leaves the arena. Time when
+  it is farther away is reported by `fraction_of_time_in_distance_range`.
+  Bins found by nearest center are covered out to their `max_distance`, and
+  with no finite `max_distance` at their centers, as before. A fixed object
+  with a NaN or infinite coordinate is left out of the default range.
 
 ### Place fields: a field next to a split field is no longer lost
 
