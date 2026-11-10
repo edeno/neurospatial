@@ -1053,7 +1053,7 @@ Compute geodesic or Euclidean distance from each bin to target bins or regions.
     - **Path planning**: Understand navigation strategies and route selection
     - **Multi-goal tasks**: Analyze behavior when multiple targets compete for attention
 
-    **Geodesic vs Euclidean**: Geodesic distance (also called "path distance" or "through-environment distance") follows the connectivity graph and respects barriers, while Euclidean measures straight-line distance ignoring structure.
+    **Geodesic vs Euclidean**: Geodesic distance (also called "path distance" or "through-environment distance") is the length of the shortest path that stays inside the environment and goes around barriers, while Euclidean measures straight-line distance ignoring structure.
 
 ```python
 def distance_to(
@@ -1079,7 +1079,7 @@ def distance_to(
         polygon). Give exactly one of ``bins``, ``points`` and ``region``.
     metric : {"euclidean", "geodesic"}, optional
         Distance metric:
-        - "geodesic": Follows connectivity graph (path distance, respects barriers)
+        - "geodesic": Shortest path inside the environment (respects barriers)
         - "euclidean": Straight-line distance
         Default is "geodesic".
 

@@ -66,7 +66,8 @@ credible_region : Highest-density credible region
 Quality Metrics
 ---------------
 decoding_error : Position error per time bin
-    Euclidean or graph-based distance between decoded and actual positions.
+    Distance between decoded and actual positions: the shortest path inside
+    the environment, or the straight line.
 
 median_decoding_error : Median decoding error
     Summary statistic for decoding accuracy.

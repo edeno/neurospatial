@@ -1,8 +1,9 @@
 """Decoding quality metrics for evaluating position decoding accuracy.
 
 This module provides functions for computing error metrics between decoded
-and actual positions, measured along the environment's connectivity graph by
-default or as straight-line distance.
+and actual positions, measured by default as the shortest path between the
+two positions that stays inside the environment (along a track, around
+walls), or as straight-line distance.
 
 Functions
 ---------
@@ -57,8 +58,8 @@ def decoding_error(
     Parameters
     ----------
     env : Environment
-        Environment the positions are in. Its connectivity graph gives
-        geodesic distances and its ``n_dims`` the number of position columns.
+        Environment the positions are in. Geodesic distances are paths
+        inside it, and its ``n_dims`` is the number of position columns.
     decoded_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
         Decoded position estimates (e.g., MAP or mean positions).
     actual_positions : NDArray[np.float64], shape (n_time_bins, n_dims)
