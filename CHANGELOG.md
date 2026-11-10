@@ -13,7 +13,9 @@
   (`OLAFSDOTTIR_2015`) and 9.3% (`BUSH_2022`) at a nominal 4%;
   `OLAFSDOTTIR_2017` holds its α but gives too many p-values below 0.5;
   Kudrimoti's t test calls 4.0% at a nominal 2.5% (pairs share cells), and
-  Lansink's bootstrap 0.1%. The recipes keep their papers' methods, so
+  Lansink's bootstrap 0.1%. `LIU_2023` notes a smaller excess that no test
+  pins: 4.8% of 5,000 such events at a nominal 4%, and 21.1% with p < 0.2
+  against 19%. The recipes keep their papers' methods, so
   results still compare with the papers. `replay_significance`,
   `shuffle_cell_identity`, `shuffle_place_fields_circular`,
   `explained_variance_reactivation` and `ReactivationMethod(test=...)` say
@@ -86,7 +88,8 @@ give the measured rates:
   `object_vector_cell_significance` and
   `egocentric_object_vector_cell_significance` reject untuned cells at the
   rate of an exact test and are uniform (600-1400 simulated untuned cells
-  each; head direction slightly above it, see below). The place-cell rate of 7.25% seen once on 400 cells sharing one
+  each; head direction measured on 90,000 cells, see below). The place-cell
+  rate of 7.25% seen once on 400 cells sharing one
   trajectory was chance: 1400 cells on seven trajectories rejected 4.4%
   against 4.5% expected. No code changed.
 - `is_place_cell`, `is_spatial_view_cell`, `is_object_vector_cell` and
@@ -94,27 +97,36 @@ give the measured rates:
   information to reach `min_info`, which no untuned cell did: their
   false-positive rate is well below `alpha`. Their Notes now give the
   measured rates and how detection grows with peak rate.
-- `is_head_direction_cell` Notes: the shuffle verdict rejects slightly
-  more untuned cells than an exact test (5.2% of 10000 at 199 shifts, where
-  4.5% is exact). Excluding shifts shorter than `min_shift` causes part of
-  it; with `min_shift=0` the same cells rejected 4.8%. The default stays at
-  20 s.
+- `is_head_direction_cell` Notes: on 90,000 simulated untuned cells the
+  shuffle rejected 4.66% at 199 shifts with the default `min_shift` and
+  4.58% with `min_shift=0`, where an exact test rejects 4.5% (standard
+  error 0.07 points); the verdict at its default 1000 shifts rejected 5.0%
+  of 6,600. Sets of 10,000 cells ranged from 4.4% to 5.2%. The default
+  stays at 20 s.
 - `is_spatial_view_cell` Notes: with `gaze_model="fixed_distance"` a place
   cell passes as a spatial view cell (all 50 simulated place cells at a
-  10 cm view distance); with the ray-cast gaze none did.
+  10 cm view distance); with the ray-cast gaze none did. With the ray-cast
+  gaze the shuffle alone was significant for 26-46% of simulated place
+  cells (13 to 23 of 50), and none passed the verdict only because their
+  bias-corrected information stayed below the 0.5 bits/spike cutoff (0.46
+  at most); a lower `min_info` admits them (7 of 50 at 0.25).
 - `DirectionalRateResult.tuning_pvalue` Notes: the false-positive rate for
   cells whose rate drifts slowly was given as 0-1%. It is about 5% when the
   heading diffuses smoothly, and 0.5% (conservative) for movement heading
   in a walled box, where wall reflections make the heading autocorrelation
   turn negative.
 - `SpatialRatesResult.label_cell_types` Notes: untuned cells are labeled
-  grid in about 2% of cases and border in 12-20%, but 0-63% from one
-  session to the next, because an untuned cell's border score sits at the
+  grid in 1.8% of cases and border in 15% (1 m square) and 11% (1 m circle)
+  over 400 sessions each, but 0-63% from one session to the next and 6-23%
+  over 20 sessions, because untuned cells score at or just below the
   session's `untuned_border_score`.
 - `spatial_information_bias` Notes record its agreement with the
   information of simulated untuned cells: within 1 standard error at 1000
   spikes for both kernel estimators and a fixed-penalty GAM, and within 4%
-  at 100 spikes.
+  at 100 spikes. For `method="binned"` the bias is less accurate when bins
+  are visited unevenly: smoothed maps over-predict by 6-20% at 100 spikes
+  and 0-6% at 1000, so their screens are conservative, and unsmoothed maps
+  under-predict by 7-8% at 1000 spikes.
 
 ### Behavior: VTE offers the Redish lab's velocity estimator, by default
 
