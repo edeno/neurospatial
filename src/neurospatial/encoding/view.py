@@ -2499,7 +2499,16 @@ def is_spatial_view_cell(
     simulated place cells (10 cm field, 8 Hz peak) passed, and 86-88% at
     30 cm. With the ray-cast gaze the viewed wall point moves with heading:
     none of the 50 passed, and 4 of 120 narrower, stronger place cells
-    (5 cm field, 20 Hz). Test the cell with
+    (5 cm field, 20 Hz). The shuffle is not what holds them back. On four
+    pairs of 10-minute explorations of a 1 m box (50 such place cells per
+    pair, 0.1 Hz baseline, ray-cast gaze along the movement heading, 199
+    shifts), the information test alone was significant for 13, 14, 16 and
+    23 of the 50 (26-46%, against the 4.5% of untuned cells), and none of
+    the 200 passed the verdict, because their bias-corrected information
+    stayed below the 0.5 bits/spike cutoff (0.46 at most, 0.12-0.18 at the
+    median). With the ray-cast gaze it is therefore the information cutoff,
+    not the shuffle, that separates place cells from view cells, and a
+    lower ``min_info`` admits them: 7 of 50 at 0.25. Test the cell with
     :func:`~neurospatial.encoding.spatial.is_place_cell` as well, and
     compare its place and view maps.
     Results keep no raw arrays or recompute closures. Shuffle keywords
