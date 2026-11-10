@@ -70,18 +70,65 @@ def assert_rejections_at_rate(
 
 
 def assert_pvalues_uniform(p_values: ArrayLike, *, level: float = 0.001) -> None:
-    """Assert that null p-values are uniform on [0, 1] (Kolmogorov-Smirnov).
+    """Assert that exact null p-values are uniform, on [0, 1] or on a grid.
 
-    Monte Carlo p-values ``(k + 1) / (n + 1)`` are discrete; with hundreds
-    of shuffles the step is too small for the KS test to see. ``level`` is
-    the KS p-value below which uniformity is rejected.
+    Valid for p-values with ``P(p <= v) = v`` at every value ``v`` they can
+    take: continuous p-values, and Monte Carlo p-values
+    ``(k + 1) / (n_shuffles + 1)`` of an exchangeable null. For both, a false
+    failure has probability at most ``level``.
+
+    The statistic is the largest ``|share of p-values <= v - v|`` over the
+    observed values ``v``, referred to the Kolmogorov-Smirnov null
+    distribution. The Kolmogorov-Smirnov distance also compares just below
+    each observed value, where the distribution function of p-values on a
+    grid is a whole step under the diagonal: ``scipy.stats.kstest`` fails
+    exact p-values from 39 shuffles in 4.6% of samples of 1000 at ``level``
+    0.001. Rounding a continuous uniform sample up to the grid leaves the
+    share at or below each grid value unchanged, so without that comparison
+    the grid cannot add false failures.
+
+    The comparison just below a value exceeds the one at the value by the
+    share of the sample at that value, so a departure of that size can go
+    unseen. p-values that pass but are too coarse for the sample are
+    therefore refused: the most common value must hold a smaller share of
+    the sample than the distance rejected at ``level``. A p-value that is
+    always 1 is refused, and a sample at twice the Kolmogorov-Smirnov
+    rejection distance always fails.
+
+    Raises
+    ------
+    AssertionError
+        If the p-values are not finite or not uniform.
+    ValueError
+        If the p-values are too coarse for the check.
     """
     from scipy import stats
 
     p_values = np.asarray(p_values, dtype=float)
     assert np.all(np.isfinite(p_values)), "null p-values must be finite"
-    result = stats.kstest(p_values, "uniform")
-    assert result.pvalue >= level, (
-        f"{p_values.size} null p-values are not uniform: KS D = "
-        f"{result.statistic:.3f}, p = {result.pvalue:.2g}"
+    n = p_values.size
+    values, counts = np.unique(p_values, return_counts=True)
+    distance = float(np.max(np.abs(np.cumsum(counts) / n - values)))
+    p_uniform = float(stats.kstwo.sf(distance, n))
+    assert p_uniform >= level, (
+        f"{n} null p-values are not uniform: largest distance of their "
+        f"distribution function from the diagonal = {distance:.3f}, "
+        f"p = {p_uniform:.2g}"
     )
+    largest_share = float(counts.max() / n)
+    rejected_distance = float(stats.kstwo.isf(level, n))
+    if largest_share >= rejected_distance:
+        msg = (
+            f"{n} null p-values are too coarse to check for uniformity: "
+            f"{counts.max()} of them ({largest_share:.3g} of the sample) equal "
+            f"{values[counts.argmax()]:.3g}, and the check rejects at a "
+            f"distance of {rejected_distance:.3g}.\n"
+            "Why: a departure from uniform as large as the share of the "
+            "sample at one value can go unseen, so that share must be smaller "
+            "than the distance the check rejects at.\n"
+            f"Fix: use at least {int(np.ceil(2 / rejected_distance))} shuffles "
+            "per p-value, which puts half that distance at each value, or "
+            "check the rejection count at chosen levels with "
+            "assert_rejections_at_rate."
+        )
+        raise ValueError(msg)

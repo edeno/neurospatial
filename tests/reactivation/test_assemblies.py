@@ -807,22 +807,43 @@ class TestExplainedVarianceReactivation:
     def test_null_explained_variance_has_the_squared_correlation_distribution(
         self, rng: np.random.Generator
     ) -> None:
-        """For independent Gaussian correlation vectors of n pairs, r² follows
-        Beta(1/2, (n - 2)/2), mean 1/(n - 1), and the squared partial
-        correlation given one control Beta(1/2, (n - 3)/2), mean 1/(n - 2);
-        the reversed EV is the same under this null."""
-        n_pairs, n_draws = 100, 2000
+        """EV and REV follow the null law of a squared (partial) correlation.
+
+        For independent Gaussian vectors of n pairs, r² follows
+        Beta(1/2, (n - 2)/2), mean 1/(n - 1). The squared partial correlation
+        of two Gaussian vectors that are independent given one control
+        follows Beta(1/2, (n - 3)/2), mean 1/(n - 2).
+
+        The vector partialled out is a component shared by the other two, so
+        they correlate at 0.5 and are independent only given it: the control
+        for EV, the match for REV. Six pairs put the two Beta means at 1/5
+        and 1/4. A plain r² of any two of the vectors, EV and REV exchanged,
+        or the Beta law for the wrong number of controls then misses the mean
+        by 9 standard errors or more.
+        """
+        n_pairs, n_draws = 6, 2000
         ev, ev_given_control, rev_given_control = [], [], []
         for _ in range(n_draws):
-            template, match, control = rng.standard_normal((3, n_pairs))
+            template, match = rng.standard_normal((2, n_pairs))
             ev.append(
                 explained_variance_reactivation(template, match).explained_variance
             )
-            result = explained_variance_reactivation(
-                template, match, control_correlations=control
+            shared, own_template, own_match = rng.standard_normal((3, n_pairs))
+            ev_given_control.append(
+                explained_variance_reactivation(
+                    shared + own_template,
+                    shared + own_match,
+                    control_correlations=shared,
+                ).explained_variance
             )
-            ev_given_control.append(result.explained_variance)
-            rev_given_control.append(result.reversed_explained_variance)
+            shared, own_template, own_control = rng.standard_normal((3, n_pairs))
+            rev_given_control.append(
+                explained_variance_reactivation(
+                    shared + own_template,
+                    shared,
+                    control_correlations=shared + own_control,
+                ).reversed_explained_variance
+            )
         for values, n_controls in (
             (ev, 0),
             (ev_given_control, 1),
@@ -830,7 +851,7 @@ class TestExplainedVarianceReactivation:
         ):
             null = stats.beta(0.5, (n_pairs - 2 - n_controls) / 2)
             # 4 SE of the mean of n_draws values: a calibrated EV fails
-            # with probability 6e-5; an EV of 0 or of |r| misses by > 30 SE.
+            # with probability 6e-5.
             assert np.mean(values) == pytest.approx(
                 null.mean(), abs=4 * null.std() / np.sqrt(n_draws)
             )
