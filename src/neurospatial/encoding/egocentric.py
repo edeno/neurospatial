@@ -2170,6 +2170,42 @@ def _bin_reach(env: Environment) -> NDArray[np.float64]:
     return reach
 
 
+def _above_rounding(bound: float, n_bins: int, box: NDArray[np.float64]) -> float:
+    """``bound`` plus more than the rounding of the distances it bounds.
+
+    The bound holds in exact arithmetic. A measured distance and the bound
+    are each computed as a sum of at most ``n_bins + 2`` legs: a path passes
+    a bin center at most once, and has one more leg at each end. A leg is
+    the norm of a difference of coordinates, or on a track a stretch of the
+    centerline found from products of such differences. Each leg and each
+    addition is rounded by a few half units in the last place of its own
+    size, which adds up to about ``(n_bins + 5) * eps / 2`` times the
+    distance for each of the two sums. A bin center, a cell corner or a
+    projection onto a track is itself rounded by ``eps / 2`` times the size
+    of the coordinates. So a measured distance can exceed the computed bound
+    by about ``(n_bins + 5) * eps`` times ``scale``, the bound plus the
+    largest coordinate of the box. On a 150 cm track the measured run to
+    the far end was 150.0 against a bound of 149.99999999999997, and the
+    range, in whole 5 cm rings, ended at 150.
+
+    The margin is ``8 * (n_bins + 2) * eps * scale``, at least four times
+    that (4e-11 cm for that track, 1e-9 cm for 2,500 bins in a 1 m box). It
+    also covers the division and the product that turn the bound into whole
+    rings, so a position at the bound is strictly inside the last ring.
+
+    Parameters
+    ----------
+    bound : float
+        An upper bound on distances inside the environment.
+    n_bins : int
+        Number of bins of the environment.
+    box : ndarray, shape (2, n_dims)
+        Lower and upper corners of the box around the environment.
+    """
+    scale = bound + float(np.abs(box).max())
+    return bound + 8 * (n_bins + 2) * float(np.finfo(np.float64).eps) * scale
+
+
 def _largest_object_distance(
     env: Environment,
     object_positions: NDArray[np.float64],
@@ -2180,7 +2216,8 @@ def _largest_object_distance(
     """An upper bound on the distance to the nearest object from inside ``env``.
 
     No position that ``env.bin_at`` gives a bin is farther from its nearest
-    object than this. The one exception is bins found by nearest center with
+    object than this, in exact arithmetic and, with the margin of
+    :func:`_above_rounding`, as the distances are computed. The one exception is bins found by nearest center with
     no finite ``max_distance``, which have no farthest position: the bound
     then holds for positions at the bin centers.
 
@@ -2246,15 +2283,15 @@ def _largest_object_distance(
             farthest = np.min(through_centers, axis=0) + reach
             reachable = farthest[np.isfinite(farthest)]
             if reachable.size:
-                return float(reachable.max())
-    diagonal = float(np.hypot(*(box[1] - box[0])))
-    if objects.ndim == 3 or not len(objects):
-        return diagonal
-    # The point of the box farthest from an object is one of its corners.
-    to_far_corner = np.hypot(
-        *np.maximum(np.abs(objects - box[0]), np.abs(objects - box[1])).T
-    )
-    return max(diagonal, float(to_far_corner.min()))
+                return _above_rounding(float(reachable.max()), env.n_bins, box)
+    bound = float(np.hypot(*(box[1] - box[0])))
+    if objects.ndim == 2 and len(objects):
+        # The point of the box farthest from an object is one of its corners.
+        to_far_corner = np.hypot(
+            *np.maximum(np.abs(objects - box[0]), np.abs(objects - box[1])).T
+        )
+        bound = max(bound, float(to_far_corner.min()))
+    return _above_rounding(bound, env.n_bins, box)
 
 
 def _object_vector_grid(

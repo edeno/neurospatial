@@ -1,5 +1,8 @@
 """The default object-vector distance range covers every position in the environment."""
 
+import itertools
+
+import networkx as nx
 import numpy as np
 import pytest
 import shapely
@@ -377,3 +380,146 @@ def test_a_moving_object_never_tracked_is_refused_with_guidance():
     objects[:] = np.inf
     with pytest.raises(InputError, match="excluded ALL trajectory intervals"):
         _map(env, positions, objects, "euclidean")
+
+
+def _dwelling_session(run, dwell):
+    """Positions along ``run`` and back, with a third of the time at ``dwell``."""
+    positions = np.vstack([run, np.tile(dwell, (len(run), 1)), run[::-1]])
+    return np.arange(len(positions)) / 30.0, positions
+
+
+def _assert_the_whole_session_is_in_range(result, times):
+    settings = result.analysis_settings
+    assert settings["time_beyond_distance_range"] == 0.0
+    assert settings["fraction_of_time_in_distance_range"] == 1.0
+    assert np.nansum(result.occupancy) == pytest.approx(times[-1] - times[0])
+
+
+@pytest.mark.parametrize(
+    ("length", "bin_size", "angle", "start_x"),
+    [
+        (150.0, 2.0, 0.3, 0.0),
+        (150.0, 3.0, 0.3, 0.0),
+        (120.0, 0.7, 0.0, 0.0),
+        (50.0, 0.7, 0.0, 1000.3),
+    ],
+)
+def test_time_at_the_far_end_of_a_track_is_in_the_default_range(
+    length, bin_size, angle, start_x
+):
+    """The animal waits at the far end of a track; the object is at the start.
+
+    The run along the track is ``length``, a whole number of 5 cm rings, so
+    the range must end beyond it. A bound a few rounding errors short of
+    ``length`` ended the range at ``length`` and lost the third of the
+    session spent at the far end.
+    """
+    start = np.array([start_x, 0.0])
+    along = np.array([np.cos(angle), np.sin(angle)])
+    graph = nx.Graph()
+    graph.add_node(0, pos=tuple(start))
+    graph.add_node(1, pos=tuple(start + length * along))
+    graph.add_edge(0, 1, distance=length)
+    env = Environment.from_graph(
+        graph, [(0, 1)], bin_size=bin_size, units="cm", track_width=8.0
+    )
+    run = start + np.linspace(0.0, length, 300)[:, None] * along
+    # One cm past the end, inside the track's width: it projects to the end.
+    times, positions = _dwelling_session(run, start + (length + 1.0) * along)
+    assert (env.bin_at(positions) >= 0).all()
+
+    result = compute_object_vector_rate(
+        env, np.array([0.5]), times, positions, start[None], metric="geodesic"
+    )
+
+    assert result.distance_range == (0.0, length + 5.0)
+    _assert_the_whole_session_is_in_range(result, times)
+
+
+def test_time_at_the_far_well_of_a_w_track_is_in_the_default_range():
+    """Object at the first well, animal waiting at the last: 210 cm apart."""
+    nodes = {0: (0, 70), 1: (0, 0), 2: (35, 0), 3: (35, 70), 4: (70, 0), 5: (70, 70)}
+    order = [(0, 1), (1, 2), (2, 3), (2, 4), (4, 5)]
+    graph = nx.Graph()
+    for node, place in nodes.items():
+        graph.add_node(node, pos=(float(place[0]), float(place[1])))
+    graph.add_edges_from(order)
+    env = Environment.from_graph(
+        graph, order, bin_size=3.0, units="cm", track_width=8.0
+    )
+    corners = np.array([nodes[k] for k in (0, 1, 2, 4, 5)], dtype=float)
+    run = np.vstack(
+        [np.linspace(a, b, 60, endpoint=False) for a, b in itertools.pairwise(corners)]
+    )
+    times, positions = _dwelling_session(run, corners[-1])
+    assert (env.bin_at(positions) >= 0).all()
+
+    result = compute_object_vector_rate(
+        env, np.array([0.5]), times, positions, corners[:1], metric="geodesic"
+    )
+
+    assert result.distance_range == (0.0, 215.0)  # 70 + 35 + 35 + 70, and a ring
+    _assert_the_whole_session_is_in_range(result, times)
+
+
+def test_time_at_the_start_of_a_t_maze_is_in_range_with_rings_that_divide_the_run():
+    """Object 31 cm along the right arm, animal waiting at the start box.
+
+    The run is 100 cm up the stem and 31 cm along the arm. With rings of
+    131 / 29 cm it is 29 whole rings, so the range must have a thirtieth.
+    """
+    from neurospatial.simulation.mazes import make_t_maze
+
+    env = make_t_maze().env_track
+    start, junction = np.array([0.0, -50.0]), np.array([0.0, 50.0])
+    objects = np.array([[31.0, 50.0]])
+    run = np.vstack(
+        [
+            np.linspace(objects[0], junction, 40, endpoint=False),
+            np.linspace(junction, start, 100),
+        ]
+    )
+    times, positions = _dwelling_session(run, start)
+    assert (env.bin_at(positions) >= 0).all()
+    ring = 131.0 / 29
+
+    result = compute_object_vector_rate(
+        env,
+        np.array([0.5]),
+        times,
+        positions,
+        objects,
+        metric="geodesic",
+        distance_bin_size=ring,
+    )
+
+    assert result.n_distance_bins == 30
+    _assert_the_whole_session_is_in_range(result, times)
+
+
+def test_time_in_the_far_corner_of_a_box_is_in_the_default_euclidean_range():
+    """Object in one corner of the arena's box, animal waiting in the opposite one.
+
+    With rings that divide the diagonal into ten, the range must have an
+    eleventh. For this box the diagonal computed from its sides is one
+    rounding step below the distance between the two corners.
+    """
+    low = np.array([-250.1, 1000.3])
+    high = low + np.array([37.3, 40.0])
+    env = Environment.from_polygon(shapely.box(*low, *high), bin_size=2.5, units="cm")
+    run = np.linspace(low, high, 60)
+    times, positions = _dwelling_session(run, high)
+    assert (env.bin_at(positions) >= 0).all()
+    diagonal = float(np.linalg.norm(high - low))
+
+    result = compute_object_vector_rate(
+        env,
+        np.array([0.5]),
+        times,
+        positions,
+        low[None],
+        distance_bin_size=diagonal / 10,
+    )
+
+    assert result.n_distance_bins == 11
+    _assert_the_whole_session_is_in_range(result, times)
