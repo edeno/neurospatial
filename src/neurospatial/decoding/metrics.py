@@ -252,10 +252,12 @@ def _errors_and_misses(
             decoded, actual = decoded_positions, actual_positions
         else:
             paths = _environment_paths(env, call=call.removesuffix("()"))
-            decoded = _inside_the_bin(
+            decoded, decoded_bins = _inside_the_bin(
                 env, decoded_positions, decoded_bins, decoded_edge
             )
-            actual = _inside_the_bin(env, actual_positions, actual_bins, actual_edge)
+            actual, actual_bins = _inside_the_bin(
+                env, actual_positions, actual_bins, actual_edge
+            )
         errors[measured] = paths.between(
             decoded[measured],
             actual[measured],
@@ -270,35 +272,46 @@ def _inside_the_bin(
     positions: NDArray[np.float64],
     bins: NDArray[np.intp],
     just_outside: NDArray[np.bool_],
-) -> NDArray[np.float64]:
-    """Each position, moved onto its nearest bin where it lies just outside.
+) -> tuple[NDArray[np.float64], NDArray[np.intp]]:
+    """Each position, moved onto the environment where it lies just outside.
 
     A position within a bin spacing of the environment but outside every bin
-    (tracking jitter at an edge, a head beyond the side of a track) has its
-    nearest bin in ``bins``. On a track it stays where it is: the distance is
-    measured between projections onto the track, so it does not depend on
-    how far to the side a position lies. Elsewhere it moves to the nearest
-    point of that bin's cell, so the path is measured between points inside
+    (tracking jitter at an edge, a head beyond the side of a track) has the
+    bin with the nearest center in ``bins``. On a track it stays where it
+    is: the distance is measured between projections onto the track, so it
+    does not depend on how far to the side a position lies. Elsewhere it
+    moves onto a bin's cell, so the path is measured between points inside
     the environment and the error changes continuously as a position crosses
-    the environment's edge. Bins without a known cell (neither a rectilinear
-    grid nor planar cells) use their center.
+    the environment's edge:
+
+    - planar cells (hexagons, triangles, a rotated grid): the nearest point
+      of the nearest cell, which is the nearest point of the environment.
+      The bin with the nearest center is not always that cell (a position
+      beside a long triangle can be nearer another triangle's centroid), so
+      the position takes the bin of the cell it moved onto;
+    - a rectilinear grid, in any number of dimensions: the nearest point of
+      the cell of the bin with the nearest center;
+    - bins without a known cell: the bin's center.
 
     Parameters
     ----------
     env : Environment
     positions : NDArray[np.float64], shape (n_time_bins, n_dims)
     bins : NDArray[np.intp], shape (n_time_bins,)
-        Bin of each position, its nearest bin where ``just_outside``.
+        Bin of each position, the bin with the nearest center where
+        ``just_outside``.
     just_outside : NDArray[np.bool_], shape (n_time_bins,)
         Positions outside every bin that were given their nearest bin.
 
     Returns
     -------
-    NDArray[np.float64], shape (n_time_bins, n_dims)
+    positions : NDArray[np.float64], shape (n_time_bins, n_dims)
+    bins : NDArray[np.intp], shape (n_time_bins,)
+        The bin whose cell each returned position lies in or on.
     """
     rows = np.flatnonzero(just_outside)
     if not rows.size or env.binning.linearization is not None:
-        return positions
+        return positions, bins
     located: NDArray[np.float64] = positions.copy()
     grid = env.binning.rectilinear
     if grid is not None:
@@ -320,14 +333,16 @@ def _inside_the_bin(
             env._cache.get(CELL_POLYGONS, lambda: cell_polygons(env.binning)),
             dtype=object,
         )
+        points = shapely.points(positions[rows])
+        nearest = np.asarray(shapely.STRtree(cells).nearest(points), dtype=np.intp)
         # Each line runs from the cell's nearest point to the position.
-        lines = shapely.shortest_line(
-            cells[bins[rows]], shapely.points(positions[rows])
-        )
+        lines = shapely.shortest_line(cells[nearest], points)
         located[rows] = shapely.get_coordinates(lines)[::2]
+        bins = bins.copy()
+        bins[rows] = nearest
     else:
         located[rows] = env.bin_centers[bins[rows]]
-    return located
+    return located, bins
 
 
 def _paired_positions(

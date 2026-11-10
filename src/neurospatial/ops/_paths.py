@@ -1946,6 +1946,8 @@ class _OpenPaths(_EnvironmentPaths):
                     starts[seg[apart]] + f0[apart, None] * span,
                     starts[seg[apart]] + f1[apart, None] * span,
                     self._connected,
+                    from_start=f0[apart] == 0.0,
+                    to_end=f1[apart] == 1.0,
                 )
                 apart = apart[~through]
             # Several pieces can share an origin: mark, never unmark.
@@ -3145,6 +3147,15 @@ class _VertexFans:
     near ``v`` on either side. A pinch, or a vertex on the edge of the
     environment, blocks it.
 
+    A segment that starts or ends at ``v`` does not pass through it. Its
+    end is a point of every triangle around ``v``, and its piece there runs
+    from ``v`` into ``b`` alone (or out of ``a`` alone to ``v``), inside one
+    triangle. It is inside when the walk reaches ``b`` from ``a`` either way
+    round: the bin the caller gave the end is then joined to the triangle
+    the segment runs in, through connected triangles that all hold ``v``.
+    So a position on the edge of the environment, at a mesh vertex, has its
+    straight lines into the triangles around it; a pinch still separates.
+
     ``margin`` (a billionth of the mesh's coordinate scale, as in
     :class:`_MeshCores`) absorbs rounding where a probe or split point lands
     on ``v`` or on an edge: the stretches before and after it, and the
@@ -3235,6 +3246,9 @@ class _VertexFans:
         p0: NDArray[np.float64],
         p1: NDArray[np.float64],
         connected: Callable[[NDArray[np.intp], NDArray[np.intp]], NDArray[np.bool_]],
+        *,
+        from_start: NDArray[np.bool_],
+        to_end: NDArray[np.bool_],
     ) -> NDArray[np.bool_]:
         """Whether each piece passes inside around the one vertex its bins share.
 
@@ -3246,6 +3260,9 @@ class _VertexFans:
             The piece's ends, in ``a`` and ``b``.
         connected : callable
             Whether each bin pair is joined by an open connection.
+        from_start, to_end : ndarray of bool, shape (n,)
+            Whether ``p0`` is the start, and ``p1`` the end, of the whole
+            segment the piece belongs to, rather than a probe along it.
 
         Returns
         -------
@@ -3329,7 +3346,16 @@ class _VertexFans:
             along = np.sum((v - q0) * d, axis=1) / length**2
         on = np.flatnonzero(through & (along >= -slack) & (along <= 1 + slack))
         way = np.ones(on.size)
-        inside[on] = walk(on, way, exact=True) & walk(on, -way, exact=True)
+        one_way, other_way = walk(on, way, exact=True), walk(on, -way, exact=True)
+        # The segment's own end at v: the piece runs inside one triangle.
+        at_v = (
+            from_start[rows[on]]
+            & (np.linalg.norm(q0[on] - v[on], axis=1) <= self.margin)
+        ) | (
+            to_end[rows[on]]
+            & (np.linalg.norm(p1[rows[on]] - v[on], axis=1) <= self.margin)
+        )
+        inside[on] = np.where(at_v, one_way | other_way, one_way & other_way)
         if self.boundary is not None and inside.any():
             found = np.flatnonzero(inside)
             inside[found] = shapely.covers(

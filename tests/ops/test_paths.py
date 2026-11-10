@@ -457,3 +457,72 @@ class TestCellCorners:
         np.testing.assert_allclose(
             paths.between(start - 4.0, end - 4.0), [np.hypot(2.0, 2.0)], rtol=1e-12
         )
+
+
+class TestMeshVertexOnTheEdge:
+    """A path may start or end at a vertex on the environment's edge.
+
+    A line that passes through such a vertex from elsewhere is blocked, as
+    a line through a cell corner that touches a missing cell is on a grid.
+    A position that lies on the vertex is in the triangles around it, so a
+    path from it into any of them stays inside.
+    """
+
+    @staticmethod
+    def _mesh(room):
+        from neurospatial.layout import create_layout
+
+        return Environment.from_layout(
+            create_layout("TriangularMesh", boundary_polygon=room, point_spacing=3.0)
+        )
+
+    def test_a_path_from_a_vertex_on_the_edge_of_a_convex_room_is_straight(self):
+        from neurospatial.geometry import cell_polygons
+
+        room = box(0, 0, 30, 30)
+        env = self._mesh(room)
+        corners = np.unique(
+            np.round(
+                np.vstack(
+                    [polygon.exterior.coords for polygon in cell_polygons(env.binning)]
+                ),
+                9,
+            ),
+            axis=0,
+        )
+        on_edge = shapely.distance(shapely.points(corners), room.exterior) < 1e-9
+        vertices = corners[on_edge & (env.bin_at(corners) >= 0)]
+        assert len(vertices) >= 30
+        targets = np.random.default_rng(14).uniform(0.5, 29.5, (100, 2))
+        starts = np.repeat(vertices, len(targets), axis=0)
+        ends = np.tile(targets, (len(vertices), 1))
+        straight = np.linalg.norm(ends - starts, axis=1)
+        paths = _environment_paths(env, call="test")
+        assert np.all(paths.sees(starts, ends))
+        np.testing.assert_allclose(paths.between(starts, ends), straight, rtol=1e-12)
+        np.testing.assert_allclose(paths.between(ends, starts), straight, rtol=1e-12)
+
+    def test_a_line_through_a_vertex_on_the_edge_is_still_blocked(self):
+        # An L-shaped room whose inner corner (15, 15) is a mesh vertex.
+        corner = np.array([[15.0, 15.0]])
+        ell = shapely.Polygon([(0, 0), (30, 0), (30, 15), (15, 15), (15, 30), (0, 30)])
+        env = self._mesh(ell)
+        assert env.bin_at(corner)[0] >= 0
+        paths = _environment_paths(env, call="test")
+        # From one arm to the other exactly through the corner, and beside it.
+        start, end = np.array([[10.0, 20.0]]), np.array([[20.0, 10.0]])
+        assert not paths.sees(start, end)[0]
+        assert paths.between(start, end)[0] > np.hypot(10.0, 10.0) + 1e-6
+        assert paths.sees(start - [0.0, 0.1], end - [0.0, 0.1])[0]
+        # From the corner itself, every position the room holds in plain
+        # sight is the straight line away, whichever arm it is in.
+        targets = np.array([[5.0, 20.0], [20.0, 5.0], [5.0, 5.0], [14.0, 29.0]])
+        corners = np.tile(corner, (len(targets), 1))
+        straight = np.linalg.norm(targets - corner, axis=1)
+        assert np.all(paths.sees(corners, targets))
+        np.testing.assert_allclose(
+            paths.between(corners, targets), straight, rtol=1e-12
+        )
+        np.testing.assert_allclose(
+            paths.between(targets, corners), straight, rtol=1e-12
+        )
