@@ -67,6 +67,7 @@ from numpy.typing import NDArray
 from scipy import fft, ndimage, special
 from scipy.sparse import coo_array, csr_array
 
+from neurospatial._cache import CacheKey
 from neurospatial._exceptions import _format_error
 from neurospatial._results import ReadOnlyArraysMixin, ResultMixin
 from neurospatial.geometry import require_cartesian
@@ -528,6 +529,12 @@ def spatial_autocorrelation_radial(
     is a radial average of the 2-D spatial autocorrelogram, which correlates
     the map with shifted copies of itself instead of grouping bin pairs by
     geodesic distance.
+
+    The distances between bins depend only on the environment. For up to
+    about 5,600 bins (a 256 MB matrix) they are measured once, on the first
+    map, and kept with the environment, so the other units of a population
+    reuse them; ``env.clear_cache()`` drops them. A larger environment
+    measures the pairs of each map's finite bins on every call.
     """
     _validate_autocorr_input(env, firing_rate)
 
@@ -715,6 +722,49 @@ def _linear_autocorrelation(rate_map: NDArray[np.float64]) -> NDArray[np.float64
     return np.where(defined, np.clip(autocorr, -1.0, 1.0), np.nan)
 
 
+# The any-angle distance between every pair of an environment's bin centers.
+_PAIR_DISTANCES: CacheKey[NDArray[np.float64]] = CacheKey("geodesic_pair_distances")
+
+
+def _pair_distances(env: Environment, bins: NDArray[np.intp]) -> NDArray[np.float64]:
+    """Any-angle distance between every pair of ``bins``.
+
+    The distances depend only on the environment, not on the rate map, so
+    the matrix over all of its bins is measured once and kept in the
+    environment's analysis cache; each map then reads the pairs of its own
+    finite bins. The matrix is kept only when it fits the memory the path
+    engine allows its kept fields (256 MB, about 5,600 bins); a larger
+    environment measures the pairs of ``bins`` on every call.
+
+    Parameters
+    ----------
+    env : Environment
+        The environment whose bins are measured.
+    bins : ndarray of int, shape (n,)
+        Bin indices.
+
+    Returns
+    -------
+    ndarray, shape (n, n)
+        ``pairwise_distances(env, bins)``: symmetric, ``inf`` between
+        disconnected parts.
+    """
+    from neurospatial.ops._paths import _FIELD_CACHE_BYTES
+    from neurospatial.ops.distance import pairwise_distances
+
+    if 8 * env.n_bins**2 > _FIELD_CACHE_BYTES:
+        return pairwise_distances(env, bins)
+
+    def measure() -> NDArray[np.float64]:
+        matrix = pairwise_distances(env, np.arange(env.n_bins))
+        matrix.setflags(write=False)
+        return matrix
+
+    every_pair = env._cache.get(_PAIR_DISTANCES, measure)
+    chosen: NDArray[np.float64] = every_pair[np.ix_(bins, bins)]
+    return chosen
+
+
 def _spatial_autocorrelation_graph(
     env: Environment,
     firing_rate: NDArray[np.float64],
@@ -744,8 +794,6 @@ def _spatial_autocorrelation_graph(
     correlations : NDArray[np.float64], shape (n_distance_bins,)
         Autocorrelation at each distance.
     """
-    from neurospatial.ops.distance import pairwise_distances
-
     # Filter out NaN bins
     valid_bins = np.where(np.isfinite(firing_rate))[0]
 
@@ -762,7 +810,7 @@ def _spatial_autocorrelation_graph(
     if spread > 0:
         valid_rates = (valid_rates - valid_rates.mean()) / spread
 
-    dist_matrix = pairwise_distances(env, valid_bins)  # (n_valid, n_valid)
+    dist_matrix = _pair_distances(env, valid_bins)  # (n_valid, n_valid)
 
     # Vectorized extraction of upper triangle (avoid nested loops)
     triu_indices = np.triu_indices(n_valid, k=1)
