@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from calibration_helpers import assert_rejections_at_rate
+from measured_rate_helpers import require_measured_rejections
 from numpy.testing import assert_allclose
 from replay_helpers import (
     monte_carlo_rejection_rate,
@@ -570,26 +572,47 @@ class TestReplaySignificance:
         low, high = null_rejection_interval(len(p_values), alpha)
         assert low <= np.sum(p_values <= 0.1) <= high
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Each Tirole null alone is not calibrated on events of spikes from "
-            "random positions: of these 1000 events, 149 (spike-train shift), "
-            "197 (place-field shift) and 132 (column cycle) have p <= 0.1, "
-            "against 76 to 125 for a calibrated test; all three together give "
-            "98, which is why Tirole et al. require all three."
-        ),
+    @pytest.mark.parametrize(
+        ("null", "measured"),
+        [
+            pytest.param(
+                null,
+                measured,
+                id=null,
+                marks=pytest.mark.xfail(
+                    strict=True,
+                    raises=AssertionError,
+                    reason=(
+                        f"The {name} null alone is not calibrated on events of "
+                        f"spikes from random positions: {measured} of these "
+                        "1000 events have p <= 0.1, against 76 to 125 for a "
+                        "calibrated test; all three nulls together give 98, "
+                        "which is why Tirole et al. require all three."
+                    ),
+                ),
+            )
+            for null, name, measured in [
+                ("spike_train_circular", "spike-train shift", 149),
+                ("place_field_circular", "place-field shift", 197),
+                ("column_cycle", "column cycle", 132),
+            ]
+        ],
     )
     def test_each_tirole_null_alone_is_calibrated_without_replay(
-        self, random_position_p_values
+        self, random_position_p_values, null, measured
     ):
-        alpha = monte_carlo_rejection_rate(39, 0.1, strict=False)
-        counts = {
-            null: int(np.sum(random_position_p_values[null] <= 0.1))
-            for null in self.TIROLE_NULLS
-        }
-        low, high = null_rejection_interval(1000, alpha)
-        assert all(low <= count <= high for count in counts.values()), counts
+        """Each null is expected to fail the nominal-rate assertion, and only that.
+
+        Its count is first held to the 99% interval of its measured rate
+        (121 to 179, 165 to 230 and 105 to 160). A count outside that
+        interval fails the test, whichever way it moved, and a count inside
+        the nominal interval fails it as an unexpected pass.
+        """
+        rejected = random_position_p_values[null] <= 0.1
+        require_measured_rejections(rejected, measured)
+        assert_rejections_at_rate(
+            rejected, monte_carlo_rejection_rate(39, 0.1, strict=False)
+        )
 
     def test_time_bin_permutation_is_calibrated_without_replay(self, place_code):
         """Independent time bins are exchangeable, so this null is exact."""
