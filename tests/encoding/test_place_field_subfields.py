@@ -68,6 +68,96 @@ def test_neighbouring_field_is_found_after_a_subfield_split(
     assert not set(result.fields[0].tolist()) & set(result.fields[1].tolist())
 
 
+def _core_fields_from_the_image(env, rate, threshold=0.2):
+    """The two ``"core"`` fields of a strong and a weak field, from the image.
+
+    Regions are labeled with ``scipy.ndimage`` on the 40 x 40 grid image (8
+    neighbors, as the box's bins). The strong field is the core around the
+    map's maximum. The weak field is the region around the other local
+    maximum at ``threshold`` times that peak, among the bins outside the
+    core that are not above that peak (a higher bin there is a flank of the
+    strong field).
+    """
+    cells = np.round((env.bin_centers - 1.25) / 2.5).astype(int)
+    image = np.zeros((40, 40))
+    image[cells[:, 1], cells[:, 0]] = rate
+
+    def region(mask, seed):
+        labels = ndimage.label(mask, structure=np.ones((3, 3)))[0]
+        return labels == labels[seed]
+
+    # Bins with no higher neighbor. The fields are mirror images about
+    # y = 50, so each peak is two equal bins, one above the other.
+    summits = np.argwhere(image == ndimage.maximum_filter(image, size=3))
+    strong = tuple(summits[np.argmax(image[tuple(summits.T)])])
+    beyond = summits[summits[:, 1] > strong[1] + 4]  # more than 10 cm east
+    weak = tuple(beyond[np.argmax(image[tuple(beyond.T)])])
+    floor = threshold * image[strong]
+    core_level = floor + threshold * (image[strong] - floor)
+    whole = region(image >= floor, strong)
+    core = region(image >= core_level, strong)
+    assert core.sum() < whole.sum() / 2  # the subfield rule splits the region
+    free = ~core & (image <= image[weak])
+    weak_floor = threshold * image[weak]
+    weak_whole = region(free & (image >= weak_floor), weak)
+    weak_core = region(
+        free & (image >= weak_floor + threshold * (image[weak] - weak_floor)), weak
+    )
+    assert weak_core.sum() >= weak_whole.sum() / 2  # the weak field is not split
+    return [
+        np.flatnonzero(mask[cells[:, 1], cells[:, 0]]) for mask in (core, weak_whole)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("second_peak", "separation", "n_bins", "n_nearer_strong", "centroid_x"),
+    [(3.3, 24.0, 184, 80, 47.03), (3.0, 26.0, 192, 78, 48.68)],
+)
+def test_core_gives_the_weaker_field_the_stronger_fields_skirt(
+    box, second_peak, separation, n_bins, n_nearer_strong, centroid_x
+):
+    """With ``"core"`` the weak field wraps around the strong one.
+
+    The strong field keeps only its core. Its skirt stays unassigned and
+    joins the weak field's region, which is larger than the weak field and
+    has its centroid pulled toward the strong field (``subfields`` in
+    ``detect_place_fields``); ``"watershed"`` divides the two at the valley.
+    """
+    rate, first, second = _two_fields(box, second_peak, separation)
+    centers = box.bin_centers
+
+    def nearer_strong(bins):
+        to_first = np.linalg.norm(centers[bins] - first, axis=1)
+        return int(np.sum(to_first < np.linalg.norm(centers[bins] - second, axis=1)))
+
+    result = detect_place_fields(box, rate, bandwidth=0.0, subfields="core")
+
+    strong, weak = result.fields
+    expected_strong, expected_weak = _core_fields_from_the_image(box, rate)
+    np.testing.assert_array_equal(strong, expected_strong)
+    np.testing.assert_array_equal(weak, expected_weak)
+    assert nearer_strong(strong) >= len(strong) - 2  # the core, around its peak
+    # The weak field: the documented size, with the skirt on every side of
+    # the strong peak, the far side included.
+    assert len(weak) == n_bins
+    assert nearer_strong(weak) == n_nearer_strong
+    skirt = centers[weak] - first
+    assert skirt[:, 0].min() < -12.5  # west of the strong peak, away from the weak
+    assert skirt[:, 1].min() < -12.5
+    assert skirt[:, 1].max() > 12.5
+    table = result.fields_table()
+    assert table["centroid_x"][1] == pytest.approx(centroid_x, abs=0.01)
+    assert second[0] - table["centroid_x"][1] > 11.5  # pulled toward the strong field
+
+    divided = detect_place_fields(box, rate, bandwidth=0.0, subfields="watershed")
+
+    assert nearer_strong(divided.fields[1]) == 0
+    assert len(divided.fields[1]) < len(weak) / 2
+    np.testing.assert_allclose(
+        _centroid(box, rate, divided.fields[1]), second, atol=1.5
+    )
+
+
 @pytest.mark.parametrize("subfields", [True, False, "Core", "basin"])
 def test_unknown_subfield_rule_is_refused(box, subfields):
     rate, _, _ = _two_fields(box, 3.3, 24.0)

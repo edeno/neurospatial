@@ -5988,9 +5988,16 @@ def detect_place_fields(
 
         - ``"core"``: the rule of FMAToolbox ``MapStats`` [2]_. When the
           field's core is less than half the field, the core is the field
-          and the rest is searched again from its own peak. The weaker
-          field can then grow through the stronger one's leftover edge and
-          around it, which pulls its centroid toward the stronger field.
+          and the rest is searched again from its own peak. The skirt of
+          the stronger field (its bins below the core level) is then left
+          unassigned, and the weaker of two touching fields can take it:
+          that field wraps around the stronger one, so it is larger than
+          the weak field alone and its centroid lies toward the stronger
+          field. For a 10 Hz and a 3.3 Hz field 24 cm apart (8 cm wide,
+          2.5 cm bins), the weaker field has 184 bins, 80 of them nearer
+          the stronger peak, and a centroid 12 cm toward the stronger
+          field. Use ``"watershed"`` when the size or centroid of each
+          field matters.
         - ``"watershed"``: the same fields as ``"core"``, but each bin goes
           to the field whose peak it is reached from by flooding down the
           map, and each field ends at ``threshold`` times its own peak. Two
@@ -6026,12 +6033,21 @@ def detect_place_fields(
 
     1. **Optional map-mean filter**: if an explicit finite ``max_mean_rate``
        is exceeded, return no fields.
-    2. **Peak**: take the highest bin not yet assigned. Stop if its rate is
-       below ``max(min_peak_rate, min_secondary_peak_fraction * map_max)``.
+    2. **Peak**: take the highest bin not yet assigned or set aside. Stop if
+       its rate is below
+       ``max(min_peak_rate, min_secondary_peak_fraction * map_max)``.
        Because peaks are taken in decreasing order, every later peak would
-       also fail.
+       also fail. If a neighbor of the bin has a higher rate in the full
+       map, the bin is not a peak but the flank of a field already
+       assigned, left behind when that field was cut at its own threshold
+       or at its core. Set this one bin aside and take the next highest;
+       the bins around it stay unassigned, so a neighboring field is still
+       found from its own peak. This is the n-D form of neurocode's 1-D
+       check that the rate dips below threshold between two fields, and of
+       the ``localmax`` option of ``MapStats``.
     3. **Field**: the bins connected to the peak through ``env.connectivity``
-       whose rate is at least ``threshold`` times this peak.
+       whose rate is at least ``threshold`` times this peak, among the bins
+       not assigned and not set aside.
     4. **Coalescent fields**: with ``subfields="core"``, repeat step 3 on the
        map minus the field's floor ``m = threshold * peak``, at ``threshold``
        of the remaining height: the core is the connected region above
@@ -6040,7 +6056,11 @@ def detect_place_fields(
        region, and the core replaces the field; the rest of the region stays
        unassigned, so the neighboring field is found from its own peak with
        the same rules. This is the subfield rule of FMAToolbox ``MapStats``
-       [2]_ (``Analyses/MapStats.m``, lines 194-203).
+       [2]_ (``Analyses/MapStats.m``, lines 194-203). The neighboring
+       field's region can include the first field's skirt (the unassigned
+       bins around the core that are not above the second peak), so it can
+       wrap around the first field; ``subfields="watershed"`` divides the
+       two at the valley instead.
 
        With ``subfields="watershed"``, the search runs as with ``"core"``
        and the fields it keeps (step 5) give the peaks. Every bin then goes
@@ -6062,15 +6082,10 @@ def detect_place_fields(
        subfields is at most 0.75 times the subfield's own peak (in their
        code; the paper's text says the larger peak), and they do not cut a
        subfield at its own threshold.
-    5. **Keep or discard**: mark the field's bins as assigned. Keep it only
-       if it is larger than the smallest field (below) and its peak bin is a
-       local maximum of the full map (no neighbor has a higher rate). A candidate
-       that rises toward a neighbor is the flank of a field already assigned,
-       left behind when that field was cut at its own threshold. This is the
-       n-D form of neurocode's 1-D check that the rate dips below threshold
-       between two fields, and of the ``localmax`` option of ``MapStats``.
+    5. **Keep or discard**: mark the field's bins as assigned. Keep the
+       field only if it is larger than the smallest field (below).
     6. Repeat from step 2 until a peak fails the floor or every finite bin
-       is assigned.
+       is assigned or set aside.
 
     The floor in step 2 stops the search on noise. Without it, each
     successive threshold is a fraction of a smaller peak, so small bumps far
@@ -6348,28 +6363,42 @@ def _search_place_fields(
     measures = np.asarray(env.binning.bins.sizes, dtype=np.float64)
     # Unassigned bins keep their rate; assigned and missing bins are NaN.
     remaining = np.where(finite, firing_rate, np.nan)
+    # The order in which bins are the highest one left: from the highest rate
+    # down, at equal rates the lowest bin index first.
+    order = np.flatnonzero(finite)
+    order = order[np.argsort(-firing_rate[order], kind="stable")]
+    turn = np.full(firing_rate.shape, -1, dtype=np.intp)
+    turn[order] = np.arange(order.size)
+    # A bin with a higher neighbor in the full map is the flank of a field,
+    # not a peak (NaN compares False, so a missing neighbor is not higher).
+    pairs = env.edge_pairs
+    first, second = firing_rate[pairs[:, 0]], firing_rate[pairs[:, 1]]
+    flank = np.zeros(firing_rate.shape, dtype=bool)
+    flank[pairs[first < second, 0]] = True
+    flank[pairs[second < first, 1]] = True
     peaks: list[int] = []
     candidates: list[NDArray[np.int64]] = []
-    while np.any(np.isfinite(remaining)):
-        peak_idx = int(np.nanargmax(remaining))
-        peak_rate = float(remaining[peak_idx])
+    for peak_idx in order[~flank[order]].tolist():
+        if np.isnan(remaining[peak_idx]):
+            continue  # already in the field of a higher peak
+        peak_rate = float(firing_rate[peak_idx])
         if peak_rate <= 0 or peak_rate < min_peak:
             break
-        if _rises_toward_a_neighbor(peak_idx, peak_rate, firing_rate, env):
-            # A flank of a field already cut, not a peak. Only this bin is
-            # set aside: the region above its own floor can run into a
-            # neighbouring field, which must still be found from its own peak.
-            remaining[peak_idx] = np.nan
-            continue
+        # A flank bin is set aside when it is the highest bin left, and only
+        # that bin: the region above its own floor can run into a neighboring
+        # field, which must still be found from its own peak. So when this
+        # peak is the highest bin left, every unassigned bin before it in the
+        # order has been set aside, and the others can join its field.
+        available = turn >= turn[peak_idx]
 
         # NaN compares False, so assigned and missing bins are excluded.
         floor = peak_rate * threshold
-        field_bins = _seed_component(peak_idx, remaining >= floor, env)
+        field_bins = _seed_component(peak_idx, available & (remaining >= floor), env)
         # The watershed takes its peaks from the "core" search.
         if subfields is not None:
             # FMAToolbox MapStats: the same search on the map minus the floor.
             core_level = floor + (peak_rate - floor) * threshold
-            core = _seed_component(peak_idx, remaining >= core_level, env)
+            core = _seed_component(peak_idx, available & (remaining >= core_level), env)
             if measures[core].sum() < measures[field_bins].sum() / 2:
                 field_bins = core
         remaining[field_bins] = np.nan
@@ -7116,20 +7145,6 @@ def is_place_cell(
             kind="place",
         )
     return rate_map().is_place_cell(min_info=min_info)
-
-
-def _rises_toward_a_neighbor(
-    peak_idx: int,
-    peak_rate: float,
-    firing_rate: NDArray[np.float64],
-    env: Environment,
-) -> bool:
-    """Whether a neighbor of the candidate peak has a higher rate in the full map.
-
-    Such a candidate is the flank of an already assigned field, not a peak.
-    """
-    neighbors = list(env.connectivity.neighbors(peak_idx))
-    return bool(np.any(firing_rate[neighbors] > peak_rate))
 
 
 def _watershed_basins(
