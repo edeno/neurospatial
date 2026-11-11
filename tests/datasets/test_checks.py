@@ -273,6 +273,46 @@ def test_untracked_rows_a_scoring_gap_apart_are_one_stretch(
             run_checks(rec, stated=square_stated)
 
 
+def _with_marks(rec, times):
+    """``rec`` with one electrode's detected spikes at ``times``, unsorted."""
+    from neurospatial.datasets import Conversion
+    from neurospatial.datasets._marks import UNSORTED, SpikeMarks
+
+    marks = SpikeMarks(
+        electrodes=("T1",),
+        times=(times,),
+        amplitudes=(np.ones((times.size, 4), np.float32),),
+        clusters=(np.full(times.size, UNSORTED),),
+        unit="uV",
+        basis=Conversion("marks: peaks (synthetic)", "stated", "the test"),
+        reader=lambda folder, electrode: np.empty((0, 4, 50), np.float32),
+        folder=".",
+    )
+    return dataclasses.replace(rec, marks=marks)
+
+
+def test_unsorted_spikes_place_an_epoch_on_the_clock(square_recording, square_stated):
+    """An untracked trial whose electrodes were not sorted is on the clock by its marks.
+
+    Its epoch lies past every unit's spikes and every tracking sample, so
+    only the detected spikes in rec.marks show the recording reached it;
+    marks off the clock refuse as unit spikes do.
+    """
+    trial = np.array([[1000.0, 1100.0]])
+    rec = dataclasses.replace(
+        square_recording, epochs={"run": np.array([[0.0, 60.0]]), "open_field": trial}
+    )
+    with pytest.raises(DatasetCheckError, match=r"epochs\['open_field'\] has 1 row"):
+        run_checks(rec, stated=square_stated)
+    in_trial = np.linspace(1000.5, 1099.5, 200)
+    marked = _with_marks(rec, in_trial)
+    assert run_checks(marked, stated=square_stated).failed_checks == ()
+    off_clock = _with_marks(rec, np.concatenate([in_trial, [50_000.0]]))
+    n_spikes = sum(train.size for train in rec.spike_times) + in_trial.size + 1
+    with pytest.raises(DatasetCheckError, match=rf"1 of {n_spikes} spikes \("):
+        run_checks(off_clock, stated=square_stated)
+
+
 def test_spikes_just_past_tracking_pass(square_recording, square_stated):
     """Ephys running a little past the camera is within the clock's slack."""
     trains = list(square_recording.spike_times)

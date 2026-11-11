@@ -2,7 +2,8 @@
 
 Two checks refuse, because a failure means the arrays would be wrong:
 
-- **clock**: spikes, events and epochs are on the tracking clock;
+- **clock**: spikes (the units' and every detected spike in ``rec.marks``),
+  events and epochs are on the tracking clock;
 - **units**: the position span and sampling rate match what the dataset
   states. A value no source states, inferred from the dataset's files, is
   compared too, but a mismatch with it warns instead of refusing: only a
@@ -309,7 +310,10 @@ def _clock_finding(rec: Recording) -> str | None:
             f"no epoch holds a tracking sample: epochs run from {rows.min():.6g} to "
             f"{rows.max():.6g} s, tracking from {first:.6g} to {last:.6g} s"
         )
-    trains = [train for train in rec.spike_times if train.size]
+    # A trial whose electrodes were not sorted holds detected spikes in
+    # rec.marks only; they are recorded data on the same clock all the same.
+    marks = rec.marks.times if rec.marks is not None else ()
+    trains = [train for train in (*rec.spike_times, *marks) if train.size]
     spikes = np.concatenate(trains) if trains else np.empty(0)
     slack = _slack(last - first)
     near = (spikes >= first - slack) & (spikes <= last + slack)
