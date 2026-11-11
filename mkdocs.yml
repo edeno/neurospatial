@@ -205,6 +205,7 @@ nav:
       - "Bhattarai 2020: replay in a sequence task (rat)": datasets/bhattarai_2020.md
       - "Huszár 2022: figure-eight maze with sleep and ripples (mouse)": datasets/huszar_2022.md
       - "Carey 2019: replay on a food-or-water T-maze (rat)": datasets/carey_2019.md
+      - "Ólafsdóttir 2016: Z-track, rest, grid and place cells (rat)": datasets/olafsdottir_2016.md
   - Visualization:
       - Field Animation: user-guide/animation.md
       - Animation Overlays: animation_overlays.md
