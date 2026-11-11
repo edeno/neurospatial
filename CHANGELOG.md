@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Replay: `TIROLE_2022` requires 5 time bins, as the authors' code does
+
+- **Behavior change:** `TIROLE_2022` judges an event with at least 5 time
+  bins, as the Bendor-lab code scores one (`replay_scoring.m`), instead of
+  at least 5 active cells. The paper's cell rule is a candidate-selection
+  rule in its code (`extract_replay_events.m`), and the code tests an
+  event's halves, which need not hold 5 active cells, with the same
+  scoring. The notes now say how to test the halves (alpha 0.025) and that
+  the code's p-value without the +1 calls the same events at 1,000
+  shuffles.
+
 ### Datasets: Tirole et al. 2022, two novel linear tracks
 
 - New `tirole_2022` loader (Zenodo 7114733, CC0, the mirror of Dryad
