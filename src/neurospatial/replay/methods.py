@@ -4610,9 +4610,10 @@ OLAFSDOTTIR_2017 = ReplayMethod(
         "(10 cm).",
         "Ólafsdóttir et al. (2016) used the same line search with p < 0.2 "
         "for 'robust' events and p < 0.025 for the strongest, choosing the "
-        "direction with the lower p-value. The Barry-lab Python port differs "
-        "(speeds of 1 to 50 m/s, zero padding off the track, a third of the "
-        "points on the track) and is not confirmed as the lab's code.",
+        "direction with the lower p-value. That paper's Supplementary "
+        "Software (lineTraj_decode.m) searches 1 to 50 m/s, zero-pads the "
+        "posterior beyond the track and drops lines on it for under a third "
+        "of its time bins; see OLAFSDOTTIR_2016 for what these change.",
     ),
 )
 
@@ -5119,6 +5120,27 @@ OLAFSDOTTIR_2016 = dataclasses.replace(
         "speeds below 3 cm/s, the last 10 cm at either end and 5 cm around "
         "each corner excluded; place cells peak above 1 Hz with fields at "
         "least 20 cm long.",
+        "The paper's Supplementary Software (decode_calcPosterior.m, "
+        "lineTraj_decode.m, read) differs from this recipe: speeds from 1 m/s "
+        "where the Methods say 2; the posterior zero-padded beyond the track "
+        "where this recipe gives the median band mass of Davidson et al.; "
+        "lines on the posterior for under a third of its time bins dropped; "
+        "time bins without spikes set to 0 and the best band mass divided by "
+        "the summed probability, so by the time bins with spikes; line "
+        "positions rounded to 2 cm bins. Measured on 150 rest candidates of "
+        "olafsdottir_2016's R2336-2015-11-01, with a port of that code and "
+        "the Methods' shuffle (each map rotated by 1 to n_bins - 1 bins, 100 "
+        "times): the code judges 91 replay and this recipe 93, 88 by both, "
+        "3 by the code alone and 5 by this recipe alone. Of the code's "
+        "choices only the zero padding changes a verdict: with the median "
+        "instead the port calls 3 more of the 150, 3 of the 5 this recipe "
+        "alone calls. A 2 m/s floor, keeping every line, and dividing by "
+        "every time bin (this recipe's empty_time_bins='keep') change none. "
+        "The rest of the disagreement is near p = 0.2, where the two draw "
+        "different shuffles. "
+        "Pinned on 30 of those events by "
+        "test_the_papers_code_against_the_preset "
+        "(tests/datasets/test_olafsdottir_2016.py).",
     ),
 )
 
