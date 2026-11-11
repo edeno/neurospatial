@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from neurospatial import Environment, Intervals
     from neurospatial.animation import Animation
     from neurospatial.datasets._lfp import LFPSource
+    from neurospatial.datasets._marks import SpikeMarks
     from neurospatial.datasets._video import VideoSource
     from neurospatial.io.nwb import NWBUnits
 
@@ -285,6 +286,12 @@ class Recording(ReadOnlyArraysMixin):
         clock, each with its basis. Nothing is downloaded until
         ``rec.lfp.fetch()``, which returns the samples and their times on the
         recording's clock. None without an LFP.
+    marks : SpikeMarks or None
+        Every detected spike of each electrode, sorted or not, with its peak
+        amplitude on each channel and the authors' cluster, where the dataset
+        keeps every spike's waveform: the input of a clusterless decoder. The
+        waveforms are read on request, ``rec.marks.waveforms(electrode)``.
+        None otherwise.
 
     Raises
     ------
@@ -337,6 +344,7 @@ class Recording(ReadOnlyArraysMixin):
     verified: bool = False
     video: VideoSource | None = None
     lfp: LFPSource | None = None
+    marks: SpikeMarks | None = None
 
     #: Physical unit of each ``summary()`` key; ``{units}`` is
     #: ``position_units``.
