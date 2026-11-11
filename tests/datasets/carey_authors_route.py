@@ -381,6 +381,66 @@ def authors_spike_trains(rec, folder) -> tuple[FloatArray, ...]:
     return tuple(trains)
 
 
+def _neurospatial_sequences(
+    q: FloatArray,
+    tc: FloatArray,
+    times: FloatArray,
+    decoded: NDArray[np.bool_],
+    pathlength: float,
+    max_jump_bins: int,
+) -> tuple[FloatArray, FloatArray]:
+    """MAP and raw sequences from neurospatial's ``decode_position`` and ``replay_segments``.
+
+    The environment is the code's 111 position bins along the trajectory;
+    unoccupied bins (NaN tuning curves) get zero prior and rate, the
+    package's way to leave a bin out. ``replay_segments`` runs within each
+    run of decoded rows, as DecSeqDetectZ.m breaks at undecoded ones.
+    """
+    from neurospatial import Environment
+    from neurospatial.decoding import decode_position
+    from neurospatial.replay import replay_segments
+
+    n_bins = tc.shape[1]
+    env = Environment.linear_track(
+        endpoints=[(0.0, 0.0), (pathlength, 0.0)],
+        bin_size=pathlength / n_bins,
+        units="cm",
+    )
+    supported = np.isfinite(tc).all(axis=0)
+    prior = supported * np.asarray(env.bin_sizes, dtype=np.float64)
+    rows = np.flatnonzero(decoded)
+    z = np.full(times.size, np.nan)
+    if rows.size == 0:
+        return z, np.empty((0, 2))
+    post = np.asarray(
+        decode_position(
+            env,
+            q[:, rows].T,
+            np.nan_to_num(tc, nan=0.0),
+            dt=Q_DT,
+            prior=prior / prior.sum(),
+            times=times[rows],
+            fractional_counts=True,
+        ).posterior
+    )
+    z[rows] = np.argmax(post, axis=1) + 1.0
+    width = float(env.bin_sizes[0])
+    found: list[tuple[float, float]] = []
+    for block in np.split(np.arange(rows.size), np.flatnonzero(np.diff(rows) != 1) + 1):
+        if block.size < MIN_SEQ_LENGTH:
+            continue
+        seg = replay_segments(
+            env,
+            post[block],
+            times[rows][block],
+            max_jump=(max_jump_bins + 0.5) * width,
+            method="map",
+            min_time_bins=MIN_SEQ_LENGTH,
+        )
+        found += list(zip(seg.start_times, seg.end_times, strict=True))
+    return z, (np.array(sorted(found)) if found else np.empty((0, 2)))
+
+
 @dataclass
 class Side:
     """One trajectory's decode, as Generate_DecSeqShuf.m's ``expCond`` holds it."""
@@ -405,12 +465,20 @@ def decode_side(
     chew: FloatArray | None,
     *,
     colon_kind: Literal["octave", "matlab"] = "octave",
+    decoder: Literal["authors", "authors_no_tie", "neurospatial"] = "authors",
 ) -> Side:
     """Generate_DecSeqShuf.m for one side (shuffles off).
 
     ``pos_xy`` are the tracked samples in cm (frames with x or y of 0 dropped,
     as ``LoadPos`` does); ``trials`` the side's matched trials (GetMatchedTrials);
     ``chew`` R042's ``*times.mat`` intervals or R044's spiking seconds, else None.
+
+    ``decoder`` sets what follows the shared preprocessing (units, tuning
+    curves, spike density, the rows decoded): ``"authors"`` is DecodeZ.m and
+    DecSeqDetectZ.m; ``"authors_no_tie"`` the same with unoccupied bins given
+    no likelihood (the bin-one tie removed); ``"neurospatial"`` is
+    ``decode_position`` (uniform prior over occupied bins, 5 ms exposure,
+    fractional counts) and ``replay_segments`` with ``CAREY_2019``'s settings.
     """
     starts = trials[:, 0]
     # nearest_idx3(runStart, center_pb, 1): the first break strictly after, the
@@ -457,9 +525,23 @@ def decode_side(
     n_neurons = np.sum(q_raw >= 1, axis=0)
     p = decode_z(q, tc, float(np.median(np.diff(centers))))
     p[n_neurons < N_MIN_NEURONS] = np.nan
-    z = map_bins(p)
     max_jump = round(MAX_JUMP_CM / (pathlength / N_EDGES))
-    seqs = detect_sequences(centers, z, max_jump=max_jump, min_length=MIN_SEQ_LENGTH)
+    if decoder == "authors_no_tie":
+        # Only decoded rows; a row whose occupied bins are all impossible (an
+        # active cell with a zero rate everywhere it was seen) has no answer.
+        decoded = ~np.isnan(p).all(axis=1)
+        unoccupied = ~np.isfinite(tc).all(axis=0)
+        p[np.ix_(decoded, unoccupied)] = 0.0
+        p[decoded & ~(p > 0).any(axis=1)] = np.nan
+    if decoder == "neurospatial":
+        z, seqs = _neurospatial_sequences(
+            q, tc, centers, ~np.isnan(p).all(axis=1), pathlength, max_jump
+        )
+    else:
+        z = map_bins(p)
+        seqs = detect_sequences(
+            centers, z, max_jump=max_jump, min_length=MIN_SEQ_LENGTH
+        )
     return Side(
         units=units,
         tc=tc,
@@ -509,6 +591,7 @@ def session_sequences(
     events: FloatArray,
     *,
     colon_kind: Literal["octave", "matlab"] = "octave",
+    decoder: Literal["authors", "authors_no_tie", "neurospatial"] = "authors",
 ) -> tuple[dict[str, FloatArray], dict[str, Side]]:
     """The authors' eligible sequences of one loaded ``carey_2019`` session.
 
@@ -536,6 +619,7 @@ def session_sequences(
             np.asarray(rec.events["center_photobeam"]),
             chew,
             colon_kind=colon_kind,
+            decoder=decoder,
         )
         for side in ("left", "right")
     }
