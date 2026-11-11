@@ -34,7 +34,7 @@ AUTHORS_PER_RAT = {"R042": 1210, "R044": 91, "R050": 393, "R064": 1963}
 
 def _reference() -> dict[tuple[str, str], np.ndarray]:
     rows: dict[tuple[str, str], list[tuple[float, float]]] = {}
-    with open(REFERENCE / "authors_octave_sequences.csv") as f:
+    with (REFERENCE / "authors_octave_sequences.csv").open() as f:
         for r in csv.DictReader(f):
             rows.setdefault((r["session"], r["side"]), []).append(
                 (float(r["start_s"]), float(r["end_s"]))
@@ -63,10 +63,14 @@ def test_reference_counts_are_the_octave_run():
     )
 
 
-def _check_session(session: str, ref: dict[tuple[str, str], np.ndarray]) -> dict[str, int]:
+def _check_session(
+    session: str, ref: dict[tuple[str, str], np.ndarray]
+) -> dict[str, int]:
     rec = load("carey_2019", session=session)
     events = _intervals_of(_paper_candidates(session))
-    eligible, sides = session_sequences(rec, cache_root() / "carey_2019" / session, events)
+    eligible, sides = session_sequences(
+        rec, cache_root() / "carey_2019" / session, events
+    )
     info = json.loads((REFERENCE / "authors_octave_sessions.json").read_text())[session]
     folder = cache_root() / "carey_2019" / session
     names = sorted(p.name for p in list(folder.glob("*.t")) + list(folder.glob("*._t")))
@@ -74,7 +78,11 @@ def _check_session(session: str, ref: dict[tuple[str, str], np.ndarray]) -> dict
         assert len(sides[side].units) == len(info[side]["units"])
         assert len(sides[side].raw_sequences) == info[side]["raw_sequences"]
         theirs = ref.get((session, side), np.empty((0, 2)))
-        ours = eligible[side][np.argsort(eligible[side][:, 0])] if len(eligible[side]) else eligible[side]
+        ours = (
+            eligible[side][np.argsort(eligible[side][:, 0])]
+            if len(eligible[side])
+            else eligible[side]
+        )
         np.testing.assert_array_equal(ours, theirs)
     assert names  # the session's spike files are cached
     return {side: len(eligible[side]) for side in ("left", "right")}
