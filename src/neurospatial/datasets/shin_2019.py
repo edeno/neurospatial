@@ -110,7 +110,10 @@ __all__ = [
     "load_session",
 ]
 
-#: Filled in by the worked result's test (see ``tests/datasets/test_shin_2019.py``).
+#: The paper's per-visit counts of SWRs, candidate events and replay events,
+#: attempted on its six rats; five of the six conditions fixed before the run
+#: hold. The numbers are ``PER_VISIT``, recomputed by
+#: ``tests/datasets/test_shin_2019.py``.
 WORKED_RESULT: dict[str, Any] = {
     "status": "not possible yet",
     "level": None,
@@ -122,8 +125,61 @@ WORKED_RESULT: dict[str, Any] = {
     "criterion": None,
     "parameters": None,
     "unmatched": (),
-    "attempted": None,
-    "why": "the per-visit counts are being measured",
+    "attempted": {
+        "value": 1.024,
+        "criterion": (
+            "fixed after the well-visit rule was written and JS14's visits counted, "
+            "before any SWR was detected: over the six rats' correct trials, each "
+            "per-visit mean within half the paper's SD of its mean (immobility "
+            "10.3 +/- 2.85 s, SWRs 7.3 +/- 2.75, candidates 2.3 +/- 1.2, replay "
+            "0.9 +/- 0.6) and each share of visits with two or more events within "
+            "10 percentage points (SWRs 85.7%, candidates 53.4%). Five hold: "
+            "immobility 9.46 s, SWRs 6.68, candidates 2.98 and replay 1.02 per "
+            "visit (the value above), and 62.2% of visits with two or more "
+            "candidates; 75.5% with two or more SWRs is 10.2 points short of "
+            "85.7%, so the criterion is not met"
+        ),
+        "parameters": (
+            "1,488 visits of the 1,537 correct trials (the others: the rat never "
+            "within 15 cm of the start well before the trial); a visit is the stay "
+            "at a correct trial's start well, arrival and departure the first and "
+            "last sample of the last stay within 15 cm of the well, entry the "
+            "first sample from arrival at or below 4 cm/s, exit the start of the "
+            "last stretch above 4 cm/s reaching departure, speed by "
+            "compute_speed(smooth_window=0.5); SWRs by ripple_detection's "
+            "shin_2019 at 0eddae64 per run session on the Ref ON channel of every "
+            "CA1 tetrode holding a unit, counted by start; candidates by its "
+            "decoding_candidates stage, place cells the CA1 units with 100 spikes "
+            "in every run session and a 3 Hz peak in that session's maps; "
+            "templates per session and trajectory from its trials above 5 cm/s, "
+            "2 cm bins, a 4 cm SD Gaussian, 20 ms occupancy, cut 15 cm from each "
+            "well; SHIN_2019 unchanged on decode_jointly over the trajectories run "
+            "in that session, 10 ms bins, seeds [2019, session, event]"
+        ),
+        "differs": (
+            "the paper's well entry and exit come from an infrared beam not in the "
+            "file, replaced by a 15 cm radius around the well",
+            "the paper excluded putative interneurons by spike width and rate; the "
+            "file holds no waveforms, so the place cells may include interneurons",
+            "the ripple tetrodes are not named; we use every CA1 tetrode holding a "
+            "unit",
+            "the paper counts per rat over 1,533 trials; ours are 1,488 visits, "
+            "and the six rats differ widely (SWRs per visit 3.6 to 10.2, replay "
+            "0.28 to 1.53)",
+            "the detector's 15 ms minimum above 3 SD is Karlsson & Frank's; the "
+            "paper states none. Without it, SWRs per visit are 19.2 pooled (7.1 "
+            "on JS14, where the minimum explains the gap, and 16 to 29 on the "
+            "other rats), so the minimum is not the one cause of the short share",
+        ),
+    },
+    "why": (
+        "the criterion fixed before the run is not met: 75.5% of visits hold two "
+        "or more SWRs against the paper's 85.7%, 10.2 points apart against a "
+        "mark of 10, while the four per-visit means and the share with two or "
+        "more candidates are within their marks. The beam times of well entry and "
+        "exit, the interneuron labels and the ripple tetrodes the paper used are "
+        "not in the files"
+    ),
 }
 
 #: Modules of the ``datasets`` extra the loader imports.
@@ -155,6 +211,62 @@ PAPER_PER_VISIT: dict[str, Any] = {
 #: line-fit p-value changes each way, and the units' rate in SWRs over their
 #: rate in the run epochs (median by area).
 PER_VISIT: dict[str, Any] = {
+    "ER1": {
+        "summary": {
+            "n_visits": 301,
+            "immobility_s": (7.655, 3.761),
+            "swrs": (8.392, 5.58),
+            "candidates": (3.927, 2.877),
+            "replay": (1.296, 1.22),
+            "replay_lab_code": (1.249, 1.186),
+            "swrs_no_minimum": (22.286, 11.759),
+            "share_two_swrs": 0.85,
+            "share_two_candidates": 0.774,
+        },
+        "criterion": {
+            "immobility_s": True,
+            "swrs": True,
+            "candidates": False,
+            "replay": True,
+            "share_two_swrs": True,
+            "share_two_candidates": False,
+        },
+        "n_place_cells": [44, 43, 42, 43, 41, 43, 40, 40],
+        "n_swrs": 3782,
+        "n_candidates": 1750,
+        "n_judged": 1182,
+        "ours_only": 55,
+        "lab_code_only": 41,
+        "swr_modulation": {"CA1": 1.4018, "PFC": 0.8444},
+    },
+    "KL8": {
+        "summary": {
+            "n_visits": 189,
+            "immobility_s": (6.872, 4.44),
+            "swrs": (3.577, 3.671),
+            "candidates": (1.503, 1.69),
+            "replay": (0.28, 0.611),
+            "replay_lab_code": (0.28, 0.575),
+            "swrs_no_minimum": (16.196, 17.22),
+            "share_two_swrs": 0.608,
+            "share_two_candidates": 0.386,
+        },
+        "criterion": {
+            "immobility_s": False,
+            "swrs": False,
+            "candidates": True,
+            "replay": False,
+            "share_two_swrs": False,
+            "share_two_candidates": False,
+        },
+        "n_place_cells": [44, 47, 46, 47, 46, 49, 46, 49],
+        "n_swrs": 2322,
+        "n_candidates": 1281,
+        "n_judged": 284,
+        "ours_only": 13,
+        "lab_code_only": 13,
+        "swr_modulation": {"CA1": 1.7744, "PFC": 0.8135},
+    },
     "JS14": {
         "summary": {
             "n_visits": 250,
@@ -182,6 +294,111 @@ PER_VISIT: dict[str, Any] = {
         "ours_only": 36,
         "lab_code_only": 18,
         "swr_modulation": {"CA1": 2.1894, "PFC": 0.7483},
+    },
+    "JS15": {
+        "summary": {
+            "n_visits": 217,
+            "immobility_s": (10.849, 7.9),
+            "swrs": (5.811, 5.351),
+            "candidates": (3.461, 3.556),
+            "replay": (1.203, 1.492),
+            "replay_lab_code": (1.24, 1.557),
+            "swrs_no_minimum": (17.728, 14.565),
+            "share_two_swrs": 0.705,
+            "share_two_candidates": 0.631,
+        },
+        "criterion": {
+            "immobility_s": True,
+            "swrs": True,
+            "candidates": True,
+            "replay": True,
+            "share_two_swrs": False,
+            "share_two_candidates": True,
+        },
+        "n_place_cells": [40, 39, 37, 41, 41, 41, 41, 41],
+        "n_swrs": 2602,
+        "n_candidates": 1425,
+        "n_judged": 751,
+        "ours_only": 29,
+        "lab_code_only": 37,
+        "swr_modulation": {"CA1": 1.9177, "PFC": 0.7399},
+    },
+    "JS17": {
+        "summary": {
+            "n_visits": 288,
+            "immobility_s": (9.387, 5.339),
+            "swrs": (10.24, 7.146),
+            "candidates": (1.965, 1.729),
+            "replay": (0.931, 1.093),
+            "replay_lab_code": (0.955, 1.079),
+            "swrs_no_minimum": (29.236, 18.064),
+            "share_two_swrs": 0.792,
+            "share_two_candidates": 0.542,
+        },
+        "criterion": {
+            "immobility_s": True,
+            "swrs": False,
+            "candidates": True,
+            "replay": True,
+            "share_two_swrs": True,
+            "share_two_candidates": True,
+        },
+        "n_place_cells": [26, 24, 21, 24, 21, 23, 23, 23],
+        "n_swrs": 4816,
+        "n_candidates": 912,
+        "n_judged": 566,
+        "ours_only": 15,
+        "lab_code_only": 22,
+        "swr_modulation": {"CA1": 1.9473, "PFC": 0.8163},
+    },
+    "JS21": {
+        "summary": {
+            "n_visits": 243,
+            "immobility_s": (11.835, 7.76),
+            "swrs": (6.494, 5.68),
+            "candidates": (3.753, 3.672),
+            "replay": (1.531, 1.551),
+            "replay_lab_code": (1.502, 1.596),
+            "swrs_no_minimum": (19.733, 15.21),
+            "share_two_swrs": 0.79,
+            "share_two_candidates": 0.695,
+        },
+        "criterion": {
+            "immobility_s": True,
+            "swrs": True,
+            "candidates": False,
+            "replay": False,
+            "share_two_swrs": True,
+            "share_two_candidates": False,
+        },
+        "n_place_cells": [27, 27, 28, 28, 27, 28, 28, 28],
+        "n_swrs": 2757,
+        "n_candidates": 1739,
+        "n_judged": 912,
+        "ours_only": 44,
+        "lab_code_only": 37,
+        "swr_modulation": {"CA1": 2.5566, "PFC": 0.9772},
+    },
+    "pooled": {
+        "summary": {
+            "n_visits": 1488,
+            "immobility_s": (9.459, 6.476),
+            "swrs": (6.683, 5.945),
+            "candidates": (2.977, 2.989),
+            "replay": (1.024, 1.275),
+            "replay_lab_code": (1.008, 1.29),
+            "swrs_no_minimum": (19.232, 15.854),
+            "share_two_swrs": 0.755,
+            "share_two_candidates": 0.622,
+        },
+        "criterion": {
+            "immobility_s": True,
+            "swrs": True,
+            "candidates": True,
+            "replay": True,
+            "share_two_swrs": False,
+            "share_two_candidates": True,
+        },
     },
 }
 

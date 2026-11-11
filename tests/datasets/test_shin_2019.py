@@ -924,14 +924,31 @@ def test_per_visit_counts_of_the_six_rats():
     from neurospatial.datasets import shin_2019
 
     pytest.importorskip("ripple_detection.literature_methods")
-    visits = pd.concat(
-        [
-            _per_visit(f"sub-JDS-SingleDay-{rat}")["visits"]
-            for rat in shin_2019.PAPER_RATS
-        ]
-    )
-    summary = _summary(visits)
+    frames = []
+    for rat in shin_2019.PAPER_RATS:
+        result = _per_visit(f"sub-JDS-SingleDay-{rat}")
+        recorded = shin_2019.PER_VISIT[rat]
+        summary = _summary(result["visits"])
+        assert summary == recorded["summary"], rat
+        assert _criterion(summary) == recorded["criterion"], rat
+        for key in (
+            "n_place_cells",
+            "n_swrs",
+            "n_candidates",
+            "n_judged",
+            "ours_only",
+            "lab_code_only",
+        ):
+            assert result[key] == recorded[key], (rat, key)
+        ratio = _swr_modulation(result["rec"], result["swr_rows"])
+        area = result["rec"].units["brain_region"].to_numpy()
+        for region in ("CA1", "PFC"):
+            assert np.median(ratio[area == region]) == pytest.approx(
+                recorded["swr_modulation"][region], abs=1e-3
+            ), (rat, region)
+        frames.append(result["visits"])
+    summary = _summary(pd.concat(frames))
     recorded = shin_2019.PER_VISIT["pooled"]
     assert summary == recorded["summary"]
     assert _criterion(summary) == recorded["criterion"]
-    assert shin_2019.WORKED_RESULT["ours"] == summary["replay"][0]
+    assert shin_2019.WORKED_RESULT["attempted"]["value"] == summary["replay"][0]
