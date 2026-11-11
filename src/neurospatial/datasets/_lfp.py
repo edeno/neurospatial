@@ -59,7 +59,7 @@ _MAX_DEFAULT_CHANNELS = 32
 
 @dataclass(frozen=True)
 class LFPFile:
-    """One file, or one member of a zip, that holds LFP.
+    """One file, or one member of an archive (a zip, or a CRCNS ``.tar.gz``), that holds LFP.
 
     Parameters
     ----------
@@ -76,7 +76,9 @@ class LFPFile:
         The file's URL (the zip's, for a member), or its DANDI asset id;
         exactly one.
     member : str or None
-        The member's path inside the zip at ``url``, read by byte range.
+        The member's path inside the archive at ``url``: a zip's member is
+        read by byte range; a CRCNS ``.tar.gz`` (``url`` from
+        ``_fetch.crcns_url``) is read from its start up to the member.
     channels : tuple of str, default ()
         The channels this file holds, so a request for one channel fetches
         only the files it needs. Empty when every file is needed for any
@@ -376,7 +378,7 @@ class LFPSource:
         self, files: tuple[LFPFile, ...], cache: Path | None
     ) -> tuple[Path, ...]:
         """Each of ``files`` in the cache, downloaded once."""
-        from neurospatial.datasets._fetch import cache_root, fetch, fetch_zip_member
+        from neurospatial.datasets._fetch import cache_root, fetch, fetch_members
         from neurospatial.datasets._load import _size
 
         folder = cache_root(cache) / self.dataset
@@ -395,13 +397,9 @@ class LFPSource:
             subdir = str(Path(self.dataset) / relative.parent)
             if file.member is not None:
                 assert file.url is not None  # checked at construction
-                path = fetch_zip_member(
-                    file.url,
-                    file.member,
-                    sha256=file.sha256,
-                    subdir=subdir,
-                    cache=cache,
-                )
+                path = fetch_members(
+                    file.url, {file.member: file.sha256}, subdir=subdir, cache=cache
+                )[file.member]
             else:
                 path = fetch(
                     file.download_url,

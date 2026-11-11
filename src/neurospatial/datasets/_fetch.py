@@ -215,7 +215,16 @@ def _download_to_temp(
 def fetch(
     url: str, name: str, *, sha256: str, subdir: str, cache: Path | None = None
 ) -> Path:
-    """Return a verified local copy of ``url``, downloading it once."""
+    """Return a verified local copy of ``url``, downloading it once.
+
+    A CRCNS file's URL (:func:`crcns_url`) is fetched with the account
+    (:func:`fetch_crcns`).
+    """
+    if (path := crcns_path(url)) is not None:
+        if Path(path).name != name:
+            msg = f"{path} is cached under its own name, not {name!r}"
+            raise ValueError(msg)
+        return fetch_crcns(path, sha256=sha256, subdir=subdir, cache=cache)
     target = _target(cache, subdir, name)
     if (found := _existing(target, sha256)) is not None:
         return found
@@ -317,6 +326,55 @@ def fetch_zip_member(
 
 
 CRCNS_PORTAL = "https://portal.nersc.gov/project/crcns/download/index.php"
+#: How a registry names a CRCNS file: the portal's URL with the file's path.
+_CRCNS_FILE = f"{CRCNS_PORTAL}?fn="
+
+
+def crcns_url(path: str) -> str:
+    """The URL a registry gives the CRCNS file ``path`` (``"hc-3/<dir>/<file>"``)."""
+    return f"{_CRCNS_FILE}{path}"
+
+
+def crcns_path(url: str) -> str | None:
+    """The CRCNS path of a :func:`crcns_url`; None for any other URL."""
+    return url.removeprefix(_CRCNS_FILE) if url.startswith(_CRCNS_FILE) else None
+
+
+def fetch_members(
+    url: str,
+    members: Mapping[str, str],
+    *,
+    subdir: str,
+    cache: Path | None = None,
+) -> dict[str, Path]:
+    """Verified local copies of members of the remote archive at ``url``.
+
+    A CRCNS ``.tar.gz`` (a :func:`crcns_url`) is read once from its start for
+    all of ``members`` (:func:`fetch_crcns_tar_members`); a zip anywhere else is
+    read member by member by byte range (:func:`fetch_zip_member`).
+
+    Parameters
+    ----------
+    url : str
+        The archive's URL.
+    members : Mapping[str, str]
+        Each member's path in the archive and its pinned SHA-256.
+    subdir : str
+        The cache folder the members are stored in, under their base names.
+    cache : Path, optional
+        The cache root.
+
+    Returns
+    -------
+    dict of str to Path
+        Each member's cached copy, by its path in the archive.
+    """
+    if (path := crcns_path(url)) is not None:
+        return fetch_crcns_tar_members(path, members, subdir=subdir, cache=cache)
+    return {
+        member: fetch_zip_member(url, member, sha256=sha, subdir=subdir, cache=cache)
+        for member, sha in members.items()
+    }
 
 
 def _crcns_require_account() -> None:

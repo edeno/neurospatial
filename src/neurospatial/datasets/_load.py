@@ -132,7 +132,7 @@ def load(
     source = _stream_url(entry) if streamed else fetch_session(entry, cache=cache)
     rec: Recording = module.load_session(entry, source)
     return run_checks(
-        rec, stated=entry.info.stated, accept_failed_checks=accept_failed_checks
+        rec, stated=entry.stated, accept_failed_checks=accept_failed_checks
     )
 
 
@@ -264,7 +264,7 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     :class:`DownloadWarning` giving its size, URL and cache directory,
     attributed to the caller of :func:`load` or :func:`fetch_all`.
     """
-    from neurospatial.datasets._fetch import cache_root, fetch, fetch_zip_member
+    from neurospatial.datasets._fetch import cache_root, fetch, fetch_members
 
     root = cache_root(cache)
     if not _cached(root, entry):
@@ -279,14 +279,14 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     if entry.members:
         assert entry.url is not None  # checked when the registry is read
         subdir = f"{entry.info.dataset}/{entry.session}"
+        archived = fetch_members(
+            entry.url,
+            {m.path: m.sha256 for m in entry.members if m.url is None},
+            subdir=subdir,
+            cache=cache,
+        )
         paths = [
-            fetch_zip_member(
-                entry.url,
-                member.path,
-                sha256=member.sha256,
-                subdir=subdir,
-                cache=cache,
-            )
+            archived[member.path]
             if member.url is None
             else fetch(
                 member.url,

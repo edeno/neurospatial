@@ -184,6 +184,41 @@ def test_lfp_files_are_read_at_the_sessions_own_location():
     assert second.channels == ()
 
 
+def test_a_row_can_state_its_own_facts():
+    """A row's ``stated`` entries replace the dataset's for that session only."""
+    registry = _registry("forli_2025")
+    own = {"value": 60.0, "basis": "inferred", "source": "tracked by other means"}
+    registry["sessions"][0]["stated"] = {"sampling_rate": own}
+    first, *rest = _read(registry, "forli_2025.json")
+    assert first.stated.sampling_rate == 60.0
+    assert first.stated.sampling_rate_basis == "inferred"
+    assert first.stated.position_span == first.info.stated.position_span
+    assert first.info.stated.sampling_rate != 60.0
+    assert all(entry.stated is entry.info.stated for entry in rest)
+
+
+def test_members_of_a_crcns_archive_download_the_archive():
+    """Reaching members of a .tar.gz reads the archive from its start: its size counts."""
+    from neurospatial.datasets._fetch import crcns_url
+
+    registry = _registry("forli_2025")
+    row = registry["sessions"][0]
+    row.pop("asset_id", None)
+    row["url"] = crcns_url("hc-3/top/s.tar.gz")
+    row["size_bytes"] = 1000
+    row["members"] = [
+        {"path": "top/s/s.res.1", "sha256": "a" * 64, "size_bytes": 10},
+        {
+            "path": "t.zip",
+            "sha256": "b" * 64,
+            "size_bytes": 7,
+            "url": "https://x/t.zip",
+        },
+    ]
+    entry = _read(registry, "forli_2025.json")[0]
+    assert entry.download_bytes == 1000 + 7
+
+
 def _builder():
     path = ROOT / "scripts" / "build_dataset_registry.py"
     spec = importlib.util.spec_from_file_location("build_dataset_registry", path)
