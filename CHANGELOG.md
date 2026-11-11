@@ -86,6 +86,40 @@
   each file a session row names in the record, checks the cached copy's MD5
   against the record's and pins its SHA-256.
 
+### Datasets: Shin et al. (2019), W-maze learning with CA1 and prefrontal cortex
+
+- `shin_2019`: DANDI 000978 (CC-BY-4.0), rats learning a W-maze alternation
+  task in one day, eight run sessions between rest in a sleep box, with dorsal
+  CA1 and prefrontal units and the LFP of every tetrode. All nine files are
+  offered: the paper's six rats (ER1, KL8, JS14, JS15, JS17, JS21) and JS34 and
+  ZT2, which the paper does not include. The dandiset names no paper; the link
+  is inferred from the rats, the task and the correct-trial count (1,537 in the
+  six files, 1,533 in the paper). The default, JS14, is checked by hand.
+- The files are 28 to 47 GB, half of each a copy of the LFP, so they are never
+  downloaded: `load("shin_2019")` reads the units, position, epochs and trials
+  by byte range (47 MB in 20 s for JS14), and `rec.lfp.fetch(channels,
+  stream=True)` reads the LFP the same way. A registry can now say its files
+  are read by byte range (`archive.stream_only`); `load()` then streams them
+  unless the file is already in the cache.
+- `rec.units["brain_region"]` reads the units table's `electrodes` column as
+  the tetrode numbers it holds. pynwb reads it as rows of the electrodes table,
+  which puts 35 of JS14's 72 units in the wrong area.
+- The W-maze is a track graph fitted to the run sessions' samples, with the
+  three wells as regions; trials keep the file's start and end well,
+  outbound or inbound, and correct.
+- Worked result, not met: the paper's per-visit counts at the reward wells,
+  attempted on its six rats with `ripple_detection`'s `shin_2019` detector and
+  the `SHIN_2019` replay recipe. Over 1,488 visits we find 9.46 s of
+  immobility, 6.68 SWRs, 2.98 candidate events and 1.02 replay events per
+  visit, against the paper's 10.3 s, 7.3, 2.3 and 0.9, each within the mark
+  fixed before the run; 75.5% of visits hold two or more SWRs against 85.7%,
+  10.2 points apart against a mark of 10. The dataset's page lists what the
+  files lack (the infrared beam times, interneuron labels, the ripple
+  tetrodes) and the SWR counts measured without the detector's 15 ms minimum.
+- `SHIN_2019`'s notes give how the Jadhav lab's line-fit p-value changes its
+  verdicts on the same candidates: on JS14, 36 events are replay only for the
+  recipe and 18 only for the lab code.
+
 ### Documentation: measured false-positive rates of published nulls
 
 - The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,

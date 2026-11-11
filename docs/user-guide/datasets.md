@@ -46,6 +46,7 @@ The last column says how far each dataset's result was checked.
 | [`pfeiffer_2013`](../datasets/pfeiffer_2013.md) | rat, dorsal CA1 | 2 m open arena with 36 reward wells; one session; the author's own candidate windows and significance labels | sample recording released with Maboudi et al. 2018 (license not stated) | not possible yet; `PFEIFFER_FOSTER_2015` agrees with Pfeiffer's own labels on 82.0% of his 322 windows, kappa 0.569 against the 0.6 fixed beforehand; 43 of the 45 he labels and it rejects decode here to paths shorter than 80 cm |
 | [`carey_2019`](../datasets/carey_2019.md) | rat, dorsal CA1 | T-maze with food and water arms, rest pedestals; LFP per channel | DataLad MotivationalT (ODC-PDDL-1.0) | tested against chance, **not met**: on the route of the paper's code, 41 sequences on 1,328 candidates against a null 95th percentile of 52.35, with 5.8% of planted replay found, so it cannot show whether these events hold replay. Detection matches: our score matches the paper's stored score (r = 0.9999997); 73.5% and 91.6% agreement with its 1,654 events, 98.6% and 97.2% with its speed and theta |
 | [`olafsdottir_2016`](../datasets/olafsdottir_2016.md) | rat, dorsal CA1 and deep MEC | Z-shaped track (track graph), then a rest enclosure and an open field; every spike's amplitudes for clusterless decoding; LFP per channel | Zenodo 5566548 (CC-BY-4.0) | not possible yet: on the default day 60.9% of the rest's candidate events are judged replay against the paper's pooled 41.7% (a band of 31.7% to 51.7% fixed beforehand), and the paper's own line-fit code, ported, gives about the same (91 of 150 against 93); the paper gives no share per session. All of its replay is from the rest, none awake on the track |
+| [`shin_2019`](../datasets/shin_2019.md) | rat, dorsal CA1 and prefrontal cortex | W-maze learned in one day, 8 run sessions between rest; LFP of every tetrode | DANDI 000978 (CC-BY-4.0), read by byte range | not possible yet; the paper's per-visit counts on its six rats meet five of six marks fixed before the run: 9.46 s of immobility, 6.68 SWRs, 2.98 candidates and 1.02 replay events per visit (paper 10.3, 7.3, 2.3, 0.9), but 75.5% of visits with two or more SWRs against 85.7%. The beam times, interneuron labels and ripple tetrodes the paper used are not in the files |
 | [`tirole_2022`](../datasets/tirole_2022.md) | rat, dorsal CA1 | two novel 2 m linear tracks in one session, rest before, between and after; LFP | Zenodo 7114733 (CC0) | reproduced (level A): Fig. 3A RUN regression B = 0.0537, R² = 0.461 over 225 stable cells against the paper's 0.05 and 0.41 (the authors' code on the same files: 0.0502, 0.430). Against that code's output: the paper's detector finds 99.96% of its candidates with the file's speed (80.4% with the recording's), and `TIROLE_2022` 89.9% of its significant replays, 95.1% of ours being its |
 
 Each dataset has a page with what was recorded, the conversions the loader
@@ -303,13 +304,16 @@ detection, where it states them. `rec.lfp.unit_basis` and
 Ask for the channels you need: [`forli_2025`](../datasets/forli_2025.md) holds 384
 channels, one 53 MB in memory and all of them 405 GB, and
 [`huszar_2022`](../datasets/huszar_2022.md)'s LFP sits in raw files of up to
-184 GB, which `stream=True` reads by byte range. Seven datasets have an LFP:
+184 GB, which `stream=True` reads by byte range. Eight datasets have an LFP:
 `forli_2025`, `igata_2021` (every tetrode of the session, read from its own
 files), `bhattarai_2020` (one channel), `carey_2019` (each channel from its own
 file), `huszar_2022` (12 sessions), `olafsdottir_2016` (the two or three
 wires the recording saved at 4.8 kHz, each trial's file joined on the day's
 clock) and `tirole_2022` (the authors' four chosen channels, 1.2 to 1.7 GB per
-session).
+session). [`shin_2019`](../datasets/shin_2019.md) holds the LFP of every tetrode inside
+its 28 to 47 GB files, which are never downloaded:
+`rec.lfp.fetch(channels, stream=True)` reads 14 to 24 GB however few channels
+you ask for, so ask for all you need in one call.
 
 `olafsdottir_2016` also keeps every spike that crossed the detection threshold,
 sorted or not. `rec.marks` holds, per tetrode, each spike's time, its largest

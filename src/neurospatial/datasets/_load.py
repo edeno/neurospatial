@@ -73,7 +73,10 @@ def load(
     stream : bool, default False
         Read a DANDI file by HTTP byte range instead of downloading it,
         after checking that the archive still publishes the pinned SHA-256.
-        For files too large to keep; nothing is cached.
+        For files too large to keep; nothing is cached. A dataset whose
+        files are too large to download at all (``shin_2019``, 28 to 47 GB
+        each) is streamed whatever this says, unless its file is already
+        in the cache.
     accept_failed_checks : tuple of str, default ()
         Refusing checks (``"clock"``, ``"units"``) to load through. Each
         accepted failure is kept in ``rec.failed_checks`` and printed first
@@ -121,7 +124,12 @@ def load(
     module = import_module(f"neurospatial.datasets.{dataset}")
     for name in module.REQUIRES:
         _require(name, dataset)
-    source = _stream_url(entry) if stream else fetch_session(entry, cache=cache)
+    from neurospatial.datasets._fetch import cache_root
+
+    streamed = stream or (
+        bool(entry.stream_only) and not _cached(cache_root(cache), entry)
+    )
+    source = _stream_url(entry) if streamed else fetch_session(entry, cache=cache)
     rec: Recording = module.load_session(entry, source)
     return run_checks(
         rec, stated=entry.info.stated, accept_failed_checks=accept_failed_checks

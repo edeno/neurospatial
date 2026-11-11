@@ -1,0 +1,145 @@
+{
+  "dataset": "shin_2019",
+  "paper": "Shin et al. (2019)",
+  "paper_citation": "Shin JD, Tang W, Jadhav SP (2019). Dynamics of awake hippocampal-prefrontal replay for spatial learning and memory-guided decision making. Neuron 104(6), 1110-1125. https://doi.org/10.1016/j.neuron.2019.09.012",
+  "species": "rat",
+  "brain_regions": [
+    "dorsal CA1",
+    "prefrontal cortex"
+  ],
+  "apparatus": "80 x 80 cm W-maze with 7 cm wide track sections and a reward well at the end of each of its three arms, learned in one day over eight sessions, between rest sessions in a 30 x 30 cm sleep box",
+  "archive": {
+    "dandiset": "000978",
+    "stream_only": "each file is 28 to 47 GB, half of it acquisition/ElectricalSeries, which holds the same samples as the LFP; a load reads units, position, epochs and trials by byte range",
+    "version": "0.240511.0307",
+    "url": "https://dandiarchive.org/dandiset/000978/0.240511.0307",
+    "citation": "Shin, Justin; Jadhav, Shantanu (2024) Single Day W-Track Learning (Version 0.240511.0307) [Data set]. DANDI archive. https://doi.org/10.48324/dandi.000978/0.240511.0307"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 30.0,
+      "basis": "inferred",
+      "source": "the position series' comments, 'Video frames taken at 30fps', and the STAR Methods of Shin et al. 2019, 'an overhead color CCD camera (30 fps)'; kept as an inferred rate and not applied as a stated one, which would refuse every session, because the frame times alternate between steps of about 29 and 39 ms (median 30.7 ms, 32.6 Hz; 28.2 frames per second on average in JS14's epochs)"
+    },
+    "position_span": {
+      "value": [
+        64.0,
+        150.2
+      ],
+      "basis": "inferred",
+      "source": "the STAR Methods of Shin et al. 2019: a W-maze of '80 x 80 cm with 7-cm-wide track sections'; the largest span of the tracked positions must lie between 20% below 80 cm and 20% above the widest span of the nine files' samples (125.2 cm, JS34), since the LEDs on the headstage swing past the arms' ends; the nine files span 113 to 125 cm"
+    },
+    "speed_limit": null
+  },
+  "sessions": [
+    {
+      "session": "sub-JDS-SingleDay-ER1",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-ER1/sub-JDS-SingleDay-ER1_behavior+ecephys.nwb",
+      "asset_id": "b6425692-0f32-4087-8412-aebcfc37cd96",
+      "sha256": "508f7f4e5c1ef2b49373aef815bc64e6591ed7889407a3d57089d38dd4e2dba4",
+      "size_bytes": 30009167808,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-JDS-SingleDay-JS14",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-JS14/sub-JDS-SingleDay-JS14_behavior+ecephys.nwb",
+      "asset_id": "4b7c7959-04b3-4817-8f96-1af6f41888c1",
+      "sha256": "6b8cf8ce3bbe34374e10a8a310592d1ae9762b20554569bc3c45fcfecdcf67b6",
+      "size_bytes": 28291364968,
+      "verified": true,
+      "default": true,
+      "n_units": 72,
+      "verification": "Streamed and read against the file and Shin et al. 2019 (2026-11-11): position columns x, y and velocity by the series' comments; the units' electrodes values are tetrode numbers (52 CA1 and 20 PFC units, at least the paper's 37 CA1 place cells and 12 PFC cells of JS14, Figure S1F-G; CA1 units fire a median 2.2 times their run rate in SWRs, PFC units 0.75 times); Ref OFF minus Ref ON equals tetrode 14's signal on every CA1 tetrode and tetrode 1's on every PFC tetrode; acquisition/ElectricalSeries equals the LFP at 8 random blocks; trials stop just after the rat leaves its end well (speed rising, 18 cm from the arm's end); 258 correct trials; the fitted W-maze drawn over the run samples"
+    },
+    {
+      "session": "sub-JDS-SingleDay-JS15",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-JS15/sub-JDS-SingleDay-JS15_behavior+ecephys.nwb",
+      "asset_id": "8fae63eb-84c2-4f7c-8a13-acb0832178f9",
+      "sha256": "512ff29a08d0822eaa5811e5f64f076fce43a2d409167c436e9a6f25681febe9",
+      "size_bytes": 33642353128,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-JDS-SingleDay-JS17",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-JS17/sub-JDS-SingleDay-JS17_behavior+ecephys.nwb",
+      "asset_id": "f1f51660-4c23-4b61-a6bd-64d817d141e5",
+      "sha256": "6a6d39429758f746fae16b5ca1977a5084d8df0bcf8f7623dc8e9b536ca755be",
+      "size_bytes": 35702063632,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-JDS-SingleDay-JS21",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-JS21/sub-JDS-SingleDay-JS21_behavior+ecephys.nwb",
+      "asset_id": "f3a457e9-fa5b-45b4-9778-9c0e69de91a9",
+      "sha256": "32977517317db3f0c48c6f899e08c76717241a69bff547cce14b78e1f0ca4f46",
+      "size_bytes": 32484552528,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-JDS-SingleDay-JS34",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-JS34/sub-JDS-SingleDay-JS34_behavior+ecephys.nwb",
+      "asset_id": "b79b4575-b3c9-4449-ac4b-7a11c17bdbf9",
+      "sha256": "b3f7f47e8d8d84d23b99f09d77566bd805f724668a559c0b17cab99ff296d455",
+      "size_bytes": 40959559064,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-JDS-SingleDay-KL8",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-KL8/sub-JDS-SingleDay-KL8_behavior+ecephys.nwb",
+      "asset_id": "9fcb710b-00ea-435b-900c-454a5af46ab3",
+      "sha256": "d3ee47b26eca08af715fb6ce2bc8dfbb2bbd9fa07a999554309cc568db5b51cf",
+      "size_bytes": 32802639552,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-JDS-SingleDay-ZT2_obj-1dss6zi",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-ZT2/sub-JDS-SingleDay-ZT2_obj-1dss6zi_behavior+ecephys.nwb",
+      "asset_id": "efae9f4d-6628-4fcb-b1c1-414af48a9d08",
+      "sha256": "cf13ebd7a2876ff5d6900fcc87fc10f2c615d9b1084f768b54b6764966a8a1a6",
+      "size_bytes": 47112109304,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    },
+    {
+      "session": "sub-JDS-SingleDay-ZT2_obj-u40err",
+      "archive": "DANDI 000978",
+      "asset_path": "sub-JDS-SingleDay-ZT2/sub-JDS-SingleDay-ZT2_obj-u40err_behavior+ecephys.nwb",
+      "asset_id": "785df3db-c72d-4ac7-927f-d88725dd4944",
+      "sha256": "5cf8f505aa5fc9b3630e33d1ce931f6b85691e5eb341bb3e118db2544c5f2d1b",
+      "size_bytes": 41977536000,
+      "verified": false,
+      "default": false,
+      "n_units": null,
+      "verification": ""
+    }
+  ],
+  "license": "CC-BY-4.0"
+}

@@ -208,6 +208,7 @@ nav:
       - "Pfeiffer 2013: trajectory events in a 2 m open arena (rat)": datasets/pfeiffer_2013.md
       - "Ólafsdóttir 2016: Z-track, rest, grid and place cells (rat)": datasets/olafsdottir_2016.md
       - "Tirole 2022: replay of two novel linear tracks (rat)": datasets/tirole_2022.md
+      - "Shin 2019: W-maze learning with CA1 and prefrontal cortex (rat)": datasets/shin_2019.md
   - Visualization:
       - Field Animation: user-guide/animation.md
       - Animation Overlays: animation_overlays.md
