@@ -57,7 +57,10 @@ track (`track1`), the rest (`sleepPOST`) and, on some days, the open field
 rat started each track session at the same end; `rec.trials` holds its runs
 from one end to the other, `direction` `"outbound"` from the start end, and
 `rec.epochs["outbound"]` and `["inbound"]` the same rows. The paper built
-separate rate maps for the two directions.
+separate rate maps for the two directions. `rec.epochs["corner_stops"]`,
+`["engaged"]` and `["disengaged"]` are the rat's stops at the Z's two corners and
+the 2017 paper's sections of them (see
+[Awake replay at the corners](#awake-replay-at-the-corners-2017-paper)).
 
 `rec.positions` and `rec.env` are the track only. The rest and the open field
 were tracked in other windows of the camera's image, so their positions are in
@@ -112,6 +115,14 @@ Neo's `axonarawio.py` (BSD-3).
 - **Which paper session.** The paper's Supplementary Table 1 numbers each rat's
   sessions without dates. The deposit has 10 days for the paper's 11 sessions;
   R2192 has 2 of its 3, and which is unknown. See [Sessions](#sessions-and-the-papers-table).
+- **`R2192-2014-10-01` cannot be loaded.** Its rest file for tetrode 4,
+  `20141001_R2192_sleepPOST.4`, is zeros in its last 45,749 of 63,801 spikes and
+  its end marker, in the deposit itself (its SHA-256 is the registry's), and the
+  reader refuses it.
+- **`R2335-2015-10-26` fails the clock check.** Its second open field
+  (`screening2`) starts at 17:26, five hours after the first, past the span the
+  check takes as the recording's. `load(..., accept_failed_checks=("clock",))`
+  loads it; the 2017 analysis below uses only its track.
 - **Files the loader leaves out.** `.clu` files (the README: superseded by the
   `.cut` files), `.eeg` (the 250 Hz copy of `.egf`), `.inp`, the `*_info.mat`
   files, and three cut files named for no tetrode: `20140806_R2142_sleepPOST.cut`,
@@ -133,6 +144,9 @@ Neo's `axonarawio.py` (BSD-3).
 | `replay_dt` | 0.01 s | the paper's replay decoding bins |
 | `dt` | 0.5 s | the paper's check of decoding on the track |
 | `analysis_epochs` | the runs | |
+| `min_speed_2017` | 10 cm/s | the 2017 paper's rate maps leave out slower periods |
+| `immobile_speed` | 3 cm/s | the 2017 paper's replay events stay below it |
+| `corner_stop_direction`, `corner_stop_corner` | per corner stop | the run it arrived on, and which corner (1 nearer the start) |
 | `train_epochs`, `test_epochs` | even and odd runs | held-out decoding |
 
 ## Sessions and the paper's table
@@ -185,17 +199,9 @@ only 1.8% of the rest lies in still stretches of a minute or more by that
 measure. Sleep would need the LFP (a theta/delta ratio, say), which the paper did
 not use.
 
-So an awake-replay reproduction cannot come from this paper. It can come from
-Ólafsdóttir, Carpenter & Barry 2017, on the same track and on rats R2142, R2192,
-R2217, R2335, R2336 and R2337 among its eight: replay at the two corners of the
-track (`track1` here) while the rat was below 3 cm/s, 1,415 "engaged" and 3,010
-"disengaged" reactivation events and 513 trajectory events over 24 sessions, with
-`literature_methods.olafsdottir_2017` (it needs the corner stops as
-`behavior_intervals`) and the `OLAFSDOTTIR_2017` preset. The 2017 paper does not
-list its 24 sessions, so its per-session numbers cannot be matched to these 10
-days; its shares (for example 62.26% of engaged reactivations congruent with the
-direction of travel, and 36.88% and 38.60% of putative events qualifying as
-replay) are the numbers such a reproduction could aim at. That is not done here.
+So an awake-replay reproduction cannot come from this paper. It comes from
+Ólafsdóttir, Carpenter & Barry 2017, on the same track and these rats: see
+[Awake replay at the corners](#awake-replay-at-the-corners-2017-paper).
 
 ## Worked result
 
@@ -240,6 +246,176 @@ Table 1 lists 71 or 48 place cells for R2336.
 The tests `test_worked_result_share_of_candidates_judged_replay` and
 `test_the_papers_code_against_the_preset` in
 `tests/datasets/test_olafsdottir_2016.py` pin these numbers.
+
+## Awake replay at the corners (2017 paper)
+
+**The question.** Ólafsdóttir, Carpenter & Barry (2017, Neuron 96, 925-935)
+looked at replay on the track itself. The rat stopped at each corner of the Z
+for food, and the paper asks whether replay there depends on what the rat is
+doing: in the first and last 5 s of a stop ("engaged", just after arriving and
+just before leaving) or in the time between ("disengaged"). It reports that
+engaged reactivations mostly decode to the direction the rat is running (62.26%,
+against 52.19% when disengaged), and that 36.88% of engaged and 38.60% of
+disengaged putative trajectory events are replay.
+
+The paper recorded eight rats over 24 sessions, among them the six rats of this
+deposit, and says its data are available on request; it lists no sessions, so
+that these 10 days are among its 24 is inferred from the rat IDs. Its numbers
+are pooled over sessions, so they are compared here with numbers pooled over
+the deposit's days.
+
+The loader gives what the analysis needs. `rec.epochs["corner_stops"]` holds
+each stay at a corner, from arriving within 20 cm of it (along the track) to
+the last sample that near before the rat is 40 cm away; the paper gives no
+distance, and on the default day the samples below 3 cm/s near a corner lie
+within 20 cm of it. `rec.params["corner_stop_direction"]` gives the run each stop
+arrived on. `rec.epochs["engaged"]` and `["disengaged"]` are the paper's
+sections: the first and last 5 s of a stop and the time between, a stop shorter
+than 10 s engaged throughout, and sections under 2 s left out.
+
+<!-- docs-test: skip needs a download and ripple_detection -->
+```python
+import numpy as np
+from ripple_detection.literature_methods import Recording, run_method
+
+from neurospatial.behavior import compute_speed
+from neurospatial.datasets import load
+
+rec = load("olafsdottir_2016")
+place_cells = [...]  # your CA1 place cells, by unit id
+names = list(rec.units.index)
+track = rec.epochs["track"][0]
+grid = track[0] + np.arange(round((track[1] - track[0]) * 1000)) / 1000.0
+# One row per ms of the track trial: a count belongs to the millisecond it falls in.
+multiunit = np.column_stack(
+    [
+        np.bincount(
+            np.searchsorted(grid, train[(train >= grid[0]) & (train < track[1])],
+                            side="right") - 1,
+            minlength=grid.size,
+        )
+        for train in (rec.spike_times[names.index(u)] for u in place_cells)
+    ]
+)
+speed = np.interp(grid, rec.times, compute_speed(rec.times, rec.positions))
+signals = Recording.from_arrays(
+    grid,
+    1000.0,
+    multiunit=multiunit,
+    place_cells=np.ones(len(place_cells), dtype=bool),
+    speed=speed,
+)
+# Events wholly inside an engaged section, the rat below 3 cm/s throughout.
+engaged = run_method(
+    "olafsdottir_2017",
+    signals,
+    behavior_intervals=rec.epochs["engaged"],
+    analysis="trajectory",  # adds 15% and more than 5 place cells active
+)
+```
+
+### What was run
+
+Fixed in writing before any candidate event on a track was detected or judged
+(the constants above `SEED_2017` in `tests/datasets/test_olafsdottir_2016.py`):
+
+- **Which days.** The paper's rule: a session enters if the median error of
+  decoding the running rat in 500 ms bins is at most 30 cm. Here the place
+  cells' outbound and inbound maps over all runs decode each run with its own
+  direction's maps; the error is the distance along the track from the most
+  probable bin to the rat, in bins where it runs faster than 10 cm/s. All 9
+  readable days pass, at 5.2 to 21.7 cm. The tenth, `R2192-2014-10-01`, cannot
+  be loaded (see Watch out).
+  The paper's other exclusion (R2336's day 4, headstages disconnected in the
+  rest) cannot be applied: the deposit does not number days, and neither R2336
+  rest is short.
+- **Place cells**, the paper's rule on its 2017 maps (2 cm bins, Gaussian of
+  sigma 10 cm, ends and corners left out, speed above 10 cm/s): a field of 20
+  contiguous bins above the cell's mean track rate and a peak above 1 Hz, in
+  either direction. Interneurons, "narrow waveforms and high firing rates" in the
+  paper, are a mean track rate above 5 Hz, our choice, as in the 2016 result.
+- **Candidates**: `literature_methods.olafsdottir_2017` on the track trial at
+  1 kHz (place-cell multi-unit activity smoothed by 5 ms, above its mean by 3 SD,
+  bounded at the mean, at least 40 ms, the rat below 3 cm/s throughout, by the
+  session's speed), kept when wholly inside one engaged or disengaged section.
+  `analysis="trajectory"` adds the paper's 15% and more than 5 place cells.
+- **Trajectory events judged** by `OLAFSDOTTIR_2017` as packaged: each
+  direction's posterior in 10 ms bins scored, the direction with the higher
+  score kept with its own p, replay at p < 0.025.
+- **Reactivation events** decoded from their summed spikes with each
+  direction's maps, as the Methods describe ("two posterior probability
+  matrices were generated for each event"); the arm of the six (three arms, two
+  directions) with the most posterior is the event's, congruent when its
+  direction is the run the rat arrived on. Chance is the paper's cell-ID
+  shuffle: each active place cell's spikes given to a silent one, 100 times.
+- **Criteria.** A, the worked result: pooled over the days, the share of
+  trajectory events judged replay lies within 10 points of the paper's pooled
+  38.1% (513 of 1,347; the paper gives 149 engaged and 364 disengaged replay
+  events, and 36.88% and 38.60%, so 404 and 943 putative events, inferred).
+  B, the paper's main finding: engaged reactivations are congruent more often
+  than chance and than disengaged ones, each by the paper's bootstrap (more
+  than 97.5% of 10,000 resamples).
+
+### Results
+
+**Criterion A is met: 91 of 308 trajectory events (29.5%) are judged replay**,
+inside 28.1% to 48.1%, though near its lower edge.
+
+| Pooled over 9 days | Engaged | Disengaged | Pooled | Paper |
+| --- | --- | --- | --- | --- |
+| Putative trajectory events | 51 | 257 | 308 | 404, 943, 1,347 |
+| Judged replay by `OLAFSDOTTIR_2017` | 14 (27.5%) | 77 (30.0%) | 91 (29.5%) | 36.88%, 38.60%, 38.1% |
+| By the paper's rule, at most 2 of 100 shuffles as high | 18 (35.3%) | 91 (35.4%) | 109 (35.4%) | |
+
+As in the paper, the engaged and disengaged shares are close. Two differences
+from the paper are measured here:
+
+- **The threshold.** The paper calls an event replay when its score exceeds the
+  97.5th percentile of its 100 shuffles, which allows 2 shuffles as high;
+  `OLAFSDOTTIR_2017` takes p = (k + 1) / (n + 1) < 0.025, which allows 1. The
+  paper's rule calls 18 more events replay, 35.4% of the 308.
+- **Fewer events.** 308 putative trajectory events on 9 days, against the
+  paper's 1,347 on 24 sessions. The rat must stay below 3 cm/s through an event,
+  and by `compute_speed`'s default (0.1 s smoothing) the head LED is that slow
+  in 10.6% of the default day's corner stops, since the head moves while the
+  rat eats. The paper does not say how it
+  estimated speed.
+
+**Criterion B is not met.** Decoded as the Methods describe, engaged
+reactivations are congruent in 111 of 241 (46.1%), against a cell-ID shuffle
+chance of 50.8% (6.7% of resamples above chance), and disengaged ones in 509 of
+976 (52.2%, chance 48.9%).
+
+The cause is the decode, not the data. Each direction's posterior sums to 1 on
+its own, so comparing arms across the two cannot say which direction the spikes
+match. On the default day's runs, the same rule names the direction the rat is
+running in 1,315 of 2,564 bins of 500 ms (51.3%, a coin's rate);
+`neurospatial.decoding.decode_jointly`, one posterior over both directions'
+maps, names it in 2,084 (81.3%). Decoded jointly, which was not fixed before the
+run:
+
+| Reactivation events, pooled | Engaged | Disengaged |
+| --- | --- | --- |
+| Congruent | 149 of 241 (61.8%) | 591 of 976 (60.6%) |
+| Cell-ID shuffle chance | 51.0% | 52.8% |
+| Resamples above chance | 99.95% | 100% |
+| The paper | 62.26% | 52.19% |
+
+The engaged share matches the paper's, but disengaged events are as congruent
+(65.2% of resampled engaged-minus-disengaged differences above 0), where the
+paper found no bias. Whether the paper decoded the two directions together is
+not stated; its Methods say "two posterior probability matrices were generated
+for each event".
+
+The 2017 tests load the 9 days and take about 2 minutes and 6.6 GB of memory.
+
+`test_2017_every_day_enters_by_its_decoding_error`,
+`test_2017_worked_result_share_of_trajectory_events_judged_replay`,
+`test_2017_congruence_as_the_methods_decode_it`,
+`test_2017_congruence_decoded_jointly` and
+`test_separate_decodes_cannot_tell_the_running_direction` in
+`tests/datasets/test_olafsdottir_2016.py` pin these numbers;
+`olafsdottir_2016.AWAKE_RESULT` and `AWAKE_CONTENT` record them.
 
 ## Cite
 

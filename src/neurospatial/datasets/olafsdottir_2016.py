@@ -58,6 +58,12 @@ What the loader converts:
   are, the direction from it to the big one does not follow movement (the
   watch-outs give the numbers). ``params["little_led_positions"]`` keeps the
   little LED's positions, in cm, for a reader who wants to try.
+- corner stops: ``rec.epochs["corner_stops"]``, each stay at a corner of the
+  Z from arriving within 20 cm of it, along the track, to the last sample
+  that near before the animal is 40 cm away (our choice), with the run it
+  arrived on in ``params["corner_stop_direction"]``; ``["engaged"]`` and
+  ``["disengaged"]`` are Ólafsdóttir, Carpenter & Barry 2017's sections of
+  them, the first and last 5 s and the time between.
 - ``params["rest_times"]``, ``["rest_positions"]`` (and ``open_field_...``):
   that trial's frames and big-LED positions, cm in its own tracking window,
   which is not the track's frame.
@@ -112,11 +118,15 @@ if TYPE_CHECKING:
     from neurospatial.datasets._catalog import SessionEntry
 
 __all__ = [
+    "AWAKE_CONTENT",
+    "AWAKE_RESULT",
     "EXPECTED_WATCH_OUTS",
     "PAPER_SESSIONS",
     "REQUIRES",
     "WATCH_OUTS",
     "WORKED_RESULT",
+    "corner_stops",
+    "engagement_sections",
     "load_session",
     "read_session_lfp",
     "run_intervals",
@@ -153,6 +163,23 @@ END_ZONE = END_EXCLUSION
 FIT_MIN_SPEED = 10.0
 #: The share of track samples the placement tolerance leaves outside the track.
 TOLERANCE_QUANTILE = 0.99
+#: Ólafsdóttir et al. 2017's rate maps leave out speeds below 10 cm/s, cm/s.
+MIN_SPEED_2017 = 10.0
+#: Its replay events are at the corners with the animal below 3 cm/s, cm/s.
+IMMOBILE_SPEED = 3.0
+#: A corner stop starts when the animal comes within CORNER_ZONE of a corner,
+#: along the track, and ends when it was last that near before going
+#: CORNER_LEAVE away, cm. Our choice: the paper names no distance, and on the
+#: default day the samples below 3 cm/s near a corner lie within 20 cm of it;
+#: the head LED swings past 20 cm and back while the rat eats, which the
+#: second, wider bound does not count as leaving.
+CORNER_ZONE = 20.0
+CORNER_LEAVE = 40.0
+#: The paper's engaged periods: the first and last 5 s of a corner stop, s. A
+#: stop shorter than 10 s is engaged throughout, and a section shorter than
+#: 2 s is left out.
+ENGAGED_SECONDS = 5.0
+MIN_SECTION = 2.0
 #: Above this speed, cm/s, the LED heading is compared with movement.
 HEADING_MIN_SPEED = 10.0
 #: The ``.egf`` rate, Hz (each header's ``sample_rate 4800 Hz``).
@@ -289,6 +316,120 @@ WORKED_RESULT: dict[str, Any] = {
         "leaves the interneuron cut unstated, and this day holds 56 CA1 units "
         "where Supplementary Table 1 lists 71 or 48 place cells for R2336. So "
         "no share here is presented as the paper's"
+    ),
+}
+
+#: A finding of Ólafsdóttir, Carpenter & Barry 2017 (Neuron 96:925-935), on the
+#: same rats and track, reproduced on the deposit's track trials: awake replay
+#: at the corners. Apart from ``WORKED_RESULT`` because it is another paper's.
+AWAKE_RESULT: dict[str, Any] = {
+    "status": "reproduced",
+    "level": "A",
+    "finding": (
+        "the share of putative trajectory events at the track's corners judged "
+        "replay: 36.88% of engaged and 38.60% of disengaged events, 513 of "
+        "1,347 pooled over 24 sessions"
+    ),
+    "quote": (
+        '"We identified a total of 149 engaged replay events and 364 disengaged '
+        "replay events ... the percentage of putative events qualifying as replay "
+        "events for the two categories was not different (36.88% versus 38.60%, "
+        'p = 0.28; Figure 3E)." (Results)'
+    ),
+    "source": (
+        "Ólafsdóttir, Carpenter & Barry 2017, Neuron 96:925-935, Results and "
+        "STAR Methods"
+    ),
+    "paper": (
+        "38.1% pooled: 149 of 404 engaged and 364 of 943 disengaged (404 and 943 "
+        "inferred: the only counts that give 36.88% and 38.60% to the hundredth)"
+    ),
+    "ours": 0.295,
+    "criterion": (
+        "met. 91 of 308 putative trajectory events (29.5%) pooled over the 9 "
+        "readable deposit days are judged replay, and the criterion, fixed in "
+        "writing before any track candidate was detected, asks for 28.1% to "
+        "48.1%, within 10 points of the paper's pooled 38.1%. Engaged 14 of 51 "
+        "(27.5%), disengaged 77 of 257 (30.0%)"
+    ),
+    "parameters": (
+        "every readable deposit day (the paper's inclusion, a median running "
+        "decoding error of 30 cm or less in 500 ms bins, passes all 9: 5.2 to "
+        "21.7 cm). Place cells: CA1 units with a field of 20 cm or more above "
+        "their mean track rate and a peak above 1 Hz in the outbound or inbound "
+        "map (2 cm bins, above 10 cm/s, Gaussian sigma 10 cm, ends and corners "
+        "left out), mean rate 5 Hz or less. Candidates: "
+        "literature_methods.olafsdottir_2017(analysis='trajectory') at "
+        "ripple_detection 0eddae64 on the track trial at 1 kHz with the session "
+        "speed, kept when wholly inside one engaged or disengaged section of "
+        "rec.epochs. Judged by OLAFSDOTTIR_2017 as packaged (100 place-field "
+        "shuffles, p < 0.025), each direction's 10 ms posterior scored and the "
+        "higher score's direction kept with its p, rng 2017 + the event's index "
+        "in its day and section"
+    ),
+    "unmatched": (
+        "the sessions: the paper lists none of its 24, so that these days are "
+        "among them is inferred from the rat IDs; the deposit's R2192-2014-10-01 "
+        "cannot be read (a rest tetrode file zero-filled), and the paper's own "
+        "exclusion of R2336's day 4 cannot be applied",
+        "the threshold: the paper calls replay a score above the 97.5th "
+        "percentile of 100 shuffles, at most 2 as high; OLAFSDOTTIR_2017 takes "
+        "p = (k + 1) / (n + 1) < 0.025, at most 1. By the paper's rule 109 of "
+        "308 (35.4%) are replay: engaged 18 of 51, disengaged 91 of 257",
+        "the corner stops: the paper gives no distance from a corner; here "
+        "within 20 cm along the track until 40 cm away, chosen on the default "
+        "day's slow samples before any candidate was detected",
+        "the speed below 3 cm/s: the paper does not say how speed was "
+        "estimated; compute_speed's 0.1 s smoothing of the head LED leaves "
+        "fewer events than the paper's (308 putative trajectory events on 9 "
+        "days, against 1,347 on 24 sessions)",
+    ),
+    "attempted": None,
+    "why": None,
+}
+
+#: The 2017 paper's main finding on the same days, as a second criterion fixed
+#: before the run, and what decoding the two directions jointly gives.
+AWAKE_CONTENT: dict[str, Any] = {
+    "met": False,
+    "quote": (
+        '"Engaged events showed a robust bias to reactivate spatial firing '
+        "congruent with an animal's current direction of travel (62.26% versus "
+        'chance, p < 0.0001 ...)", disengaged 52.19%, "engaged versus '
+        'disengaged, p < 0.0001" (Results)'
+    ),
+    "criterion": (
+        "pooled over the days, engaged reactivation events are congruent more "
+        "often than the cell-ID shuffle's chance and than disengaged events, "
+        "each in more than 97.5% of 10,000 bootstrap resamples (the paper's "
+        "test); not met"
+    ),
+    "as_the_methods_describe": {
+        "engaged": (111, 241),
+        "disengaged": (509, 976),
+        "chance": {"engaged": 0.5078, "disengaged": 0.4894},
+        "above_chance": {"engaged": 0.067, "disengaged": 0.9781},
+        "engaged_above_disengaged": 0.0456,
+    },
+    "decoded_jointly": {
+        "engaged": (149, 241),
+        "disengaged": (591, 976),
+        "chance": {"engaged": 0.5098, "disengaged": 0.528},
+        "above_chance": {"engaged": 0.9995, "disengaged": 1.0},
+        "engaged_above_disengaged": 0.6517,
+    },
+    "direction_while_running": {"separately": (1315, 2564), "jointly": (2084, 2564)},
+    "cause": (
+        "the Methods decode each event once with the outbound and once with the "
+        "inbound maps, each posterior summing to 1, and take the arm of the six "
+        "with the most probability. Two posteriors normalized apart cannot say "
+        "which direction the spikes match: on the default day's runs the rule "
+        "names the running direction in 1,315 of 2,564 500 ms bins (51.3%), and "
+        "decode_jointly, one posterior over both directions, in 2,084 (81.3%). "
+        "Decoded jointly (not fixed before the run), engaged events are "
+        "congruent in 149 of 241 (61.8%, the paper 62.26%) against a chance of "
+        "51.0%, and disengaged events in 591 of 976 (60.6%, the paper 52.19%) "
+        "against 52.8%: both above chance, the two not different"
     ),
 }
 
@@ -508,13 +649,19 @@ def z_track_graph(nodes: NDArray[np.float64]) -> nx.Graph:
 def _axial_peaks(angle: NDArray[np.float64]) -> tuple[float, float]:
     """The two most common directions of travel, mod 180 degrees, radians.
 
-    A histogram of 5 degree bins over [0, pi); the second peak is the most
+    A histogram of 5 degree bins over [0, pi). The first peak is the fullest
+    bin of the three neighbouring bins that hold the most samples, the last
+    bin neighbouring the first: a runway along the camera's x axis falls on
+    both sides of 0 = 180 degrees, and a single bin's count would halve it
+    (R2142's runways lost to the diagonal so). The second peak is the most
     common direction at least 30 degrees from the first.
     """
     edges = np.radians(np.arange(0.0, 180.0 + _ANGLE_BIN, _ANGLE_BIN))
     counts, _ = np.histogram(np.mod(angle, np.pi), bins=edges)
     centres = 0.5 * (edges[:-1] + edges[1:])
-    first = int(np.argmax(counts))
+    window = counts + np.roll(counts, 1) + np.roll(counts, -1)
+    near = (int(np.argmax(window)) + np.array([-1, 0, 1])) % counts.size
+    first = int(near[np.argmax(counts[near])])
     apart = np.abs(np.angle(np.exp(2j * (centres - centres[first])))) / 2
     second = int(np.argmax(np.where(apart >= np.radians(_PEAK_APART), counts, -1)))
     return float(centres[first]), float(centres[second])
@@ -659,6 +806,134 @@ def run_intervals(
     return np.array(rows, dtype=np.float64).reshape(-1, 2), np.array(
         direction, dtype=str
     )
+
+
+def corner_stops(
+    times: NDArray[np.float64],
+    linear: NDArray[np.float64],
+    corners: NDArray[np.float64],
+    *,
+    zone: float = CORNER_ZONE,
+    leave: float = CORNER_LEAVE,
+) -> tuple[NDArray[np.float64], NDArray[np.str_], NDArray[np.int64]]:
+    """Stays at the track's corners: from arriving to leaving, with the run's direction.
+
+    A stop at a corner starts at the first tracked sample within ``zone`` of
+    it, along the track, after the animal was more than ``leave`` away, and
+    ends at the last sample within ``zone`` before it is more than ``leave``
+    away again. Samples between the two distances, and untracked ones, neither
+    start nor end a stop. A stay with no sample beyond ``leave`` before it
+    (the trial starting at the corner) has no direction, and a single sample
+    near the corner has no duration: both are left out.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+        Seconds.
+    linear : ndarray, shape (n_time,)
+        Distance along the track from its start, cm; NaN where untracked.
+    corners : ndarray, shape (n_corners,)
+        Each corner's distance along the track, cm.
+    zone, leave : float
+        cm.
+
+    Returns
+    -------
+    rows : ndarray, shape (n_stops, 2)
+        ``[arrival, departure]`` seconds, sorted by arrival.
+    direction : ndarray of str, shape (n_stops,)
+        The run the animal arrived on: ``"outbound"`` from the start's side,
+        ``"inbound"`` from the end's.
+    corner : ndarray of int, shape (n_stops,)
+        Which corner, from 1 at the start's end.
+
+    Examples
+    --------
+    >>> times = np.arange(10.0)
+    >>> linear = np.array([0, 70, 95, 125, 102, 99, 150, 104, 103, 30.0])
+    >>> rows, direction, corner = corner_stops(times, linear, np.array([100.0]))
+    >>> rows.tolist(), direction.tolist(), corner.tolist()
+    ([[2.0, 5.0], [7.0, 8.0]], ['outbound', 'inbound'], [1, 1])
+    """
+    tracked = np.flatnonzero(np.isfinite(linear))
+    rows, direction, which = [], [], []
+    for number, corner in enumerate(corners, 1):
+        offset = linear[tracked] - corner
+        state = np.where(
+            np.abs(offset) <= zone, 1, np.where(np.abs(offset) > leave, -1, 0)
+        )
+        decided = np.flatnonzero(state != 0)
+        near = state[decided] == 1
+        edges = np.diff(np.concatenate([[0], near.astype(np.int8), [0]]))
+        for first, after in zip(
+            np.flatnonzero(edges == 1), np.flatnonzero(edges == -1), strict=True
+        ):
+            arrival = times[tracked[decided[first]]]
+            departure = times[tracked[decided[after - 1]]]
+            if first == 0 or departure == arrival:
+                continue
+            came_from = offset[decided[first - 1]]
+            rows.append([arrival, departure])
+            direction.append("outbound" if came_from < 0 else "inbound")
+            which.append(number)
+    order = np.argsort([row[0] for row in rows], kind="stable")
+    return (
+        np.array(rows, dtype=np.float64).reshape(-1, 2)[order],
+        np.array(direction, dtype=str)[order],
+        np.array(which, dtype=np.int64)[order],
+    )
+
+
+def engagement_sections(
+    stops: NDArray[np.float64],
+    *,
+    engaged: float = ENGAGED_SECONDS,
+    min_section: float = MIN_SECTION,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """The engaged and disengaged sections of corner stops (Ólafsdóttir et al. 2017).
+
+    The first and last ``engaged`` seconds of a stop are engaged and the time
+    between them disengaged; a stop no longer than ``2 * engaged`` is engaged
+    throughout. Sections shorter than ``min_section`` are left out.
+
+    Parameters
+    ----------
+    stops : ndarray, shape (n_stops, 2)
+        ``[arrival, departure]`` seconds.
+    engaged, min_section : float
+        Seconds.
+
+    Returns
+    -------
+    engaged_rows, disengaged_rows : ndarray, shape (n, 2)
+        ``[start, stop]`` seconds, in time order.
+
+    Examples
+    --------
+    >>> stops = np.array([[0.0, 1.0], [10.0, 18.0], [30.0, 41.0], [50.0, 70.0]])
+    >>> engaged, disengaged = engagement_sections(stops)
+    >>> engaged.tolist()
+    [[10.0, 18.0], [30.0, 35.0], [36.0, 41.0], [50.0, 55.0], [65.0, 70.0]]
+    >>> disengaged.tolist()
+    [[55.0, 65.0]]
+    """
+    start, stop = stops[:, 0], stops[:, 1]
+    whole = stop - start <= 2 * engaged
+    split = ~whole
+    engaged_rows = np.concatenate(
+        [
+            stops[whole],
+            np.column_stack([start[split], start[split] + engaged]),
+            np.column_stack([stop[split] - engaged, stop[split]]),
+        ]
+    )
+    disengaged_rows = np.column_stack([start[split] + engaged, stop[split] - engaged])
+
+    def kept(rows: NDArray[np.float64]) -> NDArray[np.float64]:
+        rows = rows[rows[:, 1] - rows[:, 0] >= min_section]
+        return rows[np.argsort(rows[:, 0], kind="stable")]
+
+    return kept(engaged_rows), kept(disengaged_rows)
 
 
 def _declared_track(
@@ -1173,6 +1448,10 @@ def load_session(
     }
     epochs["outbound"] = runs[direction == "outbound"]
     epochs["inbound"] = runs[direction == "inbound"]
+    corners = np.cumsum(np.linalg.norm(np.diff(nodes, axis=0), axis=1))[:-1]
+    stops, stop_direction, stop_corner = corner_stops(times, linear, corners)
+    epochs["corner_stops"] = stops
+    epochs["engaged"], epochs["disengaged"] = engagement_sections(stops)
     params: dict[str, Any] = {
         "bin_size": BIN_SIZE,
         "min_speed": MIN_SPEED,
@@ -1187,6 +1466,10 @@ def load_session(
         "track_width": width,
         "end_exclusion": END_EXCLUSION,
         "corner_exclusion": CORNER_EXCLUSION,
+        "min_speed_2017": MIN_SPEED_2017,
+        "immobile_speed": IMMOBILE_SPEED,
+        "corner_stop_direction": stop_direction,
+        "corner_stop_corner": stop_corner,
         "paper_session": (PAPER_SESSIONS.get(entry.session) or (None, None, ""))[:2],
         "little_led_positions": little,
     }
@@ -1259,6 +1542,30 @@ def load_session(
         f"{np.sum(direction == 'inbound')} inbound; the paper: 'rats completed 20 "
         "full laps'), each from leaving one end's 10 cm to reaching the other's."
     )
+    durations = stops[:, 1] - stops[:, 0]
+    if durations.size:
+        notes.append(
+            f"{durations.size} corner stops (rec.epochs['corner_stops']: within "
+            f"{CORNER_ZONE:g} cm of a corner until {CORNER_LEAVE:g} cm away, our "
+            f"choice), {np.mean(durations):.1f} s long on average (SD "
+            f"{np.std(durations):.1f} s; Ólafsdóttir et al. 2017: 'mean pause "
+            "duration = 10.71 s [SD = 16.49 s]', over their 24 sessions). "
+            f"{len(epochs['engaged'])} engaged and {len(epochs['disengaged'])} "
+            "disengaged sections, the paper's first and last 5 s of a stop and the "
+            "time between."
+        )
+        speed = session_speed(times, positions)
+        if speed is not None:
+            inside = np.zeros(times.size, dtype=bool)
+            for start, stop in stops:
+                inside |= (times >= start) & (times <= stop)
+            slow = float(np.nanmean(speed[inside] < IMMOBILE_SPEED))
+            notes.append(
+                f"At the corners the speed is below {IMMOBILE_SPEED:g} cm/s in "
+                f"{slow:.1%} of the stops' samples (compute_speed's defaults): "
+                "the head LED moves while the rat eats, and the 2017 paper's "
+                "events must stay below that speed."
+            )
     return Recording(
         **entry.identity(path_or_stream),
         animal=f"rat {rat}",

@@ -311,6 +311,39 @@ def test_lfp_reader_gives_microvolts_on_the_days_clock(day):
     )
 
 
+def test_runways_along_the_x_axis_are_one_direction_across_0_and_180_degrees():
+    """R2142's runways run along the camera's x axis, split between 1 and 179 degrees.
+
+    Either half alone is smaller than the diagonal's bin, which then took the
+    runways' place and gave a Z with a 15 cm diagonal and no runs.
+    """
+    angle = np.radians(
+        np.r_[np.full(400, 1.0), np.full(300, 179.0), np.full(500, 41.0)]
+    )
+    runway, diagonal = np.degrees(olafsdottir_2016._axial_peaks(angle))
+    assert (runway, diagonal) == pytest.approx((2.5, 42.5))
+
+
+def test_corner_stops_and_their_engaged_sections():
+    """A stop runs from arriving within 20 cm to the last sample before 40 cm away."""
+    times = np.arange(0.0, 40.0, 0.5)
+    # Out to the corner at 100 cm, 13 s there (head swinging to 30 cm off and
+    # back), on to 200 cm, then back to stop 1 s at the corner.
+    linear = np.interp(
+        times, [0, 5, 18, 23, 30, 31, 40], [0, 100, 100, 200, 100, 100, 0]
+    )
+    linear[np.isclose(times, 10.0)] = 130.0
+    rows, direction, corner = olafsdottir_2016.corner_stops(
+        times, linear, np.array([100.0])
+    )
+    np.testing.assert_allclose(rows, [[4.0, 19.0], [29.0, 32.5]])
+    assert direction.tolist() == ["outbound", "inbound"]
+    assert corner.tolist() == [1, 1]
+    engaged, disengaged = olafsdottir_2016.engagement_sections(rows)
+    np.testing.assert_allclose(engaged, [[4.0, 9.0], [14.0, 19.0], [29.0, 32.5]])
+    np.testing.assert_allclose(disengaged, [[9.0, 14.0]])
+
+
 def test_run_intervals_skip_a_return_to_the_same_end():
     times = np.arange(8.0)
     linear = np.array([1.0, 50.0, 4.0, 60.0, 99.0, 50.0, 97.0, np.nan])
@@ -396,8 +429,11 @@ def _rate_map_positions(rec):
     return positions
 
 
-def _rate_maps(rec, unit_ids):
-    """Outbound and inbound rate maps of ``unit_ids``, as the paper builds them."""
+def _rate_maps(rec, unit_ids, min_speed=None):
+    """Outbound and inbound rate maps of ``unit_ids``, as the paper builds them.
+
+    ``min_speed`` defaults to the 2016 paper's 3 cm/s; the 2017 paper's is 10.
+    """
     from neurospatial import compute_spatial_rates
 
     names = list(rec.units.index)
@@ -411,7 +447,7 @@ def _rate_maps(rec, unit_ids):
             positions,
             method="binned",
             bandwidth=rec.params["bandwidth"],
-            min_speed=rec.params["min_speed"],
+            min_speed=rec.params["min_speed"] if min_speed is None else min_speed,
             epochs=rec.epochs[direction],
             unit_ids=np.asarray(unit_ids),
         )
@@ -427,7 +463,7 @@ def _longest_run(above):
     return best
 
 
-def _place_cells(rec):
+def _place_cells(rec, min_speed=None):
     """CA1 units with a field of 20 cm or more above their mean rate, peak above 1 Hz.
 
     The paper's rule; the field as bins above the cell's mean rate on the track
@@ -438,7 +474,7 @@ def _place_cells(rec):
     ca1 = [u for u in rec.units.index if rec.units.loc[u, "brain_region"] == "CA1"]
     track = rec.epochs["track"][0]
     mean = rec.units.loc[ca1, "n_spikes_track"].to_numpy() / (track[1] - track[0])
-    maps = _rate_maps(rec, ca1)
+    maps = _rate_maps(rec, ca1, min_speed)
     order = np.argsort(rec.env.to_linear(rec.env.bin_centers))
     min_bins = int(np.ceil(20.0 / rec.params["bin_size"]))
     place = []
@@ -772,3 +808,507 @@ def test_days_matched_to_the_papers_sessions(session, n_ca1, n_place, paper_sess
         paper_session - 1
     ]
     assert n_ca1 >= place_cells
+
+
+# --------------------------------------------------------------------------
+# Ólafsdóttir, Carpenter & Barry 2017 (Neuron 96:925-935): awake replay at the
+# track's corners. The constants down to SEED_2017 were written and committed
+# before any candidate event of a track trial was detected or judged.
+# --------------------------------------------------------------------------
+
+#: The paper: "We identified a total of 149 engaged replay events and 364
+#: disengaged replay events ... the percentage of putative events qualifying as
+#: replay events for the two categories was not different (36.88% versus
+#: 38.60%, p = 0.28)". 149 / 404 = 36.88% and 364 / 943 = 38.60% to the
+#: hundredth, so 404 engaged and 943 disengaged putative trajectory events
+#: (inferred), and 513 of 1,347 pooled: 38.1%.
+PAPER_2017_PUTATIVE = {"engaged": 404, "disengaged": 943}
+PAPER_2017_REPLAY = {"engaged": 149, "disengaged": 364}
+PAPER_2017_SHARE = 513 / 1347
+#: Criterion A, the worked result, fixed before the run: pooled over the
+#: included days, the share of putative trajectory events judged replay lies
+#: within 10 points of the paper's pooled 38.1% (28.1% to 48.1%). The engaged
+#: and disengaged shares are reported and pinned, with no criterion of their own.
+SHARE_2017_BAND = (PAPER_2017_SHARE - 0.10, PAPER_2017_SHARE + 0.10)
+#: Criterion B, fixed before the run, the paper's main finding ("Engaged events
+#: showed a robust bias to reactivate spatial firing congruent with an animal's
+#: current direction of travel (62.26% versus chance ...)", disengaged 52.19%,
+#: "engaged versus disengaged, p < 0.0001"): pooled over the included days, the
+#: engaged reactivation events are congruent more often than the cell-ID
+#: shuffle's chance and more often than the disengaged events, each by the
+#: paper's bootstrap (10,000 resamples of the events; more than 97.5% of the
+#: resampled shares above chance, more than 97.5% of the resampled
+#: engaged-minus-disengaged differences above 0).
+PAPER_2017_CONGRUENT = {"engaged": 0.6226, "disengaged": 0.5219}
+N_BOOTSTRAP = 10_000
+N_CELL_SHUFFLES = 100
+#: Which deposit days enter: the paper's inclusion rule, "Sessions where the
+#: median decoding error during track running ... did not exceed 30cm ... were
+#: included". Here: place cells' outbound and inbound rate maps over every run
+#: (the paper's 2017 maps: 2 cm bins, Gaussian of sigma 10 cm, ends and corners
+#: left out, speed above 10 cm/s); each run decoded in 500 ms bins with its own
+#: direction's maps; the error is the distance along the track from the MAP
+#: bin to the animal at the bin's centre, over bins where the animal runs
+#: faster than 10 cm/s; a day enters if the median is 30 cm or less. The
+#: paper's other exclusion (R2336 day 4, R2198 day 8: headstages disconnected
+#: in the rest) cannot be applied: the deposit does not number days, and
+#: neither R2336 rest is short (6,484 and 7,553 s).
+DECODING_ERROR_LIMIT = 30.0
+DECODING_DT = 0.5
+RUN_SPEED_2017 = 10.0
+#: Our choices, fixed before the run, where the paper states none:
+#: - place cells as in the 2016 worked result (field of 20 contiguous bins
+#:   above the mean track rate, peak above 1 Hz, in either direction's map;
+#:   interneurons a mean track rate above 5 Hz), on the 2017 maps (10 cm/s);
+#: - speed: ``rec``'s session speed (compute_speed's defaults), on the 1 ms
+#:   grid by linear interpolation (``_ripple._speed_on_grid``);
+#: - multi-unit activity: every CA1 unit at 1 kHz over the track trial, the
+#:   detector's place cells selected from them; its mean and SD are over the
+#:   whole track trial, and ``behavior_intervals`` keeps the events wholly
+#:   inside one section (``literature_methods.olafsdottir_2017``,
+#:   ``analysis="arm"`` for reactivation and ``"trajectory"`` for trajectory
+#:   events);
+#: - corner stops, engaged and disengaged sections: ``rec.epochs``'
+#:   ``"engaged"`` and ``"disengaged"`` (the loader's corner stops: within 20 cm
+#:   of a corner along the track, a stop ending when the animal is 40 cm away);
+#: - trajectory events judged by OLAFSDOTTIR_2017 as packaged, each direction's
+#:   posterior (10 ms bins, place cells) scored on its own, the direction with
+#:   the higher score kept with its own p ("events were classified as either
+#:   outbound or inbound depending on which produced the higher best-fit
+#:   line"), replay at p < 0.025, rng 2017 + the event's index;
+#: - reactivation events decoded from the event's summed spikes (one bin as
+#:   long as the event) with each direction's maps; the arm of the 6 (3 arms x
+#:   2 directions) with the most summed posterior is the event's; congruent
+#:   when its direction is the one the animal arrived at the corner running;
+#:   the cell-ID shuffle reassigns each active place cell's count to a place
+#:   cell silent in the event, without replacement, 100 times, rng 2017 + the
+#:   event's index; chance is the mean shuffled congruent share.
+SEED_2017 = 2017
+
+# The analysis of the 2017 paper, as fixed above.
+
+#: Every deposit day, in the registry's order.
+DAYS = (
+    "R2142-2014-08-06",
+    "R2192-2014-09-17",
+    "R2192-2014-10-01",
+    "R2217-2014-12-13",
+    "R2217-2014-12-18",
+    "R2335-2015-10-26",
+    "R2336-2015-11-01",
+    "R2336-2015-11-04",
+    "R2337-2015-11-27",
+    "R2337-2015-12-01",
+)
+
+
+#: Deposit days no load can read: R2192-2014-10-01's rest tetrode 4 file is
+#: zeros from spike 18,053 on, 45,749 of its 63,801 (the registry's SHA-256: the
+#: deposit's own file), and the reader refuses it.
+UNREADABLE = {"R2192-2014-10-01": "20141001_R2192_sleepPOST.4 is zero-filled"}
+#: Checks a day fails for reasons the 2017 analysis does not touch: R2335's
+#: second open field (17:26, five hours after the first) lies past the span
+#: the clock check takes as the recording's.
+ACCEPTED_2017 = {"R2335-2015-10-26": ("clock",)}
+
+
+def _along_track(rec, points):
+    """Distance along the fitted Z from its start, cm; NaN where untracked."""
+    return olafsdottir_2016._linear(points, rec.params["track_nodes"])[0]
+
+
+def _nearest_sample(times, at):
+    after = np.clip(np.searchsorted(times, at), 1, times.size - 1)
+    return np.where(at - times[after - 1] <= times[after] - at, after - 1, after)
+
+
+def _decoding_error(rec, cells, maps):
+    """The 2017 inclusion measure: median running decoding error along the track, cm."""
+    from neurospatial.behavior import compute_speed
+    from neurospatial.datasets._ripple import event_rows
+    from neurospatial.decoding import decode_position
+
+    names = list(rec.units.index)
+    trains = [rec.spike_times[names.index(u)] for u in cells]
+    speed = compute_speed(rec.times, rec.positions)
+    animal = _along_track(rec, rec.positions)
+    bin_along = _along_track(rec, rec.env.bin_centers)
+    errors = []
+    for direction, model in maps.items():
+        for start, stop in rec.epochs[direction]:
+            n_bins = int((stop - start) // DECODING_DT)
+            if n_bins == 0:
+                continue
+            counts, centres = event_rows(
+                trains,
+                start,
+                start + n_bins * DECODING_DT,
+                time_bin=DECODING_DT,
+                step=DECODING_DT,
+            )
+            decoded = decode_position(
+                rec.env, counts, model, dt=DECODING_DT, times=centres
+            ).map_bin
+            at = _nearest_sample(rec.times, centres)
+            keep = (
+                (speed[at] > RUN_SPEED_2017) & np.isfinite(animal[at]) & (decoded >= 0)
+            )
+            errors.append(np.abs(bin_along[decoded[keep]] - animal[at][keep]))
+    return float(np.median(np.concatenate(errors)))
+
+
+def _candidates_2017(rec, ca1, cells):
+    """``literature_methods.olafsdottir_2017`` on the track trial, per analysis and section."""
+    from ripple_detection.literature_methods import Recording, run_method
+
+    from neurospatial.datasets._ripple import _speed_on_grid, spike_counts
+
+    names = list(rec.units.index)
+    track = rec.epochs["track"][0]
+    grid = track[0] + np.arange(round((track[1] - track[0]) * 1000)) / 1000.0
+    counts = spike_counts(
+        [rec.spike_times[names.index(u)] for u in ca1], grid, sampling_rate=1000.0
+    )
+    signals = Recording.from_arrays(
+        grid,
+        1000.0,
+        multiunit=counts,
+        place_cells=np.isin(ca1, cells),
+        speed=_speed_on_grid(rec, grid),
+    )
+    found = {}
+    for analysis in ("arm", "trajectory"):
+        for section in ("engaged", "disengaged"):
+            rows = rec.epochs[section]
+            if len(rows) == 0:
+                found[analysis, section] = np.empty((0, 2))
+                continue
+            table = run_method(
+                "olafsdottir_2017", signals, behavior_intervals=rows, analysis=analysis
+            )
+            found[analysis, section] = table[["start_time", "end_time"]].to_numpy()
+    return found
+
+
+def _judge_trajectory(rec, cells, maps, events):
+    """OLAFSDOTTIR_2017 on each event, the direction with the higher score kept.
+
+    Returns (is_replay, p_value, direction) per event.
+    """
+    from neurospatial.decoding import decode_position
+    from neurospatial.replay import detect_replay
+    from neurospatial.replay.methods import OLAFSDOTTIR_2017
+
+    dt = rec.params["replay_dt"]
+    rows = []
+    for k, (start, stop) in enumerate(events):
+        # Closed event bounds on the 1 ms grid: one sample past the end.
+        counts, centres = _event_inputs(rec, cells, start, stop + 0.001)
+        best = None
+        for direction, model in maps.items():
+            posterior = decode_position(
+                rec.env, counts, model, dt=dt, times=centres
+            ).posterior
+            result = detect_replay(
+                rec.env,
+                posterior,
+                centres,
+                replay_method=OLAFSDOTTIR_2017,
+                spike_counts=counts,
+                encoding_models=model,
+                dt=dt,
+                rng=SEED_2017 + k,
+            )
+            if best is None or result.score > best[0].score:
+                best = (result, direction)
+        rows.append((bool(best[0].is_replay), float(best[0].p_value), best[1]))
+    return rows
+
+
+def _arm_masses(rec, maps, counts, duration, *, jointly=False):
+    """Each row's summed posterior on the 3 arms of each direction, shape (n, 6).
+
+    The Methods decode each direction on its own, so each direction's
+    posterior sums to 1; ``jointly=True`` decodes both in one posterior
+    (``decode_jointly``), which can say which direction the spikes match.
+    """
+    from neurospatial.decoding import decode_jointly, decode_position
+
+    corners = np.cumsum(
+        np.linalg.norm(np.diff(rec.params["track_nodes"], axis=0), axis=1)
+    )[:-1]
+    arm = np.searchsorted(corners, _along_track(rec, rec.env.bin_centers))
+    if jointly:
+        joint = decode_jointly(rec.env, counts, maps, dt=duration)
+        posteriors = [joint.joint(name) for name in maps]
+    else:
+        posteriors = [
+            decode_position(rec.env, counts, model, dt=duration).posterior
+            for model in maps.values()
+        ]
+    return np.concatenate(
+        [
+            np.stack([posterior[:, arm == a].sum(axis=1) for a in range(3)], axis=1)
+            for posterior in posteriors
+        ],
+        axis=1,
+    )
+
+
+def _reactivations(rec, cells, maps, events, *, jointly=False):
+    """Each reactivation event's congruence and its cell-ID shuffle's congruent share.
+
+    Returns (congruent, chance) per event; chance is NaN when fewer place cells
+    are silent than active, so no shuffle exists. ``jointly`` as in
+    ``_arm_masses``.
+    """
+    names = list(rec.units.index)
+    trains = [rec.spike_times[names.index(u)] for u in cells]
+    stops = rec.epochs["corner_stops"]
+    arrived = rec.params["corner_stop_direction"]
+    directions = np.array(list(maps))
+    rows = []
+    for k, (start, stop) in enumerate(events):
+        end = stop + 0.001
+        counts = np.array(
+            [[np.searchsorted(t, end) - np.searchsorted(t, start) for t in trains]]
+        )
+        which = np.flatnonzero((stops[:, 0] <= start) & (stops[:, 1] >= stop))[0]
+        observed = bool(
+            directions[
+                _arm_masses(rec, maps, counts, end - start, jointly=jointly).argmax(
+                    axis=1
+                )
+                // 3
+            ][0]
+            == arrived[which]
+        )
+        active = np.flatnonzero(counts[0] > 0)
+        silent = np.flatnonzero(counts[0] == 0)
+        if silent.size < active.size:
+            rows.append((observed, np.nan))
+            continue
+        rng = np.random.default_rng(SEED_2017 + k)
+        shuffled = np.zeros((N_CELL_SHUFFLES, len(cells)), dtype=np.int64)
+        for i in range(N_CELL_SHUFFLES):
+            shuffled[i, rng.choice(silent, active.size, replace=False)] = counts[
+                0, active
+            ]
+        chosen = (
+            _arm_masses(rec, maps, shuffled, end - start, jointly=jointly).argmax(
+                axis=1
+            )
+            // 3
+        )
+        rows.append((observed, float(np.mean(directions[chosen] == arrived[which]))))
+    return rows
+
+
+def _day_2017(session):
+    """The 2017 analysis of one deposit day, as small arrays and counts."""
+    from neurospatial.datasets import load
+
+    rec = load(
+        "olafsdottir_2016",
+        session,
+        accept_failed_checks=ACCEPTED_2017.get(session, ()),
+    )
+    ca1, cells = _place_cells(rec, RUN_SPEED_2017)
+    maps = _rate_maps(rec, cells, RUN_SPEED_2017)
+    out = {
+        "n_ca1": len(ca1),
+        "n_place": len(cells),
+        "decoding_error": _decoding_error(rec, cells, maps),
+        "n_stops": len(rec.epochs["corner_stops"]),
+        "engaged_s": float(np.sum(np.diff(rec.epochs["engaged"], axis=1))),
+        "disengaged_s": float(np.sum(np.diff(rec.epochs["disengaged"], axis=1))),
+    }
+    if out["decoding_error"] > DECODING_ERROR_LIMIT:
+        return out
+    found = _candidates_2017(rec, ca1, cells)
+    for section in ("engaged", "disengaged"):
+        out[f"trajectory_{section}"] = _judge_trajectory(
+            rec, cells, maps, found["trajectory", section]
+        )
+        out[f"arm_{section}"] = _reactivations(rec, cells, maps, found["arm", section])
+        out[f"arm_joint_{section}"] = _reactivations(
+            rec, cells, maps, found["arm", section], jointly=True
+        )
+    return out
+
+
+def _direction_read_while_running(rec, cells, maps, *, jointly):
+    """Share of 500 ms running bins whose 6-arm argmax names the running direction."""
+    from neurospatial.datasets._ripple import event_rows
+
+    names = list(rec.units.index)
+    trains = [rec.spike_times[names.index(u)] for u in cells]
+    directions = np.array(list(maps))
+    hits = []
+    for direction in directions:
+        for start, stop in rec.epochs[direction]:
+            n_bins = int((stop - start) // DECODING_DT)
+            if n_bins == 0:
+                continue
+            counts, _ = event_rows(
+                trains,
+                start,
+                start + n_bins * DECODING_DT,
+                time_bin=DECODING_DT,
+                step=DECODING_DT,
+            )
+            counts = counts[counts.sum(axis=1) > 0]
+            if len(counts):
+                masses = _arm_masses(rec, maps, counts, DECODING_DT, jointly=jointly)
+                hits.append(directions[masses.argmax(axis=1) // 3] == direction)
+    hits = np.concatenate(hits)
+    return int(hits.sum()), hits.size
+
+
+def _pooled(days, key):
+    """Rows of ``key`` over the days, in the days' order."""
+    return [row for result in days.values() for row in result.get(key, [])]
+
+
+def _congruence(days, key):
+    """Congruent counts, chance and the paper's bootstrap, per section, pooled.
+
+    Returns, per section, (congruent, events, chance to 4 places, share of
+    resamples above chance), and under ``"difference"`` the share of
+    resampled engaged-minus-disengaged differences above 0.
+    """
+    rng = np.random.default_rng(SEED_2017)
+    out, resampled = {}, {}
+    for section in ("engaged", "disengaged"):
+        rows = _pooled(days, f"{key}_{section}")
+        congruent = np.array([row[0] for row in rows], dtype=float)
+        chance = float(np.nanmean([row[1] for row in rows]))
+        boot = rng.choice(congruent, size=(N_BOOTSTRAP, congruent.size)).mean(axis=1)
+        resampled[section] = boot
+        out[section] = (
+            int(congruent.sum()),
+            congruent.size,
+            round(chance, 4),
+            float(np.mean(boot > chance)),
+        )
+    out["difference"] = float(
+        np.mean(resampled["engaged"] - resampled["disengaged"] > 0)
+    )
+    return out
+
+
+#: Measured on every readable deposit day by the analysis fixed above: its
+#: place cells and median running decoding error, cm. Every one is within
+#: 30 cm, so all 9 enter.
+MEASURED_DAYS_2017 = {
+    "R2142-2014-08-06": (28, 13.87),
+    "R2192-2014-09-17": (67, 5.15),
+    "R2217-2014-12-13": (55, 6.97),
+    "R2217-2014-12-18": (36, 11.44),
+    "R2335-2015-10-26": (26, 21.72),
+    "R2336-2015-11-01": (52, 7.96),
+    "R2336-2015-11-04": (61, 6.62),
+    "R2337-2015-11-27": (49, 8.81),
+    "R2337-2015-12-01": (42, 8.02),
+}
+#: Pooled over the days, per section: trajectory events judged replay by the
+#: preset (p < 0.025), those the paper's rule calls replay (a score above the
+#: 97.5th percentile of 100 shuffles: at most 2 as high, p <= 3 / 101), and the
+#: putative events.
+MEASURED_TRAJECTORY_2017 = {"engaged": (14, 18, 51), "disengaged": (77, 91, 257)}
+#: Pooled over the days, per section: (congruent, events, chance, share of
+#: resamples above chance), and the share of resampled differences above 0.
+MEASURED_CONGRUENCE_2017 = {
+    "engaged": (111, 241, 0.5078, 0.067),
+    "disengaged": (509, 976, 0.4894, 0.9781),
+    "difference": 0.0456,
+}
+MEASURED_CONGRUENCE_JOINT_2017 = {
+    "engaged": (149, 241, 0.5098, 0.9995),
+    "disengaged": (591, 976, 0.528, 1.0),
+    "difference": 0.6517,
+}
+#: On the default day's runs: (bins naming the running direction, bins with
+#: spikes), each direction decoded on its own and both decoded jointly.
+DIRECTION_READ_2017 = ((1315, 2564), (2084, 2564))
+
+
+@pytest.fixture(scope="module")
+def days_2017():
+    """The 2017 analysis of every readable deposit day (9 loaded, 3.9 GB cached)."""
+    pytest.importorskip("ripple_detection.literature_methods")
+    return {day: _day_2017(day) for day in DAYS if day not in UNREADABLE}
+
+
+@pytest.mark.realdata
+def test_a_deposit_file_zero_filled_leaves_one_day_out():
+    """R2192-2014-10-01's rest tetrode 4 file is zeros in its last 45,749 of 63,801 spikes.
+
+    Its SHA-256 is the registry's, so the deposit holds it so; the reader
+    refuses the file, so the day cannot be loaded and enters no 2017 result.
+    """
+    from neurospatial.datasets import load
+
+    with pytest.raises(ValueError, match=r"20141001_R2192_sleepPOST\.4: the header"):
+        load("olafsdottir_2016", "R2192-2014-10-01")
+
+
+@pytest.mark.realdata
+def test_2017_every_day_enters_by_its_decoding_error(days_2017):
+    measured = {
+        day: (result["n_place"], round(result["decoding_error"], 2))
+        for day, result in days_2017.items()
+    }
+    assert measured == MEASURED_DAYS_2017
+    assert all(error <= DECODING_ERROR_LIMIT for _, error in measured.values())
+
+
+@pytest.mark.realdata
+def test_2017_worked_result_share_of_trajectory_events_judged_replay(days_2017):
+    """Criterion A, fixed before the run, against the paper's pooled 38.1%."""
+    measured = {}
+    for section in ("engaged", "disengaged"):
+        rows = _pooled(days_2017, f"trajectory_{section}")
+        measured[section] = (
+            sum(row[0] for row in rows),
+            sum(row[1] <= 3 / 101 for row in rows),
+            len(rows),
+        )
+    assert measured == MEASURED_TRAJECTORY_2017
+    share = sum(m[0] for m in measured.values()) / sum(m[2] for m in measured.values())
+    record = olafsdottir_2016.AWAKE_RESULT
+    met = SHARE_2017_BAND[0] <= share <= SHARE_2017_BAND[1]
+    assert met is (record["status"] == "reproduced")
+    recorded = record["ours"] if met else record["attempted"]["value"]
+    assert recorded == round(share, 3)
+
+
+@pytest.mark.realdata
+def test_2017_congruence_as_the_methods_decode_it(days_2017):
+    """Criterion B, fixed before the run: each direction decoded on its own."""
+    measured = _congruence(days_2017, "arm")
+    assert measured == MEASURED_CONGRUENCE_2017
+    met = measured["engaged"][3] > 0.975 and measured["difference"] > 0.975
+    assert met is olafsdottir_2016.AWAKE_CONTENT["met"]
+
+
+@pytest.mark.realdata
+def test_2017_congruence_decoded_jointly(days_2017):
+    """Not fixed before the run: both directions in one posterior (decode_jointly)."""
+    assert _congruence(days_2017, "arm_joint") == MEASURED_CONGRUENCE_JOINT_2017
+
+
+@pytest.mark.realdata
+def test_separate_decodes_cannot_tell_the_running_direction(rec):
+    """Why the Methods' reading finds no congruence: it reads no direction.
+
+    On the default day's runs, in 500 ms bins with spikes, the arm of 6 with
+    the most posterior names the running direction about as often as a coin
+    when each direction is decoded on its own, and far more often decoded
+    jointly.
+    """
+    _, cells = _place_cells(rec, RUN_SPEED_2017)
+    maps = _rate_maps(rec, cells, RUN_SPEED_2017)
+    separate = _direction_read_while_running(rec, cells, maps, jointly=False)
+    joint = _direction_read_while_running(rec, cells, maps, jointly=True)
+    assert (separate, joint) == DIRECTION_READ_2017

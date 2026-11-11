@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Datasets: `olafsdottir_2016` gives awake replay at the corners (Ólafsdóttir et al. 2017)
+
+- `rec.epochs["corner_stops"]`, `["engaged"]` and `["disengaged"]`: each stay
+  at a corner of the Z-track, and the sections Ólafsdóttir, Carpenter & Barry
+  (2017) analyse awake replay in, the first and last 5 s of a stop and the time
+  between; `params["corner_stop_direction"]` gives the run each stop arrived on.
+  `olafsdottir_2016.corner_stops` and `engagement_sections` build them.
+- A second worked result, `olafsdottir_2016.AWAKE_RESULT`, with its criterion
+  fixed before the run: `literature_methods.olafsdottir_2017` candidates on the
+  track and `OLAFSDOTTIR_2017` judgments, pooled over the deposit's days. It
+  is met: 91 of 308 putative trajectory events (29.5%) on the 9 readable days
+  are replay, against the paper's 38.1% (band 28.1% to 48.1%); the paper's
+  97.5th-percentile rule, one shuffle looser than the preset's p < 0.025, calls
+  109 (35.4%).
+- `olafsdottir_2016.AWAKE_CONTENT`: the paper's main finding, engaged
+  reactivations congruent with the running direction, is not met when each
+  direction is decoded on its own as the Methods describe (46.1% against a
+  chance of 50.8%). That decode names the running direction in 51.3% of running
+  bins; `decode_jointly` names it in 81.3% and gives 61.8% congruent engaged
+  events (the paper 62.26%), but disengaged events are as congruent (60.6%).
+- `R2192-2014-10-01` cannot be loaded: a rest tetrode file in the deposit is
+  zero-filled. The docs page says so, and that `R2335-2015-10-26` fails the
+  clock check on its second open field.
+- Fixed: R2142's Z was fitted with a 15 cm diagonal and no runs, because its
+  runways run along the camera's x axis and their directions split between 0
+  and 180 degrees. The other days fit as before.
+
 ### Datasets: Pfeiffer & Foster's open-field session (`pfeiffer_2013`)
 
 - `load("pfeiffer_2013")` gives rat 1 day 1 of Pfeiffer & Foster (2013), the

@@ -12,8 +12,10 @@ code.
 Sargolini et al. (2006), Valero et al. (2022) and Forli et al. (2025) have
 no test: their ``WORKED_RESULT`` says why a result is not possible yet.
 Bhattarai et al. (2020), Carey et al. (2019), Igata et al. (2021), Huszar et
-al. (2022), Diba & Buzsáki (2007), Pfeiffer & Foster (2013), Ólafsdóttir et al. (2016), Shin et al. (2019)
-and Tirole et al. (2022) are tested in their own files (``test_bhattarai_2020.py``,
+al. (2022), Diba & Buzsáki (2007), Pfeiffer & Foster (2013), Ólafsdóttir et al.
+(2016) and its awake replay of Ólafsdóttir et al. (2017)
+(``olafsdottir_2016.AWAKE_RESULT``), Shin et al. (2019) and Tirole et al. (2022)
+are tested in their own files (``test_bhattarai_2020.py``,
 ``test_tirole_2022_replay.py`` and so on),
 which pin
 their recorded numbers; this file checks only that their records are complete.
@@ -361,10 +363,15 @@ ALL = [
 ]
 
 
-@pytest.mark.parametrize("module", ALL, ids=lambda module: module.__name__)
-def test_record_is_complete(module):
+#: Every worked result: each dataset's, and the second paper's on one dataset.
+RECORDS = {module.__name__: module.WORKED_RESULT for module in ALL} | {
+    "olafsdottir_2016.AWAKE_RESULT": olafsdottir_2016.AWAKE_RESULT,
+}
+
+
+@pytest.mark.parametrize("record", list(RECORDS.values()), ids=list(RECORDS))
+def test_record_is_complete(record):
     """Each record has the same fields; a result has its quote, a non-result says why."""
-    record = module.WORKED_RESULT
     assert set(record) - {"planted_recall"} == RECORD_KEYS
     if record["status"] == "not possible yet":
         assert record["level"] is None
