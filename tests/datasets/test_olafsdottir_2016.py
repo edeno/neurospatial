@@ -396,8 +396,11 @@ def _rate_map_positions(rec):
     return positions
 
 
-def _rate_maps(rec, unit_ids):
-    """Outbound and inbound rate maps of ``unit_ids``, as the paper builds them."""
+def _rate_maps(rec, unit_ids, min_speed=None):
+    """Outbound and inbound rate maps of ``unit_ids``, as the paper builds them.
+
+    ``min_speed`` defaults to the 2016 paper's 3 cm/s; the 2017 paper's is 10.
+    """
     from neurospatial import compute_spatial_rates
 
     names = list(rec.units.index)
@@ -411,7 +414,7 @@ def _rate_maps(rec, unit_ids):
             positions,
             method="binned",
             bandwidth=rec.params["bandwidth"],
-            min_speed=rec.params["min_speed"],
+            min_speed=rec.params["min_speed"] if min_speed is None else min_speed,
             epochs=rec.epochs[direction],
             unit_ids=np.asarray(unit_ids),
         )
@@ -427,7 +430,7 @@ def _longest_run(above):
     return best
 
 
-def _place_cells(rec):
+def _place_cells(rec, min_speed=None):
     """CA1 units with a field of 20 cm or more above their mean rate, peak above 1 Hz.
 
     The paper's rule; the field as bins above the cell's mean rate on the track
@@ -438,7 +441,7 @@ def _place_cells(rec):
     ca1 = [u for u in rec.units.index if rec.units.loc[u, "brain_region"] == "CA1"]
     track = rec.epochs["track"][0]
     mean = rec.units.loc[ca1, "n_spikes_track"].to_numpy() / (track[1] - track[0])
-    maps = _rate_maps(rec, ca1)
+    maps = _rate_maps(rec, ca1, min_speed)
     order = np.argsort(rec.env.to_linear(rec.env.bin_centers))
     min_bins = int(np.ceil(20.0 / rec.params["bin_size"]))
     place = []

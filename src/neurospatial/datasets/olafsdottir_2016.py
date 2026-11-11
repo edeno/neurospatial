@@ -117,6 +117,8 @@ __all__ = [
     "REQUIRES",
     "WATCH_OUTS",
     "WORKED_RESULT",
+    "corner_stops",
+    "engagement_sections",
     "load_session",
     "read_session_lfp",
     "run_intervals",
@@ -153,6 +155,23 @@ END_ZONE = END_EXCLUSION
 FIT_MIN_SPEED = 10.0
 #: The share of track samples the placement tolerance leaves outside the track.
 TOLERANCE_QUANTILE = 0.99
+#: Ólafsdóttir et al. 2017's rate maps leave out speeds below 10 cm/s, cm/s.
+MIN_SPEED_2017 = 10.0
+#: Its replay events are at the corners with the animal below 3 cm/s, cm/s.
+IMMOBILE_SPEED = 3.0
+#: A corner stop starts when the animal comes within CORNER_ZONE of a corner,
+#: along the track, and ends when it was last that near before going
+#: CORNER_LEAVE away, cm. Our choice: the paper names no distance, and on the
+#: default day the samples below 3 cm/s near a corner lie within 20 cm of it;
+#: the head LED swings past 20 cm and back while the rat eats, which the
+#: second, wider bound does not count as leaving.
+CORNER_ZONE = 20.0
+CORNER_LEAVE = 40.0
+#: The paper's engaged periods: the first and last 5 s of a corner stop, s. A
+#: stop shorter than 10 s is engaged throughout, and a section shorter than
+#: 2 s is left out.
+ENGAGED_SECONDS = 5.0
+MIN_SECTION = 2.0
 #: Above this speed, cm/s, the LED heading is compared with movement.
 HEADING_MIN_SPEED = 10.0
 #: The ``.egf`` rate, Hz (each header's ``sample_rate 4800 Hz``).
@@ -659,6 +678,129 @@ def run_intervals(
     return np.array(rows, dtype=np.float64).reshape(-1, 2), np.array(
         direction, dtype=str
     )
+
+
+def corner_stops(
+    times: NDArray[np.float64],
+    linear: NDArray[np.float64],
+    corners: NDArray[np.float64],
+    *,
+    zone: float = CORNER_ZONE,
+    leave: float = CORNER_LEAVE,
+) -> tuple[NDArray[np.float64], NDArray[np.str_], NDArray[np.int64]]:
+    """Stays at the track's corners: from arriving to leaving, with the run's direction.
+
+    A stop at a corner starts at the first tracked sample within ``zone`` of
+    it, along the track, after the animal was more than ``leave`` away, and
+    ends at the last sample within ``zone`` before it is more than ``leave``
+    away again. Samples between the two distances, and untracked ones, neither
+    start nor end a stop. A stay with no sample beyond ``leave`` before it
+    (the trial starting at the corner) has no direction and is left out.
+
+    Parameters
+    ----------
+    times : ndarray, shape (n_time,)
+        Seconds.
+    linear : ndarray, shape (n_time,)
+        Distance along the track from its start, cm; NaN where untracked.
+    corners : ndarray, shape (n_corners,)
+        Each corner's distance along the track, cm.
+    zone, leave : float
+        cm.
+
+    Returns
+    -------
+    rows : ndarray, shape (n_stops, 2)
+        ``[arrival, departure]`` seconds, sorted by arrival.
+    direction : ndarray of str, shape (n_stops,)
+        The run the animal arrived on: ``"outbound"`` from the start's side,
+        ``"inbound"`` from the end's.
+    corner : ndarray of int, shape (n_stops,)
+        Which corner, from 1 at the start's end.
+
+    Examples
+    --------
+    >>> times = np.arange(9.0)
+    >>> linear = np.array([0.0, 70.0, 95.0, 125.0, 102.0, 99.0, 150.0, 104.0, 30.0])
+    >>> rows, direction, corner = corner_stops(times, linear, np.array([100.0]))
+    >>> rows.tolist(), direction.tolist(), corner.tolist()
+    ([[2.0, 5.0], [7.0, 7.0]], ['outbound', 'inbound'], [1, 1])
+    """
+    tracked = np.flatnonzero(np.isfinite(linear))
+    rows, direction, which = [], [], []
+    for number, corner in enumerate(corners, 1):
+        offset = linear[tracked] - corner
+        state = np.where(np.abs(offset) <= zone, 1, np.where(np.abs(offset) > leave, -1, 0))
+        decided = np.flatnonzero(state != 0)
+        near = state[decided] == 1
+        edges = np.diff(np.concatenate([[0], near.astype(np.int8), [0]]))
+        for first, after in zip(
+            np.flatnonzero(edges == 1), np.flatnonzero(edges == -1), strict=True
+        ):
+            if first == 0:
+                continue
+            came_from = offset[decided[first - 1]]
+            rows.append([times[tracked[decided[first]]], times[tracked[decided[after - 1]]]])
+            direction.append("outbound" if came_from < 0 else "inbound")
+            which.append(number)
+    order = np.argsort([row[0] for row in rows], kind="stable")
+    return (
+        np.array(rows, dtype=np.float64).reshape(-1, 2)[order],
+        np.array(direction, dtype=str)[order],
+        np.array(which, dtype=np.int64)[order],
+    )
+
+
+def engagement_sections(
+    stops: NDArray[np.float64],
+    *,
+    engaged: float = ENGAGED_SECONDS,
+    min_section: float = MIN_SECTION,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """The engaged and disengaged sections of corner stops (Ólafsdóttir et al. 2017).
+
+    The first and last ``engaged`` seconds of a stop are engaged and the time
+    between them disengaged; a stop no longer than ``2 * engaged`` is engaged
+    throughout. Sections shorter than ``min_section`` are left out.
+
+    Parameters
+    ----------
+    stops : ndarray, shape (n_stops, 2)
+        ``[arrival, departure]`` seconds.
+    engaged, min_section : float
+        Seconds.
+
+    Returns
+    -------
+    engaged_rows, disengaged_rows : ndarray, shape (n, 2)
+        ``[start, stop]`` seconds, in time order.
+
+    Examples
+    --------
+    >>> stops = np.array([[0.0, 1.0], [10.0, 18.0], [30.0, 41.0], [50.0, 70.0]])
+    >>> engaged, disengaged = engagement_sections(stops)
+    >>> engaged.tolist()
+    [[10.0, 18.0], [30.0, 35.0], [36.0, 41.0], [50.0, 55.0], [65.0, 70.0]]
+    >>> disengaged.tolist()
+    [[55.0, 65.0]]
+    """
+    start, stop = stops[:, 0], stops[:, 1]
+    whole = stop - start <= 2 * engaged
+    split = ~whole
+    engaged_rows = np.concatenate(
+        [
+            stops[whole],
+            np.column_stack([start[split], start[split] + engaged]),
+            np.column_stack([stop[split] - engaged, stop[split]]),
+        ]
+    )
+    disengaged_rows = np.column_stack([start[split] + engaged, stop[split] - engaged])
+
+    def kept(rows: NDArray[np.float64]) -> NDArray[np.float64]:
+        rows = rows[rows[:, 1] - rows[:, 0] >= min_section]
+        return rows[np.argsort(rows[:, 0], kind="stable")]
+
+    return kept(engaged_rows), kept(disengaged_rows)
 
 
 def _declared_track(
@@ -1173,6 +1315,10 @@ def load_session(
     }
     epochs["outbound"] = runs[direction == "outbound"]
     epochs["inbound"] = runs[direction == "inbound"]
+    corners = np.cumsum(np.linalg.norm(np.diff(nodes, axis=0), axis=1))[:-1]
+    stops, stop_direction, stop_corner = corner_stops(times, linear, corners)
+    epochs["corner_stops"] = stops
+    epochs["engaged"], epochs["disengaged"] = engagement_sections(stops)
     params: dict[str, Any] = {
         "bin_size": BIN_SIZE,
         "min_speed": MIN_SPEED,
@@ -1187,7 +1333,11 @@ def load_session(
         "track_width": width,
         "end_exclusion": END_EXCLUSION,
         "corner_exclusion": CORNER_EXCLUSION,
-        "paper_session": (PAPER_SESSIONS.get(entry.session) or (None, None, ""))[:2],
+        "min_speed_2017": MIN_SPEED_2017,
+        "immobile_speed": IMMOBILE_SPEED,
+        "corner_stop_direction": stop_direction,
+        "corner_stop_corner": stop_corner,
+        "paper_session":(PAPER_SESSIONS.get(entry.session) or (None, None, ""))[:2],
         "little_led_positions": little,
     }
     for trial in trials:
@@ -1259,6 +1409,30 @@ def load_session(
         f"{np.sum(direction == 'inbound')} inbound; the paper: 'rats completed 20 "
         "full laps'), each from leaving one end's 10 cm to reaching the other's."
     )
+    durations = stops[:, 1] - stops[:, 0]
+    if durations.size:
+        notes.append(
+            f"{durations.size} corner stops (rec.epochs['corner_stops']: within "
+            f"{CORNER_ZONE:g} cm of a corner until {CORNER_LEAVE:g} cm away, our "
+            f"choice), {np.mean(durations):.1f} s long on average (SD "
+            f"{np.std(durations):.1f} s; Ólafsdóttir et al. 2017: 'mean pause "
+            "duration = 10.71 s [SD = 16.49 s]', over their 24 sessions). "
+            f"{len(epochs['engaged'])} engaged and {len(epochs['disengaged'])} "
+            "disengaged sections, the paper's first and last 5 s of a stop and the "
+            "time between."
+        )
+        speed = session_speed(times, positions)
+        if speed is not None:
+            inside = np.zeros(times.size, dtype=bool)
+            for start, stop in stops:
+                inside |= (times >= start) & (times <= stop)
+            slow = float(np.nanmean(speed[inside] < IMMOBILE_SPEED))
+            notes.append(
+                f"At the corners the speed is below {IMMOBILE_SPEED:g} cm/s in "
+                f"{slow:.1%} of the stops' samples (compute_speed's defaults): "
+                "the head LED moves while the rat eats, and the 2017 paper's "
+                "events must stay below that speed."
+            )
     return Recording(
         **entry.identity(path_or_stream),
         animal=f"rat {rat}",
