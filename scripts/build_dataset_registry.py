@@ -46,11 +46,25 @@ Usage
 Without ``--version`` the latest published version is pinned (never
 ``draft``); a change of version is printed, since every session must then be
 checked again.
+
+A Zenodo registry (``archive.zenodo`` set to the record id) is filled from
+the record instead. Which files make up a session is a person's decision,
+so each session row names its files by their keys in the record (``members``
+and ``lfp_files``, each with ``path``); the script writes each file's URL and
+size from the record and its SHA-256. Zenodo publishes only MD5, so each
+file must already be in the cache (``<cache>/<dataset>/<name>`` or
+``<cache>/<dataset>/<session>/<name>``): the script checks its MD5 against
+the record's and hashes it. A session's ``sha256`` and ``size_bytes`` are
+then those of its members (the SHA-256 of their checksums in order, one per
+line, and their total size), and its ``url`` is the record's.
+
+    uv run python scripts/build_dataset_registry.py tirole_2022
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -259,6 +273,105 @@ def _videos(
     return videos
 
 
+def file_digests(path: Path) -> tuple[str, str]:
+    """The MD5 and SHA-256 of ``path``, read once."""
+    md5, sha256 = hashlib.md5(usedforsecurity=False), hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1 << 20), b""):
+            md5.update(block)
+            sha256.update(block)
+    return md5.hexdigest(), sha256.hexdigest()
+
+
+def build_zenodo(
+    registry: Mapping[str, Any],
+    cache: Path,
+    get: Fetch = get_json,
+    digests: Callable[[Path], tuple[str, str]] = file_digests,
+) -> dict:
+    """The registry with each session's files located in a Zenodo record.
+
+    Parameters
+    ----------
+    registry : Mapping
+        The registry as written, with ``archive.zenodo`` and session rows
+        naming their ``members`` and ``lfp_files`` by ``path``, the file's key
+        in the record.
+    cache : Path
+        The cache root holding the files, ``<cache>/<dataset>/``.
+
+    Returns
+    -------
+    dict
+        ``registry`` with ``archive.url`` and each file's ``url``, ``size_bytes``
+        and ``sha256``, and each session's ``url``, ``sha256`` and
+        ``size_bytes``.
+
+    Raises
+    ------
+    ValueError
+        If a file is not in the record, not in the cache, or its MD5 differs
+        from the record's.
+    """
+    record_id = str(registry["archive"]["zenodo"])
+    record = get(f"https://zenodo.org/api/records/{record_id}")
+    files = {item["key"]: item for item in record["files"]}
+    folder = cache / registry["dataset"]
+    hashed: dict[str, tuple[str, int]] = {}
+
+    def locate(name: str, session: str) -> dict[str, Any]:
+        if name not in files:
+            msg = f"{name} is not a file of Zenodo record {record_id}"
+            raise ValueError(msg)
+        item = files[name]
+        if name not in hashed:
+            found = [p for p in (folder / name, folder / session / name) if p.exists()]
+            if not found:
+                msg = (
+                    f"{name} is not in {folder}: Zenodo publishes only MD5, so "
+                    f"download it there first ({item['links']['self']})"
+                )
+                raise ValueError(msg)
+            md5, sha256 = digests(found[0])
+            published = str(item["checksum"]).removeprefix("md5:")
+            if md5 != published:
+                msg = f"{found[0]} has MD5 {md5}, the record states {published}"
+                raise ValueError(msg)
+            hashed[name] = (sha256, int(item["size"]))
+        sha256, size = hashed[name]
+        return {"url": item["links"]["self"], "sha256": sha256, "size_bytes": size}
+
+    sessions = []
+    for row in registry["sessions"]:
+        members = [
+            {**member, **locate(member["path"], row["session"])}
+            for member in row.get("members", ())
+        ]
+        lfp_files = [
+            {**item, **locate(item["path"], row["session"])}
+            for item in row.get("lfp_files", ())
+        ]
+        checksums = "\n".join(member["sha256"] for member in members)
+        sessions.append(
+            {
+                **row,
+                "url": f"https://zenodo.org/records/{record_id}",
+                "sha256": hashlib.sha256(checksums.encode()).hexdigest(),
+                "size_bytes": sum(member["size_bytes"] for member in members),
+                "members": members,
+                **({"lfp_files": lfp_files} if lfp_files else {}),
+            }
+        )
+    return {
+        **registry,
+        "archive": {
+            **registry["archive"],
+            "url": f"https://doi.org/{record['doi']}",
+        },
+        "sessions": sessions,
+    }
+
+
 def main() -> None:
     """Rewrite one registry from the command line."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -267,6 +380,13 @@ def main() -> None:
     args = parser.parse_args()
     path = REGISTRY / f"{args.dataset}.json"
     registry = json.loads(path.read_text(encoding="utf-8"))
+    if "zenodo" in registry["archive"]:
+        from neurospatial.datasets._fetch import cache_root
+
+        built = build_zenodo(registry, cache_root())
+        path.write_text(json.dumps(built, indent=2) + "\n", encoding="utf-8")
+        print(f"{path.relative_to(ROOT)}: {len(built['sessions'])} sessions")
+        return
     dandiset = registry["archive"]["dandiset"]
     version = args.version or latest_published(dandiset)
     pinned = registry["archive"].get("version")
