@@ -101,7 +101,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     "EXPECTED_WATCH_OUTS",
+    "PAPER_PER_VISIT",
     "PAPER_RATS",
+    "PER_VISIT",
     "REQUIRES",
     "WATCH_OUTS",
     "WORKED_RESULT",
@@ -129,6 +131,59 @@ REQUIRES = ("pynwb", "fsspec")
 
 #: The paper's six rats (Table S1, Figure S1), as the dandiset names them.
 PAPER_RATS = ("ER1", "KL8", "JS14", "JS15", "JS17", "JS21")
+
+#: The paper's per-visit numbers over its six rats' correct trials, (mean, SD):
+#: "immobility time: 10.3 ± 5.7 s; SWRs: 7.3 ± 5.5 events; candidate events:
+#: 2.3 ± 2.4 events; replay events: 0.9 ± 1.2 events; data are presented in mean
+#: ± SD" (Figure 2G-I), and "immobility periods with ≥2 events, 85.7% or
+#: 1,313/1,533 trials for SWRs; 53.4% or 818/1,533 trials for replay candidate
+#: events" (Results).
+PAPER_PER_VISIT: dict[str, Any] = {
+    "n_visits": 1533,
+    "immobility_s": (10.3, 5.7),
+    "swrs": (7.3, 5.5),
+    "candidates": (2.3, 2.4),
+    "replay": (0.9, 1.2),
+    "share_two_swrs": 0.857,
+    "share_two_candidates": 0.534,
+}
+
+#: Our per-visit numbers, recomputed by ``tests/datasets/test_shin_2019.py``:
+#: (mean, SD) per visit and the shares of visits with two or more events; per
+#: rat, the place cells of each run epoch, the session's SWRs and candidates,
+#: the candidates judged (those in visits), the verdicts the Jadhav lab's
+#: line-fit p-value changes each way, and the units' rate in SWRs over their
+#: rate in the run epochs (median by area).
+PER_VISIT: dict[str, Any] = {
+    "JS14": {
+        "summary": {
+            "n_visits": 250,
+            "immobility_s": (10.155, 7.504),
+            "swrs": (3.82, 3.726),
+            "candidates": (2.94, 2.998),
+            "replay": (0.72, 1.05),
+            "replay_lab_code": (0.648, 1.085),
+            "swrs_no_minimum": (7.144, 6.529),
+            "share_two_swrs": 0.716,
+            "share_two_candidates": 0.628,
+        },
+        "criterion": {
+            "immobility_s": True,
+            "swrs": False,
+            "candidates": True,
+            "replay": True,
+            "share_two_swrs": False,
+            "share_two_candidates": True,
+        },
+        "n_place_cells": [38, 39, 35, 37, 39, 38, 36, 38],
+        "n_swrs": 1466,
+        "n_candidates": 1118,
+        "n_judged": 735,
+        "ours_only": 36,
+        "lab_code_only": 18,
+        "swr_modulation": {"CA1": 2.1894, "PFC": 0.7483},
+    },
+}
 
 BIN_SIZE = 2.0
 MIN_SPEED = 5.0

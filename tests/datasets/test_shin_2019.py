@@ -811,3 +811,115 @@ def test_loads_default_session(session_entry, assert_default_session):
     assert "track_width 34.7 cm" in text["environment"].text
     assert any("for 35 of the 72 units here" in t for t in rec.watch_outs)
     assert any("75% of the tracked samples of the rest" in t for t in rec.watch_outs)
+
+
+def _summary(visits):
+    """The per-visit means and SDs and the shares with two or more events."""
+    return {
+        "n_visits": len(visits),
+        **{
+            name: (
+                round(float(visits[column].mean()), 3),
+                round(float(visits[column].std()), 3),
+            )
+            for name, column in (
+                ("immobility_s", "duration"),
+                ("swrs", "swrs"),
+                ("candidates", "candidates"),
+                ("replay", "replay"),
+                ("replay_lab_code", "replay_lab_code"),
+                ("swrs_no_minimum", "swrs_no_minimum"),
+            )
+        },
+        "share_two_swrs": round(float(np.mean(visits["swrs"] >= 2)), 3),
+        "share_two_candidates": round(float(np.mean(visits["candidates"] >= 2)), 3),
+    }
+
+
+def _criterion(summary):
+    """Which of the six fixed conditions hold, by name."""
+    from neurospatial.datasets import shin_2019
+
+    paper = shin_2019.PAPER_PER_VISIT
+    held = {
+        name: abs(summary[name][0] - paper[name][0]) <= paper[name][1] / 2
+        for name in ("immobility_s", "swrs", "candidates", "replay")
+    }
+    for name in ("share_two_swrs", "share_two_candidates"):
+        held[name] = abs(summary[name] - paper[name]) <= 0.10
+    return held
+
+
+@pytest.fixture(scope="module")
+def js14():
+    pytest.importorskip("ripple_detection.literature_methods")
+    return _per_visit("sub-JDS-SingleDay-JS14")
+
+
+@pytest.mark.realdata
+@NWB_DEVICE_DEPRECATION
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_per_visit_counts_on_js14(js14):
+    """JS14's per-visit numbers, as recorded; reads 5.5 GB of LFP by byte range."""
+    from neurospatial.datasets import shin_2019
+
+    recorded = shin_2019.PER_VISIT["JS14"]
+    summary = _summary(js14["visits"])
+    assert summary == recorded["summary"]
+    assert js14["n_place_cells"] == recorded["n_place_cells"]
+    assert js14["n_swrs"] == recorded["n_swrs"]
+    assert js14["n_candidates"] == recorded["n_candidates"]
+    assert js14["n_judged"] == recorded["n_judged"]
+    assert _criterion(summary) == recorded["criterion"]
+
+
+@pytest.mark.realdata
+@NWB_DEVICE_DEPRECATION
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_lab_code_changes_verdicts_both_ways_on_js14(js14):
+    """The Jadhav lab's line-fit p-value against SHIN_2019 on the same candidates."""
+    from neurospatial.datasets import shin_2019
+
+    recorded = shin_2019.PER_VISIT["JS14"]
+    assert js14["ours_only"] == recorded["ours_only"]
+    assert js14["lab_code_only"] == recorded["lab_code_only"]
+
+
+@pytest.mark.realdata
+@NWB_DEVICE_DEPRECATION
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_ca1_units_fire_in_swrs_and_pfc_units_do_not(js14):
+    """Evidence for reading the units' electrodes as tetrodes: SWR modulation by area."""
+    from neurospatial.datasets import shin_2019
+
+    rec = js14["rec"]
+    ratio = _swr_modulation(rec, js14["swr_rows"])
+    area = rec.units["brain_region"].to_numpy()
+    recorded = shin_2019.PER_VISIT["JS14"]["swr_modulation"]
+    assert np.median(ratio[area == "CA1"]) == pytest.approx(recorded["CA1"], abs=1e-3)
+    assert np.median(ratio[area == "PFC"]) == pytest.approx(recorded["PFC"], abs=1e-3)
+    assert np.max(ratio[area == "PFC"]) < 2.0
+
+
+@pytest.mark.realdata
+@pytest.mark.slow
+@NWB_DEVICE_DEPRECATION
+@pytest.mark.filterwarnings("ignore::UserWarning")
+def test_per_visit_counts_of_the_six_rats():
+    """The worked result: the paper's six rats pooled; reads about 40 GB by byte range."""
+    import pandas as pd
+
+    from neurospatial.datasets import shin_2019
+
+    pytest.importorskip("ripple_detection.literature_methods")
+    visits = pd.concat(
+        [
+            _per_visit(f"sub-JDS-SingleDay-{rat}")["visits"]
+            for rat in shin_2019.PAPER_RATS
+        ]
+    )
+    summary = _summary(visits)
+    recorded = shin_2019.PER_VISIT["pooled"]
+    assert summary == recorded["summary"]
+    assert _criterion(summary) == recorded["criterion"]
+    assert shin_2019.WORKED_RESULT["ours"] == summary["replay"][0]
