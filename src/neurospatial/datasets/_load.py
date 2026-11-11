@@ -270,7 +270,7 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
     if not _cached(root, entry):
         warnings.warn(
             f"Downloading {entry.info.dataset} session {entry.session}: "
-            f"{_size(entry.download_bytes)} from "
+            f"{_size(_missing_bytes(root, entry))} from "
             f"{entry.url if entry.members else entry.download_url} into "
             f"{root / entry.info.dataset}",
             DownloadWarning,
@@ -305,6 +305,25 @@ def fetch_session(entry: SessionEntry, *, cache: Path | None = None) -> Path:
         subdir=entry.info.dataset,
         cache=cache,
     )
+
+
+def _missing_bytes(root: Path, entry: SessionEntry) -> int:
+    """The bytes fetching the session's files not yet in the cache downloads.
+
+    A missing member of a CRCNS ``.tar.gz`` costs the archive, which is read
+    from its start; members already cached cost nothing.
+    """
+    from neurospatial.datasets._fetch import crcns_path
+
+    if not entry.members:
+        return entry.size_bytes
+    folder = root / entry.info.dataset / entry.session
+    missing = [m for m in entry.members if not (folder / Path(m.path).name).exists()]
+    own = sum(m.size_bytes for m in missing if m.url)
+    archived = [m for m in missing if m.url is None]
+    if archived and entry.url is not None and crcns_path(entry.url) is not None:
+        return own + entry.size_bytes
+    return own + sum(m.size_bytes for m in archived)
 
 
 def _stream_url(entry: SessionEntry) -> str:
