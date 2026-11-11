@@ -772,3 +772,79 @@ def test_days_matched_to_the_papers_sessions(session, n_ca1, n_place, paper_sess
         paper_session - 1
     ]
     assert n_ca1 >= place_cells
+
+
+# --------------------------------------------------------------------------
+# Ólafsdóttir, Carpenter & Barry 2017 (Neuron 96:925-935): awake replay at the
+# track's corners. The constants down to SEED_2017 were written and committed
+# before any candidate event of a track trial was detected or judged.
+# --------------------------------------------------------------------------
+
+#: The paper: "We identified a total of 149 engaged replay events and 364
+#: disengaged replay events ... the percentage of putative events qualifying as
+#: replay events for the two categories was not different (36.88% versus
+#: 38.60%, p = 0.28)". 149 / 404 = 36.88% and 364 / 943 = 38.60% to the
+#: hundredth, so 404 engaged and 943 disengaged putative trajectory events
+#: (inferred), and 513 of 1,347 pooled: 38.1%.
+PAPER_2017_PUTATIVE = {"engaged": 404, "disengaged": 943}
+PAPER_2017_REPLAY = {"engaged": 149, "disengaged": 364}
+PAPER_2017_SHARE = 513 / 1347
+#: Criterion A, the worked result, fixed before the run: pooled over the
+#: included days, the share of putative trajectory events judged replay lies
+#: within 10 points of the paper's pooled 38.1% (28.1% to 48.1%). The engaged
+#: and disengaged shares are reported and pinned, with no criterion of their own.
+SHARE_2017_BAND = (PAPER_2017_SHARE - 0.10, PAPER_2017_SHARE + 0.10)
+#: Criterion B, fixed before the run, the paper's main finding ("Engaged events
+#: showed a robust bias to reactivate spatial firing congruent with an animal's
+#: current direction of travel (62.26% versus chance ...)", disengaged 52.19%,
+#: "engaged versus disengaged, p < 0.0001"): pooled over the included days, the
+#: engaged reactivation events are congruent more often than the cell-ID
+#: shuffle's chance and more often than the disengaged events, each by the
+#: paper's bootstrap (10,000 resamples of the events; more than 97.5% of the
+#: resampled shares above chance, more than 97.5% of the resampled
+#: engaged-minus-disengaged differences above 0).
+PAPER_2017_CONGRUENT = {"engaged": 0.6226, "disengaged": 0.5219}
+N_BOOTSTRAP = 10_000
+N_CELL_SHUFFLES = 100
+#: Which deposit days enter: the paper's inclusion rule, "Sessions where the
+#: median decoding error during track running ... did not exceed 30cm ... were
+#: included". Here: place cells' outbound and inbound rate maps over every run
+#: (the paper's 2017 maps: 2 cm bins, Gaussian of sigma 10 cm, ends and corners
+#: left out, speed above 10 cm/s); each run decoded in 500 ms bins with its own
+#: direction's maps; the error is the distance along the track from the MAP
+#: bin to the animal at the bin's centre, over bins where the animal runs
+#: faster than 10 cm/s; a day enters if the median is 30 cm or less. The
+#: paper's other exclusion (R2336 day 4, R2198 day 8: headstages disconnected
+#: in the rest) cannot be applied: the deposit does not number days, and
+#: neither R2336 rest is short (6,484 and 7,553 s).
+DECODING_ERROR_LIMIT = 30.0
+DECODING_DT = 0.5
+RUN_SPEED_2017 = 10.0
+#: Our choices, fixed before the run, where the paper states none:
+#: - place cells as in the 2016 worked result (field of 20 contiguous bins
+#:   above the mean track rate, peak above 1 Hz, in either direction's map;
+#:   interneurons a mean track rate above 5 Hz), on the 2017 maps (10 cm/s);
+#: - speed: ``rec``'s session speed (compute_speed's defaults), on the 1 ms
+#:   grid by linear interpolation (``_ripple._speed_on_grid``);
+#: - multi-unit activity: every CA1 unit at 1 kHz over the track trial, the
+#:   detector's place cells selected from them; its mean and SD are over the
+#:   whole track trial, and ``behavior_intervals`` keeps the events wholly
+#:   inside one section (``literature_methods.olafsdottir_2017``,
+#:   ``analysis="arm"`` for reactivation and ``"trajectory"`` for trajectory
+#:   events);
+#: - corner stops, engaged and disengaged sections: ``rec.epochs``'
+#:   ``"engaged"`` and ``"disengaged"`` (the loader's corner stops: within 20 cm
+#:   of a corner along the track, a stop ending when the animal is 40 cm away);
+#: - trajectory events judged by OLAFSDOTTIR_2017 as packaged, each direction's
+#:   posterior (10 ms bins, place cells) scored on its own, the direction with
+#:   the higher score kept with its own p ("events were classified as either
+#:   outbound or inbound depending on which produced the higher best-fit
+#:   line"), replay at p < 0.025, rng 2017 + the event's index;
+#: - reactivation events decoded from the event's summed spikes (one bin as
+#:   long as the event) with each direction's maps; the arm of the 6 (3 arms x
+#:   2 directions) with the most summed posterior is the event's; congruent
+#:   when its direction is the one the animal arrived at the corner running;
+#:   the cell-ID shuffle reassigns each active place cell's count to a place
+#:   cell silent in the event, without replacement, 100 times, rng 2017 + the
+#:   event's index; chance is the mean shuffled congruent share.
+SEED_2017 = 2017
