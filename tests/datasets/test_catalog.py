@@ -428,3 +428,81 @@ def test_builder_lists_a_sibling_file_as_lfp_and_leaves_out_sessions_not_offered
         }
     ]
     assert "lfp_files" not in rows["sub-3_ses-3"]
+
+
+def test_zip_builder_hashes_new_members_and_keeps_hand_fields(capsys):
+    """Members listed at their size keep their hash; a changed one resets the check."""
+    builder = _builder()
+    zipped = {
+        "url": "https://example.org/a.zip",
+        "file_name": "a.zip",
+        "sha256": "e" * 64,
+        "size_bytes": 99,
+    }
+    checked = {"verified": True, "n_units": 3, "verification": "Checked by hand."}
+    written = {
+        "dataset": "x_2016",
+        "archive": {"name": "Zenodo 1", "zip": zipped},
+        "sessions": [
+            {
+                "session": "R1-day",
+                "default": True,
+                **checked,
+                "members": [
+                    {"path": "r1/day/t.1", "sha256": "a" * 64, "size_bytes": 10},
+                    {"path": "r1/day/t.pos", "sha256": "b" * 64, "size_bytes": 5},
+                ],
+                "lfp_files": [],
+            }
+        ],
+    }
+    sizes = {"r1/day/t.1": 10, "r1/day/t.pos": 5, "r1/day/t.egf": 7, "README.txt": 1}
+    hashes = {
+        "r1/day/t.1": "f" * 64,
+        "r1/day/t.pos": "b" * 64,
+        "r1/day/t.egf": "c" * 64,
+    }
+
+    def members(names):
+        assert names == sorted(sizes)
+        return {"R1-day": (["r1/day/t.1", "r1/day/t.pos"], ["r1/day/t.egf"])}
+
+    asked = []
+
+    def sha256_of(name):
+        asked.append(name)
+        return hashes[name]
+
+    (row,) = builder.build_zip(written, sizes, members, sha256_of)["sessions"]
+    assert asked == ["r1/day/t.egf"]
+    assert row["members"] == [
+        {"path": "r1/day/t.1", "sha256": "a" * 64, "size_bytes": 10},
+        {"path": "r1/day/t.pos", "sha256": "b" * 64, "size_bytes": 5},
+    ]
+    assert row["lfp_files"] == [
+        {
+            "path": "R1-day/t.egf",
+            "sha256": "c" * 64,
+            "size_bytes": 7,
+            "member": "r1/day/t.egf",
+        }
+    ]
+    assert (row["url"], row["sha256"], row["file_name"]) == (
+        zipped["url"],
+        zipped["sha256"],
+        "a.zip",
+    )
+    # A member listed at its size keeps its hash, so the check by hand stays.
+    assert {key: row[key] for key in checked} == checked
+    assert "reset" not in capsys.readouterr().out
+    sizes["r1/day/t.1"] = 11
+    asked.clear()
+    (changed,) = builder.build_zip(written, sizes, members, sha256_of)["sessions"]
+    assert "r1/day/t.1" in asked
+    assert changed["members"][0]["sha256"] == "f" * 64
+    assert (changed["verified"], changed["n_units"], changed["default"]) == (
+        False,
+        None,
+        True,
+    )
+    assert "R1-day: reset to unverified" in capsys.readouterr().out
