@@ -1,4 +1,4 @@
-"""Pfeiffer & Foster (2013): CA1 place-cell sequences in a 2 m open arena (one session, MIT).
+"""Pfeiffer & Foster (2013): CA1 place-cell sequences in a 2 m open arena (one sample session).
 
 What was recorded: up to 40 tetrodes in dorsal CA1 of both hemispheres while a
 rat alternated two phases in a 2 x 2 m arena with 36 reward wells: foraging
@@ -7,12 +7,20 @@ well. Position came from two head-mounted LEDs and an overhead camera at
 60 Hz (the paper's Methods). The session here is one of the paper's eight:
 rat 1, day 1, the 212 units the paper states for it.
 
-Where it lives: not in an archive of the paper's own. Maboudi et al. (2018)
-deposited this one session with their code, github.com/kemerelab/
-UncoveringTemporalStructureHippocampus, as ``data/openfield.nel`` (MIT
-license, 55.8 MB; "example session in open field"), pinned here at commit
-f86b7dc and by SHA-256. Their paper credits the open-field data to Pfeiffer
-& Foster (2013, 2015) and names no rat or day; rat 1 day 1 is inferred from
+Where it lives: not in an archive of the paper's own. Maboudi et al. (2018),
+whose authors include Pfeiffer and Foster, released this one session as a
+"sample recording epoch" with their code (their Data availability), as
+``data/openfield.nel`` (55.8 MB; "example session in open field"), added on
+2018-05-16 by co-author Etienne Ackermann (commit 962b3870). It is fetched
+from eLife's archived copy of that repository,
+github.com/elifesciences-publications/UncoveringTemporalStructureHippocampus,
+pinned at commit f1b021d and by SHA-256 (the same file as the kemerelab
+original), and is never redistributed. No data license is stated: the
+repository's MIT license ("Copyright (c) 2018 Kemere Lab") is a software
+license for the code. The paper's eight sessions are "available from Brad
+Pfeiffer and David Foster on request" (Maboudi et al. 2018, Data
+availability). Their paper credits the open-field data to Pfeiffer & Foster
+(2013, 2015) and names no rat or day; rat 1 day 1 is inferred from
 the 212 units (the paper's "212 ... units active during exploration from rat
 1 on experimental days 1") and the 322 candidate windows (``n_SWRs=322`` for
 rat 1 day 1 in Krause & Drugowitsch 2022's ``replay_structure/metadata.py``).
@@ -135,15 +143,184 @@ NELPY_CLASSES = frozenset(
 #: The file's key for the one session it holds.
 _RAT_DAY = ("Rat1", "Day1")
 
-#: Pfeiffer's candidate windows against ``ripple_detection``'s detectors.
-DETECTION_CHECK: dict[str, Any] = {}
+#: Pfeiffer's candidate windows against ``ripple_detection``'s detectors, both
+#: ways: a window "overlaps" another when their open spans share any time.
+DETECTION_CHECK: dict[str, Any] = {
+    "what": (
+        "ripple_detection.literature_methods' Pfeiffer detectors at the commit "
+        "pyproject.toml pins, against the 322 windows of events['ripples']"
+    ),
+    "not_run": {
+        "pfeiffer_2013_ripples": (
+            "needs the LFP: the 150-250 Hz envelope of one electrode per "
+            "tetrode, averaged, smoothed 12.5 ms, peaks above 3 SD over time "
+            "below 5 cm/s (P&F 2013, Methods). The file holds no LFP, and no "
+            "proxy is made from spikes"
+        ),
+        "pfeiffer_2015": (
+            "needs the LFP likewise: the same envelope, bounds at the mean, 50 "
+            "ms to 2 s (P&F 2015, Supplementary Materials). The file holds no LFP"
+        ),
+    },
+    "method": "pfeiffer_2013",
+    "inputs": (
+        "every unit's spikes counted at 1 kHz over the spikes' support, the 203 "
+        "excitatory units as the pyramidal cells the histogram counts, and the "
+        "recording's speed (neurospatial's session speed, interpolated onto the "
+        "grid): the paper does not say how it computed velocity"
+    ),
+    "detected": 402,
+    "his_overlapped": (272, 322),
+    "ours_overlapped": (291, 402),
+    "significant_overlapped": (103, 110),
+    "missed_below_3_sd": 30,
+    "missed_reaching_5_cm_s": 26,
+    "why": (
+        "Pfeiffer's 322 are not population bursts by the 2013 rule: of the 50 "
+        "this detector misses, 30 never rise 3 SD above the stopped mean of the "
+        "excitatory units' 1 ms histogram smoothed 10 ms (our recomputation, a "
+        "diagnostic), and 26 reach 5 cm/s on our speed, where the detector "
+        "counts no time. Krause's code reads them as SWRs, and P&F 2015 took "
+        "its candidates from the LFP ripple envelope, so they are most likely "
+        "ripple windows; neither LFP detector can run on this file. 103 of the "
+        "110 significant windows are found"
+    ),
+}
 
 #: The ``neurospatial.replay`` presets on Pfeiffer's 322 windows against his
-#: 110 significant labels.
-JUDGING_CHECK: dict[str, Any] = {}
+#: 110 significant labels. ``both`` counts windows he labels and the preset
+#: judges a trajectory, ``his_only`` those he labels alone.
+JUDGING_CHECK: dict[str, Any] = {
+    "what": (
+        "PFEIFFER_FOSTER_2015 and PFEIFFER_FOSTER_2013, unmodified, on each of "
+        "the 322 windows, against params['significant']"
+    ),
+    "pipeline": (
+        "the 203 excitatory units, all of which peak above 1 Hz (the papers' "
+        "place-field rule); compute_spatial_rates on rec.env (2 cm bins) with "
+        "method='binned', bandwidth=4 cm and min_speed=5 cm/s over the whole "
+        "session; decode_position (Poisson, uniform prior over the supported "
+        "bins) in 20 ms windows advanced 5 ms from each window's start, the "
+        "last cut at its end; detect_replay with each preset"
+    ),
+    "n_units": 203,
+    "supported_bins": (6321, 10000),
+    "presets": {
+        "pfeiffer_foster_2015": {
+            "judged": 78,
+            "both": 65,
+            "ours_only": 13,
+            "his_only": 45,
+            "neither": 199,
+            "agreement": 0.82,
+            "kappa": 0.569,
+        },
+        "pfeiffer_foster_2013": {
+            "judged": 94,
+            "both": 40,
+            "ours_only": 54,
+            "his_only": 70,
+            "neither": 158,
+            "agreement": 0.615,
+            "kappa": 0.113,
+        },
+    },
+    "his_only_2015": {
+        "short_of_80_cm": 43,
+        "short_of_11_bins": 2,
+        "mean_distance_median": 55.4,
+        "map_distance_median": 74.4,
+        "map_reaching_80_cm": 16,
+        "peak_posterior_median": 0.059,
+        "peak_posterior_median_both": 0.073,
+    },
+    "rate_then_smooth_2015": (0.823, 0.572),
+    "why": (
+        "the 45 windows he labels and PFEIFFER_FOSTER_2015 rejects decode here to "
+        "short paths: 43 fall short of 80 cm (2 of fewer than 11 time bins), "
+        "with a median 55.4 cm between the segment's first and last posterior "
+        "means. Their decoding is also less sharp: the median row puts 0.059 of "
+        "the posterior in its peak bin, against 0.073 in the 65 windows both "
+        "call trajectories. A broad posterior pulls its mean toward the arena's "
+        "centre, but that is not the whole cause: over the same segment the MAP "
+        "runs a median 74.4 cm, and reaches 80 cm in only 16 of the 45. The "
+        "place fields' reading is not the cause either: dividing first and then "
+        "smoothing the rate gives 82.3% and kappa 0.572. Neither paper says how "
+        "unvisited bins, the speed or the smoothing were handled, and no code "
+        "was published, so what made his decoded paths longer is not known "
+        "(unsettled). PFEIFFER_FOSTER_2013's lower agreement is expected if the "
+        "labels are 2015's: a different rule on the same windows"
+    ),
+    "presets_against_the_papers": (
+        "both presets state their papers' rules as the Methods give them: "
+        "PFEIFFER_FOSTER_2013 the MAP, steps under 20 cm, at least 10 steps (11 "
+        "time bins), 40 cm start to end; PFEIFFER_FOSTER_2015 the posterior "
+        "mean ('weighted mean posterior probability'), steps under 50 cm, at "
+        "least 10 steps, 80 cm. The 2013 shuffle tests are not applied (every "
+        "trajectory event passed them, the paper says), and the 2015 paper has "
+        "none. Neither paper published code"
+    ),
+}
 
 #: The paper's finding this dataset reproduces, or why there is none yet.
-WORKED_RESULT: dict[str, Any] = {}
+WORKED_RESULT: dict[str, Any] = {
+    "status": "not possible yet",
+    "level": None,
+    "finding": (
+        "Pfeiffer's own per-event labels, 110 of his 322 windows, reproduced by "
+        "the trajectory-event rule of the paper that most likely made them"
+    ),
+    "quote": (
+        '"each candidate replay event was truncated to the longest sequence of '
+        "time frames with a weighted mean posterior probability less than 50 cm "
+        "from that of the previous frame. Candidate events with fewer than 10 "
+        "steps in the final sequence or a start-to-end distance less than 80 cm "
+        'were eliminated from future analysis." (P&F 2015, Supplementary '
+        "Materials, Trajectory Event Analysis)"
+    ),
+    "source": (
+        "Pfeiffer & Foster 2015 (Science 349:180), Supplementary Materials and "
+        "Methods; the labels are the file's BradSignificantRippleIDs. Maboudi et "
+        "al. 2018, who used Pfeiffer's events, report 815 of 2,980 over their 8 "
+        "sessions as P&F 2015's trajectory events, the 815 that paper reports"
+    ),
+    "paper": (
+        "110 of 322 labelled in the file (34.2%). P&F 2013 reports 144 to 373 "
+        "trajectory events per session (25.3% to 43.9% of candidates), 274 for "
+        "R1 D1, but on its own population-burst candidates under its own rule: "
+        "274 is more than the 110 and its candidates are not the 322, so neither "
+        "the count nor the share can be set against the 110"
+    ),
+    "ours": None,
+    "criterion": None,
+    "parameters": None,
+    "unmatched": (
+        "how the papers handled unvisited bins, computed speed and smoothed "
+        "place fields: not stated, no code",
+        "no LFP, so the 322 windows cannot be re-detected with the 2015 rule",
+    ),
+    "attempted": {
+        "value": 0.82,
+        "criterion": (
+            "fixed in writing before any window was decoded: "
+            "PFEIFFER_FOSTER_2015's verdicts agree with Pfeiffer's labels on at "
+            "least 80% of the 322 windows and Cohen's kappa is at least 0.6. "
+            "Agreement is 82.0%, kappa 0.569, so it is not met"
+        ),
+        "parameters": JUDGING_CHECK["pipeline"],
+        "differs": (
+            "PFEIFFER_FOSTER_2015 judges 78 trajectories against his 110: 65 of "
+            "them his, 13 not, and 45 of his rejected, 43 of those because their "
+            "decoded path falls short of 80 cm here (JUDGING_CHECK['why'])"
+        ),
+    },
+    "why": (
+        "the rule agrees with his labels on 82% of windows, kappa 0.569, just "
+        "under the 0.6 fixed beforehand; the shortfall is his labelled windows "
+        "whose decoded path falls short of 80 cm here, and what made his paths "
+        "longer is not stated in either paper"
+    ),
+}
 
 #: Findings computed from the data that each verified session must report, as
 #: patterns searched for in its watch_outs.
@@ -155,8 +332,22 @@ EXPECTED_WATCH_OUTS: dict[str, tuple[str, ...]] = {
 WATCH_OUTS: dict[str, tuple[str, ...]] = {
     "rat1_day1": (
         "This is one session of the paper's eight (four rats, two days each), "
-        "the only one deposited: Maboudi et al. 2018's repository holds it as "
-        "an example. Nothing here generalizes across rats or days.",
+        "the only one released: Maboudi et al. 2018's repository holds it as an "
+        "example. Nothing here generalizes across rats or days.",
+        "No data license is stated. Maboudi et al. 2018 (eLife 7:e34467), whose "
+        "authors include Pfeiffer and Foster, write under Data availability: "
+        "'Data for Figure 6 was previously reported in Pfeiffer and Foster "
+        "(2015, Science) and is available from Brad Pfeiffer and David Foster "
+        "on request. ... All analysis code and sample recording epochs for "
+        "Figures 1-7 are available on https://github.com/kemerelab/"
+        "UncoveringTemporalStructureHippocampus (copy archived at https://"
+        "github.com/elifesciences-publications/"
+        "UncoveringTemporalStructureHippocampus).' The file was added on "
+        "2018-05-16 by co-author Etienne Ackermann (commit 962b3870). The "
+        "repository's only license is MIT ('Copyright (c) 2018 Kemere Lab'), a "
+        "software license for the code. The loader downloads the file from "
+        "eLife's archived copy at a pinned commit; it is never redistributed. "
+        "The other sessions are available from the authors on request.",
         "Which rat and day this is, is inferred: the file says only Rat1, Day1. "
         "Its 212 units are the paper's for rat 1 day 1, and its 322 candidate "
         "windows are the n_SWRs = 322 Krause & Drugowitsch 2022's code lists "

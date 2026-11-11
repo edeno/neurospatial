@@ -7,11 +7,11 @@
   "dorsal CA1"
  ],
  "apparatus": "2 m x 2 m open arena with 30 cm walls and 36 reward wells, alternating random foraging and a daily Home well",
- "license": "MIT",
+ "license": "not stated (sample released with Maboudi et al. 2018; repository MIT license covers the code)",
  "archive": {
-  "name": "GitHub kemerelab/UncoveringTemporalStructureHippocampus (commit f86b7dc)",
-  "url": "https://github.com/kemerelab/UncoveringTemporalStructureHippocampus/tree/f86b7dcc9ebf1105d9738086a91928f8f3f575a2",
-  "citation": "Maboudi K, Ackermann E, de Jong LW, Pfeiffer BE, Foster D, Diba K, Kemere C (2018). Uncovering temporal structure in hippocampal output patterns. eLife 7, e34467. https://doi.org/10.7554/eLife.34467; data/openfield.nel from https://github.com/kemerelab/UncoveringTemporalStructureHippocampus at commit f86b7dcc9ebf1105d9738086a91928f8f3f575a2 (MIT license)"
+  "name": "GitHub elifesciences-publications/UncoveringTemporalStructureHippocampus (eLife's archived copy, commit f1b021d)",
+  "url": "https://github.com/elifesciences-publications/UncoveringTemporalStructureHippocampus/tree/f1b021dd804347151b1bc10797c4ab09582860a9",
+  "citation": "Maboudi K, Ackermann E, de Jong LW, Pfeiffer BE, Foster D, Diba K, Kemere C (2018). Uncovering temporal structure in hippocampal output patterns. eLife 7, e34467. https://doi.org/10.7554/eLife.34467; its sample recording data/openfield.nel, in https://github.com/kemerelab/UncoveringTemporalStructureHippocampus as archived by eLife at https://github.com/elifesciences-publications/UncoveringTemporalStructureHippocampus (commit f1b021dd804347151b1bc10797c4ab09582860a9)"
  },
  "stated": {
   "sampling_rate": {
@@ -36,8 +36,8 @@
  "sessions": [
   {
    "session": "rat1_day1",
-   "archive": "GitHub kemerelab/UncoveringTemporalStructureHippocampus (commit f86b7dc)",
-   "url": "https://raw.githubusercontent.com/kemerelab/UncoveringTemporalStructureHippocampus/f86b7dcc9ebf1105d9738086a91928f8f3f575a2/data/openfield.nel",
+   "archive": "GitHub elifesciences-publications/UncoveringTemporalStructureHippocampus (eLife's archived copy, commit f1b021d)",
+   "url": "https://raw.githubusercontent.com/elifesciences-publications/UncoveringTemporalStructureHippocampus/f1b021dd804347151b1bc10797c4ab09582860a9/data/openfield.nel",
    "file_name": "openfield.nel",
    "sha256": "8ff8b9be5ac987f10db0d54d4e83de4171f1243d9eb76feadd4be62e490b300a",
    "size_bytes": 55787347,

@@ -174,7 +174,7 @@ def _registry():
         "species": "rat",
         "brain_regions": ["dorsal CA1"],
         "apparatus": "2 m arena",
-        "license": "MIT",
+        "license": "not stated",
         "archive": {"name": "GitHub", "citation": "The data."},
         "stated": {
             "sampling_rate": {"value": 50.0, "basis": "inferred", "source": "file"},
@@ -378,3 +378,306 @@ def test_loads_default_session(session_entry, assert_default_session):
     np.testing.assert_allclose(span, [198.6, 191.6], atol=0.05)
     # Every sample lies in the declared arena.
     assert np.all(rec.env.bin_at(rec.positions) >= 0)
+
+
+def _overlapped(rows, others):
+    """Whether each row's open span shares time with any of ``others``."""
+    return np.array(
+        [np.any((others[:, 0] < stop) & (others[:, 1] > start)) for start, stop in rows]
+    )
+
+
+def _agreement(verdicts, labels):
+    """The confusion counts, agreement and Cohen's kappa, computed here by hand."""
+    both = int(np.sum(verdicts & labels))
+    ours_only = int(np.sum(verdicts & ~labels))
+    his_only = int(np.sum(~verdicts & labels))
+    neither = int(np.sum(~verdicts & ~labels))
+    n = verdicts.size
+    agreement = (both + neither) / n
+    chance = (
+        (both + ours_only) * (both + his_only)
+        + (his_only + neither) * (ours_only + neither)
+    ) / n**2
+    return {
+        "judged": int(verdicts.sum()),
+        "both": both,
+        "ours_only": ours_only,
+        "his_only": his_only,
+        "neither": neither,
+        "agreement": round(agreement, 3),
+        "kappa": round((agreement - chance) / (1 - chance), 3),
+    }
+
+
+def test_agreement_matches_a_hand_count():
+    verdicts = np.array([True, True, False, False])
+    labels = np.array([True, False, True, False])
+    assert _agreement(verdicts, labels) == {
+        "judged": 2,
+        "both": 1,
+        "ours_only": 1,
+        "his_only": 1,
+        "neither": 1,
+        "agreement": 0.5,
+        "kappa": 0.0,
+    }
+
+
+def test_preset_notes_quote_the_pinned_agreement():
+    """The presets' notes give the numbers JUDGING_CHECK pins."""
+    from neurospatial.replay.methods import PFEIFFER_FOSTER_2013, PFEIFFER_FOSTER_2015
+
+    presets = pfeiffer_2013.JUDGING_CHECK["presets"]
+    for method in (PFEIFFER_FOSTER_2013, PFEIFFER_FOSTER_2015):
+        row = presets[method.name]
+        notes = " ".join(method.notes)
+        assert f"{row['agreement']:.1%} of them (kappa {row['kappa']})" in notes
+
+
+@pytest.fixture(scope="module")
+def detected():
+    """ripple_detection's pfeiffer_2013 on the session's spikes at 1 kHz (about 12 GB)."""
+    pytest.importorskip("ripple_detection.literature_methods")
+    from ripple_detection.literature_methods import Recording as Signals
+    from ripple_detection.literature_methods import run_method
+
+    from neurospatial.datasets._ripple import _speed_on_grid, spike_counts
+
+    rec = load("pfeiffer_2013")
+    rate = 1000.0
+    start, stop = rec.epochs["session"][0]
+    grid = start + np.arange(int(np.floor((stop - start) * rate)) + 1) / rate
+    pyramidal = (rec.units["label"] == "excitatory").to_numpy()
+    speed = _speed_on_grid(rec, grid)
+    signals = Signals.from_arrays(
+        grid,
+        rate,
+        multiunit=spike_counts(rec.spike_times, grid, sampling_rate=rate),
+        speed=speed,
+        pyramidal=pyramidal,
+    )
+    found = run_method("pfeiffer_2013", signals)
+    del signals
+    return rec, grid, speed, found[["start_time", "end_time"]].to_numpy()
+
+
+@pytest.mark.realdata
+def test_population_detector_against_his_windows(detected):
+    """Both ways, as DETECTION_CHECK records; the LFP detectors cannot run."""
+    rec, _, _, ours = detected
+    record = pfeiffer_2013.DETECTION_CHECK
+    his = rec.events["ripples"]
+    significant = rec.params["significant"]
+    assert len(ours) == record["detected"]
+    assert (int(_overlapped(his, ours).sum()), len(his)) == record["his_overlapped"]
+    assert (int(_overlapped(ours, his).sum()), len(ours)) == record["ours_overlapped"]
+    assert (
+        int(_overlapped(his[significant], ours).sum()),
+        int(significant.sum()),
+    ) == record["significant_overlapped"]
+    assert rec.lfp is None
+    assert set(record["not_run"]) == {"pfeiffer_2013_ripples", "pfeiffer_2015"}
+
+
+@pytest.mark.realdata
+def test_his_missed_windows_are_not_population_bursts(detected):
+    """The cause DETECTION_CHECK names, recomputed from the spikes independently."""
+    from scipy.ndimage import gaussian_filter1d
+
+    rec, grid, speed, ours = detected
+    record = pfeiffer_2013.DETECTION_CHECK
+    excitatory = [
+        train
+        for train, label in zip(rec.spike_times, rec.units["label"], strict=True)
+        if label == "excitatory"
+    ]
+    spikes = np.concatenate(excitatory)
+    histogram = np.histogram(spikes, np.append(grid, grid[-1] + 1e-3))[0]
+    smoothed = gaussian_filter1d(histogram.astype(np.float64), 10.0)
+    stopped = speed < pfeiffer_2013.MIN_SPEED
+    z = (smoothed - smoothed[stopped].mean()) / smoothed[stopped].std()
+    missed = rec.events["ripples"][~_overlapped(rec.events["ripples"], ours)]
+    peaks, fastest = [], []
+    for start, stop in missed:
+        first, last = np.searchsorted(grid, [start, stop])
+        peaks.append(z[first : max(last, first + 1)].max())
+        fastest.append(np.nanmax(speed[first : max(last, first + 1)]))
+    assert int(np.sum(np.array(peaks) <= 3.0)) == record["missed_below_3_sd"]
+    assert (
+        int(np.sum(np.array(fastest) >= pfeiffer_2013.MIN_SPEED))
+        == record["missed_reaching_5_cm_s"]
+    )
+
+
+@pytest.fixture(scope="module")
+def judged():
+    """Each of the 322 windows decoded once and judged by both presets (about 2 min)."""
+    from neurospatial import compute_spatial_rates
+    from neurospatial.datasets._ripple import event_rows
+    from neurospatial.decoding import decode_position
+    from neurospatial.replay import detect_replay
+    from neurospatial.replay.methods import PFEIFFER_FOSTER_2013, PFEIFFER_FOSTER_2015
+
+    rec = load("pfeiffer_2013")
+    params = rec.params
+    trains = [
+        train
+        for train, label in zip(rec.spike_times, rec.units["label"], strict=True)
+        if label == "excitatory"
+    ]
+    rates = compute_spatial_rates(
+        rec.env,
+        trains,
+        rec.times,
+        rec.positions,
+        method="binned",
+        bandwidth=params["bandwidth"],
+        min_speed=params["min_speed"],
+    )
+    verdicts = {"pfeiffer_foster_2013": [], "pfeiffer_foster_2015": []}
+    # Each row's MAP bin and its posterior mass, all the cause test needs.
+    maps = []
+    for start, stop in rec.events["ripples"]:
+        counts, centres = event_rows(
+            trains,
+            float(start),
+            float(stop),
+            time_bin=params["event_time_bin"],
+            step=params["event_time_step"],
+        )
+        decoded = decode_position(
+            rec.env, counts, rates, dt=params["event_time_bin"], times=centres
+        )
+        for name, method in (
+            ("pfeiffer_foster_2013", PFEIFFER_FOSTER_2013),
+            ("pfeiffer_foster_2015", PFEIFFER_FOSTER_2015),
+        ):
+            verdicts[name].append(
+                detect_replay(rec.env, decoded.posterior, centres, replay_method=method)
+            )
+        posterior = np.asarray(decoded.posterior)
+        maps.append((posterior.argmax(axis=1), posterior.max(axis=1)))
+    return rec, trains, rates, verdicts, maps
+
+
+@pytest.mark.realdata
+def test_presets_against_his_labels(judged):
+    """The confusion tables JUDGING_CHECK records, for both presets."""
+    rec, _, rates, verdicts, _ = judged
+    record = pfeiffer_2013.JUDGING_CHECK
+    labels = rec.params["significant"]
+    peaks = np.nanmax(np.asarray(rates.firing_rates), axis=1)
+    assert np.all(peaks > pfeiffer_2013.MIN_PEAK_RATE)
+    assert len(peaks) == record["n_units"]
+    supported = int(np.isfinite(np.asarray(rates.firing_rates)[0]).sum())
+    assert (supported, rec.env.n_bins) == record["supported_bins"]
+    for name, results in verdicts.items():
+        is_replay = np.array([result.is_replay for result in results])
+        assert _agreement(is_replay, labels) == record["presets"][name], name
+
+
+@pytest.mark.realdata
+def test_worked_result_criterion_is_not_met(judged):
+    """Fixed before any window was decoded: 80% agreement and kappa >= 0.6."""
+    rec, _, _, verdicts, _ = judged
+    is_replay = np.array([r.is_replay for r in verdicts["pfeiffer_foster_2015"]])
+    measured = _agreement(is_replay, rec.params["significant"])
+    record = pfeiffer_2013.WORKED_RESULT
+    met = measured["agreement"] >= 0.8 and measured["kappa"] >= 0.6
+    assert met is False
+    assert record["status"] == "not possible yet"
+    assert record["attempted"]["value"] == measured["agreement"]
+    assert f"kappa {measured['kappa']}" in record["attempted"]["criterion"]
+
+
+@pytest.mark.realdata
+def test_his_labels_we_reject_decode_to_short_paths(judged):
+    """What JUDGING_CHECK finds: those paths are short by the mean and by the MAP."""
+    rec, _, _, verdicts, maps = judged
+    record = pfeiffer_2013.JUDGING_CHECK["his_only_2015"]
+    labels = rec.params["significant"]
+    centers = rec.env.bin_centers
+    short_distance, short_length, map_distance, mean_distance = 0, 0, [], []
+    peak_his_only, peak_both = [], []
+    for result, (map_bins, mass), labelled in zip(
+        verdicts["pfeiffer_foster_2015"], maps, labels, strict=True
+    ):
+        if labelled:
+            (peak_both if result.is_replay else peak_his_only).append(np.median(mass))
+        if not labelled or result.is_replay:
+            continue
+        if result.segment is None:  # no time bin starts a segment
+            short_length += 1
+            continue
+        segments = result.segments
+        bins = int(segments.time_bin_counts[result.segment])
+        short_length += bins < 11
+        short_distance += bins >= 11
+        first, stop = segments.segments[result.segment]  # rows [first, stop)
+        ends = centers[map_bins[[first, stop - 1]]]
+        map_distance.append(float(np.linalg.norm(ends[1] - ends[0])))
+        mean_distance.append(float(segments.start_to_end_distances[result.segment]))
+    assert short_distance == record["short_of_80_cm"]
+    assert short_length == record["short_of_11_bins"]
+    assert round(float(np.median(map_distance)), 1) == record["map_distance_median"]
+    assert int(np.sum(np.array(map_distance) >= 80.0)) == record["map_reaching_80_cm"]
+    assert round(float(np.median(mean_distance)), 1) == record["mean_distance_median"]
+    assert round(float(np.median(peak_his_only)), 3) == record["peak_posterior_median"]
+    assert round(float(np.median(peak_both)), 3) == record["peak_posterior_median_both"]
+
+
+@pytest.mark.realdata
+def test_place_field_reading_is_not_the_cause(judged):
+    """Dividing first, then smoothing the rate (4 cm on the 2 cm grid), changes little."""
+    from scipy.ndimage import gaussian_filter
+
+    from neurospatial import compute_spatial_rates
+    from neurospatial.datasets._ripple import event_rows
+    from neurospatial.decoding import decode_position
+    from neurospatial.replay import detect_replay
+    from neurospatial.replay.methods import PFEIFFER_FOSTER_2015
+
+    rec, trains, _, _, _ = judged
+    params = rec.params
+    raw = compute_spatial_rates(
+        rec.env,
+        trains,
+        rec.times,
+        rec.positions,
+        method="binned",
+        min_speed=params["min_speed"],
+    )
+    rate = np.nan_to_num(np.asarray(raw.firing_rates), nan=0.0)
+    centers = rec.env.bin_centers
+    index = np.round((centers - centers.min(axis=0)) / params["bin_size"]).astype(int)
+    grid = np.zeros((rate.shape[0], *(index.max(axis=0) + 1)))
+    grid[:, index[:, 0], index[:, 1]] = rate
+    sigma = (
+        0.0,
+        params["bandwidth"] / params["bin_size"],
+        params["bandwidth"] / params["bin_size"],
+    )
+    smoothed = gaussian_filter(grid, sigma)[:, index[:, 0], index[:, 1]]
+    smoothed = np.maximum(smoothed, 1e-12)
+    is_replay = []
+    for start, stop in rec.events["ripples"]:
+        counts, centres = event_rows(
+            trains,
+            float(start),
+            float(stop),
+            time_bin=params["event_time_bin"],
+            step=params["event_time_step"],
+        )
+        decoded = decode_position(
+            rec.env, counts, smoothed, dt=params["event_time_bin"], times=centres
+        )
+        is_replay.append(
+            detect_replay(
+                rec.env, decoded.posterior, centres, replay_method=PFEIFFER_FOSTER_2015
+            ).is_replay
+        )
+    measured = _agreement(np.array(is_replay), params["significant"])
+    assert (measured["agreement"], measured["kappa"]) == pfeiffer_2013.JUDGING_CHECK[
+        "rate_then_smooth_2015"
+    ]
