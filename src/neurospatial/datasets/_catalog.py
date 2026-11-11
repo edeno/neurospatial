@@ -188,6 +188,10 @@ class SessionEntry:
     lfp_files : tuple of LFPFile
         The files that hold the session's LFP, fetched only on request; empty
         where the archive has none. The loader builds ``rec.lfp`` from them.
+    stream_only : str
+        Why the session's file is read by byte range rather than downloaded
+        (the registry's ``archive.stream_only``), for files too large to keep;
+        empty for a file that is downloaded.
     """
 
     info: DatasetInfo
@@ -208,6 +212,7 @@ class SessionEntry:
     members: tuple[Member, ...] = ()
     videos: tuple[VideoAsset, ...] = ()
     lfp_files: tuple[LFPFile, ...] = ()
+    stream_only: str = ""
 
     @property
     def download_url(self) -> str:
@@ -318,7 +323,12 @@ def _read(registry: dict[str, Any], name: str) -> tuple[SessionEntry, ...]:
             stated=_stated(registry["stated"], name),
         )
         entries = tuple(
-            _entry(info, row, registry["paper_citation"])
+            _entry(
+                info,
+                row,
+                registry["paper_citation"],
+                stream_only=str(archive.get("stream_only", "")),
+            )
             for row in registry["sessions"]
         )
     except KeyError as exc:
@@ -388,7 +398,9 @@ def _archive_name(archive: dict[str, Any]) -> str:
     return str(archive["name"])
 
 
-def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
+def _entry(
+    info: DatasetInfo, row: dict[str, Any], paper: str, *, stream_only: str = ""
+) -> SessionEntry:
     """One session row, with its download location and checksums checked.
 
     A row from an archive other than the dataset's gives its own
@@ -453,6 +465,7 @@ def _entry(info: DatasetInfo, row: dict[str, Any], paper: str) -> SessionEntry:
         members=members,
         videos=videos,
         lfp_files=lfp_files,
+        stream_only=stream_only,
     )
 
 
