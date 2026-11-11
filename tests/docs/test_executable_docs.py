@@ -56,6 +56,7 @@ OPT_IN = (
     "docs/datasets/pfeiffer_2013.md",
     "docs/datasets/sargolini_2006.md",
     "docs/datasets/shipley_2026.md",
+    "docs/datasets/tirole_2022.md",
     "docs/datasets/valero_2022.md",
     "docs/datasets/vollan_2025.md",
     "docs/user-guide/workflows.md",

@@ -506,3 +506,64 @@ def test_zip_builder_hashes_new_members_and_keeps_hand_fields(capsys):
         True,
     )
     assert "R1-day: reset to unverified" in capsys.readouterr().out
+
+
+def _zenodo_record(names: dict[str, bytes]) -> dict:
+    import hashlib
+
+    return {
+        "doi": "10.5061/dryad.x",
+        "files": [
+            {
+                "key": name,
+                "size": len(data),
+                "checksum": "md5:"
+                + hashlib.md5(data, usedforsecurity=False).hexdigest(),
+                "links": {
+                    "self": f"https://zenodo.org/api/records/1/files/{name}/content"
+                },
+            }
+            for name, data in names.items()
+        ],
+    }
+
+
+def test_zenodo_builder_hashes_cached_files_checked_against_the_records_md5(tmp_path):
+    import hashlib
+
+    builder = _builder()
+    data = {"a.mat": b"spikes", "b.mat": b"position", "c.mat": b"lfp"}
+    (tmp_path / "ds" / "s1").mkdir(parents=True)
+    (tmp_path / "ds" / "a.mat").write_bytes(data["a.mat"])
+    (tmp_path / "ds" / "s1" / "b.mat").write_bytes(data["b.mat"])
+    (tmp_path / "ds" / "c.mat").write_bytes(data["c.mat"])
+    registry = {
+        "dataset": "ds",
+        "archive": {"zenodo": "1"},
+        "sessions": [
+            {
+                "session": "s1",
+                "verified": True,
+                "members": [{"path": "a.mat"}, {"path": "b.mat"}],
+                "lfp_files": [{"path": "c.mat", "channels": ["x"]}],
+            }
+        ],
+    }
+    get = _api({"https://zenodo.org/api/records/1": _zenodo_record(data)})
+    built = builder.build_zenodo(registry, tmp_path, get)
+    row = built["sessions"][0]
+    sha = {name: hashlib.sha256(value).hexdigest() for name, value in data.items()}
+    assert [m["sha256"] for m in row["members"]] == [sha["a.mat"], sha["b.mat"]]
+    assert (
+        row["sha256"]
+        == hashlib.sha256(f"{sha['a.mat']}\n{sha['b.mat']}".encode()).hexdigest()
+    )
+    assert row["size_bytes"] == len(data["a.mat"]) + len(data["b.mat"])
+    assert row["lfp_files"][0]["channels"] == ["x"]
+    assert row["lfp_files"][0]["sha256"] == sha["c.mat"]
+    assert row["verified"] is True
+    assert built["archive"]["url"] == "https://doi.org/10.5061/dryad.x"
+
+    (tmp_path / "ds" / "a.mat").write_bytes(b"changed")
+    with pytest.raises(ValueError, match="the record states"):
+        builder.build_zenodo(registry, tmp_path, get)

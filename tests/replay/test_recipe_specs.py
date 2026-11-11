@@ -381,7 +381,7 @@ SPEC: dict[str, tuple[type, dict[str, Any]]] = {
             "nulls": ("spike_train_circular", "place_field_circular", "column_cycle"),
             "use_absolute": True,
             "empty_time_bins": "zero",
-            "criteria": (("n_active_cells", ">=", 5, None, False),),
+            "criteria": (("n_time_bins", ">=", 5, None, False),),
             "decoding": {"time_bin": 0.02, "position_bin": 10.0},
         },
     ),

@@ -4381,7 +4381,7 @@ TIROLE_2022 = ReplayMethod(
     alpha=0.05,
     use_absolute=True,
     empty_time_bins="zero",
-    criteria=(ReplayCriterion("n_active_cells", ">=", 5),),
+    criteria=(ReplayCriterion("n_time_bins", ">=", 5),),
     decoding={"time_bin": 0.02, "position_bin": 10.0},
     notes=(
         "Weighted correlation of the posterior with time bins without spikes "
@@ -4392,12 +4392,39 @@ TIROLE_2022 = ReplayMethod(
         "track's share, decode_jointly(...).joint(name), with every track's "
         "rate maps as encoding_models and template=name, so shuffles are "
         "decoded jointly too.",
-        "Candidate events of 100-750 ms with at least 5 time bins; event "
-        "selection is not applied here.",
-        "Events split in halves at the multi-unit minimum (tested at "
-        "p < 0.025) are not included; split the event first.",
+        "At least 5 time bins, as the Bendor-lab code scores an event or a "
+        "segment (replay_scoring.m). The paper's other candidate rules (100 "
+        "to 750 ms, at least 5 active place cells, speed, ripple power) "
+        "select events (extract_replay_events.m) and are not applied here.",
+        "The code also tests each event's two halves, split at the time bin "
+        "nearest the multi-unit minimum of the event's middle third and "
+        "sharing that bin, at half the alpha (number_of_significant_replays.m); "
+        "an event is replay on a track when the whole event or either half "
+        "passes. Run this method on each half with alpha=0.025 to follow it.",
+        "The code's p-value counts shuffles at or above the score over n; here "
+        "it is (k + 1) / (n + 1). With 1,000 shuffles both are below 0.05 (and "
+        "0.025) at the same counts.",
         "The Bendor-lab code zeroes the original event's empty time bins in "
         "shuffles that move time bins; here each shuffle zeroes its own.",
+        "Checked against the Bendor-lab code run in Octave on the paper's data "
+        "(neurospatial.datasets tirole_2022; tests/datasets/"
+        "test_tirole_2022_replay.py). The code's decoding differs from "
+        "neurospatial's in three ways that change scores: it raises every rate "
+        "below 10^(log2(N) - log2(400)) Hz to that floor, and each rate raised "
+        "to its spike count too (bayesian_decoding.m); it sets bins the rat "
+        "never crossed to 0 rather than leaving them out; and it zeroes a time "
+        "bin when no spike falls in it inside the event's bounds, while its "
+        "last 20 ms bin can reach past the event's end. Reproducing those gives "
+        "the code's stored scores within 1e-6 for 99.75% of one session's 806 "
+        "(track, event) pairs; neurospatial's decoding gives 72.5% within 0.01 "
+        "(r = 0.967). On the paper's RUN candidates of nine sessions (7,002 "
+        "track-event pairs, whole event or a half), this method on "
+        "neurospatial's decoding finds 89.9% of the code's 1,658 significant "
+        "pairs, and 95.1% of its own 1,567 are the code's; two runs that differ "
+        "only in their shuffles agree on 96.7% to 98.0%. The floors make an "
+        "unlikely bin less unlikely, so the code calls a few more events "
+        "replay: on one session, with the code's floored maps passed in, 96.6% "
+        "of its significant pairs are found against 93.6% without.",
         "Measured on simulated events with no sequence (1,000 events of ten "
         "20 ms bins, spikes from a random position in each bin, 30 place "
         "cells on a 200 cm track, weighted correlation, 39 shuffles): each "

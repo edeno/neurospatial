@@ -1,0 +1,403 @@
+{
+  "dataset": "tirole_2022",
+  "paper": "Tirole et al. (2022)",
+  "paper_citation": "Tirole M, Huelin Gorriz M, Takigawa M, Kukovska L, Bendor D (2022). Experience-driven rate modulation is reinstated during hippocampal replay. eLife 11:e79031. https://doi.org/10.7554/eLife.79031",
+  "species": "rat",
+  "brain_regions": [
+    "dorsal CA1"
+  ],
+  "apparatus": "two novel 2 m linear tracks of changing shape in one room, run back and forth for about 15 min each, with a 20 cm rest pot for 1 h before, 10 min between and 2 h after",
+  "license": "CC0-1.0",
+  "archive": {
+    "name": "Zenodo 7114733 (mirror of Dryad 10.5061/dryad.ksn02v76h)",
+    "zenodo": "7114733",
+    "citation": "Takigawa M, Kukovska L, Tirole M, Huelin M, Bendor D (2023). Experience-driven rate modulation is reinstated during hippocampal replay [Data set]. Zenodo, mirror of Dryad. https://doi.org/10.5061/dryad.ksn02v76h",
+    "not_offered": [
+      "rat4_session1"
+    ],
+    "not_offered_why": "the deposit's RAT4_SESS1 spike and position files are byte-identical copies of RAT1_SESS2's, which are Rat 1 session 1; only its LFP (RAT4_SESS1_extracted_CSC.mat) is Rat 4 session 1's",
+    "url": "https://doi.org/10.5061/dryad.ksn02v76h"
+  },
+  "stated": {
+    "sampling_rate": {
+      "value": 25.0,
+      "basis": "stated",
+      "source": "the deposit README.txt: position.t is min(positions.timestamps):0.04:max(positions.timestamps), the camera being at 25Hz (1/25=0.04)"
+    },
+    "position_span": {
+      "value": [
+        150.0,
+        350.0
+      ],
+      "basis": "inferred",
+      "source": "no source read states the room or the camera's view. The camera sees both 2 m tracks, bent into a different shape each session, and the rest pot; at the file's average cm per pixel the largest per-axis span of the tracked samples is 195 to 280 cm over the nine sessions; the range allows about 25% either side"
+    },
+    "speed_limit": {
+      "value": 393.0,
+      "basis": "stated",
+      "source": "Iriarte-D\u00edaz 2002, J. Exp. Biol. 205:2897-2908, Table 1: Rattus runs at most 13.78 body lengths/s at a 0.190 m body length, 2.62 m/s (from Garland 1983 and Nowak 1999); times 1.5 because the tracked point is a head-mounted LED pair, which swings faster than the body, and no source read states head speed"
+    }
+  },
+  "sessions": [
+    {
+      "session": "rat1_session1",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat1_session1",
+      "verified": false,
+      "default": false,
+      "n_units": 99,
+      "verification": "",
+      "members": [
+        {
+          "path": "RAT1_SESS2_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT1_SESS2_extracted_clusters.mat/content",
+          "sha256": "712f3399c7e3651f18eb01726a9ecdfe31c6acc5499b73d705f0181dfb2e2984",
+          "size_bytes": 8129073
+        },
+        {
+          "path": "RAT1_SESS2_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT1_SESS2_extracted_position.mat/content",
+          "sha256": "b2fe68997b138ad10d931fc5d29bdac47a93ea3ead1d63655dd1c1c663caab9a",
+          "size_bytes": 14529477
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT1_SESS1_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT1_SESS1_extracted_CSC.mat/content",
+          "sha256": "5b83e2c02ee3f978fb2a47ca0339b5dfb56bd75e0c7589df79267514626ae1ca",
+          "size_bytes": 1684298774
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "9d7ed6965d9fce440da75b217bfdef27fccaaf1700e7bfd23acf07d85a2b49f4",
+      "size_bytes": 22658550
+    },
+    {
+      "session": "rat2_session1",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat2_session1",
+      "verified": false,
+      "default": false,
+      "n_units": 167,
+      "verification": "",
+      "members": [
+        {
+          "path": "RAT2_SESS1_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT2_SESS1_extracted_clusters.mat/content",
+          "sha256": "23b48eb0f4b2ce2e6658ba11523f64686d8099f45c2f95ec38005ecceb1dcde9",
+          "size_bytes": 27440787
+        },
+        {
+          "path": "RAT2_SESS1_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT2_SESS1_extracted_position.mat/content",
+          "sha256": "e6f428868a82cd19be70f7477d316a6f59b187a51584a72de7b42b3ddac61f58",
+          "size_bytes": 19446089
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT2_SESS1_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT2_SESS1_extracted_CSC.mat/content",
+          "sha256": "30f00f4755fc3b951bbdd8c2bcd3194c242e5878f1760fe25e4aebd2d865077e",
+          "size_bytes": 1471572387
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "563dba87dbadd415eedfbaa6a430eaf92d595edda071c3e8498192816f1e1bb8",
+      "size_bytes": 46886876
+    },
+    {
+      "session": "rat2_session2",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat2_session2",
+      "verified": false,
+      "default": false,
+      "n_units": 97,
+      "verification": "",
+      "members": [
+        {
+          "path": "RAT2_SESS2_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT2_SESS2_extracted_clusters.mat/content",
+          "sha256": "b42bf89a5174e6d71f96c8a851a911829c82d381a3aaa79341438ff98b714a98",
+          "size_bytes": 9511738
+        },
+        {
+          "path": "RAT2_SESS2_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT2_SESS2_extracted_position.mat/content",
+          "sha256": "b3694f51dcdb64918adac98e662772f6b76d35cef4203cc564aa164c405e121e",
+          "size_bytes": 11399914
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT2_SESS2_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT2_SESS2_extracted_CSC.mat/content",
+          "sha256": "3be3b967e94aa977b42c62cc879d3862d7cff33c202d3d64c4ea2d978dbfc6ab",
+          "size_bytes": 1159686603
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "e42f7339d7e4865bb4cb00665a7d18170075819f98a6421e9ad42369a346e9ad",
+      "size_bytes": 20911652
+    },
+    {
+      "session": "rat3_session1",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat3_session1",
+      "verified": false,
+      "default": false,
+      "n_units": 141,
+      "verification": "",
+      "members": [
+        {
+          "path": "RAT3_SESS1_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT3_SESS1_extracted_clusters.mat/content",
+          "sha256": "db17b85f8aa2372d18ada4aaee55243309a4a077002f35ea09b28b19f50e8029",
+          "size_bytes": 20109114
+        },
+        {
+          "path": "RAT3_SESS1_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT3_SESS1_extracted_position.mat/content",
+          "sha256": "a6f3ffc4d90d6d02615cf7a1682fbdbe34058ac01062aec9f028eeb1acdc4e17",
+          "size_bytes": 12913142
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT3_SESS1_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT3_SESS1_extracted_CSC.mat/content",
+          "sha256": "c1407651703f5c125fc2d4d86241c3759d6abc1cf1d2792079ff570b0c30f23c",
+          "size_bytes": 1366438583
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "f3b5120dd0a10fd142db1fede8540c98aa660dc2efe4bf439bd2c5c88de2ec91",
+      "size_bytes": 33022256
+    },
+    {
+      "session": "rat3_session2",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat3_session2",
+      "verified": true,
+      "default": true,
+      "n_units": 142,
+      "verification": "2026-11-11: the authors' MATLAB pipeline run in Octave on these files reproduces Table 1's laps (73 and 77 one-way runs) and PRE/POST (69.3 and 137.3 min); spikes, tracking and LFP share one clock; the drawn track lines lie on the tracked path; positions times the file's cm_per_pixel span 275 x 216 cm",
+      "members": [
+        {
+          "path": "RAT3_SESS2_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT3_SESS2_extracted_clusters.mat/content",
+          "sha256": "7e09d07f22c5ff43d636746c54e6474015d15e01a453543718db98a318985ec6",
+          "size_bytes": 28107624
+        },
+        {
+          "path": "RAT3_SESS2_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT3_SESS2_extracted_position.mat/content",
+          "sha256": "45e60ff9e6ea371a27e3292b7e68c455e0393fe20ea9127a88b78581a28ae6ce",
+          "size_bytes": 14719805
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT3_SESS2_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT3_SESS2_extracted_CSC.mat/content",
+          "sha256": "b41aebed9f0b6a5b9fcf92cbc7a5d551d15b63be4edeb727e937aff5afe609df",
+          "size_bytes": 1574090047
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "d6ff198ce8309e0eb217acb7150e78babc9e352451ae203ec53f62e9c6f45e13",
+      "size_bytes": 42827429
+    },
+    {
+      "session": "rat4_session2",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat4_session2",
+      "verified": false,
+      "default": false,
+      "n_units": 113,
+      "verification": "",
+      "members": [
+        {
+          "path": "RAT4_SESS2_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT4_SESS2_extracted_clusters.mat/content",
+          "sha256": "8b8e207d30d7abf1b255b423852b3eaabe263e1ac8ef2ef312f5a018fcd25522",
+          "size_bytes": 7299065
+        },
+        {
+          "path": "RAT4_SESS2_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT4_SESS2_extracted_position.mat/content",
+          "sha256": "9b2efdd4ad7f01b864eca9b6267c0d03b209dad1c14b2b138aa0489ec1fbd84f",
+          "size_bytes": 15933996
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT4_SESS2_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT4_SESS2_extracted_CSC.mat/content",
+          "sha256": "7119f4bb9a7035efe6e5845f72ec15ee41b1aaa71d7fbf5ded3e75d43b49cced",
+          "size_bytes": 1625308331
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "6f70361d822edbcae2efac6a23555f0ea8200243a1990c4245b2f911804ce51b",
+      "size_bytes": 23233061
+    },
+    {
+      "session": "rat4_session3",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat4_session3",
+      "verified": false,
+      "default": false,
+      "n_units": 111,
+      "verification": "",
+      "members": [
+        {
+          "path": "RAT1_SESS1_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT1_SESS1_extracted_clusters.mat/content",
+          "sha256": "e0d92901396686af445eb796fc3a46ff289cbd95b3b5434247c9e42108df2655",
+          "size_bytes": 15191185
+        },
+        {
+          "path": "RAT1_SESS1_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT1_SESS1_extracted_position.mat/content",
+          "sha256": "99bb18a66b45befb940d59359a307d65dea1a3fdec43c355d3b6621f6824508e",
+          "size_bytes": 12416468
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT4_SESS3_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT4_SESS3_extracted_CSC.mat/content",
+          "sha256": "454ccb44e0d9313be8c9faabe4eabb1a5c899a8c8e3e2c849645e54180fa57a8",
+          "size_bytes": 1182898224
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "8696702f8c6293f4d18b22839b7c0bed2e306ee5939ad0d3ddb34f843fbe1265",
+      "size_bytes": 27607653
+    },
+    {
+      "session": "rat5_session1",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat5_session1",
+      "verified": false,
+      "default": false,
+      "n_units": 109,
+      "verification": "",
+      "members": [
+        {
+          "path": "RAT5_SESS1_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT5_SESS1_extracted_clusters.mat/content",
+          "sha256": "c8b486790c26a871a1ef34377805f8672c48e4ff8c41c44616f1f1c2a5291b36",
+          "size_bytes": 7223721
+        },
+        {
+          "path": "RAT5_SESS1_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT5_SESS1_extracted_position.mat/content",
+          "sha256": "85472dfc7b3c9c560e1c951e9f81759c7da221c948b01ece7d1437eb50bdcb46",
+          "size_bytes": 12786688
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT5_SESS1_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT5_SESS1_extracted_CSC.mat/content",
+          "sha256": "a37b73a7d2e2799ea448fb27b6cab81777f51ac8e12b9da0da26950740c6bd3c",
+          "size_bytes": 1285375277
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "0d2e4724aa46f9849efcc0711c31bb03e6c8480ad95dbbfb4f1d08d3fb380a1d",
+      "size_bytes": 20010409
+    },
+    {
+      "session": "rat5_session2",
+      "archive": "Zenodo 7114733",
+      "file_name": "rat5_session2",
+      "verified": false,
+      "default": false,
+      "n_units": 138,
+      "verification": "",
+      "members": [
+        {
+          "path": "RAT5_SESS2_extracted_clusters.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT5_SESS2_extracted_clusters.mat/content",
+          "sha256": "8e471e26f2f763d22036a3443fa6836e8a1161e88b987ccb7c2cf75e95b25e37",
+          "size_bytes": 12614057
+        },
+        {
+          "path": "RAT5_SESS2_extracted_position.mat",
+          "url": "https://zenodo.org/api/records/7114733/files/RAT5_SESS2_extracted_position.mat/content",
+          "sha256": "35a3c859e426f75d7e12eb6dd8da97e25bd635de99e1666ce146a6ca4e9c459b",
+          "size_bytes": 12297501
+        }
+      ],
+      "lfp_files": [
+        {
+          "path": "RAT5_SESS2_extracted_CSC.mat",
+          "channels": [
+            "best_theta",
+            "best_ripple",
+            "best_delta",
+            "best_theta_low_ripple"
+          ],
+          "url": "https://zenodo.org/api/records/7114733/files/RAT5_SESS2_extracted_CSC.mat/content",
+          "sha256": "09e0945b051268735920127938645549b5dc715b69756b1a5fa6b5578bc59557",
+          "size_bytes": 1229454854
+        }
+      ],
+      "url": "https://zenodo.org/records/7114733",
+      "sha256": "81d94eef6d7d7bf29705fe0203d3714a33e9fd0fc1f67de29e45da7d50a0d750",
+      "size_bytes": 24911558
+    }
+  ]
+}

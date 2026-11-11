@@ -143,7 +143,7 @@ in different ways:
 |---|---|---|
 | `DAVIDSON_2009` | Line fit: posterior mass within 15 cm of the best line | Column-cycle, cell-identity and pseudo-event shuffles; every p below 0.01 |
 | `WU_2017` | Linear regression (R²) of the most likely position on time, in time bins with spikes | Time-bin permutation, p < 0.05; at least 4 active cells |
-| `TIROLE_2022` | Weighted correlation of position and time | Spike-train, place-field and position-bin circular shifts; every p below 0.05; at least 5 active cells |
+| `TIROLE_2022` | Weighted correlation of position and time | Spike-train, place-field and position-bin circular shifts; every p below 0.05; at least 5 time bins |
 | `SILVA_2015` | Weighted correlation | No shuffles: \|r\| > 0.6 and no decoded jump over 40% of the track |
 | `DIBA_BUZSAKI_2007` | Rank order of the cells' spikes vs. their place fields | Cell-order shuffle, p < 0.1; at least 5 active cells and 30% of the cells |
 
