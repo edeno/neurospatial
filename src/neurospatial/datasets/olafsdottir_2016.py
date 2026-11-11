@@ -58,6 +58,12 @@ What the loader converts:
   are, the direction from it to the big one does not follow movement (the
   watch-outs give the numbers). ``params["little_led_positions"]`` keeps the
   little LED's positions, in cm, for a reader who wants to try.
+- corner stops: ``rec.epochs["corner_stops"]``, each stay at a corner of the
+  Z from arriving within 20 cm of it, along the track, to the last sample
+  that near before the animal is 40 cm away (our choice), with the run it
+  arrived on in ``params["corner_stop_direction"]``; ``["engaged"]`` and
+  ``["disengaged"]`` are Ólafsdóttir, Carpenter & Barry 2017's sections of
+  them, the first and last 5 s and the time between.
 - ``params["rest_times"]``, ``["rest_positions"]`` (and ``open_field_...``):
   that trial's frames and big-LED positions, cm in its own tracking window,
   which is not the track's frame.
@@ -112,6 +118,8 @@ if TYPE_CHECKING:
     from neurospatial.datasets._catalog import SessionEntry
 
 __all__ = [
+    "AWAKE_CONTENT",
+    "AWAKE_RESULT",
     "EXPECTED_WATCH_OUTS",
     "PAPER_SESSIONS",
     "REQUIRES",
@@ -308,6 +316,120 @@ WORKED_RESULT: dict[str, Any] = {
         "leaves the interneuron cut unstated, and this day holds 56 CA1 units "
         "where Supplementary Table 1 lists 71 or 48 place cells for R2336. So "
         "no share here is presented as the paper's"
+    ),
+}
+
+#: A finding of Ólafsdóttir, Carpenter & Barry 2017 (Neuron 96:925-935), on the
+#: same rats and track, reproduced on the deposit's track trials: awake replay
+#: at the corners. Apart from ``WORKED_RESULT`` because it is another paper's.
+AWAKE_RESULT: dict[str, Any] = {
+    "status": "reproduced",
+    "level": "A",
+    "finding": (
+        "the share of putative trajectory events at the track's corners judged "
+        "replay: 36.88% of engaged and 38.60% of disengaged events, 513 of "
+        "1,347 pooled over 24 sessions"
+    ),
+    "quote": (
+        '"We identified a total of 149 engaged replay events and 364 disengaged '
+        "replay events ... the percentage of putative events qualifying as replay "
+        "events for the two categories was not different (36.88% versus 38.60%, "
+        'p = 0.28; Figure 3E)." (Results)'
+    ),
+    "source": (
+        "Ólafsdóttir, Carpenter & Barry 2017, Neuron 96:925-935, Results and "
+        "STAR Methods"
+    ),
+    "paper": (
+        "38.1% pooled: 149 of 404 engaged and 364 of 943 disengaged (404 and 943 "
+        "inferred: the only counts that give 36.88% and 38.60% to the hundredth)"
+    ),
+    "ours": 0.295,
+    "criterion": (
+        "met. 91 of 308 putative trajectory events (29.5%) pooled over the 9 "
+        "readable deposit days are judged replay, and the criterion, fixed in "
+        "writing before any track candidate was detected, asks for 28.1% to "
+        "48.1%, within 10 points of the paper's pooled 38.1%. Engaged 14 of 51 "
+        "(27.5%), disengaged 77 of 257 (30.0%)"
+    ),
+    "parameters": (
+        "every readable deposit day (the paper's inclusion, a median running "
+        "decoding error of 30 cm or less in 500 ms bins, passes all 9: 5.2 to "
+        "21.7 cm). Place cells: CA1 units with a field of 20 cm or more above "
+        "their mean track rate and a peak above 1 Hz in the outbound or inbound "
+        "map (2 cm bins, above 10 cm/s, Gaussian sigma 10 cm, ends and corners "
+        "left out), mean rate 5 Hz or less. Candidates: "
+        "literature_methods.olafsdottir_2017(analysis='trajectory') at "
+        "ripple_detection 0eddae64 on the track trial at 1 kHz with the session "
+        "speed, kept when wholly inside one engaged or disengaged section of "
+        "rec.epochs. Judged by OLAFSDOTTIR_2017 as packaged (100 place-field "
+        "shuffles, p < 0.025), each direction's 10 ms posterior scored and the "
+        "higher score's direction kept with its p, rng 2017 + the event's index "
+        "in its day and section"
+    ),
+    "unmatched": (
+        "the sessions: the paper lists none of its 24, so that these days are "
+        "among them is inferred from the rat IDs; the deposit's R2192-2014-10-01 "
+        "cannot be read (a rest tetrode file zero-filled), and the paper's own "
+        "exclusion of R2336's day 4 cannot be applied",
+        "the threshold: the paper calls replay a score above the 97.5th "
+        "percentile of 100 shuffles, at most 2 as high; OLAFSDOTTIR_2017 takes "
+        "p = (k + 1) / (n + 1) < 0.025, at most 1. By the paper's rule 109 of "
+        "308 (35.4%) are replay: engaged 18 of 51, disengaged 91 of 257",
+        "the corner stops: the paper gives no distance from a corner; here "
+        "within 20 cm along the track until 40 cm away, chosen on the default "
+        "day's slow samples before any candidate was detected",
+        "the speed below 3 cm/s: the paper does not say how speed was "
+        "estimated; compute_speed's 0.1 s smoothing of the head LED leaves "
+        "fewer events than the paper's (308 putative trajectory events on 9 "
+        "days, against 1,347 on 24 sessions)",
+    ),
+    "attempted": None,
+    "why": None,
+}
+
+#: The 2017 paper's main finding on the same days, as a second criterion fixed
+#: before the run, and what decoding the two directions jointly gives.
+AWAKE_CONTENT: dict[str, Any] = {
+    "met": False,
+    "quote": (
+        '"Engaged events showed a robust bias to reactivate spatial firing '
+        "congruent with an animal's current direction of travel (62.26% versus "
+        'chance, p < 0.0001 ...)", disengaged 52.19%, "engaged versus '
+        'disengaged, p < 0.0001" (Results)'
+    ),
+    "criterion": (
+        "pooled over the days, engaged reactivation events are congruent more "
+        "often than the cell-ID shuffle's chance and than disengaged events, "
+        "each in more than 97.5% of 10,000 bootstrap resamples (the paper's "
+        "test); not met"
+    ),
+    "as_the_methods_describe": {
+        "engaged": (111, 241),
+        "disengaged": (509, 976),
+        "chance": {"engaged": 0.5078, "disengaged": 0.4894},
+        "above_chance": {"engaged": 0.067, "disengaged": 0.9781},
+        "engaged_above_disengaged": 0.0456,
+    },
+    "decoded_jointly": {
+        "engaged": (149, 241),
+        "disengaged": (591, 976),
+        "chance": {"engaged": 0.5098, "disengaged": 0.528},
+        "above_chance": {"engaged": 0.9995, "disengaged": 1.0},
+        "engaged_above_disengaged": 0.6517,
+    },
+    "direction_while_running": {"separately": (1315, 2564), "jointly": (2084, 2564)},
+    "cause": (
+        "the Methods decode each event once with the outbound and once with the "
+        "inbound maps, each posterior summing to 1, and take the arm of the six "
+        "with the most probability. Two posteriors normalized apart cannot say "
+        "which direction the spikes match: on the default day's runs the rule "
+        "names the running direction in 1,315 of 2,564 500 ms bins (51.3%), and "
+        "decode_jointly, one posterior over both directions, in 2,084 (81.3%). "
+        "Decoded jointly (not fixed before the run), engaged events are "
+        "congruent in 149 of 241 (61.8%, the paper 62.26%) against a chance of "
+        "51.0%, and disengaged events in 591 of 976 (60.6%, the paper 52.19%) "
+        "against 52.8%: both above chance, the two not different"
     ),
 }
 
@@ -1348,7 +1470,7 @@ def load_session(
         "immobile_speed": IMMOBILE_SPEED,
         "corner_stop_direction": stop_direction,
         "corner_stop_corner": stop_corner,
-        "paper_session":(PAPER_SESSIONS.get(entry.session) or (None, None, ""))[:2],
+        "paper_session": (PAPER_SESSIONS.get(entry.session) or (None, None, ""))[:2],
         "little_led_positions": little,
     }
     for trial in trials:

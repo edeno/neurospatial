@@ -317,7 +317,9 @@ def test_runways_along_the_x_axis_are_one_direction_across_0_and_180_degrees():
     Either half alone is smaller than the diagonal's bin, which then took the
     runways' place and gave a Z with a 15 cm diagonal and no runs.
     """
-    angle = np.radians(np.r_[np.full(400, 1.0), np.full(300, 179.0), np.full(500, 41.0)])
+    angle = np.radians(
+        np.r_[np.full(400, 1.0), np.full(300, 179.0), np.full(500, 41.0)]
+    )
     runway, diagonal = np.degrees(olafsdottir_2016._axial_peaks(angle))
     assert (runway, diagonal) == pytest.approx((2.5, 42.5))
 
@@ -327,7 +329,9 @@ def test_corner_stops_and_their_engaged_sections():
     times = np.arange(0.0, 40.0, 0.5)
     # Out to the corner at 100 cm, 13 s there (head swinging to 30 cm off and
     # back), on to 200 cm, then back to stop 1 s at the corner.
-    linear = np.interp(times, [0, 5, 18, 23, 30, 31, 40], [0, 100, 100, 200, 100, 100, 0])
+    linear = np.interp(
+        times, [0, 5, 18, 23, 30, 31, 40], [0, 100, 100, 200, 100, 100, 0]
+    )
     linear[np.isclose(times, 10.0)] = 130.0
     rows, direction, corner = olafsdottir_2016.corner_stops(
         times, linear, np.array([100.0])
@@ -898,6 +902,16 @@ DAYS = (
 )
 
 
+#: Deposit days no load can read: R2192-2014-10-01's rest tetrode 4 file is
+#: zeros from spike 18,053 on, 45,749 of its 63,801 (the registry's SHA-256: the
+#: deposit's own file), and the reader refuses it.
+UNREADABLE = {"R2192-2014-10-01": "20141001_R2192_sleepPOST.4 is zero-filled"}
+#: Checks a day fails for reasons the 2017 analysis does not touch: R2335's
+#: second open field (17:26, five hours after the first) lies past the span
+#: the clock check takes as the recording's.
+ACCEPTED_2017 = {"R2335-2015-10-26": ("clock",)}
+
+
 def _along_track(rec, points):
     """Distance along the fitted Z from its start, cm; NaN where untracked."""
     return olafsdottir_2016._linear(points, rec.params["track_nodes"])[0]
@@ -951,7 +965,7 @@ def _candidates_2017(rec, ca1, cells):
 
     names = list(rec.units.index)
     track = rec.epochs["track"][0]
-    grid = track[0] + np.arange(int(round((track[1] - track[0]) * 1000))) / 1000.0
+    grid = track[0] + np.arange(round((track[1] - track[0]) * 1000)) / 1000.0
     counts = spike_counts(
         [rec.spike_times[names.index(u)] for u in ca1], grid, sampling_rate=1000.0
     )
@@ -1081,7 +1095,9 @@ def _reactivations(rec, cells, maps, events, *, jointly=False):
                 0, active
             ]
         chosen = (
-            _arm_masses(rec, maps, shuffled, end - start, jointly=jointly).argmax(axis=1)
+            _arm_masses(rec, maps, shuffled, end - start, jointly=jointly).argmax(
+                axis=1
+            )
             // 3
         )
         rows.append((observed, float(np.mean(directions[chosen] == arrived[which]))))
@@ -1092,7 +1108,11 @@ def _day_2017(session):
     """The 2017 analysis of one deposit day, as small arrays and counts."""
     from neurospatial.datasets import load
 
-    rec = load("olafsdottir_2016", session)
+    rec = load(
+        "olafsdottir_2016",
+        session,
+        accept_failed_checks=ACCEPTED_2017.get(session, ()),
+    )
     ca1, cells = _place_cells(rec, RUN_SPEED_2017)
     maps = _rate_maps(rec, cells, RUN_SPEED_2017)
     out = {
@@ -1115,3 +1135,180 @@ def _day_2017(session):
             rec, cells, maps, found["arm", section], jointly=True
         )
     return out
+
+
+def _direction_read_while_running(rec, cells, maps, *, jointly):
+    """Share of 500 ms running bins whose 6-arm argmax names the running direction."""
+    from neurospatial.datasets._ripple import event_rows
+
+    names = list(rec.units.index)
+    trains = [rec.spike_times[names.index(u)] for u in cells]
+    directions = np.array(list(maps))
+    hits = []
+    for direction in directions:
+        for start, stop in rec.epochs[direction]:
+            n_bins = int((stop - start) // DECODING_DT)
+            if n_bins == 0:
+                continue
+            counts, _ = event_rows(
+                trains,
+                start,
+                start + n_bins * DECODING_DT,
+                time_bin=DECODING_DT,
+                step=DECODING_DT,
+            )
+            counts = counts[counts.sum(axis=1) > 0]
+            if len(counts):
+                masses = _arm_masses(rec, maps, counts, DECODING_DT, jointly=jointly)
+                hits.append(directions[masses.argmax(axis=1) // 3] == direction)
+    hits = np.concatenate(hits)
+    return int(hits.sum()), hits.size
+
+
+def _pooled(days, key):
+    """Rows of ``key`` over the days, in the days' order."""
+    return [row for result in days.values() for row in result.get(key, [])]
+
+
+def _congruence(days, key):
+    """Congruent counts, chance and the paper's bootstrap, per section, pooled.
+
+    Returns, per section, (congruent, events, chance to 4 places, share of
+    resamples above chance), and under ``"difference"`` the share of
+    resampled engaged-minus-disengaged differences above 0.
+    """
+    rng = np.random.default_rng(SEED_2017)
+    out, resampled = {}, {}
+    for section in ("engaged", "disengaged"):
+        rows = _pooled(days, f"{key}_{section}")
+        congruent = np.array([row[0] for row in rows], dtype=float)
+        chance = float(np.nanmean([row[1] for row in rows]))
+        boot = rng.choice(congruent, size=(N_BOOTSTRAP, congruent.size)).mean(axis=1)
+        resampled[section] = boot
+        out[section] = (
+            int(congruent.sum()),
+            congruent.size,
+            round(chance, 4),
+            float(np.mean(boot > chance)),
+        )
+    out["difference"] = float(
+        np.mean(resampled["engaged"] - resampled["disengaged"] > 0)
+    )
+    return out
+
+
+#: Measured on every readable deposit day by the analysis fixed above: its
+#: place cells and median running decoding error, cm. Every one is within
+#: 30 cm, so all 9 enter.
+MEASURED_DAYS_2017 = {
+    "R2142-2014-08-06": (28, 13.87),
+    "R2192-2014-09-17": (67, 5.15),
+    "R2217-2014-12-13": (55, 6.97),
+    "R2217-2014-12-18": (36, 11.44),
+    "R2335-2015-10-26": (26, 21.72),
+    "R2336-2015-11-01": (52, 7.96),
+    "R2336-2015-11-04": (61, 6.62),
+    "R2337-2015-11-27": (49, 8.81),
+    "R2337-2015-12-01": (42, 8.02),
+}
+#: Pooled over the days, per section: trajectory events judged replay by the
+#: preset (p < 0.025), those the paper's rule calls replay (a score above the
+#: 97.5th percentile of 100 shuffles: at most 2 as high, p <= 3 / 101), and the
+#: putative events.
+MEASURED_TRAJECTORY_2017 = {"engaged": (14, 18, 51), "disengaged": (77, 91, 257)}
+#: Pooled over the days, per section: (congruent, events, chance, share of
+#: resamples above chance), and the share of resampled differences above 0.
+MEASURED_CONGRUENCE_2017 = {
+    "engaged": (111, 241, 0.5078, 0.067),
+    "disengaged": (509, 976, 0.4894, 0.9781),
+    "difference": 0.0456,
+}
+MEASURED_CONGRUENCE_JOINT_2017 = {
+    "engaged": (149, 241, 0.5098, 0.9995),
+    "disengaged": (591, 976, 0.528, 1.0),
+    "difference": 0.6517,
+}
+#: On the default day's runs: (bins naming the running direction, bins with
+#: spikes), each direction decoded on its own and both decoded jointly.
+DIRECTION_READ_2017 = ((1315, 2564), (2084, 2564))
+
+
+@pytest.fixture(scope="module")
+def days_2017():
+    """The 2017 analysis of every readable deposit day (9 loaded, 3.9 GB cached)."""
+    pytest.importorskip("ripple_detection.literature_methods")
+    return {day: _day_2017(day) for day in DAYS if day not in UNREADABLE}
+
+
+@pytest.mark.realdata
+def test_a_deposit_file_zero_filled_leaves_one_day_out():
+    """R2192-2014-10-01's rest tetrode 4 file is zeros in its last 45,749 of 63,801 spikes.
+
+    Its SHA-256 is the registry's, so the deposit holds it so; the reader
+    refuses the file, so the day cannot be loaded and enters no 2017 result.
+    """
+    from neurospatial.datasets import load
+
+    with pytest.raises(ValueError, match=r"20141001_R2192_sleepPOST\.4: the header"):
+        load("olafsdottir_2016", "R2192-2014-10-01")
+
+
+@pytest.mark.realdata
+def test_2017_every_day_enters_by_its_decoding_error(days_2017):
+    measured = {
+        day: (result["n_place"], round(result["decoding_error"], 2))
+        for day, result in days_2017.items()
+    }
+    assert measured == MEASURED_DAYS_2017
+    assert all(error <= DECODING_ERROR_LIMIT for _, error in measured.values())
+
+
+@pytest.mark.realdata
+def test_2017_worked_result_share_of_trajectory_events_judged_replay(days_2017):
+    """Criterion A, fixed before the run, against the paper's pooled 38.1%."""
+    measured = {}
+    for section in ("engaged", "disengaged"):
+        rows = _pooled(days_2017, f"trajectory_{section}")
+        measured[section] = (
+            sum(row[0] for row in rows),
+            sum(row[1] <= 3 / 101 for row in rows),
+            len(rows),
+        )
+    assert measured == MEASURED_TRAJECTORY_2017
+    share = sum(m[0] for m in measured.values()) / sum(m[2] for m in measured.values())
+    record = olafsdottir_2016.AWAKE_RESULT
+    met = SHARE_2017_BAND[0] <= share <= SHARE_2017_BAND[1]
+    assert met is (record["status"] == "reproduced")
+    recorded = record["ours"] if met else record["attempted"]["value"]
+    assert recorded == round(share, 3)
+
+
+@pytest.mark.realdata
+def test_2017_congruence_as_the_methods_decode_it(days_2017):
+    """Criterion B, fixed before the run: each direction decoded on its own."""
+    measured = _congruence(days_2017, "arm")
+    assert measured == MEASURED_CONGRUENCE_2017
+    met = measured["engaged"][3] > 0.975 and measured["difference"] > 0.975
+    assert met is olafsdottir_2016.AWAKE_CONTENT["met"]
+
+
+@pytest.mark.realdata
+def test_2017_congruence_decoded_jointly(days_2017):
+    """Not fixed before the run: both directions in one posterior (decode_jointly)."""
+    assert _congruence(days_2017, "arm_joint") == MEASURED_CONGRUENCE_JOINT_2017
+
+
+@pytest.mark.realdata
+def test_separate_decodes_cannot_tell_the_running_direction(rec):
+    """Why the Methods' reading finds no congruence: it reads no direction.
+
+    On the default day's runs, in 500 ms bins with spikes, the arm of 6 with
+    the most posterior names the running direction about as often as a coin
+    when each direction is decoded on its own, and far more often decoded
+    jointly.
+    """
+    _, cells = _place_cells(rec, RUN_SPEED_2017)
+    maps = _rate_maps(rec, cells, RUN_SPEED_2017)
+    separate = _direction_read_while_running(rec, cells, maps, jointly=False)
+    joint = _direction_read_while_running(rec, cells, maps, jointly=True)
+    assert (separate, joint) == DIRECTION_READ_2017
