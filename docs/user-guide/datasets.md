@@ -44,6 +44,7 @@ The last column says how far each dataset's result was checked.
 | [`bhattarai_2020`](../datasets/bhattarai_2020.md) | rat, dorsal CA1 | loop with two rings, four sequences to one reward; one LFP channel | Figshare 10032866 (CC0) | not possible yet; the paper's replay recipe on the archive's one LFP channel passes 37 candidates against the paper's 278 on the default set, and 11 judged replay (29.7%) only just clears its sanity check (24.6% at the 95th percentile with permuted cells); planted replay is judged 18.6% of the time, so this is no rate of replay; the complex-spike rule gives the paper's 648 of 698 units |
 | [`huszar_2022`](../datasets/huszar_2022.md) | mouse, CA1 | figure-eight maze with sleep; LFP for 12 sessions | DANDI 000552 (CC-BY-4.0) | tested against chance of our own analysis, not the paper's: 5 of 20 awake ripple candidates are judged trajectories, none in 40 shifted-spike draws (20 candidates give no rate, a null of zeros cannot show calibration, and this judge passes 8.7% of planted replay) |
 | [`carey_2019`](../datasets/carey_2019.md) | rat, dorsal CA1 | T-maze with food and water arms, rest pedestals; LFP per channel | DataLad MotivationalT (ODC-PDDL-1.0) | tested against chance, **not met**: on the route of the paper's code, 41 sequences on 1,328 candidates against a null 95th percentile of 52.35, with 5.8% of planted replay found, so it cannot show whether these events hold replay. Detection matches: our score matches the paper's stored score (r = 0.9999997); 73.5% and 91.6% agreement with its 1,654 events, 98.6% and 97.2% with its speed and theta |
+| [`tirole_2022`](../datasets/tirole_2022.md) | rat, dorsal CA1 | two novel 2 m linear tracks in one session, rest before, between and after; LFP | Zenodo 7114733 (CC0) | not yet |
 
 Each dataset has a page with what was recorded, the conversions the loader
 applied and the evidence for them, the pitfalls, the worked result and how to
@@ -300,10 +301,11 @@ detection, where it states them. `rec.lfp.unit_basis` and
 Ask for the channels you need: [`forli_2025`](../datasets/forli_2025.md) holds 384
 channels, one 53 MB in memory and all of them 405 GB, and
 [`huszar_2022`](../datasets/huszar_2022.md)'s LFP sits in raw files of up to
-184 GB, which `stream=True` reads by byte range. Five datasets have an LFP:
+184 GB, which `stream=True` reads by byte range. Six datasets have an LFP:
 `forli_2025`, `igata_2021` (every tetrode of the session, read from its own
 files), `bhattarai_2020` (one channel), `carey_2019` (each channel from its own
-file) and `huszar_2022` (12 sessions).
+file), `huszar_2022` (12 sessions) and `tirole_2022` (the authors' four chosen
+channels, 1.2 to 1.7 GB per session).
 
 ## Move to pynapple or NWB
 

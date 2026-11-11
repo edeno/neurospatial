@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Datasets: Tirole et al. 2022, two novel linear tracks
+
+- New `tirole_2022` loader (Zenodo 7114733, CC0, the mirror of Dryad
+  10.5061/dryad.ksn02v76h): dorsal CA1 of five rats running two novel 2 m
+  linear tracks between long rests. Nine sessions are offered under their
+  Table 1 names. The deposit's labels are crossed in two sessions, so each
+  spike and position file is paired with the LFP file on its clock, which
+  Table 1's laps and rest durations confirm; Rat 4 session 1 is not offered,
+  since only its LFP is in the deposit. Positions are in cm at the file's
+  average scale, `rec.linearized` is the authors' 0-200 cm linearization,
+  the epochs are PRE, each track, between them, POST and the rest-pot
+  samples, and the four LFP channels (MATLAB v7.3) are fetched on request.
+- `scripts/build_dataset_registry.py` fills a Zenodo registry: it locates
+  each file a session row names in the record, checks the cached copy's MD5
+  against the record's and pins its SHA-256.
+
 ### Documentation: measured false-positive rates of published nulls
 
 - The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,
