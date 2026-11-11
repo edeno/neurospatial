@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Datasets: Pfeiffer & Foster's open-field session (`pfeiffer_2013`)
+
+- `load("pfeiffer_2013")` gives rat 1 day 1 of Pfeiffer & Foster (2013), the
+  one session released, as a sample recording, with Maboudi et al. (2018):
+  212 dorsal CA1 units labelled excitatory (203) or inhibitory (9), 2-D
+  positions in the declared 2 m arena, Pfeiffer's 322 candidate windows
+  (`events["ripples"]`) and the 110 his file marks significant
+  (`events["significant_ripples"]`, `params["significant"]`). No data license
+  is stated (the repository's MIT license covers its code); the file is
+  fetched from eLife's archived copy at a pinned commit and SHA-256, never
+  redistributed.
+- The file is a `dill` pickle of `nelpy` objects. It is read without running
+  any of it: `_pickled.read_dill_pickle` lists its imports from the opcodes,
+  refuses anything outside an allow-list, rebuilds `nelpy`'s classes as inert
+  containers and resolves `dill`'s helpers only to NumPy's array and scalar
+  reconstructors. Neither `nelpy` nor `dill` is needed.
+- Checks against the author's own output, pinned in `realdata` tests:
+  `ripple_detection`'s `pfeiffer_2013` population-burst detector on the
+  spikes overlaps 272 of his 322 windows and 291 of its 402 overlap his (the
+  LFP detectors cannot run: the file has no LFP). On his windows,
+  `PFEIFFER_FOSTER_2015` agrees with his labels on 82.0% (kappa 0.569) and
+  `PFEIFFER_FOSTER_2013` on 61.5% (kappa 0.113). The worked result, fixed
+  beforehand (80% agreement and kappa 0.6), is not met; the presets' notes
+  give these numbers.
+
 ### Documentation: measured false-positive rates of published nulls
 
 - The notes of `TIROLE_2022`, `OLAFSDOTTIR_2015`, `BUSH_2022`,
