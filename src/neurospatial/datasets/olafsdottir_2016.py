@@ -527,13 +527,19 @@ def z_track_graph(nodes: NDArray[np.float64]) -> nx.Graph:
 def _axial_peaks(angle: NDArray[np.float64]) -> tuple[float, float]:
     """The two most common directions of travel, mod 180 degrees, radians.
 
-    A histogram of 5 degree bins over [0, pi); the second peak is the most
+    A histogram of 5 degree bins over [0, pi). The first peak is the fullest
+    bin of the three neighbouring bins that hold the most samples, the last
+    bin neighbouring the first: a runway along the camera's x axis falls on
+    both sides of 0 = 180 degrees, and a single bin's count would halve it
+    (R2142's runways lost to the diagonal so). The second peak is the most
     common direction at least 30 degrees from the first.
     """
     edges = np.radians(np.arange(0.0, 180.0 + _ANGLE_BIN, _ANGLE_BIN))
     counts, _ = np.histogram(np.mod(angle, np.pi), bins=edges)
     centres = 0.5 * (edges[:-1] + edges[1:])
-    first = int(np.argmax(counts))
+    window = counts + np.roll(counts, 1) + np.roll(counts, -1)
+    near = (int(np.argmax(window)) + np.array([-1, 0, 1])) % counts.size
+    first = int(near[np.argmax(counts[near])])
     apart = np.abs(np.angle(np.exp(2j * (centres - centres[first])))) / 2
     second = int(np.argmax(np.where(apart >= np.radians(_PEAK_APART), counts, -1)))
     return float(centres[first]), float(centres[second])
@@ -695,7 +701,8 @@ def corner_stops(
     ends at the last sample within ``zone`` before it is more than ``leave``
     away again. Samples between the two distances, and untracked ones, neither
     start nor end a stop. A stay with no sample beyond ``leave`` before it
-    (the trial starting at the corner) has no direction and is left out.
+    (the trial starting at the corner) has no direction, and a single sample
+    near the corner has no duration: both are left out.
 
     Parameters
     ----------
@@ -720,27 +727,31 @@ def corner_stops(
 
     Examples
     --------
-    >>> times = np.arange(9.0)
-    >>> linear = np.array([0.0, 70.0, 95.0, 125.0, 102.0, 99.0, 150.0, 104.0, 30.0])
+    >>> times = np.arange(10.0)
+    >>> linear = np.array([0, 70, 95, 125, 102, 99, 150, 104, 103, 30.0])
     >>> rows, direction, corner = corner_stops(times, linear, np.array([100.0]))
     >>> rows.tolist(), direction.tolist(), corner.tolist()
-    ([[2.0, 5.0], [7.0, 7.0]], ['outbound', 'inbound'], [1, 1])
+    ([[2.0, 5.0], [7.0, 8.0]], ['outbound', 'inbound'], [1, 1])
     """
     tracked = np.flatnonzero(np.isfinite(linear))
     rows, direction, which = [], [], []
     for number, corner in enumerate(corners, 1):
         offset = linear[tracked] - corner
-        state = np.where(np.abs(offset) <= zone, 1, np.where(np.abs(offset) > leave, -1, 0))
+        state = np.where(
+            np.abs(offset) <= zone, 1, np.where(np.abs(offset) > leave, -1, 0)
+        )
         decided = np.flatnonzero(state != 0)
         near = state[decided] == 1
         edges = np.diff(np.concatenate([[0], near.astype(np.int8), [0]]))
         for first, after in zip(
             np.flatnonzero(edges == 1), np.flatnonzero(edges == -1), strict=True
         ):
-            if first == 0:
+            arrival = times[tracked[decided[first]]]
+            departure = times[tracked[decided[after - 1]]]
+            if first == 0 or departure == arrival:
                 continue
             came_from = offset[decided[first - 1]]
-            rows.append([times[tracked[decided[first]]], times[tracked[decided[after - 1]]]])
+            rows.append([arrival, departure])
             direction.append("outbound" if came_from < 0 else "inbound")
             which.append(number)
     order = np.argsort([row[0] for row in rows], kind="stable")
