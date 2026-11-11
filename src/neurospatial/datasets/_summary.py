@@ -116,6 +116,12 @@ def _identity(rec: Recording) -> list[str]:
 
 
 def _time(rec: Recording) -> list[str]:
+    if rec.positions is None and rec.headings is None:
+        return [
+            f"{rec.duration:.0f} s from the first to the last sample, in seconds on "
+            f"{rec.clock}; times sampled at {rec.sampling_rate:.4g} Hz, with no "
+            "tracking"
+        ]
     sampled = "position" if rec.positions is not None else "heading"
     return [
         f"{rec.duration:.0f} s from the first to the last sample, in seconds on "
@@ -137,6 +143,8 @@ def _epochs(rec: Recording) -> str:
 
 
 def _tracking(rec: Recording) -> list[str]:
+    if rec.positions is None and rec.headings is None:
+        return [f"none: {rec.tracking}" if rec.tracking else "none in this session"]
     if rec.positions is None:
         lines = [f"{rec.tracking} (heading only; no positions in this dataset)"]
     else:

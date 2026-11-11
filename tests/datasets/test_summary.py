@@ -87,6 +87,22 @@ def test_verified_session_has_no_unchecked_note(checked):
     assert "Not yet checked by hand" in repr(checked)
 
 
+def test_untracked_summary(heading_recording, heading_stated):
+    """Neither positions nor headings: the summary says there is no tracking."""
+    untracked = dataclasses.replace(
+        heading_recording,
+        headings=None,
+        heading_source="",
+        tracking="the archive holds no tracking",
+    )
+    text = " ".join(repr(run_checks(untracked, stated=heading_stated)).split())
+    assert "times sampled at 100 Hz, with no tracking" in text
+    assert "Tracking none: the archive holds no tracking" in text
+    assert "head direction" not in text
+    assert "heading only" not in text
+    assert "tracked 0.0%" not in text
+
+
 def test_heading_only_summary(heading_recording, heading_stated):
     text = repr(run_checks(heading_recording, stated=heading_stated))
     assert "heading only; no positions in this dataset" in " ".join(text.split())

@@ -539,6 +539,7 @@ def load_session(
                 "for this session"
             ),
             times=times,
+            tracking="hc-3 holds no position for this session",
             epochs={"session": np.array([[0.0, float(times[-1])]])},
             params={"analysis_epochs": np.array([[0.0, float(times[-1])]])},
             conversions=(
